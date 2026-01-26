@@ -79,12 +79,12 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 
     writeChar(')', ostr);
 
-    if (nulls_action == NullsAction::RESPECT_NULLS)
+    if (getNullsAction() == NullsAction::RESPECT_NULLS)
         writeCString(" RESPECT NULLS", ostr);
-    else if (nulls_action == NullsAction::IGNORE_NULLS)
+    else if (getNullsAction() == NullsAction::IGNORE_NULLS)
         writeCString(" IGNORE NULLS", ostr);
 
-    if (is_window_function)
+    if (isWindowFunction())
     {
         writeCString(" OVER ", ostr);
         if (!window_name.empty())
@@ -105,12 +105,12 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 
 void ASTFunction::finishFormatWithWindow(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    if (nulls_action == NullsAction::RESPECT_NULLS)
+    if (getNullsAction() == NullsAction::RESPECT_NULLS)
         ostr << " RESPECT NULLS";
-    else if (nulls_action == NullsAction::IGNORE_NULLS)
+    else if (getNullsAction() == NullsAction::IGNORE_NULLS)
         ostr << " IGNORE NULLS";
 
-    if (!is_window_function)
+    if (!isWindowFunction())
         return;
 
     ostr << " OVER ";
@@ -156,8 +156,8 @@ void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) 
     hash_state.update(name);
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 
-    hash_state.update(nulls_action);
-    if (is_window_function)
+    hash_state.update(getNullsAction());
+    if (isWindowFunction())
     {
         hash_state.update(window_name.size());
         hash_state.update(window_name);
@@ -271,6 +271,7 @@ struct FunctionOperatorMapping
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.expression_list_prepend_whitespace = false;
+    auto kind = getKind();
     if (kind == Kind::CODEC || kind == Kind::STATISTICS || kind == Kind::BACKUP_NAME)
         frame.allow_operators = false;
     FormatStateStacked nested_need_parens = frame;
@@ -316,7 +317,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     /// Should this function to be written as operator?
     bool written = false;
-    if (is_operator && arguments && !parameters && frame.allow_operators && nulls_action == NullsAction::EMPTY)
+    if (isOperator() && arguments && !parameters && frame.allow_operators && getNullsAction() == NullsAction::EMPTY)
     {
         /// Unary prefix operators.
         if (arguments->children.size() == 1)
@@ -682,7 +683,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         ostr << ')';
     }
 
-    if ((arguments && !arguments->children.empty()) || !no_empty_args)
+    if ((arguments && !arguments->children.empty()) || !noEmptyArgs())
         ostr << '(';
 
     if (arguments)
@@ -758,7 +759,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         }
     }
 
-    if ((arguments && !arguments->children.empty()) || !no_empty_args)
+    if ((arguments && !arguments->children.empty()) || !noEmptyArgs())
         ostr << ')';
 
     finishFormatWithWindow(ostr, settings, state, frame);

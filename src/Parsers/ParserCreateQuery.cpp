@@ -679,11 +679,11 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         switch (engine_kind)
         {
             case EngineKind::TABLE_ENGINE:
-                engine->as<ASTFunction &>().kind = ASTFunction::Kind::TABLE_ENGINE;
+                engine->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_ENGINE);
                 break;
 
             case EngineKind::DATABASE_ENGINE:
-                engine->as<ASTFunction &>().kind = ASTFunction::Kind::DATABASE_ENGINE;
+                engine->as<ASTFunction &>().setKind(ASTFunction::Kind::DATABASE_ENGINE);
                 break;
         }
     }

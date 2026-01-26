@@ -612,7 +612,7 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAG & actions, Aggrega
         AggregateFunctionProperties properties;
         aggregate.parameters = (node.parameters) ? getAggregateFunctionParametersArray(node.parameters, "", getContext()) : Array();
         aggregate.function
-            = AggregateFunctionFactory::instance().get(node.name, node.nulls_action, types, aggregate.parameters, properties);
+            = AggregateFunctionFactory::instance().get(node.name, node.getNullsAction(), types, aggregate.parameters, properties);
 
         descriptions.push_back(aggregate);
     }
@@ -797,7 +797,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
     for (const ASTPtr & ast : syntax->window_function_asts)
     {
         const ASTFunction & function_node = typeid_cast<const ASTFunction &>(*ast);
-        assert(function_node.is_window_function);
+        assert(function_node.isWindowFunction());
 
         WindowFunctionDescription window_function;
         window_function.function_node = &function_node;
@@ -837,7 +837,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
         AggregateFunctionProperties properties;
         window_function.aggregate_function = AggregateFunctionFactory::instance().get(
             window_function.function_node->name,
-            window_function.function_node->nulls_action,
+            window_function.function_node->getNullsAction(),
             window_function.argument_types,
             window_function.function_parameters,
             properties);
@@ -1562,9 +1562,9 @@ void SelectQueryExpressionAnalyzer::appendSelectSkipWindowExpressions(Expression
         // Skip window function columns here -- they are calculated after
         // other SELECT expressions by a special step.
         // Also skipping lambda functions because they can't be explicitly evaluated.
-        if (function->is_window_function || function->name == "lambda")
+        if (function->isWindowFunction() || function->name == "lambda")
             return;
-        if (function->compute_after_window_functions)
+        if (function->computeAfterWindowFunctions())
         {
             for (auto & arg : function->arguments->children)
                 appendSelectSkipWindowExpressions(step, arg);
@@ -2227,7 +2227,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     auto * ast = child->as<ASTOrderByElement>();
                     ASTPtr order_expression = ast->children.at(0);
                     if (auto * function = order_expression->as<ASTFunction>();
-                        function && (function->is_window_function || function->compute_after_window_functions))
+                        function && (function->isWindowFunction() || function->computeAfterWindowFunctions()))
                         continue;
                     const String & column_name = order_expression->getColumnName();
                     chain.getLastStep().addRequiredOutput(column_name);
