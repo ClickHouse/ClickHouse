@@ -685,7 +685,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, 
             StoragePtr storage;
             if (auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(task.query.get()); query_with_table)
             {
-                if (query_with_table->table)
+                if (query_with_table->getTableAst())
                 {
                     /// It's not CREATE DATABASE
                     auto table_id = context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);

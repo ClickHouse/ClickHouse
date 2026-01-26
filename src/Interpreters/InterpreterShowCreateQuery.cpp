@@ -53,7 +53,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         (show_query = query_ptr->as<ASTShowCreateViewQuery>()) ||
         (show_query = query_ptr->as<ASTShowCreateDictionaryQuery>()))
     {
-        auto resolve_table_type = show_query->temporary ? Context::ResolveExternal : Context::ResolveOrdinary;
+        auto resolve_table_type = show_query->isTemporary() ? Context::ResolveExternal : Context::ResolveOrdinary;
         auto table_id = getContext()->resolveStorageID(*show_query, resolve_table_type);
 
         bool is_dictionary = static_cast<bool>(query_ptr->as<ASTShowCreateDictionaryQuery>());
@@ -81,7 +81,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
     {
-        if (show_query->temporary)
+        if (show_query->isTemporary())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary databases are not possible.");
         show_query->setDatabase(getContext()->resolveDatabase(show_query->getDatabase()));
         getContext()->checkAccess(AccessType::SHOW_DATABASES, show_query->getDatabase());

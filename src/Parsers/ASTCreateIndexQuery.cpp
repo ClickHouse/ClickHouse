@@ -42,16 +42,16 @@ void ASTCreateIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettin
     index_name->format(ostr, settings, state, frame);
     ostr << " ON ";
 
-    if (table)
+    if (auto tbl = getTableAst())
     {
-        if (database)
+        if (auto db = getDatabaseAst())
         {
-            database->format(ostr, settings, state, frame);
+            db->format(ostr, settings, state, frame);
             ostr << '.';
         }
 
-        chassert(table);
-        table->format(ostr, settings, state, frame);
+        chassert(tbl);
+        tbl->format(ostr, settings, state, frame);
     }
 
     formatOnCluster(ostr, settings);

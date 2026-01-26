@@ -1139,8 +1139,10 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (alter_object_type == ASTAlterQuery::AlterObjectType::DATABASE)
     {
-        if (!parseDatabaseAsAST(pos, expected, query->database))
+        ASTPtr database;
+        if (!parseDatabaseAsAST(pos, expected, database))
             return false;
+        query->setDatabaseAst(database);
 
         String cluster_str;
         if (ParserKeyword(Keyword::ON).ignore(pos, expected))
@@ -1152,8 +1154,12 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+        ASTPtr database;
+        ASTPtr table;
+        if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
             return false;
+        query->setDatabaseAst(database);
+        query->setTableAst(table);
 
         String cluster_str;
         if (ParserKeyword(Keyword::ON).ignore(pos, expected))
@@ -1171,12 +1177,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->set(query->command_list, command_list);
     query->alter_object = alter_object_type;
-
-    if (query->database)
-        query->children.push_back(query->database);
-
-    if (query->table)
-        query->children.push_back(query->table);
 
     return true;
 }

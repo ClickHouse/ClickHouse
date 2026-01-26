@@ -108,46 +108,49 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (s_into_outfile.ignore(pos, expected))
     {
         ParserStringLiteral out_file_p;
-        if (!out_file_p.parse(pos, query_with_output.out_file, expected))
+        ASTPtr out_file_node;
+        if (!out_file_p.parse(pos, out_file_node, expected))
             return false;
 
         ParserKeyword s_append(Keyword::APPEND);
         if (s_append.ignore(pos, expected))
         {
-            query_with_output.is_outfile_append = true;
+            query_with_output.setIsOutfileAppend(true);
         }
 
         ParserKeyword s_truncate(Keyword::TRUNCATE);
         if (s_truncate.ignore(pos, expected))
         {
-            query_with_output.is_outfile_truncate = true;
+            query_with_output.setIsOutfileTruncate(true);
         }
 
         ParserKeyword s_stdout(Keyword::AND_STDOUT);
         if (s_stdout.ignore(pos, expected))
         {
-            query_with_output.is_into_outfile_with_stdout = true;
+            query_with_output.setIsIntoOutfileWithStdout(true);
         }
 
         ParserKeyword s_compression_method(Keyword::COMPRESSION);
         if (s_compression_method.ignore(pos, expected))
         {
             ParserStringLiteral compression;
-            if (!compression.parse(pos, query_with_output.compression, expected))
+            ASTPtr compression_node;
+            if (!compression.parse(pos, compression_node, expected))
                 return false;
-            query_with_output.children.push_back(query_with_output.compression);
+            query_with_output.setCompression(std::move(compression_node));
 
             ParserKeyword s_compression_level(Keyword::LEVEL);
             if (s_compression_level.ignore(pos, expected))
             {
                 ParserNumber compression_level;
-                if (!compression_level.parse(pos, query_with_output.compression_level, expected))
+                ASTPtr compression_level_node;
+                if (!compression_level.parse(pos, compression_level_node, expected))
                     return false;
-                query_with_output.children.push_back(query_with_output.compression_level);
+                query_with_output.setCompressionLevel(std::move(compression_level_node));
             }
         }
 
-        query_with_output.children.push_back(query_with_output.out_file);
+        query_with_output.setOutFile(std::move(out_file_node));
 
     }
 
@@ -180,23 +183,25 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     for (size_t i = 0; i < 2; ++i)
     {
-        if (!query_with_output.format_ast && s_format.ignore(pos, expected))
+        if (!query_with_output.getFormatAst() && s_format.ignore(pos, expected))
         {
             ParserIdentifier format_p;
 
-            if (!format_p.parse(pos, query_with_output.format_ast, expected))
+            ASTPtr format_node;
+            if (!format_p.parse(pos, format_node, expected))
                 return false;
-            setIdentifierSpecial(query_with_output.format_ast);
+            setIdentifierSpecial(format_node);
 
-            query_with_output.children.push_back(query_with_output.format_ast);
+            query_with_output.setFormatAst(std::move(format_node));
         }
-        else if (!query_with_output.settings_ast && s_settings.ignore(pos, expected))
+        else if (!query_with_output.getSettingsAst() && s_settings.ignore(pos, expected))
         {
             // SETTINGS key1 = value1, key2 = value2, ...
             ParserSetQuery parser_settings(true);
-            if (!parser_settings.parse(pos, query_with_output.settings_ast, expected))
+            ASTPtr settings_node;
+            if (!parser_settings.parse(pos, settings_node, expected))
                 return false;
-            query_with_output.children.push_back(query_with_output.settings_ast);
+            query_with_output.setSettingsAst(std::move(settings_node));
         }
         else
             break;

@@ -314,8 +314,7 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
     if (!query.isView())
         query.select = nullptr;
 
-    query.format_ast = nullptr;
-    query.out_file = nullptr;
+    ASTQueryWithOutput::resetOutputASTIfExist(query);
 }
 
 String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path)

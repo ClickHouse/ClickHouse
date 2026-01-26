@@ -821,17 +821,12 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->if_not_exists = if_not_exists;
         query->cluster = cluster_str;
 
-        query->database = table_id->getDatabase();
-        query->table = table_id->getTable();
+        query->setDatabaseAst(table_id->getDatabase());
+        query->setTableAst(table_id->getTable());
         query->uuid = table_id->uuid;
         query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
 
         query->attach_as_replicated = attach_as_replicated;
-
-        if (query->database)
-            query->children.push_back(query->database);
-        if (query->table)
-            query->children.push_back(query->table);
 
         return true;
     }
@@ -945,19 +940,14 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->replace_table = replace;
     query->create_or_replace = or_replace;
     query->if_not_exists = if_not_exists;
-    query->temporary = is_temporary;
+    query->setIsTemporary(is_temporary);
     query->is_time_series_table = is_time_series_table;
 
-    query->database = table_id->getDatabase();
-    query->table = table_id->getTable();
+    query->setDatabaseAst(table_id->getDatabase());
+    query->setTableAst(table_id->getTable());
     query->uuid = table_id->uuid;
     query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
     query->cluster = cluster_str;
-
-    if (query->database)
-        query->children.push_back(query->database);
-    if (query->table)
-        query->children.push_back(query->table);
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
@@ -1181,15 +1171,10 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->is_window_view = true;
 
     auto * table_id = table->as<ASTTableIdentifier>();
-    query->database = table_id->getDatabase();
-    query->table = table_id->getTable();
+    query->setDatabaseAst(table_id->getDatabase());
+    query->setTableAst(table_id->getTable());
     query->uuid = table_id->uuid;
     query->cluster = cluster_str;
-
-    if (query->database)
-        query->children.push_back(query->database);
-    if (query->table)
-        query->children.push_back(query->table);
     if (comment)
         query->set(query->comment, comment);
 
@@ -1413,10 +1398,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->uuid = uuid;
     query->has_uuid = uuid != UUIDHelpers::Nil;
     query->cluster = cluster_str;
-    query->database = database;
-
-    if (database)
-        query->children.push_back(database);
+    query->setDatabaseAst(database);
 
     query->set(query->storage, storage);
     if (comment)
@@ -1629,18 +1611,13 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->is_populate = is_populate;
     query->is_create_empty = is_create_empty;
     query->replace_view = replace_view;
-    query->temporary = is_temporary;
+    query->setIsTemporary(is_temporary);
 
     auto * table_id = table->as<ASTTableIdentifier>();
-    query->database = table_id->getDatabase();
-    query->table = table_id->getTable();
+    query->setDatabaseAst(table_id->getDatabase());
+    query->setTableAst(table_id->getTable());
     query->uuid = table_id->uuid;
     query->cluster = cluster_str;
-
-    if (query->database)
-        query->children.push_back(query->database);
-    if (query->table)
-        query->children.push_back(query->table);
 
     query->set(query->columns_list, columns_list);
     query->set(query->aliases_list, aliases_list);
@@ -1858,14 +1835,9 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->replace_table = replace;
 
     auto * dict_id = name->as<ASTTableIdentifier>();
-    query->database = dict_id->getDatabase();
-    query->table = dict_id->getTable();
+    query->setDatabaseAst(dict_id->getDatabase());
+    query->setTableAst(dict_id->getTable());
     query->uuid = dict_id->uuid;
-
-    if (query->database)
-        query->children.push_back(query->database);
-    if (query->table)
-        query->children.push_back(query->table);
 
     query->if_not_exists = if_not_exists;
     query->set(query->dictionary_attributes_list, attributes);

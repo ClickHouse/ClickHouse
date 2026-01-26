@@ -50,7 +50,7 @@ protected:
         T & query = static_cast<T &>(*query_ptr);
 
         query.cluster.clear();
-        if (!query.database)
+        if (query.getDatabase().empty())
             query.setDatabase(new_database);
 
         return query_ptr;

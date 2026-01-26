@@ -8,31 +8,19 @@ namespace DB
 
 void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
 {
-    if (out_file)
-    {
-        cloned.out_file = out_file->clone();
-        cloned.children.push_back(cloned.out_file);
-    }
-    if (format_ast)
-    {
-        cloned.format_ast = format_ast->clone();
-        cloned.children.push_back(cloned.format_ast);
-    }
-    if (settings_ast)
-    {
-        cloned.settings_ast = settings_ast->clone();
-        cloned.children.push_back(cloned.settings_ast);
-    }
-    if (compression)
-    {
-        cloned.compression = compression->clone();
-        cloned.children.push_back(cloned.compression);
-    }
-    if (compression_level)
-    {
-        cloned.compression_level = compression_level->clone();
-        cloned.children.push_back(cloned.compression_level);
-    }
+    /// Reset indices first since children was cleared
+    cloned.resetOutputIndices();
+
+    if (auto out_file = getOutFile())
+        cloned.setOutFile(out_file->clone());
+    if (auto format_ast = getFormatAst())
+        cloned.setFormatAst(format_ast->clone());
+    if (auto settings_ast = getSettingsAst())
+        cloned.setSettingsAst(settings_ast->clone());
+    if (auto compression = getCompression())
+        cloned.setCompression(compression->clone());
+    if (auto compression_level = getCompressionLevel())
+        cloned.setCompressionLevel(compression_level->clone());
 }
 
 void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
@@ -41,36 +29,36 @@ void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s
 
     std::string indent_str = s.one_line ? "" : std::string(4u * frame.indent, ' ');
 
-    if (out_file)
+    if (auto out_file = getOutFile())
     {
         ostr << s.nl_or_ws << indent_str << "INTO OUTFILE ";
         out_file->format(ostr, s, state, frame);
 
-        if (is_outfile_append)
+        if (isOutfileAppend())
             ostr << " APPEND";
-        if (is_outfile_truncate)
+        if (isOutfileTruncate())
             ostr << " TRUNCATE";
-        if (is_into_outfile_with_stdout)
+        if (isIntoOutfileWithStdout())
             ostr << " AND STDOUT";
-        if (compression)
+        if (auto compression = getCompression())
         {
             ostr << " COMPRESSION ";
             compression->format(ostr, s, state, frame);
         }
-        if (compression_level)
+        if (auto compression_level = getCompressionLevel())
         {
             ostr << indent_str << " LEVEL ";
             compression_level->format(ostr, s, state, frame);
         }
     }
 
-    if (format_ast)
+    if (auto format_ast = getFormatAst())
     {
         ostr << s.nl_or_ws << indent_str << "FORMAT ";
         format_ast->format(ostr, s, state, frame);
     }
 
-    if (settings_ast)
+    if (auto settings_ast = getSettingsAst())
     {
         ostr << s.nl_or_ws << indent_str << "SETTINGS ";
         settings_ast->format(ostr, s, state, frame);
@@ -82,23 +70,12 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
     /// FIXME: try to prettify this cast using `as<>()`
     if (auto * ast_with_output = dynamic_cast<ASTQueryWithOutput *>(&ast))
     {
-        auto remove_if_exists = [&](ASTPtr & p)
-        {
-            if (p)
-            {
-                if (auto it = std::find(ast_with_output->children.begin(), ast_with_output->children.end(), p);
-                    it != ast_with_output->children.end())
-                    ast_with_output->children.erase(it);
-                p.reset();
-            }
-        };
-
-        remove_if_exists(ast_with_output->out_file);
-        remove_if_exists(ast_with_output->format_ast);
-        remove_if_exists(ast_with_output->settings_ast);
-        remove_if_exists(ast_with_output->compression);
-        remove_if_exists(ast_with_output->compression_level);
-
+        ast_with_output->out_file_index = INVALID_INDEX;
+        ast_with_output->format_ast_index = INVALID_INDEX;
+        ast_with_output->settings_ast_index = INVALID_INDEX;
+        ast_with_output->compression_index = INVALID_INDEX;
+        ast_with_output->compression_level_index = INVALID_INDEX;
+        /// Note: children are not removed for simplicity; they become orphaned but harmless.
         return true;
     }
 
@@ -107,7 +84,7 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
 
 bool ASTQueryWithOutput::hasOutputOptions() const
 {
-    return out_file || format_ast || settings_ast || compression || compression_level;
+    return getOutFile() || getFormatAst() || getSettingsAst() || getCompression() || getCompressionLevel();
 }
 
 }

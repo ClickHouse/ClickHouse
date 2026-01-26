@@ -14,6 +14,7 @@ String ASTUndropQuery::getID(char delim) const
 ASTPtr ASTUndropQuery::clone() const
 {
     auto res = make_intrusive<ASTUndropQuery>(*this);
+    res->children.clear();
     cloneOutputOptions(*res);
     cloneTableOptions(*res);
     return res;
@@ -26,18 +27,19 @@ void ASTUndropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
         << " ";
 
-    chassert(table);
+    auto tbl = getTableAst();
+    chassert(tbl);
 
-    if (table)
+    if (tbl)
     {
-        if (database)
+        if (auto db = getDatabaseAst())
         {
-            database->format(ostr, settings, state, frame);
+            db->format(ostr, settings, state, frame);
             ostr << '.';
         }
 
-        chassert(table);
-        table->format(ostr, settings, state, frame);
+        chassert(tbl);
+        tbl->format(ostr, settings, state, frame);
     }
 
     if (uuid != UUIDHelpers::Nil)

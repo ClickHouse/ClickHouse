@@ -9,14 +9,15 @@ void ASTOptimizeQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings 
 {
     ostr << "OPTIMIZE TABLE ";
 
-    if (database)
+    if (auto db = getDatabaseAst())
     {
-        database->format(ostr, settings, state, frame);
+        db->format(ostr, settings, state, frame);
         ostr << '.';
     }
 
-    chassert(table);
-    table->format(ostr, settings, state, frame);
+    auto tbl = getTableAst();
+    chassert(tbl);
+    tbl->format(ostr, settings, state, frame);
 
     formatOnCluster(ostr, settings);
 

@@ -36,7 +36,7 @@ BlockIO InterpreterUndropQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-    if (undrop.table)
+    if (undrop.getTableAst())
         return executeToTable(undrop);
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to undrop, both names are empty");
 }

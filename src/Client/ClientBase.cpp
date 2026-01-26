@@ -180,7 +180,7 @@ void cleanupTempFile(const DB::ASTPtr & parsed_query, const String & tmp_file)
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
     {
-        if (query_with_output->is_outfile_truncate && query_with_output->out_file)
+        if (query_with_output->isOutfileTruncate() && query_with_output->getOutFile())
         {
             if (fs::exists(tmp_file))
                 fs::remove(tmp_file);
@@ -192,9 +192,9 @@ void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_fil
 {
     if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
     {
-        if (query_with_output->is_outfile_truncate && query_with_output->out_file)
+        if (query_with_output->isOutfileTruncate() && query_with_output->getOutFile())
         {
-            const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
+            const auto & tmp_file_node = query_with_output->getOutFile()->as<DB::ASTLiteral &>();
             String tmp_file = tmp_file_node.value.safeGet<std::string>();
 
             try
@@ -688,40 +688,41 @@ try
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
-            if (query_with_output->out_file && isEmbeeddedClient())
+            auto out_file_ast = query_with_output->getOutFile();
+            if (out_file_ast && isEmbeeddedClient())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Out files are disabled when you are running client embedded into server.");
 
             String out_file;
-            if (query_with_output->out_file)
+            if (out_file_ast)
             {
                 select_into_file = true;
 
-                const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
+                const auto & out_file_node = out_file_ast->as<ASTLiteral &>();
                 out_file = out_file_node.value.safeGet<std::string>();
 
                 std::string compression_method_string;
 
-                if (query_with_output->compression)
+                if (auto compression_ast = query_with_output->getCompression())
                 {
-                    const auto & compression_method_node = query_with_output->compression->as<ASTLiteral &>();
+                    const auto & compression_method_node = compression_ast->as<ASTLiteral &>();
                     compression_method_string = compression_method_node.value.safeGet<std::string>();
                 }
 
                 CompressionMethod compression_method = chooseCompressionMethod(out_file, compression_method_string);
                 UInt64 compression_level = 3;
 
-                if (query_with_output->compression_level)
+                if (auto compression_level_ast = query_with_output->getCompressionLevel())
                 {
-                    const auto & compression_level_node = query_with_output->compression_level->as<ASTLiteral &>();
+                    const auto & compression_level_node = compression_level_ast->as<ASTLiteral &>();
                     compression_level_node.value.tryGet<UInt64>(compression_level);
                 }
 
                 auto flags = O_WRONLY | O_EXCL;
 
                 auto file_exists = fs::exists(out_file);
-                if (file_exists && query_with_output->is_outfile_append)
+                if (file_exists && query_with_output->isOutfileAppend())
                     flags |= O_APPEND;
-                else if (file_exists && query_with_output->is_outfile_truncate)
+                else if (file_exists && query_with_output->isOutfileTruncate())
                     flags |= O_TRUNC;
                 else
                     flags |= O_CREAT;
@@ -734,7 +735,7 @@ try
                     static_cast<int>(compression_level)
                 );
 
-                if (query_with_output->is_into_outfile_with_stdout)
+                if (query_with_output->isIntoOutfileWithStdout())
                 {
                     select_into_file_and_stdout = true;
                     out_file_buf = std::make_unique<ForkWriteBuffer>(std::vector<WriteBufferPtr>{std::move(out_file_buf),
@@ -745,14 +746,14 @@ try
                 if (is_interactive && is_default_format)
                     current_format = "TabSeparated";
             }
-            if (query_with_output->format_ast != nullptr)
+            if (auto format_ast = query_with_output->getFormatAst())
             {
                 if (has_vertical_output_suffix)
                     throw Exception(ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED, "Output format already specified");
-                const auto & id = query_with_output->format_ast->as<ASTIdentifier &>();
+                const auto & id = format_ast->as<ASTIdentifier &>();
                 current_format = id.name();
             }
-            else if (query_with_output->out_file)
+            else if (out_file_ast)
             {
                 auto format_name = FormatFactory::instance().tryGetFormatFromFileName(out_file);
                 if (format_name)
@@ -1096,7 +1097,7 @@ void ClientBase::updateSuggest(const ASTPtr & ast)
 
     if (auto * create = ast->as<ASTCreateQuery>())
     {
-        if (create->database)
+        if (create->getDatabaseAst())
             new_words.push_back(create->getDatabase());
         new_words.push_back(create->getTable());
 
@@ -1201,15 +1202,15 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
     // Run some local checks to make sure queries into output file will work before sending to server.
     if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
     {
-        if (query_with_output->out_file)
+        if (auto out_file_ast = query_with_output->getOutFile())
         {
             if (isEmbeeddedClient())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Out files are disabled when you are running client embedded into server.");
 
-            const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
+            const auto & out_file_node = out_file_ast->as<ASTLiteral &>();
             out_file = out_file_node.value.safeGet<std::string>();
 
-            if (query_with_output->is_outfile_truncate)
+            if (query_with_output->isOutfileTruncate())
             {
                 out_file_if_truncated = out_file;
                 out_file = fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file);
@@ -1239,32 +1240,32 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             std::string compression_method_string;
 
-            if (query_with_output->compression)
+            if (auto compression_ast = query_with_output->getCompression())
             {
-                const auto & compression_method_node = query_with_output->compression->as<ASTLiteral &>();
+                const auto & compression_method_node = compression_ast->as<ASTLiteral &>();
                 compression_method_string = compression_method_node.value.safeGet<std::string>();
             }
 
             CompressionMethod compression_method = chooseCompressionMethod(out_file, compression_method_string);
             UInt64 compression_level = 3;
 
-            if (query_with_output->is_outfile_append && query_with_output->is_outfile_truncate)
+            if (query_with_output->isOutfileAppend() && query_with_output->isOutfileTruncate())
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot use INTO OUTFILE with APPEND and TRUNCATE simultaneously.");
             }
 
-            if (query_with_output->is_outfile_append && compression_method != CompressionMethod::None)
+            if (query_with_output->isOutfileAppend() && compression_method != CompressionMethod::None)
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot append to compressed file. Please use uncompressed file or remove APPEND keyword.");
             }
 
-            if (query_with_output->compression_level)
+            if (auto compression_level_ast = query_with_output->getCompressionLevel())
             {
-                const auto & compression_level_node = query_with_output->compression_level->as<ASTLiteral &>();
+                const auto & compression_level_node = compression_level_ast->as<ASTLiteral &>();
                 bool res = compression_level_node.value.tryGet<UInt64>(compression_level);
                 auto range = getCompressionLevelRange(compression_method);
 
@@ -1278,7 +1279,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             if (fs::exists(out_file))
             {
-                if (!query_with_output->is_outfile_append && !query_with_output->is_outfile_truncate)
+                if (!query_with_output->isOutfileAppend() && !query_with_output->isOutfileTruncate())
                 {
                     throw Exception(
                         ErrorCodes::FILE_ALREADY_EXISTS,

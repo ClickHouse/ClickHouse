@@ -15,12 +15,47 @@ namespace DB
 class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 {
 public:
-    ASTPtr database;
-    ASTPtr table;
-
     UUID uuid = UUIDHelpers::Nil;
-    bool temporary{false};
 
+    ASTPtr getDatabaseAst() const { return database_index != INVALID_INDEX ? children[database_index] : nullptr; }
+    ASTPtr getTableAst() const { return table_index != INVALID_INDEX ? children[table_index] : nullptr; }
+
+    void setDatabaseAst(ASTPtr node)
+    {
+        if (node)
+        {
+            if (database_index != INVALID_INDEX)
+                children[database_index] = std::move(node);
+            else
+                database_index = addChildAndGetIndex(std::move(node));
+        }
+        else if (database_index != INVALID_INDEX)
+        {
+            /// We don't remove from children for simplicity, just invalidate the index
+            database_index = INVALID_INDEX;
+        }
+    }
+
+    void setTableAst(ASTPtr node)
+    {
+        if (node)
+        {
+            if (table_index != INVALID_INDEX)
+                children[table_index] = std::move(node);
+            else
+                table_index = addChildAndGetIndex(std::move(node));
+        }
+        else if (table_index != INVALID_INDEX)
+        {
+            /// We don't remove from children for simplicity, just invalidate the index
+            table_index = INVALID_INDEX;
+        }
+    }
+
+    bool isTemporary() const { return FLAGS & IS_TEMPORARY; }
+    void setIsTemporary(bool value) { FLAGS = value ? (FLAGS | IS_TEMPORARY) : (FLAGS & ~IS_TEMPORARY); }
+
+    /// Returns database/table name as String (for compatibility with old API)
     String getDatabase() const;
     String getTable() const;
 
@@ -29,6 +64,19 @@ public:
     void setTable(const String & name);
 
     void cloneTableOptions(ASTQueryWithTableAndOutput & cloned) const;
+
+protected:
+    UInt8 database_index = INVALID_INDEX;
+    UInt8 table_index = INVALID_INDEX;
+
+    /// Bit flags for ASTQueryWithTableAndOutput (bits 0-2 used by ASTQueryWithOutput)
+    static constexpr UInt32 IS_TEMPORARY = 1u << 3;
+
+    void resetTableIndices()
+    {
+        database_index = INVALID_INDEX;
+        table_index = INVALID_INDEX;
+    }
 };
 
 
@@ -53,15 +101,16 @@ protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         ostr
-            << (temporary ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query)
+            << (isTemporary() ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query)
             << " ";
 
-        if (database)
+        if (auto database = getDatabaseAst())
         {
             database->format(ostr, settings, state, frame);
             ostr << '.';
         }
 
+        auto table = getTableAst();
         chassert(table != nullptr, "Table is empty for the ASTQueryWithTableAndOutputImpl.");
         table->format(ostr, settings, state, frame);
     }

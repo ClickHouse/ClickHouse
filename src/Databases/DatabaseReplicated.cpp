@@ -1312,7 +1312,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
     {
         if (ddl_query->getDatabase() != getDatabaseName())
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
-        ddl_query->database.reset();
+        ddl_query->setDatabase("");
 
         if (auto * create = query->as<ASTCreateQuery>())
         {
@@ -1904,7 +1904,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         context_->getSettingsRef()[Setting::max_parser_backtracks]);
 
     auto & create = ast->as<ASTCreateQuery &>();
-    if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create.database)
+    if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create.getDatabaseAst())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", table_name, query);
 
     create.setDatabase(database_name_);
@@ -2464,7 +2464,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     /// DROP DATABASE is not replicated
     if (const auto * drop = query_ptr->as<const ASTDropQuery>())
     {
-        if (drop->table.get())
+        if (drop->getTableAst())
             return drop->kind != ASTDropQuery::Truncate || !is_keeper_map_table(query_ptr);
 
         return false;

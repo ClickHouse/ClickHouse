@@ -97,7 +97,7 @@ protected:
     {
         ostr << ASTExistsDatabaseQueryIDAndQueryNames::Query
                     << " ";
-        database->format(ostr, settings, state, frame);
+        getDatabaseAst()->format(ostr, settings, state, frame);
     }
 
     QueryKind getQueryKind() const override { return QueryKind::Exists; }
@@ -119,7 +119,7 @@ protected:
     {
         ostr << ASTShowCreateDatabaseQueryIDAndQueryNames::Query
                       << " ";
-        database->format(ostr, settings, state, frame);
+        getDatabaseAst()->format(ostr, settings, state, frame);
     }
 };
 

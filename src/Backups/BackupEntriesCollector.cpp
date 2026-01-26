@@ -616,7 +616,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
         {
-            if (!create->temporary)
+            if (!create->isTemporary())
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Got a non-temporary create query for {}",

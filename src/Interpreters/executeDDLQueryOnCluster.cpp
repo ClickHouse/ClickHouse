@@ -222,7 +222,7 @@ BlockIO getDDLOnClusterStatus(const String & node_path, const String & replicas_
 bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
 {
     const auto * query = dynamic_cast<const ASTQueryWithTableAndOutput *>(query_ptr.get());
-    if (!query || !query->table)
+    if (!query || !query->getTableAst())
         return false;
 
     String database_name = query->getDatabase();

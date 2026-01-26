@@ -161,8 +161,8 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->attach = true;
 
     /// We remove everything that is not needed for ATTACH from the query.
-    assert(!create->temporary);
-    create->database.reset();
+    assert(!create->isTemporary());
+    create->setDatabase("");
 
     if (create->uuid != UUIDHelpers::Nil)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -807,7 +807,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
         return nullptr;
 
     auto & create = ast->as<ASTCreateQuery &>();
-    if (create.table && create.uuid != UUIDHelpers::Nil)
+    if (create.getTableAst() && create.uuid != UUIDHelpers::Nil)
     {
         String table_name = unescapeForFileName(fs::path(metadata_file_path).stem());
 

@@ -126,8 +126,12 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     if (!s_on.ignore(pos, expected))
         return false;
 
-    if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+    ASTPtr database;
+    ASTPtr table;
+    if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
         return false;
+    query->setDatabaseAst(database);
+    query->setTableAst(table);
 
     /// [ON cluster_name]
     if (s_on.ignore(pos, expected))
@@ -151,12 +155,6 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     query->if_not_exists = if_not_exists;
     query->unique = unique;
     query->cluster = cluster_str;
-
-    if (query->database)
-        query->children.push_back(query->database);
-
-    if (query->table)
-        query->children.push_back(query->table);
 
     return true;
 }

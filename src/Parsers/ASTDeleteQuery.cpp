@@ -26,12 +26,7 @@ ASTPtr ASTDeleteQuery::clone() const
         res->children.push_back(res->predicate);
     }
 
-    if (settings_ast)
-    {
-        res->settings_ast = settings_ast->clone();
-        res->children.push_back(res->settings_ast);
-    }
-
+    cloneOutputOptions(*res);
     cloneTableOptions(*res);
     return res;
 }
@@ -40,14 +35,15 @@ void ASTDeleteQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 {
     ostr << "DELETE FROM ";
 
-    if (database)
+    if (auto db = getDatabaseAst())
     {
-        database->format(ostr, settings, state, frame);
+        db->format(ostr, settings, state, frame);
         ostr << '.';
     }
 
-    chassert(table);
-    table->format(ostr, settings, state, frame);
+    auto tbl = getTableAst();
+    chassert(tbl);
+    tbl->format(ostr, settings, state, frame);
 
     formatOnCluster(ostr, settings);
 

@@ -9,59 +9,50 @@ namespace DB
 String ASTQueryWithTableAndOutput::getDatabase() const
 {
     String name;
-    tryGetIdentifierNameInto(database, name);
+    tryGetIdentifierNameInto(getDatabaseAst(), name);
     return name;
 }
 
 String ASTQueryWithTableAndOutput::getTable() const
 {
     String name;
-    tryGetIdentifierNameInto(table, name);
+    tryGetIdentifierNameInto(getTableAst(), name);
     return name;
 }
 
 void ASTQueryWithTableAndOutput::setDatabase(const String & name)
 {
-    if (database)
+    if (database_index != INVALID_INDEX)
     {
-        std::erase(children, database);
-        database.reset();
+        /// Note: we don't remove from children for simplicity, just invalidate the index
+        database_index = INVALID_INDEX;
     }
 
     if (!name.empty())
-    {
-        database = make_intrusive<ASTIdentifier>(name);
-        children.push_back(database);
-    }
+        setDatabaseAst(make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTQueryWithTableAndOutput::setTable(const String & name)
 {
-    if (table)
+    if (table_index != INVALID_INDEX)
     {
-        std::erase(children, table);
-        table.reset();
+        /// Note: we don't remove from children for simplicity, just invalidate the index
+        table_index = INVALID_INDEX;
     }
 
     if (!name.empty())
-    {
-        table = make_intrusive<ASTIdentifier>(name);
-        children.push_back(table);
-    }
+        setTableAst(make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTQueryWithTableAndOutput::cloneTableOptions(ASTQueryWithTableAndOutput & cloned) const
 {
-    if (database)
-    {
-        cloned.database = database->clone();
-        cloned.children.push_back(cloned.database);
-    }
-    if (table)
-    {
-        cloned.table = table->clone();
-        cloned.children.push_back(cloned.table);
-    }
+    /// Reset indices first since children was cleared
+    cloned.resetTableIndices();
+
+    if (auto database = getDatabaseAst())
+        cloned.setDatabaseAst(database->clone());
+    if (auto table = getTableAst())
+        cloned.setTableAst(table->clone());
 }
 
 }

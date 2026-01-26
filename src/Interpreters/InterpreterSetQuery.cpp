@@ -61,7 +61,7 @@ namespace
 {
 std::optional<String> getTableStorageName(const ASTCreateQuery & create, ContextMutablePtr context)
 {
-    if ((create.database && !create.table) || create.isView())
+    if ((create.getDatabaseAst() && !create.getTableAst()) || create.isView())
         return {};
     if (create.storage->engine)
         return create.storage->engine->name;
@@ -82,8 +82,8 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
     /// First apply the outermost settings. Then they could be overridden by deeper settings.
     if (const auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(ast.get()))
     {
-        if (query_with_output->settings_ast)
-            InterpreterSetQuery(query_with_output->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+        if (auto settings_ast = query_with_output->getSettingsAst())
+            InterpreterSetQuery(settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
 
         if (const auto * create_query = ast->as<ASTCreateQuery>(); create_query)
         {
@@ -91,7 +91,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
             if (create_query->select)
                 applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context_);
             else if (
-                !create_query->settings_ast && create_query->storage && create_query->storage->settings
+                !create_query->getSettingsAst() && create_query->storage && create_query->storage->settings
                 && context_->getApplicationType() != Context::ApplicationType::CLIENT
                 && (storage_name = getTableStorageName(*create_query, context_)))
             {
@@ -135,8 +135,8 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
     }
     else if (const auto * explain_query = ast->as<ASTExplainQuery>())
     {
-        if (explain_query->settings_ast)
-            InterpreterSetQuery(explain_query->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+        if (auto explain_settings_ast = explain_query->getSettingsAst())
+            InterpreterSetQuery(explain_settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
 
         applySettingsFromQuery(explain_query->getExplainedQuery(), context_);
     }

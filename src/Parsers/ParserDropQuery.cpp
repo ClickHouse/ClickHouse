@@ -156,18 +156,15 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->if_empty = if_empty;
     query->has_tables = has_tables;
     query->has_all = has_all;
-    query->temporary = temporary;
+    query->setIsTemporary(temporary);
     query->is_dictionary = is_dictionary;
     query->is_view = is_view;
     query->sync = sync;
     query->permanently = permanently;
-    query->database = database;
+    query->setDatabaseAst(database);
     query->database_and_tables = database_and_tables;
     query->case_insensitive_like = is_case_insensitive_like;
     query->not_like = is_not_like;
-
-    if (database)
-        query->children.push_back(database);
 
     if (database_and_tables)
         query->children.push_back(database_and_tables);

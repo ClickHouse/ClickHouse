@@ -1948,8 +1948,9 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, result_details);
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
-        String format_name = ast_query_with_output->format_ast
-                ? getIdentifierName(ast_query_with_output->format_ast)
+        auto format_ast = ast_query_with_output->getFormatAst();
+        String format_name = format_ast
+                ? getIdentifierName(format_ast)
                 : context->getDefaultFormat();
 
         if (boost::iequals(format_name, "Null"))
@@ -2072,8 +2073,9 @@ void executeQuery(
             try
             {
                 const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-                format_name = ast_query_with_output && ast_query_with_output->format_ast != nullptr
-                    ? getIdentifierName(ast_query_with_output->format_ast)
+                auto format_ast = ast_query_with_output ? ast_query_with_output->getFormatAst() : nullptr;
+                format_name = format_ast != nullptr
+                    ? getIdentifierName(format_ast)
                     : context->getDefaultFormat();
 
                 output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
@@ -2168,12 +2170,13 @@ void executeQuery(
         else if (pipeline.pulling())
         {
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-            format_name = ast_query_with_output && ast_query_with_output->format_ast != nullptr
-                ? getIdentifierName(ast_query_with_output->format_ast)
+            auto format_ast = ast_query_with_output ? ast_query_with_output->getFormatAst() : nullptr;
+            format_name = format_ast != nullptr
+                ? getIdentifierName(format_ast)
                 : context->getDefaultFormat();
 
             WriteBuffer * out_buf = &ostr;
-            if (ast_query_with_output && ast_query_with_output->out_file)
+            if (ast_query_with_output && ast_query_with_output->getOutFile())
                 throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
 
             output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(

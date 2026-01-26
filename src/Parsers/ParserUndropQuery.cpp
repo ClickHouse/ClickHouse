@@ -51,15 +51,9 @@ bool parseUndropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     auto query = make_intrusive<ASTUndropQuery>();
     node = query;
 
-    query->database = database;
-    query->table = table;
+    query->setDatabaseAst(database);
+    query->setTableAst(table);
     query->uuid = uuid;
-
-    if (database)
-        query->children.push_back(database);
-
-    chassert(table);
-    query->children.push_back(table);
 
     query->cluster = cluster_str;
 

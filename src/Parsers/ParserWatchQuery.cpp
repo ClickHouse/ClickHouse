@@ -60,14 +60,8 @@ bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    query->database = database;
-    query->table = table;
-
-    if (database)
-        query->children.push_back(database);
-
-    if (table)
-        query->children.push_back(table);
+    query->setDatabaseAst(database);
+    query->setTableAst(table);
 
     node = query;
 
