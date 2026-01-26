@@ -320,7 +320,16 @@ static void splitAndModifyMutationCommands(
                         mutated_columns.emplace(command.column_name);
 
                     if (command.type == MutationCommand::Type::DROP_COLUMN)
-                        dropped_columns.emplace(command.column_name);
+                    {
+                        /// We need to keep the clear command so we also clear dependent indices
+                        if (command.clear)
+                        {
+                            for_interpreter.push_back(command);
+                            for_file_renames.push_back(command); /// For packed parts
+                        }
+                        else
+                            dropped_columns.emplace(command.column_name);
+                    }
                 }
             }
         }
@@ -976,8 +985,9 @@ static NameToNameVector collectFilesForRenames(
             {
                 for (const auto & extension : extensions)
                 {
-                    const String filename = INDEX_FILE_PREFIX + command.column_name + substream + extension;
-                    const String filename_mrk = INDEX_FILE_PREFIX + command.column_name + substream + mrk_extension;
+                    const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
+                    const String filename = index_filename + substream + extension;
+                    const String filename_mrk = index_filename + substream + mrk_extension;
 
                     if (source_part->checksums.has(filename))
                     {
@@ -1678,8 +1688,11 @@ private:
         NameSet entries_to_hardlink;
         NameSet removed_indices;
         NameSet removed_stats;
+        NameSet removed_projections;
         /// A stat file need to be renamed iff the column is renamed.
         NameToNameMap renamed_stats;
+
+        bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
 
         for (const auto & command : ctx->for_file_renames)
         {
@@ -1692,7 +1705,11 @@ private:
                 auto current_removed_stats = MutationHelpers::getRemovedStatistics(ctx->metadata_snapshot, command);
                 std::move(current_removed_stats.begin(), current_removed_stats.end(), std::inserter(removed_stats, removed_stats.end()));
             }
-            else if (command.type == MutationCommand::RENAME_COLUMN)
+            else if (command.type == MutationCommand::DROP_COLUMN)
+            {
+                removed_stats.insert(command.column_name);
+            }
+            else if (command.type == MutationCommand::RENAME_COLUMN && is_full_part_storage)
             {
                 if (auto filename = MutationHelpers::getStatisticFilename(STATS_FILE_PREFIX + command.column_name, *ctx->source_part))
                 {
@@ -1700,9 +1717,12 @@ private:
                     renamed_stats[*filename] = std::move(new_filename);
                 }
             }
+            else if (command.type == MutationCommand::DROP_PROJECTION)
+            {
+                removed_projections.insert(command.column_name);
+            }
         }
 
-        bool is_full_part_storage = isFullPartStorage(ctx->source_part->getDataPartStorage());
         bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->new_data_part);
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
@@ -1718,9 +1738,8 @@ private:
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
-            bool need_recalculate =
-                ctx->materialized_indices.contains(idx.name)
-                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name));
+            bool need_recalculate = ctx->materialized_indices.contains(idx.name)
+                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot));
 
             if (need_recalculate)
             {
@@ -1728,7 +1747,7 @@ private:
             }
             else
             {
-                auto prefix = fmt::format("{}{}.", INDEX_FILE_PREFIX, idx.name);
+                auto prefix = getIndexFileName(idx.name, idx.escape_filenames);
                 auto it = ctx->source_part->checksums.files.upper_bound(prefix);
                 while (it != ctx->source_part->checksums.files.end())
                 {
@@ -1765,13 +1784,6 @@ private:
                     ctx->existing_indices_stats_checksums.addFile(*stat_filename, checksum);
                 }
             }
-        }
-
-        NameSet removed_projections;
-        for (const auto & command : ctx->for_file_renames)
-        {
-            if (command.type == MutationCommand::DROP_PROJECTION)
-                removed_projections.insert(command.column_name);
         }
 
         bool lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
@@ -2510,7 +2522,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
     /// Checks if columns used in skipping indexes modified.
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
+    ASTPtr indices_recalc_expr_list = make_intrusive<ASTExpressionList>();
     const auto & indices = metadata_snapshot->getSecondaryIndices();
     bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
 
@@ -2522,8 +2534,8 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             continue;
         }
 
-        bool need_recalculate
-            = ctx->materialized_indices.contains(index.name) || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name));
+        bool need_recalculate = ctx->materialized_indices.contains(index.name)
+            || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name, ctx->metadata_snapshot));
 
         if (need_recalculate)
         {

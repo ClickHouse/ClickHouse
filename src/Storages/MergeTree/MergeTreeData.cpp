@@ -21,14 +21,12 @@
 #include <Common/escapeForFileName.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
-#include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
@@ -38,7 +36,6 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/hasNullable.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
@@ -61,7 +58,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTHelpers.h>
@@ -69,9 +65,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -82,11 +75,9 @@
 #include <Storages/Freeze.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
@@ -116,11 +107,9 @@
 
 #include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
-#include <Poco/Logger.h>
 #include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
-#include <azure/core/http/http.hpp>
 #endif
 
 
@@ -188,7 +177,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
-    extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool allow_suspicious_indices;
     extern const SettingsBool alter_move_to_space_execute_async;
     extern const SettingsBool alter_partition_verbose_result;
@@ -209,6 +197,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool apply_patch_parts;
     extern const SettingsUInt64 max_table_size_to_drop;
+    extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
 }
 
@@ -231,6 +220,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString disk;
     extern const MergeTreeSettingsBool table_disk;
     extern const MergeTreeSettingsBool enable_mixed_granularity_parts;
+    extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsUInt64 inactive_parts_to_delay_insert;
@@ -825,7 +815,7 @@ std::map<std::string, DiskPtr> MergeTreeData::getDistinctDisksForParts(const Dat
 ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator(
     const RangesInDataParts & parts, ContextPtr local_context) const
 {
-    if (!local_context->getSettingsRef()[Setting::allow_statistics_optimize])
+    if (!local_context->getSettingsRef()[Setting::use_statistics])
         return nullptr;
 
     if (parts.empty())
@@ -966,7 +956,7 @@ void MergeTreeData::checkProperties(
     Names new_primary_key_columns = new_primary_key.column_names;
     Names new_sorting_key_columns = new_sorting_key.column_names;
 
-    ASTPtr added_key_column_expr_list = std::make_shared<ASTExpressionList>();
+    ASTPtr added_key_column_expr_list = make_intrusive<ASTExpressionList>();
     const auto & old_sorting_key_columns = old_metadata.getSortingKeyColumns();
     for (size_t new_i = 0, old_i = 0; new_i < sorting_key_size; ++new_i)
     {
@@ -4192,11 +4182,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     columns_in_keys.insert(columns_alter_type_metadata_only.begin(), columns_alter_type_metadata_only.end());
     columns_in_keys.insert(columns_alter_type_check_safe_for_partition.begin(), columns_alter_type_check_safe_for_partition.end());
 
-    std::unordered_map<String, String> columns_in_indices;
+    /// We use columns_in_indices to prevent alters that change column data type in a way that requires
+    /// reindexing secondary indices (respecting alter_column_secondary_index_mode). But only care about explicit indices
+    std::unordered_map<String, String> columns_in_explicit_indices;
     for (const auto & index : old_metadata.getSecondaryIndices())
     {
-        for (const String & col : index.expression->getRequiredColumns())
-            columns_in_indices.emplace(col, index.name);
+        if (!index.isImplicitlyCreated())
+        {
+            for (const String & col : index.expression->getRequiredColumns())
+                columns_in_explicit_indices.emplace(col, index.name);
+        }
     }
 
     std::unordered_map<String, String> columns_in_projections;
@@ -4320,12 +4315,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
             if (index_mode == AlterColumnSecondaryIndexMode::THROW)
             {
-                if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
+                if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
                 {
                     throw Exception(
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree setting "
-                        "'alter_column_secondary_index_mode' to change this behaviour",
+                        "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree "
+                        "setting 'alter_column_secondary_index_mode' to change this behaviour",
                         backQuoteIfNeed(command.column_name),
                         it->second);
                 }
@@ -4357,13 +4352,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
             }
 
-            /// Don't check columns in indices or projections here. If required columns of indices
-            /// or projections get dropped, it will be checked later in AlterCommands::apply. This
-            /// allows projections with * to drop columns. One example can be found in
-            /// 02691_drop_column_with_projections_replicated.sql.
-
             if (!command.clear)
             {
+                /// Don't check columns in indices or projections here. If required columns of indices
+                /// or projections get dropped, it will be checked later in AlterCommands::apply. This
+                /// allows projections with * to drop columns. One example can be found in
+                /// 02691_drop_column_with_projections_replicated.sql.
                 if (!name_deps)
                     name_deps = getDependentViewsByColumn(local_context);
                 const auto & deps_mv = name_deps.value()[command.column_name];
@@ -4372,6 +4366,24 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                         "Trying to ALTER DROP column {} which is referenced by materialized view {}",
                         backQuoteIfNeed(command.column_name), toString(deps_mv));
+                }
+            }
+            else
+            {
+                /// In the case of CLEAR we want to respect `alter_column_secondary_index_mode` and we will throw if the setting is
+                /// set to `THROW` or `COMPATIBILITY` (since before this would have failed in the mutation) and
+                /// we will clear the index files (as we do with the column files) in any other case
+                if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
+                {
+                    if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
+                    {
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "The ALTER CLEAR of the column '{}' is forbidden because it is used by the index '{}'. Check the "
+                            "MergeTree setting 'alter_column_secondary_index_mode' to change this behaviour",
+                            backQuoteIfNeed(command.column_name),
+                            it->second);
+                    }
                 }
             }
 
@@ -4416,7 +4428,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
             if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
             {
-                if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
+                if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
                 {
                     throw Exception(
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -4717,9 +4729,22 @@ void MergeTreeData::changeSettings(
         bool allow_beta = ac.getAllowBetaTierSettings();
         copy->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount(), allow_experimental, allow_beta);
 
+        bool has_escape_index_filenames_changed
+            = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
+
         storage_settings.set(std::move(copy));
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
         new_metadata.setSettingsChanges(new_settings);
+
+        if (has_escape_index_filenames_changed)
+        {
+            /// We need to update the metadata fields and indices so we use the new setting when reading indices
+            bool new_value = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames];
+            new_metadata.escape_index_filenames = new_value;
+            for (auto & idx : new_metadata.secondary_indices)
+                idx.escape_filenames = new_value;
+        }
+
         setInMemoryMetadata(new_metadata);
 
         if (has_storage_policy_changed)
@@ -6057,9 +6082,10 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
         log_subtract(total_column_size.marks, part_column_size.marks, ".marks");
     }
 
+    const auto metadata_ptr = getInMemoryMetadataPtr();
     for (auto & [secondary_index_name, total_secondary_index_size] : secondary_index_sizes)
     {
-        if (!part->hasSecondaryIndex(secondary_index_name))
+        if (!part->hasSecondaryIndex(secondary_index_name, metadata_ptr))
             continue;
 
         IndexSize part_secondary_index_size = part->getSecondaryIndexSize(secondary_index_name);

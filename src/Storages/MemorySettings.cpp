@@ -80,7 +80,7 @@ void MemorySettings::loadFromQuery(ASTStorage & storage_def)
 
 ASTPtr MemorySettings::getSettingsChangesQuery()
 {
-    auto settings_ast = std::make_shared<ASTSetQuery>();
+    auto settings_ast = make_intrusive<ASTSetQuery>();
     settings_ast->is_standalone = false;
     for (const auto & change : impl->changes())
         settings_ast->changes.push_back(change);

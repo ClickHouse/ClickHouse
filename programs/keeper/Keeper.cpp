@@ -102,6 +102,11 @@ namespace ServerSetting
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
+    extern const ServerSettingsUInt64 memory_worker_period_ms;
+    extern const ServerSettingsDouble memory_worker_purge_dirty_pages_threshold_ratio;
+    extern const ServerSettingsDouble memory_worker_purge_total_memory_threshold_ratio;
+    extern const ServerSettingsBool memory_worker_correct_memory_tracker;
+    extern const ServerSettingsBool memory_worker_use_cgroup;
 }
 
 Poco::Net::SocketAddress Keeper::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
@@ -122,7 +127,7 @@ void Keeper::createServer(const std::string & listen_host, const char * port_nam
     auto port = config().getInt(port_name);
     try
     {
-        func(port);
+        func(static_cast<UInt16>(port));
     }
     catch (const Poco::Exception &)
     {
@@ -314,9 +319,9 @@ String getKeeperPath(Poco::Util::LayeredConfiguration & config)
 int Keeper::main(const std::vector<std::string> & /*args*/)
 try
 {
-#if USE_JEMALLOC
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
+#if USE_JEMALLOC
     Jemalloc::setup(
         server_settings[ServerSetting::jemalloc_enable_global_profiler],
         server_settings[ServerSetting::jemalloc_enable_background_threads],
@@ -344,7 +349,7 @@ try
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
 
-    auto updateMemorySoftLimitInConfig = [&](Poco::Util::AbstractConfiguration & config)
+    auto update_memory_soft_limit_in_config = [&](Poco::Util::AbstractConfiguration & config)
     {
         UInt64 memory_soft_limit = 0;
         if (config.has("keeper_server.max_memory_usage_soft_limit"))
@@ -369,7 +374,7 @@ try
         LOG_INFO(log, "keeper_server.max_memory_usage_soft_limit is set to {}", formatReadableSizeWithBinarySuffix(memory_soft_limit));
     };
 
-    updateMemorySoftLimitInConfig(config());
+    update_memory_soft_limit_in_config(config());
 
     std::string path = getKeeperPath(config());
     std::filesystem::create_directories(path);
@@ -397,12 +402,15 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    MemoryWorker memory_worker(
-        config().getUInt64("memory_worker_period_ms", 0),
-        /*purge_dirty_pages_threshold_ratio_=*/ 0,
-        config().getBool("memory_worker_correct_memory_tracker", false),
-        /*use_cgroup=*/ true,
-        /*page_cache_=*/ nullptr);
+    MemoryWorkerConfig memory_worker_config{
+        .rss_update_period_ms = server_settings[ServerSetting::memory_worker_period_ms],
+        .purge_dirty_pages_threshold_ratio = server_settings[ServerSetting::memory_worker_purge_dirty_pages_threshold_ratio],
+        .purge_total_memory_threshold_ratio = server_settings[ServerSetting::memory_worker_purge_total_memory_threshold_ratio],
+        .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
+        .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
+    };
+
+    MemoryWorker memory_worker(memory_worker_config, /*page_cache_=*/nullptr);
     memory_worker.start();
 
     static ServerErrorHandler error_handler;
@@ -629,7 +637,7 @@ try
         {
             updateLevels(*config, logger());
 
-            updateMemorySoftLimitInConfig(*config);
+            update_memory_soft_limit_in_config(*config);
 
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);

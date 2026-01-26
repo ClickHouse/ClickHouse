@@ -172,6 +172,9 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
         /// It's innaccurate resource free for sanitizers. malloc_usable_size() result is greater or equal to allocated size.
         else
             actual_size = malloc_usable_size(ptr);
+#    elif defined(OS_DARWIN)
+        else
+            actual_size = malloc_size(ptr);
 #    endif
 #endif
         trace = CurrentMemoryTracker::free(actual_size);

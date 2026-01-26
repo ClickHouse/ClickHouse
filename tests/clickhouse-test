@@ -1188,6 +1188,7 @@ class SettingsRandomizer:
         "input_format_parquet_use_native_reader_v3": lambda: min(1, random.randint(0, 5)),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
+        "short_circuit_function_evaluation_for_nulls_threshold": lambda: random.random() * 1.1,
         "automatic_parallel_replicas_mode": lambda: 2 if random.random() < 0.25 else 0,
         "temporary_files_buffer_size": lambda: random.randint(800 * 1024, 1200 * 1024),
         # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
@@ -1863,6 +1864,13 @@ class TestCase:
                 # and do not ignore for targeted check (args.flaky_check and args.test_runs == 1)
                 if "no-" + build_flag in tags and not (args.flaky_check and args.test_runs > 1):
                     return FailureReason.BUILD
+            if "no-sanitizers" in tags and not (args.flaky_check and args.test_runs > 1):
+                if any(
+                    flag in args.build_flags
+                    for flag in BuildFlags.SANITIZERS
+                ):
+                    return FailureReason.BUILD
+
             for tag in tags:
                 tag = tag.replace("-", "_")
                 if tag.startswith("use_") and tag not in args.build_flags:
@@ -3206,8 +3214,9 @@ class BuildFlags:
     ADDRESS = "asan"
     UNDEFINED = "ubsan"
     MEMORY = "msan"
-    DEBUG = "debug"
     SANITIZE_COVERAGE = "sanitize-coverage"
+    SANITIZERS = [THREAD, ADDRESS, UNDEFINED, MEMORY, SANITIZE_COVERAGE]
+    DEBUG = "debug"
     RELEASE = "release"
     ORDINARY_DATABASE = "ordinary-database"
     POLYMORPHIC_PARTS = "polymorphic-parts"
@@ -3922,37 +3931,38 @@ def main(args):
     else:
         print("All tests have finished.")
 
-    try:
-        clickhouse_execute(args, "SYSTEM FLUSH LOGS system.trace_log")
+    if int(clickhouse_execute(args, "EXISTS system.trace_log")):
+        try:
+            clickhouse_execute(args, "SYSTEM FLUSH LOGS system.trace_log")
 
-        unchecked_memory = int(clickhouse_execute(args, f"""
-        SELECT sum(size) FROM system.trace_log
-        WHERE
-            trace_type = 'MemoryAllocatedWithoutCheck'
-            AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
-            AND event_time >= fromUnixTimestamp({int(tests_start_time)})
-        """))
-        if unchecked_memory > 1e9:
-            print(f"""
-            Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB.
-            Take a look at:
-
-            SELECT arrayStringConcat(symbols, '\\n'), sum(size)
-            FROM system.trace_log
-            WHERE trace_type = 'MemoryAllocatedWithoutCheck'
+            unchecked_memory = int(clickhouse_execute(args, f"""
+            SELECT sum(size) FROM system.trace_log
+            WHERE
+                trace_type = 'MemoryAllocatedWithoutCheck'
                 AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
                 AND event_time >= fromUnixTimestamp({int(tests_start_time)})
-            GROUP BY 1
-            ORDER BY 2
-            LIMIT -10
-            FORMAT Vertical
+            """))
+            if unchecked_memory > 1e9:
+                print(f"""
+                Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB.
+                Take a look at:
 
-            See also at
-            - MemoryTrackerDebugBlockerInThread
-            - AllocatorWithMemoryTracking
-            """)
-    except Exception as e:
-        print(f"Failed get MemoryAllocatedWithoutCheck events from trace_log: {e}")
+                SELECT arrayStringConcat(symbols, '\\n'), sum(size)
+                FROM system.trace_log
+                WHERE trace_type = 'MemoryAllocatedWithoutCheck'
+                    AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
+                    AND event_time >= fromUnixTimestamp({int(tests_start_time)})
+                GROUP BY 1
+                ORDER BY 2
+                LIMIT -10
+                FORMAT Vertical
+
+                See also at
+                - MemoryTrackerDebugBlockerInThread
+                - AllocatorWithMemoryTracking
+                """)
+        except Exception as e:
+            print(f"Failed get MemoryAllocatedWithoutCheck events from trace_log: {e}")
 
     if args.report_logs_stats:
         try:

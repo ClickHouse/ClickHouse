@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 ASTPtr ASTSelectQuery::clone() const
 {
-    auto res = std::make_shared<ASTSelectQuery>(*this);
+    auto res = make_intrusive<ASTSelectQuery>(*this);
 
     /** NOTE Members must clone exactly in the same order in which they were inserted into `children` in ParserSelectQuery.
      * This is important because the AST hash depends on the children order and this hash is used for multiple things,
@@ -77,15 +77,9 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
 
     ostr << indent_str << "SELECT" << (distinct ? " DISTINCT" : "");
 
-    {
-        /// If part of EXCEPT clause, surround SELECT args with parens to avoid formatting inconsistency
-        FormatStateStacked frame_to_format = frame;
-        if (part_of_except_clause)
-            frame_to_format.surround_each_list_element_with_parens = true;
-
-        s.one_line ? select()->format(ostr, s, state, frame_to_format)
-                   : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame_to_format);
-    }
+    s.one_line
+        ? select()->format(ostr, s, state, frame)
+        : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
 
     if (tables())
     {
@@ -442,9 +436,9 @@ void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
 
     if (!table_expression)
     {
-        setExpression(Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
-        auto element = std::make_shared<ASTTablesInSelectQueryElement>();
-        auto table_expr = std::make_shared<ASTTableExpression>();
+        setExpression(Expression::TABLES, make_intrusive<ASTTablesInSelectQuery>());
+        auto element = make_intrusive<ASTTablesInSelectQueryElement>();
+        auto table_expr = make_intrusive<ASTTableExpression>();
         element->table_expression = table_expr;
         element->children.emplace_back(table_expr);
         tables()->children.emplace_back(element);
@@ -452,7 +446,7 @@ void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
     }
 
     String table_alias = getTableExpressionAlias(table_expression);
-    table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>(table_id);
+    table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>(table_id);
 
     if (!table_alias.empty())
         table_expression->database_and_table_name->setAlias(table_alias);
@@ -465,9 +459,9 @@ void ASTSelectQuery::addTableFunction(const ASTPtr & table_function_ptr)
 
     if (!table_expression)
     {
-        setExpression(Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
-        auto element = std::make_shared<ASTTablesInSelectQueryElement>();
-        auto table_expr = std::make_shared<ASTTableExpression>();
+        setExpression(Expression::TABLES, make_intrusive<ASTTablesInSelectQuery>());
+        auto element = make_intrusive<ASTTablesInSelectQueryElement>();
+        auto table_expr = make_intrusive<ASTTableExpression>();
         element->table_expression = table_expr;
         element->children.emplace_back(table_expr);
         tables()->children.emplace_back(element);
@@ -533,7 +527,7 @@ bool ASTSelectQuery::hasQueryParameters() const
 {
     if (!has_query_parameters.has_value())
     {
-        has_query_parameters = !analyzeReceiveQueryParams(std::make_shared<ASTSelectQuery>(*this)).empty();
+        has_query_parameters = !analyzeReceiveQueryParams(make_intrusive<ASTSelectQuery>(*this)).empty();
     }
 
     return  has_query_parameters.value();
@@ -544,7 +538,7 @@ NameToNameMap ASTSelectQuery::getQueryParameters() const
     if (!hasQueryParameters())
         return {};
 
-    return analyzeReceiveQueryParamsWithType(std::make_shared<ASTSelectQuery>(*this));
+    return analyzeReceiveQueryParamsWithType(make_intrusive<ASTSelectQuery>(*this));
 }
 
 }
