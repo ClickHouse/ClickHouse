@@ -648,7 +648,7 @@ Please refer the following server settings to configure the caches.
 
 The text index currently has the following limitations:
 - Merging parts with text indexes can consume significant amounts of memory (even with their optimized merge implementation, see [Implementation Details](#implementation)).
-- Merges currently do not materialize text indexes on parts with more than 4.294.967.296 (= 2^32 = ca. 4.2 billion) rows. As a result, queries cannot utilize the text index in such parts and fall back to slow brute-force search. Assuming the columnn is of String type and MergeTree setting `max_bytes_to_merge_at_max_space_in_pool` (default: 150 GB) was not changed, this situation happens if the part contains more than 29.5 characters per row on average.
+- Merges currently do not materialize text indexes on parts with more than 4.294.967.296 (= 2^32 = ca. 4.2 billion) rows. As a result, queries cannot utilize the text index in such parts and fall back to slow brute-force search. Assuming the column is of String type and MergeTree setting `max_bytes_to_merge_at_max_space_in_pool` (default: 150 GB) was not changed, this situation happens if the part contains more than 29.5 characters per row on average.
 
 ## Implementation Details {#implementation}
 
