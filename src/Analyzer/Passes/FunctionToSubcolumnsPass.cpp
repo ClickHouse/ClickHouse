@@ -49,12 +49,38 @@ struct ColumnContext
 
 using NodeToSubcolumnTransformer = std::function<void(QueryTreeNodePtr &, FunctionNode &, ColumnContext &)>;
 
+/// Before columns to substream optimization, we need to make sure, that column with such name as substream does not exists, otherwise the optimize will use it instead of substream.
+bool sourceHasColumn(QueryTreeNodePtr column_source, const String & column_name)
+{
+    auto * table_node = column_source->as<TableNode>();
+    if (!table_node)
+        return {};
+
+    const auto & storage_snapshot = table_node->getStorageSnapshot();
+    return storage_snapshot->tryGetColumn(GetColumnsOptions::All, column_name).has_value();
+}
+
+/// Sometimes we cannot optimize function to subcolumn because there is no such subcolumn in the table.
+/// For example, for column "a Array(Tuple(b UInt32))" function length(a.b) cannot be replaced to
+/// a.b.size0, because there is no such subcolumn, even though a.b has type Array(UInt32)
+bool canOptimizeToSubcolumn(QueryTreeNodePtr column_source, const String & subcolumn_name)
+{
+    auto * table_node = column_source->as<TableNode>();
+    if (!table_node)
+        return {};
+
+    const auto & storage_snapshot = table_node->getStorageSnapshot();
+    return storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), subcolumn_name).has_value();
+}
+
 void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
     /// Replace `length(argument)` with `argument.size`.
     /// `argument` is String.
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
+    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+        return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
@@ -66,6 +92,8 @@ void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_nod
     /// `argument` is String.
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
+    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+        return;
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
     function_arguments_nodes.clear();
@@ -82,6 +110,9 @@ void optimizeFunctionLength(QueryTreeNodePtr & node, FunctionNode &, ColumnConte
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
+    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+        return;
+
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
@@ -93,6 +124,9 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
+    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+        return;
+
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
     function_arguments_nodes.clear();
@@ -183,6 +217,8 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
         return;
 
     NameAndTypePair column{ctx.column.name + "." + subcolumn->name, subcolumn->type};
+    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+        return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
@@ -224,6 +260,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             auto key_type = std::make_shared<DataTypeArray>(data_type_map.getKeyType());
 
             NameAndTypePair column{ctx.column.name + ".keys", key_type};
+            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+                return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
     },
@@ -236,6 +274,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             auto value_type = std::make_shared<DataTypeArray>(data_type_map.getValueType());
 
             NameAndTypePair column{ctx.column.name + ".values", value_type};
+            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+                return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
     },
@@ -247,6 +287,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
             NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
+            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+                return;
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
             auto has_function_argument = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -261,6 +303,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `count(nullable_argument)` with `sum(not(nullable_argument.null))`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
+            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+                return;
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
             auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -280,6 +324,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
+            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+                return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
     },
@@ -289,6 +335,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `isNotNull(nullable_argument)` with `not(nullable_argument.null)`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
+            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+                return;
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
             function_arguments_nodes = {std::make_shared<ColumnNode>(column, ctx.column_source)};
@@ -338,7 +386,7 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
     if (!storage->supportsOptimizationToSubcolumns() || storage->isVirtualColumn(column.name, storage_snapshot->metadata))
         return {};
 
-    auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions::All, column.name);
+    auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column.name);
     if (!column_in_table || !column_in_table->type->equals(*column.type))
         return {};
 
