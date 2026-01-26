@@ -11,6 +11,8 @@
 #include <Common/NamePrompter.h>
 #include <Common/SettingsChanges.h>
 
+#include <Parsers/IAST.h>
+
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/mem_fun.hpp>
 #include <boost/multi_index/hashed_index.hpp>

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <concepts>
 #include <fmt/format.h>
 
 
@@ -14,14 +15,29 @@ class WriteBuffer;
 /// Displays the passed size in bytes as 123.45 GiB.
 void formatReadableSizeWithBinarySuffix(double value, DB::WriteBuffer & out, int precision = 2);
 std::string formatReadableSizeWithBinarySuffix(double value, int precision = 2);
+template <std::integral T>
+std::string formatReadableSizeWithBinarySuffix(T value, int precision = 2)
+{
+    return formatReadableSizeWithBinarySuffix(static_cast<double>(value), precision);
+}
 
 /// Displays the passed size in bytes as 132.55 GB.
 void formatReadableSizeWithDecimalSuffix(double value, DB::WriteBuffer & out, int precision = 2);
 std::string formatReadableSizeWithDecimalSuffix(double value, int precision = 2);
+template <std::integral T>
+std::string formatReadableSizeWithDecimalSuffix(T value, int precision = 2)
+{
+    return formatReadableSizeWithDecimalSuffix(static_cast<double>(value), precision);
+}
 
 /// Prints the number as 123.45 billion.
 void formatReadableQuantity(double value, DB::WriteBuffer & out, int precision = 2);
 std::string formatReadableQuantity(double value, int precision = 2);
+template <std::integral T>
+std::string formatReadableQuantity(T value, int precision = 2)
+{
+    return formatReadableQuantity(static_cast<double>(value), precision);
+}
 
 /// Prints the passed time in nanoseconds as 123.45 ms.
 void formatReadableTime(double ns, DB::WriteBuffer & out, int precision = 2);
@@ -33,6 +49,9 @@ struct ReadableSize
 {
     double value;
     explicit ReadableSize(double value_) : value(value_) {}
+
+    template <std::integral T>
+    explicit ReadableSize(T value_) : value(static_cast<double>(value_)) {}
 };
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types

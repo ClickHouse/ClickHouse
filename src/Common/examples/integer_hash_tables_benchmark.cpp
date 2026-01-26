@@ -31,7 +31,7 @@ void NO_INLINE test(const Key * data, size_t size, const std::string & name, std
     watch.stop();
     std::cerr << name
         << ":\nElapsed: " << watch.elapsedSeconds()
-        << " (" << size / watch.elapsedSeconds() << " elem/sec.)"
+        << " (" << static_cast<double>(size) / watch.elapsedSeconds() << " elem/sec.)"
         << ", map size: " << map.size() << "\n";
 }
 
