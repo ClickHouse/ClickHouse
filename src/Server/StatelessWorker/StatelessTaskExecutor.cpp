@@ -71,7 +71,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
 
     auto task_function = [task_description, object_storage, object_storage_path, query_context, task_promise, is_task_cancelled, update_progress]() mutable
     {
-        auto query_scope = std::make_unique<CurrentThread::QueryScope>(query_context);
+        auto query_scope = CurrentThread::QueryScope::create(query_context);
 
         Stopwatch start_watch(CLOCK_MONOTONIC);
         ASTSelectQuery ast_stub; /// FIXME: this is only used to populate query_kind
