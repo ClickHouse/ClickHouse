@@ -443,16 +443,13 @@ bool isFixedColumnForReadInOrder(
     const KeyDescription & sorting_key,
     const ReadFromMergeTree * reading)
 {
-    /// When parallel_replicas_local_plan is enabled, use AST-based fixed column detection
-    /// for deterministic results. DAG-based detection can differ between replicas due to
-    /// non-deterministic DAG structures when each replica builds its own local plan.
+    /// For parallel replicas, use AST-based fixed column detection for deterministic results.
+    /// DAG-based detection can differ between replicas due to non-deterministic DAG structures.
+    /// This applies to both local_plan=0 and local_plan=1 scenarios for consistent behavior.
     if (reading)
     {
         const auto & context = reading->getContext();
-        bool use_ast_based = (reading->isParallelReadingFromReplicas() && context->getSettingsRef()[Setting::parallel_replicas_local_plan])
-                          || context->canUseParallelReplicasOnInitiator();
-        
-        if (use_ast_based)
+        if (reading->isParallelReadingFromReplicas() || context->canUseParallelReplicasOnInitiator())
         {
             const auto * select_query = reading->getQueryInfo().query->as<ASTSelectQuery>();
             if (select_query)
@@ -466,7 +463,7 @@ bool isFixedColumnForReadInOrder(
             return false;
         }
     }
-    /// Use DAG-based detection for full optimization
+    /// Use DAG-based detection for full optimization in non-parallel scenarios
     return fixed_columns.contains(sort_node);
 }
 
