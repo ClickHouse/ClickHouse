@@ -309,13 +309,10 @@ boost::intrusive_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMat
     auto column_declaration = make_intrusive<ASTColumnDeclaration>();
 
     column_declaration->name = std::move(name);
-    column_declaration->type = makeASTDataType(type);
+    column_declaration->setType(makeASTDataType(type));
 
-    column_declaration->default_specifier = "MATERIALIZED";
-    column_declaration->default_expression = make_intrusive<ASTLiteral>(default_value);
-
-    column_declaration->children.emplace_back(column_declaration->type);
-    column_declaration->children.emplace_back(column_declaration->default_expression);
+    column_declaration->default_specifier = ColumnDefaultSpecifier::Materialized;
+    column_declaration->setDefaultExpression(make_intrusive<ASTLiteral>(default_value));
 
     return column_declaration;
 }
@@ -350,12 +347,12 @@ StorageMaterializedPostgreSQL::getColumnsExpressionList(const NamesAndTypesList 
         const auto & column_declaration = make_intrusive<ASTColumnDeclaration>();
 
         column_declaration->name = name;
-        column_declaration->type = getColumnDeclaration(type);
+        column_declaration->setType(getColumnDeclaration(type));
 
         if (auto it = defaults.find(name); it != defaults.end())
         {
-            column_declaration->default_expression = it->second;
-            column_declaration->default_specifier = "DEFAULT";
+            column_declaration->setDefaultExpression(std::move(it->second));
+            column_declaration->default_specifier = ColumnDefaultSpecifier::Default;
         }
 
         columns_expression_list->children.emplace_back(column_declaration);
@@ -430,7 +427,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
                     for (const auto & child : columns->children)
                     {
                         const auto * column_declaration = child->as<ASTColumnDeclaration>();
-                        auto type = DataTypeFactory::instance().get(column_declaration->type);
+                        auto type = DataTypeFactory::instance().get(column_declaration->getType());
                         ordinary_columns_and_types.emplace_back(NameAndTypePair(column_declaration->name, type));
                     }
                 }
