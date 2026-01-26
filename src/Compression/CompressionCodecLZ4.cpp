@@ -35,7 +35,6 @@ protected:
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return true; }
-    String getDescription() const override { return "Extremely fast; good compression; balanced speed and efficiency."; }
 
 private:
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
@@ -53,11 +52,6 @@ public:
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
-    std::string getDescription() const override
-    {
-        return "LZ4 High Compression algorithm with configurable level; slower but better compression than LZ4, but decompression is still fast.";
-    }
-
 
 private:
     const int level;
@@ -152,9 +146,7 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
 CompressionCodecLZ4HC::CompressionCodecLZ4HC(int level_)
     : level(level_)
 {
-    ASTs arguments;
-    arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(level)));
-    setCodecDescription("LZ4HC", arguments);
+    setCodecDescription("LZ4HC", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
 }
 
 

@@ -105,14 +105,6 @@ void Logger::log(const Message& msg)
 	}
 }
 
-void Logger::log(Message && msg)
-{
-    if (_level >= msg.getPriority() && _pChannel)
-    {
-        _pChannel->log(std::move(msg));
-    }
-}
-
 
 void Logger::log(const Exception& exc)
 {

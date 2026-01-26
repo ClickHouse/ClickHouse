@@ -5,10 +5,9 @@ toc_folder_title: 'Table Engines'
 toc_priority: 26
 toc_title: 'Introduction'
 title: 'Table Engines'
-doc_type: 'reference'
 ---
 
-# Table engines
+# Table Engines
 
 The table engine (type of table) determines:
 
@@ -19,7 +18,7 @@ The table engine (type of table) determines:
 - Whether multithread request execution is possible.
 - Data replication parameters.
 
-## Engine families {#engine-families}
+## Engine Families {#engine-families}
 
 ### MergeTree {#mergetree}
 
@@ -30,13 +29,12 @@ Engines in the family:
 | MergeTree Engines                                                                                                                         |
 |-------------------------------------------------------------------------------------------------------------------------------------------|
 | [MergeTree](/engines/table-engines/mergetree-family/mergetree)                                                          |
-| [ReplacingMergeTree](/engines/table-engines/mergetree-family/replacingmergetree)                               |
+| [ReplacingMergeTree](/engines/table-engines/mergetree-family/replication)                               |
 | [SummingMergeTree](/engines/table-engines/mergetree-family/summingmergetree)                                     |
 | [AggregatingMergeTree](/engines/table-engines/mergetree-family/aggregatingmergetree)                         |
 | [CollapsingMergeTree](/engines/table-engines/mergetree-family/collapsingmergetree)               |
 | [VersionedCollapsingMergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree) |
 | [GraphiteMergeTree](/engines/table-engines/mergetree-family/graphitemergetree)                                  |
-| [CoalescingMergeTree](/engines/table-engines/mergetree-family/coalescingmergetree)                                     |
 
 ### Log {#log}
 
@@ -50,7 +48,7 @@ Engines in the family:
 | [StripeLog](/engines/table-engines/log-family/stripelog) |
 | [Log](/engines/table-engines/log-family/log)                   |
 
-### Integration engines {#integration-engines}
+### Integration Engines {#integration-engines}
 
 Engines for communicating with other data storage and processing systems.
 
@@ -72,7 +70,7 @@ Engines in the family:
 | [S3Queue](../../engines/table-engines/integrations/s3queue.md)                  |
 | [TimeSeries](../../engines/table-engines/integrations/time-series.md)           |
 
-### Special engines {#special-engines}
+### Special Engines {#special-engines}
 
 Engines in the family:
 
@@ -95,7 +93,7 @@ Engines in the family:
 | [KeeperMap](/engines/table-engines/special/keeper-map)        |
 | [FileLog](/engines/table-engines/special/filelog)                                                   |
 
-## Virtual columns {#table_engines-virtual_columns}
+## Virtual Columns {#table_engines-virtual_columns}
 
 A virtual column is an integral table engine attribute that is defined in the engine source code.
 
@@ -104,11 +102,3 @@ You shouldn't specify virtual columns in the `CREATE TABLE` query, and you can't
 To select data from a virtual column, you must specify its name in the `SELECT` query. `SELECT *` does not return values from virtual columns.
 
 If you create a table with a column that has the same name as one of the table virtual columns, the virtual column becomes inaccessible. We do not recommend doing this. To help avoid conflicts, virtual column names are usually prefixed with an underscore.
-
-- `_table` — Contains the name of the table from which data was read. Type: [String](../../sql-reference/data-types/string.md).
-
-    Regardless of the table engine being used, each table includes a universal virtual column named `_table`.
-
-    When querying a table with the merge table engine, you can set the constant conditions on `_table` in the `WHERE/PREWHERE` clause (for example, `WHERE _table='xyz'`). In this case the read operation is performed only for that tables where the condition on `_table` is satisfied, so the `_table` column acts as an index.
-
-    When using queries formatted like `SELECT ... FROM (... UNION ALL ...)`, we can determine which actual table the returned rows originate from by specifying the `_table` column.

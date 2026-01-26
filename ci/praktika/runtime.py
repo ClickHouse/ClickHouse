@@ -1,9 +1,7 @@
-import json
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from .cache import Cache
-from .info import Info
 from .settings import Settings
 from .utils import MetaClasses, Utils
 
@@ -43,10 +41,6 @@ class RunConfig(MetaClasses.Serializable):
         return (
             f"{Settings.TEMP_DIR}/workflow_config_{Utils.normalize_string(name)}.json"
         )
-
-    @classmethod
-    def from_workflow_data(cls):
-        return cls.from_dict(Info().env.WORKFLOW_CONFIG)
 
     def set_job_as_filtered(self, job_name, reason):
         self.cache_success.append(job_name)

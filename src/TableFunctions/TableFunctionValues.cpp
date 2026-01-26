@@ -17,7 +17,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB
@@ -45,11 +45,7 @@ public:
     bool hasStaticStructure() const override { return true; }
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageEngineName() const override
-    {
-        /// It'd be StorageValues but it's not registered as a table engine
-        return "";
-    }
+    const char * getStorageTypeName() const override { return "Values"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;

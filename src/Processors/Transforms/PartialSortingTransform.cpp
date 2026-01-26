@@ -3,7 +3,6 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Common/PODArray.h>
 #include <Common/iota.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -85,18 +84,16 @@ bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_bl
 }
 
 PartialSortingTransform::PartialSortingTransform(
-    SharedHeader header_, const SortDescription & description_, UInt64 limit_,
-    TopKThresholdTrackerPtr threshold_tracker_)
+    const Block & header_, const SortDescription & description_, UInt64 limit_)
     : ISimpleTransform(header_, header_, false)
     , description(description_)
     , limit(limit_)
-    , threshold_tracker(threshold_tracker_)
 {
     // Sorting by no columns doesn't make sense.
     assert(!description_.empty());
 
     for (const auto & column_sort_desc : description)
-        description_with_positions.emplace_back(column_sort_desc, header_->getPositionByName(column_sort_desc.column_name));
+        description_with_positions.emplace_back(column_sort_desc, header_.getPositionByName(column_sort_desc.column_name));
 }
 
 void PartialSortingTransform::transform(Chunk & chunk)
@@ -117,7 +114,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
     /** If we've saved columns from previously blocks we could filter all rows from current block
       * which are unnecessary for sortBlock(...) because they obviously won't be in the top LIMIT rows.
       */
-    if (!sort_description_threshold_columns.empty() && !threshold_tracker)
+    if (!sort_description_threshold_columns.empty())
     {
         UInt64 rows_num = block.rows();
         auto block_columns = extractRawColumns(block, description_with_positions);
@@ -140,7 +137,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
     sortBlock(block, description, limit);
 
     /// Check if we can use this block for optimization.
-    if ((min_limit_for_partial_sort_optimization <= limit || threshold_tracker) && limit <= block.rows())
+    if (min_limit_for_partial_sort_optimization <= limit && limit <= block.rows())
     {
         /** If we filtered more than limit rows from block take block last row.
           * Otherwise take last limit row.
@@ -165,12 +162,6 @@ void PartialSortingTransform::transform(Chunk & chunk)
             }
 
             sort_description_threshold_columns = std::move(sort_description_threshold_columns_updated);
-            if (threshold_tracker)
-            {
-                Field value;
-                sort_description_threshold_columns[0]->get(0, value); /// only single number equivalent column
-                threshold_tracker->testAndSet(value);
-            }
         }
     }
 

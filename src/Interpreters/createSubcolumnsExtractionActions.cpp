@@ -23,7 +23,7 @@ ActionsDAG createSubcolumnsExtractionActions(const Block & available_columns, co
 
         for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(required_column))
         {
-            const auto * column = available_columns.findByName(column_name);
+            const auto * column = available_columns.findByName(String(column_name));
             if (!column || !column->type->tryGetSubcolumnType(subcolumn_name))
                 continue;
 

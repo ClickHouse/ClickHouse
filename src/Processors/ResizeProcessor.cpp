@@ -10,7 +10,7 @@ namespace ErrorCodes
 }
 
 /// TODO Check that there is non zero number of inputs and outputs.
-ResizeProcessor::ResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs)
+ResizeProcessor::ResizeProcessor(const Block & header, size_t num_inputs, size_t num_outputs)
     : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
     , current_input(inputs.begin())
     , current_output(outputs.begin())
@@ -156,7 +156,7 @@ ResizeProcessor::Status ResizeProcessor::prepare()
         if (input == inputs.end())
             return get_status_if_no_inputs();
 
-        output->pushData(input->pullData());
+        output->push(input->pull());
     }
 
     if (is_end_input())

@@ -1,20 +1,18 @@
-#include <Analyzer/TableFunctionNode.h>
 #include <Core/Settings.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/InterpreterExplainQuery.h>
-#include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageValues.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/InterpreterExplainQuery.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -46,11 +44,7 @@ public:
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override
-    {
-        /// No underlying storage engine
-        return "";
-    }
+    const char * getStorageTypeName() const override { return "Explain"; }
 
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
@@ -95,7 +89,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             getName(), kind_arg->formatForErrorMessage());
 
     ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.safeGet<String>());
-    auto explain_query = make_intrusive<ASTExplainQuery>(kind);
+    auto explain_query = std::make_shared<ASTExplainQuery>(kind);
 
     const auto * settings_arg = function->arguments->children[1]->as<ASTLiteral>();
     if (!settings_arg || settings_arg->value.getType() != Field::Types::String)
@@ -171,6 +165,9 @@ Block executeMonoBlock(QueryPipeline & pipeline)
             break;
     }
 
+    if (blocks.size() == 1)
+        return blocks[0];
+
     return concatenateBlocks(blocks);
 }
 
@@ -194,7 +191,7 @@ InterpreterExplainQuery TableFunctionExplain::getInterpreter(ContextPtr context)
     if (!query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' requires a explain query argument", getName());
 
-    return InterpreterExplainQuery(query, context, SelectQueryOptions{});
+    return InterpreterExplainQuery(query, context);
 }
 
 }
@@ -209,8 +206,7 @@ void registerTableFunctionExplain(TableFunctionFactory & factory)
                 Example:
                 [example:1]
                 )",
-            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}},
-            .category = FunctionDocumentation::Category::TableFunction
+            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}}
         }});
 }
 

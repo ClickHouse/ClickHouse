@@ -1,4 +1,3 @@
-import ast
 import logging
 import os
 import time
@@ -46,7 +45,7 @@ def cluster():
             with_minio=True,
             stay_alive=True,
             tmpfs=[
-                "/test_merge_tree_s3_jbod1:size=2M",
+                "/jbod1:size=2M",
             ],
         )
 
@@ -71,20 +70,15 @@ FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
 FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC = 1
 FILES_OVERHEAD_METADATA_VERSION = 1
-FILES_OVERHEAD_COLUMNS_SUBSTREAMS = 1
 FILES_OVERHEAD_PER_PART_WIDE = (
     FILES_OVERHEAD_PER_COLUMN * 3
     + 2
     + 6
     + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
     + FILES_OVERHEAD_METADATA_VERSION
-    + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
 )
 FILES_OVERHEAD_PER_PART_COMPACT = (
-    10
-    + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
-    + FILES_OVERHEAD_METADATA_VERSION
-    + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
+    10 + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC + FILES_OVERHEAD_METADATA_VERSION
 )
 
 
@@ -94,7 +88,6 @@ def create_table(node, table_name, **additional_settings):
         "old_parts_lifetime": 0,
         "index_granularity": 512,
         "temporary_directories_lifetime": 1,
-        "write_marks_for_substreams_in_compact_parts": 1,
     }
     settings.update(additional_settings)
 
@@ -115,7 +108,7 @@ def create_table(node, table_name, **additional_settings):
 
 @pytest.fixture(scope="module")
 def init_broken_s3(cluster):
-    yield start_s3_mock(cluster, "broken_s3", "8085")
+    yield start_s3_mock(cluster, "broken_s3", "8083")
 
 
 @pytest.fixture(scope="function")
@@ -508,7 +501,7 @@ def test_table_manipulations(cluster, node_name):
 
     node.query("RENAME TABLE s3_renamed TO s3_test")
 
-    assert node.query("CHECK TABLE s3_test FORMAT Values SETTINGS check_query_single_value_result = 1") == "(1)"
+    assert node.query("CHECK TABLE s3_test FORMAT Values") == "(1)"
 
     node.query("DETACH TABLE s3_test")
     node.query("ATTACH TABLE s3_test")
@@ -808,7 +801,7 @@ def test_cache_with_full_disk_space(cluster, node_name):
         [
             "/usr/bin/dd",
             "if=/dev/zero",
-            "of=/test_merge_tree_s3_jbod1/dummy",
+            "of=/jbod1/dummy",
             "bs=1000",
             "count=2000",
         ]
@@ -881,9 +874,8 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     node.query(
         "INSERT INTO test_merge_canceled_by_s3_errors SELECT 2*number, toString(number) FROM numbers(10000)"
     )
-
-    rows_count = node.query("SELECT count(key) FROM test_merge_canceled_by_s3_errors")
-    assert int(rows_count) == 20000, rows_count
+    min_key = node.query("SELECT min(key) FROM test_merge_canceled_by_s3_errors")
+    assert int(min_key) == 0, min_key
 
     broken_s3.setup_at_object_upload()
     broken_s3.setup_fake_multpartuploads()
@@ -946,7 +938,10 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
 
     node.query("OPTIMIZE TABLE merge_canceled_by_s3_errors_when_move FINAL")
 
-    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
+    node.wait_for_log_line(
+        "ExpectedError Message: mock s3 injected unretryable error",
+        look_behind_lines=1000,
+    )
 
     count = node.query("SELECT count() FROM merge_canceled_by_s3_errors_when_move")
     assert int(count) == 2000, count
@@ -982,7 +977,7 @@ def test_s3_engine_heavy_write_check_mem(
         " ("
         "   key UInt32 CODEC(NONE), value String CODEC(NONE)"
         " )"
-        " ENGINE S3('http://resolver:8085/root/data/test-upload.csv', 'minio', '{minio_secret_key}', 'CSV')",
+        " ENGINE S3('http://resolver:8083/root/data/test-upload.csv', 'minio', '{minio_secret_key}', 'CSV')",
     )
 
     broken_s3.setup_fake_multpartuploads()
@@ -1068,21 +1063,3 @@ def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
     assert int(result) > 0.8 * memory
 
     check_no_objects_after_drop(cluster, node_name=node_name)
-
-
-@pytest.mark.parametrize("node_name", ["node"])
-def test_metadata_path_works_correctly(cluster, node_name):
-    node = cluster.instances[node_name]
-    table = "s3_test_metadata_path"
-    create_table(node, table)
-
-    response = node.query(f"SELECT data_paths FROM system.tables WHERE name='{table}'")
-    data_paths = ast.literal_eval(response)
-    assert len(data_paths) >= 1, list
-
-    # Verifies that trailing slash is added correctly: https://github.com/ClickHouse/ClickHouse/issues/80647
-    found = False
-    for path in data_paths:
-        found = found or "/custom_path/" in path
-    assert found, data_paths
-    node.query(f"DROP TABLE IF EXISTS {table}")
