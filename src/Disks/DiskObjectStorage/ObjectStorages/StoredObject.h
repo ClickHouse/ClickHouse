@@ -19,14 +19,17 @@ struct StoredObject
     String local_path; /// or equivalent "metadata_path"
 
     uint64_t bytes_size = std::numeric_limits<uint64_t>::max();
+    uint64_t offset = 0;
 
     explicit StoredObject(
         const String & remote_path_ = "",
         const String & local_path_ = "",
-        uint64_t bytes_size_ = std::numeric_limits<uint64_t>::max())
+        uint64_t bytes_size_ = std::numeric_limits<uint64_t>::max(),
+        uint64_t offset_ = 0)
         : remote_path(remote_path_)
         , local_path(local_path_)
         , bytes_size(bytes_size_)
+        , offset(offset_)
     {}
 };
 

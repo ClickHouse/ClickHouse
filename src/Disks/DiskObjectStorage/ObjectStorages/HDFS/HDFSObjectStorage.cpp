@@ -218,6 +218,7 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 String(file_path),
                 ObjectMetadata{
+                    0,
                     static_cast<uint64_t>(ls.file_info[i].mSize),
                     Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
                     "",

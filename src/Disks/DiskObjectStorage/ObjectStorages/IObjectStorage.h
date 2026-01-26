@@ -102,6 +102,7 @@ using ObjectAttributes = std::map<std::string, std::string>;
 
 struct ObjectMetadata
 {
+    uint64_t offset = 0;
     uint64_t size_bytes = 0;
     Poco::Timestamp last_modified;
     std::string etag;

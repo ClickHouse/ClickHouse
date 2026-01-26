@@ -23,12 +23,13 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
 {
     readIntText(version, buf);
     assertChar('\n', buf);
-
-    if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_FULL_OBJECT_KEY)
+    bool has_offset = version & VERSION_COMPACT_MULTI_FILE;
+    auto base_version = has_offset ? version - VERSION_COMPACT_MULTI_FILE : version;
+    if (base_version < VERSION_ABSOLUTE_PATHS || base_version > VERSION_FULL_OBJECT_KEY)
         throw Exception(
             ErrorCodes::UNKNOWN_FORMAT,
             "Unknown metadata file version. Path: {}. Version: {}. Maximum expected version: {}",
-            metadata_file_path, toString(version), toString(VERSION_FULL_OBJECT_KEY));
+            metadata_file_path, toString(base_version), toString(VERSION_FULL_OBJECT_KEY));
 
     UInt32 keys_count;
     readIntText(keys_count, buf);
@@ -42,6 +43,13 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
     int64_t serialized_objects_size = 0;
     for (UInt32 i = 0; i < keys_count; ++i)
     {
+        UInt64 offset = 0;
+        if (has_offset)
+        {
+            readIntText(offset, buf);
+            assertChar('\t', buf);
+        }
+
         int64_t object_size = 0;
         readIntText(object_size, buf);
         assertChar('\t', buf);
@@ -50,7 +58,7 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
         readEscapedString(remote_path, buf);
         assertChar('\n', buf);
 
-        if (version == VERSION_ABSOLUTE_PATHS)
+        if (base_version == VERSION_ABSOLUTE_PATHS)
         {
             if (!remote_path.starts_with(compatible_key_prefix))
                 throw Exception(ErrorCodes::UNKNOWN_FORMAT,
@@ -59,12 +67,12 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
 
             remote_path = ObjectStorageKey::createAsRelative(compatible_key_prefix, remote_path.substr(compatible_key_prefix.size())).serialize();
         }
-        else if (version < VERSION_FULL_OBJECT_KEY)
+        else if (base_version < VERSION_FULL_OBJECT_KEY)
         {
             remote_path = ObjectStorageKey::createAsRelative(compatible_key_prefix, remote_path).serialize();
         }
 
-        const StoredObject & object = objects.emplace_back(remote_path, metadata_file_path, object_size);
+        const StoredObject & object = objects.emplace_back(remote_path, metadata_file_path, object_size, offset);
         serialized_objects_size += object.bytes_size;
     }
 
@@ -76,13 +84,13 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
     readIntText(ref_count, buf);
     assertChar('\n', buf);
 
-    if (version >= VERSION_READ_ONLY_FLAG)
+    if (base_version >= VERSION_READ_ONLY_FLAG)
     {
         readBoolText(read_only, buf);
         assertChar('\n', buf);
     }
 
-    if (version >= VERSION_INLINE_DATA)
+    if (base_version >= VERSION_INLINE_DATA)
     {
         readEscapedString(inline_data, buf);
         assertChar('\n', buf);
@@ -115,7 +123,8 @@ catch (...)
 
 void DiskObjectStorageMetadata::serialize(WriteBuffer & buf) const
 {
-    constexpr UInt32 write_version = VERSION_FULL_OBJECT_KEY;
+    bool serialize_offset = version & VERSION_COMPACT_MULTI_FILE;
+    UInt32 write_version = version;
 
     writeIntText(write_version, buf);
     writeChar('\n', buf);
@@ -127,6 +136,12 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf) const
 
     for (const auto & object : objects)
     {
+        if (serialize_offset)
+        {
+            writeIntText(object.offset, buf);
+            writeChar('\t', buf);
+        }
+
         writeIntText(object.bytes_size, buf);
         writeChar('\t', buf);
 
@@ -147,9 +162,18 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf) const
     }
 }
 
-String DiskObjectStorageMetadata::serializeToString() const
+String DiskObjectStorageMetadata::serializeToString()
 {
     WriteBufferFromOwnString result;
+    version = VERSION_FULL_OBJECT_KEY;
+    serialize(result);
+    return result.str();
+}
+
+String DiskObjectStorageMetadata::serializeToStringWithOffset()
+{
+    WriteBufferFromOwnString result;
+    version = VERSION_FULL_OBJECT_KEY | VERSION_COMPACT_MULTI_FILE;
     serialize(result);
     return result.str();
 }

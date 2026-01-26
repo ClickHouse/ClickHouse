@@ -32,6 +32,7 @@ private:
     static constexpr uint32_t VERSION_READ_ONLY_FLAG = 3;
     static constexpr uint32_t VERSION_INLINE_DATA = 4;
     static constexpr uint32_t VERSION_FULL_OBJECT_KEY = 5; /// only for reading data
+    static constexpr uint32_t VERSION_COMPACT_MULTI_FILE = 1 << 10;
     uint32_t version = VERSION_FULL_OBJECT_KEY;
 
 public:
@@ -42,7 +43,9 @@ public:
     bool tryDeserializeFromString(const std::string & data) noexcept;
 
     void serialize(WriteBuffer & buf) const;
-    std::string serializeToString() const;
+    std::string serializeToString();
+    // serialize with VERSION_COMPACT_MULTI_FILE
+    std::string serializeToStringWithOffset();
 };
 
 using DiskObjectStorageMetadataPtr = std::unique_ptr<DiskObjectStorageMetadata>;

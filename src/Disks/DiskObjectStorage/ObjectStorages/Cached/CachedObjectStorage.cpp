@@ -80,7 +80,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
                 read_buffer_creator,
                 modified_read_settings,
                 std::string(CurrentThread::getQueryId()),
-                object.bytes_size,
+                object.offset + object.bytes_size,
                 /* allow_seeks */!read_settings.remote_read_buffer_restrict_seek,
                 /* use_external_buffer */read_settings.remote_read_buffer_use_external_buffer,
                 /* read_until_position */std::nullopt,
