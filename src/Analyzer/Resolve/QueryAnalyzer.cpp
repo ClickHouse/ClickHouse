@@ -1392,21 +1392,20 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     }
 
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
-    if (!resolve_result.resolved_identifier && identifier_lookup.isExpressionLookup())
+    if (!resolve_result.resolved_identifier 
+        && identifier_lookup.isExpressionLookup() 
+        && identifier_resolve_settings.scope_to_resolve_alias_expression == nullptr)
     {
         const auto & function_factory = FunctionFactory::instance();
         auto identifier_name = identifier_lookup.identifier.getFullName();
 
-        if (function_factory.has(identifier_name))
+        auto function_resolver = function_factory.tryGet(identifier_name, scope.context);
+        if (function_resolver && function_resolver->allowsOmittingParentheses())
         {
-            auto function_resolver = function_factory.get(identifier_name, scope.context);
-            if (function_resolver->allowsOmittingParentheses())
-            {
-                QueryTreeNodePtr function_node = std::make_shared<FunctionNode>(identifier_name);
-                resolveFunction(function_node, scope);
-                resolve_result.resolved_identifier = std::move(function_node);
-                resolve_result.resolve_place = IdentifierResolvePlace::ALIASES;
-            }
+            auto function_node = std::make_shared<FunctionNode>(identifier_name);
+            function_node->resolveAsFunction(function_resolver->build({}));
+            resolve_result.resolved_identifier = std::move(function_node);
+            resolve_result.resolve_place = IdentifierResolvePlace::ALIASES;
         }
     }
 
