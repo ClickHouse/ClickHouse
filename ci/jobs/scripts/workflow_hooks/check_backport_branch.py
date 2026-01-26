@@ -6,9 +6,16 @@ from ci.praktika.utils import Shell
 if __name__ == "__main__":
     info = Info()
     if info.workflow_name == "BackportPR":
+        assert info.base_branch
+        # Ensure base branch is fetched.
+        # We use treeless fetch (--filter=tree:0) and no-tags to minimize data transfer.
+        Shell.run(
+            f"git fetch --no-tags --prune --no-recurse-submodules --filter=tree:0 origin {info.base_branch}",
+            verbose=True,
+        )
         num_commits = int(
             Shell.get_output_or_raise(
-                f"git rev-list --count {info.base_branch}..{info.sha}"
+                f"git rev-list --count origin/{info.base_branch}..{info.sha}"
             )
         )
         if num_commits == 0:
@@ -22,7 +29,7 @@ if __name__ == "__main__":
             )
             sys.exit(-1)
 
-        if Shell.check(f"git diff --quiet {info.base_branch}...{info.sha}"):
+        if Shell.check(f"git diff --quiet origin/{info.base_branch}...{info.sha}"):
             print(f"ERROR: Diff is empty between {info.base_branch} and {info.sha}")
             sys.exit(-1)
     else:
