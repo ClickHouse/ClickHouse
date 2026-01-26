@@ -1,4 +1,6 @@
 #include <deque>
+#include <filesystem>
+#include <memory>
 #include <vector>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
@@ -42,7 +44,100 @@ namespace Setting
     extern const SettingsBool use_async_executor_for_materialized_views;
 }
 
+
+DeduplicationHash::DeduplicationHash(UInt128 hash_, std::string partition_id_, HashType htype)
+    : hash(std::move(hash_))
+    , partition_id(std::move(partition_id_))
+    , hash_type(htype)
+{}
+
+
+DeduplicationHash DeduplicationHash::createUnufiedHash(UInt128 hash, std::string partition_id)
+{
+    return DeduplicationHash(hash, std::move(partition_id), HashType::UNIFIED);
+}
+
+
+DeduplicationHash DeduplicationHash::createSyncHash(UInt128 hash, std::string partition_id)
+{
+    return DeduplicationHash(hash, std::move(partition_id), HashType::SYNC);
+}
+
+
+DeduplicationHash DeduplicationHash::createAsyncHash(UInt128 hash, std::string partition_id)
+{
+    return DeduplicationHash(hash, std::move(partition_id), HashType::ASYNC);
+}
+
+
+std::string DeduplicationHash::getBlockId() const
+{
+    return fmt::format("{}_{}_{}", partition_id, hash.items[0], hash.items[1]);
+}
+
+
+std::string DeduplicationHash::getPath(const std::filesystem::path & storage_path) const
+{
+    std::string hashes_directory = [&] ()
+    {
+        switch (hash_type)
+        {
+            case HashType::SYNC:
+                return "blocks";
+            case HashType::ASYNC:
+                return "async_blocks";
+            case HashType::UNIFIED:
+                return "deduplication_hashes";
+        }
+    }();
+    return (storage_path / hashes_directory / getBlockId()).string();
+}
+
+
+void DeduplicationHash::setConflictPartName(const std::string & part_name)
+{
+    conflicted_part_name = part_name;
+}
+
+
+bool DeduplicationHash::hasConflictPartName() const
+{
+    return conflicted_part_name.has_value();
+}
+
+
+std::string DeduplicationHash::getConflictPartName() const
+{
+    return conflicted_part_name.value_or("");
+}
+
+
+std::vector<std::string> getDeduplicationBlockIds(const std::vector<DeduplicationHash> & deduplication_hashes)
+{
+    std::vector<std::string> result;
+    result.reserve(deduplication_hashes.size());
+    for (const auto & deduplication_hash : deduplication_hashes)
+    {
+        result.push_back(deduplication_hash.getBlockId());
+    }
+    return result;
+}
+
+
+std::vector<std::string> getDeduplicationPathes(std::filesystem::path storage_path, const std::vector<DeduplicationHash> & deduplication_hashes)
+{
+    std::vector<std::string> result;
+    result.reserve(deduplication_hashes.size());
+    for (const auto & deduplication_hash : deduplication_hashes)
+    {
+        result.push_back(deduplication_hash.getPath(storage_path));
+    }
+    return result;
+}
+
+
 static std::atomic<size_t> deduplication_info_id_counter{0};
+
 
 DeduplicationInfo::FilterResult DeduplicationInfo::deduplicateSelf(bool deduplication_enabled, const std::string & partition_id, ContextPtr context) const
 {
@@ -116,7 +211,7 @@ std::set<size_t> DeduplicationInfo::filterOriginal(const std::vector<std::string
 DeduplicationInfo::Ptr DeduplicationInfo::cloneSelfFilterImpl() const
 {
     LOG_TEST(logger, "Cloning deduplication info for filtering, debug: {}", debug());
-    auto new_instance = DeduplicationInfo::create(is_async_insert);
+    auto new_instance = DeduplicationInfo::create(is_async_insert, unification_stage);
     new_instance->disabled = disabled;
     new_instance->level = level;
     new_instance->visited_views = visited_views;
@@ -129,7 +224,7 @@ DeduplicationInfo::Ptr DeduplicationInfo::cloneSelfFilterImpl() const
 DeduplicationInfo::Ptr DeduplicationInfo::cloneMergeImpl() const
 {
     LOG_TEST(logger, "Cloning deduplication info for merging, debug: {}", debug());
-    auto new_instance = DeduplicationInfo::create(is_async_insert);
+    auto new_instance = DeduplicationInfo::create(is_async_insert, unification_stage);
     new_instance->disabled = disabled;
     new_instance->level = level;
     new_instance->visited_views = visited_views;
@@ -244,7 +339,49 @@ UInt128 DeduplicationInfo::calculateDataHash(size_t offset) const
 }
 
 
-UInt128 DeduplicationInfo::getBlockHash(size_t offset) const
+DeduplicationHash DeduplicationInfo::getBlockUnifiedHash(size_t offset, const std::string & partition_id) const
+{
+    // do not take into account source token.by_data from part writer, calculate full hash of data
+    // this hash would be used for deduplication within sync and async inserts in unified manner
+
+    auto & token = tokens[offset];
+
+    std::string extension;
+    if (!token.by_user.empty())
+    {
+        extension = "user-token-" + token.by_user;
+    }
+    else
+    {
+        auto data_hash = calculateDataHash(offset);
+        extension = fmt::format("{}_{}", data_hash.items[0], data_hash.items[1]);
+    }
+
+    // for other token sources addition parts are appended
+    for (const auto & extra : token.extra_tokens)
+    {
+        if (is_async_insert && extra.type == TokenDefinition::Extra::SOURCE_NUMBER)
+        {
+            // do not include source number for async inserts, they are not relevant as data hash is used or user token
+            // a token describes only the data in one block
+            extension.append(":");
+            extension.append(TokenDefinition::Extra::asSourceNumber(0).toString());
+            continue;
+        }
+
+        extension.append(":");
+        extension.append(extra.toString());
+    }
+
+    LOG_TEST(logger, "getBlockUnifiedHash {} debug: {}", extension, debug());
+
+    SipHash hash;
+    hash.update(extension.data(), extension.size());
+    return DeduplicationHash::createUnufiedHash(hash.get128(), partition_id);
+}
+
+
+DeduplicationHash DeduplicationInfo::getBlockHash(size_t offset, const std::string & partition_id) const
 {
     // if user token is empty we calculate by_data_hash
     auto & token = tokens[offset];
@@ -256,7 +393,12 @@ UInt128 DeduplicationInfo::getBlockHash(size_t offset) const
 
     if (token.by_data.has_value() && level == Level::SOURCE)
     {
-        return token.by_data.value();
+        LOG_TEST(logger, "getBlockHash token by data on source level debug: {}", debug());
+
+        if (is_async_insert)
+            return DeduplicationHash::createAsyncHash(token.by_data.value(), partition_id);
+        else
+            return DeduplicationHash::createSyncHash(token.by_data.value(), partition_id);
     }
 
     // only one value is set here
@@ -272,6 +414,7 @@ UInt128 DeduplicationInfo::getBlockHash(size_t offset) const
     {
         if (extra.type == TokenDefinition::Extra::SOURCE_ID)
             continue; // do not include source id
+
         if (token.by_data.has_value()
             && (extra.type == TokenDefinition::Extra::SOURCE_ID || extra.type == TokenDefinition::Extra::SOURCE_NUMBER))
             continue; // source id is already included in by_data
@@ -280,11 +423,14 @@ UInt128 DeduplicationInfo::getBlockHash(size_t offset) const
         extension.append(extra.toString());
     }
 
-    //LOG_DEBUG(logger, "getBlockId {} debug: {}", extension, debug());
+    LOG_TEST(logger, "getBlockHash {} debug: {}", extension, debug());
 
     SipHash hash;
     hash.update(extension.data(), extension.size());
-    return hash.get128();
+    if (is_async_insert)
+        return DeduplicationHash::createAsyncHash(hash.get128(), partition_id);
+    else
+        return DeduplicationHash::createSyncHash(hash.get128(), partition_id);
 }
 
 
@@ -292,32 +438,51 @@ std::unordered_map<std::string, std::vector<size_t>> DeduplicationInfo::buildBlo
 {
     std::unordered_map<std::string, std::vector<size_t>> result;
 
-    auto block_ids = getBlockIds(partition_id, true);
-    for (size_t i = 0; i < block_ids.size(); ++i)
+    for (size_t offset = 0; offset < offsets.size(); ++offset)
     {
-        result[block_ids[i]].push_back(i);
+        for (auto & block_hash : chooseDeduplicationHashes(offset, partition_id))
+            result[block_hash.getBlockId()].push_back(offset);
     }
 
     return result;
 }
 
 
-std::vector<std::string> DeduplicationInfo::getBlockIds(const std::string & partition_id, bool deduplication_enabled) const
+std::vector<DeduplicationHash> DeduplicationInfo::chooseDeduplicationHashes(size_t offset, const std::string & partition_id) const
 {
-    LOG_TEST(logger, "getBlockIds for partition_id={}, debug: {}", partition_id, debug());
+    std::vector<DeduplicationHash> result;
+    switch (unification_stage)
+    {
+        case DeduplicationUnificationStage::OLD_SEPARATE_HASHES:
+            result.push_back(getBlockHash(offset, partition_id));
+            break;
+        case DeduplicationUnificationStage::COMPATIBLE_DOUBLE_HASHES:
+            result.push_back(getBlockHash(offset, partition_id));
+            result.push_back(getBlockUnifiedHash(offset, partition_id));
+            break;
+        case DeduplicationUnificationStage::NEW_UNIFICATED_HASHES:
+            result.push_back(getBlockUnifiedHash(offset, partition_id));
+            break;
+    }
+    return result;
+}
+
+
+std::vector<DeduplicationHash> DeduplicationInfo::getDeduplicationHashes(const std::string & partition_id, bool deduplication_enabled) const
+{
+    LOG_TEST(logger, "getDeduplicationHashes for partition_id={}, deduplication_enabled: {}, debug: {}", partition_id, deduplication_enabled, debug());
     if (disabled || !deduplication_enabled)
         return {};
 
-    std::vector<std::string> result;
-    result.reserve(offsets.size());
+    std::vector<DeduplicationHash> result;
+    result.reserve(2*offsets.size());
 
-    for (size_t i = 0; i < offsets.size(); ++i)
+    for (size_t offset = 0; offset < offsets.size(); ++offset)
     {
-        auto hash = getBlockHash(i);
-        result.push_back(fmt::format("{}_{}_{}", partition_id, hash.items[0], hash.items[1]));
+        for (auto & block_hash : chooseDeduplicationHashes(offset, partition_id))
+            result.push_back(std::move(block_hash));
     }
 
-    LOG_TEST(logger, "getBlockIds {}, debug: {}", fmt::join(result, ", "), debug());
     return result;
 }
 
@@ -374,7 +539,7 @@ std::string DeduplicationInfo::debug() const
         block_str = fmt::format("rows/cols {}/{}", original_block->rows(), original_block->getColumns().size());
 
     return fmt::format(
-        "instance_id: {}, {}, {}, level {}, rows/tokens {}/{}, in block: {}, tokens: {}:[{}], visited views: {}:[{}], retried view id: {}, original block id: {}",
+        "instance_id: {}, {}, {}, level {}, rows/tokens {}/{}, in block: {}, tokens: {}:[{}], visited views: {}:[{}], retried view id: {}, original block id: {}, unification_stage {}",
         instance_id,
         is_async_insert ? "async" : "sync",
         disabled ? "disabled" : "enabled",
@@ -384,13 +549,14 @@ std::string DeduplicationInfo::debug() const
         getCount(), fmt::join(token_strs, ","),
         visited_views.size(), fmt::join(visited_views, ","),
         retried_view_id,
-        original_block_view_id);
+        original_block_view_id,
+        unification_stage);
 }
 
 
-DeduplicationInfo::Ptr DeduplicationInfo::create(bool async_insert_)
+DeduplicationInfo::Ptr DeduplicationInfo::create(bool async_insert_, DeduplicationUnificationStage unification_stage_)
 {
-    return std::make_shared<DeduplicationInfo>(async_insert_);
+    return std::make_shared<DeduplicationInfo>(async_insert_, unification_stage_);
 }
 
 
@@ -496,9 +662,10 @@ void DeduplicationInfo::redefineTokensWithDataHash()
 }
 
 
-DeduplicationInfo::DeduplicationInfo(bool async_insert_)
+DeduplicationInfo::DeduplicationInfo(bool async_insert_, DeduplicationUnificationStage unification_stage_)
     : instance_id(deduplication_info_id_counter.fetch_add(1, std::memory_order_relaxed))
     , is_async_insert(async_insert_)
+    , unification_stage(unification_stage_)
 {
     LOG_TEST(logger, "Create DeduplicationInfo, debug: {}", debug());
 }
@@ -508,6 +675,7 @@ DeduplicationInfo::DeduplicationInfo(const DeduplicationInfo & other)
     : ChunkInfo(other)
     , instance_id(deduplication_info_id_counter.fetch_add(1, std::memory_order_relaxed))
     , is_async_insert(other.is_async_insert)
+    , unification_stage(other.unification_stage)
     , insert_dependencies(other.insert_dependencies)
     , disabled(other.disabled)
     , level(other.level)

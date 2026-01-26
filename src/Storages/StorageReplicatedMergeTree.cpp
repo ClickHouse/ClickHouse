@@ -187,6 +187,12 @@ namespace Setting
     extern const SettingsBool update_sequential_consistency;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsDeduplicationUnificationStage deduplication_unification_stage;
+}
+
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
@@ -421,7 +427,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , queue(*this, merge_strategy_picker)
     , fetcher(*this)
     , cleanup_thread(*this)
-    , async_block_ids_cache(*this)
+    , deduplication_hashes_cache(*this, "deduplication_hashes")
+    , async_block_ids_cache(*this, "async_blocks")
     , part_check_thread(*this)
     , restarting_thread(*this)
     , part_moves_between_shards_orchestrator(*this)
@@ -919,6 +926,8 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodesAttempt() const
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/alter_partition_version", String(), zkutil::CreateMode::Persistent));
     /// For deduplication of async inserts
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/async_blocks", String(), zkutil::CreateMode::Persistent));
+    /// For deduplication inserts
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/deduplication_hashes", String(), zkutil::CreateMode::Persistent));
     /// To track "lost forever" parts count, just for `system.replicas` table
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lost_part_count", String(), zkutil::CreateMode::Persistent));
 
@@ -1025,6 +1034,8 @@ bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMeta
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/blocks", "",
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/async_blocks", "",
+            zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/deduplication_hashes", "",
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/block_numbers", "",
             zkutil::CreateMode::Persistent));
@@ -1570,7 +1581,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
 
     /// NOTE /block_numbers/ actually is not flat, because /block_numbers/<partition_id>/ may have ephemeral children,
     /// but we assume that all ephemeral block locks are already removed when table is being dropped.
-    static constexpr std::array flat_nodes = {"block_numbers", "blocks", "async_blocks", "leader_election", "log", "mutations", "pinned_part_uuids"};
+    static constexpr std::array flat_nodes = {"block_numbers", "blocks", "async_blocks", "deduplication_hashes", "leader_election", "log", "mutations", "pinned_part_uuids"};
 
     /// First try to remove paths that are known to be flat
     for (const auto * node : flat_nodes)
@@ -5755,6 +5766,7 @@ void StorageReplicatedMergeTree::partialShutdown()
     mutations_finalizing_task->deactivate();
 
     cleanup_thread.stop();
+    deduplication_hashes_cache.stop();
     async_block_ids_cache.stop();
     part_check_thread.stop();
 
@@ -8542,6 +8554,7 @@ void StorageReplicatedMergeTree::getClearBlocksInPartitionOps(
 {
     getClearBlocksInPartitionOpsImpl(ops, zookeeper, partition_id, min_block_num, max_block_num, "blocks");
     getClearBlocksInPartitionOpsImpl(ops, zookeeper, partition_id, min_block_num, max_block_num, "async_blocks");
+    getClearBlocksInPartitionOpsImpl(ops, zookeeper, partition_id, min_block_num, max_block_num, "deduplication_hashes");
 }
 
 void StorageReplicatedMergeTree::getClearBlocksInPartitionOpsImpl(
@@ -8600,6 +8613,8 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
     }
 
     async_block_ids_cache.truncate();
+    if (getContext()->getServerSettings()[ServerSetting::deduplication_unification_stage].value != DeduplicationUnificationStage::OLD_SEPARATE_HASHES)
+        deduplication_hashes_cache.truncate();
 
     LOG_TRACE(log, "Deleted {} deduplication block IDs in partition ID {} in range [{}, {}]",
               delete_requests.size(), partition_id, min_block_num, max_block_num);

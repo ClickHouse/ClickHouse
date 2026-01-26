@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <variant>
+#include <filesystem>
 #include <Processors/Chunk.h>
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
@@ -20,6 +21,48 @@ namespace DB
 class InsertDependenciesBuilder;
 using InsertDependenciesBuilderConstPtr = std::shared_ptr<const InsertDependenciesBuilder>;
 
+
+struct DeduplicationHash
+{
+    enum class HashType : uint8_t
+    {
+        SYNC= 0,
+        ASYNC = 1,
+        UNIFIED = 2,
+    };
+
+    DeduplicationHash(UInt128 hash_, std::string partition_id_, HashType htype);
+
+    static DeduplicationHash createUnufiedHash(UInt128 hash, std::string partition_id);
+    static DeduplicationHash createSyncHash(UInt128 hash, std::string partition_id);
+    static DeduplicationHash createAsyncHash(UInt128 hash, std::string partition_id);
+
+    DeduplicationHash(const DeduplicationHash & other) = default;
+    DeduplicationHash(DeduplicationHash && other) = default;
+    DeduplicationHash & operator =(const DeduplicationHash & other) = default;
+    DeduplicationHash & operator =(DeduplicationHash && other) = default;
+
+    /// It returns string representation of the hash
+    std::string getBlockId() const;
+    /// It returns full path to the hash file on keeper
+    std::string getPath(const std::filesystem::path & storage_path) const;
+
+    void setConflictPartName(const std::string & part_name);
+    bool hasConflictPartName() const;
+    std::string getConflictPartName() const;
+
+    UInt128 hash = 0;
+    std::string partition_id;
+    HashType hash_type = HashType::UNIFIED;
+
+    std::optional<std::string> conflicted_part_name;
+};
+
+
+std::vector<std::string> getDeduplicationBlockIds(const std::vector<DeduplicationHash> & deduplication_hashes);
+std::vector<std::string> getDeduplicationPathes(std::filesystem::path storage_path, const std::vector<DeduplicationHash> & deduplication_hashes);
+
+
 class DeduplicationInfo : public ChunkInfo
 {
 protected:
@@ -31,11 +74,11 @@ protected:
 public:
     using Ptr = std::shared_ptr<DeduplicationInfo>;
 
-    explicit DeduplicationInfo(bool async_insert_);
+    DeduplicationInfo(bool async_insert_, DeduplicationUnificationStage unification_stage_);
     DeduplicationInfo(const DeduplicationInfo & other);
     DeduplicationInfo(DeduplicationInfo && other) = default;
 
-    static Ptr create(bool async_insert_);
+    static Ptr create(bool async_insert_, DeduplicationUnificationStage unification_stage);
 
     ChunkInfo::Ptr merge(const ChunkInfo::Ptr & right) const override;
     Ptr mergeSelf(const Ptr & right) const;
@@ -54,8 +97,7 @@ public:
     FilterResult deduplicateSelf(bool deduplication_enabled, const std::string & partition_id, ContextPtr context) const;
     FilterResult deduplicateBlock(const std::vector<std::string> & existing_block_ids, const std::string & partition_id, ContextPtr context) const;
 
-    UInt128 getBlockHash(size_t offset) const;
-    std::vector<std::string> getBlockIds(const std::string & partition_id, bool deduplication_enabled) const;
+    std::vector<DeduplicationHash> getDeduplicationHashes(const std::string & partition_id, bool deduplication_enabled) const;
 
     size_t getCount() const;
     size_t getRows() const;
@@ -86,6 +128,12 @@ public:
 
 private:
     UInt128 calculateDataHash(size_t offset) const;
+    // the old one hash
+    DeduplicationHash getBlockHash(size_t offset, const std::string & partition_) const;
+    // the new unified hash
+    DeduplicationHash getBlockUnifiedHash(size_t offset, const std::string & partition_) const;
+    std::vector<DeduplicationHash> chooseDeduplicationHashes(size_t offset, const std::string & partition_id) const;
+
 
     Ptr cloneSelfFilterImpl() const;
     std::set<size_t> filterSelf(const String & partition_id) const;
@@ -113,6 +161,8 @@ private:
     LoggerPtr logger = getLogger("DedupInfo");
     size_t instance_id = 0;
     bool is_async_insert = false;
+    DeduplicationUnificationStage unification_stage;
+
 
     InsertDependenciesBuilderConstPtr insert_dependencies;
 
