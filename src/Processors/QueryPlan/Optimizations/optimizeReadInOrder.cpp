@@ -444,28 +444,29 @@ bool isFixedColumnForReadInOrder(
     const KeyDescription & sorting_key,
     const ReadFromMergeTree * reading)
 {
-    /// For parallel replicas with local plan, we need deterministic (AST-based) fixed column detection
-    /// to ensure all replicas compute the same read order.
-    if (reading && reading->isParallelReadingFromReplicas()
-        && reading->getContext()->getSettingsRef()[Setting::parallel_replicas_local_plan])
+    /// When parallel replicas with local plan is active, use AST-based fixed column detection
+    /// for deterministic results. This works reliably regardless of DAG transformations.
+    /// Check both: on replicas (isParallelReadingFromReplicas) and on coordinator (canUseParallelReplicasOnInitiator).
+    if (reading)
     {
-        /// Use AST-based detection for deterministic results across parallel replicas
-        const auto * select_query = reading->getQueryInfo().query->as<ASTSelectQuery>();
-        if (select_query)
+        const auto & context = reading->getContext();
+        if (context->getSettingsRef()[Setting::parallel_replicas_local_plan]
+            && (reading->isParallelReadingFromReplicas() || context->canUseParallelReplicasOnInitiator()))
         {
-            auto fixed_names = getFixedSortingColumns(
-                *select_query,
-                sorting_key.column_names,
-                reading->getContext());
-            return fixed_names.contains(sort_column_description.column_name);
+            const auto * select_query = reading->getQueryInfo().query->as<ASTSelectQuery>();
+            if (select_query)
+            {
+                auto fixed_names = getFixedSortingColumns(
+                    *select_query,
+                    sorting_key.column_names,
+                    context);
+                return fixed_names.contains(sort_column_description.column_name);
+            }
+            return false;
         }
-        return false;
     }
-    else
-    {
-        /// Use DAG-based detection for full optimization
-        return fixed_columns.contains(sort_node);
-    }
+    /// Use DAG-based detection for full optimization
+    return fixed_columns.contains(sort_node);
 }
 
 /// For the case when the order of keys is important (ORDER BY keys).
