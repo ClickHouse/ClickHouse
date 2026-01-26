@@ -240,6 +240,7 @@ public:
         bool use_skip_indexes_for_disjunctions_,
         bool find_exact_ranges,
         bool is_final_query,
+        bool use_skip_indexes_if_final_exact_mode_,
         bool is_parallel_reading_from_replicas,
         ReadFromMergeTree::AnalysisResult & result);
 
