@@ -865,7 +865,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         return;
     }
 
-    chassert(!buf->internalBuffer().size(),
+    chassert(buf->internalBuffer().empty(),
              fmt::format("Memory buffer for buffer must have been reset before "
              "being put into background download ({})", file_segment.getInfoForLog()));
 
