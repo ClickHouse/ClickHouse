@@ -43,11 +43,25 @@ options {
     caseInsensitive = true;
 }
 
-fragment NUMERAL: [0-9]+ ('.' [0-9]+)?;
+fragment INTEGER_NUMBER: [0-9]+ ('_'? [0-9]+)*;
 
-fragment SCIENTIFIC_NUMBER: NUMERAL ('e' [-+]? NUMERAL)?;
+fragment FLOATING_POINT: (INTEGER_NUMBER '.' INTEGER_NUMBER?) | ('.' INTEGER_NUMBER);
 
-NUMBER: NUMERAL | SCIENTIFIC_NUMBER | DURATION;
+fragment SCIENTIFIC_NUMBER: (INTEGER_NUMBER | FLOATING_POINT) 'e' [-+]? INTEGER_NUMBER;
+
+fragment INF: 'inf';
+fragment NAN: 'nan';
+
+fragment HEXADECIMAL_NUMBER: '0x' ('_'? [0-9A-F]+)+;
+
+// The proper order (longest to the shortest) must be validated after parsing
+fragment DURATION_FORMAT options {
+    caseInsensitive = false;
+}:
+    ([0-9]+ ('ms' | [smhdwy]))+
+;
+
+NUMBER: INTEGER_NUMBER | FLOATING_POINT | SCIENTIFIC_NUMBER | INF | NAN | HEXADECIMAL_NUMBER | DURATION_FORMAT;
 
 STRING: '\'' (~('\'' | '\\') | '\\' .)* '\'' | '"' (~('"' | '\\') | '\\' .)* '"';
 
@@ -197,10 +211,7 @@ AT: '@';
 
 SUBQUERY_RANGE: LEFT_BRACKET WS_FRAGMENT? NUMBER WS_FRAGMENT? ':' WS_FRAGMENT? NUMBER? WS_FRAGMENT? RIGHT_BRACKET;
 
-TIME_RANGE: LEFT_BRACKET WS_FRAGMENT? NUMBER WS_FRAGMENT? RIGHT_BRACKET;
-
-// The proper order (longest to the shortest) must be validated after parsing
-fragment DURATION: ([0-9]+ ('ms' | [smhdwy]))+;
+SELECTOR_RANGE: LEFT_BRACKET WS_FRAGMENT? NUMBER WS_FRAGMENT? RIGHT_BRACKET;
 
 METRIC_NAME : [a-z_:] [a-z0-9_:]*;
 LABEL_NAME  : [a-z_] [a-z0-9_]*;

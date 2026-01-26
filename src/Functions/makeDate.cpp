@@ -141,7 +141,7 @@ public:
                         day_num = days_since_epoch;
                 }
 
-                result_data[i] = day_num;
+                result_data[i] = static_cast<Traits::ReturnDataType::FieldType>(day_num);
             }
         }
         else
@@ -164,7 +164,7 @@ public:
                         day_num = days_since_epoch;
                 }
 
-                result_data[i] = day_num;
+                result_data[i] = static_cast<Traits::ReturnDataType::FieldType>(day_num);
             }
         }
 
@@ -233,7 +233,7 @@ public:
                     day_num = days_since_epoch;
             }
 
-            result_data[i] = day_num;
+            result_data[i] = static_cast<Traits::ReturnDataType::FieldType>(day_num);
         }
 
         return res_column;
@@ -701,7 +701,7 @@ public:
             const auto yyyymmdd = yyyymmddhhmmss / 1'000'000;
             const auto hhmmss = yyyymmddhhmmss % 1'000'000;
 
-            const auto decimal = float_date - yyyymmddhhmmss;
+            const auto decimal = float_date - static_cast<double>(yyyymmddhhmmss);
 
             const auto year = yyyymmdd / 10'000;
             const auto month = yyyymmdd / 100 % 100;

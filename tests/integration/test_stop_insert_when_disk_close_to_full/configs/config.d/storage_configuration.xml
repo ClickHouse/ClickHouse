@@ -5,6 +5,16 @@
                 <type>local</type>
                 <path>/test_stop_insert_when_disk1/</path>
             </disk1>
+            <jbod_disk1>
+                <type>local</type>
+                <path>/jbod_disk1/</path>
+                <priority>1</priority>
+            </jbod_disk1>
+            <jbod_disk2>
+                <type>local</type>
+                <path>/jbod_disk2/</path>
+                <priority>2</priority>
+            </jbod_disk2>
         </disks>
         <policies>
             <only_disk1>
@@ -14,6 +24,14 @@
                     </main>
                 </volumes>
             </only_disk1>
+            <jbod_policy>
+                <volumes>
+                    <main>
+                        <disk>jbod_disk1</disk>
+                        <disk>jbod_disk2</disk>
+                    </main>
+                </volumes>
+            </jbod_policy>
         </policies>
     </storage_configuration>
 </clickhouse>

@@ -2,15 +2,12 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Access/Common/AccessFlags.h>
-#include <Access/EnabledQuota.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/QueryNode.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <IO/ReadBuffer.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -23,8 +20,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTConstraintDeclaration.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -35,11 +30,9 @@
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -49,7 +42,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
-#include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
 #include <Core/Field.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -450,7 +442,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
                 return false;
             case DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES:
                 return context->getSettingsRef()[Setting::insert_deduplicate];
-            case DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE:
+            case DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE:
             {
                 if (!select_query_sorted && context->getSettingsRef()[Setting::insert_deduplicate])
                     LOG_INFO(logger, "INSERT SELECT deduplication is disabled because SELECT is not stable");

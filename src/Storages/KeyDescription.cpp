@@ -129,7 +129,7 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
     result.definition_ast = definition_ast;
     auto key_expression_list = extractKeyExpressionList(definition_ast);
 
-    result.expression_list_ast = std::make_shared<ASTExpressionList>();
+    result.expression_list_ast = make_intrusive<ASTExpressionList>();
     for (const auto & child : key_expression_list->children)
     {
         auto real_key = child;
@@ -146,7 +146,7 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
     if (additional_column)
     {
         result.additional_column = additional_column;
-        ASTPtr column_identifier = std::make_shared<ASTIdentifier>(*additional_column);
+        ASTPtr column_identifier = make_intrusive<ASTIdentifier>(*additional_column);
         result.column_names.emplace_back(column_identifier->getColumnName());
         result.expression_list_ast->children.push_back(column_identifier);
 
@@ -198,11 +198,11 @@ ASTPtr KeyDescription::getOriginalExpressionList() const
     if (!expression_list_ast || reverse_flags.empty())
         return expression_list_ast;
 
-    auto expr_list = std::make_shared<ASTExpressionList>();
+    auto expr_list = make_intrusive<ASTExpressionList>();
     size_t size = expression_list_ast->children.size();
     for (size_t i = 0; i < size; ++i)
     {
-        auto column_ast = std::make_shared<ASTStorageOrderByElement>();
+        auto column_ast = make_intrusive<ASTStorageOrderByElement>();
         column_ast->children.push_back(expression_list_ast->children[i]);
         column_ast->direction = (!reverse_flags.empty() && reverse_flags[i]) ? -1 : 1;
         expr_list->children.push_back(std::move(column_ast));
@@ -214,7 +214,7 @@ ASTPtr KeyDescription::getOriginalExpressionList() const
 KeyDescription KeyDescription::buildEmptyKey()
 {
     KeyDescription result;
-    result.expression_list_ast = std::make_shared<ASTExpressionList>();
+    result.expression_list_ast = make_intrusive<ASTExpressionList>();
     result.expression = std::make_shared<ExpressionActions>(ActionsDAG(), ExpressionActionsSettings{});
     return result;
 }

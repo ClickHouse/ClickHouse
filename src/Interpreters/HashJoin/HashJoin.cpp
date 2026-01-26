@@ -757,7 +757,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             {
                 ///  - build mask in the source block row space
                 ///  - set bits only for rows that belong to THIS slot (by selector)
-                not_joined_map = ColumnUInt8::create(block.rows(), 0);
+                not_joined_map = ColumnUInt8::create(block.rows(), static_cast<UInt8>(0));
                 const auto & sel = stored_columns->selector;
 
                 auto mark_if_needed = [&](size_t row)
@@ -799,7 +799,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             all_values_unique);
 
                         if (flag_per_row)
-                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(&stored_columns->columns_info.columns);
+                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(&stored_columns->columns_info.columns, stored_columns->selector);
                     });
             }
 
@@ -1365,7 +1365,7 @@ struct AdderNonJoined
                 for (size_t j = 0; j < columns_right.size(); ++j)
                 {
                     if (const auto * replicated_column = it->columns_info->replicated_columns[j])
-                        columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(mapped.row_num));
+                        columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(it->row_num));
                     else
                         columns_right[j]->insertFrom(*it->columns_info->columns[j], it->row_num);
                 }

@@ -384,8 +384,19 @@ protected:
 
     void findURLSecretArguments()
     {
-        if (!isNamedCollectionName(0))
-            excludeS3OrURLNestedMaps();
+        if (isNamedCollectionName(0))
+            return;
+
+        excludeS3OrURLNestedMaps();
+
+        String uri;
+        if (tryGetStringFromArgument(0, &uri) && maskURIPassword(&uri))
+        {
+            chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
+            result.start = 0;
+            result.count = 1;
+            result.replacement = std::move(uri);
+        }
     }
 
     bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const
@@ -724,6 +735,9 @@ protected:
 
     void findBackupDatabaseSecretArguments()
     {
+        if (function->arguments->size() < 2)
+            return;
+
         auto storage_arg = function->arguments->at(1);
         auto storage_function = storage_arg->getFunction();
 
@@ -767,6 +781,12 @@ protected:
         const String & engine_name = function->name();
         if (engine_name == "S3")
         {
+            if (isNamedCollectionName(0))
+            {
+                /// BACKUP ... TO S3(named_collection, ..., secret_access_key = 'secret_access_key', ...)
+                findSecretNamedArgument("secret_access_key", 1);
+                return;
+            }
             /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key])
             markSecretArgument(2);
         }

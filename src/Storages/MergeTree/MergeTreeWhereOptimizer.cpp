@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <ranges>
 #include <Core/Settings.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunction.h>
@@ -22,11 +21,11 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_statistics_optimize;
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsBool move_all_conditions_to_prewhere;
     extern const SettingsBool move_primary_key_columns_to_end_of_prewhere;
     extern const SettingsBool allow_reorder_prewhere_conditions;
+    extern const SettingsBool use_statistics;
 }
 
 /// Conditions like "x = N" are considered good if abs(N) > threshold.
@@ -128,7 +127,7 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
         = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = select.final();
-    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::allow_statistics_optimize] && estimator != nullptr;
+    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
 
     RPNBuilderTreeContext tree_context(context, std::move(block_with_constants), {} /*prepared_sets*/);
     RPNBuilderTreeNode node(select.where().get(), tree_context);
@@ -163,7 +162,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
         = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = is_final;
-    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::allow_statistics_optimize] && estimator != nullptr;
+    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), tree_context);
@@ -356,7 +355,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         {
             cond.good = cond.viable;
 
-            cond.estimated_row_count = estimator->estimateRelationProfile(storage_metadata, node).rows;
+            cond.estimated_row_count = static_cast<Float64>(estimator->estimateRelationProfile(storage_metadata, node).rows);
 
             if (node.getASTNode() != nullptr)
                 LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getASTNode()->dumpTree(), cond.estimated_row_count);
@@ -421,10 +420,10 @@ ASTPtr MergeTreeWhereOptimizer::reconstructAST(const Conditions & conditions)
     if (conditions.size() == 1)
         return conditions.front().node.getASTNode()->clone();
 
-    const auto function = std::make_shared<ASTFunction>();
+    const auto function = make_intrusive<ASTFunction>();
 
     function->name = "and";
-    function->arguments = std::make_shared<ASTExpressionList>();
+    function->arguments = make_intrusive<ASTExpressionList>();
     function->children.push_back(function->arguments);
 
     for (const auto & elem : conditions)

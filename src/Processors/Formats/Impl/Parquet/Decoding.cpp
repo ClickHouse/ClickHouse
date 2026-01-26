@@ -163,7 +163,7 @@ struct BitPackedRLEDecoder : public PageDecoder
 
                         if (x >= limit)
                             throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (bp)");
-                        *out = x;
+                        *out = static_cast<T>(x);
                         ++out;
                         bit_idx += bit_width;
                     }
@@ -493,7 +493,7 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             miniblock_values_remaining -= n;
 
             int bits_per_delta = int(miniblock_bit_widths[miniblock_idx]);
-            int read_count = bit_reader.GetBatch(bits_per_delta, out_values, n);
+            int read_count = bit_reader.GetBatch(bits_per_delta, out_values, static_cast<int>(n));
             chassert(read_count == int(n));
 
             for (size_t i = 0; i < n; ++i)
@@ -889,9 +889,9 @@ double Dictionary::getAverageValueSize() const
 {
     switch (mode)
     {
-        case Mode::FixedSize: return value_size;
-        case Mode::StringPlain: return std::max(0., double(data.size()) / std::max(offsets.size(), 1ul) - 4);
-        case Mode::Column: return double(col->byteSize()) / std::max(col->size(), 1ul);
+        case Mode::FixedSize: return static_cast<double>(value_size);
+        case Mode::StringPlain: return std::max(0., double(data.size()) / static_cast<double>(std::max(offsets.size(), 1ul)) - 4);
+        case Mode::Column: return double(col->byteSize()) / static_cast<double>(std::max(col->size(), 1ul));
         case Mode::Uninitialized: break;
     }
     chassert(false);
@@ -935,7 +935,7 @@ void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & i
             if (len > size_t(end - ptr))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Encoded string is out of bounds");
             ptr += len;
-            offsets[i] = ptr - data.data();
+            offsets[i] = static_cast<UInt32>(ptr - data.data());
         }
     }
     else

@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/SelectQueryInfo.h>
@@ -9,6 +10,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/TopKThresholdTracker.h>
+#include <Parsers/ASTFunction.h>
 
 namespace DB
 {
@@ -29,7 +31,7 @@ struct MergeTreeDataSelectSamplingData
     bool use_sampling = false;
     bool read_nothing = false;
     Float64 used_sample_factor = 1.0;
-    std::shared_ptr<ASTFunction> filter_function;
+    boost::intrusive_ptr<ASTFunction> filter_function;
     std::shared_ptr<const ActionsDAG> filter_expression;
 };
 
@@ -100,6 +102,17 @@ public:
         PrimaryKeyExpand,
     };
 
+    struct DistributedIndexStat
+    {
+        std::string address;
+        size_t num_parts_send;
+        size_t num_parts_received;
+        size_t num_granules_send;
+        size_t num_granules_received;
+        /// Note, probably need to include the following as well:
+        /// - search_algorithm
+    };
+
     /// This is a struct with information about applied indexes.
     /// Is used for introspection only, in EXPLAIN query.
     struct IndexStat
@@ -113,6 +126,8 @@ public:
         size_t num_parts_after;
         size_t num_granules_after;
         MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
+
+        std::vector<DistributedIndexStat> distributed = {};
     };
 
     using IndexStats = std::vector<IndexStat>;
@@ -267,6 +282,8 @@ public:
             : key_condition(std::move(key_condition_))
             , use_skip_indexes(false)
             , use_skip_indexes_for_disjunctions(false)
+            , use_skip_indexes_if_final_exact_mode(false)
+            , use_skip_indexes_on_data_read(false)
         {}
 
         KeyCondition key_condition;
@@ -278,6 +295,8 @@ public:
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;
+        bool use_skip_indexes_if_final_exact_mode;
+        bool use_skip_indexes_on_data_read;
         std::optional<std::unordered_set<String>> part_values;
     };
 
@@ -298,7 +317,10 @@ public:
         std::optional<Indexes> & indexes,
         bool find_exact_ranges,
         bool is_parallel_reading_from_replicas_,
-        bool allow_query_condition_cache_);
+        bool allow_query_condition_cache_,
+        bool supports_skip_indexes_on_data_read);
+
+    static bool areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes, bool any_one);
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 

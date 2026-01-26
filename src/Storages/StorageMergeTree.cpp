@@ -1473,9 +1473,25 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
             txn = tryGetTransactionForMutation(mutations_begin_it->second, log.load());
             if (!txn)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find transaction {} that has started mutation {} "
-                                "that is going to be applied to part {}",
-                                first_mutation_tid, mutations_begin_it->second.file_name, part->name);
+            {
+                CSN mutation_csn = mutations_begin_it->second.csn;
+                if (mutation_csn == Tx::RolledBackCSN)
+                {
+                    /// Transaction was rolled back, mutation should be removed soon, skip it for now
+                    LOG_DEBUG(log, "Mutation {} was started by transaction {} that was rolled back, skipping part {}",
+                              mutations_begin_it->second.file_name, first_mutation_tid, part->name);
+                    continue;
+                }
+                if (mutation_csn == Tx::UnknownCSN)
+                {
+                    /// Transaction is not running but hasn't committed yet - this shouldn't happen
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find transaction {} that has started mutation {} "
+                                    "that is going to be applied to part {}, and mutation CSN is still unknown",
+                                    first_mutation_tid, mutations_begin_it->second.file_name, part->name);
+                }
+                /// Transaction has committed, mutation can proceed without the transaction pointer
+                /// (txn is already null, which is fine for MergeMutateSelectedEntry)
+            }
         }
         else
         {
@@ -1702,7 +1718,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     bool scheduled = false;
     if (auto lock = time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
-            (*getSettings())[MergeTreeSetting::merge_tree_clear_old_temporary_directories_interval_seconds]))
+            static_cast<double>((*getSettings())[MergeTreeSetting::merge_tree_clear_old_temporary_directories_interval_seconds])))
     {
         assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
             [this, shared_lock] ()
@@ -1713,7 +1729,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     }
 
     if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
-            (*getSettings())[MergeTreeSetting::merge_tree_clear_old_parts_interval_seconds]))
+            static_cast<double>((*getSettings())[MergeTreeSetting::merge_tree_clear_old_parts_interval_seconds])))
     {
         assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
             [this, shared_lock] ()
@@ -2397,23 +2413,21 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
 }
 
 PartitionCommandsResultInfo StorageMergeTree::attachPartition(
-    const ASTPtr & partition, const StorageMetadataPtr & /* metadata_snapshot */,
-    bool attach_part, ContextPtr local_context)
+    const PartitionCommand & command, const StorageMetadataPtr &, ContextPtr local_context)
 {
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
-    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, local_context, renamed_parts);
+    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, local_context, renamed_parts);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
-        LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].new_name);
+        LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].new_dir);
         /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
         auto txn = local_context->getCurrentTransaction();
         TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
         loaded_parts[i]->version.setCreationTID(tid, nullptr);
         loaded_parts[i]->storeVersionMetadata();
 
-        String old_name = renamed_parts.old_and_new_names[i].old_name;
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
         MergeTreeData::Transaction transaction(*this, local_context->getCurrentTransaction().get());
@@ -2424,15 +2438,14 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
             transaction.commit(lock);
         }
 
-        renamed_parts.old_and_new_names[i].old_name.clear();
-
         results.push_back(PartitionCommandResultInfo{
             .command_type = "ATTACH_PART",
             .partition_id = loaded_parts[i]->info.getPartitionId(),
             .part_name = loaded_parts[i]->name,
-            .old_part_name = old_name,
+            .old_part_name = renamed_parts.old_and_new_names[i].old_dir,
         });
 
+        renamed_parts.old_and_new_names[i].old_dir.clear();
         LOG_INFO(log, "Finished attaching part");
     }
 

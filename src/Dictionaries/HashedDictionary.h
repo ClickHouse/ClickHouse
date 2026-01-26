@@ -33,7 +33,6 @@
 #include <memory>
 #include <variant>
 #include <optional>
-#include <numeric>
 
 
 /** This dictionary stores all content in a hash table in memory
@@ -107,14 +106,14 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
     }
 
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
+    double getLoadFactor() const override { return static_cast<double>(element_count) / static_cast<double>(bucket_count); }
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
