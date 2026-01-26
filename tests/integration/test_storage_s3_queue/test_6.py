@@ -12,6 +12,7 @@ from helpers.s3_queue_common import (
     create_mv,
     generate_random_string,
 )
+from helpers.test_tools import wait_condition
 
 
 @pytest.fixture(autouse=True)
@@ -758,21 +759,35 @@ def test_bucketing_mode_with_regex_partitioning(started_cluster, engine_name, bu
     # Check bucket distribution in ZooKeeper
     zk = started_cluster.get_kazoo_client("zoo1")
 
-    # Map: partition_key -> bucket_id
-    partition_to_buckets = {}
-    buckets_used = set()
+    # Wait for ZooKeeper nodes to be populated
+    # There can be a delay between data being processed and ZK metadata being written
+    def get_partition_to_buckets():
+        partition_to_buckets = {}
+        buckets_used = set()
 
-    for bucket_id in range(buckets):
-        bucket_path = f"{keeper_path}/buckets/{bucket_id}/processed"
-        if not zk.exists(bucket_path):
-            continue
+        for bucket_id in range(buckets):
+            bucket_path = f"{keeper_path}/buckets/{bucket_id}/processed"
+            if not zk.exists(bucket_path):
+                continue
 
-        buckets_used.add(bucket_id)
-        partition_keys = zk.get_children(bucket_path)
-        for partition_key in partition_keys:
-            if partition_key not in partition_to_buckets:
-                partition_to_buckets[partition_key] = []
-            partition_to_buckets[partition_key].append(bucket_id)
+            buckets_used.add(bucket_id)
+            partition_keys = zk.get_children(bucket_path)
+            for partition_key in partition_keys:
+                if partition_key not in partition_to_buckets:
+                    partition_to_buckets[partition_key] = []
+                partition_to_buckets[partition_key].append(bucket_id)
+
+        return partition_to_buckets, buckets_used
+
+    # Wait for all partitions to appear in ZooKeeper
+    wait_condition(
+        get_partition_to_buckets,
+        lambda result: len(result[0]) == num_hostnames,
+        max_attempts=20,
+        delay=0.5,
+    )
+
+    partition_to_buckets, buckets_used = get_partition_to_buckets()
 
     if bucketing_mode == "partition":
         # All 3 hostnames should be present as partition keys
