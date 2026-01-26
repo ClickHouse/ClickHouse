@@ -39,7 +39,7 @@ struct MemoryWorkerConfig
     double purge_dirty_pages_threshold_ratio = 0.0;
     double purge_total_memory_threshold_ratio = 0.0;
     bool correct_tracker = false;
-    uint64_t dirty_pages_decay_change_period_ms = 0;
+    uint64_t decay_adjustment_period_ms = 0;
     bool use_cgroup = true;
 };
 
@@ -87,13 +87,25 @@ private:
 
     bool correct_tracker = false;
 
+    /// State machine for dynamic dirty pages decay control
+    enum class DecayState : uint8_t
+    {
+        Enabled,           /// Decay is enabled (normal operation)
+        DisableRequested,  /// Update thread requests disabling decay due to sustained memory pressure
+        Disabled,          /// Decay is disabled (aggressive memory reclaim mode)
+        EnableRequested    /// Update thread requests enabling decay after sustained normal conditions
+    };
+
+    /// Used to notify the purging thread about actions to take
     std::atomic<bool> purge_dirty_pages = false;
-    std::atomic<bool> disable_dirty_pages_decay = false;
+
+    /// Current state of the decay control state machine
+    std::atomic<DecayState> decay_state{DecayState::Enabled};
     double purge_total_memory_threshold_ratio;
     double purge_dirty_pages_threshold_ratio;
     uint64_t page_size = 0;
 
-    uint64_t dirty_pages_decay_change_period_ms = 0;
+    std::chrono::milliseconds decay_adjustment_period_ms{0};
 
     MemoryUsageSource source{MemoryUsageSource::None};
 
