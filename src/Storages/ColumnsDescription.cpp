@@ -228,27 +228,27 @@ void ColumnDescription::readText(ReadBuffer & buf)
 
         if (auto * col_ast = ast->as<ASTColumnDeclaration>())
         {
-            if (col_ast->default_expression)
+            if (auto col_default_expression = col_ast->getDefaultExpression())
             {
-                default_desc.kind = columnDefaultKindFromString(col_ast->default_specifier);
-                default_desc.expression = std::move(col_ast->default_expression);
+                default_desc.kind = toColumnDefaultKind(col_ast->default_specifier);
+                default_desc.expression = std::move(col_default_expression);
                 default_desc.ephemeral_default = col_ast->ephemeral_default;
             }
 
-            if (col_ast->comment)
-                comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
+            if (auto col_comment = col_ast->getComment())
+                comment = col_comment->as<ASTLiteral &>().value.safeGet<String>();
 
-            if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true);
+            if (auto col_codec = col_ast->getCodec())
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_codec, type, false, true);
 
-            if (col_ast->ttl)
-                ttl = col_ast->ttl;
+            if (auto col_ttl = col_ast->getTTL())
+                ttl = col_ttl;
 
-            if (col_ast->settings)
-                settings = col_ast->settings->as<ASTSetQuery &>().changes;
+            if (auto col_settings = col_ast->getSettings())
+                settings = col_settings->as<ASTSetQuery &>().changes;
 
-            if (col_ast->statistics_desc)
-                statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(col_ast->statistics_desc, name, type);
+            if (auto col_statistics_desc = col_ast->getStatisticsDesc())
+                statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(col_statistics_desc, name, type);
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");
@@ -984,14 +984,15 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetDynamicSubcolumn(const 
 
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info)
 {
-    if (!col_decl.default_expression)
+    auto col_default_expression = col_decl.getDefaultExpression();
+    if (!col_default_expression)
         return;
 
     /** For columns with explicitly-specified type create two expressions:
     * 1. default_expression aliased as column name with _tmp suffix
     * 2. conversion of expression (1) to explicitly-specified type alias as column name
     */
-    if (col_decl.type)
+    if (col_decl.getType())
     {
         const auto & final_column_name = col_decl.name;
         const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
@@ -1000,12 +1001,12 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
         info.expr_list->children.emplace_back(setAlias(
             addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
 
-        info.expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
+        info.expr_list->children.emplace_back(setAlias(col_default_expression->clone(), tmp_column_name));
     }
     else
     {
         info.has_columns_with_default_without_type = true;
-        info.expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
+        info.expr_list->children.emplace_back(setAlias(col_default_expression->clone(), col_decl.name));
     }
 }
 

@@ -929,8 +929,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
-    ReplaseAliasColumnsVisitor replase_alias_columns_visitor;
-    replase_alias_columns_visitor.visit(query_tree_to_modify);
+    ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
+    replace_alias_columns_visitor.visit(query_tree_to_modify);
 
     const auto & settings = query_context->getSettingsRef();
 
