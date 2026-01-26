@@ -2099,25 +2099,31 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
         AggregatedDataVariants & current = *non_empty_data[result_num];
         ParallelMergeWorker parallel_param{worker_id, total_worker};
 
+    // Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]],
+    // bool prefetch, std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker) const
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder)
         {
             mergeDataImpl<Method>(
                 getDataVariant<Method>(*res).data,
-                    getDataVariant<Method>(current).data,
-                    arena, true,
-                    false, /*prefetch*/
-                is_cancelled, &parallel_param);
+                getDataVariant<Method>(current).data,
+                arena,
+                /* use_compiled_functions=*/ true,
+                /*prefetch=*/ false,
+                is_cancelled,
+                &parallel_param);
         }
         else
 #endif
         {
             mergeDataImpl<Method>(
                 getDataVariant<Method>(*res).data,
-                    getDataVariant<Method>(current).data,
-                    arena, false,
-                    false, /*prefetch*/
-                is_cancelled, &parallel_param);
+                getDataVariant<Method>(current).data,
+                arena,
+                /* use_compiled_functions=*/ false,
+                /*prefetch=*/ false,
+                is_cancelled,
+                &parallel_param);
         }
     }
 }
