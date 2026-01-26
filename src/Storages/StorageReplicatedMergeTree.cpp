@@ -189,6 +189,12 @@ namespace Setting
     extern const SettingsBool update_sequential_consistency;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsDeduplicationUnificationStage deduplication_unification_stage;
+}
+
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
@@ -423,6 +429,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , queue(*this, merge_strategy_picker)
     , fetcher(*this)
     , cleanup_thread(*this)
+    , deduplication_hashes_cache(*this, "deduplication_hashes")
     , async_block_ids_cache(*this)
     , part_check_thread(*this)
     , restarting_thread(*this)
@@ -5757,6 +5764,7 @@ void StorageReplicatedMergeTree::partialShutdown()
     mutations_finalizing_task->deactivate();
 
     cleanup_thread.stop();
+    deduplication_hashes_cache.stop();
     async_block_ids_cache.stop();
     part_check_thread.stop();
 
@@ -8602,6 +8610,8 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
     }
 
     async_block_ids_cache.truncate();
+    if (getContext()->getServerSettings()[ServerSetting::deduplication_unification_stage].value != DeduplicationUnificationStage::OLD_SEPARATE_HASHES)
+        deduplication_hashes_cache.truncate();
 
     LOG_TRACE(log, "Deleted {} deduplication block IDs in partition ID {} in range [{}, {}]",
               delete_requests.size(), partition_id, min_block_num, max_block_num);

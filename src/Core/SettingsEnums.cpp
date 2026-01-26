@@ -440,4 +440,9 @@ IMPLEMENT_SETTING_ENUM(DeduplicateInsertSelectMode, ErrorCodes::BAD_ARGUMENTS,
      {"force_enable", DeduplicateInsertSelectMode::FORCE_ENABLE},
      {"disable", DeduplicateInsertSelectMode::DISABLE},
      {"enable_even_for_bad_queries", DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES}})
+
+IMPLEMENT_SETTING_ENUM(DeduplicationUnificationStage, ErrorCodes::BAD_ARGUMENTS,
+    {{"old_separate_hashes", DeduplicationUnificationStage::OLD_SEPARATE_HASHES},
+     {"compatible_double_hashes", DeduplicationUnificationStage::COMPATIBLE_DOUBLE_HASHES},
+     {"new_unified_hash", DeduplicationUnificationStage::NEW_UNIFICATED_HASHES}})
 }
