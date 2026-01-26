@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -30,25 +32,27 @@ def started_cluster():
 
 
 def test_server_fail_on_invalid_replicated_user(started_cluster):
-    node1.query("CREATE USER test_invalid_user IDENTIFIED WITH no_password")
+    user_name = f"test_invalid_user_{uuid.uuid4().hex[:8]}"
+
+    node1.query(f"CREATE USER {user_name} IDENTIFIED WITH no_password")
 
     assert_eq_with_retry(
         node2,
-        "SELECT name FROM system.users WHERE name = 'test_invalid_user'",
-        "test_invalid_user\n",
+        f"SELECT name FROM system.users WHERE name = '{user_name}'",
+        f"{user_name}\n",
     )
 
     zk = cluster.get_kazoo_client("zoo1")
 
-    user_uuid = zk.get("/clickhouse/access/U/test_invalid_user")[0].decode("utf-8")
+    user_uuid = zk.get(f"/clickhouse/access/U/{user_name}")[0].decode("utf-8")
     entity_path = f"/clickhouse/access/uuid/{user_uuid}"
 
     original_data = zk.get(entity_path)[0].decode("utf-8")
-    assert "ATTACH USER test_invalid_user" in original_data
+    assert f"ATTACH USER {user_name}" in original_data
 
     node2.stop_clickhouse()
 
-    invalid_definition = """ATTACH USER test_invalid_user IDENTIFIED WITH no_password; ATTACH GRANT WRONG GRANT ON default.foo TO test_invalid_user;"""
+    invalid_definition = f"ATTACH USER {user_name} IDENTIFIED WITH no_password; ATTACH GRANT WRONG GRANT ON default.foo TO {user_name};"
     zk.set(entity_path, invalid_definition.encode("utf-8"))
 
     node2.start_clickhouse(start_wait_sec=60, expected_to_fail=True)
