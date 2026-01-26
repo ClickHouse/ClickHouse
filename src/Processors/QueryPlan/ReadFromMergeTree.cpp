@@ -1951,6 +1951,7 @@ static void buildIndexes(
     indexes->use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
                                                     && skip_indexes.useful_indices.size() > 1
                                                     && !indexes->key_condition_rpn_template->hasOnlyConjunctions();
+
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
@@ -2150,6 +2151,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
+        bool use_skip_indexes_if_final_exact_mode =
+            indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
+            && !areSkipIndexColumnsInPrimaryKey(primary_key_column_names, indexes->skip_indexes,
+                                                indexes->key_condition_rpn_template->hasOnlyConjunctions())
+            && settings[Setting::use_skip_indexes_if_final_exact_mode];
+
         auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_);
         if (!allow_query_condition_cache_)
             reader_settings.use_query_condition_cache = false;
@@ -2173,11 +2180,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->use_skip_indexes_for_disjunctions,
             find_exact_ranges,
             query_info_.isFinal(),
+            use_skip_indexes_if_final_exact_mode,
             is_parallel_reading_from_replicas_,
             result);
 
-        if (indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
-            && settings[Setting::use_skip_indexes_if_final_exact_mode])
+        if (use_skip_indexes_if_final_exact_mode)
         {
             result.parts_with_ranges
                 = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
@@ -3734,6 +3741,25 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
             return true;
     }
     return false;
+}
+
+/// Check if any/all columns with the given skip indexes are also part of the primary key
+bool ReadFromMergeTree::areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes, bool any_one)
+{
+    NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
+
+    for (const auto & skip_index : skip_indexes.useful_indices)
+    {
+        for (const auto & column : skip_index.index->index.column_names)
+        {
+            if (primary_key_columns_set.contains(column) && any_one)
+                return true;
+            else if (!primary_key_columns_set.contains(column) && !any_one)
+                return false;
+        }
+    }
+
+    return !any_one;
 }
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const
