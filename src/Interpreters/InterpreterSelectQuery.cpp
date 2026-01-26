@@ -2161,14 +2161,17 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                                   !expressions.hasLimitBy() &&
                                   !settings[Setting::extremes] &&
                                   !has_withfill;
-            /// Preliminary Limits mustn't be added if there is a fractional limit/offset
+            /// Preliminary Limits mustn't be added if there is a fractional or negative limit/offset
             /// because in order to correctly calculate the number of rows to be produced
-            /// based on the given fraction the final limit/offset processor must count the entire dataset.
+            /// based on the given fraction or negative position, the final limit/offset processor must count the entire dataset.
             /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
+            /// Similarly, LIMIT -10 means "last 10 rows" which requires seeing all data first.
             if (apply_prelimit)
             {
                 const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
-                apply_prelimit = apply_prelimit && (lim_info.fractional_limit == 0 && lim_info.fractional_offset == 0);
+                apply_prelimit = apply_prelimit
+                    && (lim_info.fractional_limit == 0 && lim_info.fractional_offset == 0)
+                    && !lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative;
             }
 
             bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;

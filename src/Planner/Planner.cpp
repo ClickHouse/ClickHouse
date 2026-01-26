@@ -1113,10 +1113,11 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
         }
     }
 
-    /// Note: Preliminary Limits mustn't be added if there is a fractional limit/offset
+    /// Note: Preliminary Limits mustn't be added if there is a fractional or negative limit/offset
     /// because in order to correctly calculate the number of rows to be produced
-    /// based on the given fraction the final limit/offset processor must count the entire dataset.
+    /// based on the given fraction or negative position, the final limit/offset processor must count the entire dataset.
     /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
+    /// Similarly, LIMIT -10 means "last 10 rows" which requires seeing all data first.
 
     bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
     bool apply_prelimit = apply_limit && query_node.hasLimit() && !query_node.isLimitWithTies() && !query_node.isGroupByWithTotals()
@@ -1124,6 +1125,8 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
         && !query_analysis_result.query_has_array_join_in_join_tree
         && query_analysis_result.fractional_limit == 0
         && query_analysis_result.fractional_offset == 0
+        && !query_analysis_result.is_limit_length_negative
+        && !query_analysis_result.is_limit_offset_negative
         && !query_node.isDistinct() && !query_node.hasLimitBy()
         && !settings[Setting::extremes] && !has_withfill;
     bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
@@ -1205,14 +1208,16 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
     }
 
 
-    /// Note: Preliminary Limits mustn't be added if there is a fractional limit/offset
+    /// Note: Preliminary Limits mustn't be added if there is a fractional or negative limit/offset
     /// because in order to correctly calculate the number of rows to be produced
-    /// based on the given fraction the final limit/offset processor must count the entire dataset.
+    /// based on the given fraction or negative position, the final limit/offset processor must count the entire dataset.
     /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
+    /// Similarly, LIMIT -10 means "last 10 rows" which requires seeing all data first.
 
     /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
     if (query_node.hasLimit() && !query_node.hasLimitByOffset() && !query_node.isLimitWithTies()
-        && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0)
+        && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0
+        && !query_analysis_result.is_limit_length_negative && !query_analysis_result.is_limit_offset_negative)
         addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, true /*do_not_skip_offset*/);
 }
 
