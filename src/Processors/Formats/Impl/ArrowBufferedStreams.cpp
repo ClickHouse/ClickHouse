@@ -3,7 +3,6 @@
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #if USE_ARROW || USE_ORC || USE_PARQUET
 #include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
@@ -183,7 +182,7 @@ arrow::Status ArrowInputStreamFromReadBuffer::Close()
 RandomAccessFileFromRandomAccessReadBuffer::RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_, std::shared_ptr<ThreadPool> io_pool_) : in(in_), file_size(file_size_), io_pool(std::move(io_pool_))
 {
     if (io_pool)
-        async_runner = threadPoolCallbackRunnerUnsafe<void>(*io_pool, ThreadName::ARROW_FILE);
+        async_runner = threadPoolCallbackRunnerUnsafe<void>(*io_pool, "ArrowFile");
 }
 
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::GetSize()

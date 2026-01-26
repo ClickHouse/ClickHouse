@@ -26,7 +26,7 @@ extern const int SYNTAX_ERROR;
 
 bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto command = make_intrusive<ASTAlterCommand>();
+    auto command = std::make_shared<ASTAlterCommand>();
     node = command;
 
     ParserKeyword s_add_column(Keyword::ADD_COLUMN);
@@ -645,15 +645,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parser_string_and_substituion.parse(pos, command_partition, expected))
                     return false;
 
-                if (s_from.ignore(pos, expected))
-                {
-                    ASTPtr ast_from;
-                    if (!parser_string_literal.parse(pos, ast_from, expected))
-                        return false;
-
-                    command->from = ast_from->as<ASTLiteral &>().value.safeGet<String>();
-                }
-
                 command->part = true;
                 command->type = ASTAlterCommand::ATTACH_PARTITION;
             }
@@ -867,18 +858,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parser_exp_elem.parse(pos, command_predicate, expected))
                     return false;
 
-                /// ParserExpression, in contrast to ParserExpressionWithOptionalAlias,
-                /// does not expect an alias after the expression. However, in certain cases,
-                /// it uses ParserExpressionWithOptionalAlias recursively, and use its result.
-                /// This is the case when it parses a single expression in parentheses, e.g.,
-                /// it does not allow
-                /// 1 AS x
-                /// but it can parse
-                /// (1 AS x)
-                /// which we should not allow as well.
-                if (!command_predicate->tryGetAlias().empty())
-                    return false;
-
                 command->type = ASTAlterCommand::DELETE;
             }
             else if (s_update.ignore(pos, expected))
@@ -896,18 +875,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 if (!parser_exp_elem.parse(pos, command_predicate, expected))
-                    return false;
-
-                /// ParserExpression, in contrast to ParserExpressionWithOptionalAlias,
-                /// does not expect an alias after the expression. However, in certain cases,
-                /// it uses ParserExpressionWithOptionalAlias recursively, and use its result.
-                /// This is the case when it parses a single expression in parentheses, e.g.,
-                /// it does not allow
-                /// 1 AS x
-                /// but it can parse
-                /// (1 AS x)
-                /// which we should not allow as well.
-                if (!command_predicate->tryGetAlias().empty())
                     return false;
 
                 command->type = ASTAlterCommand::UPDATE;
@@ -1093,7 +1060,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
 bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto command_list = make_intrusive<ASTExpressionList>();
+    auto command_list = std::make_shared<ASTExpressionList>();
     node = command_list;
 
     ParserToken s_comma(TokenType::Comma);
@@ -1117,7 +1084,7 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
 bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto query = make_intrusive<ASTAlterQuery>();
+    auto query = std::make_shared<ASTAlterQuery>();
     node = query;
 
     ParserKeyword s_alter_table(Keyword::ALTER_TABLE);

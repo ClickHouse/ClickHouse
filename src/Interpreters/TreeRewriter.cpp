@@ -48,6 +48,7 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <IO/WriteHelpers.h>
@@ -256,37 +257,37 @@ struct ExistsExpressionData
         /// EXISTS(subquery) --> 1 IN (SELECT 1 FROM subquery LIMIT 1)
 
         auto subquery_node = func.arguments->children[0];
-        auto table_expression = make_intrusive<ASTTableExpression>();
+        auto table_expression = std::make_shared<ASTTableExpression>();
         table_expression->subquery = std::move(subquery_node);
         table_expression->children.push_back(table_expression->subquery);
 
-        auto tables_in_select_element = make_intrusive<ASTTablesInSelectQueryElement>();
+        auto tables_in_select_element = std::make_shared<ASTTablesInSelectQueryElement>();
         tables_in_select_element->table_expression = std::move(table_expression);
         tables_in_select_element->children.push_back(tables_in_select_element->table_expression);
 
-        auto tables_in_select = make_intrusive<ASTTablesInSelectQuery>();
+        auto tables_in_select = std::make_shared<ASTTablesInSelectQuery>();
         tables_in_select->children.push_back(std::move(tables_in_select_element));
 
-        auto select_expr_list = make_intrusive<ASTExpressionList>();
-        select_expr_list->children.push_back(make_intrusive<ASTLiteral>(1u));
+        auto select_expr_list = std::make_shared<ASTExpressionList>();
+        select_expr_list->children.push_back(std::make_shared<ASTLiteral>(1u));
 
-        auto select_query = make_intrusive<ASTSelectQuery>();
+        auto select_query = std::make_shared<ASTSelectQuery>();
         select_query->children.push_back(select_expr_list);
 
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_expr_list);
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
 
-        ASTPtr limit_length_ast = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1)));
+        ASTPtr limit_length_ast = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(1)));
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length_ast));
 
-        auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
-        select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
+        auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+        select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
         select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
         select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
 
-        auto new_subquery = make_intrusive<ASTSubquery>(std::move(select_with_union_query));
+        auto new_subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
 
-        auto function = makeASTOperator("in", make_intrusive<ASTLiteral>(1u), new_subquery);
+        auto function = makeASTOperator("in", std::make_shared<ASTLiteral>(1u), new_subquery);
         func = *function;
     }
 };
@@ -372,7 +373,7 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
                 continue;
 
             size_t i = 1;
-            while (all_column_names.contains(name + "_" + toString(i)))
+            while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
                 ++i;
 
             name = name + "_" + toString(i);
@@ -506,7 +507,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
         auto & children = select_query->interpolate()->children;
         if (!children.empty())
         {
-            for (auto it = children.begin(); it != children.end();)
+            for (auto * it = children.begin(); it != children.end();)
             {
                 if (remove_columns.contains((*it)->as<ASTInterpolateElement>()->column))
                     it = select_query->interpolate()->children.erase(it);
@@ -646,7 +647,7 @@ std::optional<bool> tryEvaluateConstCondition(ASTPtr expr, ContextPtr context)
     if (eval_res.isNull())
         return false;
 
-    auto res = eval_res.template safeGet<UInt8>();
+    UInt8 res = eval_res.template safeGet<UInt8>();
     return res > 0;
 }
 
@@ -793,7 +794,7 @@ std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(const ASTPtr & 
   */
 void expandGroupByAll(ASTSelectQuery * select_query)
 {
-    auto group_expression_list = make_intrusive<ASTExpressionList>();
+    auto group_expression_list = std::make_shared<ASTExpressionList>();
 
     for (const auto & expr : select_query->select()->children)
         recursivelyCollectMaxOrdinaryExpressions(expr, *group_expression_list);
@@ -807,7 +808,7 @@ void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const Tabl
     if (!all_elem)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not order by asts.");
 
-    auto order_expression_list = make_intrusive<ASTExpressionList>();
+    auto order_expression_list = std::make_shared<ASTExpressionList>();
 
     for (const auto & expr : select_query->select()->children)
     {
@@ -837,7 +838,7 @@ void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const Tabl
                                 "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
         }
 
-        auto elem = make_intrusive<ASTOrderByElement>();
+        auto elem = std::make_shared<ASTOrderByElement>();
         elem->direction = all_elem->direction;
         elem->nulls_direction = all_elem->nulls_direction;
         elem->nulls_direction_was_explicitly_specified = all_elem->nulls_direction_was_explicitly_specified;
@@ -1012,6 +1013,7 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
     if (storage)
     {
         auto options = GetColumnsOptions(add_special ? GetColumnsOptions::All : GetColumnsOptions::AllPhysical);
+        options.withExtendedObjects();
         options.withSubcolumns(storage->supportsSubcolumns());
 
         auto columns_from_storage = storage_snapshot->getColumns(options);
@@ -1022,6 +1024,11 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
             source_columns.insert(source_columns.end(), columns_from_storage.begin(), columns_from_storage.end());
 
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+        source_columns_ordinary = metadata_snapshot->getColumns().getOrdinary();
+    }
+    else
+    {
+        source_columns_ordinary = source_columns;
     }
 
     source_columns_set = removeDuplicateColumns(source_columns);
@@ -1186,6 +1193,33 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         has_virtual_shard_num
             = is_remote_storage && storage->isVirtualColumn("_shard_num", storage_snapshot->metadata) && virtuals->has("_shard_num");
+    }
+
+    /// Collect missed object subcolumns
+    if (!unknown_required_source_columns.empty())
+    {
+        for (const NameAndTypePair & pair : source_columns_ordinary)
+        {
+            for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
+            {
+                size_t object_pos = it->find('.');
+                if (object_pos != std::string::npos)
+                {
+                    String object_name = it->substr(0, object_pos);
+                    if (pair.name == object_name && pair.type->getTypeId() == TypeIndex::ObjectDeprecated)
+                    {
+                        const auto * object_type = typeid_cast<const DataTypeObjectDeprecated *>(pair.type.get());
+                        if (object_type->getSchemaFormat() == "json" && object_type->hasNullableSubcolumns())
+                        {
+                            missed_subcolumns.insert(*it);
+                            it = unknown_required_source_columns.erase(it);
+                            continue;
+                        }
+                    }
+                }
+                ++it;
+            }
+        }
     }
 
     /// Check for subcolumns in unknown required columns.
