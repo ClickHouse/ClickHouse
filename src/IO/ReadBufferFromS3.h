@@ -42,7 +42,7 @@ private:
     LoggerPtr log = getLogger("ReadBufferFromS3");
 
 public:
-    using S3CredentialsRefreshCallback = std::function<std::shared_ptr<const S3::Client>()>;
+    using S3CredentialsRefreshCallback = std::function<std::unique_ptr<const S3::Client>()>;
 
     ReadBufferFromS3(
         std::shared_ptr<const S3::Client> client_ptr_,
