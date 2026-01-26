@@ -282,8 +282,8 @@ GROUP BY date, region;
 WITH regional_totals AS (
     SELECT 
         region,
-        mergeSerializedHLL(1, 14, 'HLL_4')(customer_sketch) AS merged_customers,
-        mergeSerializedHLL(1, 12, 'HLL_8')(transaction_sketch) AS merged_transactions
+        mergeSerializedHLL(0, 14, 'HLL_4')(customer_sketch) AS merged_customers,
+        mergeSerializedHLL(0, 12, 'HLL_8')(transaction_sketch) AS merged_transactions
     FROM business_metrics
     GROUP BY region
 )
@@ -296,8 +296,8 @@ ORDER BY region;
 
 -- Get global totals
 SELECT 
-    cardinalityFromHLL(mergeSerializedHLL(1, 14, 'HLL_4')(customer_sketch)) BETWEEN 7000 AND 8000 AS total_customers_ok,
-    cardinalityFromHLL(mergeSerializedHLL(1, 12, 'HLL_8')(transaction_sketch)) BETWEEN 14000 AND 16000 AS total_transactions_ok
+    cardinalityFromHLL(mergeSerializedHLL(0, 14, 'HLL_4')(customer_sketch)) BETWEEN 7000 AND 8000 AS total_customers_ok,
+    cardinalityFromHLL(mergeSerializedHLL(0, 12, 'HLL_8')(transaction_sketch)) BETWEEN 14000 AND 16000 AS total_transactions_ok
 FROM business_metrics;
 
 DROP TABLE business_metrics;

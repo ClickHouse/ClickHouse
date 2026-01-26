@@ -27,17 +27,17 @@ class AggregationFunctionMergeSerializedDoubleSketch final
     : public IAggregateFunctionDataHelper<DoubleSketchData<T>, AggregationFunctionMergeSerializedDoubleSketch<T>>
 {
 private:
-    bool assume_raw_binary;  /// If true, skip base64 decoding (default for performance)
+    bool base64_encoded;  /// If true, data may be base64 encoded and needs decoding check
 
 public:
-    AggregationFunctionMergeSerializedDoubleSketch(const DataTypes & arguments, const Array & params, bool assume_raw_binary_)
+    AggregationFunctionMergeSerializedDoubleSketch(const DataTypes & arguments, const Array & params, bool base64_encoded_)
         : IAggregateFunctionDataHelper<DoubleSketchData<T>, AggregationFunctionMergeSerializedDoubleSketch<T>>{arguments, params, createResultType()}
-        , assume_raw_binary(assume_raw_binary_)
+        , base64_encoded(base64_encoded_)
     {}
 
     AggregationFunctionMergeSerializedDoubleSketch()
         : IAggregateFunctionDataHelper<DoubleSketchData<T>, AggregationFunctionMergeSerializedDoubleSketch<T>>{}
-        , assume_raw_binary(true)
+        , base64_encoded(false)
     {}
 
     String getName() const override { return "mergeSerializedDoubleSketch"; }
@@ -50,7 +50,7 @@ public:
     {
         const auto & column = assert_cast<const ColumnString &>(*columns[0]);
         auto serialized_data = column.getDataAt(row_num);
-        this->data(place).insertSerialized(serialized_data, assume_raw_binary);
+        this->data(place).insertSerialized(serialized_data, !base64_encoded);
     }
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -81,18 +81,18 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedDoubleSketch(
     const Array & params,
     const Settings *)
 {
-    /// Optional parameter: assume_raw_binary (default: true)
-    /// - true (1): Skip base64 decoding, treat as raw binary (faster, for ClickHouse-generated data)
-    /// - false (0): Check for base64 encoding and decode if detected (for external data)
-    bool assume_raw_binary = true;  // Default: assume raw binary for performance
+    /// Optional parameter: base64_encoded (default: false)
+    /// - false (0): Data is raw binary, skip base64 decoding (faster, for ClickHouse-generated data)
+    /// - true (1): Data may be base64 encoded, check and decode if detected (for CSV, JSON, external data)
+    bool base64_encoded = false;  // Default: raw binary for performance
 
     if (params.size() > 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Aggregate function {} takes at most 1 parameter (assume_raw_binary: 0 or 1)", name);
+            "Aggregate function {} takes at most 1 parameter (base64_encoded: 0 or 1)", name);
 
     if (params.size() == 1)
     {
-        assume_raw_binary = params[0].safeGet<bool>();
+        base64_encoded = params[0].safeGet<bool>();
     }
 
     if (argument_types.size() != 1)
@@ -109,7 +109,7 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedDoubleSketch(
             argument_types[0]->getName(), name);
 
     // Use Float64 as template parameter since DoubleSketch works with doubles
-    return std::make_shared<AggregationFunctionMergeSerializedDoubleSketch<Float64>>(argument_types, params, assume_raw_binary);
+    return std::make_shared<AggregationFunctionMergeSerializedDoubleSketch<Float64>>(argument_types, params, base64_encoded);
 }
 
 }
@@ -121,12 +121,12 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedDoubleSketch(
 /// on different nodes or time periods and then merged together to get accurate percentiles across the
 /// entire dataset.
 ///
-/// Syntax: mergeSerializedDoubleSketch([assume_raw_binary])(sketch_column)
+/// Syntax: mergeSerializedDoubleSketch([base64_encoded])(sketch_column)
 ///
 /// Parameters (optional):
-///   - assume_raw_binary: UInt8 (0 or 1, default: 1)
-///     * 1 (true): Assumes input is raw binary data, skips base64 detection (fastest, recommended for ClickHouse data)
-///     * 0 (false): Checks for base64 encoding and decodes if detected (for external/imported data)
+///   - base64_encoded: UInt8 (0 or 1, default: 0)
+///     * 0 (false): Data is raw binary, skips base64 detection (fastest, recommended for ClickHouse data)
+///     * 1 (true): Data may be base64 encoded, checks and decodes if detected (for CSV, JSON, external data)
 ///
 /// Arguments:
 ///   - sketch_column: String - Serialized quantiles sketches (from serializedDoubleSketch() or previous merges)
@@ -161,7 +161,7 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedDoubleSketch(
 /// Performance:
 ///   - Efficient merging: O(k) where k is sketch size (typically ~1000 items)
 ///   - Memory efficient: only holds merged sketch in memory
-///   - Use assume_raw_binary=1 (default) for best performance with ClickHouse-generated sketches
+///   - Use base64_encoded=0 (default) for best performance with ClickHouse-generated sketches
 ///   - Significantly faster than re-computing percentiles from raw data
 ///
 /// Use Cases:

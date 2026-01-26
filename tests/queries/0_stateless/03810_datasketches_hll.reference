@@ -8,9 +8,9 @@ Test 4: mergeSerializedHLL basic
 1
 Test 5: mergeSerializedHLL multiple sketches
 1
-Test 6: mergeSerializedHLL with assume_raw_binary=1
+Test 6: mergeSerializedHLL with base64_encoded=0 (default, raw binary)
 1
-Test 7: mergeSerializedHLL with assume_raw_binary=0
+Test 7: mergeSerializedHLL with base64_encoded=1 (check for base64)
 1
 Test 8: cardinalityFromHLL basic
 1
@@ -58,7 +58,7 @@ Test 28: HLL sketch sizes by type
 552	824	1096	1	1
 Test 29: Higher lg_k improves accuracy
 1	1
-Test 30: mergeSerializedHLL with lg_k=12
+Test 30: mergeSerializedHLL with base64_encoded=1, lg_k=12
 1
-Test 31: mergeSerializedHLL with all parameters
+Test 31: mergeSerializedHLL with all parameters (base64_encoded, lg_k, type)
 1

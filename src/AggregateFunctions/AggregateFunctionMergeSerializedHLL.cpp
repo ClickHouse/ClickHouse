@@ -28,21 +28,21 @@ class AggregationFunctionMergeSerializedHLL final
     : public IAggregateFunctionDataHelper<HLLSketchData<T>, AggregationFunctionMergeSerializedHLL<T>>
 {
 private:
-    bool assume_raw_binary;  /// If true, skip base64 decoding (default for performance)
+    bool base64_encoded;  /// If true, data may be base64 encoded and needs decoding check
     uint8_t lg_k;
     datasketches::target_hll_type type;
 
 public:
-    AggregationFunctionMergeSerializedHLL(const DataTypes & arguments, const Array & params, bool assume_raw_binary_, uint8_t lg_k_, datasketches::target_hll_type type_)
+    AggregationFunctionMergeSerializedHLL(const DataTypes & arguments, const Array & params, bool base64_encoded_, uint8_t lg_k_, datasketches::target_hll_type type_)
         : IAggregateFunctionDataHelper<HLLSketchData<T>, AggregationFunctionMergeSerializedHLL<T>>{arguments, params, createResultType()}
-        , assume_raw_binary(assume_raw_binary_)
+        , base64_encoded(base64_encoded_)
         , lg_k(lg_k_)
         , type(type_)
     {}
 
     AggregationFunctionMergeSerializedHLL()
         : IAggregateFunctionDataHelper<HLLSketchData<T>, AggregationFunctionMergeSerializedHLL<T>>{}
-        , assume_raw_binary(true)
+        , base64_encoded(false)
         , lg_k(DEFAULT_LG_K)
         , type(DEFAULT_HLL_TYPE)
     {}
@@ -62,7 +62,7 @@ public:
     {
         const auto & column = assert_cast<const ColumnString &>(*columns[0]);
         auto serialized_data = column.getDataAt(row_num);
-        this->data(place).insertSerialized(serialized_data, assume_raw_binary);
+        this->data(place).insertSerialized(serialized_data, !base64_encoded);
     }
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -93,21 +93,21 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
     const Array & params,
     const Settings *)
 {
-    /// Optional parameters: assume_raw_binary, lg_k, type
-    /// - assume_raw_binary (default: true): Skip base64 decoding (faster, for ClickHouse-generated data)
+    /// Optional parameters: base64_encoded, lg_k, type
+    /// - base64_encoded (default: false): Check for base64 encoding (for CSV, JSON, external data)
     /// - lg_k (default: 10): Log-base-2 of K (4-21)
     /// - type (default: 'HLL_4'): Storage format ('HLL_4', 'HLL_6', or 'HLL_8')
-    bool assume_raw_binary = true;
+    bool base64_encoded = false;
     uint8_t lg_k = DEFAULT_LG_K;
     datasketches::target_hll_type type = DEFAULT_HLL_TYPE;
 
     if (params.size() > 3)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Aggregate function {} takes at most 3 parameters: assume_raw_binary (0 or 1), lg_k (4-21), and type ('HLL_4', 'HLL_6', or 'HLL_8')", name);
+            "Aggregate function {} takes at most 3 parameters: base64_encoded (0 or 1), lg_k (4-21), and type ('HLL_4', 'HLL_6', or 'HLL_8')", name);
 
     if (!params.empty())
     {
-        assume_raw_binary = params[0].safeGet<bool>();
+        base64_encoded = params[0].safeGet<bool>();
     }
 
     if (params.size() >= 2)
@@ -147,7 +147,7 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
             argument_types[0]->getName(), name);
 
     // Use uint64_t as template parameter since we're working with serialized data, not raw values
-    return std::make_shared<AggregationFunctionMergeSerializedHLL<uint64_t>>(argument_types, params, assume_raw_binary, lg_k, type);
+    return std::make_shared<AggregationFunctionMergeSerializedHLL<uint64_t>>(argument_types, params, base64_encoded, lg_k, type);
 }
 
 }
@@ -158,12 +158,12 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
 /// This enables distributed cardinality estimation where sketches are computed on different nodes or time periods
 /// and then merged together.
 ///
-/// Syntax: mergeSerializedHLL([assume_raw_binary, lg_k, type])(sketch_column)
+/// Syntax: mergeSerializedHLL([base64_encoded, lg_k, type])(sketch_column)
 ///
 /// Parameters (all optional):
-///   - assume_raw_binary: UInt8 (0 or 1, default: 1)
-///     * 1 (true): Assumes input is raw binary data, skips base64 detection (fastest, recommended for ClickHouse data)
-///     * 0 (false): Checks for base64 encoding and decodes if detected (for external/imported data)
+///   - base64_encoded: UInt8 (0 or 1, default: 0)
+///     * 0 (false): Data is raw binary, skips base64 detection (fastest, recommended for ClickHouse data)
+///     * 1 (true): Data may be base64 encoded, checks and decodes if detected (for CSV, JSON, external data)
 ///
 ///   - lg_k: Integer between 4 and 21 (default: 10)
 ///     Log-base-2 of K, where K is the number of buckets (K = 2^lg_k)
@@ -202,7 +202,7 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
 /// Performance:
 ///   - Very fast merging operation (logarithmic in sketch size)
 ///   - Memory efficient: only needs to hold one merged sketch in memory
-///   - Use assume_raw_binary=1 (default) for best performance with ClickHouse-generated sketches
+///   - Use base64_encoded=0 (default) for best performance with ClickHouse-generated sketches
 ///
 /// Note:
 ///   - The lg_k and type parameters should match those used in serializedHLL()

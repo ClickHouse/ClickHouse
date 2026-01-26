@@ -114,27 +114,27 @@ SELECT
     percentileFromDoubleSketch(s, 0.8) <= percentileFromDoubleSketch(s, 0.9) AS p80_le_p90
 FROM sketch;
 
-SELECT 'Test 21: Assume_raw_binary parameter equivalence';
+SELECT 'Test 21: base64_encoded parameter equivalence';
 WITH 
     sketch AS (SELECT serializedHLL(number) AS s FROM numbers(1000)),
     merge_default AS (SELECT mergeSerializedHLL(s) AS m FROM sketch),
-    merge_explicit_1 AS (SELECT mergeSerializedHLL(1)(s) AS m FROM sketch),
-    merge_explicit_0 AS (SELECT mergeSerializedHLL(0)(s) AS m FROM sketch)
+    merge_explicit_0 AS (SELECT mergeSerializedHLL(0)(s) AS m FROM sketch),
+    merge_explicit_1 AS (SELECT mergeSerializedHLL(1)(s) AS m FROM sketch)
 SELECT 
     abs(cardinalityFromHLL((SELECT m FROM merge_default)) - 
-        cardinalityFromHLL((SELECT m FROM merge_explicit_1))) < 10 AS default_eq_1,
+        cardinalityFromHLL((SELECT m FROM merge_explicit_0))) < 10 AS default_eq_0,
     abs(cardinalityFromHLL((SELECT m FROM merge_default)) - 
-        cardinalityFromHLL((SELECT m FROM merge_explicit_0))) < 10 AS default_eq_0
+        cardinalityFromHLL((SELECT m FROM merge_explicit_1))) < 10 AS default_eq_1
 FROM (SELECT 1);
 
-SELECT 'Test 22: DoubleSketch assume_raw_binary parameter';
+SELECT 'Test 22: DoubleSketch base64_encoded parameter';
 WITH 
     sketch AS (SELECT serializedDoubleSketch(number) AS s FROM numbers(1000)),
     merge_default AS (SELECT mergeSerializedDoubleSketch(s) AS m FROM sketch),
-    merge_explicit_1 AS (SELECT mergeSerializedDoubleSketch(1)(s) AS m FROM sketch)
+    merge_explicit_0 AS (SELECT mergeSerializedDoubleSketch(0)(s) AS m FROM sketch)
 SELECT 
     abs(percentileFromDoubleSketch((SELECT m FROM merge_default), 0.5) - 
-        percentileFromDoubleSketch((SELECT m FROM merge_explicit_1), 0.5)) < 10 AS parameters_equivalent
+        percentileFromDoubleSketch((SELECT m FROM merge_explicit_0), 0.5)) < 10 AS parameters_equivalent
 FROM (SELECT 1);
 
 SELECT 'Test 23: Very high cardinality';
@@ -181,7 +181,7 @@ WITH sketches AS (
     UNION ALL
     SELECT serializedHLL(12, 'HLL_4')(number + 25) AS sketch FROM numbers(50)
 )
-SELECT cardinalityFromHLL(mergeSerializedHLL(1, 12, 'HLL_4')(sketch)) BETWEEN 65 AND 85
+SELECT cardinalityFromHLL(mergeSerializedHLL(0, 12, 'HLL_4')(sketch)) BETWEEN 65 AND 85
 FROM sketches;
 
 SELECT 'Test 30: Parameter combinations';
@@ -214,7 +214,7 @@ WITH
         SELECT serializedHLL(number + 25) AS sketch FROM numbers(50)
     ),
     merge_default AS (SELECT mergeSerializedHLL(sketch) AS m FROM sketches),
-    merge_explicit AS (SELECT mergeSerializedHLL(1, 10, 'HLL_4')(sketch) AS m FROM sketches)
+    merge_explicit AS (SELECT mergeSerializedHLL(0, 10, 'HLL_4')(sketch) AS m FROM sketches)
 SELECT 
     abs(cardinalityFromHLL((SELECT m FROM merge_default)) - 
         cardinalityFromHLL((SELECT m FROM merge_explicit))) < 5 AS results_equivalent

@@ -25,12 +25,12 @@ FROM (
 );
 
 -- Test mergeSerializedHLL with parameter
-SELECT 'Test 6: mergeSerializedHLL with assume_raw_binary=1';
-SELECT length(mergeSerializedHLL(1)(sketch)) > 0 
+SELECT 'Test 6: mergeSerializedHLL with base64_encoded=0 (default, raw binary)';
+SELECT length(mergeSerializedHLL(0)(sketch)) > 0 
 FROM (SELECT serializedHLL(number) AS sketch FROM numbers(100));
 
-SELECT 'Test 7: mergeSerializedHLL with assume_raw_binary=0';
-SELECT length(mergeSerializedHLL(0)(sketch)) > 0 
+SELECT 'Test 7: mergeSerializedHLL with base64_encoded=1 (check for base64)';
+SELECT length(mergeSerializedHLL(1)(sketch)) > 0 
 FROM (SELECT serializedHLL(number) AS sketch FROM numbers(100));
 
 -- Test cardinalityFromHLL
@@ -199,7 +199,7 @@ SELECT
 FROM (SELECT 1);
 
 -- Test mergeSerializedHLL with lg_k parameter
-SELECT 'Test 30: mergeSerializedHLL with lg_k=12';
+SELECT 'Test 30: mergeSerializedHLL with base64_encoded=1, lg_k=12';
 WITH sketches AS (
     SELECT serializedHLL(12)(number) AS sketch FROM numbers(100)
     UNION ALL
@@ -209,7 +209,7 @@ SELECT cardinalityFromHLL(mergeSerializedHLL(1, 12, 'HLL_4')(sketch)) BETWEEN 13
 FROM sketches;
 
 -- Test mergeSerializedHLL with all parameters
-SELECT 'Test 31: mergeSerializedHLL with all parameters';
+SELECT 'Test 31: mergeSerializedHLL with all parameters (base64_encoded, lg_k, type)';
 WITH sketches AS (
     SELECT serializedHLL(14, 'HLL_8')(number) AS sketch FROM numbers(100)
     UNION ALL

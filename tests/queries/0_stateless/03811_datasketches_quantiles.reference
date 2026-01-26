@@ -8,9 +8,9 @@ Test 4: mergeSerializedDoubleSketch basic
 1
 Test 5: mergeSerializedDoubleSketch multiple sketches
 1
-Test 6: mergeSerializedDoubleSketch with assume_raw_binary=1
+Test 6: mergeSerializedDoubleSketch with base64_encoded=0 (default, raw binary)
 1
-Test 7: mergeSerializedDoubleSketch with assume_raw_binary=0
+Test 7: mergeSerializedDoubleSketch with base64_encoded=1 (check for base64)
 1
 Test 8: percentileFromDoubleSketch p50 (median)
 1

@@ -25,12 +25,12 @@ FROM (
 );
 
 -- Test mergeSerializedDoubleSketch with parameter
-SELECT 'Test 6: mergeSerializedDoubleSketch with assume_raw_binary=1';
-SELECT length(mergeSerializedDoubleSketch(1)(sketch)) > 0 
+SELECT 'Test 6: mergeSerializedDoubleSketch with base64_encoded=0 (default, raw binary)';
+SELECT length(mergeSerializedDoubleSketch(0)(sketch)) > 0 
 FROM (SELECT serializedDoubleSketch(number) AS sketch FROM numbers(100));
 
-SELECT 'Test 7: mergeSerializedDoubleSketch with assume_raw_binary=0';
-SELECT length(mergeSerializedDoubleSketch(0)(sketch)) > 0 
+SELECT 'Test 7: mergeSerializedDoubleSketch with base64_encoded=1 (check for base64)';
+SELECT length(mergeSerializedDoubleSketch(1)(sketch)) > 0 
 FROM (SELECT serializedDoubleSketch(number) AS sketch FROM numbers(100));
 
 -- Test percentileFromDoubleSketch

@@ -38,9 +38,9 @@ Test 19: Merging order independence
 1
 Test 20: Quantile monotonicity
 1	1	1	1	1	1	1	1
-Test 21: Assume_raw_binary parameter equivalence
+Test 21: base64_encoded parameter equivalence
 1	1
-Test 22: DoubleSketch assume_raw_binary parameter
+Test 22: DoubleSketch base64_encoded parameter
 1
 Test 23: Very high cardinality
 1
