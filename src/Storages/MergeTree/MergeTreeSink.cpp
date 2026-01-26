@@ -179,9 +179,12 @@ void MergeTreeSink::consume(Chunk & chunk)
             max_insert_delayed_streams_for_parallel_write = 0;
 
         /// In case of too much columns/parts in block, flush explicitly.
-        size_t current_streams = 0;
-        for (const auto & stream : temp_part->streams)
-            current_streams += stream.stream->getNumberOfOpenStreams();
+        size_t current_streams = temp_part->delayed_streams_weight;
+        if (!current_streams)
+        {
+            for (const auto & stream : temp_part->streams)
+                current_streams += stream.stream->getNumberOfOpenStreams();
+        }
 
         if (total_streams + current_streams > max_insert_delayed_streams_for_parallel_write)
         {

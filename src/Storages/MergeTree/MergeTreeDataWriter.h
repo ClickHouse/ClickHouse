@@ -33,6 +33,7 @@ void buildScatterSelector(
 struct MergeTreeTemporaryPart
 {
     MergeTreeData::MutableDataPartPtr part;
+    size_t delayed_streams_weight = 0;
 
     struct Stream
     {

@@ -28,6 +28,7 @@ public:
         WrittenOffsetColumns * offset_columns = nullptr);
 
     void write(const Block & block) override;
+    void writeWithPermutation(const Block & block, const IColumn::Permutation * permutation);
 
     MergeTreeData::DataPart::Checksums
     fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);

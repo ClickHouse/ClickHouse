@@ -67,7 +67,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get());
     if (!writer_on_disk)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergedColumnOnlyOutputStream supports only parts stored on disk");
-
     writer_on_disk->setWrittenOffsetColumns(offset_columns);
 }
 
@@ -77,6 +76,15 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         return;
 
     writer->write(block, nullptr);
+    new_serialization_infos.add(block);
+}
+
+void MergedColumnOnlyOutputStream::writeWithPermutation(const Block & block, const IColumn::Permutation * permutation)
+{
+    if (!block.rows())
+        return;
+
+    writer->write(block, permutation);
     new_serialization_infos.add(block);
 }
 
