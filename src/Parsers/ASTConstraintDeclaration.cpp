@@ -24,6 +24,7 @@ void ASTConstraintDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettin
 {
     ostr << backQuoteIfNeed(name);
     ostr << (type == Type::CHECK ? " CHECK " : " ASSUME ");
+    chassert(expr);
     auto nested_frame = frame;
     if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(expr); ast_alias && !ast_alias->tryGetAlias().empty())
         nested_frame.need_parens = true;
