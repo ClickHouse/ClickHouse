@@ -2,6 +2,8 @@
 
 #include <Parsers/IAST_fwd.h>
 
+#include <vector>
+
 namespace DB
 {
 
