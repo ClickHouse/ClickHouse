@@ -88,7 +88,7 @@ public:
                     std::this_thread::sleep_for(std::chrono::seconds(1));
                     if (sent != static_cast<int>(message.size()))
                     {
-                        LOG_ERROR(log, "Failed to send full IP block error message to client {} (sent {} of {} bytes).", socket().peerAddress().toString(), sent, message.size());
+                        LOG_ERROR(log, "Failed to send complete IP block error message to client {} (sent {} of {} bytes).", socket().peerAddress().toString(), sent, message.size());
                     }
                 }
                 catch (...)
