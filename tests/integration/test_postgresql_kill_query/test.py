@@ -1,15 +1,11 @@
 import psycopg2
 import pytest
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 import uuid
-import logging
 import threading
 import time
 
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import get_postgres_conn
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -69,6 +65,47 @@ SELECT generate_infinite_sequence() as counter;"""
     conn.close()
 
 
+def stop_clickhouse_client():
+    client_pid = node1.get_process_pid("clickhouse client")
+    node1.exec_in_container(
+        ["bash", "-c", f"kill -INT {client_pid}"],
+        user="root",
+    )
+
+
+@pytest.fixture(scope="module")
+def setup_big_data_table(started_cluster):
+    # Connect to postgres_database database
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """CREATE TABLE big_data_table (
+    id SERIAL PRIMARY KEY,
+    random_int INT,
+    random_string VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );"""
+    )
+    cursor.execute(
+        """INSERT INTO big_data_table (random_int, random_string)
+SELECT
+    floor(random() * 1000000)::INT as random_int,
+    substring(md5(random()::text || clock_timestamp()::text) from 1 for 50) as random_string
+FROM generate_series(1, 1000000);
+        """
+    )
+    postgres_host_with__port = (
+        f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
+    )
+    yield cursor, postgres_host_with__port
+    # Cleanup
+    cursor.close()
+    conn.close()
+
+
 def test_kill_infinite_query(setup_infinite_query):
     cursor, postgres_host_with__port = setup_infinite_query
     query_id = str(uuid.uuid4())
@@ -112,35 +149,9 @@ and query = 'COPY (SELECT "counter" FROM "infinite_counter") TO STDOUT';
     assert node1.contains_in_log("QUERY_WAS_CANCELLED")
 
 
-def test_kill_query_during_generation(started_cluster):
-    # Connect to postgres_database database
-    conn = get_postgres_conn(
-        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
-    )
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """CREATE TABLE big_data_table (
-    id SERIAL PRIMARY KEY,
-    random_int INT,
-    random_string VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );"""
-    )
-    cursor.execute(
-        """INSERT INTO big_data_table (random_int, random_string)
-SELECT
-    floor(random() * 1000000)::INT as random_int,
-    substring(md5(random()::text || clock_timestamp()::text) from 1 for 50) as random_string
-FROM generate_series(1, 1000000);
-        """
-    )
-
+def test_kill_query_during_generation(setup_big_data_table):
+    cursor, postgres_host_with__port = setup_big_data_table
     query_id = str(uuid.uuid4())
-
-    postgres_host_with__port = (
-        f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
-    )
 
     def execute_query():
         _, error = node1.query_and_get_answer_with_error(
@@ -188,7 +199,6 @@ def test_cancel_infinite_query(setup_infinite_query):
     _, postgres_host_with__port = setup_infinite_query
 
     def execute_query():
-        logging.debug("starting clickhouse client")
         query = f"""SELECT * FROM postgresql(
         '{postgres_host_with__port}',
         'postgres_database',
@@ -210,17 +220,43 @@ def test_cancel_infinite_query(setup_infinite_query):
     )
     time.sleep(2)
 
-    logging.debug("Sending cancel")
-    # get pid of clickhouse-client
-    client_pid = node1.get_process_pid("clickhouse client")
-    logging.debug(f"client pid: {client_pid}")
-    node1.exec_in_container(
-        ["bash", "-c", f"kill -INT {client_pid}"],
-        user="root",
-    )
+    stop_clickhouse_client()
     node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
     time.sleep(1)
 
     query_thread.join()
-    logging.debug("Finished test")
+    assert node1.contains_in_log("QUERY_WAS_CANCELLED_BY_CLIENT")
+
+
+def test_cancel_query_during_generation(setup_big_data_table):
+    _, postgres_host_with__port = setup_big_data_table
+
+    def execute_query():
+        query = f"""SELECT sleepEachRow(0.0001), id, random_int, random_string
+FROM postgresql(
+    '{postgres_host_with__port}',
+    'postgres_database',
+    'big_data_table',
+    'postgres',
+    'ClickHouse_PostgreSQL_P@ssw0rd'
+)
+SETTINGS max_block_size = 10000"""
+        node1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"""/usr/bin/clickhouse client --query "{query}" """,
+            ]
+        )
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+    node1.wait_for_log_line("Generate chuck from stream")
+    time.sleep(2)
+
+    stop_clickhouse_client()
+    node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
+    time.sleep(1)
+
+    query_thread.join()
     assert node1.contains_in_log("QUERY_WAS_CANCELLED_BY_CLIENT")
