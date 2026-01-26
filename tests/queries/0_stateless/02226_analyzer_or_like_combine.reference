@@ -114,5 +114,5 @@ SELECT
     test,
     materialize(\'Привет, World\') AS s
 FROM system.one
-WHERE or((like(s, \'hell%\') AS test), ilike(s, \'%привет%\'), ilike(s, \'world%\'))
+WHERE or(like(s, \'hell%\') AS test, ilike(s, \'%привет%\'), ilike(s, \'world%\'))
 SETTINGS optimize_or_like_chain = 1

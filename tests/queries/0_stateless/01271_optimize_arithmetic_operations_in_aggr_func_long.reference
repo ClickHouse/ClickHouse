@@ -19,10 +19,10 @@ FROM
     FROM numbers(10)
 )
 SELECT
-    minplus(n, 1),
-    minplus(1, n),
-    minminus(n, 1),
-    minminus(1, n)
+    min(plus(n, 1)),
+    min(plus(1, n)),
+    min(minus(n, 1)),
+    min(minus(1, n))
 FROM
 (
     SELECT number AS n
