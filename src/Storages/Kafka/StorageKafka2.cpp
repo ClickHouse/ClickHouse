@@ -72,7 +72,6 @@ extern const Event KafkaMessagesRead;
 extern const Event KafkaMessagesFailed;
 extern const Event KafkaRowsRead;
 extern const Event KafkaWrites;
-extern const Event KafkaMVNotReady;
 }
 
 
@@ -94,7 +93,6 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_broker_list;
     extern const KafkaSettingsString kafka_client_id;
     extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
-    extern const KafkaSettingsMilliseconds kafka_consumer_reschedule_ms;
     extern const KafkaSettingsString kafka_format;
     extern const KafkaSettingsString kafka_group_name;
     extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
@@ -160,7 +158,6 @@ StorageKafka2::StorageKafka2(
     , collection_name(collection_name_)
     , active_node_identifier(toString(ServerUUID::get()))
 {
-    kafka_settings->sanityCheck(getContext());
     if ((*kafka_settings)[KafkaSetting::kafka_num_consumers] > 1 && !thread_per_consumer)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumers, it is required to use `kafka_thread_per_consumer` setting");
 
@@ -179,7 +176,7 @@ StorageKafka2::StorageKafka2(
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
-        auto task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), log->name(), [this, i] { threadFunc(i); });
+        auto task = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this, i] { threadFunc(i); });
         task->deactivate();
         tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
     }
@@ -189,7 +186,7 @@ StorageKafka2::StorageKafka2(
     if (!first_replica)
         createReplica();
 
-    activating_task = getContext()->getSchedulePool().createTask(getStorageID(), log->name() + " (activating task)", [this]() { activateAndReschedule(); });
+    activating_task = getContext()->getSchedulePool().createTask(log->name() + "(activating task)", [this]() { activateAndReschedule(); });
     activating_task->deactivate();
 }
 
@@ -919,23 +916,20 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                 auto storage_id = getStorageID();
 
                 auto dead_letter_queue = getContext()->getDeadLetterQueue();
-                if (!dead_letter_queue)
-                    LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
-                else
-                    dead_letter_queue->add(
-                        DeadLetterQueueElement{
-                            .table_engine = DeadLetterQueueElement::StreamType::Kafka,
-                            .event_time = timeInSeconds(time_now),
-                            .event_time_microseconds = timeInMicroseconds(time_now),
-                            .database = storage_id.database_name,
-                            .table = storage_id.table_name,
-                            .raw_message = msg_info.currentPayload(),
-                            .error = exception_message.value(),
-                            .details = DeadLetterQueueElement::KafkaDetails{
-                                .topic_name = msg_info.currentTopic(),
-                                .partition = msg_info.currentPartition(),
-                                .offset = msg_info.currentPartition(),
-                                .key = msg_info.currentKey()}});
+                dead_letter_queue->add(
+                    DeadLetterQueueElement{
+                        .table_engine = DeadLetterQueueElement::StreamType::Kafka,
+                        .event_time = timeInSeconds(time_now),
+                        .event_time_microseconds = timeInMicroseconds(time_now),
+                        .database = storage_id.database_name,
+                        .table = storage_id.table_name,
+                        .raw_message = msg_info.currentPayload(),
+                        .error = exception_message.value(),
+                        .details = DeadLetterQueueElement::KafkaDetails{
+                            .topic_name = msg_info.currentTopic(),
+                            .partition = msg_info.currentPartition(),
+                            .offset = msg_info.currentPartition(),
+                            .key = msg_info.currentKey()}});
             }
 
             total_rows = total_rows + new_rows;
@@ -1014,20 +1008,14 @@ void StorageKafka2::threadFunc(size_t idx)
             {
                 maybe_stall_reason.reset();
                 if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
-                {
-                    ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
                     break;
-                }
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
                 // Exit the loop & reschedule if some stream stalled
                 if (maybe_stall_reason = streamToViews(idx); maybe_stall_reason.has_value())
                 {
-                    LOG_TRACE(
-                        log,
-                        "Stream stalled. Rescheduling in {} ms",
-                        (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
+                    LOG_TRACE(log, "Stream stalled.");
                     break;
                 }
 
@@ -1035,10 +1023,7 @@ void StorageKafka2::threadFunc(size_t idx)
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
                 if (duration.count() > KAFKA_MAX_THREAD_WORK_DURATION_MS)
                 {
-                    LOG_TRACE(
-                        log,
-                        "Thread work duration limit exceeded. Rescheduling in {} ms",
-                        (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
+                    LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
                     break;
                 }
             }
@@ -1051,11 +1036,10 @@ void StorageKafka2::threadFunc(size_t idx)
 
     if (!task->stream_cancelled)
     {
-        UInt64 kafka_consumer_reschedule_ms = (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds();
         if (maybe_stall_reason.has_value() && *maybe_stall_reason == StallKind::ShortStall)
-            task->holder->scheduleAfter(kafka_consumer_reschedule_ms / 10);
+            task->holder->scheduleAfter(KAFKA_RESCHEDULE_MS / 10);
         else
-            task->holder->scheduleAfter(kafka_consumer_reschedule_ms);
+            task->holder->scheduleAfter(KAFKA_RESCHEDULE_MS);
     }
 }
 
@@ -1179,7 +1163,7 @@ void StorageKafka2::cleanConsumers()
 std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch)
 {
     // Create an INSERT query for streaming data
-    auto insert = make_intrusive<ASTInsertQuery>();
+    auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = getStorageID();
 
     auto modified_context = Context::createCopy(getContext());

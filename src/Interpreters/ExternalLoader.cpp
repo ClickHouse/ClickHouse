@@ -912,8 +912,7 @@ private:
         putBackFinishedThreadsToPool();
 
         /// All loadings have unique loading IDs.
-        size_t loading_id = next_id_counter;
-        ++next_id_counter;
+        size_t loading_id = next_id_counter++;
         info.loading_id = loading_id;
         info.loading_start_time = std::chrono::system_clock::now();
         info.loading_end_time = TimePoint{};
@@ -1081,6 +1080,7 @@ private:
             tryLogCurrentException(log, "Cannot find out when the " + type_name + " '" + name + "' should be updated");
             next_update_time = TimePoint::max();
         }
+
 
         Info * info = getInfo(name);
 
@@ -1448,7 +1448,7 @@ ReturnType ExternalLoader::reloadAllTriedToLoad() const
 {
     std::unordered_set<String> names;
     boost::range::copy(getAllTriedToLoadNames(), std::inserter(names, names.end()));
-    return loadOrReload<ReturnType>([&names](const String & name) { return names.contains(name); });
+    return loadOrReload<ReturnType>([&names](const String & name) { return names.count(name); });
 }
 
 bool ExternalLoader::has(const String & name) const

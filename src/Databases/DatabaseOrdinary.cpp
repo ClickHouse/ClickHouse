@@ -13,7 +13,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/TablesLoader.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -89,7 +89,7 @@ DatabaseOrdinary::DatabaseOrdinary(
     : DatabaseOrdinary(
           name_,
           metadata_path_,
-          DatabaseCatalog::getDataDirPath(name_) / "",
+          std::filesystem::path("data") / escapeForFileName(name_) / "",
           "DatabaseOrdinary (" + name_ + ")",
           context_,
           database_metadata_disk_settings_)
@@ -141,8 +141,8 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
 void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
 {
     auto * storage = create_query.storage;
-    auto args = make_intrusive<ASTExpressionList>();
-    auto engine = make_intrusive<ASTFunction>();
+    auto args = std::make_shared<ASTExpressionList>();
+    auto engine = std::make_shared<ASTFunction>();
     String engine_name;
 
     if (replicated)
@@ -151,8 +151,8 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
         String replica_path = server_settings[ServerSetting::default_replica_path];
         String replica_name = server_settings[ServerSetting::default_replica_name];
 
-        args->children.push_back(make_intrusive<ASTLiteral>(replica_path));
-        args->children.push_back(make_intrusive<ASTLiteral>(replica_name));
+        args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
+        args->children.push_back(std::make_shared<ASTLiteral>(replica_name));
 
         /// Add old engine's arguments
         if (storage->engine->arguments)

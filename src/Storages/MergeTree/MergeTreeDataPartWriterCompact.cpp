@@ -271,11 +271,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             {
                 String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
-                auto stream_it = compressed_streams.find(stream_name);
-                if (stream_it == compressed_streams.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} for column {} not found", stream_name, name_and_type->name);
-
-                auto & result_stream = stream_it->second;
+                auto & result_stream = compressed_streams[stream_name];
                 /// Write one compressed block per column in granule for more optimal reading.
                 if (prev_stream && prev_stream != result_stream)
                 {

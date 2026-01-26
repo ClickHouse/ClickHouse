@@ -183,7 +183,7 @@ private:
                 }
             };
 
-            runner.enqueueAndKeepTrack(std::move(worker));
+            runner(std::move(worker));
         }
 
         runner.waitForAllToFinishAndRethrowFirstError();

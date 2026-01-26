@@ -61,7 +61,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
@@ -131,8 +130,7 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
 
         if (actions.getOutputs().size() != 1)
         {
-            // Expression can return more than one column using untuple()
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Constant expression returns more than 1 column: {}", ast->formatForLogging());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ActionsDAG contains more than 1 output for expression: {}", ast->formatForLogging());
         }
 
         const auto & output = actions.getOutputs()[0];
@@ -212,13 +210,13 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr
     /// If it's already a literal.
     if (node->as<ASTLiteral>())
         return node;
-    return make_intrusive<ASTLiteral>(evaluateConstantExpression(node, context).first);
+    return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const ContextPtr & context)
 {
     if (const auto * id = node->as<ASTIdentifier>())
-        return make_intrusive<ASTLiteral>(id->name());
+        return std::make_shared<ASTLiteral>(id->name());
 
     return evaluateConstantExpressionAsLiteral(node, context);
 }
@@ -576,12 +574,11 @@ namespace
         if (!col_set || !col_set->getData())
             return {};
 
-        SetPtr set = nullptr;
-        if (auto * set_from_tuple = typeid_cast<FutureSetFromTuple *>(col_set->getData().get()))
-            set = set_from_tuple->buildOrderedSetInplace(context);
-        else
-            set = col_set->getData().get()->get();
+        auto * set_from_tuple = typeid_cast<FutureSetFromTuple *>(col_set->getData().get());
+        if (!set_from_tuple)
+            return {};
 
+        SetPtr set = set_from_tuple->buildOrderedSetInplace(context);
         if (!set || !set->hasExplicitSetElements())
             return {};
 

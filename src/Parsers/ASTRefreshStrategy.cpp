@@ -7,7 +7,7 @@ namespace DB
 
 ASTPtr ASTRefreshStrategy::clone() const
 {
-    auto res = make_intrusive<ASTRefreshStrategy>(*this);
+    auto res = std::make_shared<ASTRefreshStrategy>(*this);
     res->children.clear();
 
     if (period)
