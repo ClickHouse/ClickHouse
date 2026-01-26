@@ -16,12 +16,12 @@ namespace DB
 {
 
 template <typename T>
-class DoubleSketchData : private boost::noncopyable
+class QuantilesSketchData : private boost::noncopyable
 {
 private:
     std::unique_ptr<datasketches::quantiles_sketch<double>> quantile_sketch;
 
-    datasketches::quantiles_sketch<double> * getDoubleSketch()
+    datasketches::quantiles_sketch<double> * getQuantilesSketch()
     {
         if (!quantile_sketch)
             quantile_sketch = std::make_unique<datasketches::quantiles_sketch<double>>(datasketches::quantiles_sketch<double>());
@@ -29,12 +29,12 @@ private:
     }
 
 public:
-    DoubleSketchData() = default;
-    ~DoubleSketchData() = default;
+    QuantilesSketchData() = default;
+    ~QuantilesSketchData() = default;
 
     void insertOriginal(double value)
     {
-        getDoubleSketch()->update(value);
+        getQuantilesSketch()->update(value);
     }
 
     void insertSerialized(std::string_view serialized_data, bool force_raw = true)
@@ -43,7 +43,7 @@ public:
             return;
 
         std::string decoded_storage;
-        /// When merging internally-generated sketches (from serializedDoubleSketch),
+        /// When merging internally-generated sketches (from serializedQuantiles),
         /// we know the data is raw binary, not base64. Use force_raw=true for performance.
         /// For external data sources that might send base64, set force_raw=false.
         auto [data_ptr, data_size] = decodeSketchData(serialized_data, decoded_storage, force_raw);
@@ -55,7 +55,7 @@ public:
         try
         {
             auto sk = datasketches::quantiles_sketch<double>::deserialize(data_ptr, data_size);
-            getDoubleSketch()->merge(sk);
+            getQuantilesSketch()->merge(sk);
         }
         catch (...) // NOLINT(bugprone-empty-catch)
         {
@@ -106,12 +106,12 @@ public:
         return buf.str();
     }
 
-    void merge(const DoubleSketchData & rhs)
+    void merge(const QuantilesSketchData & rhs)
     {
         if (!rhs.quantile_sketch)
             return;
-        datasketches::quantiles_sketch<double> * u = getDoubleSketch();
-        u->merge(*const_cast<DoubleSketchData &>(rhs).quantile_sketch);
+        datasketches::quantiles_sketch<double> * u = getQuantilesSketch();
+        u->merge(*rhs.quantile_sketch);
     }
 
     void read(DB::ReadBuffer & in)
@@ -121,7 +121,7 @@ public:
         if (!bytes.empty())
         {
             auto quantile_sketch_local = datasketches::quantiles_sketch<double>::deserialize(bytes.data(), bytes.size());
-            getDoubleSketch()->merge(quantile_sketch_local);
+            getQuantilesSketch()->merge(quantile_sketch_local);
         }
     }
 

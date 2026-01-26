@@ -5,8 +5,6 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
@@ -16,7 +14,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/TDigestSketchData.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnMap.h>
 
 #if USE_DATASKETCHES
 
@@ -48,7 +45,7 @@ public:
 
     static DataTypePtr createResultType()
     {
-        return std::make_shared<DataTypeMap>(std::make_shared<DataTypeNumber<Float64>>(), std::make_shared<DataTypeNumber<Int64>>());
+        return std::make_shared<DataTypeString>();
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -76,19 +73,8 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto centroids = this->data(place).getCentroids();
-
-        // Create a Map field which is a vector of (key, value) tuples
-        Map map_field;
-        for (const auto & [key, value] : centroids)
-        {
-            Tuple tuple;
-            tuple.push_back(Field(key));
-            tuple.push_back(Field(value));
-            map_field.push_back(Field(tuple));
-        }
-
-        assert_cast<ColumnMap &>(to).insert(map_field);
+        auto serialized_data = this->data(place).getSerializedData();
+        assert_cast<ColumnString &>(to).insertData(reinterpret_cast<const char*>(serialized_data.data()), serialized_data.size());
     }
 };
 

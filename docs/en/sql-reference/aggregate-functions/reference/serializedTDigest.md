@@ -1,5 +1,5 @@
 ---
-description: 'Creates a TDigest sketch and returns centroids as a Map for percentile estimation'
+description: 'Creates a serialized TDigest sketch for accurate percentile estimation, especially at extremes'
 slug: /sql-reference/aggregate-functions/reference/serializedTDigest
 title: 'serializedTDigest'
 doc_type: 'reference'
@@ -7,7 +7,7 @@ doc_type: 'reference'
 
 # serializedTDigest
 
-Creates a TDigest sketch from numeric values and returns the centroids as a Map. TDigest is an algorithm for accurate estimation of percentiles, particularly at the extremes (p99, p99.9, etc.).
+Creates a serialized Apache DataSketches TDigest sketch from numeric values for accurate percentile estimation, particularly at the extremes (p99, p99.9, etc.). The sketch can be stored, transmitted, or merged with other sketches.
 
 ## Syntax
 
@@ -17,20 +17,61 @@ serializedTDigest(expression)
 
 ## Arguments
 
-- `expression` — Numeric expression. Supported types: [Int](/docs/en/sql-reference/data-types/int-uint.md), [UInt](/docs/en/sql-reference/data-types/int-uint.md), [Float](/docs/en/sql-reference/data-types/float.md).
+- `expression` — Numeric expression. Supported types: [Int](../../../sql-reference/data-types/int-uint), [UInt](../../../sql-reference/data-types/int-uint), [Float](../../../sql-reference/data-types/float).
 
 ## Returned Value
 
-- Map of centroids where keys are Float64 (centroid means) and values are Int64 (centroid weights). Type: [Map(Float64, Int64)](/docs/en/sql-reference/data-types/map.md).
+- Serialized binary TDigest sketch. Type: [String](../../../sql-reference/data-types/string).
+
+## Implementation Details
+
+TDigest provides:
+- High accuracy for extreme percentiles (p99, p99.9, p99.99)
+- Compact sketch representation
+- Mergeable for distributed computation
+- Binary compatibility with Apache DataSketches implementations
 
 ## Examples
 
+### Example 1: Create and Store TDigest Sketch
+
 ```sql
-SELECT serializedTDigest(number) AS tdigest_centroids
-FROM numbers(1000);
+SELECT serializedTDigest(response_time_ms) AS tdigest_sketch
+FROM requests
+WHERE service = 'api';
+```
+
+### Example 2: Extract Percentiles
+
+```sql
+WITH sketch AS (
+    SELECT serializedTDigest(latency_ms) AS tdigest
+    FROM requests
+)
+SELECT 
+    percentileFromTDigest(tdigest, 0.50) AS p50,
+    percentileFromTDigest(tdigest, 0.99) AS p99,
+    percentileFromTDigest(tdigest, 0.999) AS p999
+FROM sketch;
+```
+
+### Example 3: Merge Across Time Periods
+
+```sql
+WITH merged AS (
+    SELECT mergeSerializedTDigest(daily_sketch) AS weekly_sketch
+    FROM daily_tdigest_table
+    WHERE date >= toStartOfWeek(now())
+)
+SELECT 
+    percentileFromTDigest(weekly_sketch, 0.99) AS weekly_p99
+FROM merged;
 ```
 
 ## See Also
 
-- [quantileTDigest](/docs/en/sql-reference/aggregate-functions/reference/quantiletdigest) — TDigest-based percentile function
-- [serializedDoubleSketch](/docs/en/sql-reference/aggregate-functions/reference/serializeddoublesketch) — Alternative quantiles algorithm
+- [mergeSerializedTDigest](../../../sql-reference/aggregate-functions/reference/mergeserializedtdigest) — Merge TDigest sketches
+- [percentileFromTDigest](../../../sql-reference/functions/percentilefromtdigest) — Extract percentile from TDigest
+- [centroidsFromTDigest](../../../sql-reference/functions/centroidsfromtdigest) — Extract centroids from TDigest
+- [quantileTDigest](../../../sql-reference/aggregate-functions/reference/quantiletdigest) — Native ClickHouse TDigest percentile
+- [serializedQuantiles](../../../sql-reference/aggregate-functions/reference/serializedquantiles) — Alternative quantiles algorithm

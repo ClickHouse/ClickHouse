@@ -121,9 +121,9 @@ void registerWindowFunctions(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSerializedHLL(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMergeSerializedHLL(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSerializedTDigest(AggregateFunctionFactory & factory);
-void registerAggregateFunctionSerializedDoubleSketch(AggregateFunctionFactory & factory);
-void registerAggregateFunctionMergeSerializedDoubleSketch(AggregateFunctionFactory & factory);
-void registerAggregateFunctionLatencyValuesAndWeights(AggregateFunctionFactory & factory);
+void registerAggregateFunctionMergeSerializedTDigest(AggregateFunctionFactory & factory);
+void registerAggregateFunctionSerializedQuantiles(AggregateFunctionFactory & factory);
+void registerAggregateFunctionMergeSerializedQuantiles(AggregateFunctionFactory & factory);
 #endif
 
 void registerAggregateFunctions()
@@ -225,9 +225,9 @@ void registerAggregateFunctions()
         registerAggregateFunctionSerializedHLL(factory);
         registerAggregateFunctionMergeSerializedHLL(factory);
         registerAggregateFunctionSerializedTDigest(factory);
-        registerAggregateFunctionSerializedDoubleSketch(factory);
-        registerAggregateFunctionMergeSerializedDoubleSketch(factory);
-        registerAggregateFunctionLatencyValuesAndWeights(factory);
+        registerAggregateFunctionMergeSerializedTDigest(factory);
+        registerAggregateFunctionSerializedQuantiles(factory);
+        registerAggregateFunctionMergeSerializedQuantiles(factory);
 #endif
 
         registerWindowFunctions(factory);

@@ -25,12 +25,12 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionPercentileFromDoubleSketch : public IFunction
+class FunctionPercentileFromQuantiles : public IFunction
 {
 public:
-    static constexpr auto name = "percentileFromDoubleSketch";
+    static constexpr auto name = "percentileFromQuantiles";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPercentileFromDoubleSketch>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPercentileFromQuantiles>(); }
 
     String getName() const override { return name; }
 
@@ -160,7 +160,7 @@ public:
 
             try
             {
-                /// ClickHouse aggregate functions (serializedDoubleSketch, mergeSerializedDoubleSketch)
+                /// ClickHouse aggregate functions (serializedQuantiles, mergeSerializedQuantiles)
                 /// always return raw binary data, never base64. Skip base64 detection for performance.
                 /// If users need to decode base64 sketch data from external sources, they should
                 /// use base64Decode() explicitly before calling this function.
@@ -197,16 +197,16 @@ public:
 
 }
 
-REGISTER_FUNCTION(PercentileFromDoubleSketch)
+REGISTER_FUNCTION(PercentileFromQuantiles)
 {
     FunctionDocumentation::Description description = R"(
-Extracts the percentile value from a serialized DoubleSketch (Quantiles sketch).
+Extracts the percentile value from a serialized Quantiles sketch.
 The function deserializes the sketch and returns the value at the specified percentile.
 If the input is invalid or empty, returns NaN.
 )";
-    FunctionDocumentation::Syntax syntax = "percentileFromDoubleSketch(serialized_sketch, percentile)";
+    FunctionDocumentation::Syntax syntax = "percentileFromQuantiles(serialized_sketch, percentile)";
     FunctionDocumentation::Arguments arguments = {
-        {"serialized_sketch", "Serialized DoubleSketch (quantiles sketch) as a String.", {"String"}},
+        {"serialized_sketch", "Serialized Quantiles sketch as a String.", {"String"}},
         {"percentile", "Percentile value between 0.0 and 1.0 (e.g., 0.5 for median, 0.95 for 95th percentile).", {"Float64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
@@ -217,7 +217,7 @@ If the input is invalid or empty, returns NaN.
         {
             "Get median (50th percentile)",
             R"(
-SELECT percentileFromDoubleSketch(serializedDoubleSketch(rand()), 0.5) AS median
+SELECT percentileFromQuantiles(serializedQuantiles(rand()), 0.5) AS median
 FROM numbers(1000)
             )",
             ""
@@ -225,7 +225,7 @@ FROM numbers(1000)
         {
             "Get 95th percentile",
             R"(
-SELECT percentileFromDoubleSketch(serializedDoubleSketch(rand()), 0.95) AS p95
+SELECT percentileFromQuantiles(serializedQuantiles(rand()), 0.95) AS p95
 FROM numbers(1000)
             )",
             ""
@@ -235,7 +235,7 @@ FROM numbers(1000)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionPercentileFromDoubleSketch>(documentation);
+    factory.registerFunction<FunctionPercentileFromQuantiles>(documentation);
 }
 
 }

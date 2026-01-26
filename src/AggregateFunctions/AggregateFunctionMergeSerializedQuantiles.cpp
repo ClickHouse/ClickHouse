@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/DoubleSketchData.h>
+#include <AggregateFunctions/QuantilesSketchData.h>
 #include <Columns/ColumnString.h>
 
 #if USE_DATASKETCHES
@@ -23,24 +23,24 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 namespace
 {
 template <typename T>
-class AggregationFunctionMergeSerializedDoubleSketch final
-    : public IAggregateFunctionDataHelper<DoubleSketchData<T>, AggregationFunctionMergeSerializedDoubleSketch<T>>
+class AggregationFunctionMergeSerializedQuantiles final
+    : public IAggregateFunctionDataHelper<QuantilesSketchData<T>, AggregationFunctionMergeSerializedQuantiles<T>>
 {
 private:
     bool base64_encoded;  /// If true, data may be base64 encoded and needs decoding check
 
 public:
-    AggregationFunctionMergeSerializedDoubleSketch(const DataTypes & arguments, const Array & params, bool base64_encoded_)
-        : IAggregateFunctionDataHelper<DoubleSketchData<T>, AggregationFunctionMergeSerializedDoubleSketch<T>>{arguments, params, createResultType()}
+    AggregationFunctionMergeSerializedQuantiles(const DataTypes & arguments, const Array & params, bool base64_encoded_)
+        : IAggregateFunctionDataHelper<QuantilesSketchData<T>, AggregationFunctionMergeSerializedQuantiles<T>>{arguments, params, createResultType()}
         , base64_encoded(base64_encoded_)
     {}
 
-    AggregationFunctionMergeSerializedDoubleSketch()
-        : IAggregateFunctionDataHelper<DoubleSketchData<T>, AggregationFunctionMergeSerializedDoubleSketch<T>>{}
+    AggregationFunctionMergeSerializedQuantiles()
+        : IAggregateFunctionDataHelper<QuantilesSketchData<T>, AggregationFunctionMergeSerializedQuantiles<T>>{}
         , base64_encoded(false)
     {}
 
-    String getName() const override { return "mergeSerializedDoubleSketch"; }
+    String getName() const override { return "mergeSerializedQuantiles"; }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeString>(); }
 
@@ -75,7 +75,7 @@ public:
     }
 };
 
-AggregateFunctionPtr createAggregateFunctionMergeSerializedDoubleSketch(
+AggregateFunctionPtr createAggregateFunctionMergeSerializedQuantiles(
     const String & name,
     const DataTypes & argument_types,
     const Array & params,
@@ -108,20 +108,20 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedDoubleSketch(
             "Illegal type {} of argument for aggregate function {}. Expected String or FixedString.",
             argument_types[0]->getName(), name);
 
-    // Use Float64 as template parameter since DoubleSketch works with doubles
-    return std::make_shared<AggregationFunctionMergeSerializedDoubleSketch<Float64>>(argument_types, params, base64_encoded);
+    // Use Float64 as template parameter since Quantiles sketch works with doubles
+    return std::make_shared<AggregationFunctionMergeSerializedQuantiles<Float64>>(argument_types, params, base64_encoded);
 }
 
 }
 
-/// mergeSerializedDoubleSketch - Merges multiple serialized quantiles sketches into a single sketch
+/// mergeSerializedQuantiles - Merges multiple serialized quantiles sketches into a single sketch
 ///
-/// This function combines multiple quantiles sketches that were created by serializedDoubleSketch() into
+/// This function combines multiple quantiles sketches that were created by serializedQuantiles() into
 /// one unified sketch. This enables distributed percentile/quantile estimation where sketches are computed
 /// on different nodes or time periods and then merged together to get accurate percentiles across the
 /// entire dataset.
 ///
-/// Syntax: mergeSerializedDoubleSketch([base64_encoded])(sketch_column)
+/// Syntax: mergeSerializedQuantiles([base64_encoded])(sketch_column)
 ///
 /// Parameters (optional):
 ///   - base64_encoded: UInt8 (0 or 1, default: 0)
@@ -129,32 +129,32 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedDoubleSketch(
 ///     * 1 (true): Data may be base64 encoded, checks and decodes if detected (for CSV, JSON, external data)
 ///
 /// Arguments:
-///   - sketch_column: String - Serialized quantiles sketches (from serializedDoubleSketch() or previous merges)
+///   - sketch_column: String - Serialized quantiles sketches (from serializedQuantiles() or previous merges)
 ///
 /// Returns: String
-///   A merged serialized quantiles sketch. Can be further merged or passed to percentileFromDoubleSketch().
+///   A merged serialized quantiles sketch. Can be further merged or passed to percentileFromQuantiles().
 ///
 /// Examples:
 ///   -- Merge hourly latency sketches to get daily percentiles (default, optimized)
 ///   SELECT
 ///       date,
-///       percentileFromDoubleSketch(mergeSerializedDoubleSketch(sketch), 0.5) AS p50_latency,
-///       percentileFromDoubleSketch(mergeSerializedDoubleSketch(sketch), 0.95) AS p95_latency,
-///       percentileFromDoubleSketch(mergeSerializedDoubleSketch(sketch), 0.99) AS p99_latency
+///       percentileFromQuantiles(mergeSerializedQuantiles(sketch), 0.5) AS p50_latency,
+///       percentileFromQuantiles(mergeSerializedQuantiles(sketch), 0.95) AS p95_latency,
+///       percentileFromQuantiles(mergeSerializedQuantiles(sketch), 0.99) AS p99_latency
 ///   FROM hourly_latency_sketches
 ///   GROUP BY toDate(hour) AS date;
 ///
 ///   -- Explicit parameter (same as default)
-///   SELECT mergeSerializedDoubleSketch(1)(sketch) FROM hourly_sketches;
+///   SELECT mergeSerializedQuantiles(0)(sketch) FROM hourly_sketches;
 ///
 ///   -- Enable base64 decoding for external data
-///   SELECT mergeSerializedDoubleSketch(0)(sketch) FROM imported_sketches;
+///   SELECT mergeSerializedQuantiles(1)(sketch) FROM imported_sketches;
 ///
 ///   -- Merge across multiple dimensions
 ///   SELECT
 ///       service,
 ///       toStartOfWeek(hour) AS week,
-///       percentileFromDoubleSketch(mergeSerializedDoubleSketch(sketch), 0.95) AS weekly_p95
+///       percentileFromQuantiles(mergeSerializedQuantiles(sketch), 0.95) AS weekly_p95
 ///   FROM hourly_latency_sketches
 ///   GROUP BY service, week;
 ///
@@ -170,14 +170,14 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedDoubleSketch(
 ///   - Time-series percentile analysis with pre-computed sketches
 ///
 /// See also:
-///   - serializedDoubleSketch() - Create quantiles sketches
-///   - percentileFromDoubleSketch() - Extract percentile from merged sketch
+///   - serializedQuantiles() - Create quantiles sketches
+///   - percentileFromQuantiles() - Extract percentile from merged sketch
 ///   - quantileMerge() - Alternative percentile aggregation method
-void registerAggregateFunctionMergeSerializedDoubleSketch(AggregateFunctionFactory & factory)
+void registerAggregateFunctionMergeSerializedQuantiles(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
 
-    factory.registerFunction("mergeSerializedDoubleSketch", {createAggregateFunctionMergeSerializedDoubleSketch, properties});
+    factory.registerFunction("mergeSerializedQuantiles", {createAggregateFunctionMergeSerializedQuantiles, properties});
 }
 
 }

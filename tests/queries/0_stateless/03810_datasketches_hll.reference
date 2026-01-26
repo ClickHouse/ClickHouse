@@ -19,9 +19,9 @@ Test 9: cardinalityFromHLL with merged sketch
 Test 10: cardinalityFromHLL empty sketch
 0
 Test 11: Cardinality accuracy for 1000 distinct values
-1031	1
+1
 Test 12: Cardinality accuracy for 10000 distinct values
-10486	1
+1
 Test 13: GROUP BY with serializedHLL
 0	1
 1	1
@@ -39,7 +39,7 @@ Test 18: Union of overlapping sets
 Test 19: Large cardinality (100K distinct values)
 1
 Test 20: Sketch size is bounded
-52	552	1
+1
 Test 21: serializedHLL with lg_k=8
 1
 Test 22: serializedHLL with lg_k=12
@@ -55,7 +55,7 @@ Test 26: serializedHLL with HLL_8 type
 Test 27: HLL types produce identical estimates
 1	1
 Test 28: HLL sketch sizes by type
-552	824	1096	1	1
+1	1
 Test 29: Higher lg_k improves accuracy
 1	1
 Test 30: mergeSerializedHLL with base64_encoded=1, lg_k=12

@@ -8,8 +8,6 @@
 #include <memory>
 #include <tdigest.hpp>
 #include <Core/Types.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -38,52 +36,33 @@ public:
         getTDigest()->update(value);
     }
 
-    std::map<Float64, Int64> getCentroids()
+    void insertSerialized(const uint8_t* data, size_t size)
     {
-        std::map<Float64, Int64> centroids;
-        if (!tdigest)
+        if (size == 0)
+            return;
+
+        try
         {
-            return centroids;
+            auto sk = datasketches::tdigest<double>::deserialize(data, size);
+            getTDigest()->merge(sk);
         }
-        tdigest->compress();
-        for (const auto& centroid : tdigest->get_centroids())
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
-            centroids[centroid.get_mean()] = centroid.get_weight();
+            /// If deserialization fails (corrupted or invalid data), skip this value.
+            /// This allows graceful handling of bad input data rather than failing the entire aggregation.
         }
-        return centroids;
     }
 
-    String serializedData()
+    std::vector<uint8_t> getSerializedData()
     {
         if (!tdigest)
         {
-            return "{}";
+            std::vector<uint8_t> empty;
+            return empty;
         }
-
-        WriteBufferFromOwnString buf;
-        writeChar('{', buf);
-        bool first = true;
         tdigest->compress();
-        for (const auto& centroid : tdigest->get_centroids())
-        {
-            double mean = centroid.get_mean();
-            UInt64 weight = static_cast<UInt64>(centroid.get_weight());
-            if (!first)
-            {
-                writeChar(',', buf);
-            }
-            else
-            {
-                first = false;
-            }
-            writeChar('"', buf);
-            writeText(mean, buf);
-            writeChar('"', buf);
-            writeChar(':', buf);
-            writeText(weight, buf);
-        }
-        writeChar('}', buf);
-        return buf.str();
+        auto bytes = tdigest->serialize();
+        return bytes;
     }
 
     void merge(const TDigestSketchData & rhs)
@@ -91,7 +70,7 @@ public:
         if (!rhs.tdigest)
             return;
         datasketches::tdigest<double> * u = getTDigest();
-        u->merge(*const_cast<TDigestSketchData &>(rhs).tdigest);
+        u->merge(*rhs.tdigest);
     }
 
     /// You can only call for an empty object.

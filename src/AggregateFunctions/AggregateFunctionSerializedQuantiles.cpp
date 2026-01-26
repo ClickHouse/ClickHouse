@@ -11,7 +11,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/DoubleSketchData.h>
+#include <AggregateFunctions/QuantilesSketchData.h>
 #include <Columns/ColumnString.h>
 
 #if USE_DATASKETCHES
@@ -28,19 +28,19 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 namespace
 {
 template <typename T>
-class AggregationFunctionSerializedDoubleSketch final
-    : public IAggregateFunctionDataHelper<DoubleSketchData<T>, AggregationFunctionSerializedDoubleSketch<T>>
+class AggregationFunctionSerializedQuantiles final
+    : public IAggregateFunctionDataHelper<QuantilesSketchData<T>, AggregationFunctionSerializedQuantiles<T>>
 {
 public:
-    AggregationFunctionSerializedDoubleSketch(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<DoubleSketchData<T>, AggregationFunctionSerializedDoubleSketch<T>>{arguments, params, createResultType()}
+    AggregationFunctionSerializedQuantiles(const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionDataHelper<QuantilesSketchData<T>, AggregationFunctionSerializedQuantiles<T>>{arguments, params, createResultType()}
     {}
 
-    AggregationFunctionSerializedDoubleSketch()
-        : IAggregateFunctionDataHelper<DoubleSketchData<T>, AggregationFunctionSerializedDoubleSketch<T>>{}
+    AggregationFunctionSerializedQuantiles()
+        : IAggregateFunctionDataHelper<QuantilesSketchData<T>, AggregationFunctionSerializedQuantiles<T>>{}
     {}
 
-    String getName() const override { return "serializedDoubleSketch"; }
+    String getName() const override { return "serializedQuantiles"; }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeString>(); }
 
@@ -74,7 +74,7 @@ public:
     }
 };
 
-AggregateFunctionPtr createAggregateFunctionSerializedDoubleSketch(
+AggregateFunctionPtr createAggregateFunctionSerializedQuantiles(
     const String & name,
     const DataTypes & argument_types,
     const Array & params,
@@ -90,7 +90,7 @@ AggregateFunctionPtr createAggregateFunctionSerializedDoubleSketch(
 
     WhichDataType which(*data_type);
     if (which.isNumber())
-        return AggregateFunctionPtr(createWithNumericType<AggregationFunctionSerializedDoubleSketch>(
+        return AggregateFunctionPtr(createWithNumericType<AggregationFunctionSerializedQuantiles>(
             *data_type, argument_types, params));
     throw Exception(
         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}", argument_types[0]->getName(), name);
@@ -98,13 +98,13 @@ AggregateFunctionPtr createAggregateFunctionSerializedDoubleSketch(
 
 }
 
-/// serializedDoubleSketch - Creates a serialized quantiles sketch for percentile/quantile calculations
+/// serializedQuantiles - Creates a serialized quantiles sketch for percentile/quantile calculations
 ///
-/// DataSketches Quantiles (DoublesSketch) is a probabilistic data structure for computing approximate
+/// DataSketches Quantiles is a probabilistic data structure for computing approximate
 /// quantiles and percentiles over a dataset. This function creates a serialized binary representation
 /// of the sketch that can be stored, transmitted, or merged with other sketches.
 ///
-/// Syntax: serializedDoubleSketch(column)
+/// Syntax: serializedQuantiles(column)
 ///
 /// Arguments:
 ///   - column: Numeric (Int8/16/32/64, UInt8/16/32/64, Float32/64)
@@ -112,11 +112,11 @@ AggregateFunctionPtr createAggregateFunctionSerializedDoubleSketch(
 ///
 /// Returns: String
 ///   A serialized binary quantiles sketch. This can be stored in a table, used with
-///   mergeSerializedDoubleSketch(), or passed to percentileFromDoubleSketch() to extract percentiles.
+///   mergeSerializedQuantiles(), or passed to percentileFromQuantiles() to extract percentiles.
 ///
 /// Examples:
 ///   -- Create quantiles sketch for response times
-///   SELECT serializedDoubleSketch(response_time_ms) AS latency_sketch FROM requests;
+///   SELECT serializedQuantiles(response_time_ms) AS latency_sketch FROM requests;
 ///
 ///   -- Store sketches by service and hour
 ///   CREATE TABLE hourly_latency_sketches (
@@ -126,7 +126,7 @@ AggregateFunctionPtr createAggregateFunctionSerializedDoubleSketch(
 ///   ) ENGINE = MergeTree() ORDER BY (service, hour);
 ///
 ///   INSERT INTO hourly_latency_sketches
-///   SELECT service, toStartOfHour(timestamp) AS hour, serializedDoubleSketch(latency)
+///   SELECT service, toStartOfHour(timestamp) AS hour, serializedQuantiles(latency)
 ///   FROM requests
 ///   GROUP BY service, hour;
 ///
@@ -142,14 +142,14 @@ AggregateFunctionPtr createAggregateFunctionSerializedDoubleSketch(
 ///   - Distributed quantile estimation across multiple nodes
 ///
 /// See also:
-///   - mergeSerializedDoubleSketch() - Merge multiple quantiles sketches
-///   - percentileFromDoubleSketch() - Extract specific percentile from sketch
+///   - mergeSerializedQuantiles() - Merge multiple quantiles sketches
+///   - percentileFromQuantiles() - Extract specific percentile from sketch
 ///   - quantile() - Direct percentile calculation (non-sketched)
-void registerAggregateFunctionSerializedDoubleSketch(AggregateFunctionFactory & factory)
+void registerAggregateFunctionSerializedQuantiles(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
 
-    factory.registerFunction("serializedDoubleSketch", {createAggregateFunctionSerializedDoubleSketch, properties});
+    factory.registerFunction("serializedQuantiles", {createAggregateFunctionSerializedQuantiles, properties});
 }
 
 }

@@ -7,31 +7,31 @@ doc_type: 'reference'
 
 # mergeSerializedHLL
 
-Merges multiple serialized Apache DataSketches HyperLogLog (HLL) sketches that were created by [serializedHLL](/docs/en/sql-reference/aggregate-functions/reference/serializedhll) into a single unified sketch. This enables distributed cardinality estimation where sketches are computed on different nodes or time periods and then merged together.
+Merges multiple serialized Apache DataSketches HyperLogLog (HLL) sketches that were created by [serializedHLL](../../../sql-reference/aggregate-functions/reference/serializedhll) into a single unified sketch. This enables distributed cardinality estimation where sketches are computed on different nodes or time periods and then merged together.
 
 ## Syntax
 
 ```sql
-mergeSerializedHLL([assume_raw_binary, lg_k, type])(sketch_column)
+mergeSerializedHLL([base64_encoded, lg_k, type])(sketch_column)
 ```
 
 ## Arguments
 
-- `sketch_column` — Column containing serialized HLL sketches. Type: [String](/docs/en/sql-reference/data-types/string.md).
+- `sketch_column` — Column containing serialized HLL sketches. Type: [String](../../../sql-reference/data-types/string).
 
 ## Parameters (optional)
 
-- `assume_raw_binary` — Performance optimization flag. Type: [Bool](/docs/en/sql-reference/data-types/boolean.md). Default: 1 (true).
-  - `1` (true): Assumes input is raw binary data, skips base64 detection (~95% faster, recommended for ClickHouse-generated sketches)
-  - `0` (false): Checks for base64 encoding and decodes if detected (for external data sources)
+- `base64_encoded` — Boolean flag to control base64 decoding. Type: [Bool](../../../sql-reference/data-types/bool). Default: 0 (false).
+  - `0` (false, default): Input is raw binary data, no decoding needed (recommended for ClickHouse-generated sketches, ~95% faster)
+  - `1` (true): Input is base64-encoded and will be decoded before merging (for external data sources)
 
-- `lg_k` — Log-base-2 of buckets (should match the value used in [serializedHLL](/docs/en/sql-reference/aggregate-functions/reference/serializedhll)). Type: [UInt8](/docs/en/sql-reference/data-types/int-uint.md). Valid range: 4-21. Default: 10.
+- `lg_k` — Log-base-2 of buckets (should match the value used in [serializedHLL](../../../sql-reference/aggregate-functions/reference/serializedhll)). Type: [UInt8](../../../sql-reference/data-types/int-uint). Valid range: 4-21. Default: 10.
 
-- `type` — Storage format (should match the value used in [serializedHLL](/docs/en/sql-reference/aggregate-functions/reference/serializedhll)). Type: [String](/docs/en/sql-reference/data-types/string.md). Valid values: 'HLL_4', 'HLL_6', 'HLL_8'. Default: 'HLL_4'.
+- `type` — Storage format (should match the value used in [serializedHLL](../../../sql-reference/aggregate-functions/reference/serializedhll)). Type: [String](../../../sql-reference/data-types/string). Valid values: 'HLL_4', 'HLL_6', 'HLL_8'. Default: 'HLL_4'.
 
 ## Returned Value
 
-- Merged serialized HLL sketch. Type: [String](/docs/en/sql-reference/data-types/string.md).
+- Merged serialized HLL sketch. Type: [String](../../../sql-reference/data-types/string).
 
 ## Implementation Details
 
@@ -53,8 +53,8 @@ FROM daily_user_sketches;
 ### Explicit Performance Flag
 
 ```sql
--- Explicitly set assume_raw_binary=1 (same as default)
-SELECT mergeSerializedHLL(1)(sketch) AS merged_sketch
+-- Explicitly set base64_encoded=0 (same as default, raw binary)
+SELECT mergeSerializedHLL(0)(sketch) AS merged_sketch
 FROM sketches;
 ```
 
@@ -62,15 +62,15 @@ FROM sketches;
 
 ```sql
 -- Merge high-precision sketches (lg_k=14)
-SELECT mergeSerializedHLL(1, 14, 'HLL_4')(sketch) AS merged_sketch
+SELECT mergeSerializedHLL(0, 14, 'HLL_4')(sketch) AS merged_sketch
 FROM high_precision_sketches;
 ```
 
 ### External Data with Base64
 
 ```sql
--- For external data that might be base64-encoded
-SELECT mergeSerializedHLL(0)(sketch) AS merged_sketch
+-- For external data that is base64-encoded
+SELECT mergeSerializedHLL(1)(sketch) AS merged_sketch
 FROM imported_sketches;
 ```
 
@@ -111,7 +111,7 @@ WITH regional_sketches AS (
     FROM events
     GROUP BY region
 )
-SELECT cardinalityFromHLL(mergeSerializedHLL(1, 12, 'HLL_4')(user_sketch)) AS global_unique_users
+SELECT cardinalityFromHLL(mergeSerializedHLL(0, 12, 'HLL_4')(user_sketch)) AS global_unique_users
 FROM regional_sketches;
 ```
 
@@ -130,7 +130,7 @@ GROUP BY minute;
 CREATE MATERIALIZED VIEW hourly_metrics AS
 SELECT 
     toStartOfHour(minute) AS hour,
-    mergeSerializedHLL(1, 10, 'HLL_8')(session_sketch) AS session_sketch
+    mergeSerializedHLL(0, 10, 'HLL_8')(session_sketch) AS session_sketch
 FROM minute_metrics
 GROUP BY hour;
 
@@ -160,12 +160,12 @@ SELECT cardinalityFromHLL(m) AS total_cardinality FROM merged;
 
 ## Performance Notes
 
-- Using `assume_raw_binary=1` (default) provides ~95% speedup for ClickHouse-generated sketches
+- Using `base64_encoded=0` (default) provides ~95% speedup for ClickHouse-generated sketches (no base64 decoding overhead)
 - For best performance, match `lg_k` and `type` parameters to those used in `serializedHLL`
 - Merging is very fast: typically microseconds per sketch regardless of cardinality
 
 ## See Also
 
-- [serializedHLL](/docs/en/sql-reference/aggregate-functions/reference/serializedhll) — Create HLL sketches
-- [cardinalityFromHLL](/docs/en/sql-reference/functions/cardinalityfromhll) — Extract cardinality from merged sketch
-- [uniq](/docs/en/sql-reference/aggregate-functions/reference/uniq) — Native approximate distinct count
+- [serializedHLL](../../../sql-reference/aggregate-functions/reference/serializedhll) — Create HLL sketches
+- [cardinalityFromHLL](../../../sql-reference/functions/cardinalityfromhll) — Extract cardinality from merged sketch
+- [uniq](../../../sql-reference/aggregate-functions/reference/uniq) — Native approximate distinct count

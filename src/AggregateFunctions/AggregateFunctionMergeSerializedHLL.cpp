@@ -184,13 +184,13 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
 ///   SELECT mergeSerializedHLL(sketch) FROM daily_sketches;
 ///
 ///   -- Explicit default parameters
-///   SELECT mergeSerializedHLL(1, 10, 'HLL_4')(sketch) FROM daily_sketches;
+///   SELECT mergeSerializedHLL(0, 10, 'HLL_4')(sketch) FROM daily_sketches;
 ///
 ///   -- Enable base64 decoding for external data
-///   SELECT mergeSerializedHLL(0)(sketch) FROM imported_sketches;
+///   SELECT mergeSerializedHLL(1)(sketch) FROM imported_sketches;
 ///
 ///   -- Merge sketches created with higher precision
-///   SELECT mergeSerializedHLL(1, 12, 'HLL_4')(sketch) FROM high_precision_sketches;
+///   SELECT mergeSerializedHLL(0, 12, 'HLL_4')(sketch) FROM high_precision_sketches;
 ///
 ///   -- Complete workflow: daily to monthly cardinality
 ///   SELECT

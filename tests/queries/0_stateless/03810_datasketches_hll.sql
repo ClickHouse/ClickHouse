@@ -51,16 +51,14 @@ SELECT 'Test 11: Cardinality accuracy for 1000 distinct values';
 WITH 
     sketch AS (SELECT mergeSerializedHLL(s) AS merged FROM (SELECT serializedHLL(number) AS s FROM numbers(1000)))
 SELECT 
-    cardinalityFromHLL(merged) AS estimated,
-    abs(estimated - 1000) / 1000.0 < 0.05 AS within_5_percent
+    abs(cardinalityFromHLL(merged) - 1000) / 1000.0 < 0.05 AS within_5_percent
 FROM sketch;
 
 SELECT 'Test 12: Cardinality accuracy for 10000 distinct values';
 WITH 
     sketch AS (SELECT mergeSerializedHLL(s) AS merged FROM (SELECT serializedHLL(number) AS s FROM numbers(10000)))
 SELECT 
-    cardinalityFromHLL(merged) AS estimated,
-    abs(estimated - 10000) / 10000.0 < 0.05 AS within_5_percent
+    abs(cardinalityFromHLL(merged) - 10000) / 10000.0 < 0.05 AS within_5_percent
 FROM sketch;
 
 -- Test with GROUP BY
@@ -131,9 +129,7 @@ WITH
     size_small AS (SELECT length(serializedHLL(number)) AS s FROM numbers(10)),
     size_large AS (SELECT length(mergeSerializedHLL(sketch)) AS s FROM (SELECT serializedHLL(number) AS sketch FROM numbers(100000)))
 SELECT 
-    (SELECT s FROM size_small) AS small,
-    (SELECT s FROM size_large) AS large,
-    abs(small - large) < 1000 AS sizes_similar
+    abs((SELECT s FROM size_small) - (SELECT s FROM size_large)) < 1000 AS sizes_similar
 FROM (SELECT 1);
 
 -- Test optional lg_k parameter
@@ -180,9 +176,6 @@ WITH
     size_hll6 AS (SELECT length(serializedHLL(10, 'HLL_6')(number)) AS s FROM numbers(1000)),
     size_hll8 AS (SELECT length(serializedHLL(10, 'HLL_8')(number)) AS s FROM numbers(1000))
 SELECT 
-    (SELECT s FROM size_hll4) AS hll4_size,
-    (SELECT s FROM size_hll6) AS hll6_size,
-    (SELECT s FROM size_hll8) AS hll8_size,
     (SELECT s FROM size_hll4) < (SELECT s FROM size_hll6) AS hll4_smaller_than_hll6,
     (SELECT s FROM size_hll6) < (SELECT s FROM size_hll8) AS hll6_smaller_than_hll8
 FROM (SELECT 1);

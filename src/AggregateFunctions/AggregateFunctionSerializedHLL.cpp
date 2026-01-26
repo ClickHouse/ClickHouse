@@ -14,6 +14,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/HLLSketchData.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 
 #if USE_DATASKETCHES
 
@@ -63,7 +64,15 @@ public:
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = *columns[0];
-        this->data(place).insertOriginal(column.getDataAt(row_num));
+        if constexpr (std::is_same_v<T, String>)
+        {
+            this->data(place).insertOriginal(column.getDataAt(row_num));
+        }
+        else
+        {
+            /// Use the typed value for numeric inputs (better cross-system compatibility than hashing raw bytes).
+            this->data(place).insert(assert_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+        }
     }
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -133,7 +142,7 @@ AggregateFunctionPtr createAggregateFunctionSerializedHLL(
 
     WhichDataType which(*data_type);
     if (which.isNumber())
-        return std::make_shared<AggregationFunctionSerializedHLL<UInt64>>(argument_types, params, lg_k, type);
+        return AggregateFunctionPtr(createWithNumericType<AggregationFunctionSerializedHLL>(*data_type, argument_types, params, lg_k, type));
     if (which.isStringOrFixedString())
         return std::make_shared<AggregationFunctionSerializedHLL<String>>(argument_types, params, lg_k, type);
     throw Exception(
@@ -201,7 +210,7 @@ AggregateFunctionPtr createAggregateFunctionSerializedHLL(
 ///   - uniq() - Direct cardinality estimation (non-serialized)
 void registerAggregateFunctionSerializedHLL(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
 
     factory.registerFunction("serializedHLL", {createAggregateFunctionSerializedHLL, properties});
 }

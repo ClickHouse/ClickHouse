@@ -40,7 +40,7 @@ INSERT INTO hourly_latency_sketches
 SELECT 
     toDateTime('2024-01-01 00:00:00') + toIntervalHour(h.number) AS hour,
     s.service AS service,
-    serializedDoubleSketch(rand() % 1000) AS sketch
+    serializedQuantiles(rand() % 1000) AS sketch
 FROM numbers(24) AS h, (SELECT arrayJoin(['api', 'db', 'cache']) AS service) AS s
 GROUP BY hour, service;
 
@@ -48,15 +48,15 @@ GROUP BY hour, service;
 WITH daily_sketches AS (
     SELECT 
         service,
-        mergeSerializedDoubleSketch(sketch) AS merged
+        mergeSerializedQuantiles(sketch) AS merged
     FROM hourly_latency_sketches
     GROUP BY service
 )
 SELECT 
     service,
-    percentileFromDoubleSketch(merged, 0.5) BETWEEN 0 AND 1000 AS p50_ok,
-    percentileFromDoubleSketch(merged, 0.95) BETWEEN 0 AND 1000 AS p95_ok,
-    percentileFromDoubleSketch(merged, 0.99) BETWEEN 0 AND 1000 AS p99_ok
+    percentileFromQuantiles(merged, 0.5) BETWEEN 0 AND 1000 AS p50_ok,
+    percentileFromQuantiles(merged, 0.95) BETWEEN 0 AND 1000 AS p95_ok,
+    percentileFromQuantiles(merged, 0.99) BETWEEN 0 AND 1000 AS p99_ok
 FROM daily_sketches
 ORDER BY service;
 
@@ -173,13 +173,13 @@ INSERT INTO persistent_sketches
 SELECT 
     1 AS id,
     serializedHLL(number) AS sketch_hll,
-    serializedDoubleSketch(number) AS sketch_quantiles
+    serializedQuantiles(number) AS sketch_quantiles
 FROM numbers(10000);
 
 -- Retrieve and use stored sketches
 SELECT 
     cardinalityFromHLL(sketch_hll) BETWEEN 9500 AND 10500 AS hll_ok,
-    percentileFromDoubleSketch(sketch_quantiles, 0.5) BETWEEN 4500 AND 5500 AS quantile_ok
+    percentileFromQuantiles(sketch_quantiles, 0.5) BETWEEN 4500 AND 5500 AS quantile_ok
 FROM persistent_sketches
 WHERE id = 1;
 
@@ -225,17 +225,17 @@ CREATE TABLE test_distributions (
 ) ENGINE = Memory;
 
 INSERT INTO test_distributions
-SELECT 'uniform' AS dist_type, mergeSerializedDoubleSketch(sketch) AS sketch
-FROM (SELECT serializedDoubleSketch(number) AS sketch FROM numbers(1000));
+SELECT 'uniform' AS dist_type, mergeSerializedQuantiles(sketch) AS sketch
+FROM (SELECT serializedQuantiles(number) AS sketch FROM numbers(1000));
 
 INSERT INTO test_distributions
-SELECT 'skewed' AS dist_type, mergeSerializedDoubleSketch(sketch) AS sketch
-FROM (SELECT serializedDoubleSketch(pow(number, 2)) AS sketch FROM numbers(100));
+SELECT 'skewed' AS dist_type, mergeSerializedQuantiles(sketch) AS sketch
+FROM (SELECT serializedQuantiles(pow(number, 2)) AS sketch FROM numbers(100));
 
 SELECT 
-    percentileFromDoubleSketch((SELECT sketch FROM test_distributions WHERE dist_type = 'uniform'), 0.5) BETWEEN 400 AND 600 AS uniform_median_ok,
-    percentileFromDoubleSketch((SELECT sketch FROM test_distributions WHERE dist_type = 'skewed'), 0.95) > 
-    percentileFromDoubleSketch((SELECT sketch FROM test_distributions WHERE dist_type = 'skewed'), 0.5) AS skewed_increasing
+    percentileFromQuantiles((SELECT sketch FROM test_distributions WHERE dist_type = 'uniform'), 0.5) BETWEEN 400 AND 600 AS uniform_median_ok,
+    percentileFromQuantiles((SELECT sketch FROM test_distributions WHERE dist_type = 'skewed'), 0.95) > 
+    percentileFromQuantiles((SELECT sketch FROM test_distributions WHERE dist_type = 'skewed'), 0.5) AS skewed_increasing
 FROM (SELECT 1);
 
 DROP TABLE test_distributions;
@@ -245,11 +245,11 @@ SELECT 'Test 10: Empty result handling';
 
 SELECT 
     cardinalityFromHLL(mergeSerializedHLL(sketch)) = 0 AS hll_empty_ok,
-    isNaN(percentileFromDoubleSketch(mergeSerializedDoubleSketch(q_sketch), 0.5)) AS quantile_empty_ok
+    isNaN(percentileFromQuantiles(mergeSerializedQuantiles(q_sketch), 0.5)) AS quantile_empty_ok
 FROM (
     SELECT 
         serializedHLL(number) AS sketch,
-        serializedDoubleSketch(number) AS q_sketch
+        serializedQuantiles(number) AS q_sketch
     FROM numbers(0)
 );
 

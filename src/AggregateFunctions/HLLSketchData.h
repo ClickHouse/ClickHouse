@@ -8,6 +8,7 @@
 #include <memory>
 #include <hll.hpp>
 #include <AggregateFunctions/SketchDataUtils.h>
+#include <Core/Types.h>
 
 namespace DB
 {
@@ -56,7 +57,28 @@ public:
 
     void insert(Key value)
     {
-        getHLLUpdate()->update(value);
+        /// DataSketches hll_sketch supports a limited set of primitive overloads.
+        /// For unsupported ClickHouse numeric types (e.g. Int256), fall back to
+        /// updating with raw bytes (still stable within ClickHouse).
+        if constexpr (std::is_same_v<Key, BFloat16>)
+        {
+            getHLLUpdate()->update(static_cast<float>(value));
+        }
+        else if constexpr (std::is_floating_point_v<Key>)
+        {
+            getHLLUpdate()->update(static_cast<double>(value));
+        }
+        else if constexpr (std::is_integral_v<Key> && sizeof(Key) <= sizeof(UInt64))
+        {
+            if constexpr (std::is_signed_v<Key>)
+                getHLLUpdate()->update(static_cast<Int64>(value));
+            else
+                getHLLUpdate()->update(static_cast<UInt64>(value));
+        }
+        else
+        {
+            getHLLUpdate()->update(&value, sizeof(value));
+        }
     }
 
     UInt64 size() const
