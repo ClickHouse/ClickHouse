@@ -228,7 +228,11 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
     result_function->function = function;
     result_function->kind = kind;
     result_function->nulls_action = nulls_action;
-    result_function->wrap_with_nullable = wrap_with_nullable;
+    /// Do not copy wrap_with_nullable. This flag indicates that the result type should be
+    /// wrapped with Nullable in a specific context (e.g., due to join_use_nulls). When a
+    /// FunctionNode is cloned for use in a different context (like USING clause resolution),
+    /// the clone should not inherit this context-specific flag. If nullable wrapping is needed
+    /// in the new context, convertToNullable() will be called on the clone.
     result_function->is_operator = is_operator;
 
     return result_function;

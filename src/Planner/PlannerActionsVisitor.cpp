@@ -481,9 +481,10 @@ private:
 class ActionsScopeNode
 {
 public:
-    explicit ActionsScopeNode(ActionsDAG & actions_dag_, QueryTreeNodePtr scope_node_)
+    explicit ActionsScopeNode(ActionsDAG & actions_dag_, QueryTreeNodePtr scope_node_, ContextPtr context_)
         : actions_dag(actions_dag_)
         , scope_node(std::move(scope_node_))
+        , context(std::move(context_))
     {
         for (const auto & node : actions_dag.getNodes())
             node_name_to_node[node.result_name] = &node;
@@ -617,10 +618,24 @@ public:
         return node;
     }
 
+    /// Overload for FunctionNode that requires context to rebuild function with actual argument types
+    const ActionsDAG::Node * addFunctionIfNecessary(const std::string & node_name, ActionsDAG::NodeRawConstPtrs children, const FunctionNode & function)
+    {
+        auto it = node_name_to_node.find(node_name);
+        if (it != node_name_to_node.end())
+            return it->second;
+
+        const auto * node = &actions_dag.addFunction(function, children, node_name, context);
+        node_name_to_node[node->result_name] = node;
+
+        return node;
+    }
+
 private:
     std::unordered_map<std::string_view, const ActionsDAG::Node *> node_name_to_node;
     ActionsDAG & actions_dag;
     QueryTreeNodePtr scope_node;
+    ContextPtr context;
 };
 
 class PlannerActionsVisitorImpl
@@ -711,7 +726,7 @@ PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(
     , action_node_name_helper(node_to_node_name, *planner_context, use_column_identifier_as_action_node_name_)
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
 {
-    actions_stack.emplace_back(actions_dag, nullptr);
+    actions_stack.emplace_back(actions_dag, nullptr, planner_context->getQueryContext());
 }
 
 std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisitorImpl::visit(QueryTreeNodePtr expression_node)
@@ -891,7 +906,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
 
     ActionsDAG lambda_actions_dag;
-    actions_stack.emplace_back(lambda_actions_dag, node);
+    actions_stack.emplace_back(lambda_actions_dag, node, planner_context->getQueryContext());
 
     auto [lambda_expression_node_name, levels] = visitImpl(lambda_node.getExpression());
     lambda_actions_dag.getOutputs().push_back(actions_stack.back().getNodeOrThrow(lambda_expression_node_name));

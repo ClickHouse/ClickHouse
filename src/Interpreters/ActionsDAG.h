@@ -168,7 +168,8 @@ public:
     const Node & addFunction(
         const FunctionNode & function,
         NodeRawConstPtrs children,
-        std::string result_name);
+        std::string result_name,
+        ContextPtr context);
     const Node & addFunction(
         const FunctionBasePtr & function_base,
         NodeRawConstPtrs children,

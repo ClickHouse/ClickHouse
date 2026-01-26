@@ -902,6 +902,11 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
             return;
         auto function = FunctionFactory::instance().get(name, context);
         function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
+
+        /// Reset wrap_with_nullable because the function was re-resolved with new argument types.
+        /// The nullable wrapping should be determined by the actual argument types after re-resolution,
+        /// not by any previously set flag.
+        function_node->resetWrapWithNullable();
     }
     else if (function_node->isAggregateFunction())
     {

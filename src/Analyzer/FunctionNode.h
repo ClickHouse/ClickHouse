@@ -191,7 +191,7 @@ public:
                 function_name);
         auto type = function->getResultType();
         if (wrap_with_nullable)
-          return makeNullableSafe(type);
+            return makeNullableSafe(type);
         return type;
     }
 
@@ -202,6 +202,13 @@ public:
         /// before the validation happened.
         if (kind == FunctionKind::ORDINARY)
             wrap_with_nullable = true;
+    }
+
+    /// Reset the wrap_with_nullable flag. This is used when re-resolving a function
+    /// after its argument types have changed (e.g., in ReplaceColumnsVisitor).
+    void resetWrapWithNullable()
+    {
+        wrap_with_nullable = false;
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
