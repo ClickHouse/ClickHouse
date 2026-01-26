@@ -91,7 +91,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     if (ast_create_query.as_table_function)
     {
         const auto & factory = TableFunctionFactory::instance();
-        auto table_function_ast = ast_create_query.getChild(*ast_create_query.as_table_function);
+        auto table_function_ast = ast_create_query.as_table_function->ptr();
         auto table_function = factory.get(table_function_ast, context);
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)

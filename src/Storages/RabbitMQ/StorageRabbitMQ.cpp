@@ -1,3 +1,4 @@
+#include <amqpcpp.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -33,6 +34,8 @@
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
+#include <Common/quoteString.h>
+#include <Common/setThreadName.h>
 #include <Common/RemoteHostFilter.h>
 
 #include <base/range.h>

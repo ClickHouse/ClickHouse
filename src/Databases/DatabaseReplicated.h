@@ -214,12 +214,11 @@ private:
     static BlockIO
     getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait);
 
-    const String zookeeper_path;
-    const String shard_name;
-    const String replica_name;
-    const String replica_path;
-
+    String zookeeper_path;
+    String shard_name;
+    String replica_name;
     String replica_group_name;
+    String replica_path;
     DatabaseReplicatedSettings db_settings;
 
     ZooKeeperPtr getZooKeeper() const;

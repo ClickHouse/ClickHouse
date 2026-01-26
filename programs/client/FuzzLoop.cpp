@@ -521,11 +521,10 @@ static void runExternalCommand(
     std::unique_ptr<BuzzHouse::ExternalIntegrations> & external_integrations,
     const uint64_t seed,
     const bool async,
-    const String & engine,
     const String & cname,
     const String & tname)
 {
-    if (!external_integrations->performExternalCommand(seed, async, BuzzHouse::IntegrationCall::Dolor, engine, cname, tname))
+    if (!external_integrations->performExternalCommand(seed, async, BuzzHouse::IntegrationCall::Dolor, cname, tname))
     {
         throw Exception(ErrorCodes::BUZZHOUSE, "External command failed for {} on catalog {}", tname, cname);
     }
@@ -544,8 +543,7 @@ bool Client::buzzHouse()
     static const RE2 rerun_database_re(R"((?i)^--External\s+database\s+(.*)$)");
     static const String & rerun_table = "--External table ";
     static const RE2 rerun_table_re(R"((?i)^--External\s+table\s+(.*)$)");
-    static const RE2 extern_re(
-        R"((?i)^--External\s+command\s+(?:(async)\s+)?with\s+seed\s+(\d+)\s+to\s([^\s.]+)\stable\s+([^\s.]+)\.([^\s.]+)\s*$)");
+    static const RE2 extern_re(R"((?i)^--External\s+command\s+(?:(async)\s+)?with\s+seed\s+(\d+)\s+to\s+([^\s.]+)\.([^\s.]+)\s*$)");
 
     /// Set time to run, but what if a query runs for too long?
     buzz_done = 0;
@@ -563,7 +561,6 @@ bool Client::buzzHouse()
         {
             String async_flag;
             String seed_str;
-            String engine;
             String database;
             String table;
 
@@ -584,8 +581,7 @@ bool Client::buzzHouse()
                 UNUSED(x);
             }
             else if (
-                startsWith(full_query, external_cmd)
-                && RE2::FullMatch(full_query, extern_re, &async_flag, &seed_str, &engine, &database, &table))
+                startsWith(full_query, external_cmd) && RE2::FullMatch(full_query, extern_re, &async_flag, &seed_str, &database, &table))
             {
                 uint64_t seed = 0;
                 const auto * const first = seed_str.data();
@@ -593,7 +589,7 @@ bool Client::buzzHouse()
                 const auto x = std::from_chars(first, last, seed, 10);
 
                 UNUSED(x);
-                runExternalCommand(external_integrations, seed, !async_flag.empty(), engine, database, table);
+                runExternalCommand(external_integrations, seed, !async_flag.empty(), database, table);
             }
             else if (startsWith(full_query, health_check_cmd))
             {
@@ -641,14 +637,14 @@ bool Client::buzzHouse()
         loadSystemTables(*fuzz_config);
 
         full_query2.reserve(8192);
-        BuzzHouse::StatementGenerator gen(rg, *fuzz_config, *external_integrations, has_cloud_features);
+        BuzzHouse::StatementGenerator gen(*fuzz_config, *external_integrations, has_cloud_features);
         BuzzHouse::QueryOracle qo(*fuzz_config);
         while (server_up && !buzz_done)
         {
             sq1.Clear();
             full_query.resize(0);
 
-            if (total_create_database_tries < 20 && nsuccessfull_create_database < max_initial_databases)
+            if (total_create_database_tries < 10 && nsuccessfull_create_database < max_initial_databases)
             {
                 gen.generateNextCreateDatabase(
                     rg, sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_create_database());
@@ -661,7 +657,7 @@ bool Client::buzzHouse()
                 total_create_database_tries++;
             }
             else if (
-                gen.collectionHas<std::shared_ptr<BuzzHouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 300
+                gen.collectionHas<std::shared_ptr<BuzzHouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 150
                 && nsuccessfull_create_table < max_initial_tables)
             {
                 gen.generateNextCreateTable(
@@ -769,8 +765,7 @@ bool Client::buzzHouse()
                     const uint32_t alter_update_table = 20 * static_cast<uint32_t>(test_content);
                     const uint32_t insert_count_table = 20 * static_cast<uint32_t>(test_content && tbl.get().areInsertsAppends());
                     const uint32_t dump_table = 40;
-                    const uint32_t prob_space2
-                        = optimize_table + reattach_table + backup_restore_table + alter_update_table + insert_count_table + dump_table;
+                    const uint32_t prob_space2 = optimize_table + reattach_table + backup_restore_table + alter_update_table + insert_count_table + dump_table;
                     std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
                     const uint32_t nopt2 = next_dist2(rg.generator);
                     BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::DUMP_TABLE;
@@ -793,8 +788,7 @@ bool Client::buzzHouse()
                         strategy = BuzzHouse::DumpOracleStrategy::ALTER_UPDATE;
                     }
                     else if (
-                        alter_update_table
-                        && nopt2 < (optimize_table + reattach_table + backup_restore_table + alter_update_table + insert_count_table + 1))
+                        alter_update_table && nopt2 < (optimize_table + reattach_table + backup_restore_table + alter_update_table + insert_count_table + 1))
                     {
                         strategy = BuzzHouse::DumpOracleStrategy::INSERT_COUNT;
                     }
@@ -895,15 +889,13 @@ bool Client::buzzHouse()
                     const uint64_t nseed = rg.nextInFullRange();
                     const auto & tbl
                         = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
-                    const auto & engine = tbl.isAnyIcebergEngine() ? "iceberg" : (tbl.isAnyDeltaLakeEngine() ? "deltalake" : "kafka");
-                    const auto & ndname = tbl.isKafkaEngine() ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
+                    const auto & ndname = tbl.getSparkCatalogName();
                     const auto & ntname = tbl.getTableName(false);
                     const bool async = fuzz_config->allow_async_requests && rg.nextSmallNumber() < 4;
 
-                    chassert(tbl.isAnyIcebergEngine() || tbl.isAnyDeltaLakeEngine() || tbl.isKafkaEngine());
-                    fuzz_config->outf << external_cmd << (async ? "async " : "") << "with seed " << nseed << " to " << engine << " table "
-                                      << ndname << "." << ntname << std::endl;
-                    runExternalCommand(external_integrations, nseed, async, engine, ndname, ntname);
+                    fuzz_config->outf << external_cmd << (async ? "async " : "") << "with seed " << nseed << " to " << ndname << "."
+                                      << ntname << std::endl;
+                    runExternalCommand(external_integrations, nseed, async, ndname, ntname);
                 }
                 else if (
                     health_check

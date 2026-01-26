@@ -229,14 +229,14 @@ private:
                 }
                 else if (is_max_key_positive && !is_min_key_positive)
                 {
-                    KeyTypeUnsigned min_key_unsigned = static_cast<KeyTypeUnsigned>(-static_cast<KeyTypeUnsigned>(min_key));
+                    KeyTypeUnsigned min_key_unsigned = -static_cast<KeyTypeUnsigned>(min_key);
                     max_min_key_difference = static_cast<KeyTypeUnsigned>(max_key) + min_key_unsigned;
                 }
                 else
                 {
                     /// Both max and min key are negative
-                    KeyTypeUnsigned min_key_unsigned = static_cast<KeyTypeUnsigned>(-static_cast<KeyTypeUnsigned>(min_key));
-                    KeyTypeUnsigned max_key_unsigned = static_cast<KeyTypeUnsigned>(-static_cast<KeyTypeUnsigned>(max_key));
+                    KeyTypeUnsigned min_key_unsigned = -static_cast<KeyTypeUnsigned>(min_key);
+                    KeyTypeUnsigned max_key_unsigned = -static_cast<KeyTypeUnsigned>(max_key);
                     max_min_key_difference = min_key_unsigned - max_key_unsigned;
                 }
             }
@@ -259,7 +259,7 @@ private:
 
             for (KeyType current_key = min_key; current_key <= max_key; ++current_key)
             {
-                size_t key_offset_index = static_cast<size_t>(current_key - min_key);
+                size_t key_offset_index = current_key - min_key;
                 size_t insert_index = result_value_data_size + key_offset_index;
 
                 result_key_data[insert_index] = current_key;

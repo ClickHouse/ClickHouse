@@ -4,11 +4,11 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
-#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
+#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
@@ -46,15 +46,16 @@
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
-#include <IO/AsynchronousReader.h>
 #include <IO/S3Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
 #include <Disks/IO/getIOUringReader.h>
+#include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -98,6 +99,8 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/WriteSettings.h>
@@ -112,6 +115,7 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
@@ -395,7 +399,6 @@ namespace ErrorCodes
     extern const int SET_NON_GRANTED_ROLE;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
-    extern const int TYPE_MISMATCH;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -694,19 +697,6 @@ struct ContextSharedPart : boost::noncopyable
 
     ~ContextSharedPart()
     {
-        /// Shutdown must be called first to stop all background tasks (like loadOutdatedDataParts)
-        /// that may be using the thread pool readers. Otherwise there is a data race between
-        /// background tasks calling getThreadPoolReader() and the destructor resetting the readers.
-        /// See https://github.com/ClickHouse/ClickHouse/issues/62143
-        try
-        {
-            shutdown();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-
 #if USE_NURAFT
         if (keeper_dispatcher)
         {
@@ -805,6 +795,15 @@ struct ContextSharedPart : boost::noncopyable
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
+        }
+
+        try
+        {
+            shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
@@ -985,14 +984,13 @@ struct ContextSharedPart : boost::noncopyable
             trace_collector.reset();
         }
 
-        zkutil::ZooKeeperPtr delete_zookeeper;
         {
             /// Stop zookeeper connection
             std::lock_guard lock(zookeeper_mutex);
-            delete_zookeeper = std::move(zookeeper);
+            if (zookeeper)
+                zookeeper->finalize("shutdown");
+            zookeeper.reset();
         }
-        if (delete_zookeeper)
-            delete_zookeeper->finalize("shutdown");
 
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
@@ -1522,7 +1520,7 @@ void Context::setFilesystemCacheUser(const String & user)
 static void setupTmpPath(LoggerPtr log, const DiskPtr & disk)
 try
 {
-    LOG_DEBUG(log, "Setting up temporary data storage at disk '{}' with path '{}'", disk->getName(), disk->getPath());
+    LOG_DEBUG(log, "Setting up {}:{} to store temporary data in it", disk->getName(), disk->getPath());
 
     if (disk->existsDirectory(""))
     {
@@ -2404,20 +2402,20 @@ void Context::addQueryAccessInfo(
     addQueryAccessInfo(backQuoteIfNeed(table_id.getDatabaseName()), table_id.getFullTableName(), column_names);
 }
 
-std::shared_ptr<ContextTimeSeriesTagsCollector> Context::getTimeSeriesTagsCollector()
+ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector()
 {
     {
         SharedLockGuard lock(mutex);
         if (time_series_tags_collector)
-            return time_series_tags_collector;
+            return *time_series_tags_collector;
     }
     std::lock_guard lock(mutex);
     if (!time_series_tags_collector)
         time_series_tags_collector = std::make_shared<ContextTimeSeriesTagsCollector>();
-    return time_series_tags_collector;
+    return *time_series_tags_collector;
 }
 
-std::shared_ptr<const ContextTimeSeriesTagsCollector> Context::getTimeSeriesTagsCollector() const
+const ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector() const
 {
     return const_cast<Context *>(this)->getTimeSeriesTagsCollector();
 }
@@ -2559,8 +2557,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
         if (parts.size() == 2)
         {
-            database_name = std::move(parts[0]);
-            table_name = std::move(parts[1]);
+            database_name = parts[0];
+            table_name = parts[1];
         }
     }
 
@@ -2574,7 +2572,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
 
             ASTCreateQuery create;
-            create.set(create.select, query);
+            create.select = query->as<ASTSelectWithUnionQuery>();
             auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
@@ -2631,7 +2629,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
             bool asterisk = false;
             const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
-            auto expression = expression_list.begin();
+            const auto * expression = expression_list.begin();
 
             /// We want to go through SELECT expression list and correspond each expression to column in insert table
             /// which type will be used as a hint for the file structure inference.
@@ -2788,7 +2786,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 }
 
 
-StoragePtr Context::buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values) const
+StoragePtr Context::buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values)
 {
     if (table_name.empty())
         return nullptr;
@@ -2805,42 +2803,19 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     StorageView::replaceQueryParametersIfParameterizedView(query, param_values);
 
     ASTCreateQuery create;
-    create.set(create.select, query);
+    create.select = query->as<ASTSelectWithUnionQuery>();
 
     auto sql_security = std::make_shared<ASTSQLSecurity>();
     sql_security->type = original_view_metadata->sql_security_type;
     if (original_view_metadata->definer)
         sql_security->definer = std::make_shared<ASTUserNameWithHost>(*original_view_metadata->definer);
-    create.set(create.sql_security, sql_security);
+    create.sql_security = sql_security;
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
-
-    /* Check that the actual schema matches the defined one (if any) */
-    auto actual_names_and_types = sample_block->getNamesAndTypesList();
-    const auto original_defined_columns = original_view_metadata->getColumns();
-    if (!original_defined_columns.empty())
-    {
-        auto throw_schema_mismatch = [table_name]()
-        {
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "After parameters substitution of parameterized view {} the actual schema does not match the defined one",
-                backQuote(table_name));
-        };
-        if (original_defined_columns.size() != actual_names_and_types.size())
-            throw_schema_mismatch();
-
-        for (const auto [defined_column, actual_column] : std::views::zip(original_defined_columns.getAll(), actual_names_and_types))
-        {
-            if (defined_column.name != actual_column.name || defined_column.type->getName() != actual_column.type->getName())
-                throw_schema_mismatch();
-        }
-    }
-
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
-                                                ColumnsDescription(actual_names_and_types),
+                                                ColumnsDescription(sample_block->getNamesAndTypesList()),
             /* comment */ "",
             /* is_parameterized_view */ true);
     res->startup();
@@ -5052,7 +5027,7 @@ const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
 UInt16 Context::getTCPPort() const
 {
     const auto & config = getConfigRef();
-    return static_cast<UInt16>(config.getInt("tcp_port", DBMS_DEFAULT_PORT));
+    return config.getInt("tcp_port", DBMS_DEFAULT_PORT);
 }
 
 std::optional<UInt16> Context::getTCPPortSecure() const
@@ -5295,25 +5270,32 @@ void Context::startClusterDiscovery()
 /// On repeating calls updates existing clusters and adds new clusters, doesn't delete old clusters
 void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_discovery, const String & config_name)
 {
-    std::lock_guard lock(shared->clusters_mutex);
-    if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
     {
-        shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
+        std::lock_guard lock(shared->clusters_mutex);
+        if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
+        {
+            shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
+        }
+
+        /// Do not update clusters if this part of config wasn't changed.
+        if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name))
+            return;
+
+        auto old_clusters_config = shared->clusters_config;
+        shared->clusters_config = config;
+
+        if (!shared->clusters)
+            shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
+        else
+            shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
+
+        ++shared->clusters_version;
     }
-
-    /// Do not update clusters if this part of config wasn't changed.
-    if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name))
-        return;
-
-    auto old_clusters_config = shared->clusters_config;
-    shared->clusters_config = config;
-
-    if (!shared->clusters)
-        shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
-    else
-        shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
-
-    ++shared->clusters_version;
+    {
+        SharedLockGuard lock(shared->mutex);
+        if (shared->ddl_worker)
+            shared->ddl_worker->notifyHostIDsUpdated();
+    }
 }
 
 size_t Context::getClustersVersion() const
@@ -6112,31 +6094,9 @@ size_t Context::getConfigReloaderInterval() const
     return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
-InputFormatPtr Context::getInputFormat(
-    const String & name,
-    ReadBuffer & buf,
-    const Block & sample,
-    UInt64 max_block_size,
-    const std::optional<FormatSettings> & format_settings,
-    const std::optional<UInt64> & max_block_size_bytes,
-    const std::optional<UInt64> & min_block_size_rows,
-    const std::optional<UInt64> & min_block_size_bytes) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
 {
-    return FormatFactory::instance().getInput(
-        name,
-        buf,
-        sample,
-        shared_from_this(),
-        max_block_size,
-        format_settings,
-        nullptr,
-        nullptr,
-        false,
-        CompressionMethod::None,
-        false,
-        max_block_size_bytes,
-        min_block_size_rows,
-        min_block_size_bytes);
+    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
 }
 
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const

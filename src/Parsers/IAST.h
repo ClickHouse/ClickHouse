@@ -29,7 +29,7 @@ using Strings = std::vector<String>;
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
-class IAST : public TypePromotion<IAST>
+class IAST : public std::enable_shared_from_this<IAST>, public TypePromotion<IAST>
 {
 public:
     ASTs children;
@@ -70,6 +70,8 @@ public:
     /** Get the text that identifies this element. */
     virtual String getID(char delimiter = '_') const = 0; /// NOLINT
 
+    ASTPtr ptr() { return shared_from_this(); }
+
     /** Get a deep copy of the tree. Cloned object must have the same range. */
     virtual ASTPtr clone() const = 0;
 
@@ -107,15 +109,6 @@ public:
     {
         for (const auto & child : children)
             child->collectIdentifierNames(set);
-    }
-
-    ASTPtr getChild(const IAST & child) const
-    {
-        for (const auto & node : children)
-            if (node.get() == &child)
-                return node;
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
     }
 
     template <typename T>
@@ -170,7 +163,7 @@ public:
         if (field == nullptr)
             return;
 
-        auto child = children.begin();
+        auto * child = children.begin();
         while (child != children.end())
         {
             if (child->get() == field)
@@ -255,7 +248,6 @@ public:
         bool surround_each_list_element_with_parens = false;
         bool ignore_printed_asts_with_alias = false; /// Ignore FormatState::printed_asts_with_alias
         bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
-        bool allow_moving_operators_before_parens = true; /// Allow moving operators like "-" before parents: (-...) -> -(...)
         size_t list_element_index = 0;
         std::string create_engine_name;
         const IAST * current_select = nullptr;

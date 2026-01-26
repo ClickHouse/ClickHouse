@@ -379,7 +379,8 @@ private:
     size_t clearOldPartsAndRemoveFromZK();
     void clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKeeperPtr zookeeper, DataPartsVector && parts);
 
-    friend class ReplicatedMergeTreeSink;
+    template<bool async_insert>
+    friend class ReplicatedMergeTreeSinkImpl;
     friend class ReplicatedMergeTreeSinkPatch;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
@@ -826,17 +827,18 @@ private:
     /// Creates new block number if block with such block_id does not exist
     /// If zookeeper_path_prefix specified then allocate block number on this path
     /// (can be used if we want to allocate blocks on other replicas)
-    EphemeralLockInZooKeeper allocateBlockNumber(
+    std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id,
         const zkutil::ZooKeeperPtr & zookeeper,
-        const std::vector<std::string> & zookeeper_block_id_paths = {},
+        const String & zookeeper_block_id_path = "",
         const String & zookeeper_path_prefix = "",
         const std::optional<String> & znode_data = std::nullopt) const;
 
-    EphemeralLockInZooKeeper allocateBlockNumber(
+    template<typename T>
+    std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id,
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
-        const std::vector<std::string> & zookeeper_block_id_paths = {},
+        const T & zookeeper_block_id_path,
         const String & zookeeper_path_prefix = "",
         const std::optional<String> & znode_data = std::nullopt) const;
 
@@ -909,7 +911,7 @@ private:
 
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context) override;
-    PartitionCommandsResultInfo attachPartition(const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) override;
+    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr query_context) override;
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context) override;
     void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context) override;
@@ -1011,8 +1013,8 @@ private:
 
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {
-        explicit DataValidationTasks(DataPartsVector && parts_, ReplicatedMergeTreePartCheckThread::TemporaryPause && pause_)
-            : pause(std::move(pause_)), parts(std::move(parts_)), it(parts.begin())
+        explicit DataValidationTasks(DataPartsVector && parts_, std::unique_lock<std::mutex> && parts_check_lock_)
+            : parts_check_lock(std::move(parts_check_lock_)), parts(std::move(parts_)), it(parts.begin())
         {}
 
         DataPartPtr next()
@@ -1029,9 +1031,7 @@ private:
             return std::distance(it, parts.end());
         }
 
-        /// Pauses the part check thread while this object exists.
-        /// Safe to destroy from any thread (unlike unique_lock which has thread affinity).
-        ReplicatedMergeTreePartCheckThread::TemporaryPause pause;
+        std::unique_lock<std::mutex> parts_check_lock;
 
         mutable std::mutex mutex;
         DataPartsVector parts;

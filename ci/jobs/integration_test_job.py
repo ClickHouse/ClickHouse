@@ -17,9 +17,8 @@ MAX_FAILS_BEFORE_DROP = 5
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
 mem_gb = round(Utils.physical_memory() // (1024**3), 1)
-
-MAX_CPUS_PER_WORKER = 5
-MAX_MEM_PER_WORKER = 11
+MAX_CPUS_PER_WORKER = 4
+MAX_MEM_PER_WORKER = 7
 
 
 def _start_docker_in_docker():
@@ -98,13 +97,7 @@ FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
 
 
 def get_parallel_sequential_tests_to_run(
-    batch_num: int,
-    total_batches: int,
-    args_test: List[str],
-    workers: int,
-    job_options: str,
-    info: Info,
-    no_strict: bool = False,
+    batch_num: int, total_batches: int, args_test: List[str], workers: int
 ) -> Tuple[List[str], List[str]]:
     if args_test:
         batch_num = 1
@@ -118,7 +111,7 @@ def get_parallel_sequential_tests_to_run(
     assert len(test_files) > 100
 
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
-        test_files, total_batches, batch_num, workers, job_options, info
+        test_files, total_batches, batch_num, workers
     )
     if not args_test:
         return parallel_test_modules, sequential_test_modules
@@ -147,8 +140,7 @@ def get_parallel_sequential_tests_to_run(
             if test_match(test_file, test_arg):
                 sequential_tests.append(test_arg)
                 matched = True
-        if not no_strict:
-            assert matched, f"Test [{test_arg}] not found"
+        assert matched, f"Test [{test_arg}] not found"
 
     return parallel_tests, sequential_tests
 
@@ -167,25 +159,6 @@ def main():
     is_parallel = False
     is_sequential = False
     is_targeted_check = False
-
-    # Set on_error_hook to collect logs on hard timeout
-    Result.from_fs(info.job_name).set_on_error_hook(
-        """
-dmesg -T >./ci/tmp/dmesg.log
-sudo chown -R $(id -u):$(id -g) ./tests/integration
-tar -czf ./ci/tmp/logs.tar.gz \
-  ./tests/integration/test_*/_instances*/ \
-  ./ci/tmp/*.log \
-  ./ci/tmp/*.jsonl || :
-"""
-    ).set_files(
-        [
-            "./ci/tmp/logs.tar.gz",
-            "./ci/tmp/dmesg.log",
-            "./ci/tmp/docker-in-docker.log",
-        ],
-        strict=False,
-    )
 
     if args.param:
         for item in args.param.split(","):
@@ -239,8 +212,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if args.workers:
         workers = args.workers
     else:
-        print("ncpu:", ncpu)
-        print("mem_gb:", mem_gb)
         workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // MAX_MEM_PER_WORKER) or 1
 
     clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
@@ -349,9 +320,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
             total_batches,
             args.test or targeted_tests or changed_test_modules,
             workers,
-            args.options,
-            info,
-            no_strict=is_targeted_check,  # targeted check might want to run test that was removed on a merge-commit
         )
     )
 
@@ -445,7 +413,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             has_error = True
             error_info.append(test_result_sequential.info)
 
-    # Collect logs before re-run
+    # Collect logs before rerun
     attached_files = []
     if not info.is_local_run:
         failed_suits = []
@@ -460,12 +428,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
         failed_suits = list(set(failed_suits))
         for failed_suit in failed_suits:
             failed_tests_files.append(f"tests/integration/{failed_suit}")
-
-        # Add all files matched ./ci/tmp/*.log ./ci/tmp/*.jsonl into failed_tests_files
-        for pattern in ["*.log", "*.jsonl"]:
-            for log_file in Path("./ci/tmp/").glob(pattern):
-                if log_file.is_file():
-                    failed_tests_files.append(str(log_file))
 
         if failed_suits:
             attached_files.append(
@@ -501,8 +463,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     if not info.is_local_run:
         print("Dumping dmesg")
-        Shell.check("dmesg -T > ./ci/tmp/dmesg.log", verbose=True, strict=True)
-        with open("./ci/tmp/dmesg.log", "rb") as dmesg:
+        Shell.check("dmesg -T > dmesg.log", verbose=True, strict=True)
+        with open("dmesg.log", "rb") as dmesg:
             dmesg = dmesg.read()
             if (
                 b"Out of memory: Killed process" in dmesg
@@ -514,7 +476,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                         name=OOM_IN_DMESG_TEST_NAME, status=Result.StatusExtended.FAIL
                     )
                 )
-                attached_files.append("./ci/tmp/dmesg.log")
+                attached_files.append("dmesg.log")
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
 

@@ -461,8 +461,7 @@ void StorageMerge::read(
     /// What will be result structure depending on query processed stage in source tables?
     auto common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
 
-    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer]
-        && processed_stage != QueryProcessingStage::FetchColumns)
+    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer] && processed_stage == QueryProcessingStage::Complete)
     {
         auto block = *common_header;
         /// Remove constants.
@@ -514,25 +513,6 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
             &filter.actions,
             filter.column_name,
             filter.do_remove_column));
-
-    if (child_plans)
-    {
-        /// Propagate new filter to all child plans if they are already present
-        for (auto & child : *child_plans)
-        {
-            auto filter_step = std::make_unique<FilterStep>(
-                child.plan.getCurrentHeader(),
-                filter.actions.clone(),
-                filter.column_name,
-                filter.do_remove_column);
-
-            child.plan.addStep(std::move(filter_step));
-
-            /// Push down this newly added filter if possible
-            child.plan.optimize(QueryPlanOptimizationSettings(context));
-        }
-    }
-
     pushed_down_filters.push_back(std::move(filter));
 }
 
@@ -1003,10 +983,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             auto filter_actions_dag = std::make_shared<ActionsDAG>();
             for (const auto & column : required_column_names)
             {
-                /// Skip columns that don't exists in this table. It may happen when we use merge over tables with different schemas.
-                if (!storage_columns.has(column))
-                    continue;
-
                 const auto column_default = storage_columns.getDefault(column);
                 bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
 
@@ -1589,24 +1565,13 @@ void ReadFromMerge::convertAndFilterSourceStream(
     ColumnsWithTypeAndName converted_columns;
     size_t size = current_step_columns.size();
     converted_columns.reserve(current_step_columns.size());
-    auto materializeIfSourceIsNotConst = [](const ColumnWithTypeAndName & expected, const ColumnWithTypeAndName & source)
-    {
-        if (expected.column && isColumnConst(*expected.column) && (!source.column || !isColumnConst(*source.column)))
-        {
-            ColumnWithTypeAndName materialized = expected;
-            materialized.column = expected.column->convertToFullColumnIfConst();
-            return materialized;
-        }
-        return expected;
-    };
-
     String smallest_column_name = ExpressionActions::getSmallestColumn(snapshot->metadata->getColumns().getAllPhysical()).name;
     for (size_t i = 0; i < size; ++i)
     {
         const auto & source_elem = current_step_columns[i];
         if (header.has(source_elem.name))
         {
-            converted_columns.push_back(materializeIfSourceIsNotConst(header.getByName(source_elem.name), source_elem));
+            converted_columns.push_back(header.getByName(source_elem.name));
         }
         else if (is_smallest_column_requested && smallest_column_name == source_elem.name)
         {
@@ -1616,7 +1581,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
         else if (header.columns() == current_step_columns.size())
         {
             /// Virtual columns and columns read from Distributed tables (having different name but matched by position).
-            converted_columns.push_back(materializeIfSourceIsNotConst(header.getByPosition(i), source_elem));
+            converted_columns.push_back(header.getByPosition(i));
         }
         else
         {

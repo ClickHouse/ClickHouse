@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationString.h>
 
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>

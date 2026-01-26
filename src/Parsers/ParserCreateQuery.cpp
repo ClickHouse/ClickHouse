@@ -267,43 +267,22 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserKeyword s_index(Keyword::INDEX);
-    ParserKeyword s_type(Keyword::TYPE);
-    ParserExpressionWithOptionalArguments type_p;
-    ParserExpression expression_p;
     ParserKeyword s_with_settings(Keyword::WITH_SETTINGS);
     ASTPtr name;
     ASTPtr query;
-    ASTPtr index;
-    ASTPtr type;
     ASTPtr with_settings;
 
     if (!name_p.parse(pos, name, expected))
         return false;
 
-    if (s_lparen.ignore(pos, expected))
-    {
-        if (!query_p.parse(pos, query, expected))
-            return false;
-
-        if (!s_rparen.ignore(pos, expected))
-            return false;
-    }
-    else if (s_index.ignore(pos, expected))
-    {
-        if (!expression_p.parse(pos, index, expected))
-            return false;
-
-        if (!s_type.ignore(pos, expected))
-            return false;
-
-        if (!type_p.parse(pos, type, expected))
-            return false;
-    }
-    else
-    {
+    if (!s_lparen.ignore(pos, expected))
         return false;
-    }
+
+    if (!query_p.parse(pos, query, expected))
+        return false;
+
+    if (!s_rparen.ignore(pos, expected))
+        return false;
 
     if (s_with_settings.ignore(pos, expected))
     {
@@ -319,14 +298,8 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     auto projection = std::make_shared<ASTProjectionDeclaration>();
     projection->name = name->as<ASTIdentifier &>().name();
-    if (query)
-        projection->set(projection->query, query);
-    if (index)
-        projection->set(projection->index, index);
-    if (type)
-        projection->set(projection->type, type);
-    if (with_settings)
-        projection->set(projection->with_settings, with_settings);
+    projection->set(projection->query, query);
+    projection->set(projection->with_settings, with_settings);
     node = projection;
 
     return true;
@@ -975,7 +948,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         else if (query->storage->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
-        query->storage->set(query->storage->primary_key, query->columns_list->getChild(*query->columns_list->primary_key));
+        query->storage->primary_key = query->columns_list->primary_key;
 
     }
 
@@ -987,7 +960,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         else if (query->storage->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
-        query->storage->set(query->storage->primary_key, query->columns_list->getChild(*query->columns_list->primary_key_from_columns));
+        query->storage->primary_key = query->columns_list->primary_key_from_columns;
     }
 
     tryGetIdentifierNameInto(as_database, query->as_database);
@@ -1199,9 +1172,9 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->is_watermark_strictly_ascending = is_watermark_strictly_ascending;
     query->is_watermark_ascending = is_watermark_ascending;
     query->is_watermark_bounded = is_watermark_bounded;
-    query->set(query->watermark_function, watermark);
+    query->watermark_function = watermark;
     query->allowed_lateness = allowed_lateness;
-    query->set(query->lateness_function, lateness);
+    query->lateness_function = lateness;
     query->is_populate = is_populate;
     query->is_create_empty = is_create_empty;
 
@@ -1651,7 +1624,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (comment)
         query->set(query->comment, comment);
     if (sql_security)
-        query->set(query->sql_security, sql_security);
+        query->sql_security = typeid_cast<std::shared_ptr<ASTSQLSecurity>>(sql_security);
 
     if (query->columns_list && query->columns_list->primary_key)
     {
@@ -1661,7 +1634,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         auto & storage_ref = typeid_cast<ASTStorage &>(*storage);
         if (storage_ref.primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
-        storage_ref.set(storage_ref.primary_key, query->columns_list->getChild(*query->columns_list->primary_key));
+        storage_ref.primary_key = query->columns_list->primary_key;
     }
 
     if (query->columns_list && (query->columns_list->primary_key_from_columns))
@@ -1672,7 +1645,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         auto & storage_ref = typeid_cast<ASTStorage &>(*storage);
         if (storage_ref.primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
-        storage_ref.set(storage_ref.primary_key, query->columns_list->getChild(*query->columns_list->primary_key_from_columns));
+        storage_ref.primary_key = query->columns_list->primary_key_from_columns;
     }
 
     std::shared_ptr<ASTViewTargets> targets;
