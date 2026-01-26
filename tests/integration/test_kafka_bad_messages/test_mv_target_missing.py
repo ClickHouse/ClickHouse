@@ -288,7 +288,7 @@ missing_dependencies: []
         )
 
         # The old table engine will wait for assignment up to MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS after the consumer is
-        # created and that is won't be interrupted by flush interval (which make sense, we want to get assignment as
+        # created and that it won't be interrupted by flush interval (which make sense, we want to get assignment as
         # soon as possible, because getting stuck in a rebalance loop is expensive for all consumers in the consumer
         # group, not just for one). Therefore waiting the flush interval seconds will only ensure the new target is
         # picked up the engine after the assignment is done.
