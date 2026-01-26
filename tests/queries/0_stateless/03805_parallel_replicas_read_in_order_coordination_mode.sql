@@ -13,11 +13,12 @@ CREATE TABLE t_read_in_order_coordination
     event_time UInt32
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_read_in_order_coordination', 'r1')
-ORDER BY (tenant, event_time);
+ORDER BY (tenant, event_time)
+SETTINGS index_granularity = 1;
 
--- Insert deterministic test data
-INSERT INTO t_read_in_order_coordination SELECT 1, number FROM numbers(10);
-INSERT INTO t_read_in_order_coordination SELECT 2, number FROM numbers(10);
+-- Insert enough data so remote replicas have a chance to respond before query cancellation
+INSERT INTO t_read_in_order_coordination SELECT 1, number FROM numbers(1000);
+INSERT INTO t_read_in_order_coordination SELECT 2, number FROM numbers(1000);
 
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
