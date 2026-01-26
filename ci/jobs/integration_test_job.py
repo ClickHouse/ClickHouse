@@ -465,16 +465,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
             print("ERROR: llvm-profdata not found in PATH")
         else:
             print(f"Using {llvm_profdata} to merge coverage files")
-        
-        # if llvm_profdata:
-        #     # Start background merger process
-        #     merger_process = Process(
-        #         target=merge_profraw_files,
-        #         args=(llvm_profdata, batch_num, True),
-        #         daemon=True
-        #     )
-        #     merger_process.start()
-        #     print(f"Started background coverage merger (PID: {merger_process.pid})")
 
     test_results = []
     failed_tests_files = []
@@ -695,7 +685,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             
             if profdata_files:
                 print(f"Merging {len(profdata_files)} intermediate profdata files into final it-{batch_num}.profdata")
-                final_file = f"./ft-{batch_num}.profdata"
+                final_file = f"./it-{batch_num}.profdata"
                 merge_cmd = f"{llvm_profdata} merge -sparse {' '.join(profdata_files)} -o {final_file} 2>&1"
                 Shell.get_output(merge_cmd, verbose=True)
                 print(f"Successfully created final coverage file: {final_file}")
