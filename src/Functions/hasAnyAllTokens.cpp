@@ -182,7 +182,8 @@ struct HasAllTokensMatcher
     {
         return [&](const char * token_start, size_t token_len)
         {
-            if (auto it = tokens.find(std::string_view(token_start, token_len)); it != tokens.end()) {
+            if (auto it = tokens.find(std::string_view(token_start, token_len)); it != tokens.end())
+            {
                 num_set_bits += !mask.test_set(it->second);
 
                 if (num_set_bits == tokens.size())
