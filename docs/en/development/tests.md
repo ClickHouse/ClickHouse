@@ -60,7 +60,7 @@ sudo usermod -aG docker ubuntu
 
 ```
 git clone --single-branch https://github.com/ClickHouse/ClickHouse
-cd clickhouse
+cd ClickHouse
 ```
 
 3. Build code and run a subset of tests (named "Fast test").
@@ -74,7 +74,7 @@ python3 -m ci.praktika run "Fast test"
 Failed: 0, Passed: 7394, Skipped: 1795
 ```
 
-If you leave the run anattended, you may use `nohup` or `disown` to keep it running after the `ssh` connection is lost.
+If you leave the run unattended, you may use `nohup` or `disown` to keep it running after the `ssh` connection is lost.
 
 
 ### Adding a new test {#adding-a-new-test}
