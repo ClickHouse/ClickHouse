@@ -354,10 +354,6 @@ void MemoryWorker::updateResidentMemoryThread()
 {
     DB::setThreadName(ThreadName::MEMORY_WORKER);
 
-    /// Set the biggest priority for this thread to avoid drift
-    /// under the CPU starvation.
-    OSThreadNiceValue::set(-20);
-
     std::chrono::milliseconds chrono_period_ms{rss_update_period_ms};
     [[maybe_unused]] bool first_run = true;
     std::unique_lock rss_update_lock(rss_update_mutex);
