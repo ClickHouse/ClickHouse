@@ -5,6 +5,7 @@
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include "config.h"
 
@@ -17,7 +18,7 @@ struct AsyncReadCounters;
 using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
 class ReadBufferFromRemoteFSGather;
 
-class AsynchronousBoundedReadBuffer : public ReadBufferFromFileBase
+class AsynchronousBoundedReadBuffer : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
 {
 public:
     using Impl = ReadBufferFromFileBase;
@@ -58,6 +59,8 @@ public:
     bool supportsReadAt() override { return impl->supportsReadAt(); }
 
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
+
+    std::optional<Field> getMetadata(const String & name) const override;
 
 private:
     const ImplPtr impl;

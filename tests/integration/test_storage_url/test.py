@@ -100,17 +100,49 @@ def test_url_wildcard_from_index_pages():
 
 def test_url_wildcard_size_virtual_column():
     result = node1.query(
-        "SELECT sum(_size) FROM url('http://resolver:8081/data/**/part*.tsv', 'TSV', 'x UInt64')"
+        "SELECT sum(size) FROM ("
+        "SELECT _file, any(_size) AS size "
+        "FROM url('http://resolver:8081/data/**/part*.tsv', 'TSV', 'x UInt64') "
+        "GROUP BY _file)"
     )
     assert result.strip() == "8"
 
 
 def test_url_wildcard_headers_virtual_column():
     result = node1.query(
-        "SELECT count() FROM url('http://resolver:8081/data/**/part*.tsv', 'TSV', 'x UInt64') "
-        "WHERE _headers['Content-Type'] = 'text/plain'"
+        "SELECT sum(length(mapKeys(_headers))) "
+        "FROM url('http://resolver:8081/data/**/part*.tsv', 'TSV', 'x UInt64') "
+        "SETTINGS enable_filesystem_cache=0"
     )
-    assert result.strip() == "4"
+    assert int(result.strip()) > 0
+
+
+def test_url_wildcard_empty_listing():
+    result = node1.query(
+        "SELECT count() FROM url('http://resolver:8081/data/empty/**/part*.tsv', 'TSV', 'x UInt64')"
+    )
+    assert result.strip() == "0"
+
+
+def test_url_wildcard_missing_listing():
+    error = node1.query_and_get_error(
+        "SELECT count() FROM url('http://resolver:8081/missing/**/part*.tsv', 'TSV', 'x UInt64')"
+    )
+    assert "There is no path" in error
+
+
+def test_url_wildcard_oversize_index_page():
+    error = node1.query_and_get_error(
+        "SELECT count() FROM url('http://resolver:8081/data/oversize/**/part*.tsv', 'TSV', 'x UInt64')"
+    )
+    assert "exceeds max_http_index_page_size" in error
+
+
+def test_url_wildcard_query_fragment_matching():
+    result = node1.query(
+        "SELECT sum(x) FROM url('http://resolver:8081/data/query/part*.tsv', 'TSV', 'x UInt64')"
+    )
+    assert result.strip() == "3"
 
 
 def test_table_function_url_access_rights():

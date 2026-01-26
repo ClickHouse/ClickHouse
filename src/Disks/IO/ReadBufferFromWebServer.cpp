@@ -150,6 +150,13 @@ Map ReadBufferFromWebServer::getResponseHeaders() const
     return {};
 }
 
+std::optional<Field> ReadBufferFromWebServer::getMetadata(const String & name) const
+{
+    if (name == "headers")
+        return Field(getResponseHeaders());
+    return std::nullopt;
+}
+
 
 off_t ReadBufferFromWebServer::seek(off_t offset_, int whence)
 {

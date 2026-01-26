@@ -702,6 +702,13 @@ Map ReadWriteBufferFromHTTP::getResponseHeaders() const
     return map;
 }
 
+std::optional<Field> ReadWriteBufferFromHTTP::getMetadata(const String & name) const
+{
+    if (name == "headers")
+        return Field(getResponseHeaders());
+    return std::nullopt;
+}
+
 void ReadWriteBufferFromHTTP::setNextCallback(NextCallback next_callback_)
 {
     next_callback = next_callback_;
