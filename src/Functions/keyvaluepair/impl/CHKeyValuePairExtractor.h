@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace extractKV
 {
 /*
- * Handle state transitions and a few states like `FLUSH_PAIR` and `END`.
+ * Thread-safe key value pair extractor. This class in particular handles state transitions.
  * */
 template <typename StateHandler>
 class KeyValuePairExtractor
@@ -37,7 +37,7 @@ public:
     }
 
 protected:
-    uint64_t extractImpl(std::string_view data, typename StateHandler::PairWriter & pair_writer)
+    uint64_t extractImpl(std::string_view data, typename StateHandler::PairWriter & pair_writer) const
     {
         auto state =  State::WAITING_KEY;
 
@@ -66,7 +66,7 @@ protected:
     }
 
 private:
-    void incrementRowOffset(uint64_t & row_offset)
+    void incrementRowOffset(uint64_t & row_offset) const
     {
         row_offset++;
 
@@ -76,7 +76,7 @@ private:
         }
     }
 
-    NextState processState(std::string_view file, State state, auto & pair_writer, uint64_t & row_offset)
+    NextState processState(std::string_view file, State state, auto & pair_writer, uint64_t & row_offset) const
     {
         switch (state)
         {
@@ -129,14 +129,14 @@ private:
         }
     }
 
-    void reset(auto & pair_writer)
+    void reset(auto & pair_writer) const
     {
         pair_writer.resetKey();
         pair_writer.resetValue();
     }
 
-    StateHandler state_handler;
-    uint64_t max_number_of_pairs;
+    const StateHandler state_handler;
+    const uint64_t max_number_of_pairs;
 };
 
 }
@@ -147,7 +147,7 @@ struct KeyValuePairExtractorNoEscaping : extractKV::KeyValuePairExtractor<extrac
     explicit KeyValuePairExtractorNoEscaping(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
         : KeyValuePairExtractor(configuration_, max_number_of_pairs_) {}
 
-    uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
+    uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) const
     {
         auto pair_writer = typename StateHandler::PairWriter(*keys, *values);
         return extractImpl(data, pair_writer);
@@ -160,7 +160,7 @@ struct KeyValuePairExtractorInlineEscaping : extractKV::KeyValuePairExtractor<ex
     explicit KeyValuePairExtractorInlineEscaping(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
         : KeyValuePairExtractor(configuration_, max_number_of_pairs_) {}
 
-    uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
+    uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) const
     {
         auto pair_writer = typename StateHandler::PairWriter(*keys, *values);
         return extractImpl(data, pair_writer);
@@ -173,7 +173,7 @@ struct KeyValuePairExtractorReferenceMap : extractKV::KeyValuePairExtractor<extr
     explicit KeyValuePairExtractorReferenceMap(const extractKV::Configuration & configuration_, std::size_t max_number_of_pairs_)
         : KeyValuePairExtractor(configuration_, max_number_of_pairs_) {}
 
-    uint64_t extract(std::string_view data, std::map<std::string_view, std::string_view> & map)
+    uint64_t extract(std::string_view data, std::map<std::string_view, std::string_view> & map) const
     {
         auto pair_writer = typename StateHandler::PairWriter(map);
         return extractImpl(data, pair_writer);

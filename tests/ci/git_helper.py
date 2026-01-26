@@ -257,7 +257,7 @@ class Git:
         self.latest_tag = self.run("git describe --tags --abbrev=0", stderr=stderr)
         # Format should be: {latest_tag}-{commits_since_tag}-g{sha_short}
         self.commits_since_latest = int(
-            self.run(f"git rev-list {self.latest_tag}..HEAD --count")
+            self.run(f"git rev-list {self.latest_tag}..HEAD --first-parent --count")
         )
         if self.latest_tag.endswith("-new"):
             # We won't change the behaviour of the the "latest_tag"
@@ -268,7 +268,7 @@ class Git:
                 stderr=stderr,
             )
             self.commits_since_new = int(
-                self.run(f"git rev-list {self.new_tag}..HEAD --count")
+                self.run(f"git rev-list {self.new_tag}..HEAD --first-parent --count")
             )
 
     @staticmethod

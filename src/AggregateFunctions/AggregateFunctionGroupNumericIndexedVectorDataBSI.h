@@ -295,7 +295,8 @@ public:
           * - When value is a Float32/Float64, fraction_bit_num indicates how many bits are used to represent the decimal, Because the
           *   maximum value of total_bit_num(integer_bit_num + fraction_bit_num) is 64, overflow may occur.
           */
-        Int64 scaled_value = Int64(value * (1ULL << fraction_bit_num));
+        using ScaledValueType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, UInt64>;
+        Int64 scaled_value = Int64(value * static_cast<ScaledValueType>(1ULL << fraction_bit_num));
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             if (scaled_value & (1ULL << i))
@@ -633,7 +634,7 @@ public:
         const UInt32 total_bit_num = vector.getTotalBitNum();
         for (size_t i = 0; i < total_bit_num; ++i)
         {
-            vector.getDataArrayAt(i)->ra_set_container(ctns[i], container_id, types[i]);
+            vector.getDataArrayAt(i)->ra_set_container(ctns[i], static_cast<UInt16>(container_id), types[i]);
         }
     }
 
@@ -711,7 +712,7 @@ public:
                     UInt64 t = w & (~w + 1);
                     /// on x64, should compile to TZCNT
                     int i = __builtin_ctzll(w);
-                    bit_buffer[i][cnt[i]++] = indexes[offset + j];
+                    bit_buffer[i][cnt[i]++] = static_cast<UInt16>(indexes[offset + j]);
                     w ^= t;
                 }
             }
@@ -800,7 +801,7 @@ public:
 
 #if defined(__AVX512__)
             cnt = roaring::internal::bitset_extract_setbits_avx512(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
-#elif defined(__AVX2__)
+#elif defined(__AVX2__) && !defined(__e2k__)
             cnt = roaring::internal::bitset_extract_setbits_avx2(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
 #else
             cnt = roaring::internal::bitset_extract_setbits(buffer.data() + offset, len, bit_buffer.data(), 0);
@@ -810,7 +811,7 @@ public:
                 UInt64 val = bit_buffer[i];
                 UInt64 row;
                 UInt64 col = val & 0x3f;
-#if defined(__BMI2__)
+#if defined(__BMI2__) && !defined(__e2k__)
                 ASM_SHIFT_RIGHT(val, shift, row);
 #else
                 row = val >> shift;
@@ -836,7 +837,7 @@ public:
                     continue;
                 }
                 auto * ctn = reinterpret_cast<roaring::internal::bitset_container_t *>(ctns[col]);
-                roaring::internal::bitset_container_set(ctn, index);
+                roaring::internal::bitset_container_set(ctn, static_cast<UInt16>(index));
             }
         }
 
@@ -883,7 +884,7 @@ public:
             for (UInt32 j = 0; j < len; ++j)
             {
                 UInt64 w = buffer[offset + j];
-                UInt16 key = indexes[offset + j];
+                UInt16 key = static_cast<UInt16>(indexes[offset + j]);
                 while (w)
                 {
                     /// on x64, should compile to BLSI (careful: the Intel compiler seems to fail)
@@ -925,7 +926,7 @@ public:
                 {
                     UInt64 tmp_offset;
                     UInt64 p = bit_buffer[i][j];
-#if defined(__BMI2__)
+#if defined(__BMI2__) && !defined(__e2k__)
                     ASM_SHIFT_RIGHT(p, shift, tmp_offset);
 #else
                     tmp_offset = p >> shift;
@@ -991,7 +992,7 @@ public:
     {
         PaddedPODArray<UInt64> buffer(65536);
         PaddedPODArray<UInt32> bit_buffer(65536);
-        UInt16 mask_container_cardinality = mask->ra_get_container_cardinality(container_id);
+        UInt16 mask_container_cardinality = mask->ra_get_container_cardinality(static_cast<UInt16>(container_id));
         if (mask_container_cardinality == 0)
             return 0;
         memset(buffer.data(), 0, buffer.size() * sizeof(UInt64));
@@ -1000,7 +1001,7 @@ public:
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             auto & lhs_bm = vector.getDataArrayAt(i);
-            auto bit_cnt = lhs_bm->container_and_to_uint32_array(mask.get(), container_id, 0, &bit_buffer);
+            auto bit_cnt = lhs_bm->container_and_to_uint32_array(mask.get(), static_cast<UInt16>(container_id), 0, &bit_buffer);
             for (size_t j = 0; j < bit_cnt; ++j)
             {
                 if (bit_buffer[j] >= 65536)
@@ -1008,7 +1009,7 @@ public:
                 buffer[bit_buffer[j]] |= (1ULL << i);
             }
         }
-        auto result_cnt = mask->container_to_uint32_array(container_id, 0, bit_buffer);
+        auto result_cnt = mask->container_to_uint32_array(static_cast<UInt16>(container_id), 0, bit_buffer);
         if (vector.isValueTypeSigned() && total_bit_num < 64)
         {
             UInt64 bit_mask = ~((1ULL << total_bit_num) - 1);
@@ -1022,7 +1023,7 @@ public:
                     buffer[bit_buffer[i]] |= bit_mask;
                 }
                 output[i] = static_cast<Float64>(static_cast<ValueType>(static_cast<Int64>(buffer[bit_buffer[i]])))
-                    / (1ULL << vector.fraction_bit_num);
+                    / static_cast<Float64>(1ULL << vector.fraction_bit_num);
             }
         }
         else
@@ -1032,7 +1033,7 @@ public:
                 if (bit_buffer[i] >= 65536)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "bit_buffer index out of bounds. bit_buffer[i]: {}", bit_buffer[i]);
                 output[i] = static_cast<Float64>(static_cast<ValueType>(static_cast<Int64>(buffer[bit_buffer[i]])))
-                    / (1ULL << vector.fraction_bit_num);
+                    / static_cast<Float64>(1ULL << vector.fraction_bit_num);
             }
         }
         return result_cnt;
@@ -1141,13 +1142,13 @@ public:
                 case multiply_op_code:
                     for (size_t i = 0; i < indexes_size; ++i)
                     {
-                        res_values[i] = lhs_values[i] * rhs;
+                        res_values[i] = lhs_values[i] * static_cast<Float64>(rhs);
                     }
                     break;
                 case divide_op_code:
                     for (size_t i = 0; i < indexes_size; ++i)
                     {
-                        res_values[i] = lhs_values[i] / rhs;
+                        res_values[i] = lhs_values[i] / static_cast<Float64>(rhs);
                     }
                     break;
                 /// If you want to add other operations such as subtraction, please pay attention to the handling of 0.
@@ -1271,7 +1272,9 @@ public:
         res_bm = lhs.getAllNonZeroIndex();
 
         UInt64 long_value = UInt64(std::floor(rhs));
-        UInt64 decimal_value = static_cast<UInt64>((rhs - long_value) * (1ULL << lhs.fraction_bit_num));
+        /// if ValueType is floating point, use ValueType for calculation, otherwise use UInt64
+        using CalculationType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, UInt64>;
+        UInt64 decimal_value = static_cast<UInt64>((rhs - static_cast<CalculationType>(long_value)) * static_cast<CalculationType>(1ULL << lhs.fraction_bit_num));
 
         size_t i = 0;
         for (; i < lhs.fraction_bit_num; ++i)
@@ -1651,7 +1654,7 @@ public:
                     integer_bit_num,
                     fraction_bit_num);
 
-            scaled_value = static_cast<Int64>(value * scaling);
+            scaled_value = static_cast<Int64>(value * static_cast<ValueType>(scaling));
         }
         else
         {
@@ -1671,7 +1674,7 @@ public:
 
             if ((sum & 1) == 1)
             {
-                getDataArrayAt(j)->add(ele);
+                getDataArrayAt(j)->add(static_cast<IndexType>(ele));
             }
 
             cin = cin & x_xor_y;
@@ -1697,7 +1700,7 @@ public:
                 scaled_value |= (1ULL << i);
             }
         }
-        return static_cast<ValueType>(scaled_value) / (1LL << fraction_bit_num);
+        return static_cast<ValueType>(scaled_value) / static_cast<ValueType>(1LL << fraction_bit_num);
     }
 
     /// sum(origin_vector(this))
@@ -1714,7 +1717,7 @@ public:
             for (size_t i = 0; i < total_bit_num; ++i)
             {
                 Float64 bit_contribution = std::pow(2.0, int(i) - int(fraction_bit_num));
-                value += getDataArrayAt(i)->size() * bit_contribution;
+                value += static_cast<Float64>(getDataArrayAt(i)->size()) * bit_contribution;
             }
         }
         else if (which.isInt() || which.isFloat())
@@ -1733,7 +1736,7 @@ public:
                 positive_indexes.rb_or(*getDataArrayAt(i));
 
                 positive_indexes.rb_andnot(negative_indexes);
-                value += positive_indexes.size() * bit_contribution;
+                value += static_cast<Float64>(positive_indexes.size()) * bit_contribution;
             }
 
             /// Handle negative indexes
@@ -1751,7 +1754,7 @@ public:
                 sum.rb_or(augend);
                 sum.rb_xor(cin);
 
-                value -= sum.size() * bit_contribution;
+                value -= static_cast<Float64>(sum.size()) * bit_contribution;
 
                 cin.rb_and(augend);
             }
@@ -1847,7 +1850,8 @@ public:
                 else
                 {
                     values_pod.emplace_back(
-                        static_cast<ValueType>(static_cast<Int64>(value) / static_cast<Float64>(1ULL << fraction_bit_num)));
+                        static_cast<ValueType>(
+                            static_cast<Float64>(static_cast<Int64>(value)) / static_cast<Float64>(1ULL << fraction_bit_num)));
                 }
             }
         }

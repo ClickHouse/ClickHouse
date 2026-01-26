@@ -159,4 +159,4 @@ SELECT * FROM system.backups ORDER BY start_time
 
 **See Also**
 
-- [Backup and Restore](../../operations/backup.md)
+- [Backup and Restore](/operations/backup/overview)

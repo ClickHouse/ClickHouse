@@ -1,9 +1,12 @@
 #pragma once
+#include <Common/Logger.h>
 #include <Core/Block.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
 #include <Storages/MergeTree/MarkRange.h>
+
+#include <mutex>
 
 namespace DB
 {
@@ -327,7 +330,7 @@ public:
         /// Add current step filter to the result and then for each granule calculate the number of filtered rows at the end.
         /// Remove them and update filter.
         /// Apply the filter to the columns and update num_rows if required
-        void optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules);
+        void optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules, bool must_apply_filter);
 
         /// Remove all rows from granules.
         void clear();

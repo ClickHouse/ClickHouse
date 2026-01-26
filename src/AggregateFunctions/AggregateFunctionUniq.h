@@ -298,8 +298,8 @@ struct Adder
             const auto & column = *columns[0];
             if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
             {
-                StringRef value = column.getDataAt(row_num);
-                data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
+                auto value = column.getDataAt(row_num);
+                data.set.insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()));
             }
             else
             {
@@ -313,10 +313,10 @@ struct Adder
             const auto & column = *columns[0];
             if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
             {
-                StringRef value = column.getDataAt(row_num);
+                auto value = column.getDataAt(row_num);
 
                 SipHash hash;
-                hash.update(value.data, value.size);
+                hash.update(value);
                 const auto key = hash.get128();
 
                 data.set.template insert<const UInt128 &, hint>(key);
@@ -551,7 +551,7 @@ public:
         detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_num);
     }
 
-    void addBatchSinglePlace(
+    ALWAYS_INLINE void addBatchSinglePlace(
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t if_argument_pos)
         const override
     {

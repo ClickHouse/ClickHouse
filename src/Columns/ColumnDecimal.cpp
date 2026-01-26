@@ -11,9 +11,6 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>
 
-#include <base/TypeName.h>
-#include <base/sort.h>
-
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
@@ -22,6 +19,11 @@
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+
+#include <base/TypeName.h>
+#include <base/sort.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -78,16 +80,17 @@ Float64 ColumnDecimal<T>::getFloat64(size_t n) const
 }
 
 template <is_decimal T>
-const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
+void ColumnDecimal<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
-    data.push_back(unalignedLoad<T>(pos));
-    return pos + sizeof(T);
+    T dec;
+    readBinaryLittleEndian(dec, in);
+    data.push_back(std::move(dec));
 }
 
 template <is_decimal T>
-const char * ColumnDecimal<T>::skipSerializedInArena(const char * pos) const
+void ColumnDecimal<T>::skipSerializedInArena(ReadBuffer & in) const
 {
-    return pos + sizeof(T);
+    in.ignore(sizeof(T));
 }
 
 template <is_decimal T>
@@ -447,6 +450,66 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
 }
 
 template <is_decimal T>
+void ColumnDecimal<T>::filter(const IColumn::Filter & filt)
+{
+    size_t size = data.size();
+    if (size != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
+
+    const UInt8 * filt_pos = filt.data();
+    const UInt8 * filt_end = filt_pos + size;
+    const T * data_pos = data.data();
+    T * res_data = data.data();
+    size_t res_size = 0;
+
+    /** A slightly more optimized version.
+    * Based on the assumption that often pieces of consecutive values
+    *  completely pass or do not pass the filter.
+    * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+    */
+    static constexpr size_t SIMD_BYTES = 64;
+    const UInt8 * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
+
+    while (filt_pos < filt_end_aligned)
+    {
+        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
+
+        if (0xffffffffffffffff == mask)
+        {
+            memmove(res_data + res_size, data_pos, SIMD_BYTES * sizeof(T));
+            res_size += SIMD_BYTES;
+        }
+        else
+        {
+            while (mask)
+            {
+                size_t index = std::countr_zero(mask);
+                res_data[res_size++] = data_pos[index];
+            #ifdef __BMI__
+                mask = _blsr_u64(mask);
+            #else
+                mask = mask & (mask-1);
+            #endif
+            }
+        }
+
+        filt_pos += SIMD_BYTES;
+        data_pos += SIMD_BYTES;
+    }
+
+    while (filt_pos < filt_end)
+    {
+        if (*filt_pos)
+            res_data[res_size++] = *data_pos;
+
+        ++filt_pos;
+        ++data_pos;
+    }
+
+    data.resize_assume_reserved(res_size);
+}
+
+template <is_decimal T>
 void ColumnDecimal<T>::expand(const IColumn::Filter & mask, bool inverted)
 {
     expandDataByMask<T>(data, mask, inverted);
@@ -470,16 +533,19 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
         return res;
 
     typename Self::Container & res_data = res->getData();
-    res_data.reserve_exact(offsets.back());
+    res_data.resize_exact(offsets.back());
+
+    const T * src = data.data();
+    T * dst = res_data.data();
 
     IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
     {
-        size_t size_to_replicate = offsets[i] - prev_offset;
+        size_t count = offsets[i] - prev_offset;
         prev_offset = offsets[i];
 
-        for (size_t j = 0; j < size_to_replicate; ++j)
-            res_data.push_back(data[i]);
+        std::fill_n(dst, count, src[i]);
+        dst += count;
     }
 
     return res;

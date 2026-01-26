@@ -12,10 +12,17 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <algorithm>
-
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool enable_extended_results_for_datetime_functions;
+}
+
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -35,9 +42,14 @@ private:
         Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
     };
     mutable Overload overload;
+    const bool enable_extended_results_for_datetime_functions = false;
 
 public:
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToStartOfInterval>(); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionToStartOfInterval>(context_); }
+
+    explicit FunctionToStartOfInterval(ContextPtr context_): enable_extended_results_for_datetime_functions(context_->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
+    {
+    }
 
     static constexpr auto name = "toStartOfInterval";
     String getName() const override { return name; }
@@ -105,6 +117,14 @@ public:
                 case IntervalKind::Kind::Year:
                     result_type = ResultType::Date;
                     break;
+            }
+
+            if (enable_extended_results_for_datetime_functions)
+            {
+                if (result_type == ResultType::Date)
+                    result_type = ResultType::Date32;
+                else if (result_type == ResultType::DateTime)
+                    result_type = ResultType::DateTime64;
             }
         };
 
@@ -283,15 +303,27 @@ private:
             auto scale = assert_cast<const DataTypeDateTime64 &>(time_column_type).getScale();
 
             if (time_column_vec)
-                return dispatchForIntervalColumn<ReturnType, DataTypeDateTime64, ColumnDateTime64>(assert_cast<const DataTypeDateTime64 &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone, scale);
+                return dispatchForIntervalColumn<ReturnType, DataTypeDateTime64, ColumnDateTime64>(
+                    assert_cast<const DataTypeDateTime64 &>(time_column_type),
+                    *time_column_vec,
+                    interval_column,
+                    origin_column,
+                    result_type,
+                    time_zone,
+                    static_cast<UInt16>(scale));
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64", getName());
     }
 
     template <typename ReturnType, typename TimeDataType, typename TimeColumnType>
     ColumnPtr dispatchForIntervalColumn(
-        const TimeDataType & time_data_type, const TimeColumnType & time_column, const ColumnWithTypeAndName & interval_column, const ColumnWithTypeAndName & origin_column,
-        const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale = 1) const
+        const TimeDataType & time_data_type,
+        const TimeColumnType & time_column,
+        const ColumnWithTypeAndName & interval_column,
+        const ColumnWithTypeAndName & origin_column,
+        const DataTypePtr & result_type,
+        const DateLUTImpl & time_zone,
+        UInt16 scale = 1) const
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
         if (!interval_type)
@@ -413,8 +445,9 @@ private:
                     origin /= SECONDS_PER_DAY;
                 }
 
-                result_data[i] = (result_scale < origin_scale) ? (origin + offset) / scale_diff : (origin + offset) * scale_diff;
-            }
+                result_data[i] = (result_scale < origin_scale) ? static_cast<ResultDataType::FieldType>((origin + offset) / scale_diff)
+                                                               : static_cast<ResultDataType::FieldType>((origin + offset) * scale_diff);
+        }
         }
         else // Overload: Default
         {
@@ -492,7 +525,7 @@ SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, t
         };
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionToStartOfInterval>(documentation);
     }

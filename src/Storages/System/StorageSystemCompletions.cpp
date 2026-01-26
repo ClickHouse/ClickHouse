@@ -89,8 +89,11 @@ void fillDataWithTableColumns(
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
-    const auto & snapshot = table->getInMemoryMetadataPtr();
-    const auto & columns = snapshot->getColumns();
+    auto snapshot = table->tryGetInMemoryMetadataPtr();
+    if (!snapshot)
+        return;
+
+    const auto & columns = (*snapshot)->getColumns();
     for (const auto & column : columns)
     {
         if (!access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
@@ -118,10 +121,6 @@ void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, const Cont
         res_columns[0]->insert(database_name);
         res_columns[1]->insert(DATABASE_CONTEXT);
         res_columns[2]->insertDefault();
-
-        /// We are skipping "Lazy" database because we cannot afford initialization of all its tables.
-        if (database_ptr->getEngineName() == "Lazy")
-            continue;
 
         for (auto iterator = database_ptr->getLightweightTablesIterator(context); iterator->isValid(); iterator->next())
         {

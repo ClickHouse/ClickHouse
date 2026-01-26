@@ -19,6 +19,9 @@ struct MergeTreeMutationStatus
     time_t create_time = 0;
     std::map<String, Int64> block_numbers{};
 
+    /// Parts that are currently being mutated.
+    Names parts_in_progress_names = {};
+
     /// Parts that should be mutated/merged or otherwise moved to Obsolete state for this mutation to complete.
     Names parts_to_do_names = {};
 

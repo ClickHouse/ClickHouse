@@ -6,7 +6,6 @@
 
 #include <Common/Stopwatch.h>
 
-#include <base/StringRef.h>
 #include <Common/Arena.h>
 
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -32,10 +31,10 @@ int main(int argc, char ** argv)
 
     using Vec = std::vector<std::string>;
     using Set = std::unordered_map<std::string, int>;
-    using RefsSet = std::unordered_map<StringRef, int, StringRefHash>;
+    using RefsSet = std::unordered_map<std::string_view, int, StringViewHash>;
     using DenseSet = ::google::dense_hash_map<std::string, int>;
-    using RefsDenseSet = ::google::dense_hash_map<StringRef, int, StringRefHash>;
-    using RefsHashMap = HashMap<StringRef, int, StringRefHash>;
+    using RefsDenseSet = ::google::dense_hash_map<std::string_view, int, StringViewHash>;
+    using RefsHashMap = HashMap<std::string_view, int, StringViewHash>;
     Vec vec;
 
     vec.reserve(n);
@@ -52,8 +51,8 @@ int main(int argc, char ** argv)
         }
 
         std::cerr << "Read and inserted into vector in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
     }
 
@@ -70,8 +69,8 @@ int main(int argc, char ** argv)
         }
 
         std::cerr << "Inserted into pool in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         devnull.write(res, 100);
@@ -86,8 +85,8 @@ int main(int argc, char ** argv)
             set[elem] = 0;
 
         std::cerr << "Inserted into std::unordered_map in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;
@@ -103,17 +102,17 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (const auto & elem : vec)
-            set[StringRef(elem)] = 0;
+            set[std::string_view(elem)] = 0;
 
         std::cerr << "Inserted refs into std::unordered_map in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;
         for (RefsSet::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
         {
-            devnull.write(it->first.data, it->first.size);
+            devnull.write(it->first.data(), it->first.size());
             devnull << std::endl;
         }
     }
@@ -124,17 +123,17 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (const auto & elem : vec)
-            set[StringRef(pool.insert(elem.data(), elem.size()), elem.size())] = 0;
+            set[std::string_view(pool.insert(elem.data(), elem.size()), elem.size())] = 0;
 
         std::cerr << "Inserted into pool and refs into std::unordered_map in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;
         for (RefsSet::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
         {
-            devnull.write(it->first.data, it->first.size);
+            devnull.write(it->first.data(), it->first.size());
             devnull << std::endl;
         }
     }
@@ -148,8 +147,8 @@ int main(int argc, char ** argv)
             set[elem] = 0;
 
         std::cerr << "Inserted into google::dense_hash_map in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;
@@ -166,17 +165,17 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (const auto & elem : vec)
-            set[StringRef(elem.data(), elem.size())] = 0;
+            set[std::string_view(elem.data(), elem.size())] = 0;
 
         std::cerr << "Inserted refs into google::dense_hash_map in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;
         for (RefsDenseSet::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
         {
-            devnull.write(it->first.data, it->first.size);
+            devnull.write(it->first.data(), it->first.size());
             devnull << std::endl;
         }
     }
@@ -188,17 +187,17 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (const auto & elem : vec)
-            set[StringRef(pool.insert(elem.data(), elem.size()), elem.size())] = 0;
+            set[std::string_view(pool.insert(elem.data(), elem.size()), elem.size())] = 0;
 
         std::cerr << "Inserted into pool and refs into google::dense_hash_map in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;
         for (RefsDenseSet::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
         {
-            devnull.write(it->first.data, it->first.size);
+            devnull.write(it->first.data(), it->first.size());
             devnull << std::endl;
         }
     }
@@ -211,18 +210,18 @@ int main(int argc, char ** argv)
         {
             RefsHashMap::LookupResult inserted_it;
             bool inserted;
-            set.emplace(StringRef(elem), inserted_it, inserted);
+            set.emplace(std::string_view(elem), inserted_it, inserted);
         }
 
         std::cerr << "Inserted refs into HashMap in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;
         for (auto it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
         {
-            devnull.write(it->getKey().data, it->getKey().size);
+            devnull.write(it->getKey().data(), it->getKey().size());
             devnull << std::endl;
         }
 
@@ -238,18 +237,18 @@ int main(int argc, char ** argv)
         {
             RefsHashMap::LookupResult inserted_it;
             bool inserted;
-            set.emplace(StringRef(pool.insert(elem.data(), elem.size()), elem.size()), inserted_it, inserted);
+            set.emplace(std::string_view(pool.insert(elem.data(), elem.size()), elem.size()), inserted_it, inserted);
         }
 
         std::cerr << "Inserted into pool and refs into HashMap in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;
         for (auto it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
         {
-            devnull.write(it->getKey().data, it->getKey().size);
+            devnull.write(it->getKey().data(), it->getKey().size());
             devnull << std::endl;
         }
     }

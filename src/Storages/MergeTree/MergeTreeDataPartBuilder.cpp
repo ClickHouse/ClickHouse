@@ -59,12 +59,13 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
     if (!part_info)
         part_info = MergeTreePartInfo::fromPartName(name, data.format_version);
 
+    auto data_settings = data.getSettings(projection);
     switch (part_type->getValue())
     {
         case PartType::Wide:
-            return std::make_shared<MergeTreeDataPartWide>(data, name, *part_info, part_storage, parent_part);
+            return std::make_shared<MergeTreeDataPartWide>(data, *data_settings, name, *part_info, part_storage, parent_part);
         case PartType::Compact:
-            return std::make_shared<MergeTreeDataPartCompact>(data, name, *part_info, part_storage, parent_part);
+            return std::make_shared<MergeTreeDataPartCompact>(data, *data_settings, name, *part_info, part_storage, parent_part);
         default:
             throw Exception(ErrorCodes::UNKNOWN_PART_TYPE,
                 "Unknown type of part {}", part_storage->getRelativePath());
@@ -104,6 +105,12 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withParentPart(const IMerge
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent part cannot be projection");
 
     parent_part = parent_part_;
+    return *this;
+}
+
+MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withProjection(ProjectionDescriptionRawPtr projection_)
+{
+    projection = projection_;
     return *this;
 }
 
@@ -190,7 +197,7 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromStorage()
 
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withBytesAndRows(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level)
 {
-    return withPartFormat(data.choosePartFormat(bytes_uncompressed, rows_count, part_level));
+    return withPartFormat(data.choosePartFormat(bytes_uncompressed, rows_count, part_level, projection));
 }
 
 }

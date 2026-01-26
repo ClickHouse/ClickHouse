@@ -134,7 +134,7 @@ ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const
 
     column_identifier_parts.push_back(column.name);
 
-    return std::make_shared<ASTIdentifier>(std::move(column_identifier_parts));
+    return make_intrusive<ASTIdentifier>(std::move(column_identifier_parts));
 }
 
 }

@@ -124,9 +124,9 @@ class FunctionMergeTreePartCoverage : public IFunction
     static MergeTreePartInfo constructCoveringPart(const ColumnPtr & covering_column, size_t row_number)
     {
         if (isColumnConst(*covering_column))
-            return unpackPartName(covering_column->getDataAt(0).toView()).part_info;
+            return unpackPartName(covering_column->getDataAt(0)).part_info;
 
-        return unpackPartName(covering_column->getDataAt(row_number).toView()).part_info;
+        return unpackPartName(covering_column->getDataAt(row_number)).part_info;
     }
 
 public:
@@ -157,7 +157,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto part_info = unpackPartName(input_column->getDataAt(i).toView()).part_info;
+            const auto part_info = unpackPartName(input_column->getDataAt(i)).part_info;
             const auto covering_part = constructCoveringPart(arguments[1].column, i);
             result_column->insertValue(covering_part.contains(part_info));
         }
@@ -222,7 +222,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto [part_info, prefix, suffix] = unpackPartName(input_column->getDataAt(i).toView());
+            const auto [part_info, prefix, suffix] = unpackPartName(input_column->getDataAt(i));
 
             partition_column->insertData(part_info.getPartitionId().data(), part_info.getPartitionId().size());
             prefix_column->insertData(prefix.data(), prefix.size());
@@ -274,7 +274,7 @@ SELECT isMergeTreePartCoveredBy(rhs, lhs), isMergeTreePartCoveredBy(lhs, rhs);
     };
     FunctionDocumentation::IntroducedIn introduced_in_coverage = {25, 6};
     FunctionDocumentation::Category category_coverage = FunctionDocumentation::Category::Introspection;
-    FunctionDocumentation documentation_coverage = {description_coverage, syntax_coverage, arguments_coverage, returned_value_coverage, examples_coverage, introduced_in_coverage, category_coverage};
+    FunctionDocumentation documentation_coverage = {description_coverage, syntax_coverage, arguments_coverage, {}, returned_value_coverage, examples_coverage, introduced_in_coverage, category_coverage};
 
     factory.registerFunction<FunctionMergeTreePartCoverage>(documentation_coverage, FunctionFactory::Case::Insensitive);
 
@@ -302,7 +302,7 @@ SELECT info.partition_id, info.min_block, info.max_block, info.level, info.mutat
     };
     FunctionDocumentation::IntroducedIn introduced_in_info = {25, 6};
     FunctionDocumentation::Category category_info = FunctionDocumentation::Category::Introspection;
-    FunctionDocumentation documentation_info = {description_info, syntax_info, arguments_info, returned_value_info, examples_info, introduced_in_info, category_info};
+    FunctionDocumentation documentation_info = {description_info, syntax_info, arguments_info, {}, returned_value_info, examples_info, introduced_in_info, category_info};
 
     factory.registerFunction<FunctionMergeTreePartInfo>(documentation_info, FunctionFactory::Case::Insensitive);
 }

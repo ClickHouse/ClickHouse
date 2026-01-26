@@ -9,7 +9,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
@@ -25,7 +25,6 @@ namespace DB::Iceberg
 
 Iceberg::ManifestFilePtr getManifestFile(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     LoggerPtr log,
@@ -36,14 +35,11 @@ Iceberg::ManifestFilePtr getManifestFile(
 
 ManifestFileCacheKeys getManifestList(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationWeakPtr configuration,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     const String & filename,
     LoggerPtr log);
 
-std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
-std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);
 }
 
 #endif

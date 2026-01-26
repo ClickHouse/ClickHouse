@@ -1,0 +1,12 @@
+CREATE TABLE t (`c0` Int64, INDEX i0 (c0 AS a) TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY c0
+CREATE TABLE t (`c0` Date) ENGINE = MergeTree ORDER BY tuple() TTL (c0 AS a)
+CREATE TABLE t (`c0` Date TTL (c0 AS a)) ENGINE = MergeTree ORDER BY tuple()
+CREATE TABLE t (`c0` Int64, INDEX i0 (c0 AS a) TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY c0
+CREATE TABLE t (`c0` Date) ENGINE = MergeTree ORDER BY tuple() TTL (c0 AS a)
+CREATE TABLE t ENGINE = Memory AS SELECT 1
+CREATE TABLE t (`c0` Int64) ENGINE = Memory AS SELECT 1
+CREATE TABLE t (`c0` String, INDEX i0 (lower(c0) AS lc) TYPE tokenbf_v1(1024, 2, 0) GRANULARITY 1) ENGINE = MergeTree ORDER BY c0
+CREATE TABLE t (`c0` Date) ENGINE = MergeTree ORDER BY tuple() TTL (c0 AS a) SETTINGS index_granularity = 8192
+CREATE TABLE t (`c0` Date) ENGINE = MergeTree ORDER BY tuple() TTL (c0 AS a) SETTINGS index_granularity = 8192
+CREATE TABLE t (`c0` Date) ENGINE = MergeTree PARTITION BY c0 ORDER BY tuple() TTL (c0 AS a)
+CREATE TABLE t (`c0` Date) ENGINE = MergeTree PARTITION BY c0 ORDER BY tuple() TTL (c0 AS a)

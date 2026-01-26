@@ -61,7 +61,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return Traits::getArgumentsThatAreAlwaysConstant(); }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayShuffleImpl<Traits>>(); }
@@ -108,7 +108,8 @@ private:
 template <typename Traits>
 ColumnPtr FunctionArrayShuffleImpl<Traits>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
-    const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+    auto col = arguments[0].column->convertToFullColumnIfConst();
+    const ColumnArray * array = checkAndGetColumn<ColumnArray>(col.get());
     if (!array)
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
@@ -192,7 +193,7 @@ This function will not materialize constants.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayShuffleTraits>>(documentation, FunctionFactory::Case::Insensitive);
 
@@ -234,7 +235,7 @@ The value of `limit` should be in the range `[1..N]`. Values outside of that ran
 └──────────────────────────┴──────────────────────────┘
     )"}
     };
-    documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayPartialShuffleTraits>>(documentation, FunctionFactory::Case::Insensitive);
 }
 
