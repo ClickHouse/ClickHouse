@@ -87,9 +87,17 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                     column->size(), filter.size());
 
             if (canInplaceFilter(column, filter.getColumn()))
-                column->assumeMutable()->filter(filter_data);
+            {
+                /// The contract is - not to filter in-place if the column is shared. But if there're some shared subcolumns,
+                /// we'll clone them via IColumn::mutate() and then safely filter in-place.
+                auto mutable_column = IColumn::mutate(std::move(column));
+                mutable_column->filter(filter_data);
+                column = std::move(mutable_column);
+            }
             else
+            {
                 column = column->filter(filter_data, filter.countBytesInFilter());
+            }
 
             if (column->empty())
             {
@@ -247,11 +255,11 @@ MergeTreeRangeReader::Stream::Stream(size_t from_mark, size_t to_mark, size_t cu
     size_t marks_count = index_granularity->getMarksCount();
     if (from_mark >= marks_count)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying create stream to read from mark №{} but total marks count is {}",
-            toString(current_mark), toString(marks_count));
+            toString(from_mark), toString(marks_count));
 
     if (last_mark > marks_count)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying create stream to read to mark №{} but total marks count is {}",
-            toString(current_mark), toString(marks_count));
+            toString(last_mark), toString(marks_count));
 }
 
 void MergeTreeRangeReader::Stream::checkNotFinished() const
@@ -365,10 +373,17 @@ void MergeTreeRangeReader::ReadResult::addGranule(size_t num_rows_, GranuleOffse
 
 void MergeTreeRangeReader::ReadResult::adjustLastGranule()
 {
-    size_t num_rows_to_subtract = total_rows_per_granule - num_read_rows;
-
     if (rows_per_granule.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't adjust last granule because no granules were added");
+
+    /// When no rows were physically read (e.g., all columns are defaults/missing,
+    /// or a constant PREWHERE expression like `PREWHERE 1`), the granule sizes
+    /// were determined directly from the index granularity and are already accurate.
+    /// No adjustment is needed in this case.
+    if (num_read_rows == 0)
+        return;
+
+    size_t num_rows_to_subtract = total_rows_per_granule - num_read_rows;
 
     if (num_rows_to_subtract > rows_per_granule.back())
     {
@@ -1068,7 +1083,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         result.adjustLastGranule();
 
     fillVirtualColumns(result.columns, result);
-    result.num_rows = result.numReadRows();
+    /// Use total_rows_per_granule because:
+    /// - In normal cases, after adjustLastGranule, it equals numReadRows()
+    /// - When no columns are read (e.g., constant PREWHERE), it has the correct value from index granularity
+    result.num_rows = result.total_rows_per_granule;
 
     updatePerformanceCounters(result.numReadRows());
 

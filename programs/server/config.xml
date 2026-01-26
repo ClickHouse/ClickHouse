@@ -1260,7 +1260,8 @@
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <flush_on_crash>false</flush_on_crash>
         <!-- Only tasks longer then duration_threshold_milliseconds will be logged. Zero means log everything -->
-        <duration_threshold_milliseconds>0</duration_threshold_milliseconds>
+        <!-- Default value is 30ms (averge tasks execution time) -->
+        <duration_threshold_milliseconds>30</duration_threshold_milliseconds>
     </background_schedule_pool_log>
 
     <!-- Text log contains all information from usual server log but stores it in structured and efficient way.
@@ -1485,6 +1486,16 @@
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </aggregated_zookeeper_log>
 
+    <!--
+    <zookeeper_log>
+        <database>system</database>
+        <table>zookeeper_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <ttl>event_date + INTERVAL 30 DAY</ttl>
+        <duration_threshold_microseconds>0</duration_threshold_microseconds>
+    </zookeeper_log>
+    -->
+
     <!-- ZooKeeper connection log.
     -->
     <zookeeper_connection_log>
@@ -1654,7 +1665,7 @@
     <!-- <throw_on_unknown_workload>true</throw_on_unknown_workload> -->
 
     <!-- Workload scheduling: if enabled during CPU overloaded periods, long-running queries will downscale to lower number of threads dynamically.
-         Ensures more fair CPU resource distribution.
+         Ensures more fair CPU resource distribution. (Enabled by default)
     -->
     <!--
     <cpu_slot_preemption>true</cpu_slot_preemption>

@@ -17,6 +17,14 @@ enum class DumpOracleStrategy
     INSERT_COUNT = 6
 };
 
+struct MatchHandler
+{
+    /// predicate: returns true if this message should be handled
+    std::function<bool(const google::protobuf::Message &)> predicate;
+    /// handler: mutates or processes the message
+    std::function<void(google::protobuf::Message &)> handler;
+};
+
 class QueryOracle
 {
 private:
@@ -37,9 +45,7 @@ private:
     std::unordered_set<uint32_t> found_tables;
     DB::Strings nsettings;
 
-    void swapQuery(RandomGenerator & rg, StatementGenerator & gen, google::protobuf::Message & mes);
-    bool findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
-    void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, SelectStatementCore * ssc) const;
+    void iterateQuery(google::protobuf::Message & message, const std::vector<MatchHandler> & rules);
     void insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool peer, TableOrFunction * tof) const;
     void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
     void

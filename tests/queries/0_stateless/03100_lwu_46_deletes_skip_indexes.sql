@@ -3,7 +3,6 @@
 DROP TABLE IF EXISTS t_lwd_indexes;
 
 SET enable_lightweight_update = 1;
-SET use_skip_indexes_on_data_read = 0;
 
 CREATE TABLE t_lwd_indexes
 (

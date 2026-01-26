@@ -198,6 +198,9 @@
     M(BuildVectorSimilarityIndexThreads, "Number of threads in the build vector similarity index thread pool.") \
     M(BuildVectorSimilarityIndexThreadsActive, "Number of threads in the build vector similarity index thread pool running a task.") \
     M(BuildVectorSimilarityIndexThreadsScheduled, "Number of queued or active jobs in the build vector similarity index thread pool.") \
+    M(DistributedIndexAnalysisThreads, "Number of threads in the thread pool for distributed index analysis.") \
+    M(DistributedIndexAnalysisThreadsActive, "Number of threads in the thread pool for distributed index analysis running a task.") \
+    M(DistributedIndexAnalysisThreadsScheduled, "Number of queued or active jobs in the distributed idnex analysis thread pool.") \
     M(ObjectStorageQueueRegisteredServers, "Number of registered servers in StorageS3(Azure)Queue")\
     M(IcebergCatalogThreads, "Number of threads in the IcebergCatalog thread pool.") \
     M(IcebergCatalogThreadsActive, "Number of threads in the IcebergCatalog thread pool running a task.") \
@@ -488,28 +491,28 @@ namespace CurrentMetrics
     /// +1 to allow using END as a placeholder
     std::atomic<Value> values[END + 1] {};    /// Global variable, initialized by zeros.
 
-    const char * getName(Metric event)
+    static const std::array<std::string_view, END> names =
     {
-        static const char * strings[] =
-        {
-        #define M(NAME, DOCUMENTATION) #NAME,
-            APPLY_FOR_METRICS(M)
-        #undef M
-        };
+    #define M(NAME, DOCUMENTATION) #NAME,
+        APPLY_FOR_METRICS(M)
+    #undef M
+    };
 
-        return strings[event];
+    const std::string_view & getName(Metric event)
+    {
+        return names[event];
     }
 
-    const char * getDocumentation(Metric event)
+    static const std::array<std::string_view, END> docs =
     {
-        static const char * strings[] =
-        {
-        #define M(NAME, DOCUMENTATION) DOCUMENTATION,
-            APPLY_FOR_METRICS(M)
-        #undef M
-        };
+    #define M(NAME, DOCUMENTATION) DOCUMENTATION,
+        APPLY_FOR_METRICS(M)
+    #undef M
+    };
 
-        return strings[event];
+    const std::string_view & getDocumentation(Metric event)
+    {
+        return docs[event];
     }
 
     Metric end() { return END; }

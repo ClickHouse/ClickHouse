@@ -1,7 +1,8 @@
-personal_ws-1.1 en 3452
+personal_ws-1.1 en 3453
 aarch
 AArch
 ACLs
+ADLS
 ALTERs
 AMPLab
 AMQP
@@ -417,6 +418,8 @@ HNSW
 HSTS
 HTTPConnection
 HTTPThreads
+HTTPs
+HTTPSecureThreads
 HashedDictionary
 HashedDictionaryThreads
 HashedDictionaryThreadsActive
@@ -488,6 +491,7 @@ IntervalQuarter
 IntervalSecond
 IntervalWeek
 IntervalYear
+InterserverSecureThreads
 intExp
 intHash
 IntN
@@ -612,6 +616,8 @@ Keccak
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequests
+KeeperTCPSecureThreads
+KeeperTCPThreads
 Kerberos
 Khanna
 Kibana
@@ -660,6 +666,7 @@ LogQL
 LogQueriesType
 LogsLevel
 Logstash
+LongestRunningMerge
 LookML
 LoongArch
 LowCardinality
@@ -736,6 +743,7 @@ Milovidov
 MinHash
 MinIO
 MinMax
+MinMaxIndexPruned
 MindsDB
 Mongo
 Mongodb
@@ -790,6 +798,7 @@ NewSetting
 Noaa
 NodeJs
 NonMonotonic
+NotPruned
 NonZeroUInt
 NuRaft
 NumHexagons
@@ -902,6 +911,7 @@ ParquetMetadata
 ParquetVersion
 Parsers
 PartMutation
+PartitionPruned
 Partitioner
 PartsActive
 PartsCommitted
@@ -969,7 +979,6 @@ ProxySQL
 Punycode
 PyArrow
 PyCharm
-QATlib
 QBit
 QEMU
 QTCreator
@@ -1165,6 +1174,7 @@ TAVG
 TCPConnection
 TCPHandler
 TCPThreads
+TCPSecureThreads
 TDigest
 TINYINT
 TLSv
@@ -1195,6 +1205,7 @@ TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Tauri
+TcpExtListenOverflows
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
@@ -1332,7 +1343,6 @@ YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
 ZCurve
-ZSTDQAT
 Zabbix
 Zipkin
 ZooKeeper
@@ -1934,6 +1944,7 @@ enqueued
 enum
 enum's
 enums
+ephemerals
 erfc
 errorCodeToName
 estimateCompressionRatio
@@ -2143,6 +2154,7 @@ gtid
 gunzip
 gzip
 gzipped
+GRPCThreads
 hackernews
 hadoop
 halfMD
@@ -2784,6 +2796,7 @@ proleptic
 prometheus
 prometheusQuery
 prometheusQueryRange
+PrometheusThreads
 proportionsZTest
 proto
 protobuf

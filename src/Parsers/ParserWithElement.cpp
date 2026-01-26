@@ -20,7 +20,7 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
 
     auto old_pos = pos;
-    auto with_element = std::make_shared<ASTWithElement>();
+    auto with_element = make_intrusive<ASTWithElement>();
 
     // Trying to parse structure: identifier [(alias1, alias2, ...)] AS (subquery)
     if (ASTPtr name_or_expr;

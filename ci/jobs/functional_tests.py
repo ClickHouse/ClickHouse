@@ -1,7 +1,7 @@
 import argparse
 import os
 import random
-import re
+import subprocess
 from pathlib import Path
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
@@ -64,6 +64,12 @@ def parse_args():
         help="Optional. Number of parallel workers for the test runner. Default: automatically computed from CPU count and job type",
         default=None,
     )
+    parser.add_argument(
+        "--debug",
+        help="Optional. Open clickhouse-client console after test run",
+        default=False,
+        action="store_true",
+    )
     return parser.parse_args()
 
 
@@ -85,7 +91,7 @@ def run_tests(
     if "--no-zookeeper" not in extra_args:
         extra_args += " --zookeeper"
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
-    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --trace \
+    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {5*2**30} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
                 {extra_args} \
                 --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
@@ -191,6 +197,9 @@ def main():
             nproc = int(Utils.cpu_count() * 1.2)
         elif is_database_replicated:
             nproc = int(Utils.cpu_count() * 0.4)
+        elif "msan" in args.options:
+            # MSan is slow
+            nproc = int(Utils.cpu_count() * 0.4)
         elif is_coverage:
             cidb_cluster = CIDBCluster()
             assert cidb_cluster.is_ready()
@@ -274,9 +283,9 @@ def main():
         stages.remove(JobStages.COLLECT_COVERAGE)
     else:
         stages.remove(JobStages.COLLECT_LOGS)
-    if is_coverage or is_bugfix_validation or info.is_local_run:
-        # not needed for these job flavors
-        # moreover it updates/rewrites inverted Tests status for bugfix validation check which should stay inverted
+    if is_coverage or info.is_local_run or is_bugfix_validation:
+        # For bugfix validation, we intentionally skip the check error stage (checks FATAL messages):
+        # regular test failures are assumed to be sufficient to validate the test
         stages.remove(JobStages.CHECK_ERRORS)
     if info.is_local_run:
         if JobStages.COLLECT_LOGS in stages:
@@ -293,6 +302,35 @@ def main():
         stages.remove(JobStages.RETRIES)
 
     tests = args.test
+
+    # for local run check if stateful tests are present to skip prepare_stateful_data and start faster if not
+    has_stateful_tests = True
+    if tests and info.is_local_run:
+        from glob import glob
+
+        has_stateful = False
+        for test_pattern in tests:
+            test_pattern_clean = test_pattern.strip()
+            matching_files = glob(
+                f"tests/queries/**/*{test_pattern_clean}*.sql", recursive=True
+            )
+            matching_files += glob(
+                f"tests/queries/**/*{test_pattern_clean}*.sh", recursive=True
+            )
+            for test_file in matching_files:
+                try:
+                    with open(test_file, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                        if "stateful" in content.lower():
+                            has_stateful = True
+                            break
+                except Exception:
+                    pass
+            if has_stateful:
+                break
+        if not has_stateful:
+            has_stateful_tests = False
+
     targeter = Targeting(info=info)
     if is_flaky_check or is_bugfix_validation:
         if info.is_local_run:
@@ -406,13 +444,14 @@ def main():
                     )
                     print("Failed to create minio log tables")
 
-                res = (
-                    CH.prepare_stateful_data(
-                        with_s3_storage=is_s3_storage,
-                        is_db_replicated=is_database_replicated,
+                if has_stateful_tests:
+                    res = (
+                        CH.prepare_stateful_data(
+                            with_s3_storage=is_s3_storage,
+                            is_db_replicated=is_database_replicated,
+                        )
+                        and CH.insert_system_zookeeper_config()
                     )
-                    and CH.insert_system_zookeeper_config()
-                )
             if res:
                 print("stateful data prepared")
             return res
@@ -481,35 +520,25 @@ def main():
                             collected_test_results.append(test_case_result)
                             seen_test_names.add(test_case_result.name)
 
+                # Control elapsed time for targeted checks: exit if >30 minutes
+                stop_by_elapsed_time = False
+                if is_targeted_check and cnt > 0:
+                    stop_by_elapsed_time = stop_watch_.duration / 60 > 30
+
                 # On final run, replace results with collected ones
-                if is_final_run:
+                if is_final_run or stop_by_elapsed_time:
                     test_result.results = collected_test_results
                     # Set overall status to failed if any collected test cases failed
                     has_failures = any(not t.is_ok() for t in collected_test_results)
                     if has_failures and test_result.is_ok():
                         test_result.set_failed()
+                    break
 
         if not info.is_local_run:
             CH.stop_log_exports()
 
         results.append(test_result)
         debug_files += ft_res_processor.debug_files
-
-        # invert result status for bugfix validation
-        if is_bugfix_validation:
-            has_failure = False
-            for r in results[-1].results:
-                r.set_label("xfail")
-                if r.status == Result.StatusExtended.FAIL:
-                    r.status = Result.StatusExtended.OK
-                    has_failure = True
-                elif r.status == Result.StatusExtended.OK:
-                    r.status = Result.StatusExtended.FAIL
-            if not has_failure:
-                print("Failed to reproduce the bug")
-                results[-1].set_failed().set_info("Failed to reproduce the bug")
-            else:
-                results[-1].set_success()
 
         results[-1].set_timing(stopwatch=stop_watch_)
         if results[-1].info:
@@ -520,7 +549,11 @@ def main():
 
     if JobStages.RETRIES in stages and test_result and test_result.is_failure():
         # retry all failed tests and mark original failed either as success on retry or failed on retry
-        failed_tests = [t.name for t in test_result.results if t.is_failure()]
+        failed_tests = [
+            t.name
+            for t in test_result.results
+            if t.is_failure() and t.name and t.name[0].isdigit()
+        ]
         if len(failed_tests) > 10:
             results.append(
                 Result(
@@ -555,8 +588,13 @@ def main():
                         test_case.set_label(Result.Label.FAILED_ON_RETRY)
             results.append(retry_result)
 
+    if args.debug:
+        print("\n\n=== Debug mode enabled, starting clickhouse-client ===\n")
+        subprocess.call("clickhouse-client", shell=True)
+
     CH.terminate()
 
+    reset_success = False
     if (
         test_result
         and not test_result.is_error()
@@ -574,6 +612,8 @@ def main():
                 ).do(),
             )
         )
+        if results[-1].is_ok():
+            reset_success = True
 
     if test_result and JobStages.CHECK_ERRORS in stages:
         # must not be performed for a test validation - test must fail and log errors are not respected
@@ -590,8 +630,29 @@ def main():
         # fatal failures found in logs represented as normal test cases
         test_result.extend_sub_results(results[-1].results)
         results[-1].results = []
-        if not results[-1].is_ok():
-            results[-1].set_info("Found errors added into Tests results")
+
+    # invert result status for bugfix validation
+    if is_bugfix_validation and test_result:
+        has_failure = False
+        for r in test_result.results:
+            r.set_label("xfail")
+            if r.status == Result.StatusExtended.FAIL:
+                r.status = Result.StatusExtended.OK
+                has_failure = True
+            elif r.status == Result.StatusExtended.OK:
+                r.status = Result.StatusExtended.FAIL
+        if not has_failure:
+            print("Failed to reproduce the bug")
+            test_result.set_failed().set_info("Failed to reproduce the bug")
+        else:
+            # For bugfix validation, the expected behavior is:
+            # - At least one test must fail (bug reproduced)
+            # - The overall Tests result is treated as success in that case
+            test_result.set_success()
+
+        # For bugfix validation, "Check errors" (latest in the list) is only a helper step and
+        # must not affect the overall job result.
+        results[-1].set_success()
 
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")
@@ -626,12 +687,18 @@ def main():
     if test_result:
         test_result.sort()
 
-    Result.create_from(
+    R = Result.create_from(
         results=results,
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
         info=job_info,
-    ).complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
+    )
+
+    if reset_success:
+        # coverage job ignores test failures
+        R.set_success()
+
+    R.complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
 
 if __name__ == "__main__":

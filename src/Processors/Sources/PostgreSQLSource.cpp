@@ -159,7 +159,7 @@ Chunk PostgreSQLSource<T>::generate()
                             column_nullable.getNestedColumn(), (*row)[idx],
                             description.types[idx].first, data_type.getNestedType(), array_info, idx);
 
-                    column_nullable.getNullMapData().emplace_back(0);
+                    column_nullable.getNullMapData().emplace_back(false);
                 }
                 else
                 {

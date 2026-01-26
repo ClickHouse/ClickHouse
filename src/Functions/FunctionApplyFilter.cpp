@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int LOGICAL_ERROR;
 }
 
 class FunctionApplyFilter : public IFunction
@@ -61,21 +62,32 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * filter_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
-        if (!filter_name_column)
+        String filter_name;
+        if (const auto * filter_name_const_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
+        {
+            filter_name = filter_name_const_column->getValue<String>();
+        }
+        else if (const auto * filter_name_column = dynamic_cast<const ColumnString *>(arguments[0].column.get()))
+        {
+            if (filter_name_column->size() == 1)
+                filter_name = filter_name_column->getDataAt(0);
+        }
+
+        if (filter_name.empty())
             throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "First argument of function '{}' must be a String filter name",
                     getName());
 
-        String filter_name = filter_name_column->getValue<String>();
-
         /// Query context contains filter lookup where per-query filters are stored
         auto query_context = CurrentThread::get().getQueryContext();
         auto filter_lookup = query_context->getRuntimeFilterLookup();
+        if (!filter_lookup)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter lookup was not initialized");
         auto filter = filter_lookup->find(filter_name);
 
         /// If filter is not present all rows pass
