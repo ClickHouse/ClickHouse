@@ -33,7 +33,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_kill_infinite_query(started_cluster):
+@pytest.fixture(scope="module")
+def setup_infinite_query(started_cluster):
     # Connect to postgres_database database
     conn = get_postgres_conn(
         started_cluster.postgres_ip, started_cluster.postgres_port, database=True
@@ -59,11 +60,18 @@ $$ LANGUAGE plpgsql;"""
 SELECT generate_infinite_sequence() as counter;"""
     )
 
-    query_id = str(uuid.uuid4())
-
     postgres_host_with__port = (
         f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
     )
+    yield cursor, postgres_host_with__port
+    # Cleanup
+    cursor.close()
+    conn.close()
+
+
+def test_kill_infinite_query(setup_infinite_query):
+    cursor, postgres_host_with__port = setup_infinite_query
+    query_id = str(uuid.uuid4())
 
     def execute_query():
         _, error = node1.query_and_get_answer_with_error(
@@ -117,8 +125,7 @@ def test_kill_query_during_generation(started_cluster):
     random_int INT,
     random_string VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-        """
+    );"""
     )
     cursor.execute(
         """INSERT INTO big_data_table (random_int, random_string)
@@ -175,3 +182,45 @@ and query = 'COPY (SELECT "counter" FROM "infinite_counter") TO STDOUT';
     assert cursor.fetchall()[0][0] == 0
 
     assert node1.contains_in_log("QUERY_WAS_CANCELLED")
+
+
+def test_cancel_infinite_query(setup_infinite_query):
+    _, postgres_host_with__port = setup_infinite_query
+
+    def execute_query():
+        logging.debug("starting clickhouse client")
+        query = f"""SELECT * FROM postgresql(
+        '{postgres_host_with__port}',
+        'postgres_database',
+        'infinite_counter',
+        'postgres',
+        'ClickHouse_PostgreSQL_P@ssw0rd')"""
+        node1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"""/usr/bin/clickhouse client --query "{query}" """,
+            ]
+        )
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+    node1.wait_for_log_line(
+        'ReadFromPostgreSQL: Query: SELECT "counter" FROM "infinite_counter"'
+    )
+    time.sleep(2)
+
+    logging.debug("Sending cancel")
+    # get pid of clickhouse-client
+    client_pid = node1.get_process_pid("clickhouse client")
+    logging.debug(f"client pid: {client_pid}")
+    node1.exec_in_container(
+        ["bash", "-c", f"kill -INT {client_pid}"],
+        user="root",
+    )
+    node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
+    time.sleep(1)
+
+    query_thread.join()
+    logging.debug("Finished test")
+    assert node1.contains_in_log("QUERY_WAS_CANCELLED_BY_CLIENT")
