@@ -74,7 +74,7 @@ public:
         DataLakeStorageSettingsPtr settings_,
         std::optional<std::string> catalog_namespaces_ = std::nullopt)
         : settings(settings_)
-        , catalog_namespaces(catalog_namespaces_ ? *catalog_namespaces_ : std::string("*")) {}
+        , catalog_namespaces(catalog_namespaces_.value_or("*")) {}
 
     bool isDataLakeConfiguration() const override { return true; }
 

@@ -17,7 +17,7 @@ namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
-    extern const int OUT_OF_SCOPE;
+    extern const int CATALOG_NAMESPACE_DISABLED;
 }
 
 namespace
@@ -163,7 +163,7 @@ bool UnityCatalog::tryGetTableMetadata(
     TableMetadata & result) const
 {
     if (!isNamespaceAllowed(schema_name))
-        throw DB::Exception(DB::ErrorCodes::OUT_OF_SCOPE, "Namespace {} is filtered by `namespaces` database parameter", schema_name);
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED, "Namespace {} is filtered by `namespaces` database parameter", schema_name);
 
     auto full_table_name = warehouse + "." + schema_name + "." + table_name;
     Poco::Dynamic::Var json;
@@ -285,7 +285,7 @@ bool UnityCatalog::tryGetTableMetadata(
 bool UnityCatalog::existsTable(const std::string & schema_name, const std::string & table_name) const
 {
     if (!isNamespaceAllowed(schema_name))
-        throw DB::Exception(DB::ErrorCodes::OUT_OF_SCOPE, "Namespace {} is filtered by `namespaces` database parameter", schema_name);
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED, "Namespace {} is filtered by `namespaces` database parameter", schema_name);
 
     String json_str;
     Poco::Dynamic::Var json;
@@ -446,7 +446,7 @@ UnityCatalog::UnityCatalog(
     , log(getLogger("UnityCatalog(" + catalog_ + ")"))
     , auth_header("Authorization", "Bearer " + catalog_credential_)
 {
-    boost::split(allowed_namespaces, namespaces_, [](char c){ return c == ','; });
+    boost::split(allowed_namespaces, namespaces_, boost::is_any_of(", "), boost::token_compress_on);
 }
 
 bool UnityCatalog::isNamespaceAllowed(const std::string & namespace_) const

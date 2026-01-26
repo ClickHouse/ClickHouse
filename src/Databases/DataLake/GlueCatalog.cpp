@@ -56,7 +56,7 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
-    extern const int OUT_OF_SCOPE;
+    extern const int CATALOG_NAMESPACE_DISABLED;
 }
 
 namespace DB::Setting
@@ -168,7 +168,7 @@ GlueCatalog::GlueCatalog(
         glue_client = std::make_unique<Aws::Glue::GlueClient>(credentials_provider, endpoint_provider, client_configuration);
     }
 
-    boost::split(allowed_namespaces, settings.namespaces, [](char c){ return c == ','; });
+    boost::split(allowed_namespaces, settings.namespaces, boost::is_any_of(", "), boost::token_compress_on);
 }
 
 GlueCatalog::~GlueCatalog() = default;
@@ -277,7 +277,7 @@ DB::Names GlueCatalog::getTables() const
 bool GlueCatalog::existsTable(const std::string & database_name, const std::string & table_name) const
 {
     if (!isNamespaceAllowed(database_name))
-        throw DB::Exception(DB::ErrorCodes::OUT_OF_SCOPE, "Namespace {} is filtered by `namespaces` database parameter", database_name);
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED, "Namespace {} is filtered by `namespaces` database parameter", database_name);
 
     Aws::Glue::Model::GetTableRequest request;
     request.SetDatabaseName(database_name);
@@ -293,7 +293,7 @@ bool GlueCatalog::tryGetTableMetadata(
     TableMetadata & result) const
 {
     if (!isNamespaceAllowed(database_name))
-        throw DB::Exception(DB::ErrorCodes::OUT_OF_SCOPE, "Namespace {} is filtered by `namespaces` database parameter", database_name);
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED, "Namespace {} is filtered by `namespaces` database parameter", database_name);
 
     Aws::Glue::Model::GetTableRequest request;
     request.SetDatabaseName(database_name);
@@ -582,7 +582,7 @@ void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
 void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*metadata_content*/) const
 {
     if (!isNamespaceAllowed(namespace_name))
-        throw DB::Exception(DB::ErrorCodes::OUT_OF_SCOPE,
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED,
             "Failed to create table {}, namespace {} is filtered by `namespaces` database parameter",
             table_name, namespace_name);
 
@@ -659,7 +659,7 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
 void GlueCatalog::dropTable(const String & namespace_name, const String & table_name) const
 {
     if (!isNamespaceAllowed(namespace_name))
-        throw DB::Exception(DB::ErrorCodes::OUT_OF_SCOPE,
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED,
             "Failed to drop table {}, namespace {} is filtered by `namespaces` database parameter",
             table_name, namespace_name);
 

@@ -41,7 +41,7 @@ namespace DB::ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int OUT_OF_SCOPE;
+    extern const int CATALOG_NAMESPACE_DISABLED;
 }
 
 namespace DataLake
@@ -561,7 +561,7 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
 {
     if (!allowed_namespaces.isNamespaceAllowed(base_namespace, /*nested*/ false))
-        throw DB::Exception(DB::ErrorCodes::OUT_OF_SCOPE,
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED,
             "Namespace {} is filtered by `namespaces` database parameter", base_namespace);
 
     auto encoded_namespace = encodeNamespaceForURI(base_namespace);
@@ -633,7 +633,7 @@ bool RestCatalog::tryGetTableMetadata(
     }
     catch (const DB::Exception & ex)
     {
-        if (ex.code() == DB::ErrorCodes::OUT_OF_SCOPE)
+        if (ex.code() == DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED)
             throw;
         LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
         return false;
@@ -657,7 +657,7 @@ bool RestCatalog::getTableMetadataImpl(
     LOG_DEBUG(log, "Checking table {} in namespace {}", table_name, namespace_name);
 
     if (!allowed_namespaces.isNamespaceAllowed(namespace_name, /*nested*/ false))
-        throw DB::Exception(DB::ErrorCodes::OUT_OF_SCOPE,
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED,
             "Namespace {} is filtered by `namespaces` database parameter", namespace_name);
 
     DB::HTTPHeaderEntries headers;
@@ -870,7 +870,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const
 {
     if (!allowed_namespaces.isNamespaceAllowed(namespace_name, /*nested*/ false))
-        throw DB::Exception(DB::ErrorCodes::OUT_OF_SCOPE,
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED,
             "Failed to create table {}, namespace {} is filtered by `namespaces` database parameter", table_name, namespace_name);
 
     createNamespaceIfNotExists(namespace_name, metadata_content->getValue<String>("location"));
@@ -978,7 +978,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 void RestCatalog::dropTable(const String & namespace_name, const String & table_name) const
 {
     if (!allowed_namespaces.isNamespaceAllowed(namespace_name, /*nested*/ false))
-        throw DB::Exception(DB::ErrorCodes::OUT_OF_SCOPE,
+        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED,
             "Failed to drop table {}, namespace {} is filtered by `namespaces` database parameter",
             table_name, namespace_name);
 
@@ -1008,11 +1008,11 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
 RestCatalog::AllowedNamespaces::AllowedNamespaces(const std::string & namespaces_)
 {
     std::vector<std::string> list_of_namespaces;
-    boost::split(list_of_namespaces, namespaces_, [](char c){ return c == ','; });
+    boost::split(list_of_namespaces, namespaces_, boost::is_any_of(", "), boost::token_compress_on);
     for (const auto & ns : list_of_namespaces)
     {
         std::vector<std::string> list_of_nested_namespaces;
-        boost::split(list_of_nested_namespaces, ns, [](char c){ return c == '.'; });
+        boost::split(list_of_nested_namespaces, ns, boost::is_any_of("."));
 
         size_t len = list_of_nested_namespaces.size();
         if (!len)
@@ -1043,7 +1043,7 @@ bool RestCatalog::AllowedNamespaces::isNamespaceAllowed(const std::string & name
         return true;
 
     std::vector<std::string> list_of_nested_namespaces;
-    boost::split(list_of_nested_namespaces, namespace_, [](char c){ return c == '.'; });
+    boost::split(list_of_nested_namespaces, namespace_, boost::is_any_of("."));
 
     const AllowedNamespaces * current = this;
     for (const auto & nns : list_of_nested_namespaces)
