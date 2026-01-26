@@ -14,51 +14,49 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+import socket
+import ssl
+import time
+
+def check_ip_blocked(port, secure=False):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(5)
+    try:
+        sock.connect((instance.ip_address, port))
+        
+        if secure:
+            # Create a context that accepts self-signed certs
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            sock = context.wrap_socket(sock, server_hostname=instance.ip_address)
+
+        # We don't need to send anything for the server to reject us if the IP is blocked.
+        # But for SSL, the handshake (wrap_socket) happens first.
+        # After handshake (or immediately for plain), the server should send the error message.
+        
+        # Read the response
+        data = b""
+        start = time.time()
+        while time.time() - start < 5:
+            try:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+            except socket.timeout:
+                break
+                
+        response = data.decode('utf-8', errors='ignore')
+        assert "IP address not allowed" in response, f"Unexpected response: {response}"
+        
+    finally:
+        sock.close()
+
 def test_ip_block_message_ssl():
     # Connect to the secure port (9440).
-    # Rejection happens after the SSL handshake completes, driven by <networks> in ssl_config.xml.
-    
-    # We need a client config that accepts invalid certificates (since self-signed)
-    client_config = """
-<clickhouse>
-    <accept-invalid-certificate>1</accept-invalid-certificate>
-</clickhouse>
-"""
-    # Write config to temp file
-    config_path = os.path.join(os.path.dirname(__file__), "configs", "client_ssl_allow.xml")
-    with open(config_path, "w") as f:
-        f.write(client_config)
-
-    client = Client(
-        instance.ip_address,
-        9440,
-        command=cluster.client_bin_path,
-        secure=True,
-        config=config_path
-    )
-    
-    # The client invocation should fail with the error message from the server
-    # We expect "IP address not allowed" in the stderr/stdout which is captured in the exception
-    try:
-        with pytest.raises(Exception) as excinfo:
-            client.query("SELECT 1")
-        
-        assert "IP address not allowed" in str(excinfo.value)
-    finally:
-        if os.path.exists(config_path):
-            os.remove(config_path)
+    check_ip_blocked(9440, secure=True)
 
 def test_ip_block_message_plain():
     # Connect to the insecure port (9000).
-    client = Client(
-        instance.ip_address,
-        9000,
-        command=cluster.client_bin_path,
-        secure=False
-    )
-    
-    # Should receive error message immediately
-    with pytest.raises(Exception) as excinfo:
-        client.query("SELECT 1")
-        
-    assert "IP address not allowed" in str(excinfo.value)
+    check_ip_blocked(9000, secure=False)
