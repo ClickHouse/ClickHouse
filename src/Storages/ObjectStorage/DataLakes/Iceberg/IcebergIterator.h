@@ -61,6 +61,7 @@ private:
     PersistentTableComponents persistent_components;
     FilesGenerator files_generator;
     LoggerPtr log;
+    std::vector<ManifestFileEntryPtr> files;
 
 
     // By Iceberg design it is difficult to avoid storing position deletes in memory.
