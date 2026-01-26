@@ -39,6 +39,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.2",
+        {
+            {"parallel_replicas_allow_merge_tables", false, false, "Allow usage of Merge tables with parallel replicas"},
+        });
         addSettingsChanges(settings_changes_history, "26.1",
         {
             {"use_statistics", true, true, "Enable this optimization by default."},

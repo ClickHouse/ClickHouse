@@ -181,6 +181,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsBool parallel_replicas_allow_merge_tables;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsBool query_plan_enable_optimizations;
@@ -751,6 +752,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
         else if (
             storage->isMergeTree() && (storage->supportsReplication() || settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
+            && context->getClientInfo().distributed_depth == 0
+            && context->canUseParallelReplicasCustomKeyForCluster(*context->getClusterForParallelReplicas()))
+        {
+            context->setSetting("prefer_localhost_replica", Field(0));
+        }
+        /// Handle Merge tables for parallel replicas with custom key
+        else if (
+            typeid_cast<const StorageMerge *>(storage.get()) && settings[Setting::parallel_replicas_allow_merge_tables]
             && context->getClientInfo().distributed_depth == 0
             && context->canUseParallelReplicasCustomKeyForCluster(*context->getClusterForParallelReplicas()))
         {

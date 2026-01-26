@@ -673,7 +673,8 @@ void executeQueryWithParallelReplicas(
 {
     auto logger = getLogger("executeQueryWithParallelReplicas");
     LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
-        storage_id.getNameForLogs(), header->dumpStructure(), query_ast->formatForLogging(), processed_stage);
+        storage_id.empty() ? "<table function>" : storage_id.getNameForLogs(),
+        header->dumpStructure(), query_ast->formatForLogging(), processed_stage);
 
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
