@@ -4,6 +4,8 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadSettings.h>
+#include <IO/HTTPHeaderEntries.h>
+#include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 
@@ -23,7 +25,8 @@ public:
         size_t file_size_,
         const ReadSettings & settings_ = {},
         bool use_external_buffer_ = false,
-        size_t read_until_position = 0);
+        size_t read_until_position = 0,
+        HTTPHeaderEntries headers_ = {});
 
     bool nextImpl() override;
 
@@ -39,6 +42,8 @@ public:
 
     bool supportsRightBoundedReads() const override { return true; }
 
+    Map getResponseHeaders() const;
+
 private:
     std::unique_ptr<SeekableReadBuffer> initialize();
 
@@ -51,6 +56,7 @@ private:
     std::unique_ptr<SeekableReadBuffer> impl;
 
     ReadSettings read_settings;
+    HTTPHeaderEntries headers;
 
     Poco::Net::HTTPBasicCredentials credentials{};
 
