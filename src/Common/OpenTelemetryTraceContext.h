@@ -27,13 +27,11 @@ struct SpanAttribute
     String key;
     String value;
 
-    template <typename K, typename V>
-    requires std::is_convertible_v<V, String>
+    template <typename K, std::convertible_to<String> V>
     SpanAttribute(K && k, V && v)
         : key(std::forward<K>(k)), value(std::forward<V>(v)) {}
 
     template <typename K, typename V>
-    requires (!std::is_convertible_v<V, String>)
     SpanAttribute(K && k, V && v)
         : key(std::forward<K>(k)), value(toString(std::forward<V>(v))) {}
 };
