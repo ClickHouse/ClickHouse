@@ -720,6 +720,7 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
 
         char * initial_buffer = state.buf->internalBuffer().begin();
         size_t initial_buffer_size = state.buf->internalBuffer().size();
+        chassert(initial_buffer && initial_buffer_size);
 
         char *  predownload_buffer;
         size_t predownload_buffer_size;
@@ -736,7 +737,7 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
         }
 
         chassert(initial_buffer);
-        chassert(predownload_buffer);
+        chassert(predownload_buffer && predownload_buffer_size);
 
         SCOPE_EXIT({
             state.buf->set(initial_buffer, initial_buffer_size);
@@ -1079,21 +1080,24 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     }
 
     state->buf->set(internal_buffer.begin(), internal_buffer.size());
-    SCOPE_EXIT({
-        state->buf->set(nullptr, 0);
-    });
+    size_t size = 0;
+    {
+        SCOPE_EXIT({
+            state->buf->set(nullptr, 0);
+        });
 
-    const auto size = readFromFileSegment(
-        file_segment,
-        file_offset_of_buffer_end,
-        *state,
-        info,
-        implementation_buffer_can_be_reused,
-        log);
+        size = readFromFileSegment(
+            file_segment,
+            file_offset_of_buffer_end,
+            *state,
+            info,
+            implementation_buffer_can_be_reused,
+            log);
 
-    chassert(!state->buf->internalBuffer().empty());
-    chassert(state->buf->buffer().begin() == internal_buffer.begin());
-    chassert(state->buf->available() == size);
+        chassert(!state->buf->internalBuffer().empty());
+        chassert(state->buf->buffer().begin() == internal_buffer.begin());
+        chassert(state->buf->available() == size);
+    }
 
     if (size)
     {
@@ -1101,9 +1105,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         info.current_file_segment_counters.increment(ProfileEvents::FileSegmentUsedBytes, size);
     }
 
-    chassert(internal_buffer.begin() == state->buf->buffer().begin());
     working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + size);
-    state->buf->position() = state->buf->buffer().end();
 
     if (file_segment.isDownloader())
         file_segment.completePartAndResetDownloader();
