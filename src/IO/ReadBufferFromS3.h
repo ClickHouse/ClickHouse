@@ -23,7 +23,7 @@ namespace DB
 class ReadBufferFromS3 : public ReadBufferFromFileBase
 {
 private:
-    std::shared_ptr<const S3::Client> client_ptr;
+    mutable std::shared_ptr<const S3::Client> client_ptr;
     String bucket;
     String key;
     String version_id;

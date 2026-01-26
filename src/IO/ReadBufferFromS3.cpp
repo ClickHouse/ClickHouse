@@ -296,7 +296,8 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
     {
         if (s3_exception->isAccessTokenExpiredError())
         {
-            credentials_refresh_callback();
+            auto new_client = credentials_refresh_callback();
+            client_ptr = std::move(new_client);
             return true;
         }
 

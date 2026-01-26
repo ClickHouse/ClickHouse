@@ -445,6 +445,8 @@ ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCa
 {
     return [this] () -> std::shared_ptr<IStorageCredentials>
     {
+        LOG_DEBUG(log, "Update credentials in the catalog");
+
         auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, {});
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
