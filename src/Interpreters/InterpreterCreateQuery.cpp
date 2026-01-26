@@ -1381,7 +1381,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     const auto * kind = create.is_dictionary ? "Dictionary" : "Table";
     const auto * kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
     bool is_replicated_database_internal = database->getEngineName() == "Replicated" && getContext()->getClientInfo().is_replicated_database_internal;
-    bool from_path = create.attach_from_path.has_value();
+    bool from_path = create.has_attach_from_path;
     bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
     if (database->getEngineName() == "Replicated" && create.uuid != UUIDHelpers::Nil && !is_replicated_database_internal && !internal && !is_on_cluster && !create.attach)
@@ -1585,7 +1585,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Attaching table as [not] replicated is supported only for short attach queries");
 
-    if (create.attach_from_path)
+    if (create.has_attach_from_path)
     {
         chassert(!ddl_guard);
 
@@ -1594,7 +1594,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         {
-            fs::path data_path = fs::path(*create.attach_from_path).lexically_normal();
+            fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
                 data_path = (user_files / data_path).lexically_normal();
             if (!startsWith(data_path, user_files))
@@ -1606,7 +1606,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         }
         else
         {
-            fs::path data_path = (root_path / *create.attach_from_path).lexically_normal();
+            fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
             if (!startsWith(data_path, user_files))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
@@ -1936,7 +1936,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
-    bool from_path = create.attach_from_path.has_value();
+    bool from_path = create.has_attach_from_path;
     String actual_data_path = data_path;
     if (from_path)
     {
@@ -1944,8 +1944,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                             "ATTACH ... FROM ... query is not supported for {} database engine", database->getEngineName());
         /// We will try to create Storage instance with provided data path
-        data_path = *create.attach_from_path;
-        create.attach_from_path = std::nullopt;
+        data_path = create.attach_from_path;
+        create.has_attach_from_path = false;
+        create.attach_from_path.clear();
     }
 
     if (create.attach)

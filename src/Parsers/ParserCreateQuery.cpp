@@ -1012,7 +1012,10 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->is_clone_as = is_clone_as;
 
     if (from_path)
+    {
         query->attach_from_path = from_path->as<ASTLiteral &>().value.safeGet<String>();
+        query->has_attach_from_path = true;
+    }
 
     return true;
 }
