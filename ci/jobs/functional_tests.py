@@ -600,10 +600,7 @@ def main():
             if success_after_rerun or failed_after_rerun:
                 for test_case in test_result.results:
                     if test_case.name in success_after_rerun:
-                        if is_llvm_coverage:
-                            test_case.set_status(Result.StatusExtended.OK)
-                        else:
-                            test_case.set_label(Result.Label.OK_ON_RETRY)
+                        test_case.set_label(Result.Label.OK_ON_RETRY)
                     elif test_case.name in failed_after_rerun:
                         test_case.set_label(Result.Label.FAILED_ON_RETRY)
             results.append(retry_result)

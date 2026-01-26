@@ -450,7 +450,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "JAVA_PATH": java_path,
     }
     if is_llvm_coverage:
-        test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-%p.profraw"
+        test_env["LLVM_PROFILE_FILE"] = f"it-%4m.profraw"
         print(
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
@@ -466,15 +466,15 @@ tar -czf ./ci/tmp/logs.tar.gz \
         else:
             print(f"Using {llvm_profdata} to merge coverage files")
         
-        if llvm_profdata:
-            # Start background merger process
-            merger_process = Process(
-                target=merge_profraw_files,
-                args=(llvm_profdata, batch_num, True),
-                daemon=True
-            )
-            merger_process.start()
-            print(f"Started background coverage merger (PID: {merger_process.pid})")
+        # if llvm_profdata:
+        #     # Start background merger process
+        #     merger_process = Process(
+        #         target=merge_profraw_files,
+        #         args=(llvm_profdata, batch_num, True),
+        #         daemon=True
+        #     )
+        #     merger_process.start()
+        #     print(f"Started background coverage merger (PID: {merger_process.pid})")
 
     test_results = []
     failed_tests_files = []
@@ -500,7 +500,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     failed_test_cases = []
 
-    timeout = 5400 if not is_llvm_coverage else 7200
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
@@ -676,13 +675,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
             R.set_success()
 
     force_ok_exit = False
-    if is_llvm_coverage and merger_process:
-        print("Tests completed, stopping background merger...")
-        merger_process.terminate()
-        merger_process.join(timeout=5)
-        if merger_process.is_alive():
-            merger_process.kill()
-            merger_process.join()
+    if is_llvm_coverage:
+        # print("Tests completed, stopping background merger...")
+        # merger_process.terminate()
+        # merger_process.join(timeout=5)
+        # if merger_process.is_alive():
+        #     merger_process.kill()
+        #     merger_process.join()
         
         print("Collecting and merging LLVM coverage files...")
         
@@ -695,7 +694,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             profdata_files = [f.strip() for f in profdata_files if f.strip()]
             
             if profdata_files:
-                print(f"Merging {len(profdata_files)} intermediate profdata files into final ft-{batch_num}.profdata")
+                print(f"Merging {len(profdata_files)} intermediate profdata files into final it-{batch_num}.profdata")
                 final_file = f"./ft-{batch_num}.profdata"
                 merge_cmd = f"{llvm_profdata} merge -sparse {' '.join(profdata_files)} -o {final_file} 2>&1"
                 Shell.get_output(merge_cmd, verbose=True)

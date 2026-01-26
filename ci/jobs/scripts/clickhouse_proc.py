@@ -478,8 +478,6 @@ profiles:
             )
             return False
 
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-%2m.profraw"
-
         print(
             f"ClickHouse server replica {replica_num} started successfully, pid [{pid}]"
         )
