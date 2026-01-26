@@ -125,9 +125,13 @@ StorageView::StorageView(
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
-    // Set columns if provided (regardless of whether view is parameterized)
-    // For parameterized views without explicit columns, columns_ will be empty
-    if (!columns_.empty())
+    if (!is_parameterized_view_)
+    {
+        /// If CREATE query is to create parameterized view, then we dont want to set columns
+        if (!query.isParameterizedView())
+            storage_metadata.setColumns(columns_);
+    }
+    else
         storage_metadata.setColumns(columns_);
 
     storage_metadata.setComment(comment);
@@ -141,7 +145,7 @@ StorageView::StorageView(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
     SelectQueryDescription description;
 
-    description.inner_query = query.getChild(*query.select);
+    description.inner_query = query.select->ptr();
 
     NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::Unspecified};
     NormalizeSelectWithUnionQueryVisitor{data}.visit(description.inner_query);
@@ -213,8 +217,7 @@ void StorageView::read(
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             header->getColumnsWithTypeAndName(),
             expected_header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name,
-            context);
+            ActionsDAG::MatchColumnsMode::Name);
 
     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
@@ -239,9 +242,7 @@ void StorageView::alter(
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
 
-    DatabaseCatalog::instance()
-        .getDatabase(table_id.database_name)
-        ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
 
     auto & instance = ViewDefinerDependencies::instance();
     if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
@@ -284,11 +285,11 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
         {
             auto table_function_name = table_expression->table_function->as<ASTFunction>()->name;
             if (table_function_name == "view" || table_function_name == "viewIfPermitted")
-                table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>("__view");
+                table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>("__view");
             else if (table_function_name == "merge")
-                table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>("__merge");
+                table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>("__merge");
             else if (parameterized_view)
-                table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>(table_function_name);
+                table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>(table_function_name);
 
         }
         if (!table_expression->database_and_table_name)
@@ -300,7 +301,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
 
     view_name = table_expression->database_and_table_name;
     table_expression->database_and_table_name = {};
-    table_expression->subquery = make_intrusive<ASTSubquery>(view_query);
+    table_expression->subquery = std::make_shared<ASTSubquery>(view_query);
     table_expression->subquery->setAlias(alias);
 
     for (auto & child : table_expression->children)

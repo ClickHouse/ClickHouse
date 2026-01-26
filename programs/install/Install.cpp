@@ -3,8 +3,8 @@
 #include <boost/program_options.hpp>
 #include <Common/filesystemHelpers.h>
 
-#include <csignal>
 #include <sys/stat.h>
+#include <pwd.h>
 
 #if defined(OS_LINUX)
     #include <syscall.h>
@@ -33,18 +33,13 @@
 
 #include <Poco/Util/XMLConfiguration.h>
 
+#include <incbin.h>
+
 #include "config.h"
 
 /// Embedded configuration files used inside the install program
-constexpr unsigned char resource_config_xml[] =
-{
-#embed "../server/config.xml"
-};
-
-constexpr unsigned char resource_users_xml[] =
-{
-#embed "../server/users.xml"
-};
+INCBIN(resource_config_xml, SOURCE_DIR "/programs/server/config.xml");
+INCBIN(resource_users_xml, SOURCE_DIR "/programs/server/users.xml");
 
 
 /** This tool can be used to install ClickHouse without a deb/rpm/tgz package, having only "clickhouse" binary.
@@ -238,7 +233,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        if (options.contains("help"))
+        if (options.count("help"))
         {
             std::cout << "Install ClickHouse without .deb/.rpm/.tgz packages (having the binary only)\n\n";
             std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " install [options]", getuid() != 0) << '\n';
@@ -291,7 +286,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         bool old_binary_exists = fs::exists(main_bin_path);
         bool already_installed = false;
 
-        if (options.contains("link"))
+        if (options.count("link"))
         {
             if (old_binary_exists)
             {
@@ -469,7 +464,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     if (is_symlink)
                         points_to = fs::weakly_canonical(FS::readSymlink(symlink_path));
 
-                    if (is_symlink && (points_to == main_bin_path || (options.contains("link") && points_to == binary_self_canonical_path)))
+                    if (is_symlink && (points_to == main_bin_path || (options.count("link") && points_to == binary_self_canonical_path)))
                     {
                         need_to_create = false;
                     }
@@ -586,7 +581,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(main_config_file))
         {
-            std::string_view main_config_content(reinterpret_cast<const char *>(resource_config_xml), std::size(resource_config_xml));
+            std::string_view main_config_content(reinterpret_cast<const char *>(gresource_config_xmlData), gresource_config_xmlSize);
             if (main_config_content.empty())
             {
                 fmt::print("There is no default config.xml, you have to download it and place to {}.\n", main_config_file.string());
@@ -697,7 +692,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(users_config_file))
         {
-            std::string_view users_config_content(reinterpret_cast<const char *>(resource_users_xml), std::size(resource_users_xml));
+            std::string_view users_config_content(reinterpret_cast<const char *>(gresource_users_xmlData), gresource_users_xmlSize);
             if (users_config_content.empty())
             {
                 fmt::print("There is no default users.xml, you have to download it and place to {}.\n", users_config_file.string());
@@ -804,7 +799,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         const char * debian_frontend_var = getenv("DEBIAN_FRONTEND"); // NOLINT(concurrency-mt-unsafe)
         bool noninteractive = (debian_frontend_var && debian_frontend_var == std::string_view("noninteractive"))
-                              || options.contains("noninteractive");
+                              || options.count("noninteractive");
 
 
         bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;
@@ -1218,10 +1213,9 @@ int mainEntryClickHouseStart(int argc, char ** argv)
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        if (options.contains("help"))
+        if (options.count("help"))
         {
             std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " start", getuid() != 0) << '\n';
-            std::cout << desc << "\n";
             return 1;
         }
 
@@ -1260,10 +1254,9 @@ int mainEntryClickHouseStop(int argc, char ** argv)
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        if (options.contains("help"))
+        if (options.count("help"))
         {
             std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " stop", getuid() != 0) << '\n';
-            std::cout << desc << "\n";
             return 1;
         }
 
@@ -1297,10 +1290,9 @@ int mainEntryClickHouseStatus(int argc, char ** argv)
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        if (options.contains("help"))
+        if (options.count("help"))
         {
             std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " status", getuid() != 0) << '\n';
-            std::cout << desc << "\n";
             return 1;
         }
 
@@ -1344,10 +1336,9 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        if (options.contains("help"))
+        if (options.count("help"))
         {
             std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " restart", getuid() != 0) << '\n';
-            std::cout << desc << "\n";
             return 1;
         }
 

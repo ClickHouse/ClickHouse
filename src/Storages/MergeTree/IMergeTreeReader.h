@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
+#include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
@@ -25,7 +26,6 @@ public:
         const NamesAndTypesList & columns_,
         const VirtualFields & virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
-        const MergeTreeSettingsPtr & storage_settings_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         const MarkRanges & all_mark_ranges_,
@@ -41,14 +41,6 @@ public:
                             size_t rows_offset, Columns & res_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
-
-    /// This is a special case for the filter-only reader, when no other filtration is potentially applied.
-    /// So we must always apply filter into the RangeReader.
-    virtual bool mustApplyFilter() const { return false; }
-
-    virtual size_t getResultColumnCount() const { return getColumns().size(); }
-
-    virtual bool producesFilterOnly() const { return false; }
 
     virtual ~IMergeTreeReader() = default;
 
@@ -68,8 +60,8 @@ public:
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
 
-    ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns; }
-    size_t numColumnsInResult() const { return getColumns().size(); }
+    const NamesAndTypesList & getColumns() const { return requested_columns; }
+    size_t numColumnsInResult() const { return requested_columns.size(); }
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
@@ -78,10 +70,6 @@ public:
     virtual void prefetchBeginOfRange(Priority) {}
 
     MergeTreeReaderSettings & getMergeTreeReaderSettings() { return settings; }
-
-    virtual bool canSkipMark(size_t, size_t) { return false; }
-
-    virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
 
 protected:
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
@@ -111,10 +99,9 @@ protected:
     MarkCache * const mark_cache;
 
     MergeTreeReaderSettings settings;
-    MergeTreeSettingsPtr storage_settings;
 
     const StorageSnapshotPtr storage_snapshot;
-    MarkRanges all_mark_ranges;
+    const MarkRanges all_mark_ranges;
 
     /// Column, serialization and level (of nesting) of column
     /// which is used for reading offsets for missing nested column.
@@ -136,9 +123,6 @@ protected:
     AlterConversionsPtr alter_conversions;
 
 private:
-    friend class MergeTreeReaderIndex;
-    friend class MergeTreeReaderTextIndex;
-
     /// Returns actual column name in part, which can differ from table metadata.
     String getColumnNameInPart(const NameAndTypePair & required_column) const;
     std::pair<String, String> getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const;
@@ -151,7 +135,7 @@ private:
     NamesAndTypesList original_requested_columns;
 
     /// The same as above but with converted Arrays to subcolumns of Nested.
-    NamesAndTypesList converted_requested_columns;
+    NamesAndTypesList requested_columns;
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;
@@ -163,7 +147,6 @@ MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns,
     const StorageSnapshotPtr & storage_snapshot,
-    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
@@ -173,11 +156,4 @@ MergeTreeReaderPtr createMergeTreeReader(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
-struct MergeTreeIndexWithCondition;
-
-MergeTreeReaderPtr createMergeTreeReaderIndex(
-    const IMergeTreeReader * main_reader,
-    const MergeTreeIndexWithCondition & index,
-    const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark);
 }

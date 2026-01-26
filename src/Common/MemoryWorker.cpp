@@ -6,7 +6,6 @@
 #include <base/cgroupsv2.h>
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
-#include <Common/OSThreadNiceValue.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -178,9 +177,7 @@ std::optional<std::string> getCgroupsV1Path()
     return {default_cgroups_mount / "memory"};
 }
 
-}
-
-std::pair<std::string, ICgroupsReader::CgroupsVersion> ICgroupsReader::getCgroupsPath()
+std::pair<std::string, ICgroupsReader::CgroupsVersion> getCgroupsPath()
 {
     auto v2_path = getCgroupsV2PathContainingFile("memory.current");
     if (v2_path.has_value())
@@ -191,6 +188,8 @@ std::pair<std::string, ICgroupsReader::CgroupsVersion> ICgroupsReader::getCgroup
         return {*v1_path, ICgroupsReader::CgroupsVersion::V1};
 
     throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot find cgroups v1 or v2 current memory file");
+}
+
 }
 
 std::shared_ptr<ICgroupsReader> ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion version, const std::filesystem::path & cgroup_path)
@@ -244,7 +243,7 @@ MemoryWorker::MemoryWorker(
         {
             static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
 
-            const auto [cgroup_path, version] = ICgroupsReader::getCgroupsPath();
+            const auto [cgroup_path, version] = getCgroupsPath();
             LOG_INFO(
                 getLogger("CgroupsReader"),
                 "Will create cgroup reader from '{}' (cgroups version: {})",
@@ -353,11 +352,7 @@ uint64_t MemoryWorker::getMemoryUsage(bool log_error)
 
 void MemoryWorker::updateResidentMemoryThread()
 {
-    DB::setThreadName(ThreadName::MEMORY_WORKER);
-
-    /// Set the biggest priority for this thread to avoid drift
-    /// under the CPU starvation.
-    OSThreadNiceValue::set(-20);
+    setThreadName("MemoryWorker");
 
     std::chrono::milliseconds chrono_period_ms{rss_update_period_ms};
     [[maybe_unused]] bool first_run = true;
@@ -423,7 +418,7 @@ void MemoryWorker::purgeDirtyPagesThread()
     /// We do it to avoid reading RSS value in both threads. Even though they are fairly
     /// fast, they are still not free.
     /// So we keep the work of reading current RSS in one thread which allows us to keep the low period time for it.
-    DB::setThreadName(ThreadName::MEMORY_WORKER);
+    setThreadName("MemoryWorker");
 
     std::unique_lock purge_dirty_pages_lock(purge_dirty_pages_mutex);
 
