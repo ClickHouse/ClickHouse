@@ -46,7 +46,6 @@ struct PaimonTableSchema
     void update(const Poco::JSON::Object::Ptr & json_object);
 
     explicit PaimonTableSchema(const Poco::JSON::Object::Ptr & json_object);
-    explicit PaimonTableSchema() = default;
 };
 using PaimonTableSchemaPtr = std::shared_ptr<PaimonTableSchema>;
 

@@ -59,7 +59,7 @@ static MutationCommand createCommandWithUpdatedColumns(
     res.mutation_version = command.mutation_version;
 
     auto & alter_ast = assert_cast<ASTAlterCommand &>(*res.ast);
-    auto new_assignments = make_intrusive<ASTExpressionList>();
+    auto new_assignments = std::make_shared<ASTExpressionList>();
 
     for (const auto & child : alter_ast.update_assignments->children)
     {
@@ -92,14 +92,14 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
     chassert(command.type == MutationCommand::Type::UPDATE);
     chassert(command.predicate != nullptr);
 
-    auto alter_command = make_intrusive<ASTAlterCommand>();
+    auto alter_command = std::make_shared<ASTAlterCommand>();
     alter_command->type = ASTAlterCommand::DELETE;
 
     if (command.partition)
         alter_command->partition = alter_command->children.emplace_back(command.partition->clone()).get();
 
     alter_command->predicate = alter_command->children.emplace_back(command.predicate->clone()).get();
-    auto mutation_command = MutationCommand::parse(*alter_command);
+    auto mutation_command = MutationCommand::parse(alter_command.get());
 
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}", alter_command->formatForErrorMessage());

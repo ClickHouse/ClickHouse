@@ -12,7 +12,6 @@
 #include <Common/TraceSender.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
-#include <csignal>
 
 
 namespace CurrentMetrics
@@ -124,7 +123,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-#if defined(SIGEV_THREAD_ID)
+#ifndef __APPLE__
 Timer::Timer()
     : log(getLogger("Timer"))
 {}
@@ -236,7 +235,9 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
 {
 #if defined(SANITIZER)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
-#elif defined(SIGEV_THREAD_ID)
+#elif defined(__APPLE__)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
+#else
     /// Sanity check.
     if (!hasPHDRCache())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache, that is not available for TSan build");
@@ -265,8 +266,6 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
         timer.cleanup();
         throw;
     }
-#else
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler requires SIGEV_THREAD_ID");
 #endif
 }
 
@@ -276,11 +275,12 @@ void QueryProfilerBase<ProfilerImpl>::setPeriod([[maybe_unused]] UInt64 period_)
 {
 #if defined(SANITIZER)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
-#elif defined(SIGEV_THREAD_ID)
-    timer.set(period_);
+#elif defined(__APPLE__)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
 #else
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler requires SIGEV_THREAD_ID");
+    timer.set(period_);
 #endif
+
 }
 
 template <typename ProfilerImpl>
@@ -299,7 +299,7 @@ QueryProfilerBase<ProfilerImpl>::~QueryProfilerBase()
 template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::cleanup()
 {
-#if defined(SIGEV_THREAD_ID)
+#ifndef __APPLE__
     timer.stop();
     signal_handler_disarmed = true;
 #endif

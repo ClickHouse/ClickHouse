@@ -36,7 +36,6 @@ def kafka_cluster():
 def test_missing_mv_target(kafka_cluster, create_query_generator):
     admin = k.get_admin_client(kafka_cluster)
     topic = "mv_target_missing" + k.get_topic_postfix(create_query_generator)
-    flush_interval_seconds = 1
 
     # we don't bother creating this topic because we never start streaming
     topic_other = "mv_target_missing_other" + k.get_topic_postfix(
@@ -48,7 +47,6 @@ def test_missing_mv_target(kafka_cluster, create_query_generator):
         settings = {
             "kafka_row_delimiter": "\n",
             "format_csv_delimiter": "|",
-            "kafka_flush_interval_ms": flush_interval_seconds * 1000,
         }
         if create_query_generator == k.generate_old_create_table_query:
             settings["kafka_commit_on_select"] = 1
@@ -175,15 +173,11 @@ missing_dependencies: [['test.mvother']]
 """
         )
 
-        # make sure the kafka table engine picked up the views, because it happens at the beginning of the streaming loop
-        time.sleep(flush_interval_seconds * 1.2)
         k.kafka_produce(kafka_cluster, topic, ["1|foo", "2|bar"])
 
         assert (
             instance.query_with_retry(
                 "SELECT count() FROM test.target2",
-                retry_count=500,
-                sleep_time=0.1,
                 check_callback=lambda x: int(x) == 2,
             ).strip()
             == "2"
@@ -191,8 +185,6 @@ missing_dependencies: [['test.mvother']]
         assert (
             instance.query_with_retry(
                 "SELECT count() FROM test.target1",
-                retry_count=500,
-                sleep_time=0.1,
                 check_callback=lambda x: int(x) == 2,
             ).strip()
             == "2"
@@ -220,14 +212,12 @@ missing_dependencies: [['test.mvother']]
 def test_missing_mv_transitive_target(kafka_cluster, create_query_generator):
     admin = k.get_admin_client(kafka_cluster)
     topic = "mv_transitive_target_missing" + k.get_topic_postfix(create_query_generator)
-    flush_interval_seconds = 1
 
     with k.kafka_topic(admin, topic):
 
         settings = {
             "kafka_row_delimiter": "\n",
             "format_csv_delimiter": "|",
-            "kafka_flush_interval_ms": flush_interval_seconds * 1000,
         }
         if create_query_generator == k.generate_old_create_table_query:
             settings["kafka_commit_on_select"] = 1
@@ -289,16 +279,11 @@ missing_dependencies: []
 """
         )
 
-        # make sure the kafka table engine picked up the views, because it happens at the beginning of the streaming loop
-        time.sleep(flush_interval_seconds * 1.2)
-
         k.kafka_produce(kafka_cluster, topic, ["1|foo", "2|bar"])
 
         assert (
             instance.query_with_retry(
                 "SELECT count() FROM test.target2",
-                retry_count=500,
-                sleep_time=0.1,
                 check_callback=lambda x: int(x) == 2,
             ).strip()
             == "2"

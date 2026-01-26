@@ -18,7 +18,6 @@ namespace DB
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
 }
@@ -371,11 +370,10 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
         is_equal = false;
     }
 
-    constexpr bool escape_index_filenames = true; /// It doesn't matter here, as we compare parsed strings
-    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context).explicitToString();
+    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, context).explicitToString();
     if (skip_indices != parsed_zk_skip_indices)
     {
-        String all_parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context).allToString();
+        String all_parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, context).allToString();
         // Backward compatibility: older replicas included implicit indices in metadata,
         // while newer ones exclude them. This check allows comparison between both formats.
         if (skip_indices != all_parsed_zk_skip_indices)
@@ -513,7 +511,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         }
 
         if (skip_indices_changed)
-            new_metadata.secondary_indices = IndicesDescription::parse(new_skip_indices, new_columns, new_metadata.escape_index_filenames, context);
+            new_metadata.secondary_indices = IndicesDescription::parse(new_skip_indices, new_columns, context);
 
         if (constraints_changed)
             new_metadata.constraints = ConstraintsDescription::parse(new_constraints);

@@ -299,10 +299,9 @@ size_t CPULeaseAllocation::upscale()
     return max_threads;
 }
 
-void CPULeaseAllocation::downscale(size_t thread_num, bool shutdown_)
+void CPULeaseAllocation::downscale(size_t thread_num)
 {
-    if (!shutdown_)
-        ProfileEvents::increment(ProfileEvents::ConcurrencyControlDownscales);
+    ProfileEvents::increment(ProfileEvents::ConcurrencyControlDownscales);
 
     chassert(threads.leased[thread_num]);
     threads.leased.reset(thread_num);
@@ -462,7 +461,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
 
     if (shutdown) // Allocation is being destroyed, worker thread should stop
     {
-        downscale(lease.slot_id, /* shutdown = */ true);
+        downscale(lease.slot_id);
         lease.reset();
         return false;
     }
@@ -504,12 +503,10 @@ bool CPULeaseAllocation::renew(Lease & lease)
             CurrentMetrics::Increment preempted_increment(CurrentMetrics::ConcurrencyControlPreempted);
             acquired_increment.sub(1);
 
-            bool wait_succeeded = waitForGrant(lock, thread_num);
-            if (!wait_succeeded || shutdown)
+            if (!waitForGrant(lock, thread_num) || shutdown)
             {
                 // Timeout or exception or shutdown - worker thread should stop
-                // Only count as downscale if actually timed out, not just shutdown
-                downscale(thread_num, /* shutdown = */ wait_succeeded);
+                downscale(thread_num);
                 lease.reset();
                 return false;
             }

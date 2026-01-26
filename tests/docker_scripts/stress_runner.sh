@@ -54,7 +54,11 @@ cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config 
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
 
-start_server || { echo "Failed to start server"; exit 1; }
+start_server
+if [ $? -ne 0 ]; then
+    echo "Failed to start server"
+    exit 1
+fi
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_start || echo "ERROR: Failed to start log exports"
 
@@ -78,7 +82,10 @@ fi
 echo "Using cache policy: $cache_policy"
 
 if [ "$cache_policy" = "SLRU" ]; then
-    sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
+    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+    | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
+    > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+    mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
 fi
 
 # Disable experimental WINDOW VIEW tests for stress tests, since they may be
@@ -100,7 +107,11 @@ sudo cat /etc/clickhouse-server/users.d/stress_tests_overrides.xml <<EOL
 </clickhouse>
 EOL
 
-start_server || { echo "Failed to start server"; exit 1; }
+start_server
+if [ $? -ne 0 ]; then
+    echo "Failed to start server"
+    exit 1
+fi
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
@@ -251,17 +262,31 @@ if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" || "$USE_AZURE_STORAGE_FOR_MERGE_T
         exit 1
     fi
 
-    sed -i.tmp "s|<main><disk>cached_azure</disk></main>|<main><disk>cached_azure</disk></main><default><disk>default</disk></default>|" "$file"
+    sudo cat "$file" \
+      | sed "s|<main><disk>cached_azure</disk></main>|<main><disk>cached_azure</disk></main><default><disk>default</disk></default>|" \
+      > /etc/clickhouse-server/config.d/.xml.tmp
+    mv /etc/clickhouse-server/config.d/.xml.tmp "$file"
 
+    if [[ $? -ne 0 ]]; then
+        echo "ERROR: Failed to update storage policy by default file"
+        exit 1
+    fi
+    
     sudo chown clickhouse "$file"
     sudo chgrp clickhouse "$file"
 fi
 
 
-sed -i.tmp "s|<level>trace</level>|<level>test</level>|" /etc/clickhouse-server/config.d/logger_trace.xml
+sudo cat /etc/clickhouse-server/config.d/logger_trace.xml \
+   | sed "s|<level>trace</level>|<level>test</level>|" \
+   > /etc/clickhouse-server/config.d/logger_trace.xml.tmp
+mv /etc/clickhouse-server/config.d/logger_trace.xml.tmp /etc/clickhouse-server/config.d/logger_trace.xml
 
 if [ "$cache_policy" = "SLRU" ]; then
-    sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
+    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+    | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
+    > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+    mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
 fi
 
 # Randomize async_load_databases
@@ -270,13 +295,11 @@ if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
 
-# Randomize concurrent_threads_scheduler (default is fair_round_robin)
-if [ $((RANDOM % 2)) -eq 1 ]; then
-    sudo echo "<concurrent_threads_scheduler>max_min_fair</concurrent_threads_scheduler>" \
-        > /etc/clickhouse-server/config.d/enable_max_min_fair_scheduler.xml
+start_server
+if [ $? -ne 0 ]; then
+    echo "Failed to start server"
+    exit 1
 fi
-
-start_server || { echo "Failed to start server"; exit 1; }
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
 python3 /repo/ci/jobs/scripts/stress/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
@@ -294,7 +317,11 @@ unset "${!THREAD_@}"
 # running with fault injection.
 rm /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
 
-start_server || { echo "Failed to start server"; exit 1; }
+start_server
+if [ $? -ne 0 ]; then
+    echo "Failed to start server"
+    exit 1
+fi
 
 check_server_start
 

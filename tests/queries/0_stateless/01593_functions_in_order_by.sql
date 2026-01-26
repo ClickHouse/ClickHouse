@@ -1,5 +1,3 @@
-SET enable_analyzer = 1;
-
 EXPLAIN SYNTAX
 SELECT msg, toDateTime(intDiv(ms, 1000)) AS time
 FROM

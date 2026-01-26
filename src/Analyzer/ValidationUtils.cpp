@@ -13,7 +13,6 @@
 #include <Storages/IStorage.h>
 
 #include <memory>
-#include <ranges>
 
 namespace DB
 {
@@ -201,8 +200,6 @@ public:
 
         auto column_node_source = column_node->getColumnSource();
         if (column_node_source->getNodeType() == QueryTreeNodeType::LAMBDA)
-            return;
-        if (column_node_source->getNodeType() == QueryTreeNodeType::INTERPOLATE)
             return;
 
         throw Exception(ErrorCodes::NOT_AN_AGGREGATE,

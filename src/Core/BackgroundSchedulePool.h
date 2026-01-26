@@ -5,7 +5,6 @@
 #include <functional>
 #include <map>
 #include <mutex>
-#include <unordered_set>
 #include <vector>
 #include <Interpreters/StorageID.h>
 #include <base/defines.h>
@@ -117,8 +116,6 @@ private:
     std::unordered_map<UInt64, TasksGroup> task_groups TSA_GUARDED_BY(tasks_mutex);
     std::vector<UInt64> runnable_task_types TSA_GUARDED_BY(tasks_mutex);
     Threads threads;
-    /// Tasks from tasks_groups are removed while executing, hold list of running tasks separately, for better introspection via system.background_schedule_pool.
-    std::unordered_set<TaskInfoPtr> running_tasks TSA_GUARDED_BY(tasks_mutex);
 
     /// Delayed tasks.
 
@@ -161,14 +158,17 @@ public:
     /// Return **permanent** watch callback needed for notifications from ZooKeeper watches.
     Coordination::WatchCallbackPtr getWatchCallback();
 
+    /// Returns lock that protects from concurrent task execution.
+    /// This lock should not be held for a long time.
+    std::unique_lock<std::mutex> getExecLock();
+
 private:
     friend class TaskNotification;
     friend class BackgroundSchedulePool;
 
     BackgroundSchedulePoolTaskInfo(BackgroundSchedulePoolWeakPtr pool_, const StorageID & storage_, const std::string & log_name_, const BackgroundSchedulePool::TaskFunc & function_);
 
-    /// Return true if it the task was scheduled again
-    bool execute(BackgroundSchedulePool & pool);
+    void execute(BackgroundSchedulePool & pool);
 
     bool scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock);
 

@@ -146,8 +146,6 @@ public:
         return QueryTreeNodeType::SORT;
     }
 
-    const std::string & getColumnName() const { return column_name; }
-
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -167,7 +165,6 @@ private:
     static constexpr size_t fill_staleness_child_index = 4;
     static constexpr size_t children_size = fill_staleness_child_index + 1;
 
-    std::string column_name;
     SortDirection sort_direction = SortDirection::ASCENDING;
     std::optional<SortDirection> nulls_sort_direction;
     std::shared_ptr<Collator> collator;

@@ -193,22 +193,6 @@ NameSet checkAccessRights(const TableNode & table_node, const Names & column_nam
     return {};
 }
 
-/// Check access rights for all tables referenced in a subquery
-void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const ContextPtr & query_context)
-{
-    auto table_nodes = extractAllTableReferences(subquery_node);
-    for (const auto & table_node_ptr : table_nodes)
-    {
-        const auto & table_node = table_node_ptr->as<TableNode &>();
-        if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
-            continue;
-
-        const auto & storage_id = table_node.getStorageID();
-        if (storage_id.hasDatabase())
-            query_context->checkAccess(AccessType::SELECT, storage_id);
-    }
-}
-
 bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
 {
     const auto & storage_id = table_node.getStorageID();
@@ -421,7 +405,7 @@ bool applyTrivialCountIfPossible(
     return true;
 }
 
-void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expression, const SelectQueryOptions & select_query_options, PlannerContextPtr & planner_context)
+void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expression, PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -442,13 +426,6 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
     {
         const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
         columns_names_allowed_to_select = checkAccessRights(*table_node, column_names_with_aliases, query_context);
-    }
-    else if ((query_node || union_node) && select_query_options.check_subquery_table_access)
-    {
-        /// Check permissions for all tables referenced in the subquery.
-        /// This is needed because in only_analyze mode, subqueries are not recursively planned,
-        /// so their permission checks would otherwise be skipped.
-        checkAccessRightsForSubquery(table_expression, query_context);
     }
 
     if (columns_names.empty())
@@ -716,14 +693,13 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
 }
 
 std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
-    AliasColumnExpressions & alias_column_expressions, const SharedHeader & current_header)
+    std::unordered_map<std::string, ActionsDAG> & alias_column_expressions, const SharedHeader & current_header)
 {
     ActionsDAG merged_alias_columns_actions_dag(current_header->getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs action_dag_outputs = merged_alias_columns_actions_dag.getInputs();
 
-    for (auto & alias_column_expression : alias_column_expressions)
+    for (auto & [column_name, alias_column_actions_dag] : alias_column_expressions)
     {
-        auto & alias_column_actions_dag = alias_column_expression.second;
         const auto & current_outputs = alias_column_actions_dag.getOutputs();
         action_dag_outputs.insert(action_dag_outputs.end(), current_outputs.begin(), current_outputs.end());
         merged_alias_columns_actions_dag.mergeNodes(std::move(alias_column_actions_dag));
@@ -2598,9 +2574,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
             // if right join position is after left/inner join then we can't parallelize the left/inner join
             if (first_left_or_inner_join_pos < 0 && (join_node.getKind() == JoinKind::Left || join_node.getKind() == JoinKind::Inner))
-                first_left_or_inner_join_pos = static_cast<int>(i);
+                first_left_or_inner_join_pos = i;
             if (first_right_join_pos < 0 && join_node.getKind() == JoinKind::Right)
-                first_right_join_pos = static_cast<int>(i);
+                first_right_join_pos = i;
 
             /// For RIGHT JOIN with a distributed table on the right side, disable parallel replicas.
             /// The distributed table on the right side would be wrapped into a subquery,
@@ -2615,7 +2591,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             continue;
         }
 
-        prepareBuildQueryPlanForTableExpression(table_expression, select_query_options, planner_context);
+        prepareBuildQueryPlanForTableExpression(table_expression, planner_context);
     }
 
     auto should_disable_parallel_replicas = [&]() -> bool

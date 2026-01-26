@@ -91,7 +91,7 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
             all = true;
     }
 
-    auto query = make_intrusive<ASTShowAccessEntitiesQuery>();
+    auto query = std::make_shared<ASTShowAccessEntitiesQuery>();
     node = query;
 
     query->type = type;

@@ -21,7 +21,7 @@
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Core/Settings.h>
-#include <Common/BlobStorageLogWriter.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 
@@ -280,7 +280,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
     if (max_keys)
         request.SetMaxKeys(static_cast<int>(max_keys));
     else
-        request.SetMaxKeys(static_cast<int>(settings_ptr->request_settings[S3RequestSetting::list_object_keys_size]));
+        request.SetMaxKeys(settings_ptr->request_settings[S3RequestSetting::list_object_keys_size]);
 
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     do

@@ -261,9 +261,8 @@ def test_simple_alter_table(started_cluster, engine):
     assert_create_query([main_node, dummy_node], name, expected)
 
     # test_create_replica_after_delay
-    competing_node.query(f"DROP DATABASE IF EXISTS {database}")
     competing_node.query(
-        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica3');"
+        f"CREATE DATABASE IF NOT EXISTS {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica3');"
     )
 
     main_node.query("ALTER TABLE {} ADD COLUMN Added3 UInt32;".format(name))
@@ -283,13 +282,6 @@ def test_simple_alter_table(started_cluster, engine):
         "ENGINE = {}\\nPARTITION BY StartDate\\nORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)\\n"
         "SETTINGS index_granularity = 8192".format(name, full_engine)
     )
-
-    # Ensure all replicas are synchronized before asserting schema equality
-    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
-    competing_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
-    if "Replicated" in engine:
-        dummy_node.query(f"SYSTEM SYNC REPLICA {name}")
-        competing_node.query(f"SYSTEM SYNC REPLICA {name}")
 
     assert_create_query([main_node, dummy_node, competing_node], name, expected)
     main_node.query(f"DROP DATABASE {database} SYNC")
@@ -1021,13 +1013,13 @@ def test_recover_staled_replica_many_mvs(started_cluster):
     dummy_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
 
     main_node.query_with_retry(
-        "CREATE DATABASE recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica1');"
+        "CREATE DATABASE IF NOT EXISTS recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica1');"
     )
     started_cluster.get_kazoo_client("zoo1").set(
         "/clickhouse/databases/recover_mvs/logs_to_keep", b"10"
     )
     dummy_node.query_with_retry(
-        "CREATE DATABASE recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica2');"
+        "CREATE DATABASE IF NOT EXISTS recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica2');"
     )
 
     settings = {"distributed_ddl_task_timeout": 0}
@@ -1969,29 +1961,3 @@ def test_mv_false_cyclic_dependency(started_cluster):
     )
     # Cleanup
     main_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
-
-
-def test_ignore_cluster_name_setting(started_cluster):
-    db_name = "test_cluster_name"
-
-    for node in [main_node, dummy_node]:
-        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
-
-    for node in [main_node, dummy_node]:
-        node.query(f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}')")
-
-    create_query = f"""
-        CREATE TABLE {db_name}.replicated_table ON CLUSTER 'some_cluster' (d Date, k UInt64, i32 Int32)
-        ENGINE=ReplicatedMergeTree('/clickhouse/{db_name}/{{table}}/{{shard}}', '{{replica}}') ORDER BY k PARTITION BY toYYYYMM(d);
-        """
-
-    assert (
-        "Requested cluster 'some_cluster' not found"
-        in main_node.query_and_get_error(create_query)
-    )
-
-    node.query(create_query, settings={"ignore_on_cluster_for_replicated_database": 1})
-
-    # Cleanup
-    for node in [main_node, dummy_node]:
-        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

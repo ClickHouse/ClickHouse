@@ -920,8 +920,8 @@ public:
     void addSpecialScalar(const String & name, const Block & block);
 
     /// Mapping between identifiers and time series tags collected in the context of the currently executed query.
-    std::shared_ptr<const ContextTimeSeriesTagsCollector> getTimeSeriesTagsCollector() const;
-    std::shared_ptr<ContextTimeSeriesTagsCollector> getTimeSeriesTagsCollector();
+    const ContextTimeSeriesTagsCollector & getTimeSeriesTagsCollector() const;
+    ContextTimeSeriesTagsCollector & getTimeSeriesTagsCollector();
 
     const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
     QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
@@ -977,7 +977,7 @@ public:
     /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
 
-    StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values) const;
+    StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
@@ -1082,15 +1082,8 @@ public:
     const BackupsInMemoryHolder & getBackupsInMemory() const;
 
     /// I/O formats.
-    InputFormatPtr getInputFormat(
-        const String & name,
-        ReadBuffer & buf,
-        const Block & sample,
-        UInt64 max_block_size,
-        const std::optional<FormatSettings> & format_settings = std::nullopt,
-        const std::optional<UInt64> & max_block_size_bytes = std::nullopt,
-        const std::optional<UInt64> & min_block_size_rows = std::nullopt,
-        const std::optional<UInt64> & min_block_size_bytes = std::nullopt) const;
+    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
+                                  const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;

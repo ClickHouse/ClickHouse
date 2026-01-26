@@ -239,7 +239,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
@@ -712,12 +712,9 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
         if (jt != subcolumns.get<0>().end())
             return *jt;
 
-        if (options.with_dynamic_subcolumns)
-        {
-            /// Check for dynamic subcolumns.
-            if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name))
-                return dynamic_subcolumn;
-        }
+        /// Check for dynamic subcolumns.
+        if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name))
+            return dynamic_subcolumn;
     }
 
     return {};
@@ -998,7 +995,7 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
         const auto * data_type_ptr = data_type.get();
 
         info.expr_list->children.emplace_back(setAlias(
-            addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+            addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
 
         info.expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
     }

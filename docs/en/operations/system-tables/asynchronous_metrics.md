@@ -212,17 +212,9 @@ The number of used inodes on the volume where the main ClickHouse path is mounte
 
 Number of threads in the server of the HTTP interface (without TLS).
 
-### HTTPSecureThreads {#httpsecurethreads}
-
-Number of threads in the server of the HTTPS interface.
-
 ### InterserverThreads {#interserverthreads}
 
 Number of threads in the server of the replicas communication protocol (without TLS).
-
-### InterserverSecureThreads {#interserversecurethreads}
-
-Number of threads in the server of the replicas communication protocol (with TLS).
 
 ### Jitter {#jitter}
 
@@ -532,26 +524,6 @@ Sum queue size (in the number of operations like get, merge) across Replicated t
 
 Number of threads in the server of the TCP protocol (without TLS).
 
-### TCPSecureThreads {#tcpsecurethreads}
-
-Number of threads in the server of the TCP protocol (with TLS).
-
-### GRPCThreads {#grpcthreads}
-
-Number of threads in the server of the GRPC protocol.
-
-### PrometheusThreads {#prometheusthreads}
-
-Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports.
-
-### KeeperTCPThreads {#keepertcpthreads}
-
-Number of threads in the server of the Keeper TCP protocol (without TLS).
-
-### KeeperTCPSecureThreads {#keepertcpsecurethreads}
-
-Number of threads in the server of the Keeper TCP protocol (with TLS).
-
 ### Temperature_*N* {#temperature_n}
 
 The temperature of the corresponding device in ℃. A sensor can return an unrealistic value. Source: `/sys/class/thermal`
@@ -587,10 +559,6 @@ The server uptime in seconds. It includes the time spent for server initializati
 ### ZooKeeperClientLastZXIDSeen {#zookeeperclientlastzxidseen}
 
 The last ZXID seen by the current ZooKeeper client session. This value increases monotonically as the client observes transactions from ZooKeeper.
-
-### LongestRunningMerge {#longestrunningmerge}
-
-Elapsed time in seconds of the longest currently running background merge.
 
 ### jemalloc.active {#jemallocactive}
 

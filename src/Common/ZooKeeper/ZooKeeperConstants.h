@@ -48,7 +48,6 @@ enum class OpNum : int32_t
     CreateIfNotExists = 502,
     RemoveRecursive = 503,
     CheckStat = 504,
-    TryRemove = 505,
 
     SessionID = 997, /// Special internal request
 };

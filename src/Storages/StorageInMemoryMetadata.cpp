@@ -37,7 +37,6 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     : columns(other.columns)
     , add_minmax_index_for_numeric_columns(other.add_minmax_index_for_numeric_columns)
     , add_minmax_index_for_string_columns(other.add_minmax_index_for_string_columns)
-    , escape_index_filenames(other.escape_index_filenames)
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
     , projections(other.projections.clone())
@@ -68,7 +67,6 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     columns = other.columns;
     add_minmax_index_for_numeric_columns = other.add_minmax_index_for_numeric_columns;
     add_minmax_index_for_string_columns = other.add_minmax_index_for_string_columns;
-    escape_index_filenames = other.escape_index_filenames;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
     projections = other.projections.clone();
@@ -849,7 +847,7 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
 
         if (!minmax_index_exists)
         {
-            auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
+            auto index = createImplicitMinMaxIndexDescription(column.name, columns, context);
             bool valid_index = true;
             try
             {

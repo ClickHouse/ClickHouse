@@ -10,7 +10,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Common/Exception.h>
-#include <Processors/Transforms/LazyMaterializingTransform.h>
+#include <Processors/Transforms/LazilyMaterializingTransform.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -381,17 +381,12 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     Block block;
     if (read_result.num_rows != 0)
     {
-        for (auto & column : read_result.columns)
+        for (const auto & column : read_result.columns)
         {
-            /// We may have columns that have other references, usually it is a constant column that has been created during analysis
-            /// (that will not be const here anymore, i.e. after materialize()). The contract is - not to shrink if column is shared.
-            /// But if some subcolumns are shared, we'll clone them via IColumn::mutate() and then safely shrink
+            /// We may have columns that has other references, usually it is a constant column that has been created during analysis
+            /// (that will not be const here anymore, i.e. after materialize()), and we do not need to shrink it anyway.
             if (column->use_count() == 1)
-            {
-                auto mutable_column = IColumn::mutate(std::move(column));
-                mutable_column->shrinkToFit();
-                column = std::move(mutable_column);
-            }
+                column->assumeMutableRef().shrinkToFit();
         }
         block = sample_block.cloneWithColumns(read_result.columns);
     }

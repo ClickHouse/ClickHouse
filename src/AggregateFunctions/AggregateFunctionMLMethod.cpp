@@ -4,6 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/castColumn.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>

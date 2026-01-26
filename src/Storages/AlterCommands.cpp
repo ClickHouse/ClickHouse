@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -24,6 +25,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -50,6 +52,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
+    extern const SettingsBool enable_deflate_qpl_codec;
+    extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool flatten_nested;
 }
 
@@ -512,7 +516,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true, true, true);
 
         column.ttl = ttl;
 
@@ -591,7 +595,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             else
             {
                 if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true);
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true, true, true);
 
                 if (comment)
                     column.comment = *comment;
@@ -720,10 +724,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             ++insert_it;
         }
 
-        metadata.secondary_indices.emplace(
-            insert_it,
-            IndexDescription::getIndexFromAST(
-                index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
+        metadata.secondary_indices.emplace(insert_it, IndexDescription::getIndexFromAST(index_decl, metadata.columns, /* is_implicitly_created */ false, context));
     }
     else if (type == DROP_INDEX)
     {
@@ -818,14 +819,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                         constraint_name);
         }
 
-        auto insert_it = constraints.end();
+        auto * insert_it = constraints.end();
         constraints.emplace(insert_it, constraint_decl);
         metadata.constraints = ConstraintsDescription(constraints);
     }
     else if (type == DROP_CONSTRAINT)
     {
         auto constraints = metadata.constraints.getConstraints();
-        auto erase_it = std::find_if(
+        auto * erase_it = std::find_if(
             constraints.begin(),
             constraints.end(),
             [this](const ASTPtr & constraint_ast) { return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name; });
@@ -886,7 +887,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     {
         if (!metadata.settings_changes)
         {
-            auto changes = make_intrusive<ASTSetQuery>();
+            auto changes = std::make_shared<ASTSetQuery>();
             changes->is_standalone = false;
             metadata.settings_changes = std::move(changes);
         }
@@ -1278,12 +1279,12 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     {
         try
         {
-            index = IndexDescription::getIndexFromAST(
-                index.definition_ast, metadata_copy.columns, index.isImplicitlyCreated(), index.escape_filenames, context);
+            index = IndexDescription::getIndexFromAST(index.definition_ast, metadata_copy.columns, index.isImplicitlyCreated(), context);
         }
-        catch (const Exception & exception)
+        catch (Exception & exception)
         {
-            throw Exception(exception.code(), "Cannot apply ALTER because it breaks skip index {}: {}", index.name, exception.message());
+            exception.addMessage("Cannot apply mutation because it breaks skip index " + index.name);
+            throw;
         }
     }
 
@@ -1303,9 +1304,10 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             performRequiredConversions(old_projection_block, new_projection.sample_block.getNamesAndTypesList(), context, metadata_copy.getColumns().getDefaults());
             new_projections.add(std::move(new_projection));
         }
-        catch (const Exception & exception)
+        catch (Exception & exception)
         {
-            throw Exception(exception.code(), "Cannot apply ALTER because it breaks projection {}: {}", projection.name, exception.message());
+            exception.addMessage("Cannot apply mutation because it breaks projection " + projection.name);
+            throw;
         }
     }
     metadata_copy.projections = std::move(new_projections);
@@ -1393,7 +1395,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
-    ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
+    ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     NameSet modified_columns;
     NameSet renamed_columns;
     for (size_t i = 0; i < size(); ++i)
@@ -1433,7 +1435,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     command.codec,
                     command.data_type,
                     !settings[Setting::allow_suspicious_codecs],
-                    settings[Setting::allow_experimental_codecs]);
+                    settings[Setting::allow_experimental_codecs],
+                    settings[Setting::enable_deflate_qpl_codec],
+                    settings[Setting::enable_zstd_qat_codec]);
             }
 
             all_columns.add(ColumnDescription(column_name, command.data_type));
@@ -1462,7 +1466,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     command.codec,
                     command.data_type,
                     !context->getSettingsRef()[Setting::allow_suspicious_codecs],
-                    context->getSettingsRef()[Setting::allow_experimental_codecs]);
+                    context->getSettingsRef()[Setting::allow_experimental_codecs],
+                    context->getSettingsRef()[Setting::enable_deflate_qpl_codec],
+                    context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
             }
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
@@ -1688,7 +1694,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
 
                 default_expr_list->children.emplace_back(setAlias(
-                    addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
+                    addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
                     final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
@@ -1705,7 +1711,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto data_type_ptr = command.data_type;
 
                 default_expr_list->children.emplace_back(setAlias(
-                    addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+                    addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(column_in_table.default_desc.expression->clone(), tmp_column_name));
             }
@@ -1744,7 +1750,7 @@ bool AlterCommands::isCommentAlter() const
 static MutationCommand createMaterializeTTLCommand()
 {
     MutationCommand command;
-    auto ast = make_intrusive<ASTAlterCommand>();
+    auto ast = std::make_shared<ASTAlterCommand>();
     ast->type = ASTAlterCommand::MATERIALIZE_TTL;
     command.type = MutationCommand::MATERIALIZE_TTL;
     command.ast = std::move(ast);

@@ -5,7 +5,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
+#include <base/range.h>
 
 #include <Functions/s2_fwd.h>
 

@@ -1,9 +1,13 @@
+#include <filesystem>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
@@ -14,11 +18,14 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <QueryPipeline/Pipe.h>
 #include <base/sort.h>
+#include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 
@@ -30,7 +37,6 @@ namespace Setting
     extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
     extern const SettingsInt64 distributed_ddl_task_timeout;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
-    extern const SettingsBool ignore_on_cluster_for_replicated_database;
 }
 
 namespace ServerSetting
@@ -230,11 +236,12 @@ bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
         database_name = context->getCurrentDatabase();
 
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
+    if (database_name != query_on_cluster->cluster)
+        return false;
+
     auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
     if (database && database->shouldReplicateQuery(context, query_ptr))
     {
-        if (!context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_database] && database_name != query_on_cluster->cluster)
-            return false;
         /// It's Replicated database and query is replicated on database level,
         /// so ON CLUSTER clause is redundant.
         query_on_cluster->cluster.clear();

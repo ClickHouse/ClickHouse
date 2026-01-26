@@ -9,6 +9,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnLazy.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
@@ -293,6 +294,11 @@ bool isColumnNullableOrLowCardinalityNullable(const IColumn & column)
 bool isColumnConst(const IColumn & column)
 {
     return checkColumn<ColumnConst>(column);
+}
+
+bool isColumnLazy(const IColumn & column)
+{
+    return checkColumn<ColumnLazy>(column);
 }
 
 template <typename Derived, typename Parent>
@@ -907,13 +913,13 @@ template class IColumnHelper<ColumnBLOB, IColumn>;
 void intrusive_ptr_add_ref(const IColumn * c)
 {
     BOOST_ASSERT(c != nullptr);
-    boost::sp_adl_block::intrusive_ptr_add_ref<IColumn, boost::thread_safe_counter>(c);
+    boost::sp_adl_block::intrusive_ptr_add_ref(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
 }
 
 void intrusive_ptr_release(const IColumn * c)
 {
     BOOST_ASSERT(c != nullptr);
-    boost::sp_adl_block::intrusive_ptr_release<IColumn, boost::thread_safe_counter>(c);
+    boost::sp_adl_block::intrusive_ptr_release(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
 }
 
 }

@@ -257,12 +257,12 @@ struct HashTableGrower
         else if (initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
             size_degree = initial_size_degree;
         else
-            size_degree = static_cast<UInt8>(static_cast<size_t>(log2(num_elems - 1)) + 2);
+            size_degree = static_cast<size_t>(log2(num_elems - 1)) + 2;
     }
 
     void setBufSize(size_t buf_size_)
     {
-        size_degree = static_cast<UInt8>(static_cast<size_t>(log2(buf_size_ - 1) + 1));
+        size_degree = static_cast<size_t>(log2(buf_size_ - 1) + 1);
     }
 };
 
@@ -319,13 +319,13 @@ public:
         else if (initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
             size_degree = initial_size_degree;
         else
-            size_degree = static_cast<UInt8>(log2(num_elems - 1)) + 2;
+            size_degree = static_cast<size_t>(log2(num_elems - 1)) + 2;
         increaseSizeDegree(0);
     }
 
     void setBufSize(size_t buf_size_)
     {
-        size_degree = static_cast<UInt8>(log2(buf_size_ - 1) + 1);
+        size_degree = static_cast<size_t>(log2(buf_size_ - 1) + 1);
         increaseSizeDegree(0);
     }
 };
@@ -936,7 +936,7 @@ public:
     };
 
 
-    template <bool prefetch = false>
+    template<bool prefetch = false>
     auto begin() const
     {
         using ConstIterator = std::conditional_t<prefetch && CouldPrefetchKey<cell_type>, const_prefetching_iterator, const_iterator>;
@@ -954,10 +954,10 @@ public:
         return ConstIterator(this, ptr);
     }
 
-    template <bool prefetch = false>
+    template<bool prefetch = false>
     auto cbegin() const { return begin<prefetch>(); }
 
-    template <bool prefetch = false>
+    template<bool prefetch = false>
     auto begin()
     {
         using Iterator = std::conditional_t<prefetch && CouldPrefetchKey<cell_type>, prefetching_iterator, iterator>;
@@ -983,7 +983,7 @@ public:
         return ConstIterator(this, buf ? buf + grower.bufSize() : buf);
     }
 
-    template <bool prefetch = false>
+    template<bool prefetch = false>
     auto cend() const
     {
         return end<prefetch>();

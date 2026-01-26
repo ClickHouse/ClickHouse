@@ -40,7 +40,7 @@ struct CompactStringRef
     CompactStringRef(const char * data_, size_t size_)
     {
         data_mixed = data_;
-        size = static_cast<UInt16>(size_);
+        size = size_;
     }
 
     CompactStringRef(const unsigned char * data_, size_t size_) : CompactStringRef(reinterpret_cast<const char *>(data_), size_) {}

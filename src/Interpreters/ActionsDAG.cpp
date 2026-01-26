@@ -934,7 +934,7 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         case ActionsDAG::ActionType::COLUMN:
         {
             auto column = node->column;
-            if (input_rows_count != column->size())
+            if (input_rows_count < column->size())
                 column = column->cloneResized(input_rows_count);
 
             res_column.column = column;
@@ -1711,8 +1711,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     ContextPtr context,
     bool ignore_constant_values,
     bool add_cast_columns,
-    NameToNameMap * new_names,
-    NameSet * columns_contain_compiled_function)
+    NameToNameMap * new_names)
 {
     size_t num_input_columns = source.size();
     size_t num_result_columns = result.size();
@@ -1784,15 +1783,6 @@ ActionsDAG ActionsDAG::makeConvertingActions(
                         ErrorCodes::ILLEGAL_COLUMN,
                         "Cannot convert column `{}` because it is constant but values of constants are different in source and result",
                         res_elem.name);
-            }
-            else if (columns_contain_compiled_function && columns_contain_compiled_function->contains(res_elem.name))
-            {
-                /// It may happen when JIT compilation is enabled that source column is constant and destination column is not constant.
-                /// e.g. expression "and(equals(materialize(null::Nullable(UInt64)), null::Nullable(UInt64)), equals(null::Nullable(UInt64), null::Nullable(UInt64)))"
-                /// compiled expression is "and(equals(input: Nullable(UInt64), null), null). Partial evaluation of the compiled expression isn't able to infer that the result column is constant.
-                /// It causes inconsistency between pipeline header(source column is not constant) and output header of ExpressionStep(destination column is constant).
-                /// So we need to convert non-constant column to constant column under this condition.
-                dst_node = &actions_dag.addColumn(res_elem);
             }
             else
                 throw Exception(
@@ -2476,7 +2466,7 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
     if (value.isNull())
         return true;
 
-    auto predicate_value = value.safeGet<UInt8>();
+    UInt8 predicate_value = value.safeGet<UInt8>();
     return predicate_value == 0;
 }
 
@@ -2749,12 +2739,6 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
     if (remove_filter)
         actions.outputs.insert(actions.outputs.begin(), result_predicate);
 
-    if (result_predicate->type == ActionType::COLUMN)
-    {
-        /// If result is a column, it means that predicate is constant. Let's not push it further.
-        return {};
-    }
-
     return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter, false};
 }
 
@@ -2892,6 +2876,20 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         rejected_conjunctions_set.erase(right_stream_allowed_conjunction);
 
     NodeRawConstPtrs rejected_conjunctions(rejected_conjunctions_set.begin(), rejected_conjunctions_set.end());
+
+    if (rejected_conjunctions.size() == 1)
+    {
+        chassert(rejected_conjunctions.front()->result_type);
+
+        bool left_stream_push_constant = !left_stream_allowed_conjunctions.empty() && left_stream_allowed_conjunctions[0]->type == ActionType::COLUMN;
+        bool right_stream_push_constant = !right_stream_allowed_conjunctions.empty() && right_stream_allowed_conjunctions[0]->type == ActionType::COLUMN;
+
+        if ((left_stream_push_constant || right_stream_push_constant) && !rejected_conjunctions.front()->result_type->equals(*predicate->result_type))
+        {
+            /// No further optimization can be done
+            return {};
+        }
+    }
 
     auto left_stream_filter_to_push_down = createActionsForConjunction(left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName());
     auto right_stream_filter_to_push_down = createActionsForConjunction(right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName());
