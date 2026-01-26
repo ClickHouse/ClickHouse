@@ -155,7 +155,7 @@ public:
             bool enable_producing_buckets_out_of_order_in_aggregation_,
             size_t limit_plus_offset_length_ = std::numeric_limits<size_t>::max(),
             std::optional<std::vector<ColumnsHashing::OptimizationDataOneExpression>> optimization_indexes_ = std::nullopt,
-            bool serialize_string_with_zero_byte_);
+            bool serialize_string_with_zero_byte_ = false);
 
         /// Only parameters that matter during merge.
         Params(
