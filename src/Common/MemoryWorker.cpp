@@ -423,7 +423,7 @@ void MemoryWorker::purgeDirtyPagesThread()
     /// We do it to avoid reading RSS value in both threads. Even though they are fairly
     /// fast, they are still not free.
     /// So we keep the work of reading current RSS in one thread which allows us to keep the low period time for it.
-    DB::setThreadName(ThreadName::MEMORY_WORKER);
+    setThreadName("MemoryWorker");
 
     std::unique_lock purge_dirty_pages_lock(purge_dirty_pages_mutex);
 
