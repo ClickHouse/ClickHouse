@@ -8,6 +8,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -88,7 +89,7 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
         /// There might be some special columns for which `columns_desc.get` would throw, e.g. Nested column when flatten_nested is enabled.
         /// At the time of writing I am not aware of anything else, but my knowledge is limited and new types might be added, so let's be safe.
-        if (!col_decl.default_expression)
+        if (!col_decl.getDefaultExpression())
             continue;
 
         /// If no column description for the name, let's skip the validation of default expressions, but let's log the fact that something went wrong
@@ -101,10 +102,12 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     if (default_expr_info.expr_list)
         validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, columns_desc.getAll(), context);
 
+    constexpr bool escape_index_filenames = true; /// We don't care, we are only doing validation and discarding the result
+    bool is_implicitly_created = false; /// Same
     if (columns.indices)
     {
         for (const auto & child : columns.indices->children)
-            IndexDescription::getIndexFromAST(child, columns_desc, /* is_implicitly_created */ false, context);
+            IndexDescription::getIndexFromAST(child, columns_desc, is_implicitly_created, escape_index_filenames, context);
     }
     if (columns.constraints)
     {
@@ -278,12 +281,12 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
                                         backQuote(table_id.database_name), backQuote(table_id.table_name));
                     return nullptr;
                 }
-                ast_column_declaration->type = ast_type;
+                ast_column_declaration->setType(std::move(ast_type));
 
                 if (auto column_default = metadata_ptr->columns.getDefault(column_name_and_type.name))
                 {
-                    ast_column_declaration->default_specifier = toString(column_default->kind);
-                    ast_column_declaration->default_expression = column_default->expression;
+                    ast_column_declaration->default_specifier = toColumnDefaultSpecifier(column_default->kind);
+                    ast_column_declaration->setDefaultExpression(column_default->expression->clone());
                 }
             }
             ast_expression_list->children.emplace_back(ast_column_declaration);

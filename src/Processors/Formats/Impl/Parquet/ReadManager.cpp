@@ -626,9 +626,10 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         if (row_group_idx != i)
             return false;
         const RowGroup & row_group = reader.row_groups[row_group_idx];
-        /// Only access next_subgroup_for_step if it has been initialized.
-        /// It is initialized during OffsetIndex stage.
-        if (row_group.stage.load() <= ReadStage::OffsetIndex)
+        /// Must check stage first to ensure `next_subgroup_for_step` is fully initialized.
+        /// It's assigned during `OffsetIndex` processing, before stage advances to `ColumnData`.
+        /// Using acquire ordering to synchronize with the release (seq_cst) store in `finishRowGroupStage`.
+        if (row_group.stage.load(std::memory_order_acquire) < ReadStage::ColumnData)
             return false;
         if (row_group.next_subgroup_for_step.empty())
             return false;
