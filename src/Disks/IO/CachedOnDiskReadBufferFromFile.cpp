@@ -1341,11 +1341,9 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Having zero bytes, but range is not finished: "
-            //"result: {}, "
             "file offset: {}, "
             "read bytes: {}, "
             "object size: {}, "
-            //"nextimpl working buffer offset: {},"
             "reading until: {}, "
             "read type: {}, "
             "impl read stop reason: {}, "
@@ -1360,7 +1358,6 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             "cache file path: {}, "
             "remaining file segments: {}, "
             "current file segment: {}",
-            //result,
             offset + size,
             size,
             object_size ? std::to_string(*object_size) : "None",
@@ -1383,7 +1380,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
     info.current_file_segment_counters.increment(ProfileEvents::FileSegmentUsedBytes, state.buf->available());
 
     // No necessary because of the SCOPE_EXIT above, but useful for logging below.
-    LOG_TEST(log, "Read {} bytes (buffer size: {}). Read info: {}", size, state.buf->internalBuffer().size(), getInfoForLog(&state, info, offset + size));
+    LOG_TEST(log, "Read {} bytes (buffer size: {}). Read info: {}",
+             size, state.buf->internalBuffer().size(), getInfoForLog(&state, info, offset + size));
 
     return size;
 }
@@ -1546,9 +1544,6 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET allowed");
     }
 
-    //if (!use_external_buffer)
-    //    resetWorkingBuffer();
-
     first_offset = file_offset_of_buffer_end = new_pos;
     info.file_segments = nullptr;
     state.reset();
@@ -1586,7 +1581,6 @@ void CachedOnDiskReadBufferFromFile::setReadUntilPosition(size_t position)
         return;
 
     file_offset_of_buffer_end = getPosition();
-    //resetWorkingBuffer();
     info.file_segments = nullptr;
     state.reset();
     initialized = false;

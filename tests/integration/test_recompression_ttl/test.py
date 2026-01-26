@@ -97,7 +97,7 @@ def test_recompression_simple(started_cluster):
 
     assert (
         node1.query(
-            "SELECT default_compression_codec FROM system.parts where name = 'all_1_1_2'"
+            f"SELECT default_compression_codec FROM system.parts where name = 'all_1_1_2' and table = '{name}'"
         )
         == "ZSTD(10)\n"
     )
@@ -116,7 +116,7 @@ def test_recompression_multiple_ttls(started_cluster):
 
     assert (
         node2.query(
-            "SELECT default_compression_codec FROM system.parts where name = 'all_1_1_0'"
+            f"SELECT default_compression_codec FROM system.parts where name = 'all_1_1_0' and table = '{name}'"
         )
         == "LZ4\n"
     )
@@ -152,14 +152,14 @@ def test_recompression_multiple_ttls(started_cluster):
 
     assert (
         node2.query(
-            "SELECT default_compression_codec FROM system.parts where name = 'all_1_1_4'"
+            f"SELECT default_compression_codec FROM system.parts where name = 'all_1_1_4' and table = '{name}'"
         )
         == "ZSTD(12)\n"
     )
 
     assert (
         node2.query(
-            "SELECT recompression_ttl_info.expression FROM system.parts where name = 'all_1_1_4'"
+            f"SELECT recompression_ttl_info.expression FROM system.parts where name = 'all_1_1_4' and table = '{name}'"
         )
         == "['d + toIntervalSecond(10)','d + toIntervalSecond(15)','d + toIntervalSecond(5)']\n"
     )
