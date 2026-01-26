@@ -65,12 +65,8 @@ bool isParseError(int code)
 
 bool isConnectionError(int code)
 {
-    return code == ErrorCodes::SOCKET_TIMEOUT
-        || code == ErrorCodes::NETWORK_ERROR
-        || code == ErrorCodes::CANNOT_READ_FROM_SOCKET
-        || code == ErrorCodes::CANNOT_WRITE_TO_SOCKET
-	|| code == ErrorCodes::UNEXPECTED_END_OF_FILE;
-
+    return code == ErrorCodes::SOCKET_TIMEOUT || code == ErrorCodes::NETWORK_ERROR || code == ErrorCodes::CANNOT_READ_FROM_SOCKET
+        || code == ErrorCodes::CANNOT_WRITE_TO_SOCKET || code == ErrorCodes::UNEXPECTED_END_OF_FILE;
 }
 
 IRowInputFormat::IRowInputFormat(SharedHeader header, ReadBuffer & in_, Params params_)
@@ -108,8 +104,6 @@ void IRowInputFormat::logError()
 
 Chunk IRowInputFormat::read()
 {
-     LoggerPtr log = getLogger("IRowInputFormat");
-     LOG_INFO(log,"Calling Read");
     if (got_connection_exception)
         return {};
 
@@ -265,7 +259,6 @@ Chunk IRowInputFormat::read()
     {
         if (isConnectionError(e.code()))
         {
-	    LOG_INFO(log,"Connection Error");
             got_connection_exception  = true;
             bool need_rollback = false;
 
@@ -280,7 +273,6 @@ Chunk IRowInputFormat::read()
 
             if (need_rollback)
             {
-		    LOG_INFO(log, "Rolling Back");
                 for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
                     columns[column_idx]->rollback(*checkpoints[column_idx]);
             }
@@ -315,6 +307,7 @@ Chunk IRowInputFormat::read()
     {
         if (num_errors && (params.allow_errors_num > 0 || params.allow_errors_ratio > 0))
         {
+            LoggerPtr log = getLogger("IRowInputFormat");
             LOG_DEBUG(log, "Skipped {} rows with errors while reading the input stream", num_errors);
         }
 
@@ -328,7 +321,7 @@ Chunk IRowInputFormat::read()
     Chunk chunk(std::move(columns), num_rows);
     approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
 
-    LOG_INFO(log, "Emitting Chunk");
+
     return chunk;
 }
 
