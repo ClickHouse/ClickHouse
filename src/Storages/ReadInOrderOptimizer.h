@@ -17,6 +17,11 @@ namespace DB
 NameSet getFixedSortingColumns(
     const ASTSelectQuery & query, const Names & sorting_key_columns, const ContextPtr & context);
 
+/// Overload that takes the filter condition directly (combined WHERE and PREWHERE).
+/// This is useful when the condition is extracted from QueryTree (new analyzer) via toAST().
+NameSet getFixedSortingColumns(
+    const ASTPtr & condition, const Names & sorting_key_columns, const ContextPtr & context);
+
 class ReadInOrderOptimizer
 {
 public:

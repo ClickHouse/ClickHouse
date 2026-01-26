@@ -33,6 +33,8 @@
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Analyzer/QueryNode.h>
+#include <Parsers/makeASTForLogicalFunction.h>
 
 #include <stack>
 
@@ -451,11 +453,41 @@ bool isFixedColumnForReadInOrder(
         const auto & context = reading->getContext();
         if (reading->isParallelReadingFromReplicas() || context->canUseParallelReplicasOnInitiator())
         {
-            const auto * select_query = reading->getQueryInfo().query->as<ASTSelectQuery>();
-            if (select_query)
+            const auto & query_info = reading->getQueryInfo();
+            ASTPtr where_condition;
+            ASTPtr prewhere_condition;
+
+            /// Try to get WHERE/PREWHERE from query tree (new analyzer)
+            if (query_info.query_tree)
+            {
+                if (const auto * query_node = query_info.query_tree->as<QueryNode>())
+                {
+                    if (query_node->hasWhere())
+                        where_condition = query_node->getWhere()->toAST();
+                    if (query_node->hasPrewhere())
+                        prewhere_condition = query_node->getPrewhere()->toAST();
+                }
+            }
+            /// Fall back to AST (old analyzer)
+            else if (const auto * select_query = query_info.query->as<ASTSelectQuery>())
+            {
+                where_condition = select_query->where();
+                prewhere_condition = select_query->prewhere();
+            }
+
+            /// Combine WHERE and PREWHERE conditions
+            ASTPtr condition;
+            if (where_condition && prewhere_condition)
+                condition = makeASTForLogicalAnd({where_condition, prewhere_condition});
+            else if (where_condition)
+                condition = where_condition;
+            else if (prewhere_condition)
+                condition = prewhere_condition;
+
+            if (condition)
             {
                 auto fixed_names = getFixedSortingColumns(
-                    *select_query,
+                    condition,
                     sorting_key.column_names,
                     context);
                 return fixed_names.contains(sort_column_description.column_name);
