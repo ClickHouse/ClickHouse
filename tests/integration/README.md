@@ -203,3 +203,9 @@ sudo vim /etc/docker/daemon.json
   "ipv6": false
 }
 ```
+
+### "Permission denied" errors in ClickHouse repository after running integration tests
+Sometimes after running integration tests natively docker seems to change the permissions of the ClickHouse code repository and running normal `clickhouse-test` tests fails due to these permission errors. To fix it, chown back to your user and group:
+```bash
+sudo chown -R <user>:<group> ClickHouse/
+```

@@ -1163,6 +1163,8 @@ def test_rmv_append_backup():
     instance.query(
         "CREATE MATERIALIZED VIEW test.view REFRESH EVERY 6 HOURS APPEND TO test.target AS SELECT x FROM test.table"
     )
+    instance.query("SYSTEM REFRESH VIEW test.view")
+    instance.query("SYSTEM WAIT VIEW test.view")
 
     backup_name = new_backup_name()
     backup_settings = {"backup_data_from_refreshable_materialized_view_targets": False}
