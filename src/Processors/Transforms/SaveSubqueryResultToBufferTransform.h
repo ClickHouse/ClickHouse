@@ -32,7 +32,6 @@ public:
 private:
     ChunkBufferPtr chunk_buffer;
     std::vector<size_t> columns_to_save_indices;
-    bool finished = false;
 };
 
 }
