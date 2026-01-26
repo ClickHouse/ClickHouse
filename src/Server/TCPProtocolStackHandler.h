@@ -74,28 +74,30 @@ public:
                 try
                 {
                     std::string message = "Code: " + std::to_string(ErrorCodes::IP_ADDRESS_NOT_ALLOWED) + ". DB::Exception: IP address not allowed.\n";
+                    LOG_DEBUG(log, "IP address {} is blocked. Sending error message.", socket().peerAddress().toString());
 
                     int sent = socket().sendBytes(message.data(), static_cast<int>(message.size()));
-                    socket().shutdownSend();
+                    LOG_DEBUG(log, "Sent {} bytes of error message.", sent);
 
                     /// Wait for the client to close the connection or timeout, while draining the socket to prevent RST.
                     auto start = std::chrono::steady_clock::now();
-                    while (std::chrono::steady_clock::now() - start < std::chrono::seconds(1))
+                    while (std::chrono::steady_clock::now() - start < std::chrono::seconds(2))
                     {
-                        if (socket().poll(Poco::Timespan(10000), Poco::Net::Socket::SELECT_READ))
+                        if (socket().poll(Poco::Timespan(100000), Poco::Net::Socket::SELECT_READ))
                         {
-                            char buffer[1024];
+                            char buffer[4096];
                             int n = socket().receiveBytes(buffer, sizeof(buffer));
                             if (n <= 0) break; /// Client closed or error.
-                        }
-                        else
-                        {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                            LOG_DEBUG(log, "Drained {} bytes from blocked client.", n);
                         }
                     }
                     if (sent != static_cast<int>(message.size()))
                     {
                         LOG_ERROR(log, "Failed to send complete IP block error message to client {} (sent {} of {} bytes).", socket().peerAddress().toString(), sent, message.size());
+                    }
+                    else
+                    {
+                        LOG_INFO(log, "Sent IP access denied message to {}.", socket().peerAddress().toString());
                     }
                 }
                 catch (...)
