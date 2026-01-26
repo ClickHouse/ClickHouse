@@ -115,7 +115,7 @@ public:
 
         sortIfNeeded();
 
-        const double index = std::max(0., std::min(samples.size() - 1., level * (samples.size() - 1)));
+        const double index = std::max(0., std::min(static_cast<double>(samples.size() - 1), level * static_cast<double>(samples.size() - 1)));
 
         /// To get a value from a fractional index, we linearly interpolate between adjacent values.
         size_t left_index = static_cast<size_t>(index);
@@ -123,8 +123,8 @@ public:
         if (right_index == samples.size())
             return static_cast<double>(samples[left_index].first);
 
-        const double left_coef = right_index - index;
-        const double right_coef = index - left_index;
+        const double left_coef = static_cast<double>(right_index) - index;
+        const double right_coef = index - static_cast<double>(left_index);
 
         return static_cast<double>(samples[left_index].first) * left_coef + static_cast<double>(samples[right_index].first) * right_coef;
     }

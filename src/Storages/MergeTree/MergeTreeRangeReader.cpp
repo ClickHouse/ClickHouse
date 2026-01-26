@@ -373,10 +373,17 @@ void MergeTreeRangeReader::ReadResult::addGranule(size_t num_rows_, GranuleOffse
 
 void MergeTreeRangeReader::ReadResult::adjustLastGranule()
 {
-    size_t num_rows_to_subtract = total_rows_per_granule - num_read_rows;
-
     if (rows_per_granule.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't adjust last granule because no granules were added");
+
+    /// When no rows were physically read (e.g., all columns are defaults/missing,
+    /// or a constant PREWHERE expression like `PREWHERE 1`), the granule sizes
+    /// were determined directly from the index granularity and are already accurate.
+    /// No adjustment is needed in this case.
+    if (num_read_rows == 0)
+        return;
+
+    size_t num_rows_to_subtract = total_rows_per_granule - num_read_rows;
 
     if (num_rows_to_subtract > rows_per_granule.back())
     {
@@ -683,7 +690,7 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
             applyFilter(current_filter);
         }
         /// Another guess, if it's worth filtering at PREWHERE
-        else if (must_apply_filter || (filter.countBytesInFilter() < 0.6 * filter.size()))
+        else if (must_apply_filter || (static_cast<double>(filter.countBytesInFilter()) < 0.6 * static_cast<double>(filter.size())))
         {
             applyFilter(filter);
         }
@@ -1076,7 +1083,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         result.adjustLastGranule();
 
     fillVirtualColumns(result.columns, result);
-    result.num_rows = result.numReadRows();
+    /// Use total_rows_per_granule because:
+    /// - In normal cases, after adjustLastGranule, it equals numReadRows()
+    /// - When no columns are read (e.g., constant PREWHERE), it has the correct value from index granularity
+    result.num_rows = result.total_rows_per_granule;
 
     updatePerformanceCounters(result.numReadRows());
 

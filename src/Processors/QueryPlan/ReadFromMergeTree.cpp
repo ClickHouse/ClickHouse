@@ -727,25 +727,29 @@ Pipe ReadFromMergeTree::readInOrder(
             const auto & primary_key = storage_snapshot->metadata->primary_key;
             size_t mark_range_begin = part_with_ranges.ranges.front().begin;
 
-            ColumnsWithTypeAndName pk_columns;
             /// The index may have fewer columns than the primary key if suffix columns were
             /// removed by optimizeIndexColumns (controlled by primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns).
-            size_t num_columns = std::min(virtual_row_conversion->getRequiredColumnsWithTypes().size(), index->size());
-            pk_columns.reserve(num_columns);
-
-            for (size_t j = 0; j < num_columns; ++j)
+            /// In that case, we cannot apply virtual row optimization because we don't have all required columns.
+            size_t num_pk_columns_required = virtual_row_conversion->getRequiredColumnsWithTypes().size();
+            if (index->size() >= num_pk_columns_required)
             {
-                auto column = primary_key.data_types[j]->createColumn()->cloneEmpty();
-                column->insert((*(*index)[j])[mark_range_begin]);
-                pk_columns.push_back({std::move(column), primary_key.data_types[j], primary_key.column_names[j]});
+                ColumnsWithTypeAndName pk_columns;
+                pk_columns.reserve(num_pk_columns_required);
+
+                for (size_t j = 0; j < num_pk_columns_required; ++j)
+                {
+                    auto column = primary_key.data_types[j]->createColumn()->cloneEmpty();
+                    column->insert((*(*index)[j])[mark_range_begin]);
+                    pk_columns.push_back({std::move(column), primary_key.data_types[j], primary_key.column_names[j]});
+                }
+
+                Block pk_block(std::move(pk_columns));
+
+                pipe.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<VirtualRowTransform>(header, pk_block, virtual_row_conversion);
+                });
             }
-
-            Block pk_block(std::move(pk_columns));
-
-            pipe.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<VirtualRowTransform>(header, pk_block, virtual_row_conversion);
-            });
         }
 
         pipes.emplace_back(std::move(pipe));
@@ -1494,8 +1498,8 @@ static void addMergingFinal(
 
 static std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionForPositiveSign(const String & sign_column_name, const Block & header, const ContextPtr & context)
 {
-    ASTPtr sign_indentifier = std::make_shared<ASTIdentifier>(sign_column_name);
-    ASTPtr sign_filter = makeASTOperator("equals", sign_indentifier, std::make_shared<ASTLiteral>(Field(static_cast<Int8>(1))));
+    ASTPtr sign_indentifier = make_intrusive<ASTIdentifier>(sign_column_name);
+    ASTPtr sign_filter = makeASTOperator("equals", sign_indentifier, make_intrusive<ASTLiteral>(Field(static_cast<Int8>(1))));
     const auto & sign_column = header.getByName(sign_column_name);
 
     auto syntax_result = TreeRewriter(context).analyze(sign_filter, {{sign_column.name, sign_column.type}});
@@ -1505,8 +1509,8 @@ static std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionFor
 
 static std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionForIsDeleted(const String & is_deleted_column_name, const Block & header, const ContextPtr & context)
 {
-    ASTPtr is_deleted_identifier = std::make_shared<ASTIdentifier>(is_deleted_column_name);
-    ASTPtr is_deleted_filter = makeASTFunction("equals", is_deleted_identifier, std::make_shared<ASTLiteral>(Field(static_cast<Int8>(0))));
+    ASTPtr is_deleted_identifier = make_intrusive<ASTIdentifier>(is_deleted_column_name);
+    ASTPtr is_deleted_filter = makeASTFunction("equals", is_deleted_identifier, make_intrusive<ASTLiteral>(Field(static_cast<Int8>(0))));
 
     const auto & is_deleted_column = header.getByName(is_deleted_column_name);
 

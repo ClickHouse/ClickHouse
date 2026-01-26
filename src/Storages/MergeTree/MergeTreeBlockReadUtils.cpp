@@ -149,7 +149,10 @@ NameSet injectRequiredColumns(
         */
     if (!have_at_least_one_physical_column)
     {
-        auto available_columns = storage_snapshot->metadata->getColumns().get(options);
+        /// Use part's own columns to find the minimum size column.
+        /// This ensures we find a column that actually exists in this part,
+        /// even if the table metadata has changed (e.g., all columns were dropped and new ones added).
+        const auto & available_columns = data_part_info_for_reader.getColumns();
         const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
         columns.push_back(minimum_size_column_name);
         /// correctly report added column
@@ -195,7 +198,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();
             fixed_columns_bytes_per_row += column_data->sizeOfValueIfFixed();
-            max_size_per_row_fixed = std::max<double>(max_size_per_row_fixed, size_of_value);
+            max_size_per_row_fixed = std::max(max_size_per_row_fixed, static_cast<double>(size_of_value));
         }
         else
         {
@@ -205,14 +208,14 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
             ColumnSize column_size = data_part->getColumnSize(column_name);
 
             info.bytes_per_row_global = column_size.data_uncompressed
-                ? column_size.data_uncompressed / number_of_rows_in_part
-                : column_data->byteSize() / std::max<size_t>(1, column_data->size());
+                ? static_cast<double>(column_size.data_uncompressed) / static_cast<double>(number_of_rows_in_part)
+                : static_cast<double>(column_data->byteSize()) / static_cast<double>(std::max<size_t>(1, column_data->size()));
 
             dynamic_columns_infos.emplace_back(info);
         }
     }
 
-    bytes_per_row_global = fixed_columns_bytes_per_row;
+    bytes_per_row_global = static_cast<double>(fixed_columns_bytes_per_row);
     for (auto & info : dynamic_columns_infos)
     {
         info.bytes_per_row = info.bytes_per_row_global;
@@ -254,7 +257,7 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 
     size_t diff_rows = num_rows - block_size_rows;
     block_size_bytes = num_rows * fixed_columns_bytes_per_row;
-    bytes_per_row_current = fixed_columns_bytes_per_row;
+    bytes_per_row_current = static_cast<double>(fixed_columns_bytes_per_row);
     block_size_rows = num_rows;
 
     /// Make recursive updates for each read row: v_{i+1} = (1 - decay) v_{i} + decay v_{target}
@@ -268,7 +271,7 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
         size_t new_size = columns[sample_block.getPositionByName(info.name)]->byteSize();
         size_t diff_size = new_size - info.size_bytes;
 
-        double local_bytes_per_row = static_cast<double>(diff_size) / diff_rows;
+        double local_bytes_per_row = static_cast<double>(diff_size) / static_cast<double>(diff_rows);
         info.bytes_per_row = alpha * info.bytes_per_row + (1. - alpha) * local_bytes_per_row;
 
         info.size_bytes = new_size;

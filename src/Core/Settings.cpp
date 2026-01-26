@@ -3745,9 +3745,6 @@ Possible values:
     DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
 Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
 )", 0) \
-    DECLARE(Bool, optimize_read_in_window_order, true, R"(
-Enable ORDER BY optimization in window clause for reading data in corresponding order in MergeTree tables.
-)", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/sql-reference/statements/select/group-by) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
@@ -5715,7 +5712,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_reuse_storage_ordering_for_window_functions, true, R"(
+    DECLARE_WITH_ALIAS(Bool, query_plan_reuse_storage_ordering_for_window_functions, false, R"(
 Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
@@ -5727,7 +5724,7 @@ Possible values:
 
 - 0 - Disable
 - 1 - Enable
-)", 0) \
+)", 0, optimize_read_in_window_order) \
     DECLARE(Bool, query_plan_lift_up_union, true, R"(
 Toggles a query-plan-level optimization which moves larger subtrees of the query plan into union to enable further optimizations.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -6564,7 +6561,7 @@ Columns preceding WITH FILL columns in ORDER BY clause form sorting prefix. Rows
     DECLARE(Bool, optimize_uniq_to_count, true, R"(
 Rewrite uniq and its variants(except uniqUpTo) to count if subquery has distinct or group by clause.
 )", 0) \
-    DECLARE(Bool, use_variant_as_common_type, false, R"(
+    DECLARE(Bool, use_variant_as_common_type, true, R"(
 Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiIf)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
 
 Example:
@@ -6870,7 +6867,7 @@ Use up to `max_parallel_replicas` the number of replicas from each shard for SEL
 Enable automatic switching to execution with parallel replicas based on collected statistics. Requires enabling `parallel_replicas_local_plan` and providing `cluster_for_parallel_replicas`.
 0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 0, R"(
+    DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 1_MiB, R"(
 Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
 The total number of bytes to read is estimated based on the collected statistics.
 )", EXPERIMENTAL) \
@@ -7192,6 +7189,9 @@ Max bytes of iceberg parquet data file on insert operation.
     DECLARE(UInt64, iceberg_insert_max_partitions, 100, R"(
 Max allowed partitions count per one insert operation for Iceberg table engine.
 )", 0) \
+    DECLARE(Bool, database_datalake_require_metadata_access, true, R"(
+Either to throw error or not if we don't have rights to get table's metadata in database engine DataLakeCatalog.
+)", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
     DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, R"(
@@ -7418,6 +7418,10 @@ On server startup, prevent scheduling of refreshable materialized views, as if w
     \
     DECLARE(Bool, allow_experimental_database_materialized_postgresql, false, R"(
 Allow to create database with Engine=MaterializedPostgreSQL(...).
+)", EXPERIMENTAL) \
+    \
+    DECLARE(Bool, allow_experimental_nullable_tuple_type, false, R"(
+Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Tuple](../../sql-reference/data-types/tuple.md) columns in tables.
 )", EXPERIMENTAL) \
     \
     /** Experimental feature for moving data between shards. */ \
@@ -8119,7 +8123,7 @@ void Settings::addToProgramOptions(std::string_view setting_name, boost::program
                 this->set(setting_name, value);
             });
     options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-            setting_name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), accessor.getDescription(index)))); // NOLINT
+            setting_name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), accessor.getDescription(index).data()))); // NOLINT
 }
 
 void Settings::addToProgramOptionsAsMultitokens(boost::program_options::options_description & options) const

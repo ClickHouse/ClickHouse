@@ -1076,7 +1076,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function untuple can't have lambda-expressions as arguments");
 
             auto result_type = untuple_argument->getResultType();
-            const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
+            DataTypePtr result_type_without_nullable = removeNullable(result_type);
+            const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type_without_nullable.get());
             if (!tuple_data_type)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "Function 'untuple' argument must have compound type. Actual type {}. In scope {}",
@@ -1427,7 +1428,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     try
     {
         FunctionBasePtr function_base;
-        if (function_cache)
+        /** Do not use cache for functions with lambda arguments.
+          * The cache key (tree hash) is computed before lambdas are resolved,
+          * so the same AST structure with different resolved lambda types
+          * would incorrectly share the cached function base.
+          */
+        if (function_cache && !has_lambda_arguments)
         {
             auto & cached_function = function_cache->function_base;
             if (!cached_function)

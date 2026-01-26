@@ -694,9 +694,9 @@ struct ToStartOfInterval<IntervalKind::Kind::Day>
     {
         return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
     }
-    static UInt32 execute(Int32 d, Int64 days, const DateLUTImpl & time_zone, Int64)
+    static Int64 execute(Int32 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
-        return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
+        return time_zone.toStartOfDayInterval(ExtendedDayNum(d), days);
     }
     static UInt32 execute(UInt32 t, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
@@ -715,9 +715,9 @@ struct ToStartOfInterval<IntervalKind::Kind::Week>
     {
         return time_zone.toStartOfWeekInterval(DayNum(d), weeks);
     }
-    static UInt16 execute(Int32 d, Int64 weeks, const DateLUTImpl & time_zone, Int64)
+    static Int32 execute(Int32 d, Int64 weeks, const DateLUTImpl & time_zone, Int64)
     {
-        return static_cast<UInt16>(time_zone.toStartOfWeekInterval(ExtendedDayNum(d), weeks));
+        return time_zone.toStartOfWeekInterval(ExtendedDayNum(d), weeks);
     }
     static UInt16 execute(UInt32 t, Int64 weeks, const DateLUTImpl & time_zone, Int64)
     {
@@ -738,9 +738,9 @@ struct ToStartOfInterval<IntervalKind::Kind::Month>
     {
         return time_zone.toStartOfMonthInterval(DayNum(d), months);
     }
-    static UInt16 execute(Int32 d, Int64 months, const DateLUTImpl & time_zone, Int64)
+    static Int32 execute(Int32 d, Int64 months, const DateLUTImpl & time_zone, Int64)
     {
-        return static_cast<UInt16>(time_zone.toStartOfMonthInterval(ExtendedDayNum(d), months));
+        return time_zone.toStartOfMonthInterval(ExtendedDayNum(d), months);
     }
     static UInt16 execute(UInt32 t, Int64 months, const DateLUTImpl & time_zone, Int64)
     {
@@ -771,9 +771,9 @@ struct ToStartOfInterval<IntervalKind::Kind::Quarter>
     {
         return time_zone.toStartOfQuarterInterval(DayNum(d), quarters);
     }
-    static UInt16 execute(Int32 d, Int64 quarters, const DateLUTImpl & time_zone, Int64)
+    static Int32 execute(Int32 d, Int64 quarters, const DateLUTImpl & time_zone, Int64)
     {
-        return static_cast<UInt16>(time_zone.toStartOfQuarterInterval(ExtendedDayNum(d), quarters));
+        return time_zone.toStartOfQuarterInterval(ExtendedDayNum(d), quarters);
     }
     static UInt16 execute(UInt32 t, Int64 quarters, const DateLUTImpl & time_zone, Int64)
     {
@@ -794,9 +794,9 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
     {
         return time_zone.toStartOfYearInterval(DayNum(d), years);
     }
-    static UInt16 execute(Int32 d, Int64 years, const DateLUTImpl & time_zone, Int64)
+    static Int32 execute(Int32 d, Int64 years, const DateLUTImpl & time_zone, Int64)
     {
-        return static_cast<UInt16>(time_zone.toStartOfYearInterval(ExtendedDayNum(d), years));
+        return static_cast<Int32>(time_zone.toStartOfYearInterval(ExtendedDayNum(d), years));
     }
     static UInt16 execute(UInt32 t, Int64 years, const DateLUTImpl & time_zone, Int64)
     {
@@ -2450,15 +2450,15 @@ struct Transformer
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            if constexpr (std::is_same_v<ToType, DataTypeDate> || std::is_same_v<ToType, DataTypeDateTime> || std::is_same_v<ToType, DataTypeTime>)
+            if constexpr (is_any_of<ToType, DataTypeDate, DataTypeDateTime, DataTypeTime>)
             {
-                if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
-                    || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
+                if constexpr (is_any_of<Additions, DateTimeAccurateConvertStrategyAdditions, DateTimeAccurateOrNullConvertStrategyAdditions>)
                 {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-                    bool is_valid_input = vec_from[i] >= 0 && vec_from[i] <= 0xFFFFFFFFL;
-#pragma clang diagnostic pop
+                    using UpperBoundType = std::conditional_t<
+                        std::is_floating_point_v<typename FromTypeVector::value_type>,
+                        typename FromTypeVector::value_type,
+                        Int64>;
+                    bool is_valid_input = vec_from[i] >= 0 && vec_from[i] <= static_cast<UpperBoundType>(0xFFFFFFFFL);
                     if (!is_valid_input)
                     {
                         if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
