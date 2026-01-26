@@ -273,7 +273,16 @@ SELECT
     serializedHLL(12, 'HLL_8')(d.number * 50000 + r.region_id * 5000 + t.number) AS transaction_sketch
 FROM 
     numbers(5) AS d,
-    (SELECT arrayJoin(['US', 'EU', 'APAC']) AS region, arrayJoin([1, 2, 3]) AS region_id) AS r,
+    (
+        /* Important: keep region and region_id paired (no cartesian product). */
+        SELECT
+            tupleElement(x, 1) AS region,
+            tupleElement(x, 2) AS region_id
+        FROM
+        (
+            SELECT arrayJoin(arrayZip(['US', 'EU', 'APAC'], [1, 2, 3])) AS x
+        )
+    ) AS r,
     numbers(500) AS c,
     numbers(1000) AS t
 GROUP BY date, region;
@@ -282,8 +291,8 @@ GROUP BY date, region;
 WITH regional_totals AS (
     SELECT 
         region,
-        mergeSerializedHLL(0, 14, 'HLL_4')(customer_sketch) AS merged_customers,
-        mergeSerializedHLL(0, 12, 'HLL_8')(transaction_sketch) AS merged_transactions
+        mergeSerializedHLL(14, 'HLL_4')(customer_sketch) AS merged_customers,
+        mergeSerializedHLL(12, 'HLL_8')(transaction_sketch) AS merged_transactions
     FROM business_metrics
     GROUP BY region
 )
@@ -296,8 +305,8 @@ ORDER BY region;
 
 -- Get global totals
 SELECT 
-    cardinalityFromHLL(mergeSerializedHLL(0, 14, 'HLL_4')(customer_sketch)) BETWEEN 7000 AND 8000 AS total_customers_ok,
-    cardinalityFromHLL(mergeSerializedHLL(0, 12, 'HLL_8')(transaction_sketch)) BETWEEN 14000 AND 16000 AS total_transactions_ok
+    cardinalityFromHLL(mergeSerializedHLL(14, 'HLL_4')(customer_sketch)) BETWEEN 7000 AND 8000 AS total_customers_ok,
+    cardinalityFromHLL(mergeSerializedHLL(12, 'HLL_8')(transaction_sketch)) BETWEEN 14000 AND 16000 AS total_transactions_ok
 FROM business_metrics;
 
 DROP TABLE business_metrics;

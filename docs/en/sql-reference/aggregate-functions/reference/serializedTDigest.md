@@ -9,21 +9,21 @@ doc_type: 'reference'
 
 Creates a serialized Apache DataSketches TDigest sketch from numeric values for accurate percentile estimation, particularly at the extremes (p99, p99.9, etc.). The sketch can be stored, transmitted, or merged with other sketches.
 
-## Syntax
+## Syntax {#syntax}
 
 ```sql
 serializedTDigest(expression)
 ```
 
-## Arguments
+## Arguments {#arguments}
 
 - `expression` — Numeric expression. Supported types: [Int](../../../sql-reference/data-types/int-uint), [UInt](../../../sql-reference/data-types/int-uint), [Float](../../../sql-reference/data-types/float).
 
-## Returned Value
+## Returned Value {#returned-value}
 
 - Serialized binary TDigest sketch. Type: [String](../../../sql-reference/data-types/string).
 
-## Implementation Details
+## Implementation Details {#implementation-details}
 
 TDigest provides:
 - High accuracy for extreme percentiles (p99, p99.9, p99.99)
@@ -31,9 +31,9 @@ TDigest provides:
 - Mergeable for distributed computation
 - Binary compatibility with Apache DataSketches implementations
 
-## Examples
+## Examples {#examples}
 
-### Example 1: Create and Store TDigest Sketch
+### Example 1: Create and Store TDigest Sketch {#example-1-create-and-store-tdigest-sketch}
 
 ```sql
 SELECT serializedTDigest(response_time_ms) AS tdigest_sketch
@@ -41,7 +41,7 @@ FROM requests
 WHERE service = 'api';
 ```
 
-### Example 2: Extract Percentiles
+### Example 2: Extract Percentiles {#example-2-extract-percentiles}
 
 ```sql
 WITH sketch AS (
@@ -55,7 +55,7 @@ SELECT
 FROM sketch;
 ```
 
-### Example 3: Merge Across Time Periods
+### Example 3: Merge Across Time Periods {#example-3-merge-across-time-periods}
 
 ```sql
 WITH merged AS (
@@ -68,7 +68,7 @@ SELECT
 FROM merged;
 ```
 
-## See Also
+## See Also {#see-also}
 
 - [mergeSerializedTDigest](../../../sql-reference/aggregate-functions/reference/mergeserializedtdigest) — Merge TDigest sketches
 - [percentileFromTDigest](../../../sql-reference/functions/percentilefromtdigest) — Extract percentile from TDigest

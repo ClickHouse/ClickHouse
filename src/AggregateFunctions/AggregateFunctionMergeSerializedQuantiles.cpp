@@ -50,7 +50,7 @@ public:
     {
         const auto & column = assert_cast<const ColumnString &>(*columns[0]);
         auto serialized_data = column.getDataAt(row_num);
-        this->data(place).insertSerialized(serialized_data, !base64_encoded);
+        this->data(place).insertSerialized(serialized_data, base64_encoded);
     }
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

@@ -27,9 +27,9 @@ Test 9: Quantiles with different distributions
 Test 10: Empty result handling
 1	1
 Test 11: High-precision business metrics with custom parameters
-APAC	0	0
-EU	0	0
-US	0	0
+APAC	1	1
+EU	1	1
+US	1	1
 1	1
 Test 12: Accuracy comparison - default vs high-precision
 1

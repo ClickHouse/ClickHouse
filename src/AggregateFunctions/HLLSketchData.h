@@ -113,7 +113,10 @@ public:
     {
         if (sk_union)
         {
-            auto bytes = sk_union->get_result().serialize_compact();
+            /// Respect the configured target HLL type for the output sketch.
+            /// This matters for users who explicitly request a specific representation (HLL_4/6/8)
+            /// and keeps mergeSerializedHLL output consistent with serializedHLL settings.
+            auto bytes = sk_union->get_result(type).serialize_compact();
             return String(bytes.begin(), bytes.end());
         }
         if (sk_update)

@@ -62,7 +62,7 @@ public:
     {
         const auto & column = assert_cast<const ColumnString &>(*columns[0]);
         auto serialized_data = column.getDataAt(row_num);
-        this->data(place).insertSerialized(serialized_data, !base64_encoded);
+        this->data(place).insertSerialized(serialized_data, base64_encoded);
     }
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -93,10 +93,18 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
     const Array & params,
     const Settings *)
 {
-    /// Optional parameters: base64_encoded, lg_k, type
-    /// - base64_encoded (default: false): Check for base64 encoding (for CSV, JSON, external data)
-    /// - lg_k (default: 10): Log-base-2 of K (4-21)
-    /// - type (default: 'HLL_4'): Storage format ('HLL_4', 'HLL_6', or 'HLL_8')
+    /// Optional parameters:
+    /// One supported ordering is: [base64_encoded, lg_k, type].
+    ///
+    /// For better parity with other HLL functions and usability, we also accept:
+    ///   - [lg_k, type]
+    ///   - [lg_k, type, base64_encoded]
+    ///   - [lg_k] (base64_encoded defaults to 0, type defaults to 'HLL_4')
+    ///
+    /// Disambiguation rules:
+    ///   - If a parameter position is String, it is interpreted as `type`.
+    ///   - Otherwise numeric parameters are interpreted as `base64_encoded` when value is 0/1,
+    ///     or as `lg_k` when value is in [4..21].
     bool base64_encoded = false;
     uint8_t lg_k = DEFAULT_LG_K;
     datasketches::target_hll_type type = DEFAULT_HLL_TYPE;
@@ -105,23 +113,9 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Aggregate function {} takes at most 3 parameters: base64_encoded (0 or 1), lg_k (4-21), and type ('HLL_4', 'HLL_6', or 'HLL_8')", name);
 
-    if (!params.empty())
+    auto parseType = [&](const Field & field)
     {
-        base64_encoded = params[0].safeGet<bool>();
-    }
-
-    if (params.size() >= 2)
-    {
-        UInt64 lg_k_param = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
-        if (lg_k_param < 4 || lg_k_param > 21)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Parameter lg_k for aggregate function {} must be between 4 and 21, got {}", name, lg_k_param);
-        lg_k = static_cast<uint8_t>(lg_k_param);
-    }
-
-    if (params.size() == 3)
-    {
-        String type_str = params[2].safeGet<String>();
+        String type_str = field.safeGet<String>();
         if (type_str == "HLL_4")
             type = datasketches::HLL_4;
         else if (type_str == "HLL_6")
@@ -131,6 +125,78 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Parameter type for aggregate function {} must be 'HLL_4', 'HLL_6', or 'HLL_8', got '{}'", name, type_str);
+    };
+
+    auto parseBase64 = [&](const Field & field)
+    {
+        UInt64 v = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), field);
+        if (v != 0 && v != 1)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Parameter base64_encoded for aggregate function {} must be 0 or 1, got {}", name, v);
+        base64_encoded = (v != 0);
+    };
+
+    auto parseLgK = [&](const Field & field)
+    {
+        UInt64 v = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), field);
+        if (v < 4 || v > 21)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Parameter lg_k for aggregate function {} must be between 4 and 21, got {}", name, v);
+        lg_k = static_cast<uint8_t>(v);
+    };
+
+    /// Parse parameters with support for both ordering variants.
+    if (params.size() == 1)
+    {
+        /// [base64_encoded] where base64_encoded is 0/1 OR [lg_k] where lg_k in [4..21]
+        UInt64 v = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
+        if (v == 0 || v == 1)
+            base64_encoded = (v != 0);
+        else
+            parseLgK(params[0]);
+    }
+    else if (params.size() == 2)
+    {
+        /// Either [base64_encoded, lg_k] OR [lg_k, type]
+        bool second_is_string = false;
+        try { (void)params[1].safeGet<String>(); second_is_string = true; } catch (...) { second_is_string = false; }
+
+        if (second_is_string)
+        {
+            parseLgK(params[0]);
+            parseType(params[1]);
+        }
+        else
+        {
+            parseBase64(params[0]);
+            parseLgK(params[1]);
+        }
+    }
+    else if (params.size() == 3)
+    {
+        /// Either [base64_encoded, lg_k, type] OR [lg_k, type, base64_encoded]
+        bool second_is_string = false;
+        bool third_is_string = false;
+        try { (void)params[1].safeGet<String>(); second_is_string = true; } catch (...) { second_is_string = false; }
+        try { (void)params[2].safeGet<String>(); third_is_string = true; } catch (...) { third_is_string = false; }
+
+        if (second_is_string && !third_is_string)
+        {
+            parseLgK(params[0]);
+            parseType(params[1]);
+            parseBase64(params[2]);
+        }
+        else if (!second_is_string && third_is_string)
+        {
+            parseBase64(params[0]);
+            parseLgK(params[1]);
+            parseType(params[2]);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Ambiguous parameters for aggregate function {}. Expected [base64_encoded, lg_k, type] or [lg_k, type, base64_encoded].", name);
+        }
     }
 
     if (argument_types.size() != 1)

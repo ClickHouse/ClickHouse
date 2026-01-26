@@ -9,17 +9,17 @@ doc_type: 'reference'
 
 Creates a serialized Apache DataSketches HyperLogLog (HLL) sketch from column values for approximate distinct count estimation. The sketch can be stored, transmitted, or merged with other sketches for distributed cardinality estimation.
 
-## Syntax
+## Syntax {#syntax}
 
 ```sql
 serializedHLL([lg_k, type])(expression)
 ```
 
-## Arguments
+## Arguments {#arguments}
 
 - `expression` — Column expression. Supported types: [Int](../../data-types/int-uint.md), [UInt](../../data-types/int-uint.md), [Float](../../data-types/float.md), [String](../../data-types/string.md), [FixedString](../../data-types/fixedstring.md).
 
-## Parameters (optional)
+## Parameters (optional) {#parameters}
 
 - `lg_k` — Log-base-2 of the number of buckets (precision parameter). Type: [UInt8](../../data-types/int-uint.md). Valid range: 4-21. Default: 10.
   - Higher values provide better accuracy but use more memory
@@ -33,11 +33,11 @@ serializedHLL([lg_k, type])(expression)
   - `'HLL_8'`: 8 bits per bucket, largest (~K bytes), fastest updates
   - All types produce identical accuracy for the same `lg_k`
 
-## Returned Value
+## Returned Value {#returned-value}
 
 - Serialized binary HLL sketch. Type: [String](../../data-types/string.md).
 
-## Implementation Details
+## Implementation Details {#implementation-details}
 
 This function uses the Apache DataSketches HyperLogLog algorithm, providing:
 - Fixed memory usage regardless of cardinality
@@ -47,9 +47,9 @@ This function uses the Apache DataSketches HyperLogLog algorithm, providing:
 
 The relative error is approximately `1.04 / √K` where `K = 2^lg_k`.
 
-## Usage
+## Usage {#usage}
 
-### Basic Usage (Default Parameters)
+### Basic Usage (Default Parameters) {#basic-usage}
 
 ```sql
 -- Create HLL sketch with default parameters (lg_k=10, type='HLL_4')
@@ -57,7 +57,7 @@ SELECT serializedHLL(user_id) AS user_sketch
 FROM events;
 ```
 
-### Custom Precision
+### Custom Precision {#custom-precision}
 
 ```sql
 -- Higher precision for critical metrics (lg_k=14)
@@ -66,7 +66,7 @@ FROM transactions
 GROUP BY date;
 ```
 
-### Fast Updates
+### Fast Updates {#fast-updates}
 
 ```sql
 -- Use HLL_8 for fastest update performance
@@ -75,7 +75,7 @@ FROM realtime_events
 GROUP BY minute;
 ```
 
-### Materialized View Pattern
+### Materialized View Pattern {#materialized-view-pattern}
 
 ```sql
 -- Store sketches for incremental aggregation
@@ -89,9 +89,9 @@ FROM events
 GROUP BY date;
 ```
 
-## Examples
+## Examples {#examples}
 
-### Example 1: Basic Cardinality Estimation
+### Example 1: Basic Cardinality Estimation {#example-1-basic-cardinality-estimation}
 
 ```sql
 SELECT cardinalityFromHLL(serializedHLL(number)) AS estimated_count
@@ -104,7 +104,7 @@ FROM numbers(1000);
 └─────────────────┘
 ```
 
-### Example 2: Accuracy Comparison
+### Example 2: Accuracy Comparison {#example-2-accuracy-comparison}
 
 ```sql
 WITH 
@@ -122,7 +122,7 @@ SELECT
 └─────────────────┴──────────────────┴────────────────────┘
 ```
 
-### Example 3: Different Storage Types
+### Example 3: Different Storage Types {#example-3-different-storage-types}
 
 ```sql
 SELECT 
@@ -138,7 +138,7 @@ FROM numbers(10000);
 └───────────┴───────────┴───────────┘
 ```
 
-## See Also
+## See Also {#see-also}
 
 - [mergeSerializedHLL](./mergeSerializedHLL.md) — Merge multiple HLL sketches
 - [cardinalityFromHLL](../../functions/cardinalityFromHLL.md) — Extract cardinality estimate from sketch

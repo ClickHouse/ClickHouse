@@ -9,24 +9,24 @@ doc_type: 'reference'
 
 Merges multiple Apache DataSketches Quantiles sketches into a single sketch. This enables distributed percentile computation across shards, time periods, or dimensions.
 
-## Syntax
+## Syntax {#syntax}
 
 ```sql
 mergeSerializedQuantiles([base64_encoded])(sketch)
 ```
 
-## Arguments
+## Arguments {#arguments}
 
 - `base64_encoded` (optional) — Boolean flag (0 or 1) to control base64 decoding. Default: 0 (raw binary).
   - `0` (default): Input is raw binary sketch data (most common)
   - `1`: Input is base64-encoded and will be decoded before merging
 - `sketch` — Column containing serialized Quantiles sketches. Type: [String](../../../sql-reference/data-types/string).
 
-## Returned Value
+## Returned Value {#returned-value}
 
 - Merged serialized Quantiles sketch. Type: [String](../../../sql-reference/data-types/string).
 
-## Implementation Details
+## Implementation Details {#implementation-details}
 
 The merge operation is:
 - **Commutative**: Order doesn't matter
@@ -35,9 +35,9 @@ The merge operation is:
 
 This makes it ideal for distributed aggregation in ClickHouse.
 
-## Examples
+## Examples {#examples}
 
-### Example 1: Merge Daily Sketches into Weekly
+### Example 1: Merge Daily Sketches into Weekly {#example-1-merge-daily-sketches-into-weekly}
 
 ```sql
 WITH daily_sketches AS (
@@ -53,7 +53,7 @@ SELECT
 FROM daily_sketches;
 ```
 
-### Example 2: Cross-Shard Aggregation
+### Example 2: Cross-Shard Aggregation {#example-2-cross-shard-aggregation}
 
 ```sql
 -- Aggregate from multiple distributed shards
@@ -66,7 +66,7 @@ FROM distributed_latency_table
 GROUP BY service;
 ```
 
-### Example 3: Time Series Rollup
+### Example 3: Time Series Rollup {#example-3-time-series-rollup}
 
 ```sql
 -- Rollup hourly -> daily -> weekly
@@ -81,7 +81,7 @@ FROM hourly_latency_sketches
 GROUP BY service, date;
 ```
 
-### Example 4: Base64-Encoded Input
+### Example 4: Base64-Encoded Input {#example-4-base64-encoded-input}
 
 ```sql
 -- Merge sketches stored as base64 strings
@@ -94,7 +94,7 @@ FROM external_sketches
 WHERE source = 'partner_api';
 ```
 
-## See Also
+## See Also {#see-also}
 
 - [serializedQuantiles](../../../sql-reference/aggregate-functions/reference/serializedquantiles) — Create Quantiles sketch
 - [percentileFromQuantiles](../../../sql-reference/functions/percentilefromquantiles) — Extract percentile from sketch

@@ -9,21 +9,21 @@ doc_type: 'reference'
 
 Creates a serialized Apache DataSketches Quantiles sketch from numeric values for approximate percentile estimation. The sketch can be stored, transmitted, or merged with other sketches for distributed percentile computation.
 
-## Syntax
+## Syntax {#syntax}
 
 ```sql
 serializedQuantiles(expression)
 ```
 
-## Arguments
+## Arguments {#arguments}
 
 - `expression` — Column expression with numeric values. Supported types: [Int](../../../sql-reference/data-types/int-uint), [UInt](../../../sql-reference/data-types/int-uint), [Float](../../../sql-reference/data-types/float).
 
-## Returned Value
+## Returned Value {#returned-value}
 
 - Serialized binary Quantiles sketch. Type: [String](../../../sql-reference/data-types/string).
 
-## Implementation Details
+## Implementation Details {#implementation-details}
 
 This function uses the Apache DataSketches Quantiles algorithm (KLL sketch), providing:
 - Compact representation of value distribution
@@ -33,9 +33,9 @@ This function uses the Apache DataSketches Quantiles algorithm (KLL sketch), pro
 
 The sketch automatically adapts its internal structure based on the number of values, maintaining accuracy while minimizing memory usage.
 
-## Usage
+## Usage {#usage}
 
-### Basic Usage
+### Basic Usage {#basic-usage}
 
 ```sql
 -- Create quantiles sketch for latency data
@@ -43,7 +43,7 @@ SELECT serializedQuantiles(response_time_ms) AS latency_sketch
 FROM requests;
 ```
 
-### Materialized View Pattern
+### Materialized View Pattern {#materialized-view-pattern}
 
 ```sql
 -- Store sketches for time-series percentile analysis
@@ -58,9 +58,9 @@ FROM requests
 GROUP BY service, hour;
 ```
 
-## Examples
+## Examples {#examples}
 
-### Example 1: Basic Percentile Estimation
+### Example 1: Basic Percentile Estimation {#example-1-basic-percentile-estimation}
 
 ```sql
 SELECT 
@@ -76,7 +76,7 @@ FROM numbers(1000);
 └────────┴───────┴───────┘
 ```
 
-### Example 2: Service Latency Monitoring
+### Example 2: Service Latency Monitoring {#example-2-service-latency-monitoring}
 
 ```sql
 WITH sketches AS (
@@ -96,7 +96,7 @@ FROM sketches
 ORDER BY service;
 ```
 
-### Example 3: Comparing Distributions
+### Example 3: Comparing Distributions {#example-3-comparing-distributions}
 
 ```sql
 WITH 
@@ -116,7 +116,7 @@ SELECT
     (after_p95 - before_p95) / before_p95 * 100 AS percent_change;
 ```
 
-## See Also
+## See Also {#see-also}
 
 - [mergeSerializedQuantiles](../../../sql-reference/aggregate-functions/reference/mergeserializedquantiles) — Merge multiple quantiles sketches
 - [percentileFromQuantiles](../../../sql-reference/functions/percentilefromquantiles) — Extract percentile from sketch

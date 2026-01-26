@@ -9,33 +9,33 @@ doc_type: 'reference'
 
 Merges multiple Apache DataSketches TDigest sketches into a single sketch. This enables distributed percentile computation with high accuracy at extreme percentiles.
 
-## Syntax
+## Syntax {#syntax}
 
 ```sql
 mergeSerializedTDigest([base64_encoded])(sketch)
 ```
 
-## Arguments
+## Arguments {#arguments}
 
 - `base64_encoded` (optional) — Boolean flag (0 or 1) to control base64 decoding. Default: 0 (raw binary).
   - `0` (default): Input is raw binary sketch data (most common)
   - `1`: Input is base64-encoded and will be decoded before merging
 - `sketch` — Column containing serialized TDigest sketches. Type: [String](../../../sql-reference/data-types/string).
 
-## Returned Value
+## Returned Value {#returned-value}
 
 - Merged serialized TDigest sketch. Type: [String](../../../sql-reference/data-types/string).
 
-## Implementation Details
+## Implementation Details {#implementation-details}
 
 The merge operation is:
 - **Commutative**: Order doesn't matter
 - **Associative**: Can merge in any grouping
 - Preserves high accuracy at extreme percentiles
 
-## Examples
+## Examples {#examples}
 
-### Example 1: Merge Hourly into Daily
+### Example 1: Merge Hourly into Daily {#example-1-merge-hourly-into-daily}
 
 ```sql
 WITH hourly_sketches AS (
@@ -52,7 +52,7 @@ SELECT
 FROM hourly_sketches;
 ```
 
-### Example 2: Cross-Region Aggregation
+### Example 2: Cross-Region Aggregation {#example-2-cross-region-aggregation}
 
 ```sql
 SELECT 
@@ -64,7 +64,7 @@ FROM distributed_tdigest_table
 GROUP BY service;
 ```
 
-### Example 3: Base64-Encoded Input
+### Example 3: Base64-Encoded Input {#example-3-base64-encoded-input}
 
 ```sql
 -- Merge sketches from external system stored as base64
@@ -76,7 +76,7 @@ SELECT
 FROM external_tdigest_data;
 ```
 
-## See Also
+## See Also {#see-also}
 
 - [serializedTDigest](../../../sql-reference/aggregate-functions/reference/serializedtdigest) — Create TDigest sketch
 - [percentileFromTDigest](../../../sql-reference/functions/percentilefromtdigest) — Extract percentile from TDigest
