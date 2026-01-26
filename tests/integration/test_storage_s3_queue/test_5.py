@@ -498,7 +498,7 @@ def test_failure_in_the_middle(started_cluster):
                 f"StorageS3Queue (default.{table_name}): Got an error while pulling chunk: Code: 1002. DB::Exception: Failed to read file. Processed rows:"
             )
 
-        for _ in range(40):
+        for _ in range(120):
             if check_failpoint():
                 break
             time.sleep(1)

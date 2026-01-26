@@ -383,7 +383,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const IMergeTreeDataPart * parent_part_)
     : DataPartStorageHolder(data_part_storage_)
     , storage(storage_)
-    , storage_context(storage_.getContext())
     , name(mutable_name)
     , info(info_)
     , index_granularity_info(storage_, storage_settings, part_type_)
@@ -704,20 +703,13 @@ void IMergeTreeDataPart::clearCaches()
     if (cleared_data_in_caches.exchange(true) || is_duplicate)
         return;
 
-    /// Use the weak pointer to context instead of accessing storage directly.
-    /// This is important because clearCaches() may be called from the part destructor
-    /// after the storage has been destroyed (e.g., table dropped while query is running).
-    auto context = storage_context.lock();
-    if (!context)
-        return;
-
     /// Remove index and marks from the cache, because otherwise the cache will grow to its maximum size
     /// even if the overall index size is much less.
-    removeMarksFromCache(context->getMarkCache().get());
-    removeIndexFromCache(context->getPrimaryIndexCache().get());
+    removeMarksFromCache(storage.getContext()->getMarkCache().get());
+    removeIndexFromCache(storage.getPrimaryIndexCache().get());
 
     /// Remove from other caches of secondary indexes
-    removeFromVectorIndexCache(context->getVectorSimilarityIndexCache().get());
+    removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
