@@ -83,7 +83,7 @@ public:
                     /// If users need to decode base64 sketch data from external sources, they should
                     /// use base64Decode() explicitly before calling this function.
                     std::string decoded_storage;
-                    auto [data_ptr, data_size] = decodeSketchData(sketch_data, decoded_storage, /* force_raw= */ true);
+                    auto [data_ptr, data_size] = decodeSketchData(sketch_data, decoded_storage, /* base64_encoded= */ false);
 
                     if (data_ptr == nullptr || data_size == 0)
                     {

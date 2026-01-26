@@ -37,16 +37,16 @@ public:
         getQuantilesSketch()->update(value);
     }
 
-    void insertSerialized(std::string_view serialized_data, bool force_raw = true)
+    void insertSerialized(std::string_view serialized_data, bool base64_encoded = false)
     {
         if (serialized_data.empty())
             return;
 
         std::string decoded_storage;
         /// When merging internally-generated sketches (from serializedQuantiles),
-        /// we know the data is raw binary, not base64. Use force_raw=true for performance.
-        /// For external data sources that might send base64, set force_raw=false.
-        auto [data_ptr, data_size] = decodeSketchData(serialized_data, decoded_storage, force_raw);
+        /// we know the data is raw binary, not base64. Use base64_encoded=false for performance.
+        /// For external data sources that might send base64, set base64_encoded=true.
+        auto [data_ptr, data_size] = decodeSketchData(serialized_data, decoded_storage, base64_encoded);
 
         if (data_ptr == nullptr || data_size == 0)
             return;

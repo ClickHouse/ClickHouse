@@ -38,7 +38,7 @@ public:
 
     void insertSerialized(const uint8_t* data, size_t size)
     {
-        if (size == 0)
+        if (data == nullptr || size == 0)
             return;
 
         auto sk = datasketches::tdigest<double>::deserialize(data, size);

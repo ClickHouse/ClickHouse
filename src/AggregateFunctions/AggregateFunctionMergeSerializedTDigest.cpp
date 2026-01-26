@@ -71,7 +71,10 @@ public:
         auto [data_ptr, data_size] = decodeSketchData(
             serialized_data,
             decoded_storage,
-            !base64_encoded);  // skip_decoding = !base64_encoded
+            base64_encoded);
+
+        if (data_ptr == nullptr || data_size == 0)
+            return;
 
         this->data(place).insertSerialized(data_ptr, data_size);
     }

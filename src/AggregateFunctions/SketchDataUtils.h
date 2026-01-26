@@ -45,18 +45,17 @@ inline bool looksLikeBase64(std::string_view data)
 ///
 /// @param serialized_data The input data (may be base64 or raw binary)
 /// @param decoded_storage Storage for decoded data (if base64 decoding is performed)
-/// @param force_raw If true, skip base64 detection and treat as raw binary (optimization for internal sketch data)
+/// @param base64_encoded If true, data may be base64 encoded and should be checked/decoded
 inline std::pair<const uint8_t*, size_t> decodeSketchData(
     std::string_view serialized_data,
     std::string& decoded_storage,
-    bool force_raw = false)
+    bool base64_encoded = false)
 {
     if (serialized_data.empty())
         return {nullptr, 0};
 
-    /// If we know the data is raw binary (e.g., from internal ClickHouse aggregate functions),
-    /// skip the expensive base64 detection and decode attempt
-    if (force_raw)
+    /// Most ClickHouse-generated sketches are raw binary; skip base64 detection by default.
+    if (!base64_encoded)
     {
         return {
             reinterpret_cast<const uint8_t*>(serialized_data.data()),
