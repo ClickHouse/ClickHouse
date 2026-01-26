@@ -300,15 +300,15 @@ bool MergeTreeTransaction::rollback() noexcept
     }
 
     for (const auto & part : parts_to_activate)
-        if (part->version.getCreationTID() != tid)
-            const_cast<MergeTreeData &>(*part->getStorage()).restoreAndActivatePart(part);
-
-    for (const auto & part : parts_to_activate)
     {
+        auto part_storage = part->getStorage();
+        if (part->version.getCreationTID() != tid)
+            const_cast<MergeTreeData &>(*part_storage).restoreAndActivatePart(part);
+
         /// Clear removal_tid from version metadata file, so we will not need to distinguish TIDs that were not committed
         /// and TIDs that were committed long time ago and were removed from the log on log cleanup.
         part->appendRemovalTIDToVersionMetadata(/* clear */ true);
-        part->version.unlockRemovalTID(tid, TransactionInfoContext{part->getStorage()->getStorageID(), part->name});
+        part->version.unlockRemovalTID(tid, TransactionInfoContext{part_storage->getStorageID(), part->name});
     }
 
     assert([&]()
