@@ -61,7 +61,7 @@ using ComparatorWrapper = Comparator;
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wold-style-cast"
-
+#pragma clang diagnostic ignored "-Wimplicit-int-float-conversion"
 #include <miniselect/floyd_rivest_select.h>
 
 template <typename RandomIt, typename Compare>

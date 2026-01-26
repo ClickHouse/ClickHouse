@@ -53,11 +53,11 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
         /// Compute ranks according to both samples.
         std::tie(ranks, tie_correction) = computeRanksAndTieCorrection(both);
 
-        const Float64 n1 = this->size_x;
-        const Float64 n2 = this->size_y;
+        const Float64 n1 = static_cast<Float64>(this->size_x);
+        const Float64 n2 = static_cast<Float64>(this->size_y);
 
         Float64 r1 = 0;
-        for (size_t i = 0; i < n1; ++i)
+        for (size_t i = 0; i < static_cast<size_t>(n1); ++i)
             r1 += ranks[i];
 
         const Float64 u1 = n1 * n2 + (n1 * (n1 + 1.)) / 2. - r1;

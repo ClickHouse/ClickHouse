@@ -280,7 +280,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
         }
 
-        double null_ratio = rows_with_nulls / static_cast<double>(input_rows_count);
+        double null_ratio = static_cast<double>(rows_with_nulls) / static_cast<double>(input_rows_count);
         bool should_short_circuit
             = short_circuit_function_evaluation_for_nulls && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
 
