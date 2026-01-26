@@ -67,11 +67,17 @@ ASTPtr getFixedPoint(const ASTPtr & ast, const ContextPtr & context)
     return argument->as<ASTIdentifier>() ? argument : nullptr;
 }
 
-} /// end anonymous namespace
-
 NameSet getFixedSortingColumns(
-    const ASTPtr & condition, const Names & sorting_key_columns, const ContextPtr & context)
+    const ASTSelectQuery & query, const Names & sorting_key_columns, const ContextPtr & context)
 {
+    ASTPtr condition;
+    if (query.where() && query.prewhere())
+        condition = makeASTOperator("and", query.where(), query.prewhere());
+    else if (query.where())
+        condition = query.where();
+    else if (query.prewhere())
+        condition = query.prewhere();
+
     if (!condition)
         return {};
 
@@ -102,23 +108,6 @@ NameSet getFixedSortingColumns(
 
     return fixed_points;
 }
-
-NameSet getFixedSortingColumns(
-    const ASTSelectQuery & query, const Names & sorting_key_columns, const ContextPtr & context)
-{
-    ASTPtr condition;
-    if (query.where() && query.prewhere())
-        condition = makeASTOperator("and", query.where(), query.prewhere());
-    else if (query.where())
-        condition = query.where();
-    else if (query.prewhere())
-        condition = query.prewhere();
-
-    return getFixedSortingColumns(condition, sorting_key_columns, context);
-}
-
-namespace
-{
 
 struct MatchResult
 {

@@ -34,6 +34,9 @@
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 
 #include <stack>
@@ -435,8 +438,70 @@ struct SortingInputOrder
     std::optional<ActionsDAG> virtual_row_conversion{};
 };
 
+/// Find fixed columns from QueryTree condition, filtering by table alias.
+/// Only considers columns that belong to the specified table (by alias).
+/// This handles JOINs correctly by not matching columns from different tables.
+NameSet getFixedColumnsFromQueryTree(
+    const QueryTreeNodePtr & condition,
+    const String & table_alias,
+    const NameSet & sorting_key_columns_set)
+{
+    NameSet fixed_columns;
+    if (!condition || table_alias.empty())
+        return fixed_columns;
+
+    std::vector<QueryTreeNodePtr> nodes_to_process;
+    nodes_to_process.push_back(condition);
+
+    while (!nodes_to_process.empty())
+    {
+        auto node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        const auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            continue;
+
+        const auto & function_name = function_node->getFunctionName();
+
+        if (function_name == "and")
+        {
+            for (const auto & arg : function_node->getArguments())
+                nodes_to_process.push_back(arg);
+            continue;
+        }
+
+        if (function_name == "equals")
+        {
+            const auto & args = function_node->getArguments().getNodes();
+            if (args.size() != 2)
+                continue;
+
+            const ColumnNode * column_node = nullptr;
+            if (args[0]->as<ColumnNode>() && args[1]->as<ConstantNode>())
+                column_node = args[0]->as<ColumnNode>();
+            else if (args[1]->as<ColumnNode>() && args[0]->as<ConstantNode>())
+                column_node = args[1]->as<ColumnNode>();
+
+            if (column_node)
+            {
+                auto column_source = column_node->getColumnSourceOrNull();
+                if (column_source && column_source->getAlias() == table_alias)
+                {
+                    const auto & column_name = column_node->getColumnName();
+                    if (sorting_key_columns_set.contains(column_name))
+                        fixed_columns.insert(column_name);
+                }
+            }
+        }
+    }
+
+    return fixed_columns;
+}
+
 /// Check if a column is fixed (constant) for read-in-order optimization.
-/// For parallel replicas with local plan, uses AST-based detection for determinism.
+/// For parallel replicas, uses QueryTree-based detection for deterministic results.
+/// Uses table_expression to correctly handle JOINs by filtering columns by table alias.
 /// Otherwise uses DAG-based detection for full optimization.
 bool isFixedColumnForReadInOrder(
     const ActionsDAG::Node * sort_node,
@@ -445,54 +510,56 @@ bool isFixedColumnForReadInOrder(
     const KeyDescription & sorting_key,
     const ReadFromMergeTree * reading)
 {
-    /// For parallel replicas, use AST-based fixed column detection for deterministic results.
+    /// For parallel replicas, use QueryTree-based fixed column detection for deterministic results.
     /// DAG-based detection can differ between replicas due to non-deterministic DAG structures.
-    /// This applies to both local_plan=0 and local_plan=1 scenarios for consistent behavior.
     if (reading)
     {
         const auto & context = reading->getContext();
         if (reading->isParallelReadingFromReplicas() || context->canUseParallelReplicasOnInitiator())
         {
             const auto & query_info = reading->getQueryInfo();
-            ASTPtr where_condition;
-            ASTPtr prewhere_condition;
 
-            /// Try to get WHERE/PREWHERE from query tree (new analyzer)
             if (query_info.query_tree)
             {
                 if (const auto * query_node = query_info.query_tree->as<QueryNode>())
                 {
-                    if (query_node->hasWhere())
-                        where_condition = query_node->getWhere()->toAST();
-                    if (query_node->hasPrewhere())
-                        prewhere_condition = query_node->getPrewhere()->toAST();
+                    /// Get the table alias for the current table being read.
+                    /// This is deterministic and consistent across replicas.
+                    String table_alias;
+                    if (query_info.table_expression)
+                        table_alias = query_info.table_expression->getAlias();
+
+                    /// Extract the column name from sort_column_description
+                    /// (e.g., "tenant" from "__table1.tenant")
+                    String column_name = sort_column_description.column_name;
+                    if (auto dot_pos = column_name.rfind('.'); dot_pos != String::npos)
+                        column_name = column_name.substr(dot_pos + 1);
+
+                    /// Combine WHERE and PREWHERE conditions
+                    QueryTreeNodePtr condition;
+                    if (query_node->hasWhere() && query_node->hasPrewhere())
+                    {
+                        auto and_function = std::make_shared<FunctionNode>("and");
+                        and_function->getArguments().getNodes().push_back(query_node->getWhere());
+                        and_function->getArguments().getNodes().push_back(query_node->getPrewhere());
+                        condition = and_function;
+                    }
+                    else if (query_node->hasWhere())
+                        condition = query_node->getWhere();
+                    else if (query_node->hasPrewhere())
+                        condition = query_node->getPrewhere();
+
+                    if (condition)
+                    {
+                        /// Use QueryTree-based detection which preserves table context
+                        /// This correctly handles JOINs by only matching columns from our table
+                        NameSet sorting_key_set(sorting_key.column_names.begin(), sorting_key.column_names.end());
+                        auto fixed_names = getFixedColumnsFromQueryTree(condition, table_alias, sorting_key_set);
+                        return fixed_names.contains(column_name);
+                    }
+                    return false;
                 }
             }
-            /// Fall back to AST (old analyzer)
-            else if (const auto * select_query = query_info.query->as<ASTSelectQuery>())
-            {
-                where_condition = select_query->where();
-                prewhere_condition = select_query->prewhere();
-            }
-
-            /// Combine WHERE and PREWHERE conditions
-            ASTPtr condition;
-            if (where_condition && prewhere_condition)
-                condition = makeASTForLogicalAnd({where_condition, prewhere_condition});
-            else if (where_condition)
-                condition = where_condition;
-            else if (prewhere_condition)
-                condition = prewhere_condition;
-
-            if (condition)
-            {
-                auto fixed_names = getFixedSortingColumns(
-                    condition,
-                    sorting_key.column_names,
-                    context);
-                return fixed_names.contains(sort_column_description.column_name);
-            }
-            return false;
         }
     }
     /// Use DAG-based detection for full optimization in non-parallel scenarios
