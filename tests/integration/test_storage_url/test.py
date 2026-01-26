@@ -20,9 +20,10 @@ def setup_node():
     try:
         cluster.start()
         start_mock_servers(cluster, os.path.dirname(__file__), [("index_pages_server.py", "resolver", 8081)])
-        node1.query(
-            "insert into table function url(url1) partition by column3 values (1, 2, 3), (3, 2, 1), (1, 3, 2)"
-        )
+        if not os.environ.get("CLICKHOUSE_INTEGRATION_LOCAL"):
+            node1.query(
+                "insert into table function url(url1) partition by column3 values (1, 2, 3), (3, 2, 1), (1, 3, 2)"
+            )
         yield
     finally:
         cluster.shutdown()
@@ -143,6 +144,23 @@ def test_url_wildcard_query_fragment_matching():
         "SELECT sum(x) FROM url('http://resolver:8081/data/query/part*.tsv', 'TSV', 'x UInt64')"
     )
     assert result.strip() == "3"
+
+
+def test_url_wildcard_glob_patterns():
+    result = node1.query(
+        "SELECT sum(x) FROM url('http://resolver:8081/data/glob/part?.tsv', 'TSV', 'x UInt64')"
+    )
+    assert result.strip() == "15"
+
+    result = node1.query(
+        "SELECT sum(x) FROM url('http://resolver:8081/data/glob/part{a,b,c}.tsv', 'TSV', 'x UInt64')"
+    )
+    assert result.strip() == "6"
+
+    result = node1.query(
+        "SELECT sum(x) FROM url('http://resolver:8081/data/glob/part{1..2}.tsv', 'TSV', 'x UInt64')"
+    )
+    assert result.strip() == "9"
 
 
 def test_table_function_url_access_rights():
