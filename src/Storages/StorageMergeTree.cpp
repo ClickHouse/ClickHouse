@@ -2984,7 +2984,9 @@ PreparedSetsCachePtr StorageMergeTree::getPreparedSetsCache(Int64 mutation_id)
 
 void StorageMergeTree::assertNotReadonly() const
 {
-    if (isStaticStorage() || (*getSettings())[MergeTreeSetting::table_is_readonly])
+    if (isStaticStorage())
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
+    if ((*getSettings())[MergeTreeSetting::table_is_readonly])
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode");
 }
 
