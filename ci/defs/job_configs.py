@@ -6,9 +6,10 @@ from ci.defs.defs import ArtifactNames, BuildTypes, JobNames, RunnerLabels
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 
 BINARY_DOCKER_COMMAND = (
-    "clickhouse/binary-builder+--network=host+"
-    f"--memory={Utils.physical_memory() * 95 // 100}+"
-    f"--memory-reservation={Utils.physical_memory() * 9 // 10}"
+    "clickhouse/binary-builder+--network=host"
+    f"+--memory={Utils.physical_memory() * 95 // 100}"
+    f"+--memory-reservation={Utils.physical_memory() * 9 // 10}"
+    f"+--volume=.:/ClickHouse"
 )
 
 if Utils.is_arm():
@@ -107,12 +108,6 @@ common_integration_test_job_config = Job.Config(
     run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
 )
 
-BINARY_DOCKER_COMMAND = (
-    "clickhouse/binary-builder+--network=host+"
-    f"--memory={Utils.physical_memory() * 95 // 100}+"
-    f"--memory-reservation={Utils.physical_memory() * 9 // 10}"
-)
-
 
 class JobConfigs:
     style_check = Job.Config(
@@ -134,7 +129,7 @@ class JobConfigs:
         runs_on=RunnerLabels.AMD_LARGE,
         command="python3 ./ci/jobs/fast_test.py",
         # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker="clickhouse/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log",
+        run_in_docker="clickhouse/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/fast_test.py",
