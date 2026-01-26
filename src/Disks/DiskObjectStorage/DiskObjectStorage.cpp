@@ -44,7 +44,7 @@ DiskTransactionPtr DiskObjectStorage::createTransaction()
     return createObjectStorageTransaction();
 }
 
-ObjectStoragePtr DiskObjectStorage::getObjectStorage() const
+ObjectStoragePtr DiskObjectStorage::getObjectStorage()
 {
     return object_storage;
 }

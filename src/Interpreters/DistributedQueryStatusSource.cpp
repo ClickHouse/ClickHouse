@@ -21,6 +21,7 @@ extern const int UNFINISHED;
 }
 
 DistributedQueryStatusSource::DistributedQueryStatusSource(
+    const String & zookeeper_name_,
     const String & zk_node_path,
     const String & zk_replicas_path,
     SharedHeader block,
@@ -28,6 +29,7 @@ DistributedQueryStatusSource::DistributedQueryStatusSource(
     const Strings & hosts_to_wait,
     const char * logger_name)
     : ISource(block)
+    , zookeeper_name(zookeeper_name_)
     , node_path(zk_node_path)
     , replicas_path(zk_replicas_path)
     , context(context_)
@@ -47,19 +49,6 @@ DistributedQueryStatusSource::DistributedQueryStatusSource(
 
     addTotalRowsApprox(waiting_hosts.size());
     timeout_seconds = context->getSettingsRef()[Setting::distributed_ddl_task_timeout];
-}
-
-DistributedQueryStatusSource::DistributedQueryStatusSource(
-    const String & zookeeper_name_,
-    const String & zk_node_path,
-    const String & zk_replicas_path,
-    SharedHeader block,
-    ContextPtr context_,
-    const Strings & hosts_to_wait,
-    const char * logger_name)
-    : DistributedQueryStatusSource(zk_node_path, zk_replicas_path, block, context_, hosts_to_wait, logger_name)
-{
-    zookeeper_name = zookeeper_name_;
 }
 
 IProcessor::Status DistributedQueryStatusSource::prepare()

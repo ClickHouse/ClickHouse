@@ -172,12 +172,12 @@ DDLWorker::~DDLWorker()
     DDLWorker::shutdown();
 }
 
-ZooKeeperPtr DDLWorker::getZooKeeper() const
+ZooKeeperPtr DDLWorker::getZooKeeperFromContext() const
 {
     return context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
 }
 
-ZooKeeperPtr DDLWorker::getCachedZooKeeper() const
+ZooKeeperPtr DDLWorker::getZooKeeper() const
 {
     std::lock_guard lock(zookeeper_mutex);
     if (!current_zookeeper)
@@ -185,12 +185,12 @@ ZooKeeperPtr DDLWorker::getCachedZooKeeper() const
     return current_zookeeper;
 }
 
-ZooKeeperPtr DDLWorker::getAndCacheZooKeeper()
+ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
 {
     std::lock_guard lock(zookeeper_mutex);
 
     if (!current_zookeeper || current_zookeeper->expired())
-        current_zookeeper = getZooKeeper();
+        current_zookeeper = getZooKeeperFromContext();
 
     return current_zookeeper;
 }
@@ -307,7 +307,7 @@ static void filterAndSortQueueNodes(Strings & all_nodes)
 void DDLWorker::scheduleTasks(bool reinitialized)
 {
     LOG_DEBUG(log, "Scheduling tasks");
-    auto zookeeper = getCachedZooKeeper();
+    auto zookeeper = getZooKeeper();
 
     /// Main thread of DDLWorker was restarted, probably due to lost connection with ZooKeeper.
     /// We have some unfinished tasks.
@@ -1119,7 +1119,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &
 
 String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
 {
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = getZooKeeperFromContext();
 
     String query_path_prefix = fs::path(queue_dir) / "query-";
     zookeeper->createAncestors(query_path_prefix);
@@ -1166,7 +1166,7 @@ bool DDLWorker::initializeMainThread()
     {
         try
         {
-            auto zookeeper = getAndCacheZooKeeper();
+            auto zookeeper = getAndSetZooKeeper();
             zookeeper->createAncestors(fs::path(queue_dir) / "");
             initializeReplication();
             markReplicasActive(/*reinitialized=*/true);
@@ -1301,7 +1301,7 @@ void DDLWorker::runMainThread()
 
 void DDLWorker::initializeReplication()
 {
-    auto zookeeper = getCachedZooKeeper();
+    auto zookeeper = getZooKeeper();
     zookeeper->createAncestors(fs::path(replicas_dir) / "");
 }
 
@@ -1316,7 +1316,7 @@ void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet 
 
 void DDLWorker::markReplicasActive(bool reinitialized)
 {
-    auto zookeeper = getCachedZooKeeper();
+    auto zookeeper = getZooKeeper();
     const auto maybe_secure_port = context->getTCPPortSecure();
     const auto port = context->getTCPPort();
 
@@ -1514,7 +1514,7 @@ void DDLWorker::runCleanupThread()
             }
 
             /// ZooKeeper connection is recovered by main thread. We will wait for it on cleanup_event.
-            auto zookeeper = getCachedZooKeeper();
+            auto zookeeper = getZooKeeper();
             if (zookeeper->expired())
                 continue;
 

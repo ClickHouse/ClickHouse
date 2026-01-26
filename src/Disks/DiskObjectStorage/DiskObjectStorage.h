@@ -179,7 +179,7 @@ public:
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
-    ObjectStoragePtr getObjectStorage() const override;
+    ObjectStoragePtr getObjectStorage() override;
 
     DiskObjectStoragePtr createDiskObjectStorage() override;
 

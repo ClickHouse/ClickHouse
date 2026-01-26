@@ -811,7 +811,7 @@ void DiskLocal::chmod(const String & path, mode_t mode)
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot chmod file: {}", path);
 }
 
-ObjectStoragePtr DiskLocal::getObjectStorage() const
+ObjectStoragePtr DiskLocal::getObjectStorage()
 {
     LocalObjectStorageSettings settings_object_storage(name, disk_path, /* read_only */false);
     return std::make_shared<LocalObjectStorage>(settings_object_storage);

@@ -81,7 +81,7 @@ public:
     StoredObjects getStorageObjects(const String & path) const override { return delegate->getStorageObjects(path); }
 
     DiskObjectStoragePtr createDiskObjectStorage() override { return delegate->createDiskObjectStorage(); }
-    ObjectStoragePtr getObjectStorage() const override { return delegate->getObjectStorage(); }
+    ObjectStoragePtr getObjectStorage() override { return delegate->getObjectStorage(); }
     NameSet getCacheLayersNames() const override { return delegate->getCacheLayersNames(); }
 
     MetadataStoragePtr getMetadataStorage() override { return delegate->getMetadataStorage(); }
