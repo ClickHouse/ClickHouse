@@ -335,7 +335,8 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         auto tuple_node = make_intrusive<ASTTupleDataType>();
         tuple_node->name = type_name;
-        tuple_node->arguments = make_intrusive<ASTExpressionList>();
+        auto arguments = make_intrusive<ASTExpressionList>();
+        tuple_node->children.push_back(arguments);
 
         bool has_named_elements = false;
         Strings element_names_tmp;
@@ -366,7 +367,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 String elem_name;
                 tryGetIdentifierNameInto(identifier_node, elem_name);
                 element_names_tmp.push_back(elem_name);
-                tuple_node->arguments->children.push_back(type_node);
+                arguments->children.push_back(type_node);
                 has_named_elements = true;
             }
             else
@@ -378,7 +379,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     /// Empty placeholder needed to detect mixed named/unnamed tuples.
                     /// The factory validates that all names are non-empty when element_names is set.
                     element_names_tmp.push_back("");
-                    tuple_node->arguments->children.push_back(type_node);
+                    arguments->children.push_back(type_node);
                 }
                 else
                 {
@@ -388,7 +389,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
         }
 
-        if (pos->type == TokenType::ClosingRoundBracket && !tuple_node->arguments->children.empty())
+        if (pos->type == TokenType::ClosingRoundBracket && !arguments->children.empty())
         {
             ++pos;
             /// Only store element_names if tuple has any named elements
@@ -397,8 +398,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 element_names_tmp.shrink_to_fit();
                 tuple_node->element_names = std::move(element_names_tmp);
             }
-            tuple_node->arguments->children.shrink_to_fit();
-            tuple_node->children.push_back(tuple_node->arguments);
+            arguments->children.shrink_to_fit();
             node = tuple_node;
             return true;
         }

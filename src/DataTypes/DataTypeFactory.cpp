@@ -75,13 +75,14 @@ static DataTypePtr createEnumFromValues(const String & type_name, const std::vec
 /// Helper to create Tuple data type from ASTTupleDataType
 static DataTypePtr createTupleFromAST(const ASTTupleDataType * tuple_ast)
 {
-    if (!tuple_ast->arguments || tuple_ast->arguments->children.empty())
+    const auto arguments = tuple_ast->getArguments();
+    if (!arguments || arguments->children.empty())
         return std::make_shared<DataTypeTuple>(DataTypes{});
 
     DataTypes nested_types;
-    nested_types.reserve(tuple_ast->arguments->children.size());
+    nested_types.reserve(arguments->children.size());
 
-    for (const auto & child : tuple_ast->arguments->children)
+    for (const auto & child : arguments->children)
         nested_types.emplace_back(DataTypeFactory::instance().get(child));
 
     /// If element_names is empty, it's an unnamed tuple
