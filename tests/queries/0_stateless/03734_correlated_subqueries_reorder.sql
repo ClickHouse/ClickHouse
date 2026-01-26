@@ -10,6 +10,7 @@ SET enable_parallel_replicas = 0;
 
 SET query_plan_optimize_join_order_algorithm = 'dpsize';
 SET query_plan_join_swap_table = 'auto';
+SET enable_join_runtime_filters = 0;
 
 CREATE TABLE lineitem (
     l_orderkey       Int32,

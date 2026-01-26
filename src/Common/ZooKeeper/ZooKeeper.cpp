@@ -1665,11 +1665,12 @@ Coordination::RequestPtr makeCreateRequest(const std::string & path, const std::
     return request;
 }
 
-Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version)
+Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version, bool try_remove)
 {
     auto request = std::make_shared<Coordination::ZooKeeperRemoveRequest>();
     request->path = path;
     request->version = version;
+    request->try_remove = try_remove;
     return request;
 }
 

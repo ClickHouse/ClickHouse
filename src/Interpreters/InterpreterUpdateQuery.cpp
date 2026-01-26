@@ -48,7 +48,7 @@ InterpreterUpdateQuery::InterpreterUpdateQuery(ASTPtr query_ptr_, ContextPtr con
 
 static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query)
 {
-    auto alter_query = std::make_shared<ASTAlterCommand>();
+    auto alter_query = make_intrusive<ASTAlterCommand>();
 
     alter_query->type = ASTAlterCommand::UPDATE;
     alter_query->set(alter_query->predicate, update_query.predicate);
@@ -57,7 +57,7 @@ static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query
     if (update_query.partition)
         alter_query->set(alter_query->partition, update_query.partition);
 
-    auto mutation_command = MutationCommand::parse(alter_query.get());
+    auto mutation_command = MutationCommand::parse(*alter_query);
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Failed to convert query '{}' to mutation command. It's a bug", update_query.formatForErrorMessage());

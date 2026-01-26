@@ -212,13 +212,13 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr
     /// If it's already a literal.
     if (node->as<ASTLiteral>())
         return node;
-    return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
+    return make_intrusive<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const ContextPtr & context)
 {
     if (const auto * id = node->as<ASTIdentifier>())
-        return std::make_shared<ASTLiteral>(id->name());
+        return make_intrusive<ASTLiteral>(id->name());
 
     return evaluateConstantExpressionAsLiteral(node, context);
 }

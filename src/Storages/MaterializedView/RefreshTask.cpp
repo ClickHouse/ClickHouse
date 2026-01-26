@@ -671,7 +671,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     auto new_table_id = StorageID::createEmpty();
 
     std::optional<QueryLogElement> query_log_elem;
-    std::shared_ptr<ASTInsertQuery> refresh_query;
+    boost::intrusive_ptr<ASTInsertQuery> refresh_query;
     String query_for_logging;
     UInt64 normalized_query_hash = 0;
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>("query");

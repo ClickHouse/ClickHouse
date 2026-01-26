@@ -363,15 +363,18 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRequest::process(TestKeeper::Contai
     auto it = container.find(path);
     if (it == container.end())
     {
-        response.error = Error::ZNONODE;
+        if (!try_remove)
+            response.error = Error::ZNONODE;
     }
     else if (version != -1 && version != it->second.stat.version)
     {
-        response.error = Error::ZBADVERSION;
+        if (!try_remove)
+            response.error = Error::ZBADVERSION;
     }
     else if (it->second.stat.numChildren)
     {
-        response.error = Error::ZNOTEMPTY;
+        if (!try_remove)
+            response.error = Error::ZNOTEMPTY;
     }
     else
     {
@@ -766,6 +769,7 @@ TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::REMOVE_RECURSIVE);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CHECK_STAT);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::TRY_REMOVE);
 
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
 }

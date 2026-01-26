@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # Start with empty query cache (QC).
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS tab"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE tab (a UInt64) ENGINE=MergeTree() ORDER BY a"
@@ -23,9 +23,9 @@ SETTINGS_ANALYZER="SETTINGS use_query_cache=1, max_threads=1, enable_analyzer=1,
 ${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=trace --query "SELECT count(a) / (SELECT sum(a) FROM tab) FROM tab $SETTINGS_NO_ANALYZER" 2>&1 | grep "Aggregated. " | wc -l
 ${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=trace --query "SELECT count(a) / (SELECT sum(a) FROM tab) FROM tab $SETTINGS_NO_ANALYZER" 2>&1 | grep "Aggregated. " | wc -l
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
 
 ${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=trace --query "SELECT count(a) / (SELECT sum(a) FROM tab) FROM tab $SETTINGS_ANALYZER" 2>&1 | grep "Aggregated. " | wc -l
 ${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=trace --query "SELECT count(a) / (SELECT sum(a) FROM tab) FROM tab $SETTINGS_ANALYZER" 2>&1 | grep "Aggregated. " | wc -l
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"

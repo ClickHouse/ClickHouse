@@ -2492,17 +2492,17 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         {
             if (!engine->arguments)
             {
-                engine->arguments = std::make_shared<ASTExpressionList>();
+                engine->arguments = make_intrusive<ASTExpressionList>();
                 engine->children.push_back(engine->arguments);
             }
 
             auto settings = args.context->getDatabaseReplicatedSettings();
             if (engine->arguments->children.empty())
-                engine->arguments->children.emplace_back(std::make_shared<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_path].value));
+                engine->arguments->children.emplace_back(make_intrusive<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_path].value));
             if (engine->arguments->children.size() == 1)
-                engine->arguments->children.emplace_back(std::make_shared<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_shard_name].value));
+                engine->arguments->children.emplace_back(make_intrusive<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_shard_name].value));
             if (engine->arguments->children.size() == 2)
-                engine->arguments->children.emplace_back(std::make_shared<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_name].value));
+                engine->arguments->children.emplace_back(make_intrusive<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_name].value));
         }
 
         if (!engine->arguments || engine->arguments->children.size() != 3)

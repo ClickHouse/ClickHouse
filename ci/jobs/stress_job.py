@@ -227,7 +227,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     )
 
     server_died = False
-    test_results = []
+    failed_results = []
     for test_result in test_results:
         if test_result.name == "Server died":
             # This result from stress.py indicates a server crash - we use it as a flag
@@ -235,13 +235,13 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             # since we'll create a more informative result from the parsed logs
             server_died = True
         elif not test_result.is_ok():
-            test_results.append(test_result)
+            failed_results.append(test_result)
 
     if server_died:
         server_err_log = server_log_path / "clickhouse-server.err.log"
         stderr_log = result_path / "stderr.log"
         if not (server_err_log.exists() and stderr_log.exists()):
-            test_results.append(
+            failed_results.append(
                 Result.create_from(
                     name="Unknown error",
                     info="no server logs found",
@@ -255,7 +255,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 fuzzer_log="",
             )
             name, description, files = log_parser.parse_failure()
-            test_results.append(
+            failed_results.append(
                 Result.create_from(
                     name=name,
                     info=description,
@@ -265,8 +265,8 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             )
 
     r = Result.create_from(
-        results=test_results,
-        status=Result.Status.SUCCESS if not test_results else "",
+        results=failed_results,
+        status=Result.Status.SUCCESS if not failed_results else "",
         stopwatch=stopwatch,
     )
     if not r.is_ok() and is_oom:

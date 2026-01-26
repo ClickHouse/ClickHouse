@@ -1231,4 +1231,109 @@ TYPED_TEST(CoordinationTest, TestCheckStat)
     }
 }
 
+TYPED_TEST(CoordinationTest, TestTryRemove)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+
+    int32_t zxid = 0;
+
+    const auto exists = [&](const String & path)
+    {
+        int new_zxid = ++zxid;
+
+        const auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
+        exists_request->path = path;
+
+        storage.preprocessRequest(exists_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(exists_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error == Coordination::Error::ZOK;
+    };
+
+    {
+        SCOPED_TRACE("Remove without extension");
+
+        const Coordination::Requests create_ops{
+            zkutil::makeCreateRequest("/s1", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/s1/A", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/s1/A/B", "", zkutil::CreateMode::Persistent),
+        };
+        const auto create_request = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
+        int create_zxid = ++zxid;
+        storage.preprocessRequest(create_request, 1, 0, create_zxid);
+        storage.processRequest(create_request, 1, create_zxid);
+
+        ASSERT_TRUE(exists("/s1/A"));
+        ASSERT_TRUE(exists("/s1/A/B"));
+
+        const Coordination::Requests remove_ops{
+            zkutil::makeRemoveRequest("/s1/A", -1),
+            zkutil::makeRemoveRequest("/s1/A/B", -1),
+            zkutil::makeRemoveRequest("/s1/A", -1),
+        };
+        const auto remove_request = std::make_shared<ZooKeeperMultiRequest>(remove_ops, ACLs{});
+        int remove_zxid = ++zxid;
+        storage.preprocessRequest(remove_request, 1, 0, remove_zxid);
+        auto responses = storage.processRequest(remove_request, 1, remove_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+
+        auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(responses[0].response);
+        ASSERT_EQ(multi_response->responses.size(), 3);
+        ASSERT_EQ(multi_response->responses[0]->error, Error::ZNOTEMPTY);
+        ASSERT_EQ(multi_response->responses[1]->error, Error::ZRUNTIMEINCONSISTENCY);
+        ASSERT_EQ(multi_response->responses[2]->error, Error::ZRUNTIMEINCONSISTENCY);
+
+        ASSERT_TRUE(exists("/s1/A"));
+        ASSERT_TRUE(exists("/s1/A/B"));
+    }
+
+    {
+        SCOPED_TRACE("Remove with extension");
+
+        const Coordination::Requests create_ops{
+            zkutil::makeCreateRequest("/s2", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/s2/A", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/s2/A/B", "", zkutil::CreateMode::Persistent),
+        };
+        const auto create_request = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
+        int create_zxid = ++zxid;
+        storage.preprocessRequest(create_request, 1, 0, create_zxid);
+        storage.processRequest(create_request, 1, create_zxid);
+
+        ASSERT_TRUE(exists("/s2/A"));
+        ASSERT_TRUE(exists("/s2/A/B"));
+
+        const Coordination::Requests remove_ops{
+            zkutil::makeRemoveRequest("/s2/A", -1, /*try_remove=*/true),
+            zkutil::makeRemoveRequest("/s2/A/B", -1),
+            zkutil::makeRemoveRequest("/s2/A", -1),
+        };
+        const auto remove_request = std::make_shared<ZooKeeperMultiRequest>(remove_ops, ACLs{});
+        int remove_zxid = ++zxid;
+        storage.preprocessRequest(remove_request, 1, 0, remove_zxid);
+        auto responses = storage.processRequest(remove_request, 1, remove_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+
+        auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(responses[0].response);
+        ASSERT_EQ(multi_response->responses.size(), 3);
+        ASSERT_EQ(multi_response->responses[0]->error, Error::ZOK);
+        ASSERT_EQ(multi_response->responses[1]->error, Error::ZOK);
+        ASSERT_EQ(multi_response->responses[2]->error, Error::ZOK);
+
+        ASSERT_FALSE(exists("/s2/A"));
+        ASSERT_FALSE(exists("/s2/A/B"));
+    }
+}
+
 #endif

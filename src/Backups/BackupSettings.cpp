@@ -98,7 +98,7 @@ bool BackupSettings::isAsync(const ASTBackupQuery & query)
 
 void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
 {
-    auto query_settings = std::make_shared<ASTSetQuery>();
+    auto query_settings = make_intrusive<ASTSetQuery>();
     query_settings->is_standalone = false;
 
     /// Copy the fields of the BackupSettings to the query.
@@ -171,10 +171,10 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
     if (cluster_host_ids.empty())
         return nullptr;
 
-    auto res = std::make_shared<ASTFunction>();
+    auto res = make_intrusive<ASTFunction>();
     res->name = "array";
     res->is_operator = true;
-    auto res_replicas = std::make_shared<ASTExpressionList>();
+    auto res_replicas = make_intrusive<ASTExpressionList>();
     res->arguments = res_replicas;
     res->children.push_back(res_replicas);
     res_replicas->children.resize(cluster_host_ids.size());
@@ -188,7 +188,7 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
         for (size_t j = 0; j != shard.size(); ++j)
             res_shard[j] = Field{shard[j]};
 
-        res_replicas->children[i] = std::make_shared<ASTLiteral>(Field{std::move(res_shard)});
+        res_replicas->children[i] = make_intrusive<ASTLiteral>(Field{std::move(res_shard)});
     }
 
     return res;

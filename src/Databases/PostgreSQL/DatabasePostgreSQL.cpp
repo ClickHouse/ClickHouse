@@ -422,13 +422,13 @@ void DatabasePostgreSQL::shutdown()
 
 ASTPtr DatabasePostgreSQL::getCreateDatabaseQueryImpl() const
 {
-    const auto & create_query = std::make_shared<ASTCreateQuery>();
+    const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_define);
     create_query->uuid = db_uuid;
 
     if (!comment.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment));
+        create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
 
     return create_query;
 }
@@ -449,13 +449,13 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
         return nullptr;
     }
 
-    auto create_table_query = std::make_shared<ASTCreateQuery>();
+    auto create_table_query = make_intrusive<ASTCreateQuery>();
     auto table_storage_define = database_engine_define->clone();
     table_storage_define->as<ASTStorage>()->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
     create_table_query->set(create_table_query->storage, table_storage_define);
 
-    auto columns_declare_list = std::make_shared<ASTColumns>();
-    auto columns_expression_list = std::make_shared<ASTExpressionList>();
+    auto columns_declare_list = make_intrusive<ASTColumns>();
+    auto columns_expression_list = make_intrusive<ASTExpressionList>();
 
     columns_declare_list->set(columns_declare_list->columns, columns_expression_list);
     create_table_query->set(create_table_query->columns_list, columns_declare_list);
@@ -468,7 +468,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
     for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
     {
-        const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+        const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
         column_declaration->name = column_type_and_name.name;
         column_declaration->type = getColumnDeclaration(column_type_and_name.type);
         columns_expression_list->children.emplace_back(column_declaration);
@@ -483,7 +483,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     /// Check for named collection.
     if (typeid_cast<ASTIdentifier *>(storage_engine_arguments->children[0].get()))
     {
-        storage_engine_arguments->children.push_back(makeASTOperator("equals", std::make_shared<ASTIdentifier>("table"), std::make_shared<ASTLiteral>(table_id.table_name)));
+        storage_engine_arguments->children.push_back(makeASTOperator("equals", make_intrusive<ASTIdentifier>("table"), make_intrusive<ASTLiteral>(table_id.table_name)));
     }
     else
     {
@@ -493,7 +493,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
 
         /// Add table_name to engine arguments.
         if (storage_engine_arguments->children.size() >= 2)
-            storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, std::make_shared<ASTLiteral>(table_id.table_name));
+            storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, make_intrusive<ASTLiteral>(table_id.table_name));
     }
 
     return create_table_query;
@@ -511,10 +511,10 @@ ASTPtr DatabasePostgreSQL::getColumnDeclaration(const DataTypePtr & data_type) c
         return makeASTDataType("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
 
     if (which.isDateTime64())
-        return makeASTDataType("DateTime64", std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
+        return makeASTDataType("DateTime64", make_intrusive<ASTLiteral>(static_cast<UInt32>(6)));
 
     if (which.isDecimal())
-        return makeASTDataType("Decimal", std::make_shared<ASTLiteral>(getDecimalPrecision(*data_type)), std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
+        return makeASTDataType("Decimal", make_intrusive<ASTLiteral>(getDecimalPrecision(*data_type)), make_intrusive<ASTLiteral>(getDecimalScale(*data_type)));
 
     return makeASTDataType(data_type->getName());
 }

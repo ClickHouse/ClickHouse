@@ -20,7 +20,7 @@ String ASTAlterCommand::getID(char delim) const
 
 ASTPtr ASTAlterCommand::clone() const
 {
-    auto res = std::make_shared<ASTAlterCommand>(*this);
+    auto res = make_intrusive<ASTAlterCommand>(*this);
     res->children.clear();
 
     if (col_decl)
@@ -549,29 +549,29 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
 }
 
-void ASTAlterCommand::forEachPointerToChild(std::function<void(void**)> f)
+void ASTAlterCommand::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
 {
-    f(reinterpret_cast<void **>(&col_decl));
-    f(reinterpret_cast<void **>(&column));
-    f(reinterpret_cast<void **>(&order_by));
-    f(reinterpret_cast<void **>(&sample_by));
-    f(reinterpret_cast<void **>(&index_decl));
-    f(reinterpret_cast<void **>(&index));
-    f(reinterpret_cast<void **>(&constraint_decl));
-    f(reinterpret_cast<void **>(&constraint));
-    f(reinterpret_cast<void **>(&projection_decl));
-    f(reinterpret_cast<void **>(&projection));
-    f(reinterpret_cast<void **>(&statistics_decl));
-    f(reinterpret_cast<void **>(&partition));
-    f(reinterpret_cast<void **>(&predicate));
-    f(reinterpret_cast<void **>(&update_assignments));
-    f(reinterpret_cast<void **>(&comment));
-    f(reinterpret_cast<void **>(&ttl));
-    f(reinterpret_cast<void **>(&settings_changes));
-    f(reinterpret_cast<void **>(&settings_resets));
-    f(reinterpret_cast<void **>(&select));
-    f(reinterpret_cast<void **>(&sql_security));
-    f(reinterpret_cast<void **>(&rename_to));
+    f(&col_decl, nullptr);
+    f(&column, nullptr);
+    f(&order_by, nullptr);
+    f(&sample_by, nullptr);
+    f(&index_decl, nullptr);
+    f(&index, nullptr);
+    f(&constraint_decl, nullptr);
+    f(&constraint, nullptr);
+    f(&projection_decl, nullptr);
+    f(&projection, nullptr);
+    f(&statistics_decl, nullptr);
+    f(&partition, nullptr);
+    f(&predicate, nullptr);
+    f(&update_assignments, nullptr);
+    f(&comment, nullptr);
+    f(&ttl, nullptr);
+    f(&settings_changes, nullptr);
+    f(&settings_resets, nullptr);
+    f(&select, nullptr);
+    f(&sql_security, nullptr);
+    f(&rename_to, nullptr);
 }
 
 
@@ -655,7 +655,7 @@ String ASTAlterQuery::getID(char delim) const
 
 ASTPtr ASTAlterQuery::clone() const
 {
-    auto res = std::make_shared<ASTAlterQuery>(*this);
+    auto res = make_intrusive<ASTAlterQuery>(*this);
     res->children.clear();
 
     if (command_list)
@@ -717,11 +717,11 @@ void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & s
     }
 }
 
-void ASTAlterQuery::forEachPointerToChild(std::function<void(void**)> f)
+void ASTAlterQuery::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
 {
     for (const auto & child : command_list->children)
         child->as<ASTAlterCommand &>().forEachPointerToChild(f);
-    f(reinterpret_cast<void **>(&command_list));
+    f(reinterpret_cast<IAST **>(&command_list), nullptr);
 }
 
 }

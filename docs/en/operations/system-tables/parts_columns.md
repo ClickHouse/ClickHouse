@@ -43,6 +43,10 @@ Each row describes one data part.
 | `path` | String | Absolute path to the folder with data part files. |
 | `column` | String | Name of the column. |
 | `type` | String | Column type. |
+| `statistics` | String | Statistics created for the column. |
+| `estimates.min` | String | Estimated minimum value of the column. |
+| `estimates.max` | String | Estimated maximum value of the column. |
+| `estimates.cardinality` | String | Estimated cardinality of the column. |
 | `column_position` | UInt64 | Ordinal position of a column in a table starting with 1. |
 | `default_kind` | String | Expression type (`DEFAULT`, `MATERIALIZED`, `ALIAS`) for the default value, or empty string if not defined. |
 | `default_expression` | String | Expression for the default value, or empty string if not defined. |

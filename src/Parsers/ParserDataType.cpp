@@ -131,7 +131,7 @@ private:
     const char * getName() const override { return "JSON data type optional argument"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
-        auto argument = std::make_shared<ASTObjectTypeArgument>();
+        auto argument = make_intrusive<ASTObjectTypeArgument>();
 
         /// SKIP arguments
         if (ParserKeyword(Keyword::SKIP).ignore(pos))
@@ -187,7 +187,7 @@ private:
         if (!type_parser.parse(pos, type, expected))
             return false;
 
-        auto name_and_type = std::make_shared<ASTObjectTypedPathArgument>();
+        auto name_and_type = make_intrusive<ASTObjectTypedPathArgument>();
         name_and_type->path = getIdentifierName(identifier);
         name_and_type->type = type;
         name_and_type->children.push_back(name_and_type->type);
@@ -312,7 +312,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         auto saved_pos = pos;
         ++pos;
 
-        auto enum_node = std::make_shared<ASTEnumDataType>();
+        auto enum_node = make_intrusive<ASTEnumDataType>();
         enum_node->name = type_name;
 
         if (parseEnumValues(pos, enum_node->values, expected) && pos->type == TokenType::ClosingRoundBracket)
@@ -325,7 +325,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         pos = saved_pos;
     }
 
-    auto data_type_node = std::make_shared<ASTDataType>();
+    auto data_type_node = make_intrusive<ASTDataType>();
     data_type_node->name = type_name;
 
     if (pos->type != TokenType::OpeningRoundBracket)
@@ -336,7 +336,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     /// Parse optional parameters
-    ASTPtr expr_list_args = std::make_shared<ASTExpressionList>();
+    ASTPtr expr_list_args = make_intrusive<ASTExpressionList>();
 
     /// Allow mixed lists of nested and normal types.
     /// Parameters are either:

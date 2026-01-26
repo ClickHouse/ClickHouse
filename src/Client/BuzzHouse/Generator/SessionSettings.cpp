@@ -292,6 +292,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"allow_changing_replica_until_first_data_packet", trueOrFalseSettingNoOracle},
     {"allow_dynamic_type_in_join_keys", trueOrFalseSettingNoOracle},
     {"allow_experimental_delta_kernel_rs", trueOrFalseSettingNoOracle},
+    {"allow_experimental_nullable_tuple_type", trueOrFalseSettingNoOracle},
     {"allow_get_client_http_header", trueOrFalseSettingNoOracle},
     {"allow_introspection_functions", trueOrFalseSetting},
     {"allow_special_bool_values_inside_variant", trueOrFalseSettingNoOracle},

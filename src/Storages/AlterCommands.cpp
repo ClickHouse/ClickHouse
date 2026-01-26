@@ -720,7 +720,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             ++insert_it;
         }
 
-        metadata.secondary_indices.emplace(insert_it, IndexDescription::getIndexFromAST(index_decl, metadata.columns, /* is_implicitly_created */ false, context));
+        metadata.secondary_indices.emplace(
+            insert_it,
+            IndexDescription::getIndexFromAST(
+                index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
     }
     else if (type == DROP_INDEX)
     {
@@ -883,7 +886,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     {
         if (!metadata.settings_changes)
         {
-            auto changes = std::make_shared<ASTSetQuery>();
+            auto changes = make_intrusive<ASTSetQuery>();
             changes->is_standalone = false;
             metadata.settings_changes = std::move(changes);
         }
@@ -1275,7 +1278,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     {
         try
         {
-            index = IndexDescription::getIndexFromAST(index.definition_ast, metadata_copy.columns, index.isImplicitlyCreated(), context);
+            index = IndexDescription::getIndexFromAST(
+                index.definition_ast, metadata_copy.columns, index.isImplicitlyCreated(), index.escape_filenames, context);
         }
         catch (const Exception & exception)
         {
@@ -1389,7 +1393,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
-    ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
+    ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
     NameSet modified_columns;
     NameSet renamed_columns;
     for (size_t i = 0; i < size(); ++i)
@@ -1684,7 +1688,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
 
                 default_expr_list->children.emplace_back(setAlias(
-                    addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
+                    addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
                     final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
@@ -1701,7 +1705,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto data_type_ptr = command.data_type;
 
                 default_expr_list->children.emplace_back(setAlias(
-                    addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+                    addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(column_in_table.default_desc.expression->clone(), tmp_column_name));
             }
@@ -1740,7 +1744,7 @@ bool AlterCommands::isCommentAlter() const
 static MutationCommand createMaterializeTTLCommand()
 {
     MutationCommand command;
-    auto ast = std::make_shared<ASTAlterCommand>();
+    auto ast = make_intrusive<ASTAlterCommand>();
     ast->type = ASTAlterCommand::MATERIALIZE_TTL;
     command.type = MutationCommand::MATERIALIZE_TTL;
     command.ast = std::move(ast);

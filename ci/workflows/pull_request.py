@@ -16,6 +16,7 @@ FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
             "_debug, parallel",
             "_binary, parallel",
             "_asan, distributed plan, parallel",
+            "_tsan, parallel",
         )
     )
 ]

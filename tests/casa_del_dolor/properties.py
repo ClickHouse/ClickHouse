@@ -132,7 +132,7 @@ possible_properties = {
     "compiled_expression_cache_elements_size": threshold_generator(0.2, 0.2, 0, 10000),
     "compiled_expression_cache_size": threshold_generator(0.2, 0.2, 0, 10000),
     "concurrent_threads_scheduler": lambda: random.choice(
-        ["round_robin", "fair_round_robin"]
+        ["round_robin", "fair_round_robin", "max_min_fair"]
     ),
     "concurrent_threads_soft_limit_num": threads_lambda,
     "concurrent_threads_soft_limit_ratio_to_cores": threads_lambda,

@@ -4,10 +4,7 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
-#include <Core/Field.h>
 #include <Interpreters/Context.h>
-#include <Poco/JSON/JSON.h>
-#include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <numeric>
 
@@ -24,11 +21,47 @@ namespace ErrorCodes
 
 namespace
 {
-    ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPathImpl(const std::string & path, size_t buckets_num)
+    /// Normalize hive part to use as node in zookeeper path
+    /// `date=2025-01-01/city=New_Orlean` changes to `date=2025-01-01_city=New__Orlean`
+    void normalizeHivePart(std::string & hive_part)
     {
-        if (!buckets_num)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets number cannot be zero");
-        return sipHash64(path) % buckets_num;
+        boost::replace_all(hive_part, "_", "__");
+        boost::replace_all(hive_part, "/", "_");
+    }
+
+    /// Helper for HIVE mode: return hive part of path
+    /// For path `/table/path/date=2026-01-01/city=New_Orlean/data.parquet` returns `date=2026-01-01/city=New_Orlean`
+    std::string getHivePart(const std::string & file_path)
+    {
+        std::string hive_part(VirtualColumnUtils::findHivePartitioningInPath(file_path));
+        normalizeHivePart(hive_part);
+        return hive_part;
+    }
+
+    /// Utility function to extract partition key from file path
+    std::string getPartitionKey(
+        const std::string & file_path, ObjectStorageQueuePartitioningMode partitioning_mode, const ObjectStorageQueueFilenameParser * parser)
+    {
+        switch (partitioning_mode)
+        {
+            case ObjectStorageQueuePartitioningMode::HIVE:
+                return getHivePart(file_path);
+            case ObjectStorageQueuePartitioningMode::REGEX: {
+                if (parser && parser->isValid())
+                {
+                    if (auto partition_key = parser->parse(file_path))
+                        return *partition_key;
+                }
+                return "";
+            }
+            case ObjectStorageQueuePartitioningMode::NONE:
+                return "";
+        }
+    }
+
+    bool hasPartitioningMode(const ObjectStorageQueuePartitioningMode partitioning_mode)
+    {
+        return partitioning_mode != ObjectStorageQueuePartitioningMode::NONE;
     }
 
     std::string getProcessedPathWithBucket(const std::filesystem::path & zk_path, size_t bucket)
@@ -46,10 +79,38 @@ namespace
         return buckets_num > 1;
     }
 
-    std::string getProcessedPath(const std::filesystem::path & zk_path, const std::string & path, size_t buckets_num)
+    ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPathImpl(
+        const std::string & path,
+        size_t buckets_num,
+        ObjectStorageQueueBucketingMode bucketing_mode,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser)
+    {
+        if (!buckets_num)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets number cannot be zero");
+
+        /// Use partition key for bucketing when bucketing_mode is PARTITION
+        /// This ensures files from the same partition always go to the same bucket
+        if (bucketing_mode == ObjectStorageQueueBucketingMode::PARTITION)
+        {
+            auto partition_key = getPartitionKey(path, partitioning_mode, parser);
+            return sipHash64(partition_key) % buckets_num;
+        }
+
+        /// Default hash the full file path
+        return sipHash64(path) % buckets_num;
+    }
+
+    std::string getProcessedPath(
+        const std::filesystem::path & zk_path,
+        const std::string & path,
+        size_t buckets_num,
+        ObjectStorageQueueBucketingMode bucketing_mode,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser)
     {
         if (useBucketsForProcessing(buckets_num))
-            return getProcessedPathWithBucket(zk_path, getBucketForPathImpl(path, buckets_num));
+            return getProcessedPathWithBucket(zk_path, getBucketForPathImpl(path, buckets_num, bucketing_mode, partitioning_mode, parser));
         return getProcessedPathWithoutBucket(zk_path);
     }
 }
@@ -175,12 +236,14 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
     bool use_persistent_processing_nodes_,
-    bool is_path_with_hive_partitioning_,
+    ObjectStorageQueueBucketingMode bucketing_mode_,
+    ObjectStorageQueuePartitioningMode partitioning_mode_,
+    const ObjectStorageQueueFilenameParser * parser_,
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
         path_,
         /* processing_node_path */zk_path_ / "processing" / getNodeName(path_),
-        /* processed_node_path */getProcessedPath(zk_path_, path_, buckets_num_),
+        /* processed_node_path */getProcessedPath(zk_path_, path_, buckets_num_, bucketing_mode_, partitioning_mode_, parser_),
         /* failed_node_path */zk_path_ / "failed" / getNodeName(path_),
         file_status_,
         max_loading_retries_,
@@ -190,12 +253,13 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     , buckets_num(buckets_num_)
     , zk_path(zk_path_)
     , bucket_info(bucket_info_)
-    , is_path_with_hive_partitioning(is_path_with_hive_partitioning_)
+    , partitioning_mode(partitioning_mode_)
+    , parser(parser_)
 {
     LOG_TEST(log, "Path: {}, node_name: {}, max_loading_retries: {}, "
-             "processed_path: {}, processing_path: {}, failed_path: {}, use hive partitioning: {}",
+             "processed_path: {}, processing_path: {}, failed_path: {}, partitioning_mode: {}",
              path, node_name, max_loading_retries,
-             processed_node_path, processing_node_path, failed_node_path, is_path_with_hive_partitioning);
+             processed_node_path, processing_node_path, failed_node_path, magic_enum::enum_name(partitioning_mode));
 }
 
 bool ObjectStorageQueueOrderedFileMetadata::useBucketsForProcessing() const
@@ -248,8 +312,8 @@ ObjectStorageQueueOrderedFileMetadata::getProcessingStateFromKeeper(
         processed_node_stat,
         processed_node_path,
         path,
-        is_path_with_hive_partitioning
-            ? std::optional<std::string>(std::filesystem::path(processed_node_path) / getHivePart(path))
+        hasPartitioningMode(partitioning_mode)
+            ? std::optional<std::string>(std::filesystem::path(processed_node_path) / getPartitionKey(path, partitioning_mode, parser))
             : std::nullopt,
         check_failed ? std::optional<std::string>(failed_node_path) : std::nullopt,
         log_);
@@ -383,9 +447,14 @@ bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFilesByHivePartition(
 }
 
 ObjectStorageQueueOrderedFileMetadata::Bucket
-ObjectStorageQueueOrderedFileMetadata::getBucketForPath(const std::string & path_, size_t buckets_num)
+ObjectStorageQueueOrderedFileMetadata::getBucketForPath(
+    const std::string & path_,
+    size_t buckets_num,
+    ObjectStorageQueueBucketingMode bucketing_mode,
+    ObjectStorageQueuePartitioningMode partitioning_mode,
+    const ObjectStorageQueueFilenameParser * parser)
 {
-    return getBucketForPathImpl(path_, buckets_num);
+    return getBucketForPathImpl(path_, buckets_num, bucketing_mode, partitioning_mode, parser);
 }
 
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
@@ -454,9 +523,9 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
     processor_info = getProcessorInfo(generateProcessingID());
 
-    std::string processed_node_hive_path;
-    if (is_path_with_hive_partitioning)
-        processed_node_hive_path = std::filesystem::path(processed_node_path) / getHivePart(path);
+    std::string processed_node_partition_path;
+    if (hasPartitioningMode(partitioning_mode))
+        processed_node_partition_path = std::filesystem::path(processed_node_path) / getPartitionKey(path, partitioning_mode, parser);
 
     const size_t max_num_tries = 100;
     Coordination::Error code;
@@ -667,15 +736,15 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(
     doPrepareProcessedRequests(requests, processed_node_path, /* ignore_if_exists */false, created_nodes);
 }
 
-void ObjectStorageQueueOrderedFileMetadata::prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & last_processed_file_per_hive_partition)
+void ObjectStorageQueueOrderedFileMetadata::preparePartitionProcessedMap(PartitionLastProcessedFileInfoMap & last_processed_file_per_partition)
 {
-    if (!is_path_with_hive_partitioning)
+    if (!hasPartitioningMode(partitioning_mode))
         return;
 
-    const auto hive_partition_processed_path = std::filesystem::path(processed_node_path) / getHivePart(node_metadata.file_path);
+    const auto partition_processed_path = std::filesystem::path(processed_node_path) / getPartitionKey(node_metadata.file_path, partitioning_mode, parser);
 
-    if (auto it = last_processed_file_per_hive_partition.find(hive_partition_processed_path);
-        it != last_processed_file_per_hive_partition.end())
+    if (auto it = last_processed_file_per_partition.find(partition_processed_path);
+        it != last_processed_file_per_partition.end())
     {
         auto & last_processed_path = it->second.file_path;
         if (last_processed_path < node_metadata.file_path)
@@ -686,10 +755,10 @@ void ObjectStorageQueueOrderedFileMetadata::prepareHiveProcessedMap(HiveLastProc
         auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
         zk_retry.retryLoop([&]
         {
-            bool processed_path_exists = ObjectStorageQueueMetadata::getZooKeeper(log)->exists(hive_partition_processed_path);
-            last_processed_file_per_hive_partition.emplace(
-                hive_partition_processed_path,
-                HiveLastProcessedFileInfo({
+            bool processed_path_exists = ObjectStorageQueueMetadata::getZooKeeper(log)->exists(partition_processed_path);
+            last_processed_file_per_partition.emplace(
+                partition_processed_path,
+                PartitionLastProcessedFileInfo({
                         processed_path_exists,
                         /* last_processed_path */node_metadata.file_path}));
         });
@@ -808,15 +877,17 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     std::vector<std::string> & paths,
     const std::filesystem::path & zk_path_,
     size_t buckets_num,
-    bool is_path_with_hive_partitioning,
+    ObjectStorageQueueBucketingMode bucketing_mode,
+    ObjectStorageQueuePartitioningMode partitioning_mode,
+    const ObjectStorageQueueFilenameParser * parser,
     LoggerPtr log_)
 {
     const bool use_buckets_for_processing = buckets_num > 1;
     buckets_num = std::max<size_t>(buckets_num, 1);
 
-    /// When hive partitioning is not used, consider HivePartition an empty string.
-    using HivePartition = std::string;
-    std::map<Bucket, std::unordered_map<HivePartition, std::string>> last_processed_file_map;
+    /// When partitioning is not used, consider PartitionKey an empty string.
+    using PartitionKey = std::string;
+    std::map<Bucket, std::unordered_map<PartitionKey, std::string>> last_processed_file_map;
 
     for (size_t i = 0; i < buckets_num; ++i)
     {
@@ -824,9 +895,9 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
             ? getProcessedPathWithBucket(zk_path_, i)
             : getProcessedPathWithoutBucket(zk_path_);
 
-        if (is_path_with_hive_partitioning)
+        if (hasPartitioningMode(partitioning_mode))
         {
-            std::unordered_map<HivePartition, std::string> max_processed_files;
+            std::unordered_map<PartitionKey, std::string> max_processed_files;
             if (getMaxProcessedFilesByHivePartition(max_processed_files, processed_node_path, log_))
                 last_processed_file_map[i] = std::move(max_processed_files);
         }
@@ -843,12 +914,13 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     for (size_t i = 0; i < paths.size(); ++i)
     {
         const auto & path = paths[i];
-        const auto bucket = use_buckets_for_processing ? getBucketForPathImpl(path, buckets_num) : 0;
+        const auto bucket = use_buckets_for_processing ? getBucketForPathImpl(path, buckets_num, bucketing_mode, partitioning_mode, parser) : 0;
         if (!last_processed_file_map.empty())
         {
-            if (is_path_with_hive_partitioning)
+            if (hasPartitioningMode(partitioning_mode))
             {
-                auto max_processed_file = last_processed_file_map[bucket].find(getHivePart(path));
+                auto partition_key = getPartitionKey(path, partitioning_mode, parser);
+                auto max_processed_file = last_processed_file_map[bucket].find(partition_key);
                 if (max_processed_file != last_processed_file_map[bucket].end()
                     && path <= max_processed_file->second)
                 {
@@ -902,19 +974,6 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
 
     }
     paths = std::move(result);
-}
-
-std::string ObjectStorageQueueOrderedFileMetadata::getHivePart(const std::string & file_path)
-{
-    std::string hive_part(VirtualColumnUtils::findHivePartitioningInPath(file_path));
-    normalizeHivePart(hive_part);
-    return hive_part;
-}
-
-void ObjectStorageQueueOrderedFileMetadata::normalizeHivePart(std::string & hive_part)
-{
-    boost::replace_all(hive_part, "_", "__");
-    boost::replace_all(hive_part, "/", "_");
 }
 
 }

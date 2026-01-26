@@ -266,6 +266,8 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
 template <typename Parser>
 void SerializationJSON<Parser>::deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const
 {
+    updateMaxDynamicPathsLimitIfNeeded(column, settings);
+
     typename Parser::Element document;
     auto parser = parsers_pool.get([] { return new Parser; });
     if (!parser->parse(object, document))

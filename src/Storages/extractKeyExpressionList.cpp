@@ -7,7 +7,7 @@ namespace DB
     ASTPtr extractKeyExpressionList(const ASTPtr & node)
     {
         if (!node)
-            return std::make_shared<ASTExpressionList>();
+            return make_intrusive<ASTExpressionList>();
 
         const auto * expr_func = node->as<ASTFunction>();
 
@@ -16,11 +16,11 @@ namespace DB
             if (expr_func->arguments)
                 /// Primary key is specified in tuple, extract its arguments.
                 return expr_func->arguments->clone();
-            return std::make_shared<ASTExpressionList>();
+            return make_intrusive<ASTExpressionList>();
         }
 
         /// Primary key consists of one column.
-        auto res = std::make_shared<ASTExpressionList>();
+        auto res = make_intrusive<ASTExpressionList>();
         res->children.push_back(node->clone());
         return res;
     }

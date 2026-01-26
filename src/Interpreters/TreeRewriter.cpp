@@ -256,37 +256,37 @@ struct ExistsExpressionData
         /// EXISTS(subquery) --> 1 IN (SELECT 1 FROM subquery LIMIT 1)
 
         auto subquery_node = func.arguments->children[0];
-        auto table_expression = std::make_shared<ASTTableExpression>();
+        auto table_expression = make_intrusive<ASTTableExpression>();
         table_expression->subquery = std::move(subquery_node);
         table_expression->children.push_back(table_expression->subquery);
 
-        auto tables_in_select_element = std::make_shared<ASTTablesInSelectQueryElement>();
+        auto tables_in_select_element = make_intrusive<ASTTablesInSelectQueryElement>();
         tables_in_select_element->table_expression = std::move(table_expression);
         tables_in_select_element->children.push_back(tables_in_select_element->table_expression);
 
-        auto tables_in_select = std::make_shared<ASTTablesInSelectQuery>();
+        auto tables_in_select = make_intrusive<ASTTablesInSelectQuery>();
         tables_in_select->children.push_back(std::move(tables_in_select_element));
 
-        auto select_expr_list = std::make_shared<ASTExpressionList>();
-        select_expr_list->children.push_back(std::make_shared<ASTLiteral>(1u));
+        auto select_expr_list = make_intrusive<ASTExpressionList>();
+        select_expr_list->children.push_back(make_intrusive<ASTLiteral>(1u));
 
-        auto select_query = std::make_shared<ASTSelectQuery>();
+        auto select_query = make_intrusive<ASTSelectQuery>();
         select_query->children.push_back(select_expr_list);
 
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_expr_list);
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
 
-        ASTPtr limit_length_ast = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(1)));
+        ASTPtr limit_length_ast = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1)));
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length_ast));
 
-        auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
-        select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
+        auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+        select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
         select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
         select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
 
-        auto new_subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
+        auto new_subquery = make_intrusive<ASTSubquery>(std::move(select_with_union_query));
 
-        auto function = makeASTOperator("in", std::make_shared<ASTLiteral>(1u), new_subquery);
+        auto function = makeASTOperator("in", make_intrusive<ASTLiteral>(1u), new_subquery);
         func = *function;
     }
 };
@@ -793,7 +793,7 @@ std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(const ASTPtr & 
   */
 void expandGroupByAll(ASTSelectQuery * select_query)
 {
-    auto group_expression_list = std::make_shared<ASTExpressionList>();
+    auto group_expression_list = make_intrusive<ASTExpressionList>();
 
     for (const auto & expr : select_query->select()->children)
         recursivelyCollectMaxOrdinaryExpressions(expr, *group_expression_list);
@@ -807,7 +807,7 @@ void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const Tabl
     if (!all_elem)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not order by asts.");
 
-    auto order_expression_list = std::make_shared<ASTExpressionList>();
+    auto order_expression_list = make_intrusive<ASTExpressionList>();
 
     for (const auto & expr : select_query->select()->children)
     {
@@ -837,7 +837,7 @@ void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const Tabl
                                 "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
         }
 
-        auto elem = std::make_shared<ASTOrderByElement>();
+        auto elem = make_intrusive<ASTOrderByElement>();
         elem->direction = all_elem->direction;
         elem->nulls_direction = all_elem->nulls_direction;
         elem->nulls_direction_was_explicitly_specified = all_elem->nulls_direction_was_explicitly_specified;

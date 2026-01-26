@@ -191,6 +191,7 @@ protected:
 
         ReadFromMergeTree::AnalysisResult analysis_result;
         indexes->use_skip_indexes_on_data_read = false; /// for static skip index analysis
+        indexes->use_skip_indexes_if_final_exact_mode = false; /// not supported in distributed index analysis
         MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
         {
             .metadata_snapshot = metadata_snapshot,

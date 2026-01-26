@@ -31,6 +31,8 @@ struct StorageInMemoryMetadata
     /// Table indices. Currently supported for MergeTree only.
     bool add_minmax_index_for_numeric_columns = false;
     bool add_minmax_index_for_string_columns = false;
+    /// Needed for compatibility
+    bool escape_index_filenames = true;
     IndicesDescription secondary_indices;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;

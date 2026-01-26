@@ -240,6 +240,7 @@ def test_refreshable_mv_in_system_db(started_cluster, cleanup):
 
     node1.restart_clickhouse()
     node1.query("system refresh view system.a")
+    node1.query("system wait view system.a")
     assert node1.query("select count(), sum(x) from system.a") == "2\t3\n"
 
 

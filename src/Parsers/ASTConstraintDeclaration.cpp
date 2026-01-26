@@ -8,7 +8,7 @@ namespace DB
 
 ASTPtr ASTConstraintDeclaration::clone() const
 {
-    auto res = std::make_shared<ASTConstraintDeclaration>();
+    auto res = make_intrusive<ASTConstraintDeclaration>();
 
     res->name = name;
     res->type = type;

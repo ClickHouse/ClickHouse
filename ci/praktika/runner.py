@@ -106,7 +106,6 @@ class Runner:
             FORK_NAME="",
             PR_LABELS=[],
             EVENT_TIME="",
-            WORKFLOW_STATUS_DATA={},
             WORKFLOW_CONFIG=workflow_config,
         ).dump()
 
@@ -128,7 +127,13 @@ class Runner:
             os.environ[key] = value
             print(f"Set environment variable {key}.")
 
-        if job.name == Settings.CI_CONFIG_JOB_NAME:
+        if (
+            job.name == Settings.CI_CONFIG_JOB_NAME
+            or _workflow.jobs[0].name != Settings.CI_CONFIG_JOB_NAME
+        ):
+            # Settings.CI_CONFIG_JOB_NAME initializes the workflow environment by reading it
+            # directly from the GitHub context. For workflows without this config job, each
+            # job reads the environment from the GitHub context independently.
             print("Read GH Environment from GH context")
             env = _Environment.from_env()
         else:

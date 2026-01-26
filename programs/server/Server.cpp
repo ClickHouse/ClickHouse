@@ -2068,7 +2068,7 @@ try
     std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;
     try
     {
-        auto wait_time = server_settings[ServerSetting::cgroups_memory_usage_observer_wait_time];
+        const auto & wait_time = server_settings[ServerSetting::cgroups_memory_usage_observer_wait_time];
         if (wait_time != 0)
             cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time));
     }
@@ -2272,27 +2272,27 @@ try
             /// This is done for backward compatibility.
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = new_server_settings[ServerSetting::background_pool_size];
-                auto new_ratio = new_server_settings[ServerSetting::background_merges_mutations_concurrency_ratio];
+                const auto & new_pool_size = new_server_settings[ServerSetting::background_pool_size];
+                const auto & new_ratio = new_server_settings[ServerSetting::background_merges_mutations_concurrency_ratio];
                 global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(new_pool_size * new_ratio));
                 global_context->getMergeMutateExecutor()->updateSchedulingPolicy(new_server_settings[ServerSetting::background_merges_mutations_scheduling_policy].toString());
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = new_server_settings[ServerSetting::background_move_pool_size];
+                const auto & new_pool_size = new_server_settings[ServerSetting::background_move_pool_size];
                 global_context->getMovesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = new_server_settings[ServerSetting::background_fetches_pool_size];
+                const auto & new_pool_size = new_server_settings[ServerSetting::background_fetches_pool_size];
                 global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = new_server_settings[ServerSetting::background_common_pool_size];
+                const auto & new_pool_size = new_server_settings[ServerSetting::background_common_pool_size];
                 global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
