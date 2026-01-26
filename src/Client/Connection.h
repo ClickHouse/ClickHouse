@@ -180,6 +180,8 @@ public:
 
     bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
 
+    void setAddressConnectTimeoutExpired() { address_connect_timeout_expired = true; }
+
     void setFormatSettings(const FormatSettings & settings) override
     {
         format_settings = settings;
@@ -272,6 +274,7 @@ private:
     std::unique_ptr<NativeWriter> block_out;
 
     bool have_more_addresses_to_connect = false;
+    bool address_connect_timeout_expired = false;
 
     /// Logger is created lazily, for avoid to run DNS request in constructor.
     class LoggerWrapper
