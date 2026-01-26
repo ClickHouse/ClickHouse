@@ -1731,17 +1731,17 @@ std::optional<String> StatementGenerator::alterSingleTable(
         const uint32_t heavy_delete = 30 * static_cast<uint32_t>(no_oracle && t.can_run_merges);
         const uint32_t heavy_update = 40 * static_cast<uint32_t>(can_update && t.can_run_merges);
         const uint32_t add_column = 2 * static_cast<uint32_t>(no_oracle && !t.hasDatabasePeer() && t.cols.size() < fc.max_columns);
-        const uint32_t materialize_column = 2 * static_cast<uint32_t>(t.can_run_merges);
+        const uint32_t materialize_column = 2 * static_cast<uint32_t>(!t.cols.empty() && t.can_run_merges);
         const uint32_t drop_column = 2 * static_cast<uint32_t>(no_oracle && !t.hasDatabasePeer() && !t.cols.empty() && t.can_run_merges);
-        const uint32_t rename_column = 2 * static_cast<uint32_t>(no_oracle && !t.hasDatabasePeer() && t.can_run_merges);
-        const uint32_t clear_column = 2 * static_cast<uint32_t>(t.can_run_merges);
-        const uint32_t modify_column = 2 * static_cast<uint32_t>(no_oracle && !t.hasDatabasePeer() && t.can_run_merges);
-        const uint32_t comment_column = 2;
-        const uint32_t add_stats = 3;
-        const uint32_t mod_stats = 3 * static_cast<uint32_t>(t.can_run_merges);
-        const uint32_t drop_stats = 3 * static_cast<uint32_t>(t.can_run_merges);
-        const uint32_t clear_stats = 3 * static_cast<uint32_t>(t.can_run_merges);
-        const uint32_t mat_stats = 3 * static_cast<uint32_t>(t.can_run_merges);
+        const uint32_t rename_column = 2 * static_cast<uint32_t>(no_oracle && !t.hasDatabasePeer() && !t.cols.empty() && t.can_run_merges);
+        const uint32_t clear_column = 2 * static_cast<uint32_t>(!t.cols.empty() && t.can_run_merges);
+        const uint32_t modify_column = 2 * static_cast<uint32_t>(no_oracle && !t.hasDatabasePeer() && !t.cols.empty() && t.can_run_merges);
+        const uint32_t comment_column = 2 * static_cast<uint32_t>(!t.cols.empty());
+        const uint32_t add_stats = 3 * static_cast<uint32_t>(!t.cols.empty());
+        const uint32_t mod_stats = 3 * static_cast<uint32_t>(!t.cols.empty() && t.can_run_merges);
+        const uint32_t drop_stats = 3 * static_cast<uint32_t>(!t.cols.empty() && t.can_run_merges);
+        const uint32_t clear_stats = 3 * static_cast<uint32_t>(!t.cols.empty() && t.can_run_merges);
+        const uint32_t mat_stats = 3 * static_cast<uint32_t>(!t.cols.empty() && t.can_run_merges);
         const uint32_t delete_mask = 8 * static_cast<uint32_t>(t.can_run_merges);
         const uint32_t add_idx = 2 * static_cast<uint32_t>(no_oracle && t.idxs.size() < 3);
         const uint32_t materialize_idx = 2 * static_cast<uint32_t>(t.can_run_merges && !t.idxs.empty());
@@ -1814,7 +1814,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
             const uint64_t type_mask_backup = this->next_type_mask;
             std::vector<uint32_t> nested_ids;
 
-            if (next_option < 4)
+            if (!t.cols.empty() && next_option < 4)
             {
                 flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
                 columnPathRef(rg.pickRandomly(this->entries), add_col->mutable_add_where()->mutable_col());
