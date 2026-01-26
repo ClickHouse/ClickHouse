@@ -48,18 +48,18 @@ namespace
 {
 
 template <typename T, typename ... Args>
-std::shared_ptr<T> addASTChildrenTo(IAST & node, ASTPtr & children, Args && ... args)
+boost::intrusive_ptr<T> addASTChildrenTo(IAST & node, ASTPtr & children, Args && ... args)
 {
-    auto new_children = std::make_shared<T>(std::forward<Args>(args)...);
+    auto new_children = make_intrusive<T>(std::forward<Args>(args)...);
     children = new_children;
     node.children.push_back(children);
     return new_children;
 }
 
 template <typename T>
-std::shared_ptr<T> addASTChildren(IAST & node)
+boost::intrusive_ptr<T> addASTChildren(IAST & node)
 {
-    auto children = std::make_shared<T>();
+    auto children = make_intrusive<T>();
     node.children.push_back(children);
     return children;
 }
@@ -105,9 +105,9 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
             auto list_of_selects = addASTChildrenTo<ASTExpressionList>(*sub_select_with_union, sub_select_with_union->list_of_selects);
 
             auto new_select = addASTChildren<ASTSelectQuery>(*list_of_selects);
-            new_select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+            new_select->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
             addASTChildren<ASTAsterisk>(*new_select->select());
-            new_select->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
+            new_select->setExpression(ASTSelectQuery::Expression::TABLES, make_intrusive<ASTTablesInSelectQuery>());
 
             auto tables_elem = addASTChildren<ASTTablesInSelectQueryElement>(*new_select->tables());
             auto sub_table_expr = addASTChildrenTo<ASTTableExpression>(*tables_elem, tables_elem->table_expression);

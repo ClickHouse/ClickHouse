@@ -54,7 +54,7 @@ namespace
     }
 
 
-    bool parseRoles(IParser::Pos & pos, Expected & expected, bool is_revoke, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseRoles(IParser::Pos & pos, Expected & expected, bool is_revoke, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -67,13 +67,13 @@ namespace
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 
-            roles = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
+            roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
             return true;
         });
     }
 
 
-    bool parseToGrantees(IParser::Pos & pos, Expected & expected, bool is_revoke, std::shared_ptr<ASTRolesOrUsersSet> & grantees)
+    bool parseToGrantees(IParser::Pos & pos, Expected & expected, bool is_revoke, boost::intrusive_ptr<ASTRolesOrUsersSet> & grantees)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -86,7 +86,7 @@ namespace
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 
-            grantees = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
+            grantees = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
             return true;
         });
     }
@@ -127,7 +127,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     AccessRightsElements elements;
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
 
     bool current_grants = false;
     if (!is_revoke && ParserKeyword{Keyword::CURRENT_GRANTS}.ignore(pos, expected))
@@ -145,7 +145,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
-    std::shared_ptr<ASTRolesOrUsersSet> grantees;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> grantees;
     if (!parseToGrantees(pos, expected, is_revoke, grantees) && !allow_no_grantees)
         return false;
 
@@ -191,7 +191,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!is_revoke && !attach_mode)
         elements.throwIfNotGrantable();
 
-    auto query = std::make_shared<ASTGrantQuery>();
+    auto query = make_intrusive<ASTGrantQuery>();
     node = query;
 
     query->is_revoke = is_revoke;

@@ -382,6 +382,23 @@ enum class ObjectStorageQueueAction : uint8_t
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueAction)
 
+enum class ObjectStorageQueuePartitioningMode : uint8_t
+{
+    NONE,   /// No per-partition tracking (default)
+    HIVE,   /// Extract partition from path structure (key=value pairs)
+    REGEX,  /// Extract partition from filename using regex
+};
+
+DECLARE_SETTING_ENUM(ObjectStorageQueuePartitioningMode)
+
+enum class ObjectStorageQueueBucketingMode : uint8_t
+{
+    PATH,       /// Hash full file path for bucketing (default, existing behavior)
+    PARTITION,  /// Hash partition key for bucketing (requires partitioning_mode != NONE)
+};
+
+DECLARE_SETTING_ENUM(ObjectStorageQueueBucketingMode)
+
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
 DECLARE_SETTING_ENUM(SchemaInferenceMode)

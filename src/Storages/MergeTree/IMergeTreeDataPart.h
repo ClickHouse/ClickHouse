@@ -26,6 +26,7 @@
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+#include <Interpreters/Context_fwd.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 
@@ -115,7 +116,7 @@ public:
     IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
 
     /// Returns true if there is materialized index with specified name in part.
-    bool hasSecondaryIndex(const String & index_name) const;
+    bool hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const;
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const;
@@ -230,6 +231,10 @@ public:
     void setName(const String & new_name);
 
     const MergeTreeData & storage;
+
+    /// Weak pointer to the context, used in clearCaches() to access caches
+    /// even if the storage has been destroyed (e.g., table dropped while query is running).
+    ContextWeakPtr storage_context;
 
     const String & name;    // const ref to private mutable_name
     MergeTreePartInfo info;
