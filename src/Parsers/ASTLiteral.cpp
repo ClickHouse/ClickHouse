@@ -24,7 +24,7 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) c
 
 ASTPtr ASTLiteral::clone() const
 {
-    auto res = make_intrusive<ASTLiteral>(*this);
+    auto res = std::make_shared<ASTLiteral>(*this);
     res->unique_column_name = {};
     return res;
 }

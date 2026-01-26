@@ -82,7 +82,7 @@ struct MutationCommand
     bool read_for_patch = false;
 
     /// If parse_alter_commands, than consider more Alter commands as mutation commands
-    static std::optional<MutationCommand> parse(const ASTAlterCommand & command, bool parse_alter_commands = false, bool with_pure_metadata_commands = false);
+    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false, bool with_pure_metadata_commands = false);
 
     /// This command shouldn't stick with other commands
     bool isBarrierCommand() const;
@@ -96,7 +96,7 @@ struct MutationCommand
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
-    boost::intrusive_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
+    std::shared_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
 
     void writeText(WriteBuffer & out, bool with_pure_metadata_commands) const;
     void readText(ReadBuffer & in, bool with_pure_metadata_commands);

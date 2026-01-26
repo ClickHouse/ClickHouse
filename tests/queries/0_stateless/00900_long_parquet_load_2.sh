@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-asan, no-msan, no-tsan, no-debug
+# Tags: long, no-fasttest, no-asan, no-msan, no-tsan
+#asdqwe no-debug
 
 # Load various .parquet files from the internet, and files used by other tests.
 

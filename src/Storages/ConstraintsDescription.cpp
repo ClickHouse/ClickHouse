@@ -86,7 +86,7 @@ std::vector<std::vector<CNFQueryAtomicFormula>> ConstraintsDescription::buildCon
     std::vector<std::vector<CNFQueryAtomicFormula>> constraint_data;
     for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
-        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr)
+        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
             .pullNotOutFunctions(); /// TODO: move prepare stage to ConstraintsDescription
         for (const auto & group : cnf.getStatements())
             constraint_data.emplace_back(std::begin(group), std::end(group));
@@ -100,7 +100,7 @@ std::vector<CNFQueryAtomicFormula> ConstraintsDescription::getAtomicConstraintDa
     std::vector<CNFQueryAtomicFormula> constraint_data;
     for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
-        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr)
+        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
              .pullNotOutFunctions();
         for (const auto & group : cnf.getStatements())
         {
@@ -193,16 +193,16 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
 
     for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
-        auto expr = constraint->getChild(*constraint->as<ASTConstraintDeclaration>()->expr);
+        auto expr = constraint->as<ASTConstraintDeclaration>()->expr->ptr();
         // Wrap the scalar expression with a function call "equals(SELECT..., 1)".
         if (dynamic_cast<ASTSubquery *>(expr.get()))
         {
-            auto func = make_intrusive<ASTFunction>();
+            auto func = std::make_shared<ASTFunction>();
             func ->name = "equals";
-            func->children.push_back(make_intrusive<ASTExpressionList>());
-            auto args = make_intrusive<ASTExpressionList>();
+            func->children.push_back(std::make_shared<ASTExpressionList>());
+            auto args = std::make_shared<ASTExpressionList>();
             args->children.push_back(expr);
-            args->children.push_back(make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(1)}));
+            args->children.push_back(std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)}));
             func->arguments = args;
             expr = func;
         }

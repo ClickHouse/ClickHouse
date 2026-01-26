@@ -104,9 +104,6 @@ SELECT midpoint(
     toDateTime64('2025-01-01 00:00:01.000', 3)
 ) AS result, toTypeName(result) AS type;
 
--- mixed Time64 scales
-SELECT midpoint(toTime64('12:00:00', 0), toTime64('14:00:00', 3)) AS result, toTypeName(result) AS type;
-
 -- ===============================================================
 -- Nullable return type
 -- ===============================================================

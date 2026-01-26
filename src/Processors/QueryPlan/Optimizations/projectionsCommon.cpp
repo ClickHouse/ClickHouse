@@ -312,7 +312,7 @@ bool analyzeProjectionCandidate(
     if (projection_parts.empty())
         return false;
 
-    ReadFromMergeTree::AnalysisResultPtr projection_result_ptr = reader.estimateNumMarksToRead(
+    auto projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),
         empty_mutations_snapshot,
         required_column_names,
@@ -320,10 +320,6 @@ bool analyzeProjectionCandidate(
         projection_query_info,
         context,
         context->getSettingsRef()[Setting::max_threads]);
-
-    /// If projection analysis exceeded limits, skip this candidate
-    if (!projection_result_ptr->isUsable())
-        return false;
 
     std::unordered_set<const IMergeTreeDataPart *> valid_parts = candidate.parent_parts;
     for (auto & part : projection_result_ptr->parts_with_ranges)

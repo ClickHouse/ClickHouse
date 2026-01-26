@@ -49,7 +49,7 @@ namespace
     {
         ASTs partition_columns_asts;
         for (const auto & column : partition_columns)
-            partition_columns_asts.push_back(make_intrusive<ASTIdentifier>(column));
+            partition_columns_asts.push_back(std::make_shared<ASTIdentifier>(column));
 
         ASTPtr partition_by = makeASTFunction("tuple", partition_columns_asts);
         auto key_description = KeyDescription::getKeyFromAST(
@@ -68,25 +68,23 @@ namespace
 
 DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     DeltaLake::WriteTransactionPtr delta_transaction_,
+    StorageObjectStorageConfigurationPtr configuration_,
     const Names & partition_columns_,
     ObjectStoragePtr object_storage_,
     ContextPtr context_,
     SharedHeader sample_block_,
-    const std::optional<FormatSettings> & format_settings_,
-    const String & write_format_,
-    const String & write_compression_method_)
+    const std::optional<FormatSettings> & format_settings_)
     : SinkToStorage(sample_block_)
     , WithContext(context_)
     , log(getLogger("DeltaLakePartitionedSink"))
     , partition_columns(partition_columns_)
     , object_storage(object_storage_)
     , format_settings(format_settings_)
+    , configuration(configuration_)
     , data_file_max_rows(context_->getSettingsRef()[Setting::delta_lake_insert_max_rows_in_data_file])
     , data_file_max_bytes(context_->getSettingsRef()[Setting::delta_lake_insert_max_bytes_in_data_file])
     , partition_strategy(createPartitionStrategy(partition_columns, getHeader(), context_))
     , delta_transaction(delta_transaction_)
-    , write_format(write_format_)
-    , write_compression_method(write_compression_method_)
 {
     delta_transaction->validateSchema(getHeader());
 }
@@ -108,7 +106,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
     size_t chunk_rows = chunk.getNumRows();
     chunk_row_index_to_partition_index.resize(chunk_rows);
 
-    HashMapWithSavedHash<std::string_view, size_t> partition_id_to_chunk_index;
+    HashMapWithSavedHash<StringRef, size_t> partition_id_to_chunk_index;
 
     for (size_t row = 0; row < chunk_rows; ++row)
     {
@@ -169,7 +167,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
 }
 
 DeltaLakePartitionedSink::PartitionInfoPtr
-DeltaLakePartitionedSink::getPartitionDataForPartitionKey(std::string_view partition_key)
+DeltaLakePartitionedSink::getPartitionDataForPartitionKey(StringRef partition_key)
 {
     auto it = partitions_data.find(partition_key);
     if (it == partitions_data.end())
@@ -178,17 +176,16 @@ DeltaLakePartitionedSink::getPartitionDataForPartitionKey(std::string_view parti
 }
 
 DeltaLakePartitionedSink::StorageSinkPtr
-DeltaLakePartitionedSink::createSinkForPartition(std::string_view partition_key)
+DeltaLakePartitionedSink::createSinkForPartition(StringRef partition_key)
 {
-    auto data_prefix = std::filesystem::path(delta_transaction->getDataPath()) / partition_key;
+    auto data_prefix = std::filesystem::path(delta_transaction->getDataPath()) / partition_key.toString();
     return std::make_unique<StorageObjectStorageSink>(
-        DeltaLake::generateWritePath(std::move(data_prefix), write_format),
+        DeltaLake::generateWritePath(std::move(data_prefix), configuration->format),
         object_storage,
+        configuration,
         format_settings,
         std::make_shared<Block>(partition_strategy->getFormatHeader()),
-        getContext(),
-        write_format,
-        write_compression_method);
+        getContext());
 }
 
 void DeltaLakePartitionedSink::onFinish()
@@ -203,7 +200,7 @@ void DeltaLakePartitionedSink::onFinish()
     for (auto & [_, partition_info] : partitions_data)
     {
         auto & [partition_key, data_files] = *partition_info;
-        std::string partition_key_str{partition_key};
+        auto partition_key_str = partition_key.toString();
         auto keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(partition_key_str);
         Map partition_values;
         partition_values.reserve(keys_and_values.size());

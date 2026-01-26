@@ -4,7 +4,7 @@
 --- These tests verify the caching of a deserialized text index header in the consecutive executions.
 
 SET enable_analyzer = 1;
-SET enable_full_text_index = 1;
+SET allow_experimental_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_text_index_header_cache = 1;
@@ -16,7 +16,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = array, dictionary_block_size = 128)
+    INDEX idx(message) TYPE text(tokenizer = array, dictionary_block_size = 128) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY (id)
@@ -55,9 +55,20 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_511');
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_511');
 
+SELECT '--- no profile events when cache is disabled.';
+
+SET use_text_index_header_cache = 0;
+
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_255');
+
+SET use_text_index_header_cache = 1;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT * FROM text_index_cache_stats(filter = 'text_255');
+
 SELECT 'Clear text index header cache';
 
-SYSTEM CLEAR TEXT INDEX HEADER CACHE;
+SYSTEM DROP TEXT INDEX HEADER CACHE;
 
 SELECT '--- cache miss on the first run.';
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_001');
@@ -71,6 +82,6 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_510');
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_510');
 
-SYSTEM CLEAR TEXT INDEX HEADER CACHE;
+SYSTEM DROP TEXT INDEX HEADER CACHE;
 DROP VIEW text_index_cache_stats;
 DROP TABLE tab;

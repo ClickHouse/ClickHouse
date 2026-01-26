@@ -11,7 +11,6 @@
 #include <Common/PODArray.h>
 #include <Common/formatReadable.h>
 #include <Common/setThreadName.h>
-#include <Common/TerminalSize.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -26,16 +25,13 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
      : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_->getSerializations()), style(style_), mono_block(mono_block_), color(color_), glue_chunks(glue_chunks_)
 {
     /// Decide whether we should print a tip near the single number value in the result.
-    if (!header_->getColumns().empty())
+    if (header_->getColumns().size() == 1)
     {
         /// Check if it is a numeric type, possible wrapped by Nullable or LowCardinality.
-        DataTypePtr type = removeNullable(recursiveRemoveLowCardinality(header_->getDataTypes().back()));
+        DataTypePtr type = removeNullable(recursiveRemoveLowCardinality(header_->getDataTypes().at(0)));
         if (isNumber(type))
             readable_number_tip = true;
     }
-    format_settings.pretty_format = true;
-    format_settings.json = FormatSettings::JSON{};
-    format_settings.json.pretty_print_indent_multiplier = 1;
 }
 
 bool PrettyBlockOutputFormat::cutInTheMiddle(size_t row_num, size_t num_rows, size_t max_rows)
@@ -569,29 +565,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     out << vertical_bar;
 
                 if (readable_number_tip)
-                {
-                    size_t term_width = getTerminalWidth();
-                    size_t visible_table_width = format_settings.pretty.row_numbers ? row_number_width : 0;
-
-                    for (size_t w : max_widths)
-                        visible_table_width += w;
-
-                    if (style == Style::Space)
-                        visible_table_width += (num_columns * 3) - 1;
-                    else
-                        visible_table_width += (num_columns * 3) + 1;
-
-                    size_t remaining_width = 0;
-
-                    // Unit tests or non-TTY
-                    if (term_width == 0)
-                        remaining_width = SIZE_MAX;
-                    else if (term_width > visible_table_width)
-                        remaining_width = term_width - visible_table_width;
-
-                    if (remaining_width > 0)
-                        writeReadableNumberTip(out, *columns.back(), i, format_settings, color, remaining_width);
-                }
+                    writeReadableNumberTipIfSingleValue(out, chunk, format_settings, color);
 
                 out << "\n";
                 if (all_lines_printed)
