@@ -65,7 +65,7 @@ bool isDeduplicationEnabledForInsertSelect(bool select_query_sorted, const Setti
 
             return isDeduplicationEnabledForInsert(false, settings);
         }
-        case DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE:
+        case DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE:
         {
             if (logger && !select_query_sorted && isDeduplicationEnabledForInsert(false, settings))
                 LOG_INFO(logger, "INSERT SELECT deduplication is disabled because SELECT is not stable");

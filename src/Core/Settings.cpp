@@ -1961,7 +1961,7 @@ That setting has three possible values:
 - backward_compatible_choice — Deduplication is enabled if `insert_deduplicate` or `async_insert_deduplicate` are enabled for specific insert type.
     )", 0) \
 \
-    DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE, R"(
+    DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE, R"(
 Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
 The setting overrids `insert_deduplicate` and `deduplicate_insert` for `INSERT SELECT` queries.
 That setting has four possible values:

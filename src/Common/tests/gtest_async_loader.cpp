@@ -1178,7 +1178,7 @@ TEST(AsyncLoader, SubJobs)
             t.loader.setMaxThreads(0, threads);
             std::list<MyComponent> components;
             LoadTaskPtrs tasks;
-            size_t size = static_cast<size_t>(jobs_per_thread * threads);
+            size_t size = static_cast<size_t>(jobs_per_thread * static_cast<double>(threads));
             tasks.reserve(size);
             for (size_t j = 0; j < size; j++)
             {
@@ -1248,7 +1248,7 @@ TEST(AsyncLoader, RecursiveJob)
             t.loader.setMaxThreads(0, threads);
             std::list<MyComponent> components;
             LoadTaskPtrs tasks;
-            size_t size = static_cast<size_t>(jobs_per_thread * threads);
+            size_t size = static_cast<size_t>(jobs_per_thread * static_cast<double>(threads));
             tasks.reserve(size);
             for (size_t j = 0; j < size; j++)
             {
