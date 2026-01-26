@@ -175,6 +175,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
     extern const SettingsBool parallel_replicas_support_projection;
+    extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool distributed_index_analysis;
     extern const SettingsBool distributed_index_analysis_for_non_shared_merge_tree;
     extern const SettingsUInt64 preferred_block_size_bytes;
@@ -2257,6 +2258,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         UInt64 distributed_index_analysis_min_parts_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_parts_to_activate];
         UInt64 distributed_index_analysis_min_indexes_size_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_indexes_size_to_activate];
         bool distributed_index_analysis_enabled = !final_second_pass
+            && settings[Setting::cluster_for_parallel_replicas].changed
             && settings[Setting::distributed_index_analysis]
             && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
             && (total_parts >= distributed_index_analysis_min_parts_to_activate)
