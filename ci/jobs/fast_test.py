@@ -146,13 +146,16 @@ def main():
                 f"NOTE: It's a local run and clickhouse binary is not found [{clickhouse_bin_path}] - will be built"
             )
             time.sleep(5)
+        resolved_clickhouse_bin_path = clickhouse_bin_path.resolve()
         Shell.check(
-            f"ln -sf {clickhouse_bin_path} {os.path.dirname(clickhouse_bin_path)}/clickhouse-server", strict=True
+            f"ln -sf {resolved_clickhouse_bin_path} {resolved_clickhouse_bin_path.parent}/clickhouse-server",
+            strict=True,
         )
         Shell.check(
-            f"ln -sf {clickhouse_bin_path} {os.path.dirname(clickhouse_bin_path)}/clickhouse-client", strict=True
+            f"ln -sf {resolved_clickhouse_bin_path} {resolved_clickhouse_bin_path.parent}/clickhouse-client",
+            strict=True,
         )
-        Shell.check(f"chmod +x {clickhouse_bin_path}", strict=True)
+        Shell.check(f"chmod +x {resolved_clickhouse_bin_path}", strict=True)
     else:
         os.environ["CH_HOSTNAME"] = (
             "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
