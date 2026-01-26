@@ -7,6 +7,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include "Common/logger_useful.h"
 #include <Common/JSONBuilder.h>
 #include <Interpreters/ActionsDAG.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -16,6 +17,7 @@
 #include <Functions/IFunction.h>
 #include <stack>
 #include <ranges>
+#include <Common/StackTrace.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -136,6 +138,8 @@ FilterStep::FilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
+    LOG_DEBUG(getLogger(__func__), "\n{}\n{}", actions_dag.dumpDAG(), StackTrace().toString());
+
     actions_dag.removeAliasesForFilter(filter_column_name);
     /// Removing aliases may result in unneeded ALIAS node in DAG.
     /// This should not be an issue by itself,

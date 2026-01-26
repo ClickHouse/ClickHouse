@@ -34,6 +34,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
+#include "Common/Logger.h"
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 #include <Core/QueryProcessingStage.h>
@@ -241,6 +242,8 @@ ASTPtr tryBuildAdditionalFilterAST(
     Tables * external_tables,
     ContextMutablePtr & context)
 {
+    LOG_DEBUG(getLogger(__func__), "\n{}", dag.dumpDAG());
+
     std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
     struct Frame

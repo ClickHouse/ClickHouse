@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include "Common/logger_useful.h"
 
 namespace DB::QueryPlanOptimizations
 {
@@ -26,6 +27,8 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
+            LOG_DEBUG(getLogger(__func__), "\n{}", filter_step->getExpression().dumpDAG());
+
             source_step_with_filter->addFilter(filter_step->getExpression().clone(), filter_step->getFilterColumnName());
         }
         else if (auto * limit_step = typeid_cast<LimitStep *>(iter->node->step.get()))

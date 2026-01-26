@@ -21,6 +21,7 @@ ORDER BY (device_id, data_item_id, data_time)
 SETTINGS index_granularity = 8192;
 
 
+DROP TABLE IF EXISTS ts_data_double;
 CREATE VIEW ts_data_double AS
 SELECT
     device_id,

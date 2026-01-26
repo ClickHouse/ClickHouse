@@ -130,6 +130,8 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan
 
     auto * filter = assert_cast<FilterStep *>(parent.get());
     auto & expression = filter->getExpression();
+    LOG_DEBUG(getLogger(__func__), "\n{}", expression.dumpDAG());
+
     const auto & filter_column_name = filter->getFilterColumnName();
     const bool removes_filter = filter->removesFilterColumn();
 

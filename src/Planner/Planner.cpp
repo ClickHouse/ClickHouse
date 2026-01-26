@@ -534,6 +534,7 @@ ALWAYS_INLINE void addFilterStep(
         buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
     }
 
+    // LOG_DEBUG(getLogger(__func__), "\n{}",   )
     auto actions = std::move(filter_analysis_result.filter_actions->dag);
     if (filter_analysis_result.filter_actions->project_input)
         actions.appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
