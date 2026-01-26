@@ -369,24 +369,41 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     /// The FunctionNode may have been resolved with different argument types than the actual
     /// children in this ActionsDAG (e.g., due to join_use_nulls converting column types to Nullable
     /// during analysis, while the actual input columns are not Nullable).
-    /// To ensure the function's result type matches the actual execution, we rebuild the function
+    /// To ensure the function's result type matches the actual execution, we try to rebuild the function
     /// using the actual argument types from the children.
-    auto function_resolver = FunctionFactory::instance().get(function.getFunctionName(), context);
+    ///
+    /// However, some internal functions (like groupingOrdinary) are not registered in FunctionFactory.
+    /// For such functions, we fall back to using the original function from the FunctionNode.
+    auto function_resolver = FunctionFactory::instance().tryGet(function.getFunctionName(), context);
 
-    auto constant_args = function_resolver->getArgumentsThatAreAlwaysConstant();
-    for (size_t pos : constant_args)
+    if (function_resolver)
     {
-        if (pos >= children.size())
-            continue;
+        auto constant_args = function_resolver->getArgumentsThatAreAlwaysConstant();
+        for (size_t pos : constant_args)
+        {
+            if (pos >= children.size())
+                continue;
 
-        if (arguments[pos].column && isColumnConst(*arguments[pos].column))
-            continue;
+            if (arguments[pos].column && isColumnConst(*arguments[pos].column))
+                continue;
 
-        if (isConstantFromScalarSubquery(children[pos]))
-            arguments[pos].column = arguments[pos].type->createColumnConstWithDefaultValue(0);
+            if (isConstantFromScalarSubquery(children[pos]))
+                arguments[pos].column = arguments[pos].type->createColumnConstWithDefaultValue(0);
+        }
+
+        auto function_base = function_resolver->build(arguments);
+        return addFunctionImpl(
+            function_base,
+            std::move(children),
+            std::move(arguments),
+            std::move(result_name),
+            function_base->getResultType(),
+            all_const);
     }
 
-    auto function_base = function_resolver->build(arguments);
+    /// Fallback: use the original function from FunctionNode for internal functions
+    /// that are not registered in FunctionFactory.
+    auto function_base = function.getFunction();
     return addFunctionImpl(
         function_base,
         std::move(children),
