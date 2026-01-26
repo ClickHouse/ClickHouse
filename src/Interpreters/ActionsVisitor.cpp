@@ -678,7 +678,7 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Dat
         }
 
         /// Special check for WITH statement alias. Add alias action to be able to use this alias.
-        if (identifier.prefer_alias_to_column_name && !identifier.alias.empty())
+        if (identifier.preferAliasToColumnName() && !identifier.alias.empty())
             data.addAlias(identifier.name(), identifier.alias);
     }
 }

@@ -10,9 +10,8 @@
 #include <Parsers/LiteralEscapingStyle.h>
 #include <base/types.h>
 
+#include <atomic>
 #include <set>
-
-#include <boost/smart_ptr/intrusive_ref_counter.hpp>
 
 class SipHash;
 
@@ -30,15 +29,24 @@ class WriteBuffer;
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
-class IAST : public TypePromotion<IAST>, public boost::intrusive_ref_counter<IAST>
+class IAST : public TypePromotion<IAST>
 {
 public:
     ASTs children;
+private:
+    /// We implement intrusive reference counting (based on boost::intrusive_ptr) to avoid the padding added by the ref_counter
+    /// And we use the extra bytes to store FLAGS in derived classes.
+    mutable std::atomic<UInt32> ref_counter{0};
+protected:
+    UInt32 FLAGS = 0; /// Used by derived classes for various flags.
+public:
 
     virtual ~IAST();
     IAST() = default;
-    IAST(const IAST &) = default;
-    IAST & operator=(const IAST &) = default;
+    IAST(const IAST & other);
+    IAST & operator=(const IAST & other);
+
+    UInt32 use_count() const noexcept { return ref_counter.load(std::memory_order_relaxed); }
 
     /** Get the canonical name of the column if the element is a column */
     String getColumnName() const;
@@ -369,6 +377,9 @@ protected:
 
 private:
     size_t checkDepthImpl(size_t max_depth) const;
+
+    friend void intrusive_ptr_add_ref(const IAST * p) noexcept;
+    friend void intrusive_ptr_release(const IAST * p) noexcept;
 };
 
 }
