@@ -9,6 +9,7 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/safe_cast.h>
+#include <Core/Types.h>
 #include "config.h"
 
 #if USE_SSL

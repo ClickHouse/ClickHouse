@@ -1,18 +1,20 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
-#include <base/types.h>
-#include <Parsers/IASTHash.h>
-#include <Parsers/IdentifierQuotingStyle.h>
-#include <Parsers/LiteralEscapingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
 
+#include <Parsers/IASTFormatState.h>
+#include <Parsers/IASTHash.h>
+#include <Parsers/IAST_fwd.h>
+#include <Parsers/IdentifierQuotingStyle.h>
+#include <Parsers/LiteralEscapingStyle.h>
+#include <base/types.h>
+
 #include <set>
 
-class SipHash;
+#include <boost/smart_ptr/intrusive_ref_counter.hpp>
 
-#include <boost/container/vector.hpp>
+class SipHash;
 
 namespace DB
 {
@@ -25,7 +27,6 @@ namespace ErrorCodes
 using IdentifierNameSet = std::set<String>;
 
 class WriteBuffer;
-using Strings = std::vector<String>;
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
@@ -242,18 +243,7 @@ public:
         void checkIdentifier(const String & name) const;
     };
 
-    /// State. For example, a set of nodes can be remembered, which we already walk through.
-    struct FormatState
-    {
-        /** The SELECT query in which the alias was found; identifier of a node with such an alias.
-          * It is necessary that when the node has met again, output only the alias.
-          * This is only needed for the old analyzer. Remove it after removing the old analyzer.
-          */
-        std::set<std::tuple<
-            const IAST * /* SELECT query node */,
-            std::string /* alias */,
-            IASTHash /* printed content */>> printed_asts_with_alias;
-    };
+    using FormatState = IASTFormatState;
 
     /// The state that is copied when each node is formatted. For example, nesting level.
     struct FormatStateStacked

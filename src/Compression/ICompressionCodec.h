@@ -1,10 +1,12 @@
 #pragma once
 
-#include <memory>
 #include <Parsers/IAST_fwd.h>
 #include <boost/noncopyable.hpp>
 #include <Compression/CompressionInfo.h>
 #include <base/types.h>
+
+#include <memory>
+#include <vector>
 
 class SipHash;
 
