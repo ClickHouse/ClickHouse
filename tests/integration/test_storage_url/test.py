@@ -19,6 +19,7 @@ node1 = cluster.add_instance(
 def setup_node():
     try:
         cluster.start()
+        start_mock_servers(cluster, os.path.dirname(__file__), [("index_pages_server.py", "resolver", 8081)])
         node1.query(
             "insert into table function url(url1) partition by column3 values (1, 2, 3), (3, 2, 1), (1, 3, 2)"
         )
@@ -88,6 +89,28 @@ def test_url_cluster_with_named_collection():
         f"select * from urlCluster(test_cluster_one_shard_three_replicas_localhost, test_url, structure='auto')"
     )
     assert result.strip() == "3\t2\t1"
+
+
+def test_url_wildcard_from_index_pages():
+    result = node1.query(
+        "SELECT sum(x) FROM url('http://resolver:8081/data/**/part*.tsv', 'TSV', 'x UInt64')"
+    )
+    assert result.strip() == "12"
+
+
+def test_url_wildcard_size_virtual_column():
+    result = node1.query(
+        "SELECT sum(_size) FROM url('http://resolver:8081/data/**/part*.tsv', 'TSV', 'x UInt64')"
+    )
+    assert result.strip() == "8"
+
+
+def test_url_wildcard_headers_virtual_column():
+    result = node1.query(
+        "SELECT count() FROM url('http://resolver:8081/data/**/part*.tsv', 'TSV', 'x UInt64') "
+        "WHERE _headers['Content-Type'] = 'text/plain'"
+    )
+    assert result.strip() == "4"
 
 
 def test_table_function_url_access_rights():

@@ -938,6 +938,12 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <keep_alive_timeout>10</keep_alive_timeout>
     ```
     )", 0) \
+    DECLARE(UInt64, max_http_index_page_size, 10 * 1024 * 1024, R"(
+    Maximum size of an HTTP index page response used for directory listing over HTTP.
+    If the response exceeds this limit, the query fails with an error.
+
+    Default: `10485760` (10 MiB).
+    )", 0) \
     DECLARE(UInt64, max_keep_alive_requests, 10000, R"(
     Maximal number of requests through a single keep-alive connection until it will be closed by ClickHouse server.
 
