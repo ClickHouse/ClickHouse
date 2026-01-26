@@ -436,6 +436,10 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                     if (left->relations & right->relations)
                         continue;
 
+                    /// If both components are of the same size then check each pair just once, not twice
+                    if (smaller_component_size == bigger_component_size && *left->relations.begin() > *right->relations.begin())
+                        continue;
+
                     const auto combined_relations = left->relations | right->relations;
 
                     auto join_kind = isValidJoinOrder(left->relations, right->relations);
