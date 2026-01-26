@@ -133,7 +133,7 @@ FROM
         ) AS subquery
     FROM system.one
 )
-WHERE subquery = 1
+WHERE equals(subquery, 1)
 1	1
 SELECT *
 FROM
