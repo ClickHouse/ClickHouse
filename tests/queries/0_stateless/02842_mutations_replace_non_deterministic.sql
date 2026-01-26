@@ -107,10 +107,12 @@ UPDATE v =
 (
     SELECT sum(number) FROM numbers(1000) WHERE number > randConstant()
 ) WHERE 1
-SETTINGS mutations_execute_subqueries_on_initiator = 0, allow_nondeterministic_mutations = 1;
+SETTINGS mutations_execute_subqueries_on_initiator = 0, allow_nondeterministic_mutations = 1, mutations_sync = 0;
 
+-- Just verify the command was stored correctly. Don't require completion to avoid query context expiration issues when
+-- subqueries execute on replicas on CI leading to flakiness.
 SELECT command FROM system.mutations
-WHERE database = currentDatabase() AND table = 't_mutations_nondeterministic' AND is_done
+WHERE database = currentDatabase() AND table = 't_mutations_nondeterministic'
 ORDER BY command;
 
 DROP TABLE t_mutations_nondeterministic SYNC;
