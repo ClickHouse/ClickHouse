@@ -47,7 +47,7 @@ bool S3Exception::isRetryableError() const
 
 bool S3Exception::isAccessTokenExpiredError() const
 {
-    return code == Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID;
+    return code == Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID || code == Aws::S3::S3Errors::ACCESS_DENIED || code == Aws::S3::S3Errors::INVALID_SIGNATURE;
 }
 
 }
