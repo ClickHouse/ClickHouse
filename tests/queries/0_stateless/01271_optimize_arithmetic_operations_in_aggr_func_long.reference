@@ -418,37 +418,37 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT plus(plus(plus(sumplus(n, 1), sumplus(1, n)), summinus(n, 1)), summinus(1, n))
+SELECT plus(plus(plus(sum(plus(n, 1)), sum(plus(1, n))), sum(minus(n, 1))), sum(minus(1, n)))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT plus(plus(plus(summultiply(n, 2), summultiply(2, n)), sumdivide(n, 2)), sumdivide(1, n))
+SELECT plus(plus(plus(sum(multiply(n, 2)), sum(multiply(2, n))), sum(divide(n, 2))), sum(divide(1, n)))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT plus(plus(plus(minplus(n, 1), minplus(1, n)), minminus(n, 1)), minminus(1, n))
+SELECT plus(plus(plus(min(plus(n, 1)), min(plus(1, n))), min(minus(n, 1))), min(minus(1, n)))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT plus(plus(plus(minmultiply(n, 2), minmultiply(2, n)), mindivide(n, 2)), mindivide(1, n))
+SELECT plus(plus(plus(min(multiply(n, 2)), min(multiply(2, n))), min(divide(n, 2))), min(divide(1, n)))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT plus(plus(plus(maxplus(n, 1), maxplus(1, n)), maxminus(n, 1)), maxminus(1, n))
+SELECT plus(plus(plus(max(plus(n, 1)), max(plus(1, n))), max(minus(n, 1))), max(minus(1, n)))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT plus(plus(plus(maxmultiply(n, 2), maxmultiply(2, n)), maxdivide(n, 2)), maxdivide(1, n))
+SELECT plus(plus(plus(max(multiply(n, 2)), max(multiply(2, n))), max(divide(n, 2))), max(divide(1, n)))
 FROM
 (
     SELECT number AS n
