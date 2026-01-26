@@ -71,7 +71,6 @@ public:
                 try
                 {
                     std::string message = "Code: " + std::to_string(ErrorCodes::IP_ADDRESS_NOT_ALLOWED) + ". DB::Exception: IP address not allowed.\n";
-                    
                     int sent = socket().sendBytes(message.data(), static_cast<int>(message.size()));
                     socket().shutdownSend();
                     if (sent != static_cast<int>(message.size()))
