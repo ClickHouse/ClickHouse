@@ -812,7 +812,7 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
             auto engine = make_intrusive<ASTFunction>();
 
             engine->name = "Shared";
-            engine->no_empty_args = true;
+            engine->setNoEmptyArgs(true);
 
             create.storage->set(create.storage->engine, engine);
         }

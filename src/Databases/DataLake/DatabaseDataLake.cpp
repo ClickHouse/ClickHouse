@@ -840,7 +840,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     auto table_storage_define = table_engine_definition->clone();
 
     auto * storage = table_storage_define->as<ASTStorage>();
-    storage->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
+    storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
     if (!table_metadata.isDefaultReadableTable())
         storage->engine->name = DataLake::FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES;
 

@@ -239,13 +239,13 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     auto function_ast = make_intrusive<ASTFunction>();
 
     function_ast->name = function_name;
-    function_ast->nulls_action = nulls_action;
-    function_ast->is_operator = is_operator;
+    function_ast->setNullsAction(nulls_action);
+    function_ast->setIsOperator(is_operator);
 
     if (isWindowFunction())
     {
-        function_ast->is_window_function = true;
-        function_ast->kind = ASTFunction::Kind::WINDOW_FUNCTION;
+        function_ast->setIsWindowFunction(true);
+        function_ast->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
     }
 
     const auto & arguments = getArguments();
