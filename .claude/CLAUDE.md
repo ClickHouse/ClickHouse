@@ -40,3 +40,5 @@ You can run integration tests as in `tests/integration/README.md` using: `python
 When writing tests, do not add "no-*" tags (like "no-parallel") unless strictly necessarily.
 
 When writing tests in tests/queries, prefer adding a new test instead of extending existing ones.
+
+Prefer not using `catch (...)` without rethrowing the exception.

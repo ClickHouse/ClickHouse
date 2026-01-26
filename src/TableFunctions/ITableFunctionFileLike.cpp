@@ -1,6 +1,8 @@
+#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
+#include <Core/Settings.h>
 #include <Storages/StorageFile.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -13,11 +15,17 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 void ITableFunctionFileLike::parseFirstArguments(const ASTPtr & arg, const ContextPtr &)
@@ -91,7 +99,33 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
     if (structure != "auto")
         columns = parseColumnsListFromString(structure, context);
     else if (!structure_hint.empty())
-        columns = structure_hint;
+    {
+        /// For mode 2, use schema inference to get all columns from the file.
+        /// The schema inference in ReadSchemaUtils will merge with INSERT table types.
+        /// This allows WHERE/ORDER BY to reference columns not in the destination table (issue #53157).
+        ///
+        /// Important: is_insert_query is true when this table function is the INSERT destination
+        /// (e.g., INSERT INTO file(...)), but we only want to do schema inference when the table
+        /// function is a source (e.g., INSERT INTO table SELECT FROM file(...)).
+        /// So we check !is_insert_query && hasInsertionTableColumnsDescription().
+        bool is_source_in_insert = !is_insert_query && context->hasInsertionTableColumnsDescription();
+        if (is_source_in_insert && context->getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions] == 2)
+        {
+            try
+            {
+                columns = getActualTableStructure(context, /*is_insert_query=*/true);
+            }
+            catch (const Exception & e)
+            {
+                /// If schema inference fails (e.g., file with NULLs in JSONEachRow), fall back to structure_hint.
+                if (e.code() != ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE)
+                    throw;
+                columns = structure_hint;
+            }
+        }
+        else
+            columns = structure_hint;
+    }
 
     StoragePtr storage = getStorage(filename, format, columns, context, table_name, compression_method, is_insert_query);
     storage->startup();

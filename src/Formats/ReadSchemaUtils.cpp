@@ -17,6 +17,7 @@ namespace Setting
     extern const SettingsUInt64 input_format_max_rows_to_read_for_schema_inference;
     extern const SettingsUInt64 input_format_max_bytes_to_read_for_schema_inference;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
+    extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
 }
 
 namespace ErrorCodes
@@ -522,6 +523,21 @@ try
             auto ordered_list = getOrderedColumnsList(names_and_types, names_in_storage);
             if (ordered_list)
                 names_and_types = *ordered_list;
+        }
+
+        /// For INSERT queries with use_structure_from_insertion_table_in_table_functions = 2,
+        /// use types from the INSERT table for columns that match by name. This allows schema
+        /// inference to return all columns from the file (so WHERE/ORDER BY can reference them)
+        /// while using destination types for columns being inserted (issue #53157).
+        if (context->getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions] == 2
+            && context->hasInsertionTableColumnsDescription())
+        {
+            const auto & insertion_columns = *context->getInsertionTableColumnsDescription();
+            for (auto & [name, type] : names_and_types)
+            {
+                if (insertion_columns.has(name))
+                    type = insertion_columns.get(name).type;
+            }
         }
 
         /// Some formats like CSVWithNames can contain empty column names. We don't support empty column names and further processing can fail with an exception. Let's just remove columns with empty names from the structure.
