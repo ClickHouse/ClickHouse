@@ -41,7 +41,7 @@ do
     ENGINE = MergeTree()
     ORDER BY id
     PARTITION BY intDiv(id, 100)
-    SETTINGS alter_column_secondary_index_mode = 'rebuild', ${part_type_setting};
+    SETTINGS alter_column_secondary_index_mode = 'rebuild', index_granularity=8192, index_granularity_bytes='10M', ${part_type_setting};
 
     INSERT INTO test_table SELECT number, number FROM numbers(10);
 

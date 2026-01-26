@@ -42,7 +42,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool optimize_read_in_order;
-    extern const SettingsBool optimize_read_in_window_order;
+    extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
 }
 }
 
@@ -315,6 +315,24 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
 /// Functions result is fixed if all arguments are fixed or constants.
 void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
 {
+    /// First, collect names of all fixed INPUT nodes.
+    /// This is needed because after DAG merging, there can be multiple INPUT nodes
+    /// with the same column name (e.g., one from filter expression and one from SELECT).
+    /// If any INPUT node with a given name is fixed, all INPUT nodes with that name should be fixed.
+    std::unordered_set<std::string_view> fixed_input_names;
+    for (const auto * node : fixed_columns)
+    {
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            fixed_input_names.insert(node->result_name);
+    }
+
+    /// Add all INPUT nodes with matching names to fixed_columns.
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::INPUT && fixed_input_names.contains(node.result_name))
+            fixed_columns.insert(&node);
+    }
+
     struct Frame
     {
         const ActionsDAG::Node * node;
@@ -534,6 +552,24 @@ SortingInputOrder buildInputOrderFromSortDescription(
             {
                 //std::cerr << "====== Found direct match" << std::endl;
 
+                /// If the ORDER BY column is fixed (constant due to WHERE clause),
+                /// don't let it determine read direction - skip to next columns.
+                /// Example: ORDER BY tenant, event_time DESC with WHERE tenant='42'
+                /// tenant is constant, so read direction should come from event_time DESC.
+                if (fixed_columns.contains(sort_node))
+                {
+                    /// Virtual row for fixed column from order by is not supported now.
+                    can_optimize_virtual_row = false;
+
+                    /// Still add the fixed column to the sort description (required for sort matching)
+                    /// but don't set current_direction so it won't influence read_direction.
+                    match_infos.push_back({.source = sort_node, .fixed_column = sort_node});
+                    order_key_prefix_descr.push_back(sort_column_description);
+                    ++next_description_column;
+                    ++next_sort_key;
+                    continue;
+                }
+
                 /// We try to find the match first even if column is fixed. In this case, potentially more keys will match.
                 /// Example: 'table (x Int32, y Int32) ORDER BY x + 1, y + 1'
                 ///          'SELECT x, y FROM table WHERE x = 42 ORDER BY x + 1, y + 1'
@@ -604,8 +640,20 @@ SortingInputOrder buildInputOrderFromSortDescription(
             break;
     }
 
-    if (read_direction == 0 || order_key_prefix_descr.empty())
+    if (order_key_prefix_descr.empty())
         return {};
+
+    /// If all ORDER BY columns were fixed (constant), read_direction is still 0.
+    /// Default to ascending (1) since the data is trivially sorted when all columns are constant.
+    /// But only if we actually matched some key columns (next_sort_key > 0).
+    /// If next_sort_key == 0, the ORDER BY doesn't match the key prefix at all.
+    if (read_direction == 0)
+    {
+        if (next_sort_key > 0)
+            read_direction = 1;
+        else
+            return {};
+    }
 
     /// If the prefix description is used, we can't restore the full description from PK value.
     /// TODO: partial sort description can be used as well. Implement support later.
@@ -682,6 +730,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     /// For every column in PK find any match from GROUP BY key.
     using ReverseMatches = std::unordered_map<const ActionsDAG::Node *, MatchedTrees::Matches::const_iterator>;
     ReverseMatches reverse_matches;
+    std::unordered_set<std::string_view> not_matched_keys(unordered_keys.begin(), unordered_keys.end());
 
     if (dag)
     {
@@ -704,6 +753,12 @@ InputOrder buildInputOrderFromUnorderedKeys(
             const MatchedTrees::Match * match = &it->second;
             if (match->node)
             {
+                // ensure that output is in aggregation keys (not_matched_keys at this point just a set of aggregation keys)
+                // the output can be removed for filters, so it'll not be present in corresponding header,
+                // and parent aggregation step will have no such column/expr in keys
+                if (!not_matched_keys.contains(output->result_name))
+                    continue;
+
                 auto [jt, inserted] = reverse_matches.emplace(match->node, it);
                 if (!inserted)
                 {
@@ -732,7 +787,6 @@ InputOrder buildInputOrderFromUnorderedKeys(
     /// So far, 0 means any direction is possible. It is ok for constant prefix.
     int read_direction = 0;
     size_t next_sort_key = 0;
-    std::unordered_set<std::string_view> not_matched_keys(unordered_keys.begin(), unordered_keys.end());
 
     SortDescription sort_description;
     sort_description.reserve(unordered_keys.size());
@@ -1329,6 +1383,9 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     if (sorting->getType() != SortingStep::Type::Full)
         return;
 
+    if (sorting->hasPartitions() && !optimization_settings.reuse_storage_ordering_for_window_functions)
+        return;
+
     bool apply_virtual_row = false;
 
     if (typeid_cast<UnionStep *>(node.children.front()->step.get()))
@@ -1509,7 +1566,8 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     auto context = read_from_merge_tree->getContext();
     const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::optimize_read_in_window_order] || (settings[Setting::optimize_read_in_order] && settings[Setting::query_plan_read_in_order])
+    if (!settings[Setting::query_plan_reuse_storage_ordering_for_window_functions]
+        || (settings[Setting::optimize_read_in_order] && settings[Setting::query_plan_read_in_order])
         || context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         return 0;
