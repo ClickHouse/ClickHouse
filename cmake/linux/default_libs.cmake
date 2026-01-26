@@ -23,9 +23,9 @@ elseif (SANITIZE STREQUAL undefined)
     string(REPLACE "builtins.a" "ubsan_standalone_cxx.a" EXTRA_BUILTINS_LIBRARY "${BUILTINS_LIBRARY}")
 endif ()
 
-include (cmake/libllvmlibc.cmake)
+if (ENABLE_LLVM_LIBC_MATH)
+    include (cmake/libllvmlibc.cmake)
 
-if (EXISTS "${LLVM_LIBC_DIR}")
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
 endif()
 
