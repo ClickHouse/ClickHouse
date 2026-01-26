@@ -128,6 +128,14 @@ def main():
 
     clickhouse_bin_path = Path(f"{build_dir}/programs/clickhouse")
     if Info().is_local_run:
+        for path in [
+            clickhouse_bin_path,
+            Path(temp_dir) / "clickhouse",
+            Path(current_directory) / "clickhouse",
+        ]:
+            if path.exists():
+                clickhouse_bin_path = path
+                break
         if clickhouse_bin_path.exists():
             print(
                 f"NOTE: It's a local run and clickhouse binary is found [{clickhouse_bin_path}] - skip the build"
@@ -138,10 +146,13 @@ def main():
                 f"NOTE: It's a local run and clickhouse binary is not found [{clickhouse_bin_path}] - will be built"
             )
             time.sleep(5)
-        clickhouse_server_link = Path(f"{build_dir}/programs/clickhouse-server")
-        if not clickhouse_server_link.is_file():
-            Shell.check(f"ln -sf {clickhouse_bin_path} {clickhouse_server_link}")
-        Shell.check(f"chmod +x {clickhouse_bin_path}")
+        Shell.check(
+            f"ln -sf {clickhouse_bin_path} {os.path.dirname(clickhouse_bin_path)}/clickhouse-server", strict=True
+        )
+        Shell.check(
+            f"ln -sf {clickhouse_bin_path} {os.path.dirname(clickhouse_bin_path)}/clickhouse-client", strict=True
+        )
+        Shell.check(f"chmod +x {clickhouse_bin_path}", strict=True)
     else:
         os.environ["CH_HOSTNAME"] = (
             "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
@@ -155,7 +166,9 @@ def main():
         os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
         Shell.check("sccache --show-stats", verbose=True)
 
-    Utils.add_to_PATH(f"{build_dir}/programs:{current_directory}/tests")
+    Utils.add_to_PATH(
+        f"{os.path.dirname(clickhouse_bin_path)}:{current_directory}/tests"
+    )
 
     res = True
     results = []
