@@ -124,7 +124,7 @@ def merge_profraw_files(llvm_profdata: str, batch_num: int, loop: bool = False):
                 capture_output=True, text=True
             )
             
-            corrupted_count = result.stderr.count("invalid instrumentation profile") + result.stderr.count("file header is corrupt")
+            corrupted_count = result.stderr.count("invalid instrumentation profile")
             corrupted_files = set()
             if corrupted_count > 0:
                 print(f"  WARNING: Found {corrupted_count} corrupted profraw files", flush=True)

@@ -2030,7 +2030,7 @@ class ClickHouseCluster:
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/var/lib/clickhouse/server_%h_%p_%m.profraw"
+            "/var/lib/clickhouse/server_%h_%p.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd
