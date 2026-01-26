@@ -1,5 +1,8 @@
 #pragma once
 
+#include <thread>
+#include <chrono>
+
 #include <Server/TCPServerConnectionFactory.h>
 #include <Server/TCPServer.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -73,6 +76,7 @@ public:
                     std::string message = "Code: " + std::to_string(ErrorCodes::IP_ADDRESS_NOT_ALLOWED) + ". DB::Exception: IP address not allowed.\n";
                     int sent = socket().sendBytes(message.data(), static_cast<int>(message.size()));
                     socket().shutdownSend();
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
                     if (sent != static_cast<int>(message.size()))
                     {
                         LOG_ERROR(log, "Failed to send full IP block error message to client {} (sent {} of {} bytes).", socket().peerAddress().toString(), sent, message.size());
