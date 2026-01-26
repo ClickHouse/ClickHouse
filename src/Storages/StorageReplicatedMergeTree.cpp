@@ -6908,7 +6908,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     {
         for (const auto & part_name : active_parts_names)
         {
-            command.partition = std::make_shared<ASTLiteral>(part_name);
+            command.partition = make_intrusive<ASTLiteral>(part_name);
             attachPartition(command, metadata_snapshot, getContext());
         }
     }
@@ -10810,6 +10810,12 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & p
 
 bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name)
 {
+    if (is_readonly)
+    {
+        LOG_WARNING(log, "Cannot replace lost part {} with empty part because replica is readonly", lost_part_name);
+        return false;
+    }
+
     LOG_INFO(log, "Going to replace lost part {} with empty part", lost_part_name);
 
     auto new_part_info = MergeTreePartInfo::fromPartName(lost_part_name, format_version);
@@ -10872,6 +10878,14 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
         {
             if (shutdown_called || partial_shutdown_called)
                 throw Exception(ErrorCodes::ABORTED, "Cannot create an empty part because shutdown called");
+
+            /// Replica may become readonly during the operation due to ZooKeeper issues.
+            /// In this case, we should not try to create an empty part.
+            if (is_readonly)
+            {
+                LOG_WARNING(log, "Cannot replace lost part {} with empty part because replica became readonly", lost_part_name);
+                return false;
+            }
 
             /// We should be careful when creating an empty part, because we are not sure that this part is still needed.
             /// For example, it's possible that part (or partition) was dropped (or replaced) concurrently.

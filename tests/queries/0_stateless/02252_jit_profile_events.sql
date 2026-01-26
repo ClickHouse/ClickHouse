@@ -3,7 +3,7 @@
 SET compile_expressions = 1;
 SET min_count_to_compile_expression = 0;
 
-SYSTEM DROP COMPILED EXPRESSION CACHE;
+SYSTEM CLEAR COMPILED EXPRESSION CACHE;
 
 SELECT number + number + number FROM numbers(1);
 

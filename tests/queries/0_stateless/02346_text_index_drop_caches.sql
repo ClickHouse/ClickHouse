@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas, no-parallel
 
--- Tests correctness and profile events of SYSTEM DROP TEXT INDEX CACHES
+-- Tests correctness and profile events of SYSTEM CLEAR TEXT INDEX CACHES
 
 DROP TABLE IF EXISTS tab;
 
@@ -25,7 +25,7 @@ SELECT count() FROM tab WHERE s LIKE '%888%' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasAnyTokens(s, '888');
 SELECT count() FROM tab WHERE hasAnyTokens(s, '888');
 
-SYSTEM DROP TEXT INDEX CACHES;
+SYSTEM CLEAR TEXT INDEX CACHES;
 
 SELECT count() FROM tab WHERE hasAnyTokens(s, '888');
 SELECT count() FROM tab WHERE hasAnyTokens(s, '888');

@@ -48,7 +48,7 @@ InterpreterUpdateQuery::InterpreterUpdateQuery(ASTPtr query_ptr_, ContextPtr con
 
 static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query)
 {
-    auto alter_query = std::make_shared<ASTAlterCommand>();
+    auto alter_query = make_intrusive<ASTAlterCommand>();
 
     alter_query->type = ASTAlterCommand::UPDATE;
     alter_query->set(alter_query->predicate, update_query.predicate);
