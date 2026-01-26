@@ -11,7 +11,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/castColumn.h>
 #include <AggregateFunctions/SketchDataUtils.h>
-#include "DatasketchesIncludes.h"
+#include <Functions/DatasketchesIncludes.h>
 
 namespace DB
 {
@@ -20,7 +20,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -74,7 +73,7 @@ public:
         const ColumnString * col_str = nullptr;
         bool is_sketch_const = false;
         std::string_view const_sketch_data;
-        
+
         if (const auto * col_const_sketch = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
         {
             const_sketch_data = col_const_sketch->getDataAt(0);
@@ -95,7 +94,7 @@ public:
         Float64 const_percentile_value = 0.0;
         bool is_percentile_const = false;
         const ColumnFloat64 * col_percentile = nullptr;
-        
+
         // Check if percentile is a constant
         if (const auto * col_const = checkAndGetColumnConst<ColumnFloat64>(arguments[1].column.get()))
         {
@@ -110,7 +109,7 @@ public:
         {
             // Try to cast the column
             ColumnPtr percentile_column = castColumn(arguments[1], std::make_shared<DataTypeFloat64>());
-            
+
             if (const auto * col_const_casted = checkAndGetColumnConst<ColumnFloat64>(percentile_column.get()))
             {
                 const_percentile_value = col_const_casted->getValue<Float64>();

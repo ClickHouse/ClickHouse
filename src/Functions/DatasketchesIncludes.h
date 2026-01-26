@@ -28,8 +28,8 @@
 #pragma clang diagnostic ignored "-Wextra-semi-stmt"
 #pragma clang diagnostic ignored "-Wreserved-macro-identifier"
 
-#if __has_include("../../contrib/datasketches-cpp/common/include/MurmurHash3.h")
-    #include "../../contrib/datasketches-cpp/common/include/MurmurHash3.h"
+#if __has_include(<../../contrib/datasketches-cpp/common/include/MurmurHash3.h>)
+    #include <../../contrib/datasketches-cpp/common/include/MurmurHash3.h>
 #else
     #include <MurmurHash3.h>
 #endif

@@ -111,7 +111,7 @@ AggregateFunctionPtr createAggregateFunctionSerializedDoubleSketch(
 ///             The numeric values to add to the quantiles sketch
 ///
 /// Returns: String
-///   A serialized binary quantiles sketch. This can be stored in a table, used with 
+///   A serialized binary quantiles sketch. This can be stored in a table, used with
 ///   mergeSerializedDoubleSketch(), or passed to percentileFromDoubleSketch() to extract percentiles.
 ///
 /// Examples:
@@ -125,7 +125,7 @@ AggregateFunctionPtr createAggregateFunctionSerializedDoubleSketch(
 ///       sketch String
 ///   ) ENGINE = MergeTree() ORDER BY (service, hour);
 ///
-///   INSERT INTO hourly_latency_sketches 
+///   INSERT INTO hourly_latency_sketches
 ///   SELECT service, toStartOfHour(timestamp) AS hour, serializedDoubleSketch(latency)
 ///   FROM requests
 ///   GROUP BY service, hour;

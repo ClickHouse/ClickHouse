@@ -85,11 +85,11 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedDoubleSketch(
     /// - true (1): Skip base64 decoding, treat as raw binary (faster, for ClickHouse-generated data)
     /// - false (0): Check for base64 encoding and decode if detected (for external data)
     bool assume_raw_binary = true;  // Default: assume raw binary for performance
-    
+
     if (params.size() > 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Aggregate function {} takes at most 1 parameter (assume_raw_binary: 0 or 1)", name);
-    
+
     if (params.size() == 1)
     {
         assume_raw_binary = params[0].safeGet<bool>();
@@ -116,9 +116,9 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedDoubleSketch(
 
 /// mergeSerializedDoubleSketch - Merges multiple serialized quantiles sketches into a single sketch
 ///
-/// This function combines multiple quantiles sketches that were created by serializedDoubleSketch() into 
-/// one unified sketch. This enables distributed percentile/quantile estimation where sketches are computed 
-/// on different nodes or time periods and then merged together to get accurate percentiles across the 
+/// This function combines multiple quantiles sketches that were created by serializedDoubleSketch() into
+/// one unified sketch. This enables distributed percentile/quantile estimation where sketches are computed
+/// on different nodes or time periods and then merged together to get accurate percentiles across the
 /// entire dataset.
 ///
 /// Syntax: mergeSerializedDoubleSketch([assume_raw_binary])(sketch_column)
@@ -136,7 +136,7 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedDoubleSketch(
 ///
 /// Examples:
 ///   -- Merge hourly latency sketches to get daily percentiles (default, optimized)
-///   SELECT 
+///   SELECT
 ///       date,
 ///       percentileFromDoubleSketch(mergeSerializedDoubleSketch(sketch), 0.5) AS p50_latency,
 ///       percentileFromDoubleSketch(mergeSerializedDoubleSketch(sketch), 0.95) AS p95_latency,
@@ -151,7 +151,7 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedDoubleSketch(
 ///   SELECT mergeSerializedDoubleSketch(0)(sketch) FROM imported_sketches;
 ///
 ///   -- Merge across multiple dimensions
-///   SELECT 
+///   SELECT
 ///       service,
 ///       toStartOfWeek(hour) AS week,
 ///       percentileFromDoubleSketch(mergeSerializedDoubleSketch(sketch), 0.95) AS weekly_p95

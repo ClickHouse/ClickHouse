@@ -10,7 +10,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <AggregateFunctions/SketchDataUtils.h>
-#include "DatasketchesIncludes.h"
+#include <Functions/DatasketchesIncludes.h>
 
 namespace DB
 {
@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -59,7 +58,7 @@ public:
         /// Fast path for empty blocks (common in parallel pipeline execution after aggregation)
         if (input_rows_count == 0)
             return ColumnUInt64::create();
-        
+
         const auto * col_str = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!col_str)
             throw Exception(

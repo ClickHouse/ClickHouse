@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include "config.h"
 
 
 namespace DB
@@ -115,12 +116,15 @@ void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory &
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
+
+#if USE_DATASKETCHES
 void registerAggregateFunctionSerializedHLL(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMergeSerializedHLL(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSerializedTDigest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSerializedDoubleSketch(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMergeSerializedDoubleSketch(AggregateFunctionFactory & factory);
 void registerAggregateFunctionLatencyValuesAndWeights(AggregateFunctionFactory & factory);
+#endif
 
 void registerAggregateFunctions()
 {
@@ -216,12 +220,15 @@ void registerAggregateFunctions()
         registerAggregateFunctionLast2Samples(factory);
         registerAggregateFunctionTimeseries(factory);
         registerAggregateFunctionTimeseriesGroupArray(factory);
+
+#if USE_DATASKETCHES
         registerAggregateFunctionSerializedHLL(factory);
         registerAggregateFunctionMergeSerializedHLL(factory);
         registerAggregateFunctionSerializedTDigest(factory);
         registerAggregateFunctionSerializedDoubleSketch(factory);
         registerAggregateFunctionMergeSerializedDoubleSketch(factory);
         registerAggregateFunctionLatencyValuesAndWeights(factory);
+#endif
 
         registerWindowFunctions(factory);
     }

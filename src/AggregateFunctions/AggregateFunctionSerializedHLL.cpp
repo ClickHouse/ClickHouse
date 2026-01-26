@@ -54,8 +54,8 @@ public:
     static DataTypePtr createResultType() { return std::make_shared<DataTypeString>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
-    
-    void create(AggregateDataPtr __restrict place) const override
+
+    void create(AggregateDataPtr __restrict place) const override // NOLINT(readability-non-const-parameter)
     {
         new (place) HLLSketchData<T>(lg_k, type);
     }
@@ -97,12 +97,12 @@ AggregateFunctionPtr createAggregateFunctionSerializedHLL(
     // Parse optional parameters: lg_k and HLL type
     uint8_t lg_k = DEFAULT_LG_K;
     datasketches::target_hll_type type = DEFAULT_HLL_TYPE;
-    
+
     if (params.size() > 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Aggregate function {} takes at most 2 parameters: lg_k (4-21) and type ('HLL_4', 'HLL_6', or 'HLL_8')", name);
-    
-    if (params.size() >= 1)
+
+    if (!params.empty())
     {
         UInt64 lg_k_param = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
         if (lg_k_param < 4 || lg_k_param > 21)
@@ -110,7 +110,7 @@ AggregateFunctionPtr createAggregateFunctionSerializedHLL(
                 "Parameter lg_k for aggregate function {} must be between 4 and 21, got {}", name, lg_k_param);
         lg_k = static_cast<uint8_t>(lg_k_param);
     }
-    
+
     if (params.size() == 2)
     {
         String type_str = params[1].safeGet<String>();
@@ -161,7 +161,7 @@ AggregateFunctionPtr createAggregateFunctionSerializedHLL(
 ///           - lg_k=10 (K=1024): ~3.2% error, ~512 bytes (HLL_4)
 ///           - lg_k=12 (K=4096): ~1.6% error, ~2KB (HLL_4)
 ///           - lg_k=14 (K=16384): ~0.8% error, ~8KB (HLL_4)
-///   
+///
 ///   - type: String, one of 'HLL_4', 'HLL_6', or 'HLL_8' (default: 'HLL_4')
 ///           Storage format:
 ///           - 'HLL_4': 4 bits/bucket, most compact (~K/2 bytes), slowest

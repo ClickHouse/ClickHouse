@@ -8,6 +8,9 @@
 #include <memory>
 #include <quantiles_sketch.hpp>
 #include <AggregateFunctions/SketchDataUtils.h>
+#include <Core/Types.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -54,7 +57,7 @@ public:
             auto sk = datasketches::quantiles_sketch<double>::deserialize(data_ptr, data_size);
             getDoubleSketch()->merge(sk);
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
             /// If deserialization fails (corrupted or invalid data), skip this value.
             /// This allows graceful handling of bad input data rather than failing the entire aggregation.
@@ -78,25 +81,29 @@ public:
             return "{}";
         }
 
-        std::stringstream ss;
-        ss << "{";
+        WriteBufferFromOwnString buf;
+        writeChar('{', buf);
         bool first = true;
-        for (const auto&& node : *(quantile_sketch.get()))
+        for (const auto&& node : *quantile_sketch)
         {
             double value = node.first;
-            long long weight = node.second;
+            UInt64 weight = static_cast<UInt64>(node.second);
             if (!first)
             {
-                ss << ",";
+                writeChar(',', buf);
             }
             else
             {
                 first = false;
             }
-            ss << "\"" << value << "\":" << weight;
+            writeChar('"', buf);
+            writeText(value, buf);
+            writeChar('"', buf);
+            writeChar(':', buf);
+            writeText(weight, buf);
         }
-        ss << "}";
-        return ss.str();
+        writeChar('}', buf);
+        return buf.str();
     }
 
     void merge(const DoubleSketchData & rhs)

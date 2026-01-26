@@ -42,7 +42,7 @@ inline bool looksLikeBase64(std::string_view data)
 /// Decode base64 data if it looks like base64, otherwise return raw data
 /// Returns a pair of (data_ptr, data_size) and optionally fills decoded_storage
 /// Used by both aggregate functions and scalar functions for sketch deserialization
-/// 
+///
 /// @param serialized_data The input data (may be base64 or raw binary)
 /// @param decoded_storage Storage for decoded data (if base64 decoding is performed)
 /// @param force_raw If true, skip base64 detection and treat as raw binary (optimization for internal sketch data)
@@ -76,7 +76,7 @@ inline std::pair<const uint8_t*, size_t> decodeSketchData(
                 decoded_storage.size()
             };
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
             /// Looked like base64 but wasn't valid, use raw data
         }

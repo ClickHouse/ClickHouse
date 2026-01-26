@@ -7,6 +7,9 @@
 #include <boost/noncopyable.hpp>
 #include <memory>
 #include <tdigest.hpp>
+#include <Core/Types.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -57,26 +60,30 @@ public:
             return "{}";
         }
 
-        std::stringstream ss;
-        ss << "{";
+        WriteBufferFromOwnString buf;
+        writeChar('{', buf);
         bool first = true;
         tdigest->compress();
         for (const auto& centroid : tdigest->get_centroids())
         {
             double mean = centroid.get_mean();
-            long long weight = centroid.get_weight();
+            UInt64 weight = static_cast<UInt64>(centroid.get_weight());
             if (!first)
             {
-                ss << ",";
+                writeChar(',', buf);
             }
             else
             {
                 first = false;
             }
-            ss << "\"" << mean << "\":" << weight;
+            writeChar('"', buf);
+            writeText(mean, buf);
+            writeChar('"', buf);
+            writeChar(':', buf);
+            writeText(weight, buf);
         }
-        ss << "}";
-        return ss.str();
+        writeChar('}', buf);
+        return buf.str();
     }
 
     void merge(const TDigestSketchData & rhs)

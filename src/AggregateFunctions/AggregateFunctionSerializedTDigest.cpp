@@ -18,7 +18,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnMap.h>
 
-#ifdef USE_DATASKETCHES
+#if USE_DATASKETCHES
 
 namespace DB
 {
@@ -77,7 +77,7 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         auto centroids = this->data(place).getCentroids();
-        
+
         // Create a Map field which is a vector of (key, value) tuples
         Map map_field;
         for (const auto & [key, value] : centroids)
@@ -87,12 +87,12 @@ public:
             tuple.push_back(Field(value));
             map_field.push_back(Field(tuple));
         }
-        
+
         assert_cast<ColumnMap &>(to).insert(map_field);
     }
 };
 
-static AggregateFunctionPtr createAggregateFunctionSerializedTDigest(
+AggregateFunctionPtr createAggregateFunctionSerializedTDigest(
     const String & name,
     const DataTypes & argument_types,
     const Array & params,

@@ -21,7 +21,7 @@ class HLLSketchData : private boost::noncopyable
 private:
     std::unique_ptr<datasketches::hll_sketch> sk_update;
     std::unique_ptr<datasketches::hll_union> sk_union;
-    
+
     uint8_t lg_k;
     datasketches::target_hll_type type;
 
@@ -41,12 +41,12 @@ private:
 
 public:
     using value_type = Key;
-    
+
     HLLSketchData() : lg_k(DEFAULT_LG_K), type(DEFAULT_HLL_TYPE) {}
-    
-    HLLSketchData(uint8_t lg_k_, datasketches::target_hll_type type_) 
+
+    HLLSketchData(uint8_t lg_k_, datasketches::target_hll_type type_)
         : lg_k(lg_k_), type(type_) {}
-    
+
     ~HLLSketchData() = default;
 
     void insertOriginal(std::string_view value)
@@ -88,7 +88,7 @@ public:
             auto sk = datasketches::hll_sketch::deserialize(data_ptr, data_size);
             getHLLUnion()->update(sk);
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
             /// If deserialization fails (corrupted or invalid data), skip this value.
             /// This allows graceful handling of bad input data rather than failing the entire aggregation.

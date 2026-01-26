@@ -52,8 +52,8 @@ public:
     static DataTypePtr createResultType() { return std::make_shared<DataTypeString>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
-    
-    void create(AggregateDataPtr __restrict place) const override
+
+    void create(AggregateDataPtr __restrict place) const override // NOLINT(readability-non-const-parameter)
     {
         new (place) HLLSketchData<T>(lg_k, type);
     }
@@ -100,16 +100,16 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
     bool assume_raw_binary = true;
     uint8_t lg_k = DEFAULT_LG_K;
     datasketches::target_hll_type type = DEFAULT_HLL_TYPE;
-    
+
     if (params.size() > 3)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Aggregate function {} takes at most 3 parameters: assume_raw_binary (0 or 1), lg_k (4-21), and type ('HLL_4', 'HLL_6', or 'HLL_8')", name);
-    
-    if (params.size() >= 1)
+
+    if (!params.empty())
     {
         assume_raw_binary = params[0].safeGet<bool>();
     }
-    
+
     if (params.size() >= 2)
     {
         UInt64 lg_k_param = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
@@ -118,7 +118,7 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
                 "Parameter lg_k for aggregate function {} must be between 4 and 21, got {}", name, lg_k_param);
         lg_k = static_cast<uint8_t>(lg_k_param);
     }
-    
+
     if (params.size() == 3)
     {
         String type_str = params[2].safeGet<String>();
@@ -142,8 +142,8 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
     WhichDataType which(*data_type);
     if (!which.isStringOrFixedString())
         throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, 
-            "Illegal type {} of argument for aggregate function {}. Expected String or FixedString.", 
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of argument for aggregate function {}. Expected String or FixedString.",
             argument_types[0]->getName(), name);
 
     // Use uint64_t as template parameter since we're working with serialized data, not raw values
@@ -164,12 +164,12 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
 ///   - assume_raw_binary: UInt8 (0 or 1, default: 1)
 ///     * 1 (true): Assumes input is raw binary data, skips base64 detection (fastest, recommended for ClickHouse data)
 ///     * 0 (false): Checks for base64 encoding and decodes if detected (for external/imported data)
-///   
+///
 ///   - lg_k: Integer between 4 and 21 (default: 10)
 ///     Log-base-2 of K, where K is the number of buckets (K = 2^lg_k)
 ///     Should match the lg_k used when creating the sketches with serializedHLL()
 ///     Higher values = better accuracy but more memory
-///   
+///
 ///   - type: String, one of 'HLL_4', 'HLL_6', or 'HLL_8' (default: 'HLL_4')
 ///     Storage format for the merged sketch (should match serializedHLL() settings)
 ///
@@ -188,12 +188,12 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
 ///
 ///   -- Enable base64 decoding for external data
 ///   SELECT mergeSerializedHLL(0)(sketch) FROM imported_sketches;
-///   
+///
 ///   -- Merge sketches created with higher precision
 ///   SELECT mergeSerializedHLL(1, 12, 'HLL_4')(sketch) FROM high_precision_sketches;
 ///
 ///   -- Complete workflow: daily to monthly cardinality
-///   SELECT 
+///   SELECT
 ///       toStartOfMonth(date) AS month,
 ///       cardinalityFromHLL(mergeSerializedHLL(sketch)) AS monthly_unique_users
 ///   FROM daily_sketches
