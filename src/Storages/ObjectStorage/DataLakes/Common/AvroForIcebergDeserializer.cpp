@@ -118,11 +118,13 @@ String removeAllSlashes(const String & input)
 
 String AvroForIcebergDeserializer::getContent(size_t row_number) const
 {
+    if (!parsed_columns)
+        parsed_columns.emplace(ColumnsWithTypeAndName({ColumnWithTypeAndName(parsed_column, parsed_column_data_type, "")}));
     WriteBufferFromOwnString buf;
     FormatSettings settings;
     settings.write_statistics = false;
-    ColumnsWithTypeAndName columns({ColumnWithTypeAndName(parsed_column, parsed_column_data_type, "")});
-    JSONEachRowRowOutputFormat output_format = JSONEachRowRowOutputFormat(buf, std::make_shared<const Block>(columns), settings);
+    JSONEachRowRowOutputFormat output_format
+        = JSONEachRowRowOutputFormat(buf, std::make_shared<const Block>(parsed_columns.value()), settings);
     output_format.writeRow({parsed_column}, row_number);
     output_format.finalize();
     auto result_json = buf.str();

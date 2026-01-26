@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ColumnsWithTypeAndName.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -31,6 +32,7 @@ private:
     std::string manifest_file_path;
     DB::ColumnPtr parsed_column;
     std::shared_ptr<const DB::DataTypeTuple> parsed_column_data_type;
+    mutable std::optional<ColumnsWithTypeAndName> parsed_columns;
 
     std::map<std::string, std::vector<uint8_t>> metadata;
 public:
