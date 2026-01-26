@@ -3,7 +3,6 @@
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -24,18 +23,9 @@ public:
         : IStorage(getIDFromPart(part_))
         , parts(RangesInDataParts({part_}))
         , mutations_snapshot(mutations_snapshot_)
+        , storage_holder(part_->storage.shared_from_this())
         , storage(part_->storage)
         , partition_id(part_->info.getPartitionId())
-    {
-        setInMemoryMetadata(storage.getInMemoryMetadata());
-        setVirtuals(*storage.getVirtualsPtr());
-    }
-
-    /// Used in queries with projection.
-    StorageFromMergeTreeDataPart(
-        const MergeTreeData & storage_,
-        ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
-        : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
         setVirtuals(*storage.getVirtualsPtr());
@@ -86,9 +76,11 @@ public:
 private:
     const RangesInDataParts parts;
     const MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
+    /// Hold a reference to the storage to prevent it from being destroyed
+    /// while this wrapper (and the parts it contains) still exists.
+    const ConstStoragePtr storage_holder;
     const MergeTreeData & storage;
     const String partition_id;
-    const ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr;
 
     static StorageID getIDFromPart(const MergeTreeData::DataPartPtr & part_)
     {

@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 
@@ -42,7 +43,7 @@ void StorageFromMergeTreeDataPart::read(
         max_block_size,
         num_streams,
         nullptr,
-        analysis_result_ptr));
+        nullptr));
 }
 
 StorageSnapshotPtr
