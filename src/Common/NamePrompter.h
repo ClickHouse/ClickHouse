@@ -33,6 +33,9 @@ private:
     {
         const String & prompt = prompting_strings[ind];
 
+        /// Don't suggest the exact same name as a hint (e.g. "Did you mean 'X'?" when user already typed 'X').
+        /// We use exact comparison and not Levenshtein distance == 0 to still suggest case-different names,
+        /// which is helpful for case-sensitive identifiers like table names.
         if (prompt == name)
             return;
 
