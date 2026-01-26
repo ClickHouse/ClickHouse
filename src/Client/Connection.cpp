@@ -205,9 +205,14 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             {
                 if (async_callback)
                 {
+                    address_connect_timeout_expired = false;
                     socket->connectNB(*it);
                     while (!socket->poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
+                    {
                         async_callback(socket->impl()->sockfd(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncTaskExecutor::READ | AsyncTaskExecutor::WRITE | AsyncTaskExecutor::ERROR);
+                        if (address_connect_timeout_expired)
+                            throw Poco::TimeoutException("Connection timeout expired for address: " + it->toString());
+                    }
 
                     if (auto err = socket->impl()->socketError())
                         socket->impl()->error(err); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)

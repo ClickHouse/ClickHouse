@@ -2,6 +2,7 @@ import pytest
 import time
 
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
+from helpers.network import PartitionManager
 
 
 cluster = ClickHouseCluster(__file__)
@@ -100,6 +101,41 @@ def test_distributed_query(started_cluster):
             >= 5
         )
         with cluster.pause_container("node1"):
+            assert (
+                int(
+                    node3.query(
+                        """
+                SELECT count() FROM distributed_table
+                SETTINGS handshake_timeout_ms=100, max_replica_delay_for_distributed_queries=1
+                """,
+                        timeout=10,
+                    ).strip()
+                )
+                == 4
+            )
+    finally:
+        node2.query("SYSTEM START FETCHES")
+
+
+def test_distributed_query_network_timeout(started_cluster):
+    # Make sure that both IPv4 and IPv6 will be resolved freshly
+    node3.query("SYSTEM DROP DNS CACHE")
+    # Stop fetches on node2 so that it will be considered stale and node1 is tried first
+    node2.query("SYSTEM STOP FETCHES")
+    try:
+        node1.query("DELETE FROM local_table WHERE i = 5")
+        node1.query("INSERT INTO local_table VALUES (5, now())")
+        time.sleep(10)
+        assert (
+            int(
+                node2.query(
+                    "SELECT absolute_delay FROM system.replicas WHERE database = 'default' AND table = 'local_table'"
+                ).strip()
+            )
+            >= 5
+        )
+        with PartitionManager() as pm:
+            pm.partition_instances(node1, node3, port=9000)
             assert (
                 int(
                     node3.query(
