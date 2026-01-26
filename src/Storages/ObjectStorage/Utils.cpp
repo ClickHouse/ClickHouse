@@ -1,5 +1,8 @@
 #include <Core/Settings.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/Macros.h>
+#include <Core/UUID.h>
+#include <Databases/DatabaseReplicatedHelpers.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/getThreadPoolReader.h>
@@ -8,12 +11,13 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Poco/UUIDGenerator.h>
 
 namespace DB
 {
@@ -23,6 +27,13 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+namespace DataLakeStorageSetting
+{
+    extern const DataLakeStorageSettingsBool paimon_incremental_read;
+    extern const DataLakeStorageSettingsString paimon_keeper_path;
+    extern const DataLakeStorageSettingsString paimon_replica_name;
 }
 
 std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
@@ -247,6 +258,83 @@ ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr con
         result.compression_method = compression_method_value.value();
     }
     return result;
+}
+
+void expandPaimonKeeperMacrosIfNeeded(
+    const StorageFactory::Arguments & args,
+    const DataLakeStorageSettingsPtr & storage_settings)
+{
+    if (!storage_settings)
+        return;
+
+    const auto incremental_read_enabled = (*storage_settings)[DataLakeStorageSetting::paimon_incremental_read].changed
+        && (*storage_settings)[DataLakeStorageSetting::paimon_incremental_read].value;
+
+    const auto has_keeper_path = (*storage_settings)[DataLakeStorageSetting::paimon_keeper_path].changed
+        && !(*storage_settings)[DataLakeStorageSetting::paimon_keeper_path].value.empty();
+    const auto has_replica_name = (*storage_settings)[DataLakeStorageSetting::paimon_replica_name].changed
+        && !(*storage_settings)[DataLakeStorageSetting::paimon_replica_name].value.empty();
+
+    if (!incremental_read_enabled)
+        return;
+
+    auto * settings_query = args.storage_def->settings;
+    if (!settings_query)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Paimon incremental read requires SETTINGS with paimon_keeper_path and paimon_replica_name");
+
+    if (!has_keeper_path || !has_replica_name)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "To use Paimon incremental read both paimon_keeper_path and paimon_replica_name must be specified");
+
+    auto keeper_path = (*storage_settings)[DataLakeStorageSetting::paimon_keeper_path].value;
+    auto replica_name = (*storage_settings)[DataLakeStorageSetting::paimon_replica_name].value;
+
+    auto context = args.getContext();
+    const auto is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    const auto is_replicated_database = is_on_cluster
+        && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
+    const auto allow_uuid_macro = args.table_id.hasUUID();
+
+    if (args.mode < LoadingStrictnessLevel::ATTACH)
+    {
+        Macros::MacroExpansionInfo info;
+        info.expand_special_macros_only = true;
+        info.table_id = args.table_id;
+        info.table_id.uuid = UUIDHelpers::Nil;
+
+        keeper_path = context->getMacros()->expand(keeper_path, info);
+        info.level = 0;
+        replica_name = context->getMacros()->expand(replica_name, info);
+
+        settings_query->changes.setSetting("paimon_keeper_path", keeper_path);
+        settings_query->changes.setSetting("paimon_replica_name", replica_name);
+    }
+
+    Macros::MacroExpansionInfo info;
+    info.table_id = args.table_id;
+    if (is_replicated_database)
+    {
+        auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
+        info.replica = getReplicatedDatabaseReplicaName(database);
+    }
+    if (!allow_uuid_macro)
+        info.table_id.uuid = UUIDHelpers::Nil;
+    keeper_path = context->getMacros()->expand(keeper_path, info);
+
+    info.level = 0;
+    info.table_id.uuid = UUIDHelpers::Nil;
+    replica_name = context->getMacros()->expand(replica_name, info);
+
+    // Keep DataLakeStorageSettings in sync so DataLakeConfiguration consumers
+    // (e.g. PaimonMetadata) see the expanded values.
+    (*storage_settings)[DataLakeStorageSetting::paimon_keeper_path].value = keeper_path;
+    (*storage_settings)[DataLakeStorageSetting::paimon_replica_name].value = replica_name;
+
+    settings_query->changes.setSetting("paimon_keeper_path", keeper_path);
+    settings_query->changes.setSetting("paimon_replica_name", replica_name);
 }
 
 namespace Setting

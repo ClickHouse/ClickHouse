@@ -307,7 +307,7 @@ public:
 
     Poco::JSON::Object::Ptr getTableSchemaJSON(const std::pair<Int32, String> & schema_meta_info);
     /// Get schema meta info (id, path) for the latest schema file.
-    std::pair<Int32, String> getLastestTableSchemaInfo();
+    std::pair<Int32, String> getLatestTableSchemaInfo();
     /// Get schema meta info for a specific schema_id.
     std::pair<Int32, String> getTableSchemaInfoById(Int32 schema_id) const;
     std::optional<std::pair<Int64, String>> getLastestTableSnapshotInfo();

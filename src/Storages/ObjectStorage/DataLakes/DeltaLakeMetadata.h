@@ -65,8 +65,7 @@ public:
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationWeakPtr configuration,
-        ContextPtr local_context,
-        std::optional<StorageID> table_id = std::nullopt);
+        ContextPtr local_context);
 
     static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static DataTypePtr getSimpleTypeByName(const String & type_name);

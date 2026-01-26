@@ -26,8 +26,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <base/scope_guard.h>
-#include <base/getFQDNOrHostName.h>
-#include <Core/UUID.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -58,13 +56,14 @@ namespace DataLakeStorageSetting
 extern const DataLakeStorageSettingsBool paimon_incremental_read;
 extern const DataLakeStorageSettingsInt64 paimon_metadata_refresh_interval_ms;
 extern const DataLakeStorageSettingsInt64 paimon_target_snapshot_id;
+extern const DataLakeStorageSettingsString paimon_keeper_path;
+extern const DataLakeStorageSettingsString paimon_replica_name;
 }
 
 DataLakeMetadataPtr PaimonMetadata::create(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
-    const ContextPtr & local_context,
-    std::optional<StorageID> table_id)
+    const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
     if (!configuration_ptr)
@@ -85,7 +84,7 @@ DataLakeMetadataPtr PaimonMetadata::create(
     PaimonTableClientPtr table_client = std::make_shared<PaimonTableClient>(object_storage, table_path, global_context);
 
     /// Get and validate schema
-    auto schema_info = table_client->getLastestTableSchemaInfo();
+    auto schema_info = table_client->getLatestTableSchemaInfo();
     auto schema_json = table_client->getTableSchemaJSON(schema_info);
 
     Int32 version = -1;
@@ -117,29 +116,19 @@ DataLakeMetadataPtr PaimonMetadata::create(
         if (!local_context->hasZooKeeper())
             throw Exception(ErrorCodes::NO_ZOOKEEPER, "Incremental read requires Keeper but ZooKeeper is not configured");
 
-        /// Build keeper path aligned with ClickHouse table paths:
-        /// /clickhouse/tables/table_uuid/sanitized_paimon_table_path
-        String keeper_path = "/clickhouse/tables/";
-        keeper_path += toString(table_id->uuid);
-        keeper_path += "/";
-        String sanitized = table_path;
-        for (auto & ch : sanitized)
-        {
-            if (ch == '/' || ch == ':' || ch == ' ')
-                ch = '_';
-        }
-        keeper_path += sanitized;
-
-        /// Use host-based unique replica name to avoid config knob
-        String host = getFQDNOrHostName();
-        String replica_name = fmt::format("paimon-{}-{}", host, toString(UUIDHelpers::generateV4()));
+        String keeper_path = data_lake_settings[DataLakeStorageSetting::paimon_keeper_path].value;
+        String replica_path = keeper_path + "/replicas/" + data_lake_settings[DataLakeStorageSetting::paimon_replica_name].value;
+        if (keeper_path.empty() || replica_path.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "To use Paimon incremental read both paimon_keeper_path and paimon_replica_name must be specified");
 
         auto keeper = local_context->getZooKeeper();
         auto stream_log = getLogger("PaimonStreamState");
-        stream_state = std::make_shared<PaimonStreamState>(keeper, keeper_path, replica_name, stream_log);
+        stream_state = std::make_shared<PaimonStreamState>(keeper, keeper_path, replica_path, stream_log);
         stream_state->initializeKeeperNodes();
         if (!stream_state->activate())
-            LOG_WARNING(stream_log, "Replica {} not activated for Paimon incremental read (maybe already active elsewhere)", replica_name);
+            LOG_WARNING(stream_log, "Replica {} not activated for Paimon incremental read (maybe already active elsewhere)", replica_path);
     }
 
     /// Create persistent components
@@ -152,8 +141,7 @@ DataLakeMetadataPtr PaimonMetadata::create(
         partition_default_name,
         incremental_read_enabled,
         target_snapshot_id,
-        metadata_refresh_interval_ms,
-        table_id ? std::optional<UUID>(table_id->uuid) : std::nullopt);
+        metadata_refresh_interval_ms);
 
     return std::make_unique<PaimonMetadata>(
         object_storage, configuration_ptr, global_context, std::move(persistent_components), table_client);
@@ -300,7 +288,7 @@ StorageInMemoryMetadata PaimonMetadata::getStorageSnapshotMetadata(ContextPtr /*
     if (!state)
     {
         /// No snapshots yet: still allow schema-based metadata (DESC, SHOW).
-        auto schema_info = table_client->getLastestTableSchemaInfo();
+        auto schema_info = table_client->getLatestTableSchemaInfo();
         auto schema_json = table_client->getTableSchemaJSON(schema_info);
         auto schema = persistent_components.schema_processor->getOrAddSchema(schema_info.first, schema_json);
         auto columns = persistent_components.schema_processor->getClickHouseSchema(schema->id);

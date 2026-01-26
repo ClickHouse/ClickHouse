@@ -58,8 +58,7 @@ public:
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationWeakPtr configuration,
-        ContextPtr context,
-        std::optional<StorageID> /*table_id*/ = std::nullopt)
+        ContextPtr context)
     {
         auto configuration_ptr = configuration.lock();
         return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, context);

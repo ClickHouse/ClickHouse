@@ -8,7 +8,9 @@ DROP TABLE IF EXISTS paimon_inc_read;
 CREATE TABLE paimon_inc_read
 ENGINE = PaimonS3(s3_conn, filename = 'paimon_all_types')
 SETTINGS
-    paimon_incremental_read = 1;
+    paimon_incremental_read = 1,
+    paimon_keeper_path = '/clickhouse/tables/{uuid}',
+    paimon_replica_name = '{replica}';
 
 -- First run: initial delta (latest snapshot delta)
 SELECT count() FROM paimon_inc_read;

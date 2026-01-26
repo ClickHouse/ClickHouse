@@ -154,8 +154,7 @@ StorageObjectStorage::StorageObjectStorage(
             configuration->update(
                 object_storage,
                 context,
-                /* if_not_updated_before */ is_table_function,
-                storage_id);
+                /* if_not_updated_before */ is_table_function);
             updated_configuration = true;
         }
     }
@@ -321,8 +320,7 @@ IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_c
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */ false,
-        storage_id);
+        /* if_not_updated_before */ false);
 
     return configuration->getExternalMetadata();
 }
@@ -332,8 +330,7 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */ true,
-        storage_id);
+        /* if_not_updated_before */ true);
     if (configuration->needsUpdateForSchemaConsistency())
     {
         auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
@@ -347,8 +344,7 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */ false,
-        storage_id);
+        /* if_not_updated_before */ false);
     return configuration->totalRows(query_context);
 }
 
@@ -357,8 +353,7 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */ false,
-        storage_id);
+        /* if_not_updated_before */ false);
     return configuration->totalBytes(query_context);
 }
 
@@ -382,8 +377,7 @@ void StorageObjectStorage::read(
         configuration->update(
             object_storage,
             local_context,
-            /* if_not_updated_before */ false,
-            storage_id);
+            /* if_not_updated_before */ false);
     }
 
     if (configuration->partition_strategy && configuration->partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
@@ -488,8 +482,7 @@ SinkToStoragePtr StorageObjectStorage::write(
         configuration->update(
             object_storage,
             local_context,
-            /* if_not_updated_before */ false,
-            storage_id);
+            /* if_not_updated_before */ false);
     }
 
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());

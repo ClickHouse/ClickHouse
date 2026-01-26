@@ -99,7 +99,7 @@ PaimonTableClient::PaimonTableClient(ObjectStoragePtr object_storage_, const Str
     , log(getLogger("PaimonTableClient"))
 {}
 
-std::pair<Int32, String> PaimonTableClient::getLastestTableSchemaInfo()
+std::pair<Int32, String> PaimonTableClient::getLatestTableSchemaInfo()
 {
     /// list all schema files
     const auto schema_files = listFiles(

@@ -89,20 +89,19 @@ public:
     void update(
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
-        bool if_not_updated_before,
-        std::optional<StorageID> table_id) override
+        bool if_not_updated_before) override
     {
         const bool updated_before = current_metadata != nullptr;
         if (updated_before && if_not_updated_before)
             return;
 
-        BaseStorageConfiguration::update(object_storage, local_context, if_not_updated_before, table_id);
+        BaseStorageConfiguration::update(object_storage, local_context, if_not_updated_before);
         if (current_metadata && current_metadata->supportsUpdate())
         {
             current_metadata->update(local_context);
             return;
         }
-        current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context, table_id);
+        current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
     }
 
     void create(
@@ -122,7 +121,7 @@ public:
                 throw Exception(
                     ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
         }
-        BaseStorageConfiguration::update(object_storage, local_context, true, table_id_);
+        BaseStorageConfiguration::update(object_storage, local_context, true);
 
         DataLakeMetadata::createInitial(
             object_storage, weak_from_this(), local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
@@ -302,7 +301,7 @@ public:
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
-        update(object_storage, context, /* if_not_updated_before */ true, table_id);
+        update(object_storage, context, /* if_not_updated_before */ true);
         return current_metadata->write(
             sample_block,
             table_id,

@@ -42,8 +42,7 @@ public:
     static DataLakeMetadataPtr create(
         const ObjectStoragePtr & object_storage,
         const StorageObjectStorageConfigurationWeakPtr & configuration,
-        const ContextPtr & local_context,
-        std::optional<StorageID> table_id = std::nullopt);
+        const ContextPtr & local_context);
 
     static void createInitial(
         const ObjectStoragePtr & /*object_storage*/,

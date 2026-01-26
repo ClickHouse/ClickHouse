@@ -6,8 +6,6 @@
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonSchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataCache.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonStreamState.h>
-#include <Core/UUID.h>
-#include <optional>
 
 namespace DB
 {
@@ -49,9 +47,6 @@ struct PaimonPersistentComponents
     /// Background metadata refresh interval (ms). 0 means disabled.
     const Int64 metadata_refresh_interval_ms;
 
-    /// Optional table UUID propagated from StorageID
-    const std::optional<UUID> table_uuid;
-
     PaimonPersistentComponents(
         PaimonSchemaProcessorPtr schema_processor_,
         PaimonMetadataCachePtr metadata_cache_,  /// Can be nullptr if cache is disabled
@@ -61,8 +56,7 @@ struct PaimonPersistentComponents
         String partition_default_name_ = "__DEFAULT_PARTITION__",
         bool incremental_read_enabled_ = false,
         Int64 target_snapshot_id_ = -1,
-        Int64 metadata_refresh_interval_ms_ = 0,
-        std::optional<UUID> table_uuid_ = std::nullopt)
+        Int64 metadata_refresh_interval_ms_ = 0)
         : schema_processor(std::move(schema_processor_))
         , metadata_cache(std::move(metadata_cache_))
         , stream_state(std::move(stream_state_))
@@ -72,7 +66,6 @@ struct PaimonPersistentComponents
         , incremental_read_enabled(incremental_read_enabled_)
         , target_snapshot_id(target_snapshot_id_)
         , metadata_refresh_interval_ms(metadata_refresh_interval_ms_)
-        , table_uuid(std::move(table_uuid_))
     {
     }
 

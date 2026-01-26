@@ -14,6 +14,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
 #include <Disks/DiskType.h>
@@ -431,6 +432,7 @@ void registerStoragePaimon(StorageFactory & factory)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "This storage configuration is not available at this build");
             }
+            expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {
@@ -470,6 +472,7 @@ void registerStoragePaimon(StorageFactory & factory)
             }
             else
                 configuration = std::make_shared<StorageS3PaimonConfiguration>(storage_settings);
+            expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {
@@ -510,6 +513,7 @@ void registerStoragePaimon(StorageFactory & factory)
             }
             else
                 configuration = std::make_shared<StorageAzurePaimonConfiguration>(storage_settings);
+            expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {
@@ -528,6 +532,7 @@ void registerStoragePaimon(StorageFactory & factory)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
             auto configuration = std::make_shared<StorageHDFSPaimonConfiguration>(storage_settings);
+            expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {
@@ -567,6 +572,7 @@ void registerStoragePaimon(StorageFactory & factory)
             }
             else
                 configuration = std::make_shared<StorageLocalPaimonConfiguration>(storage_settings);
+            expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {
