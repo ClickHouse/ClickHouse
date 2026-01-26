@@ -252,3 +252,67 @@ FROM (
         serializedDoubleSketch(number) AS q_sketch
     FROM numbers(0)
 );
+
+-- Test: High-precision business metrics workflow with custom parameters
+SELECT 'Test 11: High-precision business metrics with custom parameters';
+
+DROP TABLE IF EXISTS business_metrics;
+CREATE TABLE business_metrics (
+    date Date,
+    region String,
+    customer_sketch String,
+    transaction_sketch String
+) ENGINE = Memory;
+
+-- Simulate business data for 3 regions over 5 days using higher precision
+INSERT INTO business_metrics
+SELECT 
+    toDate('2024-01-01') + d.number AS date,
+    r.region AS region,
+    serializedHLL(14, 'HLL_4')(d.number * 10000 + r.region_id * 1000 + c.number) AS customer_sketch,
+    serializedHLL(12, 'HLL_8')(d.number * 50000 + r.region_id * 5000 + t.number) AS transaction_sketch
+FROM 
+    numbers(5) AS d,
+    (SELECT arrayJoin(['US', 'EU', 'APAC']) AS region, arrayJoin([1, 2, 3]) AS region_id) AS r,
+    numbers(500) AS c,
+    numbers(1000) AS t
+GROUP BY date, region;
+
+-- Aggregate by region with matching merge parameters
+WITH regional_totals AS (
+    SELECT 
+        region,
+        mergeSerializedHLL(1, 14, 'HLL_4')(customer_sketch) AS merged_customers,
+        mergeSerializedHLL(1, 12, 'HLL_8')(transaction_sketch) AS merged_transactions
+    FROM business_metrics
+    GROUP BY region
+)
+SELECT 
+    region,
+    cardinalityFromHLL(merged_customers) BETWEEN 2400 AND 2600 AS customers_ok,
+    cardinalityFromHLL(merged_transactions) BETWEEN 4800 AND 5200 AS transactions_ok
+FROM regional_totals
+ORDER BY region;
+
+-- Get global totals
+SELECT 
+    cardinalityFromHLL(mergeSerializedHLL(1, 14, 'HLL_4')(customer_sketch)) BETWEEN 7000 AND 8000 AS total_customers_ok,
+    cardinalityFromHLL(mergeSerializedHLL(1, 12, 'HLL_8')(transaction_sketch)) BETWEEN 14000 AND 16000 AS total_transactions_ok
+FROM business_metrics;
+
+DROP TABLE business_metrics;
+
+-- Test: Compare default vs high-precision parameters
+SELECT 'Test 12: Accuracy comparison - default vs high-precision';
+
+WITH 
+    default_precision AS (
+        SELECT cardinalityFromHLL(serializedHLL(number)) AS estimate FROM numbers(10000)
+    ),
+    high_precision AS (
+        SELECT cardinalityFromHLL(serializedHLL(14)(number)) AS estimate FROM numbers(10000)
+    )
+SELECT 
+    abs((SELECT estimate FROM default_precision) - 10000) > 
+    abs((SELECT estimate FROM high_precision) - 10000) AS high_precision_more_accurate
+FROM (SELECT 1);

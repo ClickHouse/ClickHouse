@@ -40,3 +40,25 @@ Test 19: Large cardinality (100K distinct values)
 1
 Test 20: Sketch size is bounded
 52	552	1
+Test 21: serializedHLL with lg_k=8
+1
+Test 22: serializedHLL with lg_k=12
+1
+Test 23: serializedHLL with lg_k=14
+1
+Test 24: serializedHLL with HLL_4 type
+1
+Test 25: serializedHLL with HLL_6 type
+1
+Test 26: serializedHLL with HLL_8 type
+1
+Test 27: HLL types produce identical estimates
+1	1
+Test 28: HLL sketch sizes by type
+552	824	1096	1	1
+Test 29: Higher lg_k improves accuracy
+1	1
+Test 30: mergeSerializedHLL with lg_k=12
+1
+Test 31: mergeSerializedHLL with all parameters
+1

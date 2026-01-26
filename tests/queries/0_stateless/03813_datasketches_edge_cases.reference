@@ -48,3 +48,19 @@ Test 24: Percentile with uniform distribution
 1
 Test 25: Multiple aggregations in same query
 1	1	1
+Test 26: lg_k at minimum bound (4)
+1
+Test 27: lg_k at maximum bound (21)
+1
+Test 28: All HLL types with small dataset
+1	1	1
+Test 29: Merge sketches with matching parameters
+1
+Test 30: Parameter combinations
+1
+Test 31: Higher lg_k with small dataset
+1
+Test 32: Different types same cardinality estimate
+1	1
+Test 33: Merge with default vs explicit parameters
+1

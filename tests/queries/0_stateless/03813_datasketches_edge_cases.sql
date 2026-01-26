@@ -153,3 +153,69 @@ SELECT
     cardinalityFromHLL(serializedHLL(number + 1000)) BETWEEN 90 AND 110 AS card2,
     percentileFromDoubleSketch(serializedDoubleSketch(number), 0.5) BETWEEN 40 AND 60 AS p50
 FROM numbers(100);
+
+-- Test edge cases for new optional parameters
+
+SELECT 'Test 26: lg_k at minimum bound (4)';
+SELECT cardinalityFromHLL(serializedHLL(4)(number)) BETWEEN 80 AND 120
+FROM numbers(100);
+
+SELECT 'Test 27: lg_k at maximum bound (21)';
+SELECT cardinalityFromHLL(serializedHLL(21)(number)) BETWEEN 95 AND 105
+FROM numbers(100);
+
+SELECT 'Test 28: All HLL types with small dataset';
+WITH 
+    hll4 AS (SELECT serializedHLL(10, 'HLL_4')(number) AS s FROM numbers(10)),
+    hll6 AS (SELECT serializedHLL(10, 'HLL_6')(number) AS s FROM numbers(10)),
+    hll8 AS (SELECT serializedHLL(10, 'HLL_8')(number) AS s FROM numbers(10))
+SELECT 
+    cardinalityFromHLL((SELECT s FROM hll4)) = 10 AS hll4_exact,
+    cardinalityFromHLL((SELECT s FROM hll6)) = 10 AS hll6_exact,
+    cardinalityFromHLL((SELECT s FROM hll8)) = 10 AS hll8_exact
+FROM (SELECT 1);
+
+SELECT 'Test 29: Merge sketches with matching parameters';
+WITH sketches AS (
+    SELECT serializedHLL(12, 'HLL_4')(number) AS sketch FROM numbers(50)
+    UNION ALL
+    SELECT serializedHLL(12, 'HLL_4')(number + 25) AS sketch FROM numbers(50)
+)
+SELECT cardinalityFromHLL(mergeSerializedHLL(1, 12, 'HLL_4')(sketch)) BETWEEN 65 AND 85
+FROM sketches;
+
+SELECT 'Test 30: Parameter combinations';
+WITH 
+    default_sketch AS (SELECT serializedHLL(number) AS s FROM numbers(100)),
+    custom_sketch AS (SELECT serializedHLL(12, 'HLL_8')(number) AS s FROM numbers(100))
+SELECT 
+    abs(cardinalityFromHLL((SELECT s FROM default_sketch)) - 
+        cardinalityFromHLL((SELECT s FROM custom_sketch))) < 10 AS estimates_similar
+FROM (SELECT 1);
+
+SELECT 'Test 31: Higher lg_k with small dataset';
+SELECT cardinalityFromHLL(serializedHLL(16)(number)) BETWEEN 8 AND 12
+FROM numbers(10);
+
+SELECT 'Test 32: Different types same cardinality estimate';
+WITH data AS (SELECT number FROM numbers(500))
+SELECT 
+    abs(cardinalityFromHLL(serializedHLL(10, 'HLL_4')(number)) - 
+        cardinalityFromHLL(serializedHLL(10, 'HLL_6')(number))) < 3 AS hll4_eq_hll6,
+    abs(cardinalityFromHLL(serializedHLL(10, 'HLL_6')(number)) - 
+        cardinalityFromHLL(serializedHLL(10, 'HLL_8')(number))) < 3 AS hll6_eq_hll8
+FROM data;
+
+SELECT 'Test 33: Merge with default vs explicit parameters';
+WITH 
+    sketches AS (
+        SELECT serializedHLL(number) AS sketch FROM numbers(50)
+        UNION ALL
+        SELECT serializedHLL(number + 25) AS sketch FROM numbers(50)
+    ),
+    merge_default AS (SELECT mergeSerializedHLL(sketch) AS m FROM sketches),
+    merge_explicit AS (SELECT mergeSerializedHLL(1, 10, 'HLL_4')(sketch) AS m FROM sketches)
+SELECT 
+    abs(cardinalityFromHLL((SELECT m FROM merge_default)) - 
+        cardinalityFromHLL((SELECT m FROM merge_explicit))) < 5 AS results_equivalent
+FROM (SELECT 1);

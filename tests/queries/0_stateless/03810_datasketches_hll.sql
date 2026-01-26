@@ -135,3 +135,85 @@ SELECT
     (SELECT s FROM size_large) AS large,
     abs(small - large) < 1000 AS sizes_similar
 FROM (SELECT 1);
+
+-- Test optional lg_k parameter
+SELECT 'Test 21: serializedHLL with lg_k=8';
+SELECT cardinalityFromHLL(serializedHLL(8)(number)) BETWEEN 90 AND 110
+FROM numbers(100);
+
+SELECT 'Test 22: serializedHLL with lg_k=12';
+SELECT cardinalityFromHLL(serializedHLL(12)(number)) BETWEEN 90 AND 110
+FROM numbers(100);
+
+SELECT 'Test 23: serializedHLL with lg_k=14';
+SELECT cardinalityFromHLL(serializedHLL(14)(number)) BETWEEN 90 AND 110
+FROM numbers(100);
+
+-- Test optional type parameter
+SELECT 'Test 24: serializedHLL with HLL_4 type';
+SELECT cardinalityFromHLL(serializedHLL(10, 'HLL_4')(number)) BETWEEN 90 AND 110
+FROM numbers(100);
+
+SELECT 'Test 25: serializedHLL with HLL_6 type';
+SELECT cardinalityFromHLL(serializedHLL(10, 'HLL_6')(number)) BETWEEN 90 AND 110
+FROM numbers(100);
+
+SELECT 'Test 26: serializedHLL with HLL_8 type';
+SELECT cardinalityFromHLL(serializedHLL(10, 'HLL_8')(number)) BETWEEN 90 AND 110
+FROM numbers(100);
+
+-- Test that different HLL types produce identical estimates
+SELECT 'Test 27: HLL types produce identical estimates';
+WITH 
+    hll4 AS (SELECT cardinalityFromHLL(serializedHLL(10, 'HLL_4')(number)) AS c FROM numbers(1000)),
+    hll6 AS (SELECT cardinalityFromHLL(serializedHLL(10, 'HLL_6')(number)) AS c FROM numbers(1000)),
+    hll8 AS (SELECT cardinalityFromHLL(serializedHLL(10, 'HLL_8')(number)) AS c FROM numbers(1000))
+SELECT 
+    abs((SELECT c FROM hll4) - (SELECT c FROM hll6)) < 2 AS hll4_eq_hll6,
+    abs((SELECT c FROM hll4) - (SELECT c FROM hll8)) < 2 AS hll4_eq_hll8
+FROM (SELECT 1);
+
+-- Test sketch sizes differ by type
+SELECT 'Test 28: HLL sketch sizes by type';
+WITH 
+    size_hll4 AS (SELECT length(serializedHLL(10, 'HLL_4')(number)) AS s FROM numbers(1000)),
+    size_hll6 AS (SELECT length(serializedHLL(10, 'HLL_6')(number)) AS s FROM numbers(1000)),
+    size_hll8 AS (SELECT length(serializedHLL(10, 'HLL_8')(number)) AS s FROM numbers(1000))
+SELECT 
+    (SELECT s FROM size_hll4) AS hll4_size,
+    (SELECT s FROM size_hll6) AS hll6_size,
+    (SELECT s FROM size_hll8) AS hll8_size,
+    (SELECT s FROM size_hll4) < (SELECT s FROM size_hll6) AS hll4_smaller_than_hll6,
+    (SELECT s FROM size_hll6) < (SELECT s FROM size_hll8) AS hll6_smaller_than_hll8
+FROM (SELECT 1);
+
+-- Test accuracy improves with higher lg_k
+SELECT 'Test 29: Higher lg_k improves accuracy';
+WITH 
+    est_lg8 AS (SELECT cardinalityFromHLL(serializedHLL(8)(number)) AS c FROM numbers(10000)),
+    est_lg10 AS (SELECT cardinalityFromHLL(serializedHLL(10)(number)) AS c FROM numbers(10000)),
+    est_lg12 AS (SELECT cardinalityFromHLL(serializedHLL(12)(number)) AS c FROM numbers(10000))
+SELECT 
+    abs((SELECT c FROM est_lg12) - 10000) < abs((SELECT c FROM est_lg10) - 10000) AS lg12_more_accurate_than_lg10,
+    abs((SELECT c FROM est_lg10) - 10000) < abs((SELECT c FROM est_lg8) - 10000) AS lg10_more_accurate_than_lg8
+FROM (SELECT 1);
+
+-- Test mergeSerializedHLL with lg_k parameter
+SELECT 'Test 30: mergeSerializedHLL with lg_k=12';
+WITH sketches AS (
+    SELECT serializedHLL(12)(number) AS sketch FROM numbers(100)
+    UNION ALL
+    SELECT serializedHLL(12)(number + 50) AS sketch FROM numbers(100)
+)
+SELECT cardinalityFromHLL(mergeSerializedHLL(1, 12, 'HLL_4')(sketch)) BETWEEN 130 AND 170
+FROM sketches;
+
+-- Test mergeSerializedHLL with all parameters
+SELECT 'Test 31: mergeSerializedHLL with all parameters';
+WITH sketches AS (
+    SELECT serializedHLL(14, 'HLL_8')(number) AS sketch FROM numbers(100)
+    UNION ALL
+    SELECT serializedHLL(14, 'HLL_8')(number + 50) AS sketch FROM numbers(100)
+)
+SELECT cardinalityFromHLL(mergeSerializedHLL(1, 14, 'HLL_8')(sketch)) BETWEEN 130 AND 170
+FROM sketches;
