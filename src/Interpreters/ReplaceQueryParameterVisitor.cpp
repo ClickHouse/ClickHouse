@@ -52,8 +52,8 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         {
             if (create_user_query->names)
             {
-                ASTPtr names_ast = std::static_pointer_cast<IAST>(create_user_query->names);
-                visit(names_ast);
+                ASTPtr names = create_user_query->names;
+                visitChildren(names);
             }
             visitChildren(ast);
         }
