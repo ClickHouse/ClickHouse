@@ -68,10 +68,6 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
     for (const auto & position_deletes_object : iceberg_object_info->info.position_deletes_objects)
     {
-        /// Skip position deletes that do not match the data file path.
-        if (position_deletes_object.reference_data_file_path.has_value()
-            && position_deletes_object.reference_data_file_path != iceberg_data_path)
-            continue;
 
         auto object_path = position_deletes_object.file_path;
         auto object_metadata = object_storage->getObjectMetadata(object_path, /*with_tags=*/ false);
@@ -157,8 +153,16 @@ void IcebergBitmapPositionDeleteTransform::initialize()
 
             for (size_t i = 0; i < delete_chunk.getNumRows(); ++i)
             {
-                auto position_to_delete = position_column->get64(i);
-                bitmap.add(position_to_delete);
+                // Add filename matching check
+                auto filename_in_delete_record = filename_column->getDataAt(i);
+                auto current_data_file_path = iceberg_object_info->info.data_object_file_path_key;
+
+                // Only add to delete bitmap when the filename in delete record matches current data file path
+                if (filename_in_delete_record == current_data_file_path || filename_in_delete_record == "/" + current_data_file_path)
+                {
+                    auto position_to_delete = position_column->get64(i);
+                    bitmap.add(position_to_delete);
+                }
             }
         }
     }

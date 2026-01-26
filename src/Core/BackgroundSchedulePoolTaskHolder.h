@@ -40,18 +40,6 @@ private:
 class BackgroundSchedulePoolPausableTask
 {
 public:
-    explicit BackgroundSchedulePoolPausableTask(BackgroundSchedulePoolTaskHolder task_);
-
-    BackgroundSchedulePoolPausableTask(const BackgroundSchedulePoolPausableTask &) = delete;
-    BackgroundSchedulePoolPausableTask & operator=(const BackgroundSchedulePoolPausableTask &) = delete;
-    BackgroundSchedulePoolPausableTask(BackgroundSchedulePoolPausableTask &&) = delete;
-    BackgroundSchedulePoolPausableTask & operator=(BackgroundSchedulePoolPausableTask &&) = delete;
-
-    BackgroundSchedulePoolTaskHolder & getTask();
-
-    void pause();
-    void resume();
-
     struct PauseHolder
     {
         explicit PauseHolder(BackgroundSchedulePoolPausableTask & task_);
@@ -62,7 +50,20 @@ public:
     };
 
     using PauseHolderPtr = std::unique_ptr<PauseHolder>;
+    explicit BackgroundSchedulePoolPausableTask(BackgroundSchedulePoolTaskHolder task_);
+
+    BackgroundSchedulePoolPausableTask(const BackgroundSchedulePoolPausableTask &) = delete;
+    BackgroundSchedulePoolPausableTask & operator=(const BackgroundSchedulePoolPausableTask &) = delete;
+    BackgroundSchedulePoolPausableTask(BackgroundSchedulePoolPausableTask &&) = delete;
+    BackgroundSchedulePoolPausableTask & operator=(BackgroundSchedulePoolPausableTask &&) = delete;
+
+    BackgroundSchedulePoolTaskHolder & getTask();
+
+    [[nodiscard]] PauseHolderPtr pause();
 private:
+    void pauseImpl();
+    void resumeImpl();
+
     std::mutex pause_mutex;
     size_t pause_count = 0;
     BackgroundSchedulePoolTaskHolder task;

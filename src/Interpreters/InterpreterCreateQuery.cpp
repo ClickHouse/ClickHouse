@@ -770,9 +770,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         if (create.columns_list->indices)
+        {
             for (const auto & index : create.columns_list->indices->children)
             {
-                IndexDescription index_desc = IndexDescription::getIndexFromAST(index->clone(), properties.columns, /* is_implicitly_created */ false, getContext());
+                constexpr bool is_implicitly_created = false;
+                constexpr bool escape_index_filenames = true; /// We don't care about this value because it won't be used
+                IndexDescription index_desc = IndexDescription::getIndexFromAST(
+                    index->clone(), properties.columns, is_implicitly_created, escape_index_filenames, getContext());
                 if (properties.indices.has(index_desc.name))
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use a different index name", backQuoteIfNeed(index_desc.name));
 
@@ -782,6 +786,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
                 properties.indices.push_back(index_desc);
             }
+        }
 
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)

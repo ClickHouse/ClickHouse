@@ -6,6 +6,7 @@
 #include <base/cgroupsv2.h>
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
+#include <Common/OSThreadNiceValue.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -355,6 +356,10 @@ void MemoryWorker::updateResidentMemoryThread()
 {
     DB::setThreadName(ThreadName::MEMORY_WORKER);
 
+    /// Set the biggest priority for this thread to avoid drift
+    /// under the CPU starvation.
+    OSThreadNiceValue::set(-20);
+
     std::chrono::milliseconds chrono_period_ms{rss_update_period_ms};
     [[maybe_unused]] bool first_run = true;
     std::unique_lock rss_update_lock(rss_update_mutex);
@@ -484,6 +489,7 @@ void MemoryWorker::setDirtyDecayForAllArenas(size_t decay_ms)
 
 void MemoryWorker::purgeDirtyPagesThread()
 {
+#if USE_JEMALLOC
     /// Instead of having completely separate logic for purging dirty pages,
     /// we rely on the main thread to notify us when we need to purge dirty pages.
     /// We do it to avoid reading RSS value in both threads. Even though they are fairly
@@ -527,6 +533,7 @@ void MemoryWorker::purgeDirtyPagesThread()
         ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
         ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, purge_watch.elapsedMicroseconds());
     }
+#endif
 }
 
 }

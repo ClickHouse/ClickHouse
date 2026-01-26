@@ -74,8 +74,7 @@ void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ManifestFileEntryPt
             "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
             info.file_format);
     }
-    info.position_deletes_objects.emplace_back(
-        position_delete_object->file_path, position_delete_object->file_format, position_delete_object->reference_data_file_path);
+    info.position_deletes_objects.emplace_back(position_delete_object->file_path, position_delete_object->file_format, std::nullopt);
 }
 
 void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ManifestFileEntryPtr & equality_delete_object)
