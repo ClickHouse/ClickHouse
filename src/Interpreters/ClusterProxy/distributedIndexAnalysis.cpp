@@ -90,7 +90,7 @@ size_t partReplica(const std::string & part_name, size_t replicas_count)
     return ConsistentHashing(hash.get64(), replicas_count);
 }
 
-size_t findLocalReplica(std::vector<ConnectionPoolPtr> & pools, const Cluster::Addresses & local_addresses)
+size_t findLocalReplica(const std::vector<ConnectionPoolPtr> & pools, const Cluster::Addresses & local_addresses)
 {
     std::optional<size_t> local_replica_index;
     for (size_t i = 0, s = pools.size(); i < s; ++i)
