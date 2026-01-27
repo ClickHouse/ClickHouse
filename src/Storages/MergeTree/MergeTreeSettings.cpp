@@ -2067,6 +2067,9 @@ namespace ErrorCodes
     DECLARE(Seconds, refresh_statistics_interval, 0, R"(
     The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
     )", 0) \
+    DECLARE(Bool, table_is_readonly, false, R"(
+    If set to true, the table is in read-only mode. Any attempts to insert data or modify the table will fail.
+    )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)

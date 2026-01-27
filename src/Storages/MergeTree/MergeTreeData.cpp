@@ -256,6 +256,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString storage_policy;
     extern const MergeTreeSettingsFloat zero_copy_concurrent_part_removal_max_postpone_ratio;
     extern const MergeTreeSettingsUInt64 zero_copy_concurrent_part_removal_max_split_times;
+    extern const MergeTreeSettingsBool table_is_readonly;
     extern const MergeTreeSettingsBool use_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
@@ -2273,6 +2274,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     /// For iteration to be completed
     runner.waitForAllToFinishAndRethrowFirstError();
 
+    /// Check if the table is explicitly marked as readonly via setting.
+    /// This is separate from disk readonly state - the setting is intentional,
+    /// while disk readonly might be temporary (e.g., disk failure).
+    const bool is_explicitly_readonly = (*settings)[MergeTreeSetting::table_is_readonly];
+
     PartLoadingTree::PartLoadingInfos parts_to_load;
     for (auto & disk_parts : parts_to_load_by_disk)
         std::move(disk_parts.begin(), disk_parts.end(), std::back_inserter(parts_to_load));
@@ -2439,8 +2445,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             unloaded_parts.push_back(node);
     });
 
-    /// By the way, if all disks are readonly, it does not make sense to load outdated parts (we will not own them).
-    if (!unloaded_parts.empty() && !all_disks_are_readonly)
+    /// By the way, if all disks are readonly or the table is explicitly readonly,
+    /// it does not make sense to load outdated parts (we will not own them).
+    if (!unloaded_parts.empty() && !all_disks_are_readonly && !is_explicitly_readonly)
     {
         LOG_DEBUG(log, "Found {} outdated data parts. They will be loaded asynchronously", unloaded_parts.size());
 
