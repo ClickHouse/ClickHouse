@@ -13,7 +13,7 @@ namespace DB
   */
 class ASTQueryWithOutput : public IAST
 {
-public:
+protected:
     struct ASTQueryWithOutputFlags
     {
         using ParentFlags = void;
