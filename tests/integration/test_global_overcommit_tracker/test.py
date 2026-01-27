@@ -32,6 +32,7 @@ def test_global_overcommit():
         node.is_built_with_thread_sanitizer()
         or node.is_built_with_address_sanitizer()
         or node.is_built_with_memory_sanitizer()
+        or node.is_built_with_llvm_coverage()
     ):
         pytest.skip("doesn't fit in memory limits")
 
