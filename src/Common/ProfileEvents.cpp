@@ -1526,7 +1526,7 @@ double Counters::getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset)
     if (os_cpu_virtual_time_microseconds <= os_cpu_busy_time_threshold || os_cpu_wait_microseconds <= 0)
         return 0;
 
-    return static_cast<double>(os_cpu_wait_microseconds) / os_cpu_virtual_time_microseconds;
+    return static_cast<double>(os_cpu_wait_microseconds) / static_cast<double>(os_cpu_virtual_time_microseconds);
 }
 
 void Counters::increment(Event event, Count amount)

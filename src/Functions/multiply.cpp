@@ -24,7 +24,7 @@ struct MultiplyImpl
             return static_cast<Result>(static_cast<CastA>(a)) * static_cast<Result>(static_cast<CastB>(b));
         }
         else
-            return static_cast<Result>(a) * b;
+            return static_cast<Result>(a) * static_cast<Result>(b);
     }
 
     /// Apply operation and check overflow. It's used for Decimal operations. @returns true if overflowed, false otherwise.

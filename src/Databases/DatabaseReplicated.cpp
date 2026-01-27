@@ -1535,7 +1535,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     String db_name = getDatabaseName();
     String to_db_name = getDatabaseName() + BROKEN_TABLES_SUFFIX;
     String to_db_name_replicated = getDatabaseName() + BROKEN_REPLICATED_TABLES_SUFFIX;
-    if (total_tables * db_settings[DatabaseReplicatedSetting::max_broken_tables_ratio] < tables_to_detach.size())
+    if (static_cast<double>(total_tables) * db_settings[DatabaseReplicatedSetting::max_broken_tables_ratio]
+        < static_cast<double>(tables_to_detach.size()))
         throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Too many tables to recreate: {} of {}", tables_to_detach.size(), total_tables);
 
     bool drop_broken_tables = getContext()->getServerSettings()[ServerSetting::database_replicated_drop_broken_tables];
