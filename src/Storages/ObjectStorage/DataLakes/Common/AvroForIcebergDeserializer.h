@@ -53,6 +53,10 @@ public:
 
     String getContent(size_t row_number) const;
     String getMetadataContent() const;
+
+    mutable size_t nanos_in_get = 0;
+    mutable std::unordered_map<std::string, std::pair<size_t, size_t>> path_stats;
+    
 };
 
 }
