@@ -12,6 +12,10 @@ cramersV: window states merged in aggregate() (non-window consumes window states
 0.4472	0.4472	1
 cramersVIf: window states merged in aggregate() (non-window consumes window states)
 0.5	0.5	1
+cramersVArray: window states merged in aggregate() (non-window consumes window states)
+0.4472	0.4472	1
+cramersVStateArray: window states merged in aggregate() (non-window consumes window states)
+0.4472	0.4472	1
 cramersVBiasCorrected: state roundtrip
 0.4463	0.4463	1
 cramersVBiasCorrected: merge roundtrip

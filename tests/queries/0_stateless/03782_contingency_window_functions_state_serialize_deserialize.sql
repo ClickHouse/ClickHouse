@@ -165,6 +165,70 @@ SELECT
     round(merged_raw, 4) AS merged,
     abs(direct_raw - merged_raw) < 1e-9;
 
+SELECT 'cramersVArray: window states merged in aggregate() (non-window consumes window states)';
+WITH
+    (SELECT cramersVArray(array(toUInt8(number % 10)), array(toUInt8(number % 6))) FROM numbers(10_000)) AS direct_raw,
+    (
+        SELECT cramersVArrayMerge(st)
+        FROM
+        (
+            SELECT
+                g,
+                st_win AS st
+            FROM
+            (
+                SELECT
+                    number,
+                    number % 1000 AS g,
+                    cramersVArrayState(array(toUInt8(number % 10)), array(toUInt8(number % 6)))
+                        OVER (
+                            PARTITION BY (number % 1000)
+                            ORDER BY number
+                            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                        ) AS st_win
+                FROM numbers(10_000)
+            )
+            ORDER BY g, number
+            LIMIT 1 BY g
+        )
+    ) AS merged_raw
+SELECT
+    round(direct_raw, 4) AS direct,
+    round(merged_raw, 4) AS merged,
+    abs(direct_raw - merged_raw) < 1e-9;
+
+SELECT 'cramersVStateArray: window states merged in aggregate() (non-window consumes window states)';
+WITH
+    (SELECT finalizeAggregation(cramersVStateArray(array(toUInt8(number % 10)), array(toUInt8(number % 6)))) FROM numbers(10_000)) AS direct_raw,
+    (
+        SELECT finalizeAggregation(cramersVStateArrayMerge(st))
+        FROM
+        (
+            SELECT
+                g,
+                st_win AS st
+            FROM
+            (
+                SELECT
+                    number,
+                    number % 1000 AS g,
+                    cramersVStateArrayState(array(toUInt8(number % 10)), array(toUInt8(number % 6)))
+                        OVER (
+                            PARTITION BY (number % 1000)
+                            ORDER BY number
+                            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                        ) AS st_win
+                FROM numbers(10_000)
+            )
+            ORDER BY g, number
+            LIMIT 1 BY g
+        )
+    ) AS merged_raw
+SELECT
+    round(direct_raw, 4) AS direct,
+    round(merged_raw, 4) AS merged,
+    abs(direct_raw - merged_raw) < 1e-9;
+
 
 SELECT 'cramersVBiasCorrected: state roundtrip';
 SELECT
