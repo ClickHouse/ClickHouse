@@ -33,9 +33,12 @@ private:
     DB::ColumnPtr parsed_column;
     std::shared_ptr<const DB::DataTypeTuple> parsed_column_data_type;
     mutable std::optional<ColumnsWithTypeAndName> parsed_columns;
-    mutable std::unordered_map<std::string, std::pair<ColumnPtr, DataTypePtr>> extracted_subcolumns_with_types;
+    mutable std::unordered_map<std::string, std::optional<std::pair<ColumnPtr, DataTypePtr>>> extracted_subcolumns_with_types;
 
     std::map<std::string, std::vector<uint8_t>> metadata;
+
+    std::optional<std::pair<ColumnPtr, DataTypePtr>> & extractSubcolumnWithType(const std::string & path) const;
+
 public:
 
     AvroForIcebergDeserializer(

@@ -63,30 +63,44 @@ size_t AvroForIcebergDeserializer::rows() const
 
 bool AvroForIcebergDeserializer::hasPath(const std::string & path) const
 {
-    return parsed_column_data_type->hasSubcolumn(path);
+    return extractSubcolumnWithType(path).has_value();
 }
 
 TypeIndex AvroForIcebergDeserializer::getTypeForPath(const std::string & path) const
 {
-    return WhichDataType(parsed_column_data_type->getSubcolumnType(path)).idx;
+    auto & subcolumn_with_type = extractSubcolumnWithType(path);
+    if (!subcolumn_with_type.has_value())
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Cannot find column {} in manifest file {}", path, manifest_file_path);
+    return WhichDataType(subcolumn_with_type->second).idx;
 }
 
-Field AvroForIcebergDeserializer::getValueFromRowByName(size_t row_num, const std::string & path, std::optional<TypeIndex> expected_type) const
+std::optional<std::pair<ColumnPtr, DataTypePtr>> & AvroForIcebergDeserializer::extractSubcolumnWithType(const std::string & path) const
 {
-    ColumnPtr current_column;
-    DataTypePtr current_data_type;
     auto it = extracted_subcolumns_with_types.find(path);
     if (it != extracted_subcolumns_with_types.end())
+        return it->second;
+
+    try
     {
-        current_column = it->second.first;
-        current_data_type = it->second.second;
+        auto column = parsed_column_data_type->getSubcolumn(path, parsed_column);
+        auto data_type = parsed_column_data_type->getSubcolumnType(path);
+        extracted_subcolumns_with_types[path] = std::make_pair(column, data_type);
     }
-    else
+    catch (...)
     {
-        current_column = parsed_column_data_type->getSubcolumn(path, parsed_column);
-        current_data_type = parsed_column_data_type->getSubcolumnType(path);
-        extracted_subcolumns_with_types[path] = {current_column, current_data_type};
+        extracted_subcolumns_with_types[path] = std::nullopt;
     }
+    return extracted_subcolumns_with_types[path];
+}
+
+Field AvroForIcebergDeserializer::getValueFromRowByName(
+    size_t row_num, const std::string & path, std::optional<TypeIndex> expected_type) const
+{
+    auto & subcolumn_with_type = extractSubcolumnWithType(path);
+    if (!subcolumn_with_type.has_value())
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Cannot find column {} in manifest file {}", path, manifest_file_path);
+
+    const auto & [current_column, current_data_type] = *subcolumn_with_type;
 
     if (expected_type && WhichDataType(current_data_type).idx != *expected_type)
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
