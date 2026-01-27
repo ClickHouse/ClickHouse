@@ -689,7 +689,7 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
         node.query(f"DROP TABLE {table}_where SYNC")
 
 
-def test_merges_mutations_limit(started_cluster):
+def test_ttl_drop_parts_limit(started_cluster):
     table = f"test_merges_mutations_limit_{uuid.uuid4().hex}"
 
     max_parts_to_merge_at_once = 123
@@ -752,6 +752,8 @@ def test_merges_mutations_limit(started_cluster):
         f"SELECT count() FROM system.parts WHERE table = '{table}' AND active AND rows > 0"
     ).strip())
     assert final_parts == 0, f"Expected zero parts after merge, got {final_parts} (was {initial_parts})"
+
+    node1.query("SYSTEM FLUSH LOGS")
 
     # Check that no merge created with more than max_parts_to_merge_at_once parts
     max_parts_in_merge = int(node1.query(
