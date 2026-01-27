@@ -1142,8 +1142,8 @@ ContextData::ContextData(const ContextData &o) :
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
     current_database(o.current_database),
-    settings(std::make_unique<Settings>(*o.settings)),
     current_table_prefix(o.current_table_prefix),
+    settings(std::make_unique<Settings>(*o.settings)),
     progress_callback(o.progress_callback),
     file_progress_callback(o.file_progress_callback),
     process_list_elem(o.process_list_elem),
@@ -1269,7 +1269,7 @@ const RefreshSet & Context::getRefreshSet() const { return shared->refresh_set; 
 
 String Context::resolveDatabase(const String & database_name) const
 {
-    String res = database_name.empty() ? getCurrentDatabase() : database_name;
+    String res = database_name.empty() ? getCurrentDatabase().database : database_name;
     if (res.empty())
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
     return res;
@@ -2550,7 +2550,7 @@ static bool findIdentifier(const ASTFunction * function)
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
-    String database_name = getCurrentDatabase();
+    String database_name = getCurrentDatabase().database;
     String table_name = function->name;
 
     if (function->is_compound_name)
@@ -3069,10 +3069,10 @@ std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsCons
     return getSettingsConstraintsAndCurrentProfilesWithLock();
 }
 
-String Context::getCurrentDatabase() const
+Context::CurrentDatabaseInfo Context::getCurrentDatabase() const
 {
     SharedLockGuard lock(mutex);
-    return current_database;
+    return {current_database, current_table_prefix};
 }
 
 
@@ -3109,28 +3109,11 @@ void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_gu
     need_recalculate_access = true;
 }
 
-void Context::setCurrentDatabase(const String & name)
+void Context::setCurrentDatabase(const String & name, const String & table_prefix)
 {
     std::lock_guard lock(mutex);
     setCurrentDatabaseWithLock(name, lock);
-}
-
-String Context::getCurrentTablePrefix() const
-{
-    SharedLockGuard lock(mutex);
-    return current_table_prefix;
-}
-
-void Context::setCurrentTablePrefix(const String & prefix)
-{
-    std::lock_guard lock(mutex);
-    current_table_prefix = prefix;
-}
-
-void Context::clearCurrentTablePrefix()
-{
-    std::lock_guard lock(mutex);
-    current_table_prefix.clear();
+    current_table_prefix = table_prefix;
 }
 
 void Context::setCurrentQueryId(const String & query_id)

@@ -170,29 +170,8 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         table_name = table_identifier[0];
     }
 
-    /// For DataLakeCatalog databases, apply table prefix from USE db.prefix
-    String current_database = context->getCurrentDatabase();
-    bool is_datalake_context = DatabaseCatalog::instance().isDatalakeCatalog(current_database);
-    String original_database_name = database_name;
-    String original_table_name = table_name;
-
-    if (is_datalake_context)
-    {
-        if (database_name.empty())
-        {
-            /// Single-part identifier: apply table prefix if set
-            String table_prefix = context->getCurrentTablePrefix();
-            if (!table_prefix.empty())
-                table_name = table_prefix + "." + table_name;
-        }
-        else if (!DatabaseCatalog::instance().isDatabaseExist(database_name))
-        {
-            /// Two-part identifier where first part is not a real database:
-            /// Interpret as namespace.table in current catalog
-            table_name = database_name + "." + table_name;
-            database_name.clear();
-        }
-    }
+    auto current_db_info = context->getCurrentDatabase();
+    const String & current_database = current_db_info.database;
 
     StorageID storage_id(database_name, table_name);
     storage_id = context->resolveStorageID(storage_id);
@@ -221,14 +200,10 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
             storage = database->tryGetTable(table_name, context);
     }
 
-    /// For DataLakeCatalog: if standard resolution failed and we had a 2-part identifier
-    /// try interpreting it as namespace.table within the current catalog
-    if (!storage && is_datalake_context && !original_database_name.empty())
+    /// DataLakeCatalog fallback: if standard resolution failed, try datalake-specific resolution
+    if (!storage && DatabaseCatalog::instance().isDatalakeCatalog(current_database))
     {
-        String combined_table_name = original_database_name + "." + original_table_name;
-        auto current_db = DatabaseCatalog::instance().tryGetDatabase(current_database);
-        if (current_db)
-            storage = current_db->tryGetTable(combined_table_name, context);
+        storage = tryResolveDatalakeTable(table_identifier, context, current_db_info);
     }
 
     if (!storage)
@@ -244,6 +219,44 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         result->setTemporaryTableName(table_name);
 
     return result;
+}
+
+/// used as a fallback when normal resolution fails for DataLakeCatalog databases
+StoragePtr IdentifierResolver::tryResolveDatalakeTable(
+    const Identifier & table_identifier,
+    const ContextPtr & context,
+    const Context::CurrentDatabaseInfo & current_db_info)
+{
+    const String & current_database = current_db_info.database;
+    const String & table_prefix = current_db_info.table_prefix;
+
+    auto current_db = DatabaseCatalog::instance().tryGetDatabase(current_database);
+    if (!current_db)
+        return nullptr;
+
+    size_t parts_size = table_identifier.getPartsSize();
+
+    if (parts_size == 1)
+    {
+        /// Single-part identifier: apply table prefix if set
+        /// for example, with USE catalog.namespace, "table" becomes "namespace.table"
+        if (!table_prefix.empty())
+        {
+            String combined_table_name = table_prefix + "." + table_identifier[0];
+            if (auto storage = current_db->tryGetTable(combined_table_name, context))
+                return storage;
+        }
+    }
+    else if (parts_size == 2)
+    {
+        /// Two-part identifier where first part could be a namespace
+        /// for example, "namespace.table" -> try as "namespace.table" within current catalog
+        String combined_table_name = table_identifier[0] + "." + table_identifier[1];
+        if (auto storage = current_db->tryGetTable(combined_table_name, context))
+            return storage;
+    }
+
+    return nullptr;
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)

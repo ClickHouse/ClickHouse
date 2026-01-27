@@ -1712,7 +1712,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             /*zookeeper_path_=*/zookeeper_path,
             /*node_name=*/table_name,
             /*query=*/create_table_query);
-        tables_dependencies.addDependencies(qualified_name, getDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ast, getContext()->getCurrentDatabase()).dependencies);
+        tables_dependencies.addDependencies(qualified_name, getDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ast, getContext()->getCurrentDatabase().database).dependencies);
     }
 
     tables_dependencies.checkNoCyclicDependencies();

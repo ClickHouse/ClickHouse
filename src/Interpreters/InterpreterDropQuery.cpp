@@ -134,7 +134,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
             return executeToTemporaryTable(table_id.getTableName(), query.kind);
-        query.setDatabase(table_id.database_name = context_->getCurrentDatabase());
+        query.setDatabase(table_id.database_name = context_->getCurrentDatabase().database);
     }
 
     if (query.temporary)
@@ -650,7 +650,7 @@ void InterpreterDropQuery::extendQueryLogElemImpl(DB::QueryLogElement & elem, co
             }
             else if (!query_table.empty())
             {
-                auto quoted_database = query_database.empty() ? backQuoteIfNeed(context_->getCurrentDatabase())
+                auto quoted_database = query_database.empty() ? backQuoteIfNeed(context_->getCurrentDatabase().database)
                                                               : backQuoteIfNeed(query_database);
                 elem.query_databases.insert(quoted_database);
                 elem.query_tables.insert(quoted_database + "." + backQuoteIfNeed(query_table));

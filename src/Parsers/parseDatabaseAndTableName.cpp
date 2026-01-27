@@ -32,6 +32,19 @@ bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String &
 
         tryGetIdentifierNameInto(database, database_str);
         tryGetIdentifierNameInto(table, table_str);
+
+        /// Support db.namespace1.namespace2...table for DataLakeCatalog databases
+        /// Join all additional parts into the table name
+        while (s_dot.ignore(pos))
+        {
+            ASTPtr next_part;
+            if (!table_parser.parse(pos, next_part, expected))
+                return false;
+
+            String next_part_name;
+            tryGetIdentifierNameInto(next_part, next_part_name);
+            table_str += "." + next_part_name;
+        }
     }
     else
     {
@@ -56,19 +69,19 @@ bool parseDatabaseAndTableAsAST(IParser::Pos & pos, Expected & expected, ASTPtr 
         if (!table_parser.parse(pos, table, expected))
             return false;
 
-        /// Support db.namespace.table for DataLakeCatalog databases
-        /// Join the third part (if present) into the table name
-        if (s_dot.ignore(pos, expected))
+        /// Support db.namespace1.namespace2...table for DataLakeCatalog databases
+        /// Join all additional parts into the table name
+        while (s_dot.ignore(pos, expected))
         {
-            ASTPtr third_part;
-            if (!table_parser.parse(pos, third_part, expected))
+            ASTPtr next_part;
+            if (!table_parser.parse(pos, next_part, expected))
                 return false;
 
-            String namespace_name;
-            String table_name;
-            tryGetIdentifierNameInto(table, namespace_name);
-            tryGetIdentifierNameInto(third_part, table_name);
-            table = std::make_shared<ASTIdentifier>(namespace_name + "." + table_name);
+            String current_table_name;
+            String next_part_name;
+            tryGetIdentifierNameInto(table, current_table_name);
+            tryGetIdentifierNameInto(next_part, next_part_name);
+            table = make_intrusive<ASTIdentifier>(current_table_name + "." + next_part_name);
         }
     }
 
@@ -128,9 +141,25 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
                 }
                 if (identifier_parser.parse(pos, ast, expected))
                 {
-                    /// db.table
+                    /// db.table (or db.namespace1.namespace2...table)
                     database = std::move(first_identifier);
                     table = getIdentifierName(ast);
+
+                    /// Support db.namespace1.namespace2...table for DataLakeCatalog databases
+                    /// Join all additional parts into the table name
+                    while (ParserToken{TokenType::Dot}.ignore(pos, expected))
+                    {
+                        if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                        {
+                            /// db.namespace.*
+                            wildcard = true;
+                            return true;
+                        }
+                        if (!identifier_parser.parse(pos, ast, expected))
+                            return false;
+                        table += "." + getIdentifierName(ast);
+                    }
+
                     if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                         wildcard = true;
 

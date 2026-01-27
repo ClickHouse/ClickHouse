@@ -630,7 +630,7 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
         auto const & filter = tuple.at(1).safeGet<String>();
 
         if (table == table_expression_alias ||
-            (table == storage_id.getTableName() && query_context->getCurrentDatabase() == storage_id.getDatabaseName()) ||
+            (table == storage_id.getTableName() && query_context->getCurrentDatabase().database == storage_id.getDatabaseName()) ||
             (table == storage_id.getFullNameNotQuoted()))
         {
             ParserExpression parser;

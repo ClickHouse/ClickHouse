@@ -349,8 +349,8 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
+    String current_table_prefix; /// Table prefix set by USE db.namespace command (for DataLakeCatalog)
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
-    String current_table_prefix; /// Table prefix set by USE db.prefix command
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;  /// Callback for tracking progress of query execution.
@@ -983,18 +983,21 @@ public:
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
 
-    String getCurrentDatabase() const;
-    String getCurrentQueryId() const { return client_info.current_query_id; }
+    /// Current database info including optional table prefix for DataLakeCatalog databases
+    /// The table_prefix is set by USE db.namespace command and used to resolve unqualified table names
+    struct CurrentDatabaseInfo
+    {
+        String database;
+        String table_prefix;
+    };
 
-    /// Table prefix for compound table names (set by USE db.prefix)
-    String getCurrentTablePrefix() const;
-    void setCurrentTablePrefix(const String & prefix);
-    void clearCurrentTablePrefix();
+    CurrentDatabaseInfo getCurrentDatabase() const;
+    String getCurrentQueryId() const { return client_info.current_query_id; }
 
     /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
     String getInitialQueryId() const;
 
-    void setCurrentDatabase(const String & name);
+    void setCurrentDatabase(const String & name, const String & table_prefix = {});
     /// Set current_database for global context. We don't validate that database
     /// exists because it should be set before databases loading.
     void setCurrentDatabaseNameInGlobalContext(const String & name);

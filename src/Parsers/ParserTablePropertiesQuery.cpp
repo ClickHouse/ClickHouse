@@ -126,19 +126,19 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             if (!name_p.parse(pos, table, expected))
                 return false;
 
-            /// Support db.namespace.table for DataLakeCatalog databases
-            /// Join the third part (if present) into the table name
-            if (s_dot.ignore(pos, expected))
+            /// Support db.namespace1.namespace2...table for DataLakeCatalog databases
+            /// Join all additional parts into the table name
+            while (s_dot.ignore(pos, expected))
             {
-                ASTPtr third_part;
-                if (!name_p.parse(pos, third_part, expected))
+                ASTPtr next_part;
+                if (!name_p.parse(pos, next_part, expected))
                     return false;
 
-                String namespace_name;
-                String table_name;
-                tryGetIdentifierNameInto(table, namespace_name);
-                tryGetIdentifierNameInto(third_part, table_name);
-                table = std::make_shared<ASTIdentifier>(namespace_name + "." + table_name);
+                String current_table_name;
+                String next_part_name;
+                tryGetIdentifierNameInto(table, current_table_name);
+                tryGetIdentifierNameInto(next_part, next_part_name);
+                table = make_intrusive<ASTIdentifier>(current_table_name + "." + next_part_name);
             }
         }
     }

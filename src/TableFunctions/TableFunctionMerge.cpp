@@ -98,7 +98,7 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
     if (args.size() == 1)
     {
         database_is_regexp = false;
-        source_database_name_or_regexp = context->getCurrentDatabase();
+        source_database_name_or_regexp = context->getCurrentDatabase().database;
 
         args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
         source_table_regexp = checkAndGetLiteralArgument<String>(args[0], "table_name_regexp");

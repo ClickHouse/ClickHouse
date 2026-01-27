@@ -801,7 +801,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         if (auto ctx = context.lock())
         {
             res.query_settings = std::make_shared<Settings>(ctx->getSettingsCopy());
-            res.current_database = ctx->getCurrentDatabase();
+            res.current_database = ctx->getCurrentDatabase().database;
         }
     }
 

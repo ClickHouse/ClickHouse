@@ -71,6 +71,11 @@ public:
         const Identifier & table_identifier,
         const ContextPtr & context);
 
+    static StoragePtr tryResolveDatalakeTable(
+        const Identifier & table_identifier,
+        const ContextPtr & context,
+        const Context::CurrentDatabaseInfo & current_db_info);
+
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,
         const ContextPtr & context);

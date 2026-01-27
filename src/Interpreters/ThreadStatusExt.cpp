@@ -576,7 +576,7 @@ void ThreadStatus::finalizePerformanceCounters()
                 if (query_duration_ms >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
                 {
                     if (auto thread_log = global_context_ptr->getQueryThreadLog())
-                        logToQueryThreadLog(*thread_log, query_context_ptr->getCurrentDatabase());
+                        logToQueryThreadLog(*thread_log, query_context_ptr->getCurrentDatabase().database);
                 }
             }
         }

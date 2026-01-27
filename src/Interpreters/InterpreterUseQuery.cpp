@@ -35,8 +35,7 @@ BlockIO InterpreterUseQuery::execute()
     }
 
     getContext()->checkAccess(AccessType::SHOW_DATABASES, db_part); // will throw exception if db not found
-    session_context->setCurrentDatabase(db_part);
-    prefix_part.empty() ? session_context->clearCurrentTablePrefix() : session_context->setCurrentTablePrefix(prefix_part);
+    session_context->setCurrentDatabase(db_part, prefix_part);
 
     return {};
 }
