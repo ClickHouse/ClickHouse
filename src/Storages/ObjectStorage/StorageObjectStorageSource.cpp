@@ -43,7 +43,6 @@
 #endif
 
 #include <fmt/ranges.h>
-#include <boost/algorithm/string/case_conv.hpp>
 #include <Common/ProfileEvents.h>
 #include <Core/SettingsEnums.h>
 
@@ -592,12 +591,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         else
         {
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
-            read_buf = createReadBuffer(
-                object_info->relative_path_with_metadata,
-                object_storage,
-                context_,
-                log,
-                configuration->format);
+            read_buf = createReadBuffer(object_info->relative_path_with_metadata, object_storage, context_, log);
         }
 
         Block initial_header = read_from_format_info.format_header;
@@ -726,7 +720,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context_,
     const LoggerPtr & log,
-    const std::string & format,
     const std::optional<ReadSettings> & read_settings)
 {
     const auto & settings = context_->getSettingsRef();
@@ -778,10 +771,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const bool object_too_small = object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
     const bool use_prefetch = object_too_small
         && modified_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
-        && modified_read_settings.remote_fs_prefetch
-        /// Parquet reader v3 uses its own prefetches via readBigAt
-        /// TODO: we should probably always disable prefetch if impl->supportsReadBigAt?
-        && format_str != "parquet" && format_str != "parquetmetadata";
+        && modified_read_settings.remote_fs_prefetch;
 
     /// FIXME: Use async buffer if use_cache,
     /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
@@ -1228,15 +1218,7 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
         {
             archive_reader = DB::createArchiveReader(
                 path_to_archive,
-                [=, this]()
-                {
-                    return createReadBuffer(
-                        archive_object->relative_path_with_metadata,
-                        object_storage,
-                        getContext(),
-                        log,
-                        archive_object->getFileFormat().value_or(""));
-                },
+                [=, this]() { return createReadBuffer(archive_object->relative_path_with_metadata, object_storage, getContext(), log); },
                 archive_object->getObjectMetadata()->size_bytes);
 
             archive_readers.emplace(path_to_archive, archive_reader);
@@ -1295,14 +1277,7 @@ StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr o
         /* path_to_archive */
         object_info->getPath(),
         /* archive_read_function */ [=, this]()
-        {
-            return createReadBuffer(
-                object_info->relative_path_with_metadata,
-                object_storage,
-                getContext(),
-                log,
-                object_info->getFileFormat().value_or(""));
-        },
+        { return createReadBuffer(object_info->relative_path_with_metadata, object_storage, getContext(), log); },
         /* archive_size */ size);
 }
 

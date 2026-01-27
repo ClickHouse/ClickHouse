@@ -246,8 +246,7 @@ static void writeDataFiles(
             context);
 
         RelativePathWithMetadata relative_path(data_file->data_object_info->getPath());
-        const auto read_format = data_file->data_object_info->getFileFormat().value_or(write_format);
-        auto read_buffer = createReadBuffer(relative_path, object_storage, context, getLogger("IcebergCompaction"), read_format);
+        auto read_buffer = createReadBuffer(relative_path, object_storage, context, getLogger("IcebergCompaction"));
 
         const Settings & settings = context->getSettingsRef();
         auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(
@@ -255,7 +254,7 @@ static void writeDataFiles(
             /*num_streams_=*/1);
 
         auto input_format = FormatFactory::instance().getInput(
-            read_format,
+            data_file->data_object_info->getFileFormat().value_or(write_format),
             *read_buffer,
             *sample_block,
             context,

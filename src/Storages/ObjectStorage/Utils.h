@@ -32,7 +32,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context_,
     const LoggerPtr & log,
-    const std::string & format,
     const std::optional<ReadSettings> & read_settings = std::nullopt);
 
 ASTs::iterator getFirstKeyValueArgument(ASTs & args);

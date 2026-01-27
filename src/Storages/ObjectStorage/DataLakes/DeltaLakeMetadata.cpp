@@ -244,7 +244,7 @@ struct DeltaLakeMetadataImpl
     {
         auto read_settings = context->getReadSettings();
         RelativePathWithMetadata object_info(metadata_file_path);
-        auto buf = createReadBuffer(object_info, object_storage, context, log, "json");
+        auto buf = createReadBuffer(object_info, object_storage, context, log);
 
         char c;
         String sum_json;
@@ -412,7 +412,7 @@ struct DeltaLakeMetadataImpl
         String json_str;
         auto read_settings = context->getReadSettings();
         RelativePathWithMetadata object_info(last_checkpoint_file);
-        auto buf = createReadBuffer(object_info, object_storage, context, log, "json");
+        auto buf = createReadBuffer(object_info, object_storage, context, log);
         readJSONObjectPossiblyInvalid(json_str, *buf);
 
         const JSON json(json_str);
@@ -479,7 +479,7 @@ struct DeltaLakeMetadataImpl
 
         auto read_settings = context->getReadSettings();
         RelativePathWithMetadata object_info(checkpoint_path);
-        auto buf = createReadBuffer(object_info, object_storage, context, log, "parquet");
+        auto buf = createReadBuffer(object_info, object_storage, context, log);
         auto format_settings = getFormatSettings(context);
 
         /// Force nullable, because this parquet file for some reason does not have nullable
