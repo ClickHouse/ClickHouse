@@ -434,6 +434,7 @@ CREATE TABLE system.mutations
     `parts_in_progress_names` Array(String),
     `parts_to_do_names` Array(String),
     `parts_to_do` Int64,
+    `parts_postpone_reasons` Map(String, String),
     `is_done` UInt8,
     `is_killed` UInt8,
     `latest_failed_part` String,

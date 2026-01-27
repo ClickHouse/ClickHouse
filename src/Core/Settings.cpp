@@ -1461,7 +1461,15 @@ DECLARE(Bool, merge_tree_use_prefixes_deserialization_thread_pool, true, R"(
 Enables usage of the thread pool for parallel prefixes reading in Wide parts in MergeTree. Size of that thread pool is controlled by server setting `max_prefixes_deserialization_thread_pool_size`.
 )", 0) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
-Merge parts only in one partition in select final
+Improve FINAL queries by avoiding merges across different partitions.
+
+When enabled, during SELECT FINAL queries, parts from different partitions will not be merged together. Instead, merging will only occur within each partition separately. This can significantly improve query performance when working with partitioned tables.
+
+If not explicitly set, ClickHouse will automatically enable this optimization when the partition key expression is deterministic and all columns used in the partition key expression are included in the primary key.
+
+This automatic derivation ensures that rows with the same primary key values will always belong to the same partition, making it safe to avoid cross-partition merges.
+
+**Default value:** `false` (but may be automatically enabled based on table structure if not set explicitly)
 )", 0) \
     DECLARE(Bool, split_parts_ranges_into_intersecting_and_non_intersecting_final, true, R"(
 Split parts ranges into intersecting and non intersecting during FINAL optimization
@@ -1952,7 +1960,7 @@ Possible values:
 ```
 )", 0) \
 \
-    DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE, R"(
+    DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE, R"(
 Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
 The setting overrids `insert_deduplicate` for `INSERT SELECT` queries.
 That setting has three possible values:
