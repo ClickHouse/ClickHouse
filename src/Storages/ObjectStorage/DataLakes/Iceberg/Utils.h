@@ -54,9 +54,10 @@ struct TransformAndArgument
 {
     String transform_name;
     std::optional<size_t> argument;
+    std::optional<String> time_zone;
 };
 
-std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src);
+std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src, const String & time_zone);
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,

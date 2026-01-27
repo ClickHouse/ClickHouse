@@ -31,7 +31,7 @@ namespace DB::Iceberg
 struct ManifestFileEntry;
 class ManifestFileContent;
 
-DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name);
+DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name, const String & time_zone);
 
 /// Prune specific data files based on manifest content
 class ManifestFilesPruner
