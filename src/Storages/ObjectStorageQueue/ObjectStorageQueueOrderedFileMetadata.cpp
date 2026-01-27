@@ -90,14 +90,17 @@ namespace
     {
         if (!buckets_num)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets number cannot be zero");
-        std::string key = path;
-        if (bucketing_mode == ObjectStorageQueueBucketingMode::PARTITION && hasPartitioningMode(partitioning_mode))
+
+        /// Use partition key for bucketing when bucketing_mode is PARTITION
+        /// This ensures files from the same partition always go to the same bucket
+        if (bucketing_mode == ObjectStorageQueueBucketingMode::PARTITION)
         {
             auto partition_key = getPartitionKey(path, partitioning_mode, parser);
-            if (!partition_key.empty())
-                key = std::move(partition_key);
+            return sipHash64(partition_key) % buckets_num;
         }
-        return sipHash64(key) % buckets_num;
+
+        /// Default hash the full file path
+        return sipHash64(path) % buckets_num;
     }
 
     std::string getProcessedPath(
