@@ -297,7 +297,7 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
     Databases current_databases;
     {
         std::lock_guard lock(databases_mutex);
-        current_databases = databases;
+        current_databases = all_databases;
     }
 
     /// We still hold "databases" (instead of std::move) for Buffer tables to flush data correctly.
@@ -334,7 +334,7 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
     tables_marked_dropped_to_destroy.clear();
 
     std::lock_guard lock(databases_mutex);
-    for (const auto & db : databases)
+    for (const auto & db : all_databases)
     {
         UUID db_uuid = db.second->getUUID();
         if (db_uuid != UUIDHelpers::Nil)
@@ -354,9 +354,10 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         return it != elem.map.end();
     }) == uuid_map.end());
 
-    databases.clear();
-    databases_without_datalake_catalogs.clear();
-    temporary_databases_count = 0;
+    all_databases.clear();
+    temporary_databases.clear();
+    datalake_catalogs.clear();
+    regular_databases.clear();
 
     referential_dependencies.clear();
     loading_dependencies.clear();
@@ -452,8 +453,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         }
 
         std::lock_guard lock{databases_mutex};
-        auto it = databases.find(table_id.getDatabaseName());
-        if (databases.end() != it)
+        auto it = all_databases.find(table_id.getDatabaseName());
+        if (all_databases.end() != it)
             database = it->second;
     }
 
@@ -547,22 +548,19 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
     if (database_name.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
 
-    DatabasePtr db;
     {
         std::lock_guard lock{databases_mutex};
-        if (auto it = databases.find(database_name); it != databases.end())
-            db = it->second;
+        if (all_databases.contains(database_name))
+            return;
     }
-    if (!db)
-        throw makeUnknownDatabaseException(database_name);
+
+    throw makeUnknownDatabaseException(database_name);
 }
 
 bool DatabaseCatalog::isDatalakeCatalog(const String & database_name) const
 {
     std::lock_guard lock{databases_mutex};
-    if (const auto it = databases.find(database_name); it != databases.end())
-        return it->second->isDatalakeCatalog();
-    return false;
+    return datalake_catalogs.contains(database_name);
 }
 
 void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) const
@@ -574,7 +572,7 @@ void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) co
 void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_name) const
 {
     assert(!database_name.empty());
-    if (databases.contains(database_name))
+    if (all_databases.contains(database_name))
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists", backQuoteIfNeed(database_name));
 }
 
@@ -604,11 +602,8 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
 {
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
-    databases.emplace(database_name, database);
-    if (!database->isDatalakeCatalog())
-        databases_without_datalake_catalogs.emplace(database_name, database);
-    if (database->isTemporary())
-        ++temporary_databases_count;
+    all_databases.emplace(database_name, database);
+    chooseDatabasesContainer(database).emplace(database_name, database);
 
     NOEXCEPT_SCOPE({
         UUID db_uuid = database->getUUID();
@@ -620,13 +615,14 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
 
 DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const String & database_name, bool drop, bool check_empty)
 {
+    assert(!database_name.empty());
     if (database_name == TEMPORARY_DATABASE)
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot detach database with temporary tables.");
-    assert(!database_name.empty());
+
     DatabasePtr db;
     {
         std::lock_guard lock{databases_mutex};
-        if (auto it = databases.find(database_name); it != databases.end())
+        if (auto it = all_databases.find(database_name); it != all_databases.end())
         {
             db = it->second;
             assert(!db->isTemporary() || drop);
@@ -635,17 +631,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             if (db_uuid != UUIDHelpers::Nil)
                 removeUUIDMapping(db_uuid);
 
-            databases.erase(it);
-            if (!db->isDatalakeCatalog())
-            {
-                assert(databases_without_datalake_catalogs.contains(database_name));
-                databases_without_datalake_catalogs.erase(database_name);
-            }
-            if (db->isTemporary())
-            {
-                assert(temporary_databases_count > 0);
-                --temporary_databases_count;
-            }
+            all_databases.erase(it);
+            auto res = chooseDatabasesContainer(db).erase(database_name);
+            assert(res == 1);
         }
         else
             throw makeUnknownDatabaseException(database_name);
@@ -698,19 +686,17 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
 {
     std::lock_guard lock{databases_mutex};
-    assert(!databases.contains(new_name));
-    auto it = databases.find(old_name);
-    assert(it != databases.end());
-    auto db = it->second;
-    databases.erase(it);
-    databases.emplace(new_name, db);
+    assert(!all_databases.contains(new_name));
 
-    auto no_catalogs_it = databases_without_datalake_catalogs.find(old_name);
-    if (no_catalogs_it != databases_without_datalake_catalogs.end())
-    {
-        databases_without_datalake_catalogs.erase(no_catalogs_it);
-        databases_without_datalake_catalogs.emplace(new_name, db);
-    }
+    auto it = all_databases.extract(old_name);
+    auto & container = chooseDatabasesContainer(it.mapped());
+    auto it2 = container.extract(old_name);
+    assert(!it2.empty());
+
+    it.key() = new_name;
+    it2.key() = new_name;
+    all_databases.insert(std::move(it));
+    container.insert(std::move(it2));
 
     for (const auto & table_name : tables_in_database)
     {
@@ -780,7 +766,7 @@ DatabasePtr DatabaseCatalog::tryGetDatabase(std::string_view database_name, Cont
     assert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
 
-    if (const auto it = databases.find(database_name); it != databases.end() && checkDatabaseOptions(it->second, options, context_))
+    if (const auto it = all_databases.find(database_name); it != all_databases.end() && checkDatabaseOptions(it->second, options, context_))
         return it->second;
     return {};
 }
@@ -789,22 +775,18 @@ bool DatabaseCatalog::isDatabaseExist(std::string_view database_name) const
 {
     assert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
-    return databases.contains(database_name);
+    return all_databases.contains(database_name);
 }
 
 Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options, ContextPtr context_) const
 {
     std::lock_guard lock{databases_mutex};
 
-    if (temporary_databases_count == 0 || options.skip_temporary_owner_check)
-    {
-        if (options.with_datalake_catalogs)
-            return databases;
-        return databases_without_datalake_catalogs;
-    }
+    auto results = regular_databases;
+    if (options.with_datalake_catalogs)
+        results.insert(datalake_catalogs.begin(), datalake_catalogs.end());
 
-    Databases results;
-    for (const auto & [database_name, database] : databases)
+    for (const auto & [database_name, database] : temporary_databases)
     {
         if (checkDatabaseOptions(database, options, context_))
             results.emplace(database_name, database);
@@ -821,8 +803,8 @@ bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, ContextPtr co
     DatabasePtr db;
     {
         std::lock_guard lock{databases_mutex};
-        auto iter = databases.find(table_id.database_name);
-        if (iter != databases.end())
+        auto iter = all_databases.find(table_id.database_name);
+        if (iter != all_databases.end())
             db = iter->second;
     }
     return db && db->isTableExist(table_id.table_name, context_);
@@ -2053,6 +2035,15 @@ void DatabaseCatalog::reloadDisksTask()
     std::lock_guard lock{reload_disks_mutex};
     if (!disks_to_reload.empty()) /// during reload, another disks configuration change
         (*reload_disks_task)->scheduleAfter(DBMS_DEFAULT_DISK_RELOAD_PERIOD_SEC * 1000);
+}
+
+Databases & DatabaseCatalog::chooseDatabasesContainer(const DatabasePtr & db)
+{
+    if (db->isTemporary())
+        return temporary_databases;
+    if (db->isDatalakeCatalog())
+        return datalake_catalogs;
+    return regular_databases;
 }
 
 void DatabaseCatalog::triggerReloadDisksTask(const Strings & new_added_disks)

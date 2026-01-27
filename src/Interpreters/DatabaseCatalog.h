@@ -368,10 +368,12 @@ private:
     static constexpr size_t reschedule_time_ms = 100;
 
     mutable std::mutex databases_mutex;
+    Databases all_databases TSA_GUARDED_BY(databases_mutex);
+    Databases temporary_databases TSA_GUARDED_BY(databases_mutex);
+    Databases datalake_catalogs TSA_GUARDED_BY(databases_mutex);
+    Databases regular_databases TSA_GUARDED_BY(databases_mutex);
+    Databases & chooseDatabasesContainer(const DatabasePtr & db) TSA_REQUIRES(databases_mutex);
 
-    Databases databases TSA_GUARDED_BY(databases_mutex);
-    Databases databases_without_datalake_catalogs TSA_GUARDED_BY(databases_mutex);
-    std::atomic_size_t temporary_databases_count TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
     /// Referential dependencies between tables: table "A" depends on table "B"
