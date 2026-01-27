@@ -76,21 +76,20 @@ TypeIndex AvroForIcebergDeserializer::getTypeForPath(const std::string & path) c
 
 std::optional<std::pair<ColumnPtr, DataTypePtr>> & AvroForIcebergDeserializer::extractSubcolumnWithType(const std::string & path) const
 {
-    auto it = extracted_subcolumns_with_types.find(path);
-    if (it != extracted_subcolumns_with_types.end())
+    auto it = cache_extracted_subcolumns_with_types.find(path);
+    if (it != cache_extracted_subcolumns_with_types.end())
         return it->second;
 
-    try
+    if (parsed_column_data_type->hasSubcolumn(path)) 
     {
         auto column = parsed_column_data_type->getSubcolumn(path, parsed_column);
         auto data_type = parsed_column_data_type->getSubcolumnType(path);
-        extracted_subcolumns_with_types[path] = std::make_pair(column, data_type);
-    }
-    catch (...)
+        cache_extracted_subcolumns_with_types[path] = std::make_pair(column, data_type);
+    } else
     {
-        extracted_subcolumns_with_types[path] = std::nullopt;
+        cache_extracted_subcolumns_with_types[path] = std::nullopt;
     }
-    return extracted_subcolumns_with_types[path];
+    return cache_extracted_subcolumns_with_types[path];
 }
 
 Field AvroForIcebergDeserializer::getValueFromRowByName(
@@ -144,13 +143,13 @@ String removeAllSlashes(const String & input)
 
 String AvroForIcebergDeserializer::getContent(size_t row_number) const
 {
-    if (!parsed_columns)
-        parsed_columns.emplace(ColumnsWithTypeAndName({ColumnWithTypeAndName(parsed_column, parsed_column_data_type, "")}));
+    if (!cache_parsed_columns)
+        cache_parsed_columns.emplace(ColumnsWithTypeAndName({ColumnWithTypeAndName(parsed_column, parsed_column_data_type, "")}));
     WriteBufferFromOwnString buf;
     FormatSettings settings;
     settings.write_statistics = false;
     JSONEachRowRowOutputFormat output_format
-        = JSONEachRowRowOutputFormat(buf, std::make_shared<const Block>(parsed_columns.value()), settings);
+        = JSONEachRowRowOutputFormat(buf, std::make_shared<const Block>(cache_parsed_columns.value()), settings);
     output_format.writeRow({parsed_column}, row_number);
     output_format.finalize();
     auto result_json = buf.str();
