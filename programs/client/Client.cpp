@@ -64,7 +64,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
-    extern const int AUTHENTICATION_FAILED_SECOND_FACTOR;
+    extern const int REQUIRED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
     extern const int USER_EXPIRED;
 }
@@ -400,9 +400,8 @@ try
             continue;
         }
 
-        can_ask_2fa = can_ask_2fa && (e.code() == ErrorCodes::AUTHENTICATION_FAILED_SECOND_FACTOR) &&
+        can_ask_2fa = can_ask_2fa && (e.code() == ErrorCodes::REQUIRED_SECOND_FACTOR) &&
             (config().getBool("ask-password", false) || is_interactive);
-
 
         if (can_ask_2fa)
         {

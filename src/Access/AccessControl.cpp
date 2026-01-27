@@ -39,7 +39,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_SETTING;
     extern const int AUTHENTICATION_FAILED;
-    extern const int AUTHENTICATION_FAILED_SECOND_FACTOR;
+    extern const int REQUIRED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
@@ -643,7 +643,7 @@ See also /etc/clickhouse-server/users.xml on the server where ClickHouse is inst
         }
 
         /// Preserve the second factor authentication error code.
-        if (e.code() == ErrorCodes::AUTHENTICATION_FAILED_SECOND_FACTOR)
+        if (e.code() == ErrorCodes::REQUIRED_SECOND_FACTOR)
             error_code = e.code();
 
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons.

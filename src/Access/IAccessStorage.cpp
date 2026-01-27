@@ -33,7 +33,7 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_STORAGE_READONLY;
     extern const int ACCESS_STORAGE_DOESNT_ALLOW_BACKUP;
-    extern const int AUTHENTICATION_FAILED_SECOND_FACTOR;
+    extern const int REQUIRED_SECOND_FACTOR;
     extern const int WRONG_PASSWORD;
     extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int LOGICAL_ERROR;
@@ -584,7 +584,7 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
             }
 
             if (need_second_factor)
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED_SECOND_FACTOR, "Authentication requires second factor");
+                throw Exception(ErrorCodes::REQUIRED_SECOND_FACTOR, "Authentication requires second factor");
             throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
         }
     }
