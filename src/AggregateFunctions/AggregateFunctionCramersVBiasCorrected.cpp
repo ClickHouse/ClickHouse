@@ -25,13 +25,13 @@ struct CramersVBiasCorrectedData : CrossTabData
 
         Float64 phi = getPhiSquared();
 
-        Float64 a_size_adjusted = count_a.size() - 1;
-        Float64 b_size_adjusted = count_b.size() - 1;
-        Float64 count_adjusted = count - 1;
+        Float64 a_size_adjusted = static_cast<Float64>(count_a.size() - 1);
+        Float64 b_size_adjusted = static_cast<Float64>(count_b.size() - 1);
+        Float64 count_adjusted = static_cast<Float64>(count - 1);
 
         Float64 res = std::max(0.0, phi - a_size_adjusted * b_size_adjusted / count_adjusted);
-        Float64 correction_a = count_a.size() - a_size_adjusted * a_size_adjusted / count_adjusted;
-        Float64 correction_b = count_b.size() - b_size_adjusted * b_size_adjusted / count_adjusted;
+        Float64 correction_a = static_cast<Float64>(count_a.size()) - a_size_adjusted * a_size_adjusted / count_adjusted;
+        Float64 correction_b = static_cast<Float64>(count_b.size()) - b_size_adjusted * b_size_adjusted / count_adjusted;
 
         res /= std::min(correction_a, correction_b) - 1;
         return sqrt(res);

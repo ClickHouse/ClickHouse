@@ -1794,7 +1794,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                 /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
                 if (query.limitLength() && !query.limitBy() && !query.limit_with_ties)
-                    executePreLimit(query_plan, true);
+                {
+                    /// Preliminary Limits mustn't be added if there is a fractional limit/offset
+                    /// because in order to correctly calculate the number of rows to be produced
+                    /// based on the given fraction the final limit/offset processor must count the entire dataset.
+                    /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
+                    LimitInfo lim_info = getLimitLengthAndOffset(query, context);
+                    if (lim_info.fractional_offset == 0 && lim_info.fractional_limit == 0)
+                        executePreLimit(query_plan, true);
+                }
             }
         };
 
@@ -2718,7 +2726,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_sync_remote)
         {
-            if (auto streams_with_ratio = max_streams * settings[Setting::max_streams_to_max_threads_ratio];
+            if (auto streams_with_ratio = static_cast<double>(max_streams) * settings[Setting::max_streams_to_max_threads_ratio];
                 canConvertTo<size_t>(streams_with_ratio))
                 max_streams = static_cast<size_t>(streams_with_ratio);
             else

@@ -105,7 +105,7 @@ struct NpvCalculator
         if constexpr (index_mode == IndexMode::ZeroBased)
         {
             // First cashflow (t=0) is not discounted
-            npv = cashflows[0];
+            npv = static_cast<double>(cashflows[0]);
 
             // Discount subsequent cashflows (t=1, t=2, ...)
             double discount_factor = growth_factor; // (1+r)^1
@@ -141,7 +141,7 @@ struct NpvCalculator
         for (size_t i = 1; i < cashflows.size(); ++i)
         {
             compound *= (1.0 + rate);
-            derivative += -static_cast<FloatType>(cashflows[i]) * i / compound;
+            derivative += -static_cast<FloatType>(cashflows[i]) * static_cast<FloatType>(i) / compound;
         }
         return derivative;
     }
@@ -183,7 +183,7 @@ struct XnpvCalculator
         {
             double time = yearFraction<day_count>(dates[0], dates[i]);
             if (time == 0.0)
-                npv += cashflows[i];
+                npv += static_cast<double>(cashflows[i]);
             else
                 npv += static_cast<FloatType>(cashflows[i]) / std::pow(1.0 + rate, time);
         }

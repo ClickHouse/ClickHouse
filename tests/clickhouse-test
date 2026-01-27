@@ -2038,6 +2038,26 @@ class TestCase:
             )
 
         if self.reference_file is None:
+            # If --record is enabled, create a new reference file
+            if self.testcase_args.record:
+                import shutil
+                # Use the same logic as get_reference_file to determine the correct path
+                name = removesuffix(self.name, ".gen")
+                # Determine the appropriate extension based on analyzer mode
+                if is_old_analyzer_used(self.testcase_args):
+                    ext = ".oldanalyzer.reference"
+                else:
+                    ext = ".reference"
+                self.reference_file = os.path.join(self.suite.suite_path, name) + ext
+                shutil.copy2(self.stdout_file, self.reference_file)
+                description += "\tReference file created\n"
+                return TestResult(
+                    self.name,
+                    TestStatus.OK,
+                    None,
+                    total_time,
+                    description,
+                )
             return TestResult(
                 self.name,
                 TestStatus.UNKNOWN,
@@ -3931,37 +3951,38 @@ def main(args):
     else:
         print("All tests have finished.")
 
-    try:
-        clickhouse_execute(args, "SYSTEM FLUSH LOGS system.trace_log")
+    if int(clickhouse_execute(args, "EXISTS system.trace_log")):
+        try:
+            clickhouse_execute(args, "SYSTEM FLUSH LOGS system.trace_log")
 
-        unchecked_memory = int(clickhouse_execute(args, f"""
-        SELECT sum(size) FROM system.trace_log
-        WHERE
-            trace_type = 'MemoryAllocatedWithoutCheck'
-            AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
-            AND event_time >= fromUnixTimestamp({int(tests_start_time)})
-        """))
-        if unchecked_memory > 1e9:
-            print(f"""
-            Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB.
-            Take a look at:
-
-            SELECT arrayStringConcat(symbols, '\\n'), sum(size)
-            FROM system.trace_log
-            WHERE trace_type = 'MemoryAllocatedWithoutCheck'
+            unchecked_memory = int(clickhouse_execute(args, f"""
+            SELECT sum(size) FROM system.trace_log
+            WHERE
+                trace_type = 'MemoryAllocatedWithoutCheck'
                 AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
                 AND event_time >= fromUnixTimestamp({int(tests_start_time)})
-            GROUP BY 1
-            ORDER BY 2
-            LIMIT -10
-            FORMAT Vertical
+            """))
+            if unchecked_memory > 1e9:
+                print(f"""
+                Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB.
+                Take a look at:
 
-            See also at
-            - MemoryTrackerDebugBlockerInThread
-            - AllocatorWithMemoryTracking
-            """)
-    except Exception as e:
-        print(f"Failed get MemoryAllocatedWithoutCheck events from trace_log: {e}")
+                SELECT arrayStringConcat(symbols, '\\n'), sum(size)
+                FROM system.trace_log
+                WHERE trace_type = 'MemoryAllocatedWithoutCheck'
+                    AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
+                    AND event_time >= fromUnixTimestamp({int(tests_start_time)})
+                GROUP BY 1
+                ORDER BY 2
+                LIMIT -10
+                FORMAT Vertical
+
+                See also at
+                - MemoryTrackerDebugBlockerInThread
+                - AllocatorWithMemoryTracking
+                """)
+        except Exception as e:
+            print(f"Failed get MemoryAllocatedWithoutCheck events from trace_log: {e}")
 
     if args.report_logs_stats:
         try:
@@ -4494,6 +4515,15 @@ if __name__ == "__main__":
     except Exception as e:
         print(e, file=sys.stderr)
         sys.exit(1)
+
+    # When using --record, disable engine replacement to ensure we record
+    # the original test's output, not a modified version
+    if args.record:
+        if args.replace_replicated_with_shared or args.replace_non_replicated_with_shared:
+            print("INFO: Disabling engine replacement (--replace-replicated-with-shared, --replace-non-replicated-with-shared)", file=sys.stderr)
+            print("      when using --record to ensure reference files are updated with original test output.", file=sys.stderr)
+        args.replace_replicated_with_shared = False
+        args.replace_non_replicated_with_shared = False
 
     # Collect explicit settings (if any)
     args.fixed_settings = {}

@@ -105,33 +105,33 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
 
         command.column_name = ast_col_decl.name;
-        if (ast_col_decl.type)
+        if (ast_col_decl.getType())
         {
-            command.data_type = data_type_factory.get(ast_col_decl.type);
+            command.data_type = data_type_factory.get(ast_col_decl.getType());
         }
-        if (ast_col_decl.default_expression)
+        if (ast_col_decl.getDefaultExpression())
         {
-            command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
-            command.default_expression = ast_col_decl.default_expression;
+            command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
+            command.default_expression = ast_col_decl.getDefaultExpression();
         }
 
-        if (ast_col_decl.comment)
+        if (ast_col_decl.getComment())
         {
-            const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
+            const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.getComment());
             command.comment = ast_comment.value.safeGet<String>();
         }
 
-        if (ast_col_decl.codec)
+        if (ast_col_decl.getCodec())
         {
-            if (ast_col_decl.default_specifier == "ALIAS")
+            if (ast_col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-            command.codec = ast_col_decl.codec;
+            command.codec = ast_col_decl.getCodec();
         }
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
 
-        if (ast_col_decl.ttl)
-            command.ttl = ast_col_decl.ttl;
+        if (ast_col_decl.getTTL())
+            command.ttl = ast_col_decl.getTTL();
 
         command.first = command_ast->first;
         command.if_not_exists = command_ast->if_not_exists;
@@ -162,31 +162,31 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.column_name = ast_col_decl.name;
         command.to_remove = removePropertyFromString(command_ast->remove_property);
 
-        if (ast_col_decl.type)
+        if (ast_col_decl.getType())
         {
-            command.data_type = data_type_factory.get(ast_col_decl.type);
+            command.data_type = data_type_factory.get(ast_col_decl.getType());
         }
 
-        if (ast_col_decl.default_expression)
+        if (ast_col_decl.getDefaultExpression())
         {
-            command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
-            command.default_expression = ast_col_decl.default_expression;
+            command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
+            command.default_expression = ast_col_decl.getDefaultExpression();
         }
 
-        if (ast_col_decl.comment)
+        if (ast_col_decl.getComment())
         {
-            const auto & ast_comment = ast_col_decl.comment->as<ASTLiteral &>();
+            const auto & ast_comment = ast_col_decl.getComment()->as<ASTLiteral &>();
             command.comment.emplace(ast_comment.value.safeGet<String>());
         }
 
-        if (ast_col_decl.ttl)
-            command.ttl = ast_col_decl.ttl;
+        if (ast_col_decl.getTTL())
+            command.ttl = ast_col_decl.getTTL();
 
-        if (ast_col_decl.codec)
-            command.codec = ast_col_decl.codec;
+        if (ast_col_decl.getCodec())
+            command.codec = ast_col_decl.getCodec();
 
-        if (ast_col_decl.settings)
-            command.settings_changes = ast_col_decl.settings->as<ASTSetQuery &>().changes;
+        if (ast_col_decl.getSettings())
+            command.settings_changes = ast_col_decl.getSettings()->as<ASTSetQuery &>().changes;
 
         /// At most only one of ast_col_decl.settings or command_ast->settings_changes is non-null
         if (command_ast->settings_changes)

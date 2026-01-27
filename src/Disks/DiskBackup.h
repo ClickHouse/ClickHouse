@@ -124,8 +124,6 @@ public:
 
     bool isReadOnly() const override { return true; }
 
-    void shutdown() override;
-
 private:
     const std::shared_ptr<IBackup> backup;
     const PathPrefixReplacement path_prefix_replacement;

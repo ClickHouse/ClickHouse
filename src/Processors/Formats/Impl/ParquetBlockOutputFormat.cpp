@@ -246,7 +246,7 @@ void ParquetBlockOutputFormat::finalizeImpl()
             }
         }
 
-        if (file_state.completed_row_groups.empty())
+        if (file_state.offset == 0)
         {
             base_offset = out.count();
             writeFileHeader(file_state, out);
@@ -405,7 +405,7 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
             chunk.getColumns()[i], header.getByPosition(i).type, header.getByPosition(i).name,
             options, &columns_to_write);
 
-    if (file_state.completed_row_groups.empty())
+    if (file_state.offset == 0)
     {
         base_offset = out.count();
         writeFileHeader(file_state, out);
@@ -467,7 +467,7 @@ void ParquetBlockOutputFormat::reapCompletedRowGroups(std::unique_lock<std::mute
 
         lock.unlock();
 
-        if (file_state.completed_row_groups.empty())
+        if (file_state.offset == 0)
         {
             base_offset = out.count();
             writeFileHeader(file_state, out);
