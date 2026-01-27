@@ -95,7 +95,7 @@ struct PartLogElement
 
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
 
-    UUID log_marker;
+    UUID log_marker{};
 
     static std::string name() { return "PartLog"; }
 

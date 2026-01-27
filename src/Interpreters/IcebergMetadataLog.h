@@ -18,7 +18,7 @@ struct IcebergMetadataLogElement
     std::optional<UInt64> row_in_file;
     std::optional<Iceberg::PruningReturnStatus> pruning_status;
 
-    UUID log_marker;
+    UUID log_marker{};
 
     static std::string name() { return "IcebergMetadataLog"; }
 

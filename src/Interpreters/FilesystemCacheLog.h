@@ -38,7 +38,7 @@ struct FilesystemCacheLogElement
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters = nullptr;
     String user_id{};
 
-    UUID log_marker;
+    UUID log_marker{};
 
     static std::string name() { return "FilesystemCacheLog"; }
 

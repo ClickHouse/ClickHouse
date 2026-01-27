@@ -58,7 +58,7 @@ struct QueryViewsLogElement
     String exception;
     String stack_trace;
 
-    UUID log_marker;
+    UUID log_marker{};
 
     static std::string name() { return "QueryLog"; }
 

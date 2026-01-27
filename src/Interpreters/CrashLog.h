@@ -28,7 +28,7 @@ struct CrashLogElement
     Array trace;
     Array trace_full;
 
-    UUID log_marker;
+    UUID log_marker{};
 
     static std::string name() { return "CrashLog"; }
     static ColumnsDescription getColumnsDescription();

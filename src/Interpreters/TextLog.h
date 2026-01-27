@@ -41,7 +41,7 @@ struct TextLogElement
     String value9;
     String value10;
 
-    UUID log_marker;
+    UUID log_marker{};
 
     static std::string name() { return "TextLog"; }
     static ColumnsDescription getColumnsDescription();
