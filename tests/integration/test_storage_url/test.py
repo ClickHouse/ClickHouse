@@ -145,9 +145,21 @@ def test_url_wildcard_query_fragment_matching():
     assert result.strip() == "3"
 
 
-def test_url_wildcard_glob_patterns():
+def test_url_wildcard_with_headers():
     result = node1.query(
-        "SELECT sum(x) FROM url('http://resolver:8081/data/glob/part?.tsv', 'TSV', 'x UInt64')"
+        "SELECT sum(x) FROM url("
+        "'http://resolver:8081/data/headers/**/part*.tsv', "
+        "'TSV', "
+        "'x UInt64', "
+        "headers('X-Test-Header'='1'))"
+    )
+    assert result.strip() == "15"
+
+
+def test_url_wildcard_glob_patterns():
+    # '?' is reserved in URLs as a query delimiter, so use '*' to cover wildcard matching in URL paths.
+    result = node1.query(
+        "SELECT sum(x) FROM url('http://resolver:8081/data/glob/part*.tsv', 'TSV', 'x UInt64')"
     )
     assert result.strip() == "15"
 

@@ -23,10 +23,12 @@ namespace ErrorCodes
 
 WebObjectStorage::WebObjectStorage(
     const String & url_,
+    const String & query_fragment_,
     ContextPtr context_,
     HTTPHeaderEntries headers_)
     : WithContext(context_->getGlobalContext())
     , url(url_)
+    , query_fragment(query_fragment_)
     , headers(std::move(headers_))
     , log(getLogger("WebObjectStorage"))
 {
@@ -186,7 +188,7 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::
 std::string WebObjectStorage::buildURL(const std::string & path) const
 {
     if (path.empty())
-        return url;
+        return url + query_fragment;
 
     std::string result = url;
     if (!result.ends_with('/'))
@@ -195,7 +197,7 @@ std::string WebObjectStorage::buildURL(const std::string & path) const
         result += path.substr(1);
     else
         result += path;
-    return result;
+    return result + query_fragment;
 }
 
 }

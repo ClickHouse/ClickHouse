@@ -95,6 +95,7 @@ private:
 
     String raw_url;
     String base_url;
+    String query_fragment;
     String namespace_prefix;
     Path path;
     Paths paths;
