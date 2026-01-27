@@ -113,7 +113,6 @@ def test_url_wildcard_headers_virtual_column():
     result = node1.query(
         "SELECT sum(length(mapKeys(_headers))) "
         "FROM url('http://resolver:8081/data/**/part*.tsv', 'TSV', 'x UInt64') "
-        "SETTINGS enable_filesystem_cache=0"
     )
     assert int(result.strip()) > 0
 
@@ -161,6 +160,14 @@ def test_url_wildcard_glob_patterns():
         "SELECT sum(x) FROM url('http://resolver:8081/data/glob/part{1..2}.tsv', 'TSV', 'x UInt64')"
     )
     assert result.strip() == "9"
+
+
+def test_url_wildcard_listing_order():
+    result = node1.query(
+        "SELECT sum(x) FROM url('http://resolver:8081/data/order/**/part*.tsv', 'TSV', 'x UInt64') "
+        "SETTINGS glob_expansion_max_elements=1"
+    )
+    assert result.strip() == "10"
 
 
 def test_table_function_url_access_rights():
