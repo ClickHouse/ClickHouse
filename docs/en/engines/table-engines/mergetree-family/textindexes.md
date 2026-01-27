@@ -48,6 +48,7 @@ CREATE TABLE tab
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_apply_mode = 'lazy' | 'materialize' ]
                             )
 )
 ENGINE = MergeTree
@@ -187,6 +188,10 @@ Optional parameter `posting_list_block_size` (default: 1048576) specifies the si
 Optional parameter `posting_list_codec` (default: `none`) specifies the codec for posting list:
 - `none` - the posting lists are stored without additional compression.
 - `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size).
+
+Optional parameter `posting_list_apply_mode` (default: `lazy`) specifies how compressed posting lists are decoded and applied during query execution. This parameter is only effective when `posting_list_codec` is set to a compressed codec (e.g., `bitpacking`):
+- `lazy` - decode posting lists on-demand using cursor-based iteration. This mode uses skip-list algorithms for efficient intersection/union operations, avoiding full decompression of posting lists. It is more memory-efficient and performs better for selective queries (e.g., `hasAllTokens` with rare terms).
+- `materialize` - fully decompress posting lists into roaring bitmaps before applying set operations. This mode may be faster for queries that access most of the posting list entries (e.g., dense token unions).
 
 </details>
 
