@@ -690,7 +690,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         return parts;
     }
 
-    const auto * filter_node = query_info.filter_actions_dag ? query_info.filter_actions_dag->getOutputs().front() : nullptr;
+    if (!query_info.filter_actions_dag)
+        return parts;
+
+    const auto & filter_node = *query_info.filter_actions_dag->getOutputs().front();
     StatisticsPartPruner statistics_pruner(metadata_snapshot, filter_node, context);
 
     if (statistics_pruner.isUseless())

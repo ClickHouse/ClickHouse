@@ -15,25 +15,25 @@ namespace DB
 class StatisticsPartPruner
 {
 public:
-    StatisticsPartPruner(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter_node, ContextPtr context);
+    StatisticsPartPruner(const StorageMetadataPtr & metadata, const ActionsDAG::Node & filter_node, ContextPtr context);
 
     /// Check if the part can potentially match the filter condition based on statistics.
     /// Returns BoolMask indicating whether the condition can be true/false for this part.
-    BoolMask checkPartCanMatch(const Estimates & estimates) const;
+    BoolMask checkPartCanMatch(const Estimates & estimates);
 
     /// Returns true if the pruner has no useful conditions, then all parts will match.
     bool isUseless() const { return useless; }
 
     /// Get the list of column names used in the filter condition that have statistics.
-    std::vector<std::string> getUsedColumns() const { return used_column_names; }
+    Names getUsedColumns() const { return {used_column_names.begin(), used_column_names.end()}; }
 
 private:
     /// Get or create a KeyCondition for the given columns, using cache to avoid recreating for each part.
-    KeyCondition * getKeyConditionForEstimates(const NamesAndTypesList & columns_and_types) const;
+    KeyCondition * getKeyConditionForEstimates(const NamesAndTypesList & columns_and_types);
 
     struct ColumnNamesHash
     {
-        size_t operator()(const std::vector<String> & column_names) const
+        size_t operator()(const Names & column_names) const
         {
             SipHash hash;
             hash.update(column_names.size());
@@ -44,13 +44,13 @@ private:
     };
 
     /// Cache key_condition by column names to avoid recreating them for each part.
-    mutable std::unordered_map<std::vector<String>, std::unique_ptr<KeyCondition>, ColumnNamesHash> key_condition_cache;
+    std::unordered_map<Names, std::unique_ptr<KeyCondition>, ColumnNamesHash> key_condition_cache;
 
     const ActionsDAGWithInversionPushDown filter_dag;
     const ContextPtr context;
     std::map<String, DataTypePtr> stats_column_name_to_type_map;
-    mutable std::vector<std::string> used_column_names;
-    mutable bool useless = true;
+    NameOrderedSet used_column_names;
+    bool useless = true;
 };
 
 }

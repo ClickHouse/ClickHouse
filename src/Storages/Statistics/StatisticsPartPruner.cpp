@@ -119,8 +119,8 @@ static std::optional<Range> createRangeFromEstimate(const Estimate & est, const 
     }
 }
 
-StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_, const ActionsDAG::Node * filter_node_, ContextPtr context_)
-    : filter_dag(filter_node_, context_)
+StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_, const ActionsDAG::Node & filter_node_, ContextPtr context_)
+    : filter_dag(&filter_node_, context_)
     , context(context_)
 {
     if (!metadata_ || !filter_dag.dag)
@@ -129,19 +129,20 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
     const auto & columns = metadata_->getColumns();
     Names filter_columns = filter_dag.dag->getRequiredColumnsNames();
 
-for (const auto & name : filter_columns)
-{
-    if (const auto * col = columns.tryGet(name))
+    for (const auto & name : filter_columns)
     {
-        if (col->statistics.types_to_desc.contains(StatisticsType::MinMax))
+        if (const auto * col = columns.tryGet(name))
         {
-            stats_column_name_to_type_map[col->name] = col->type;
-            useless = false;
+            if (col->statistics.types_to_desc.contains(StatisticsType::MinMax))
+            {
+                stats_column_name_to_type_map[col->name] = col->type;
+                useless = false;
+            }
         }
     }
 }
 
-KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndTypesList & columns) const
+KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndTypesList & columns)
 {
     const auto column_names = columns.getNames();
 
@@ -163,18 +164,13 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
     for (size_t col_idx : key_condition_ptr->getUsedColumns())
     {
         if (col_idx < column_names.size())
-        {
-            const auto & name = column_names[col_idx];
-            if (std::find(used_column_names.begin(), used_column_names.end(), name) == used_column_names.end())
-                used_column_names.push_back(name);
-        }
+            used_column_names.insert(column_names[col_idx]);
     }
-    std::sort(used_column_names.begin(), used_column_names.end());
 
     return key_condition_ptr;
 }
 
-BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates) const
+BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates)
 {
     /// Filter estimates with loaded MinMax statistics.
     Estimates minmax_estimates;
