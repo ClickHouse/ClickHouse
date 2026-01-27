@@ -228,17 +228,18 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const auto & shard = cluster->getShardsInfo().at(0);
     auto connection_pools = prepareConnectionPools(context, shard);
     size_t local_replica_index = findLocalReplica(connection_pools, shard.local_addresses);
-    size_t replicas = std::min<size_t>(settings[Setting::max_parallel_replicas], shard.getAllNodeCount());
+    size_t total_replicas = shard.getAllNodeCount();
+    size_t active_replicas = std::min<size_t>(settings[Setting::max_parallel_replicas], total_replicas);
 
-    chassert(replicas <= connection_pools.size());
+    chassert(active_replicas <= connection_pools.size());
 
     std::vector<std::vector<std::string_view>> replicas_parts;
-    replicas_parts.resize(replicas);
+    replicas_parts.resize(active_replicas);
 
     std::vector<size_t> replicas_marks;
-    replicas_marks.resize(replicas);
+    replicas_marks.resize(active_replicas);
     std::vector<size_t> replicas_rows;
-    replicas_rows.resize(replicas);
+    replicas_rows.resize(active_replicas);
 
     for (const auto & part_ranges : parts_with_ranges)
     {
@@ -246,7 +247,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         chassert(part_ranges.exact_ranges.empty());
 
         const auto & part_name = part_ranges.data_part->name;
-        const auto & part_replica_index = partReplica(part_name, replicas);
+        const auto & part_replica_index = partReplica(part_name, active_replicas);
         replicas_parts[part_replica_index].push_back(part_name);
 
         replicas_marks[part_replica_index] += part_ranges.getMarksCount();
@@ -254,7 +255,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     }
 
     DistributedIndexAnalysisPartsRanges res;
-    res.resize(replicas);
+    res.resize(total_replicas);
 
     ContextMutablePtr execution_context = Context::createCopy(context);
     auto external_tables = execution_context->getExternalTables();
