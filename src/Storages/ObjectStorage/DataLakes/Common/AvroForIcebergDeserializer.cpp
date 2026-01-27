@@ -80,7 +80,7 @@ std::optional<std::pair<ColumnPtr, DataTypePtr>> & AvroForIcebergDeserializer::e
     if (it != cache_extracted_subcolumns_with_types.end())
         return it->second;
 
-    if (parsed_column_data_type->hasSubcolumn(path)) 
+    if (parsed_column_data_type->hasSubcolumn(path))
     {
         auto column = parsed_column_data_type->getSubcolumn(path, parsed_column);
         auto data_type = parsed_column_data_type->getSubcolumnType(path);
