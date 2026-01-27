@@ -4,11 +4,8 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/randomSeed.h>
 #include <base/unaligned.h>
-
 #if USE_MULTITARGET_CODE
-#    include <Common/TargetSpecific.h>
-
-#    include <immintrin.h>
+#  include <x86intrin.h>
 #endif
 
 
@@ -67,62 +64,59 @@ namespace
         0x15762761bb55b9acULL, 0x3e448fc94fdd28e7ULL, 0xa5121232adfbe70aULL, 0xb1e0f6d286112804ULL,
         0x6062e96de9554806ULL, 0xcc679b329c28882aULL, 0x5c6d29f45cbc060eULL, 0x1af1325a86ffb162ULL,
     };
-
-    void randImpl(char * output, size_t size)
-    {
-        LinearCongruentialGenerator generator0;
-        LinearCongruentialGenerator generator1;
-        LinearCongruentialGenerator generator2;
-        LinearCongruentialGenerator generator3;
-
-        UInt64 rand_seed = randomSeed();
-
-        seed(generator0, rand_seed, random_numbers[0] + reinterpret_cast<intptr_t>(output));
-        seed(generator1, rand_seed, random_numbers[1] + reinterpret_cast<intptr_t>(output));
-        seed(generator2, rand_seed, random_numbers[2] + reinterpret_cast<intptr_t>(output));
-        seed(generator3, rand_seed, random_numbers[3] + reinterpret_cast<intptr_t>(output));
-
-        for (const char * end = output + size; output < end; output += 16)
-        {
-            unalignedStore<UInt32>(output, generator0.next());
-            unalignedStore<UInt32>(output + 4, generator1.next());
-            unalignedStore<UInt32>(output + 8, generator2.next());
-            unalignedStore<UInt32>(output + 12, generator3.next());
-        }
-        /// It is guaranteed (by PaddedPODArray) that we can overwrite up to 15 bytes after end.
-    }
 }
 
-#if USE_MULTITARGET_CODE
+DECLARE_DEFAULT_CODE(
+
+void RandImpl::execute(char * output, size_t size)
+{
+    LinearCongruentialGenerator generator0;
+    LinearCongruentialGenerator generator1;
+    LinearCongruentialGenerator generator2;
+    LinearCongruentialGenerator generator3;
+
+    UInt64 rand_seed = randomSeed();
+
+    seed(generator0, rand_seed, random_numbers[0] + reinterpret_cast<intptr_t>(output));
+    seed(generator1, rand_seed, random_numbers[1] + reinterpret_cast<intptr_t>(output));
+    seed(generator2, rand_seed, random_numbers[2] + reinterpret_cast<intptr_t>(output));
+    seed(generator3, rand_seed, random_numbers[3] + reinterpret_cast<intptr_t>(output));
+
+    for (const char * end = output + size; output < end; output += 16)
+    {
+        unalignedStore<UInt32>(output, generator0.next());
+        unalignedStore<UInt32>(output + 4, generator1.next());
+        unalignedStore<UInt32>(output + 8, generator2.next());
+        unalignedStore<UInt32>(output + 12, generator3.next());
+    }
+    /// It is guaranteed (by PaddedPODArray) that we can overwrite up to 15 bytes after end.
+}
+
+) // DECLARE_DEFAULT_CODE
+
+DECLARE_AVX2_SPECIFIC_CODE(
 
 using namespace VectorExtension;
 
 /* Takes 2 vectors with LinearCongruentialGenerator states and combines them into vector with random values.
  * From every rand-state we use only bits 15...47 to generate random vector.
  */
-AVX2_FUNCTION_SPECIFIC_ATTRIBUTE ALWAYS_INLINE inline UInt64x4 combineValuesAVX2(UInt64x4 & a, UInt64x4 & b)
+inline UInt64x4 combineValues(UInt64x4 a, UInt64x4 b)
 {
     auto xa = reinterpret_cast<__m256i>(a);
     auto xb = reinterpret_cast<__m256i>(b);
-
-    /// 2 128-bit lanes
-    /// Each lane consist of 4 32-bit words
-    /// We only want to keep the 4 words of the middle so we move them to the sides
-    /// Mask: 0xb1 => 0b10110001 => Order: 2, 3, 0, 1
-    /// xa = a[2, 3, 0, 1, 6, 7, 4, 5]
+    /// Every state is 8-byte value and we need to use only 4 from the middle.
+    /// Swap the low half and the high half of every state to move these bytes from the middle to sides.
+    /// xa = xa[1, 0, 3, 2, 5, 4, 7, 6]
     xa = _mm256_shuffle_epi32(xa, 0xb1);
-
-    /// Now every 128-bit lane in xa is xx....xx and every value in xb is ..xxxx.. where x is random byte we want to use.
-    /// Now each lane consists of 8 16-bit words
+    /// Now every 8-byte value in xa is xx....xx and every value in xb is ..xxxx.. where x is random byte we want to use.
     /// Just blend them to get the result vector.
-    /// Mask (least significant 8 bits): 0x66 => 0b01100110 => a_b_b_a_a_b_b_a (x2)
-    /// result = xa[0],xb[1,2],xa[3,4],xb[5,6],xa[7] - xa[8],xb[9,10],xa[11,12],xb[13,14],xa[15]
-    /// Final: a[2], b[1], b[2], a[1], a[6], b[5], b[6], a[5] - a[10], b[9], b[10], a[9], a[14], b[13], b[14], a[13]
+    /// result = xa[0],xb[1,2],xa[3,4],xb[5,6],xa[7,8],xb[9,10],xa[11,12],xb[13,14],xa[15]
     __m256i result = _mm256_blend_epi16(xa, xb, 0x66);
     return reinterpret_cast<UInt64x4>(result);
 }
 
-AVX2_FUNCTION_SPECIFIC_ATTRIBUTE void NO_INLINE RandImpl::executeAVX2(char * output, size_t size)
+void RandImpl::execute(char * output, size_t size)
 {
     if (size == 0)
         return;
@@ -155,16 +149,16 @@ AVX2_FUNCTION_SPECIFIC_ATTRIBUTE void NO_INLINE RandImpl::executeAVX2(char * out
     {
         gens1 = gens1 * a + c;
         gens2 = gens2 * a + c;
-        unalignedStore<UInt64x4>(output, combineValuesAVX2(gens1, gens2));
+        unalignedStore<UInt64x4>(output, combineValues(gens1, gens2));
         gens3 = gens3 * a + c;
         gens4 = gens4 * a + c;
-        unalignedStore<UInt64x4>(output + sizeof(UInt64x4), combineValuesAVX2(gens3, gens4));
+        unalignedStore<UInt64x4>(output + sizeof(UInt64x4), combineValues(gens3, gens4));
         gens1 = gens1 * a + c;
         gens2 = gens2 * a + c;
-        unalignedStore<UInt64x4>(output + 2 * sizeof(UInt64x4), combineValuesAVX2(gens1, gens2));
+        unalignedStore<UInt64x4>(output + 2 * sizeof(UInt64x4), combineValues(gens1, gens2));
         gens3 = gens3 * a + c;
         gens4 = gens4 * a + c;
-        unalignedStore<UInt64x4>(output + 3 * sizeof(UInt64x4), combineValuesAVX2(gens3, gens4));
+        unalignedStore<UInt64x4>(output + 3 * sizeof(UInt64x4), combineValues(gens3, gens4));
         output += bytes_per_write;
     }
 
@@ -173,7 +167,7 @@ AVX2_FUNCTION_SPECIFIC_ATTRIBUTE void NO_INLINE RandImpl::executeAVX2(char * out
     {
         gens1 = gens1 * a + c;
         gens2 = gens2 * a + c;
-        UInt64x4 values = combineValuesAVX2(gens1, gens2);
+        UInt64x4 values = combineValues(gens1, gens2);
         for (int i = 0; i < vec_size && (end - output) > 0; ++i)
         {
             unalignedStore<UInt64>(output, values[i]);
@@ -182,108 +176,6 @@ AVX2_FUNCTION_SPECIFIC_ATTRIBUTE void NO_INLINE RandImpl::executeAVX2(char * out
     }
 }
 
+) // DECLARE_AVX2_SPECIFIC_CODE
 
-/* Takes 2 vectors with LinearCongruentialGenerator states and combines them into vector with random values.
- * From every rand-state we use only bits 15...47 to generate random vector.
- */
-AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE ALWAYS_INLINE inline UInt64x8 combineValuesAVX512BW(UInt64x8 & a, UInt64x8 & b)
-{
-    auto xa = reinterpret_cast<__m512i>(a);
-    auto xb = reinterpret_cast<__m512i>(b);
-
-    /// 4 128-bit lanes
-    /// Each lane consist of 4 32-bit words
-    /// We only want to keep the 4 words of the middle so we move them to the sides
-    /// Mask: 0xb1 => 0b10110001 => Order: 2, 3, 0, 1
-    /// xa = a[2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13]
-    xa = _mm512_shuffle_epi32(xa, 0xb1); // 0b10110001 => 2_3_0_1 (128 bits x 4 times)
-
-    /// Now every 128-bit lane in xa is xx....xx and every value in xb is ..xxxx.. where x is random byte we want to use.
-    /// Now each lane consists of 32 16-bit words
-    /// Just blend them to get the result vector.
-    /// Mask (all 32 bits are used): 0x66666666 => 0b01100110011001100110011001100110
-    __m512i result = _mm512_mask_blend_epi16(0x66666666, xa, xb);
-    return reinterpret_cast<UInt64x8>(result);
-}
-
-AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE void NO_INLINE RandImpl::executeAVX512BW(char * output, size_t size)
-{
-    if (size == 0)
-        return;
-
-    char * end = output + size;
-
-    constexpr int vec_size = 8;
-    constexpr int safe_overwrite = PADDING_FOR_SIMD - 1;
-    constexpr int bytes_per_write = 4 * sizeof(UInt64x8);
-
-    UInt64 rand_seed = randomSeed();
-
-    UInt64 a = LinearCongruentialGenerator::a;
-    constexpr UInt64 c = LinearCongruentialGenerator::c;
-
-    UInt64x8 gens1{};
-    UInt64x8 gens2{};
-    UInt64x8 gens3{};
-    UInt64x8 gens4{};
-
-    for (int i = 0; i < vec_size; ++i)
-    {
-        gens1[i] = calcSeed(rand_seed, random_numbers[i] + reinterpret_cast<intptr_t>(output));
-        gens2[i] = calcSeed(rand_seed, random_numbers[i + vec_size] + reinterpret_cast<intptr_t>(output));
-        gens3[i] = calcSeed(rand_seed, random_numbers[i + 2 * vec_size] + reinterpret_cast<intptr_t>(output));
-        gens4[i] = calcSeed(rand_seed, random_numbers[i + 3 * vec_size] + reinterpret_cast<intptr_t>(output));
-    }
-
-    while ((end - output) + safe_overwrite >= bytes_per_write)
-    {
-        gens1 = gens1 * a + c;
-        gens2 = gens2 * a + c;
-        unalignedStore<UInt64x8>(output, combineValuesAVX512BW(gens1, gens2));
-        gens3 = gens3 * a + c;
-        gens4 = gens4 * a + c;
-        unalignedStore<UInt64x8>(output + sizeof(UInt64x8), combineValuesAVX512BW(gens3, gens4));
-        gens1 = gens1 * a + c;
-        gens2 = gens2 * a + c;
-        unalignedStore<UInt64x8>(output + 2 * sizeof(UInt64x8), combineValuesAVX512BW(gens1, gens2));
-        gens3 = gens3 * a + c;
-        gens4 = gens4 * a + c;
-        unalignedStore<UInt64x8>(output + 3 * sizeof(UInt64x8), combineValuesAVX512BW(gens3, gens4));
-        output += bytes_per_write;
-    }
-
-    // Process tail
-    while ((end - output) > 0)
-    {
-        gens1 = gens1 * a + c;
-        gens2 = gens2 * a + c;
-        UInt64x8 values = combineValuesAVX512BW(gens1, gens2);
-        for (int i = 0; i < vec_size && (end - output) > 0; ++i)
-        {
-            unalignedStore<UInt64>(output, values[i]);
-            output += sizeof(UInt64);
-        }
-    }
-}
-
-#endif
-
-void RandImpl::execute(char * output, size_t size)
-{
-#if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::AVX512BW))
-    {
-        executeAVX512BW(output, size);
-        return;
-    }
-
-    if (isArchSupported(TargetArch::AVX2))
-    {
-        executeAVX2(output, size);
-        return;
-    }
-#endif
-
-    randImpl(output, size);
-}
 }

@@ -211,7 +211,7 @@ protected:
     {
         dequeued_requests++;
         dequeued_cost += cost;
-        throughput.add(static_cast<double>(clock_gettime_ns())/1e9, cost);
+        throughput.add(static_cast<double>(clock_gettime_ns())/1e9, static_cast<double>(cost));
     }
 
 public:

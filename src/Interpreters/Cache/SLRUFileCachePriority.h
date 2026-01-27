@@ -156,7 +156,7 @@ public:
 
     EntryPtr getEntry() const override;
 
-    bool isValid(const CachePriorityGuard::WriteLock &) override;
+    bool isValid(const CachePriorityGuard::WriteLock &) const override;
 
     void remove(const CachePriorityGuard::WriteLock &) override;
 

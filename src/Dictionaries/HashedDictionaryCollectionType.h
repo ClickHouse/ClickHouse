@@ -108,7 +108,7 @@ public:
     {
         size_degree += delta;
         precalculated_mask = (1ULL << size_degree) - 1;
-        precalculated_max_fill = static_cast<size_t>((1ULL << size_degree) * max_load_factor);
+        precalculated_max_fill = static_cast<size_t>(static_cast<double>(1ULL << size_degree) * max_load_factor);
     }
 
     /// The size of the hash table in the cells.
@@ -138,7 +138,7 @@ public:
             /// Slightly more optimal than HashTableGrowerWithPrecalculation
             /// and takes into account max_load_factor.
             size_degree = static_cast<UInt8>(static_cast<size_t>(log2(num_elems - 1)) + 1);
-            if ((1ULL << size_degree) * max_load_factor < num_elems)
+            if (static_cast<double>(1ULL << size_degree) * max_load_factor < static_cast<double>(num_elems))
                 ++size_degree;
         }
         increaseSizeDegree(0);

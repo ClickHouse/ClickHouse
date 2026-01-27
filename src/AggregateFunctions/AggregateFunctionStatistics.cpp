@@ -37,7 +37,7 @@ bool areComparable(UInt64 a, UInt64 b)
         return false;
 
     auto res = std::minmax(a, b);
-    return (((1 - static_cast<Float64>(res.first) / res.second) < sensitivity) && (res.first > threshold));
+    return (((1 - static_cast<Float64>(res.first) / static_cast<Float64>(res.second)) < sensitivity) && (static_cast<Float64>(res.first) > threshold));
 }
 
 
@@ -63,7 +63,7 @@ struct AggregateFunctionVarianceData
         Float64 delta = val - mean;
 
         ++count;
-        mean += delta / count;
+        mean += delta / static_cast<Float64>(count);
         m2 += delta * (val - mean);
     }
 
@@ -73,13 +73,13 @@ struct AggregateFunctionVarianceData
         if (total_count == 0)
             return;
 
-        Float64 factor = static_cast<Float64>(count * source.count) / total_count;
+        Float64 factor = static_cast<Float64>(count * source.count) / static_cast<Float64>(total_count);
         Float64 delta = mean - source.mean;
 
         if (areComparable(count, source.count))
-            mean = (source.count * source.mean + count * mean) / total_count;
+            mean = (static_cast<Float64>(source.count) * source.mean + static_cast<Float64>(count) * mean) / static_cast<Float64>(total_count);
         else
-            mean = source.mean + delta * (static_cast<Float64>(count) / total_count);
+            mean = source.mean + delta * (static_cast<Float64>(count) / static_cast<Float64>(total_count));
 
         m2 += source.m2 + delta * delta * factor;
         count = total_count;
@@ -124,7 +124,7 @@ private:
     {
         if (count < 2)
             return std::numeric_limits<Float64>::infinity();
-        return m2 / (count - 1);
+        return m2 / static_cast<Float64>(count - 1);
     }
 
     static Float64 getStddevSamp(Float64 m2, UInt64 count)
@@ -138,7 +138,7 @@ private:
             return std::numeric_limits<Float64>::infinity();
         if (count == 1)
             return 0.0;
-        return m2 / count;
+        return m2 / static_cast<Float64>(count);
     }
 
     static Float64 getStddevPop(Float64 m2, UInt64 count)
@@ -270,8 +270,8 @@ struct CovarianceData : public BaseCovarianceData<compute_marginal_moments>
 
         ++count;
 
-        left_mean += left_delta / count;
-        right_mean += right_delta / count;
+        left_mean += left_delta / static_cast<Float64>(count);
+        right_mean += right_delta / static_cast<Float64>(count);
         co_moment += (left_val - left_mean) * (right_val - old_right_mean);
 
         /// Update the marginal moments, if any.
@@ -289,19 +289,19 @@ struct CovarianceData : public BaseCovarianceData<compute_marginal_moments>
         if (total_count == 0)
             return;
 
-        Float64 factor = static_cast<Float64>(count * source.count) / total_count;
+        Float64 factor = static_cast<Float64>(count * source.count) / static_cast<Float64>(total_count);
         Float64 left_delta = left_mean - source.left_mean;
         Float64 right_delta = right_mean - source.right_mean;
 
         if (areComparable(count, source.count))
         {
-            left_mean = (source.count * source.left_mean + count * left_mean) / total_count;
-            right_mean = (source.count * source.right_mean + count * right_mean) / total_count;
+            left_mean = (static_cast<Float64>(source.count) * source.left_mean + static_cast<Float64>(count) * left_mean) / static_cast<Float64>(total_count);
+            right_mean = (static_cast<Float64>(source.count) * source.right_mean + static_cast<Float64>(count) * right_mean) / static_cast<Float64>(total_count);
         }
         else
         {
-            left_mean = source.left_mean + left_delta * (static_cast<Float64>(count) / total_count);
-            right_mean = source.right_mean + right_delta * (static_cast<Float64>(count) / total_count);
+            left_mean = source.left_mean + left_delta * (static_cast<Float64>(count) / static_cast<Float64>(total_count));
+            right_mean = source.right_mean + right_delta * (static_cast<Float64>(count) / static_cast<Float64>(total_count));
         }
 
         co_moment += source.co_moment + left_delta * right_delta * factor;
@@ -361,7 +361,7 @@ private:
     {
         if (count < 2)
             return std::numeric_limits<Float64>::infinity();
-        return co_moment / (count - 1);
+        return co_moment / static_cast<Float64>(count - 1);
     }
 
     static Float64 getCovarPop(Float64 co_moment, UInt64 count)
@@ -370,7 +370,7 @@ private:
             return std::numeric_limits<Float64>::infinity();
         if (count == 1)
             return 0.0;
-        return co_moment / count;
+        return co_moment / static_cast<Float64>(count);
     }
 
     static Float64 getCorr(Float64 co_moment, Float64 left_m2, Float64 right_m2, UInt64 count)
