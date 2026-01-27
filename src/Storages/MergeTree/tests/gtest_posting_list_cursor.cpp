@@ -55,8 +55,6 @@ public:
         index = static_cast<size_t>(it - row_ids.begin());
     }
 
-    double density() const { return density_val; }
-
     /// For brute force algorithms
     void linearOr(UInt8 * data, size_t row_offset, size_t num_rows)
     {
@@ -76,12 +74,6 @@ public:
             if (row_id >= row_offset && row_id < row_end)
                 ++data[row_id - row_offset];
         }
-    }
-
-    void reset()
-    {
-        index = 0;
-        is_valid = !row_ids.empty();
     }
 
 private:
@@ -219,13 +211,13 @@ void verifyUnion(const std::vector<std::vector<uint32_t>> & posting_lists, size_
 // MockPostingListCursor Basic Tests
 // =============================================================================
 
-TEST(MockPostingListCursorTest, EmptyList)
+TEST(PostingListCursorTest, MockCursorEmptyList)
 {
     MockPostingListCursor cursor({});
     EXPECT_FALSE(cursor.valid());
 }
 
-TEST(MockPostingListCursorTest, SingleElement)
+TEST(PostingListCursorTest, MockCursorSingleElement)
 {
     MockPostingListCursor cursor({42});
     EXPECT_TRUE(cursor.valid());
@@ -234,7 +226,7 @@ TEST(MockPostingListCursorTest, SingleElement)
     EXPECT_FALSE(cursor.valid());
 }
 
-TEST(MockPostingListCursorTest, MultipleElements)
+TEST(PostingListCursorTest, MockCursorMultipleElements)
 {
     MockPostingListCursor cursor({1, 5, 10, 20, 100});
     EXPECT_TRUE(cursor.valid());
@@ -249,7 +241,7 @@ TEST(MockPostingListCursorTest, MultipleElements)
     EXPECT_EQ(values, (std::vector<uint32_t>{1, 5, 10, 20, 100}));
 }
 
-TEST(MockPostingListCursorTest, SeekExact)
+TEST(PostingListCursorTest, SeekExactMatch)
 {
     MockPostingListCursor cursor({1, 5, 10, 20, 100});
     cursor.seek(10);
@@ -257,7 +249,7 @@ TEST(MockPostingListCursorTest, SeekExact)
     EXPECT_EQ(cursor.value(), 10u);
 }
 
-TEST(MockPostingListCursorTest, SeekBetween)
+TEST(PostingListCursorTest, SeekBetweenElements)
 {
     MockPostingListCursor cursor({1, 5, 10, 20, 100});
     cursor.seek(7);
@@ -265,14 +257,14 @@ TEST(MockPostingListCursorTest, SeekBetween)
     EXPECT_EQ(cursor.value(), 10u);
 }
 
-TEST(MockPostingListCursorTest, SeekPastEnd)
+TEST(PostingListCursorTest, SeekPastEnd)
 {
     MockPostingListCursor cursor({1, 5, 10, 20, 100});
     cursor.seek(200);
     EXPECT_FALSE(cursor.valid());
 }
 
-TEST(MockPostingListCursorTest, SeekToFirst)
+TEST(PostingListCursorTest, SeekToFirst)
 {
     MockPostingListCursor cursor({1, 5, 10, 20, 100});
     cursor.seek(0);
@@ -284,7 +276,7 @@ TEST(MockPostingListCursorTest, SeekToFirst)
 // LinearOr Tests
 // =============================================================================
 
-TEST(PostingListLinearOrTest, EmptyList)
+TEST(PostingListCursorTest, LinearOrEmptyList)
 {
     MockPostingListCursor cursor({});
     std::vector<UInt8> result(100, 0);
@@ -294,7 +286,7 @@ TEST(PostingListLinearOrTest, EmptyList)
         EXPECT_EQ(result[i], 0u);
 }
 
-TEST(PostingListLinearOrTest, SingleElement)
+TEST(PostingListCursorTest, LinearOrSingleElement)
 {
     MockPostingListCursor cursor({50});
     std::vector<UInt8> result(100, 0);
@@ -305,7 +297,7 @@ TEST(PostingListLinearOrTest, SingleElement)
     EXPECT_EQ(count, 1u);
 }
 
-TEST(PostingListLinearOrTest, MultipleElements)
+TEST(PostingListCursorTest, LinearOrMultipleElements)
 {
     MockPostingListCursor cursor({10, 20, 30, 40, 50});
     std::vector<UInt8> result(100, 0);
@@ -321,7 +313,7 @@ TEST(PostingListLinearOrTest, MultipleElements)
     EXPECT_EQ(count, 5u);
 }
 
-TEST(PostingListLinearOrTest, WithOffset)
+TEST(PostingListCursorTest, LinearOrWithOffset)
 {
     MockPostingListCursor cursor({100, 110, 120});
     std::vector<UInt8> result(50, 0);
@@ -335,7 +327,7 @@ TEST(PostingListLinearOrTest, WithOffset)
     EXPECT_EQ(count, 3u);
 }
 
-TEST(PostingListLinearOrTest, PartialOverlap)
+TEST(PostingListCursorTest, LinearOrPartialOverlap)
 {
     MockPostingListCursor cursor({10, 20, 30, 40, 50});
     std::vector<UInt8> result(25, 0);
@@ -354,7 +346,7 @@ TEST(PostingListLinearOrTest, PartialOverlap)
 // LinearAnd Tests
 // =============================================================================
 
-TEST(PostingListLinearAndTest, SingleCursor)
+TEST(PostingListCursorTest, LinearAndSingleCursor)
 {
     MockPostingListCursor cursor({10, 20, 30});
     std::vector<UInt8> result(50, 0);
@@ -365,7 +357,7 @@ TEST(PostingListLinearAndTest, SingleCursor)
     EXPECT_EQ(result[30], 1u);
 }
 
-TEST(PostingListLinearAndTest, MultipleCursorsIntersection)
+TEST(PostingListCursorTest, LinearAndMultipleCursorsIntersection)
 {
     // List 1: {10, 20, 30, 40}
     // List 2: {15, 20, 30, 45}
@@ -397,7 +389,7 @@ TEST(PostingListLinearAndTest, MultipleCursorsIntersection)
 // Brute Force Intersection Tests
 // =============================================================================
 
-TEST(BruteForceIntersectionTest, TwoListsNoOverlap)
+TEST(PostingListCursorTest, IntersectionTwoListsNoOverlap)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {1, 2, 3, 4, 5},
@@ -406,7 +398,7 @@ TEST(BruteForceIntersectionTest, TwoListsNoOverlap)
     verifyBruteForceIntersection(lists, 0, 20);
 }
 
-TEST(BruteForceIntersectionTest, TwoListsFullOverlap)
+TEST(PostingListCursorTest, IntersectionTwoListsFullOverlap)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {1, 2, 3, 4, 5},
@@ -415,7 +407,7 @@ TEST(BruteForceIntersectionTest, TwoListsFullOverlap)
     verifyBruteForceIntersection(lists, 0, 10);
 }
 
-TEST(BruteForceIntersectionTest, TwoListsPartialOverlap)
+TEST(PostingListCursorTest, IntersectionTwoListsPartialOverlap)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {1, 2, 3, 4, 5, 6, 7},
@@ -424,7 +416,7 @@ TEST(BruteForceIntersectionTest, TwoListsPartialOverlap)
     verifyBruteForceIntersection(lists, 0, 15);
 }
 
-TEST(BruteForceIntersectionTest, ThreeListsIntersection)
+TEST(PostingListCursorTest, IntersectionThreeLists)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
@@ -435,7 +427,7 @@ TEST(BruteForceIntersectionTest, ThreeListsIntersection)
     verifyBruteForceIntersection(lists, 0, 15);
 }
 
-TEST(BruteForceIntersectionTest, FourListsIntersection)
+TEST(PostingListCursorTest, IntersectionFourLists)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
@@ -447,7 +439,7 @@ TEST(BruteForceIntersectionTest, FourListsIntersection)
     verifyBruteForceIntersection(lists, 0, 15);
 }
 
-TEST(BruteForceIntersectionTest, EmptyIntersection)
+TEST(PostingListCursorTest, IntersectionEmpty)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {1, 3, 5, 7, 9},
@@ -456,7 +448,7 @@ TEST(BruteForceIntersectionTest, EmptyIntersection)
     verifyBruteForceIntersection(lists, 0, 15);
 }
 
-TEST(BruteForceIntersectionTest, SingleList)
+TEST(PostingListCursorTest, IntersectionSingleList)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {1, 2, 3, 4, 5}
@@ -464,7 +456,7 @@ TEST(BruteForceIntersectionTest, SingleList)
     verifyBruteForceIntersection(lists, 0, 10);
 }
 
-TEST(BruteForceIntersectionTest, WithOffset)
+TEST(PostingListCursorTest, IntersectionWithOffset)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {100, 105, 110, 115, 120},
@@ -474,7 +466,7 @@ TEST(BruteForceIntersectionTest, WithOffset)
     verifyBruteForceIntersection(lists, 100, 30);
 }
 
-TEST(BruteForceIntersectionTest, LargeRandomLists)
+TEST(PostingListCursorTest, IntersectionLargeRandomLists)
 {
     std::vector<std::vector<uint32_t>> lists;
     for (uint32_t i = 0; i < 5; ++i)
@@ -488,7 +480,7 @@ TEST(BruteForceIntersectionTest, LargeRandomLists)
 // Union Tests
 // =============================================================================
 
-TEST(UnionTest, TwoListsNoOverlap)
+TEST(PostingListCursorTest, UnionTwoListsNoOverlap)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {1, 2, 3},
@@ -497,7 +489,7 @@ TEST(UnionTest, TwoListsNoOverlap)
     verifyUnion(lists, 0, 15);
 }
 
-TEST(UnionTest, TwoListsFullOverlap)
+TEST(PostingListCursorTest, UnionTwoListsFullOverlap)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {1, 2, 3},
@@ -506,7 +498,7 @@ TEST(UnionTest, TwoListsFullOverlap)
     verifyUnion(lists, 0, 10);
 }
 
-TEST(UnionTest, TwoListsPartialOverlap)
+TEST(PostingListCursorTest, UnionTwoListsPartialOverlap)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {1, 2, 3, 4, 5},
@@ -515,7 +507,7 @@ TEST(UnionTest, TwoListsPartialOverlap)
     verifyUnion(lists, 0, 15);
 }
 
-TEST(UnionTest, ThreeListsUnion)
+TEST(PostingListCursorTest, UnionThreeLists)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {1, 4, 7},
@@ -525,7 +517,7 @@ TEST(UnionTest, ThreeListsUnion)
     verifyUnion(lists, 0, 15);
 }
 
-TEST(UnionTest, EmptyList)
+TEST(PostingListCursorTest, UnionEmptyList)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {},
@@ -534,7 +526,7 @@ TEST(UnionTest, EmptyList)
     verifyUnion(lists, 0, 10);
 }
 
-TEST(UnionTest, WithOffset)
+TEST(PostingListCursorTest, UnionWithOffset)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {100, 105, 110},
@@ -543,7 +535,7 @@ TEST(UnionTest, WithOffset)
     verifyUnion(lists, 100, 20);
 }
 
-TEST(UnionTest, LargeRandomLists)
+TEST(PostingListCursorTest, UnionLargeRandomLists)
 {
     std::vector<std::vector<uint32_t>> lists;
     for (uint32_t i = 0; i < 5; ++i)
@@ -557,7 +549,7 @@ TEST(UnionTest, LargeRandomLists)
 // Stress Tests
 // =============================================================================
 
-TEST(StressTest, ManySmallLists)
+TEST(PostingListCursorTest, StressManySmallLists)
 {
     std::vector<std::vector<uint32_t>> lists;
     for (uint32_t i = 0; i < 20; ++i)
@@ -568,7 +560,7 @@ TEST(StressTest, ManySmallLists)
     verifyUnion(lists, 0, 100);
 }
 
-TEST(StressTest, FewLargeLists)
+TEST(PostingListCursorTest, StressFewLargeLists)
 {
     std::vector<std::vector<uint32_t>> lists;
     for (uint32_t i = 0; i < 3; ++i)
@@ -579,7 +571,7 @@ TEST(StressTest, FewLargeLists)
     verifyUnion(lists, 0, 2000);
 }
 
-TEST(StressTest, DensePostingLists)
+TEST(PostingListCursorTest, StressDensePostingLists)
 {
     // Dense lists (high density)
     std::vector<uint32_t> list1(500);
@@ -592,7 +584,7 @@ TEST(StressTest, DensePostingLists)
     verifyUnion(lists, 0, 1000);
 }
 
-TEST(StressTest, SparsePostingLists)
+TEST(PostingListCursorTest, StressSparsePostingLists)
 {
     // Sparse lists (low density)
     std::vector<uint32_t> list1, list2;
@@ -606,7 +598,7 @@ TEST(StressTest, SparsePostingLists)
     verifyUnion(lists, 0, 10000);
 }
 
-TEST(StressTest, MixedDensity)
+TEST(PostingListCursorTest, StressMixedDensity)
 {
     // Mix of dense and sparse lists
     std::vector<uint32_t> dense_list(200);
@@ -625,7 +617,7 @@ TEST(StressTest, MixedDensity)
 // Edge Cases
 // =============================================================================
 
-TEST(EdgeCaseTest, SingleElementLists)
+TEST(PostingListCursorTest, EdgeCaseSingleElementLists)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {50},
@@ -635,7 +627,7 @@ TEST(EdgeCaseTest, SingleElementLists)
     verifyBruteForceIntersection(lists, 0, 100);
 }
 
-TEST(EdgeCaseTest, SingleElementListsNoMatch)
+TEST(PostingListCursorTest, EdgeCaseSingleElementListsNoMatch)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {10},
@@ -645,7 +637,7 @@ TEST(EdgeCaseTest, SingleElementListsNoMatch)
     verifyBruteForceIntersection(lists, 0, 100);
 }
 
-TEST(EdgeCaseTest, ConsecutiveElements)
+TEST(PostingListCursorTest, EdgeCaseConsecutiveElements)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {0, 1, 2, 3, 4},
@@ -656,7 +648,7 @@ TEST(EdgeCaseTest, ConsecutiveElements)
     verifyBruteForceIntersection(lists, 0, 10);
 }
 
-TEST(EdgeCaseTest, LargeGaps)
+TEST(PostingListCursorTest, EdgeCaseLargeGaps)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {0, 1000, 2000, 3000},
@@ -667,7 +659,7 @@ TEST(EdgeCaseTest, LargeGaps)
     verifyBruteForceIntersection(lists, 0, 5000);
 }
 
-TEST(EdgeCaseTest, AllSameElement)
+TEST(PostingListCursorTest, EdgeCaseAllSameElement)
 {
     std::vector<std::vector<uint32_t>> lists = {
         {42},
