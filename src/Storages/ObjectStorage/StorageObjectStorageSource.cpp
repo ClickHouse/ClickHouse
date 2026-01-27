@@ -767,7 +767,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
     // For bigger files, parallel reading is more useful.
-    const auto format_str = boost::to_lower_copy(format);
     const bool object_too_small = object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
     const bool use_prefetch = object_too_small
         && modified_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
@@ -872,8 +871,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         buffer_size = std::min<size_t>(object_size, buffer_size);
 
     LOG_TRACE(
-        log, "Downloading object {} of size {} {} initial prefetch (buffer size: {}, format: {})",
-        object_info.getPath(), object_size, use_prefetch ? "with" : "without", buffer_size, format);
+        log, "Downloading object {} of size {} {} initial prefetch (buffer size: {})",
+        object_info.getPath(), object_size, use_prefetch ? "with" : "without", buffer_size);
 
     auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     impl = std::make_unique<AsynchronousBoundedReadBuffer>(
@@ -885,7 +884,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         context_->getAsyncReadCounters(),
         context_->getFilesystemReadPrefetchesLog());
 
-    if (use_prefetch)
+    if (use_prefetch && !impl->supportsReadAt())
     {
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
