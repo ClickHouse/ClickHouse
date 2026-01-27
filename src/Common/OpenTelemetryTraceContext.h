@@ -61,9 +61,9 @@ public:
 
     String getValue() const
     {
-        return std::visit([](auto && v)
+        return std::visit([]<typename T>(T && v)
         {
-            if constexpr (std::is_same_v<std::decay_t<decltype(v)>, String>)
+            if constexpr (std::is_convertible_v<std::decay_t<T>, String>)
                 return v;
             return toString(v);
         }, value);
