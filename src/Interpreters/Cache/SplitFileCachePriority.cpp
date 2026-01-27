@@ -148,7 +148,7 @@ IFileCachePriority::IteratorPtr SplitFileCachePriority::add( /// NOLINT
     size_t size,
     const CachePriorityGuard::WriteLock & write_lock,
     const CacheStateGuard::Lock * state_lock,
-    bool best_effort) 
+    bool best_effort)
 {
     const auto type = getPriorityType(key_metadata->origin.segment_type);
     return priorities_holder.at(type)->add(
