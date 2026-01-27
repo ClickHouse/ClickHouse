@@ -966,7 +966,6 @@ class FailureReason(enum.Enum):
     SKIP = "skip"
     NO_JINJA = "no jinja"
     NO_ZOOKEEPER = "no zookeeper"
-    NO_DEBUG = "no debug"
     NO_SHARD = "no shard"
     FAST_ONLY = "running fast tests only"
     NOT_FAST_ONLY = "running not only fast tests"
@@ -1778,13 +1777,6 @@ class TestCase:
             and not args.zookeeper
         ):
             return FailureReason.NO_ZOOKEEPER
-
-        if (
-            tags
-            and ("no-debug" in tags)
-            and args.no_debug
-        ):
-            return FailureReason.NO_DEBUG
         
         if (
             tags
@@ -4380,14 +4372,6 @@ def parse_args():
         dest="zookeeper",
         help="Do not run zookeeper related tests",
     )
-    group.add_argument(
-        "--no-debug",
-        action="store_false",
-        default=None,
-        dest="no_debug",
-        help="Do not run debug related tests",
-    )
-
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument(
         "--shard",

@@ -95,65 +95,65 @@ def parse_args():
     return parser.parse_args()
 
 
-def merge_profraw_files(llvm_profdata: str, batch_num: int, loop: bool = False):
-    """Merge profraw files into intermediate profdata files.
+def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
+    """Merge all profraw files into final profdata file.
     
     Args:
-        llvm_profdata: Path to llvm-profdata tool
-        batch_num: Batch number for naming output files
-        loop: If True, run continuously with sleep intervals
+        llvm_profdata_cmd: Path to llvm-profdata tool
+        batch_num: Batch number for naming output file
     """
     import subprocess
     from pathlib import Path
-    import time
     
-    while True:
-        if loop:
-            time.sleep(600) # Sleep for 10 minutes between merges
+    # Find all profraw files
+    profraw_files = [str(p) for p in Path(".").rglob("*.profraw")]
+    
+    if not profraw_files:
+        print("No profraw files found", flush=True)
+        return
+    
+    final_file = f"./it-{batch_num}.profdata"
+    print(f"Merging {len(profraw_files)} profraw files into {final_file}", flush=True)
+    
+    result = subprocess.run(
+        [llvm_profdata_cmd, "merge", "-sparse", "-failure-mode=warn"] + profraw_files + ["-o", final_file],
+        capture_output=True, text=True
+    )
+    
+    # Check for corrupted files in stderr
+    corrupted_count = result.stderr.count("invalid instrumentation profile") + result.stderr.count("file header is corrupt")
+    if corrupted_count > 0:
+        print(f"  WARNING: Found {corrupted_count} corrupted profraw files", flush=True)
+        # Extract and display corrupted filenames from stderr
+        corrupted_files = set()
+        for line in result.stderr.split('\n'):
+            if "invalid instrumentation profile" in line or "file header is corrupt" in line or "error:" in line.lower():
+                print(f"    {line.strip()}", flush=True)
+                # Extract filename from error message (format: "error: file.profraw: ..." or "warning: file.profraw: ...")
+                parts = line.split(':')
+                if len(parts) >= 2:
+                    potential_file = parts[1].strip()
+                    if potential_file.endswith('.profraw'):
+                        corrupted_files.add(potential_file)
+        if corrupted_files:
+            print(f"  Corrupted files: {', '.join(corrupted_files)}", flush=True)
+    
+    if result.returncode == 0:
+        print(f"Successfully created final coverage file: {final_file}", flush=True)
         
-        # Find all profraw files (already-merged ones were deleted)
-        profraw_files = [str(p) for p in Path(".").rglob("*.profraw")]
-        
-        if profraw_files:
-            timestamp = int(time.time())
-            intermediate_file = f"./it-{batch_num}-part{timestamp}.profdata"
-            print(f"Background merger: merging {len(profraw_files)} profraw files into {intermediate_file}", flush=True)
-            
-            result = subprocess.run(
-                [llvm_profdata, "merge", "-sparse", "-failure-mode=warn"] + profraw_files + ["-o", intermediate_file],
-                capture_output=True, text=True
-            )
-            
-            corrupted_count = result.stderr.count("invalid instrumentation profile")
-            corrupted_files = set()
-            if corrupted_count > 0:
-                print(f"  WARNING: Found {corrupted_count} corrupted profraw files", flush=True)
-                # Extract and display corrupted filenames from stderr
-                for line in result.stderr.split('\n'):
-                    if "invalid instrumentation profile" in line or "file header is corrupt" in line or "error:" in line.lower():
-                        print(f"    {line.strip()}", flush=True)
-                        # Extract filename from error message (format: "error: file.profraw: ..." or "warning: file.profraw: ...")
-                        parts = line.split(':')
-                        if len(parts) >= 2:
-                            potential_file = parts[1].strip()
-                            if potential_file.endswith('.profraw'):
-                                corrupted_files.add(potential_file)
-            
-            # Delete merged profraw files to save disk space, but keep corrupted ones for retry
-            deleted_count = 0
-            for profraw_file in profraw_files:
-                if profraw_file in corrupted_files:
-                    print(f"  Keeping corrupted file for retry: {profraw_file}", flush=True)
-                    continue
-                try:
-                    Path(profraw_file).unlink()
-                    deleted_count += 1
-                except Exception as e:
-                    print(f"  WARNING: Failed to delete {profraw_file}: {e}", flush=True)
-            print(f"  Deleted {deleted_count} merged profraw files (kept {len(corrupted_files)} corrupted for retry)", flush=True)
-        
-        if not loop:
-            break
+        # Delete merged profraw files to save disk space
+        deleted_count = 0
+        for profraw_file in profraw_files:
+            try:
+                Path(profraw_file).unlink()
+                deleted_count += 1
+            except Exception as e:
+                print(f"  WARNING: Failed to delete {profraw_file}: {e}", flush=True)
+        print(f"  Deleted {deleted_count} profraw files", flush=True)
+    else:
+        print(f"ERROR: Failed to create final coverage file", flush=True)
+        if result.stderr:
+            print(result.stderr, flush=True)
 
 
 FLAKY_CHECK_TEST_REPEAT_COUNT = 3
@@ -231,7 +231,7 @@ def main():
     is_sequential = False
     is_targeted_check = False
     is_llvm_coverage = False
-    llvm_profdata = None
+    llvm_profdata_cmd = None
 
     # Set on_error_hook to collect logs on hard timeout
     Result.from_fs(info.job_name).set_on_error_hook(
@@ -429,6 +429,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
         sequential_test_modules = []
         assert not is_sequential
 
+    parallel_test_modules = parallel_test_modules[:5]
+    sequential_test_modules = sequential_test_modules[:5]
+    
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():
         tag = info.docker_tag(image_name)
@@ -458,13 +461,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
         for ver in ["21", "20", "18", "19", "17", "16", ""]:
             cmd = f"llvm-profdata{'-' + ver if ver else ''}"
             if Shell.check(f"command -v {cmd}", verbose=False):
-                llvm_profdata = cmd
+                llvm_profdata_cmd = cmd
                 break
         
-        if not llvm_profdata:
+        if not llvm_profdata_cmd:
             print("ERROR: llvm-profdata not found in PATH")
         else:
-            print(f"Using {llvm_profdata} to merge coverage files")
+            print(f"Using {llvm_profdata_cmd} to merge coverage files")
 
     test_results = []
     failed_tests_files = []
@@ -665,40 +668,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
             R.set_success()
 
     force_ok_exit = False
-    if is_llvm_coverage:
-        # print("Tests completed, stopping background merger...")
-        # merger_process.terminate()
-        # merger_process.join(timeout=5)
-        # if merger_process.is_alive():
-        #     merger_process.kill()
-        #     merger_process.join()
-        
+    if is_llvm_coverage and llvm_profdata_cmd:
         print("Collecting and merging LLVM coverage files...")
         
-        if llvm_profdata:
-            # Final merge of any remaining profraw files using the same function
-            merge_profraw_files(llvm_profdata, batch_num, loop=False)
-            
-            # Merge all intermediate profdata files into final file
-            profdata_files = Shell.get_output(f"find . -name 'it-{batch_num}-part*.profdata' 2>/dev/null", verbose=False).strip().split('\n')
-            profdata_files = [f.strip() for f in profdata_files if f.strip()]
-            
-            if profdata_files:
-                print(f"Merging {len(profdata_files)} intermediate profdata files into final it-{batch_num}.profdata")
-                final_file = f"./it-{batch_num}.profdata"
-                merge_cmd = f"{llvm_profdata} merge -sparse {' '.join(profdata_files)} -o {final_file} 2>&1"
-                Shell.get_output(merge_cmd, verbose=True)
-                print(f"Successfully created final coverage file: {final_file}")
-                
-                # Delete intermediate profdata files to save disk space
-                for profdata_file in profdata_files:
-                    try:
-                        Path(profdata_file).unlink()
-                    except Exception as e:
-                        print(f"  WARNING: Failed to delete {profdata_file}: {e}")
-                print(f"  Deleted {len(profdata_files)} intermediate profdata files")
-            else:
-                print("No intermediate profdata files found")
+        # Merge all profraw files into final profdata file
+        merge_profraw_files(llvm_profdata_cmd, batch_num)
 
         force_ok_exit = True
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
