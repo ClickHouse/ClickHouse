@@ -65,7 +65,7 @@ public:
         Node(const Node &) = default;
         virtual ~Node() = default;
         virtual Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const = 0;
-        virtual String dumpTree(size_t indent) const = 0;
+        virtual String dumpNode(size_t indent) const = 0;
     };
 
     /// A scalar literal, i.e. a floating-point or an integer number.
@@ -76,7 +76,7 @@ public:
         ScalarType scalar;
         ScalarLiteral() { node_type = NodeType::ScalarLiteral; result_type = ResultType::SCALAR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpTree(size_t indent) const override;
+        String dumpNode(size_t indent) const override;
     };
 
     /// An offset written in the format 2h30m or -1d.
@@ -86,7 +86,7 @@ public:
         IntervalType interval;
         IntervalLiteral() { node_type = NodeType::IntervalLiteral; result_type = ResultType::SCALAR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpTree(size_t indent) const override;
+        String dumpNode(size_t indent) const override;
     };
 
     /// A string literal.
@@ -97,7 +97,7 @@ public:
         String string;
         StringLiteral() { node_type = NodeType::StringLiteral; result_type = ResultType::STRING; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpTree(size_t indent) const override;
+        String dumpNode(size_t indent) const override;
     };
 
     /// An instant selector.
@@ -108,7 +108,7 @@ public:
         MatcherList matchers;
         InstantSelector() { node_type = NodeType::InstantSelector; result_type = ResultType::INSTANT_VECTOR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpTree(size_t indent) const override;
+        String dumpNode(size_t indent) const override;
     };
 
     /// A range selector.
@@ -120,7 +120,7 @@ public:
         const Node * getRange() const { return children.at(1); } /// [20m]
         RangeSelector() { node_type = NodeType::RangeSelector; result_type = ResultType::RANGE_VECTOR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpTree(size_t indent) const override;
+        String dumpNode(size_t indent) const override;
     };
 
     /// Represents a subquery, i.e. <expression>[<range>:<resolution>]. Here resolution can be omitted, but the colon always presents.
@@ -134,7 +134,7 @@ public:
         const Node * getResolution() const { return (children.size() >= 3) ? children[2] : nullptr; } /// [... :5m]
         Subquery() { node_type = NodeType::Subquery; result_type = ResultType::RANGE_VECTOR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpTree(size_t indent) const override;
+        String dumpNode(size_t indent) const override;
     };
 
     /// Represents a change of the evaluation time applied to an instant selector or a range selector or a subquery.
@@ -150,7 +150,7 @@ public:
         const Node * getOffset() const { return (offset_index < children.size()) ? children.at(offset_index) : nullptr; } /// offset <offset>
         At() { node_type = NodeType::At; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpTree(size_t indent) const override;
+        String dumpNode(size_t indent) const override;
     };
 
     /// A function with parameters in parentheses.
@@ -164,7 +164,7 @@ public:
         const std::vector<const Node *> & getArguments() const { return children; }
         Function() { node_type = NodeType::Function; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpTree(size_t indent) const override;
+        String dumpNode(size_t indent) const override;
     };
 
     /// An unary operator: either +<argument> or -<argument>.
@@ -175,7 +175,7 @@ public:
         const Node * getArgument() const { return children.at(0); }
         UnaryOperator() { node_type = NodeType::UnaryOperator; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpTree(size_t indent) const override;
+        String dumpNode(size_t indent) const override;
     };
 
     /// A binary operator: <left-argument> <operation-name> on(<on-labels>) group_left(<extra-labels>) <right-argument>
@@ -196,7 +196,7 @@ public:
         const Node * getRightArgument() const { return children.at(1); }
         BinaryOperator() { node_type = NodeType::BinaryOperator; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpTree(size_t indent) const override;
+        String dumpNode(size_t indent) const override;
     };
 
     /// An aggregation operator: <operator-name> [by (<by-labels>) | without (<without-labels>)] (<arguments>)
@@ -213,7 +213,7 @@ public:
         const std::vector<const Node *> & getArguments() const { return children; }
         AggregationOperator() { node_type = NodeType::AggregationOperator; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpTree(size_t indent) const override;
+        String dumpNode(size_t indent) const override;
     };
 
     PrometheusQueryTree() = default;
@@ -253,7 +253,7 @@ public:
     ResultType getResultType() const;
 
     /// Dumps the tree to string as a tree for debugging purposes.
-    String dumpTree(size_t indent = 0) const;
+    String dumpTree() const;
 
 private:
     String promql_query;

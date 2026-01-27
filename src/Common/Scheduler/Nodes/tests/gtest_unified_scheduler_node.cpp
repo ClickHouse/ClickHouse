@@ -407,15 +407,15 @@ TEST(SchedulerUnifiedNode, ThrottlerAndFairness)
     double share_b = 0.9;
 
     // Bandwidth-latency coupling due to fairness: worst latency is inversely proportional to share
-    auto max_latency_a = static_cast<ResourceCost>(req_cost * (1.0 + 1.0 / share_a));
-    auto max_latency_b = static_cast<ResourceCost>(req_cost * (1.0 + 1.0 / share_b));
+    auto max_latency_a = static_cast<ResourceCost>(static_cast<double>(req_cost) * (1.0 + 1.0 / share_a));
+    auto max_latency_b = static_cast<ResourceCost>(static_cast<double>(req_cost) * (1.0 + 1.0 / share_b));
 
     double consumed_a = 0;
     double consumed_b = 0;
     for (int seconds = 0; seconds < 100; seconds++)
     {
         t.process(start + std::chrono::seconds(seconds));
-        double arrival_curve = 100.0 + 10.0 * seconds + req_cost;
+        double arrival_curve = 100.0 + 10.0 * static_cast<double>(seconds) + static_cast<double>(req_cost);
         t.consumed("A", static_cast<ResourceCost>(arrival_curve * share_a - consumed_a), max_latency_a);
         t.consumed("B", static_cast<ResourceCost>(arrival_curve * share_b - consumed_b), max_latency_b);
         consumed_a = arrival_curve * share_a;

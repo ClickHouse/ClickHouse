@@ -24,7 +24,7 @@ struct CramersVData : CrossTabData
             return std::numeric_limits<Float64>::quiet_NaN();
 
         UInt64 q = std::min(count_a.size(), count_b.size());
-        return sqrt(getPhiSquared() / (q - 1));
+        return sqrt(getPhiSquared() / static_cast<Float64>(q - 1));
     }
 };
 
