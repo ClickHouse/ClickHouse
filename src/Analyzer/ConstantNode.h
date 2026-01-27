@@ -121,7 +121,7 @@ protected:
     QueryTreeNodePtr cloneImpl() const override;
 
     template <typename F>
-    std::shared_ptr<ASTLiteral> getCachedAST(const F &ast_generator) const;
+    boost::intrusive_ptr<ASTLiteral> getCachedAST(const F &ast_generator) const;
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
@@ -134,7 +134,7 @@ private:
 
     /// Converting to AST maybe costly (for example for large arrays), so we want
     /// to cache it using hash to check for update
-    mutable std::shared_ptr<ASTLiteral> cached_ast;
+    mutable boost::intrusive_ptr<ASTLiteral> cached_ast;
     mutable Hash hash_ast;
 };
 

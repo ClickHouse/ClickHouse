@@ -333,7 +333,7 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
         auto available_system_memory = getMostStrictAvailableSystemMemory();
         if (available_system_memory.has_value())
         {
-            size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
+            size_t ratio_in_bytes = static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio);
             if (threshold)
                 threshold = std::min(threshold.value(), ratio_in_bytes);
             else
@@ -1070,7 +1070,7 @@ void NO_INLINE Aggregator::executeImpl(
     AggregateDataPtr overflow_row) const
 {
     UInt64 total_rows = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
-    double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / total_rows : 1.0;
+    double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_rows) : 1.0;
     bool use_cache = !is_simple_count && cache_hit_rate >= params.min_hit_rate_to_use_consecutive_keys_optimization;
 
     if (use_cache)
@@ -1888,8 +1888,8 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     auto stat = out_stream.finishWriting();
 
     double elapsed_seconds = watch.elapsedSeconds();
-    double compressed_size = stat.compressed_size;
-    double uncompressed_size = stat.uncompressed_size;
+    double compressed_size = static_cast<double>(stat.compressed_size);
+    double uncompressed_size = static_cast<double>(stat.uncompressed_size);
     LOG_DEBUG(log,
         "Written part in {:.3f} sec., {} rows, {} uncompressed, {} compressed,"
         " {:.3f} uncompressed bytes per row, {:.3f} compressed bytes per row, compression rate: {:.3f}"
@@ -1898,8 +1898,8 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
         rows,
         ReadableSize(uncompressed_size),
         ReadableSize(compressed_size),
-        rows ? static_cast<double>(uncompressed_size) / rows : 0.0,
-        rows ? static_cast<double>(compressed_size) / rows : 0.0,
+        rows ? static_cast<double>(uncompressed_size) / static_cast<double>(rows) : 0.0,
+        rows ? static_cast<double>(compressed_size) / static_cast<double>(rows) : 0.0,
         static_cast<double>(uncompressed_size) / compressed_size,
         static_cast<double>(rows) / elapsed_seconds,
         ReadableSize(static_cast<double>(uncompressed_size) / elapsed_seconds),
@@ -2835,8 +2835,8 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     LOG_DEBUG(log,
         "Converted aggregated data to blocks. {} rows, {} in {} sec. ({:.3f} rows/sec., {}/sec.)",
         rows, ReadableSize(bytes),
-        elapsed_seconds, rows / elapsed_seconds,
-        ReadableSize(bytes / elapsed_seconds));
+        elapsed_seconds, static_cast<double>(rows) / elapsed_seconds,
+        ReadableSize(static_cast<double>(bytes) / elapsed_seconds));
 
     return blocks;
 }
@@ -3438,7 +3438,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     Arena * arena_for_keys) const
 {
     UInt64 total_rows = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
-    double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / total_rows : 1.0;
+    double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_rows) : 1.0;
     bool use_cache = !is_simple_count && cache_hit_rate >= params.min_hit_rate_to_use_consecutive_keys_optimization;
 
     auto merge_count_variant = [&]<typename State>(State & state)
@@ -3895,8 +3895,8 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final, std::atomic<bool>
         result.aggregator = nullptr;
     }
 
-    size_t rows = block.rows();
-    size_t bytes = block.bytes();
+    auto rows = static_cast<double>(block.rows());
+    auto bytes = static_cast<double>(block.bytes());
     double elapsed_seconds = watch.elapsedSeconds();
     LOG_DEBUG(
         log,

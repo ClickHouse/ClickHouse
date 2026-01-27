@@ -142,7 +142,7 @@ public:
 
     size_t getSize() const override { return size; }
 
-    double getLoadFactor() const override { return static_cast<double>(size) / configuration.max_size_in_cells; }
+    double getLoadFactor() const override { return static_cast<double>(size) / static_cast<double>(configuration.max_size_in_cells); }
 
     size_t getBytesAllocated() const override
     {

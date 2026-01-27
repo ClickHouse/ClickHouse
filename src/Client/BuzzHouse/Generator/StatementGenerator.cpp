@@ -1354,7 +1354,7 @@ void StatementGenerator::generateInsertToTable(
             }
             grf->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
             grf->set_random_seed(rg.nextInFullRange());
-            grf->set_max_string_length(string_length_dist(rg.generator));
+            grf->set_max_string_length(static_cast<uint32_t>(string_length_dist(rg.generator)));
             grf->set_max_array_length(nested_rows_dist(rg.generator));
             ssc->mutable_limit()->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(nrows);
         }
@@ -1372,12 +1372,12 @@ void StatementGenerator::generateInsertToTable(
                                            ->mutable_tof()
                                            ->mutable_tfunc()
                                            ->mutable_gseries();
-            const uint32_t nested_nrows = nested_rows_dist(rg.generator);
+            const uint32_t nested_nrows = static_cast<uint32_t>(nested_rows_dist(rg.generator));
 
             for (const auto & entry : this->entries)
             {
-                const String nval
-                    = entry.getBottomType()->insertNumberEntry(rg, *this, string_length_dist(rg.generator), nested_rows_dist(rg.generator));
+                const String nval = entry.getBottomType()->insertNumberEntry(
+                    rg, *this, static_cast<uint32_t>(string_length_dist(rg.generator)), static_cast<uint32_t>(nested_nrows));
 
                 buf += fmt::format(
                     "{}{}{}{}",
@@ -5085,6 +5085,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             }
             if (!this->staged_tables[tname].random_engine)
             {
+                chassert(!this->staged_tables[tname].cols.empty());
                 this->tables[tname] = std::move(this->staged_tables[tname]);
             }
         }

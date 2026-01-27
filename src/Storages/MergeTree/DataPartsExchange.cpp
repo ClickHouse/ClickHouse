@@ -95,7 +95,7 @@ struct ReplicatedFetchReadCallback
         if (replicated_fetch_entry->total_size_bytes_compressed != 0)
         {
             replicated_fetch_entry->progress.store(
-                    static_cast<double>(bytes_count) / replicated_fetch_entry->total_size_bytes_compressed,
+                    static_cast<double>(bytes_count) / static_cast<double>(replicated_fetch_entry->total_size_bytes_compressed),
                     std::memory_order_relaxed);
         }
     }
@@ -423,7 +423,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
     uri.setHost(host);
-    uri.setPort(port);
+    uri.setPort(static_cast<uint16_t>(port));
     uri.setQueryParameters(
     {
         {"endpoint",                endpoint_id},

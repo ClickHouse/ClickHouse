@@ -5,6 +5,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
@@ -19,7 +20,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -442,7 +442,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
                 return false;
             case DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES:
                 return context->getSettingsRef()[Setting::insert_deduplicate];
-            case DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE:
+            case DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE:
             {
                 if (!select_query_sorted && context->getSettingsRef()[Setting::insert_deduplicate])
                     LOG_INFO(logger, "INSERT SELECT deduplication is disabled because SELECT is not stable");

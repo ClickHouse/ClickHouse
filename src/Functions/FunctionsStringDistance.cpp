@@ -214,7 +214,7 @@ struct ByteJaccardIndexImpl
                 else
                     ++rit;
             }
-            union_size = haystack_utf8_set.size() + needle_utf8_set.size() - intersection;
+            union_size = static_cast<UInt8>(haystack_utf8_set.size() + needle_utf8_set.size() - intersection);
         }
 
         for (size_t i = 0; i < max_size; ++i)
@@ -374,10 +374,10 @@ struct ByteJaroSimilarityImpl
         /// Shortcuts:
 
         if (haystack_size == 0)
-            return needle_size;
+            return static_cast<ResultType>(needle_size);
 
         if (needle_size == 0)
-            return haystack_size;
+            return static_cast<ResultType>(haystack_size);
 
         if (haystack_size == needle_size && memcmp(haystack, needle, haystack_size) == 0)
             return 1.0;

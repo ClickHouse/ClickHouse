@@ -567,7 +567,7 @@ UInt32 CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 s
                         "Can't decrypt data, out length after decryption {} is wrong, expected {}",
                         out_len, ciphertext_size - tag_size);
 
-    return out_len;
+    return static_cast<UInt32>(out_len);
 }
 
 }
