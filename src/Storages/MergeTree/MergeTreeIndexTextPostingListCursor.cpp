@@ -41,17 +41,17 @@ void PostingListCursor::prepare(size_t segment)
     auto & in = *(stream->getDataBuffer());
     header.read(in);
 
+    chassert(header.has_block_skip_index);
     CodecUtil::readArrayU32(in, block_row_ends);
     CodecUtil::readArrayU32(in, block_offsets);
-    ///
-    current_values.reserve(POSTING_LIST_CHUNK_SIZE);
+    current_values.reserve(POSTING_LIST_UNIT_SIZE);
     if (header.payload_bytes > (compressed_data.capacity() - compressed_data.size()))
         compressed_data.reserve(compressed_data.size() + header.payload_bytes);
     compressed_data.resize(header.payload_bytes);
 
     in.readStrict(compressed_data.data(), header.payload_bytes);
-    size_t full_block_count = header.cardinality / POSTING_LIST_CHUNK_SIZE;
-    tail_size = header.cardinality % POSTING_LIST_CHUNK_SIZE;
+    size_t full_block_count = header.cardinality / POSTING_LIST_UNIT_SIZE;
+    tail_size = header.cardinality % POSTING_LIST_UNIT_SIZE;
     block_count = full_block_count + (tail_size > 0 ? 1 : 0);
     current_block = 0;
     density_val = static_cast<double>(header.cardinality) / static_cast<double>(block_row_ends.back() - header.first_row_id);
@@ -76,7 +76,7 @@ void PostingListCursor::seek(uint32_t target)
             const auto &range = info.ranges[segment];
             if (range.end > target)
             {
-                prepare(i);
+                prepare(segment);
                 if (seekImpl(target))
                 {
                     found = true;
@@ -109,30 +109,27 @@ bool PostingListCursor::seekImpl(uint32_t target)
     size_t block_end = block_count;
     size_t offset = 0;
 
-    if (block_count > 8)
-    {
-        const auto & row_ends = block_row_ends;
-        const auto & offsets = block_offsets;
+    const auto &row_ends = block_row_ends;
+    const auto &offsets = block_offsets;
 
-        auto it = std::lower_bound(row_ends.begin(), row_ends.end(), target);
-        if (it == row_ends.end())
-            return false;
-        size_t skip_block_begin = static_cast<size_t>(it - row_ends.begin());
+    auto it = std::lower_bound(row_ends.begin(), row_ends.end(), target);
+    if (it == row_ends.end())
+        return false;
+    size_t skip_block_begin = static_cast<size_t>(it - row_ends.begin());
 
-        block_start = skip_block_begin;
-        offset = offsets[block_start];
-    }
-    std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte *>(compressed_data.data()),compressed_data.size());
+    block_start = skip_block_begin;
+    offset = offsets[block_start];
+    std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte *>(compressed_data.data()), compressed_data.size());
     compressed_data_span = compressed_data_span.subspan(offset);
 
     for (size_t i = block_start; i < block_end; i++)
     {
-        size_t block_size = (i + 1 == block_count && tail_size) ? tail_size : POSTING_LIST_CHUNK_SIZE;
+        size_t block_size = (i + 1 == block_count && tail_size) ? tail_size : POSTING_LIST_UNIT_SIZE;
         PostingListCodecBitpackingImpl::decodeBlock(compressed_data_span, block_size, current_values);
-        auto it = std::lower_bound(current_values.begin(),  current_values.begin() + block_size, target);
-        if (it != current_values.begin() + block_size && *it >= target)
+        auto values_it = std::lower_bound(current_values.begin(),  current_values.begin() + block_size, target);
+        if (values_it != current_values.begin() + block_size && *values_it >= target)
         {
-            index = static_cast<size_t>(it - current_values.begin());
+            index = static_cast<size_t>(values_it - current_values.begin());
             current_block = i;
             return true;
         }
@@ -160,7 +157,7 @@ void PostingListCursor::next()
         std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte *>(compressed_data.data()),compressed_data.size());
         compressed_data_span = compressed_data_span.subspan(offset);
 
-        size_t block_size = (current_block + 1 == block_count && tail_size) ? tail_size : POSTING_LIST_CHUNK_SIZE;
+        size_t block_size = (current_block + 1 == block_count && tail_size) ? tail_size : POSTING_LIST_UNIT_SIZE;
         PostingListCodecBitpackingImpl::decodeBlock(compressed_data_span, block_size, current_values);
         index = 0;
     }
@@ -194,20 +191,15 @@ void PostingListCursor::linearOrImpl(size_t segment, UInt8 * __restrict out, siz
 
     for (size_t i = block_start; i < block_end; i++)
     {
-        size_t block_size = (i + 1 == block_count && tail_size) ? tail_size : POSTING_LIST_CHUNK_SIZE;
+        size_t block_size = (i + 1 == block_count && tail_size) ? tail_size : POSTING_LIST_UNIT_SIZE;
         PostingListCodecBitpackingImpl::decodeBlock(compressed_data_span, block_size, current_values);
         auto it = std::lower_bound(current_values.begin(), current_values.end(), row_begin);
         if (it == current_values.end())
             continue;
+
         size_t idx = static_cast<size_t>(it - current_values.begin());
         auto it_end = std::upper_bound(current_values.begin(), current_values.end(), row_end);
         size_t end_k = it_end - current_values.begin();
-#if 0
-        for (size_t k = idx; k < end_k; ++k)
-            out[current_values[k] - row_begin] = 1;
-        if (end_k < block_size)
-            return;
-#endif
         const uint32_t * data = current_values.data();
         const uint32_t * data_begin = data + idx;
         const uint32_t * data_end = data + end_k;
@@ -260,7 +252,7 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
             continue;
         }
         end = std::min(end, row_offset + num_rows - 1);
-        prepare(i);
+        prepare(segment);
         linearOrImpl(segment, data, row_offset, end);
     }
     if (unused_segment_index > 0)
@@ -299,27 +291,16 @@ void PostingListCursor::linearAndImpl(size_t segment, UInt8 * __restrict out, si
 
     for (size_t i = block_start; i < block_end; i++)
     {
-        size_t block_size = (i + 1 == block_count && tail_size) ? tail_size : POSTING_LIST_CHUNK_SIZE;
+        size_t block_size = (i + 1 == block_count && tail_size) ? tail_size : POSTING_LIST_UNIT_SIZE;
         current_block = i;
         PostingListCodecBitpackingImpl::decodeBlock(compressed_data_span, block_size, current_values);
         auto it = std::lower_bound(current_values.begin(), current_values.end(), row_begin);
         if (it == current_values.end())
             continue;
+
         size_t idx = static_cast<size_t>(it - current_values.begin());
-#if 0
-        for (size_t k = idx; k < block_size; ++k)
-        {
-            if (current_values[k] > row_end)
-                return;
-            ++out[current_values[k] - row_begin];
-        }
-#endif
         auto it_end = std::upper_bound(current_values.begin(), current_values.end(), row_end);
         size_t end_k = it_end - current_values.begin();
-#if 0
-        for (size_t k = idx; k < end_k; ++k)
-            ++data[current_values[k] - row_begin];
-#endif
         const uint32_t * p = current_values.data() + idx;
         const uint32_t * end = current_values.data() + end_k;
 
@@ -363,7 +344,7 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
             continue;
         }
         end = std::min(end, row_offset + num_rows - 1);
-        prepare(i);
+        prepare(segment);
         linearAndImpl(segment, data, row_offset, end);
     }
 
@@ -376,6 +357,8 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
 
 namespace
 {
+
+/// Helper struct for min-heap based intersection algorithm.
 struct HeapItem
 {
     uint32_t val = 0;
@@ -386,6 +369,9 @@ struct HeapItem
     bool operator>(const HeapItem & other) const { return val > other.val; }
 };
 
+/// Two-way merge intersection using skip-list style seek.
+/// Optimized for the common case of 2 posting lists.
+/// Time complexity: O(min(|L1|, |L2|) * log(max(|L1|, |L2|)))
 void intersectTwo(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1, size_t row_offset, size_t effective_end)
 {
     while (c0->valid() && c1->valid())
@@ -407,6 +393,8 @@ void intersectTwo(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1,
     }
 }
 
+/// Three-way merge intersection.
+/// All cursors seek to max value when they differ.
 void intersectThree(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1, PostingListCursorPtr c2, size_t row_offset, size_t effective_end)
 {
     uint32_t v0 = 0;
@@ -443,7 +431,8 @@ void intersectThree(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c
     }
 }
 
-
+/// Four-way merge intersection.
+/// Optimized unrolled version for exactly 4 posting lists.
 void intersectFour(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1, PostingListCursorPtr c2, PostingListCursorPtr c3, size_t row_offset, size_t effective_end)
 {
     uint32_t v0 = 0;
@@ -461,7 +450,7 @@ void intersectFour(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1
         if (max_val >= effective_end)
             return;
 
-        if (v0 == v1 && v1 == v2)
+        if (v0 == v1 && v1 == v2 && v2 == v3)
         {
             out[v0 - row_offset] = 1;
 
@@ -484,6 +473,9 @@ void intersectFour(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1
     }
 }
 
+/// Leapfrog intersection with linear min/max scan.
+/// Used for 5-8 posting lists where heap overhead isn't worth it.
+/// Algorithm: find min/max in O(n), seek min cursor to max value.
 void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t effective_end)
 {
     const size_t n = cursors.size();
@@ -495,6 +487,7 @@ void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursorPtr
 
     while (true)
     {
+        /// Find min and max values across all cursors
         uint32_t min_val = vals[0];
         uint32_t max_val = vals[0];
         size_t min_idx = 0;
@@ -517,6 +510,7 @@ void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursorPtr
 
         if (min_val == max_val)
         {
+            // All cursors point to same value => intersection found
             out[min_val - row_offset] = 1;
             for (size_t i = 0; i < n; ++i)
             {
@@ -528,6 +522,7 @@ void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursorPtr
         }
         else
         {
+            /// Advance the cursor with minimum value to catch up
             cursors[min_idx]->seek(max_val);
             if (!cursors[min_idx]->valid())
                 return;
@@ -536,11 +531,14 @@ void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursorPtr
     }
 }
 
+/// Leapfrog intersection using min-heap for efficient min finding.
+/// Used for 9+ posting lists where O(n) linear scan becomes expensive.
+/// Min-heap gives O(log n) for finding and updating minimum.
 void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t effective_end)
 {
     const size_t n = cursors.size();
 
-
+    /// Build min-heap and track global maximum
     std::vector<HeapItem> heap(n);
     uint32_t max_val = 0;
 
@@ -561,8 +559,10 @@ void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursorPtr> 
 
         if (min_val == max_val)
         {
+            /// All cursors at same position => intersection found
             out[min_val - row_offset] = 1;
 
+            /// Advance all cursors and rebuild heap
             max_val = 0;
             size_t heap_size = n;
 
@@ -586,6 +586,7 @@ void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursorPtr> 
         }
         else
         {
+            /// Pop min cursor, seek it to max_val, push back
             uint32_t min_idx = heap.front().idx;
             std::pop_heap(heap.begin(), heap.end(), std::greater<>{});
 
@@ -604,6 +605,13 @@ void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursorPtr> 
     }
 }
 
+/// Dispatcher for skip-list based intersection algorithms.
+/// Selects optimal algorithm based on number of posting lists:
+///   - 2 lists: two-pointer merge
+///   - 3 lists: three-way merge
+///   - 4 lists: four-way merge
+///   - 5-8 lists: linear leapfrog
+///   - 9+ lists: heap-based leapfrog
 void intersectLeapfrog(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t effective_end)
 {
     if (cursors.size() == 2)
@@ -620,85 +628,26 @@ void intersectLeapfrog(UInt8 * out, const std::vector<PostingListCursorPtr> & cu
 
     return intersectLeapfrogHeap(out, cursors, row_offset, effective_end);
 }
-#if 0
-void intersectChunkedBitmap(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t effective_begin, size_t effective_end)
-{
-    const size_t n = cursors.size();
-    if (n == 0)
-        return;
 
-    constexpr uint32_t CHUNK_BITS = 64;
-    uint32_t chunk_begin = (static_cast<uint32_t>(effective_begin) / CHUNK_BITS) * CHUNK_BITS;
-    uint32_t effective_chunk_end = (static_cast<uint32_t>(effective_end) / CHUNK_BITS) * CHUNK_BITS + 1;
-
-    while (chunk_begin < effective_chunk_end)
-    {
-        uint32_t chunk_next = chunk_begin + CHUNK_BITS;
-
-        uint64_t intersection = ~0ULL;
-
-        for (size_t i = 0; i < n; ++i)
-        {
-            uint64_t bitmap = 0;
-            while (cursors[i]->valid())
-            {
-                uint32_t val = cursors[i]->value();
-                if (val >= chunk_next)
-                    break;
-
-                if (val >= chunk_begin)
-                {
-                    uint32_t bit_pos = val - chunk_begin;
-                    bitmap |= (1ULL << bit_pos);
-                }
-
-                cursors[i]->next();
-            }
-
-            intersection &= bitmap;
-
-            if (intersection == 0)
-                break;
-        }
-
-        while (intersection != 0)
-        {
-            uint32_t bit_pos = __builtin_ctzll(intersection);
-            uint32_t rowid = chunk_begin + bit_pos;
-
-            if (rowid >= row_offset && rowid < effective_end)
-                out[rowid - row_offset] = 1;
-
-            intersection &= (intersection - 1);
-        }
-
-        for (size_t i = 0; i < n; ++i)
-        {
-            if (!cursors[i]->valid() || cursors[i]->value() >= effective_end)
-                return;
-        }
-
-        chunk_begin = chunk_next;
-    }
-}
-#endif
+/// Brute-force intersection using bitmap counting.
+/// Algorithm:
+///   1. First cursor sets bits via linearOr (marks candidates)
+///   2. Remaining cursors increment via linearAnd
+///   3. Final pass: keep only positions where count == n (all lists matched)
+///
+/// Preferred when posting lists are dense (high density), as it avoids
+/// the random-access overhead of skip-list based algorithms.
 void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t num_rows)
 {
+    /// Step 1: First cursor marks initial candidates
     cursors[0]->linearOr(out, row_offset, num_rows);
 
+    /// Step 2: Remaining cursors increment counts
     for (size_t i = 1; i < cursors.size(); ++i)
         cursors[i]->linearAnd(out, row_offset, num_rows);
 
+    /// Step 3: Finalize - keep only positions where all n cursors matched
     size_t n = cursors.size();
-#if 0
-    if (n > 1)
-    {
-        for (size_t i = 0; i < num_rows; ++i)
-        {
-            out[i] = out[i] == n;
-        }
-    }
-#endif
     if (n > 1)
     {
         UInt8 * p = out;
@@ -706,6 +655,7 @@ void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & 
         UInt8 * end_loop = out + (num_rows / 4) * 4;
         UInt8 n8 = static_cast<UInt8>(n);
 
+        /// Unrolled loop with prefetch for better performance
         for (; p < end_loop; p += 4)
         {
             __builtin_prefetch(p + 64, 0, 3);
@@ -717,6 +667,7 @@ void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & 
             p[3] = (p[3] == n8);
         }
 
+        /// Handle remainder
         while (p < end)
         {
             *p = (*p == n8);
@@ -724,9 +675,14 @@ void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & 
         }
     }
 }
-}
 
-void streamApplyPostingsAny(IColumn & column, std::vector<PostingListCursorPtr> & cursors, size_t column_offset, size_t row_offset, size_t num_rows, UInt64)
+} // anonymous namespace
+
+/// Union (OR) of multiple posting lists.
+/// Simply iterates through all cursors and sets bits for matching row IDs.
+/// brute_force_apply and density_threshold are unused here since union
+/// always uses linear scan (no skip-list optimization needed for OR).
+void lazyUnionPostingLists(IColumn & column, std::vector<PostingListCursorPtr> & cursors, size_t column_offset, size_t row_offset, size_t num_rows, bool /*brute_force_apply*/, float /*density_threshold*/)
 {
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
     UInt8 * out = data.data() + column_offset;
@@ -735,7 +691,17 @@ void streamApplyPostingsAny(IColumn & column, std::vector<PostingListCursorPtr> 
         cursor->linearOr(out, row_offset, num_rows);
 }
 
-void streamApplyPostingsAll(IColumn & column, std::vector<PostingListCursorPtr> & cursors, size_t column_offset, size_t row_offset, size_t num_rows, UInt64 text_index_intersect_algorithm)
+/// Intersection (AND) of multiple posting lists with adaptive algorithm selection.
+///
+/// Algorithm selection strategy:
+///   1. Single list (n=1): direct linear scan
+///   2. High density or brute_force_apply: use brute-force bitmap counting
+///   3. Otherwise: use skip-list based leapfrog intersection
+///
+/// The density-based switching is crucial for performance:
+///   - Sparse lists: skip-list is faster (fewer elements to process)
+///   - Dense lists: brute-force is faster (sequential memory access pattern)
+void lazyIntersectPostingLists(IColumn & column, std::vector<PostingListCursorPtr> & cursors, size_t column_offset, size_t row_offset, size_t num_rows, bool brute_force_apply, float density_threshold)
 {
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
     UInt8 * __restrict out = data.data() + column_offset;
@@ -746,23 +712,31 @@ void streamApplyPostingsAll(IColumn & column, std::vector<PostingListCursorPtr> 
     if (n == 0)
         return;
 
+    /// Edge case: single cursor - just mark its row IDs
     if (n == 1)
     {
         cursors.front()->linearOr(out, row_offset, num_rows);
         return;
     }
 
+    /// Compute average density across all posting lists
     double density = 0;
     for (size_t i = 0; i < n; ++i)
         density += cursors[i]->density();
     density = density / n;
 
-    if (n < 256 && (density >= 0.2 || text_index_intersect_algorithm == 1))
+    /// Use brute-force when:
+    ///   - Lists are dense (density >= threshold), OR
+    ///   - User explicitly requested brute-force
+    /// Note: n < 256 check ensures we don't overflow UInt8 counter in brute-force
+    if (n < 256 && (density >= density_threshold || brute_force_apply))
         return intersectBruteForce(out, cursors, row_offset, num_rows);
 
+    /// Skip-list based intersection: position all cursors to start of range
     for (size_t i = 0; i < n; ++i)
     {
         cursors[i]->seek(static_cast<uint32_t>(row_offset));
+        /// Early exit if any cursor is exhausted or past our range
         if (!cursors[i]->valid() || cursors[i]->value() >= end)
             return;
     }

@@ -105,7 +105,7 @@ private:
 
     PostingListCursorMap stream_posting_cursors;
     std::vector<PostingListCursorPtr> posting_cursors;
-    bool direct_build_filter_column = false;
+    bool lazy_apply_posting_list = false;
 };
 
 }

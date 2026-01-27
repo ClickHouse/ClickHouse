@@ -10,14 +10,15 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
-/// Normalize the requested block size to a multiple of POSTING_LIST_CHUNK_SIZE.
+/// Normalize the requested block size to a multiple of POSTING_LIST_UNIT_SIZE.
 /// We encode/decode posting lists in fixed-size blocks, and the SIMD bit-packing
 /// implementation expects block-aligned sizes for efficient processing.
-PostingListCodecBitpackingImpl::PostingListCodecBitpackingImpl(size_t postings_list_block_size)
-    : max_rowids_in_segment((postings_list_block_size + POSTING_LIST_CHUNK_SIZE - 1) & ~(POSTING_LIST_CHUNK_SIZE - 1))
+PostingListCodecBitpackingImpl::PostingListCodecBitpackingImpl(size_t postings_list_block_size, bool has_block_skip_index_)
+    : max_rowids_in_segment((postings_list_block_size + POSTING_LIST_UNIT_SIZE - 1) & ~(POSTING_LIST_UNIT_SIZE - 1))
+    , has_block_skip_index(has_block_skip_index_)
 {
-    compressed_data.reserve(POSTING_LIST_CHUNK_SIZE);
-    current_segment.reserve(POSTING_LIST_CHUNK_SIZE);
+    compressed_data.reserve(POSTING_LIST_UNIT_SIZE);
+    current_segment.reserve(POSTING_LIST_UNIT_SIZE);
 }
 
 void PostingListCodecBitpackingImpl::insert(uint32_t row_id)
@@ -38,7 +39,7 @@ void PostingListCodecBitpackingImpl::insert(uint32_t row_id)
     ++row_ids_in_current_segment;
     ++total_row_ids;
 
-    if (current_segment.size() == POSTING_LIST_CHUNK_SIZE)
+    if (current_segment.size() == POSTING_LIST_UNIT_SIZE)
         encodeBlock(current_segment);
 
     if (row_ids_in_current_segment == max_rowids_in_segment)
@@ -47,7 +48,7 @@ void PostingListCodecBitpackingImpl::insert(uint32_t row_id)
 
 void PostingListCodecBitpackingImpl::insert(std::span<uint32_t> row_ids)
 {
-    chassert(row_ids.size() == POSTING_LIST_CHUNK_SIZE && row_ids_in_current_segment % POSTING_LIST_CHUNK_SIZE == 0);
+    chassert(row_ids.size() == POSTING_LIST_UNIT_SIZE && row_ids_in_current_segment % POSTING_LIST_UNIT_SIZE == 0);
 
     if (row_ids_in_current_segment == 0)
     {
@@ -55,10 +56,10 @@ void PostingListCodecBitpackingImpl::insert(std::span<uint32_t> row_ids)
         segment_descriptors.back().row_id_begin = row_ids.front();
         segment_descriptors.back().compressed_data_offset = compressed_data.size();
 
-        total_row_ids += POSTING_LIST_CHUNK_SIZE;
+        total_row_ids += POSTING_LIST_UNIT_SIZE;
     }
 
-    row_ids_in_current_segment += POSTING_LIST_CHUNK_SIZE;
+    row_ids_in_current_segment += POSTING_LIST_UNIT_SIZE;
     encodeBlock(row_ids);
 
     if (row_ids_in_current_segment == max_rowids_in_segment)
@@ -69,7 +70,9 @@ void PostingListCodecBitpackingImpl::decode(ReadBuffer & in, PostingList & posti
 {
     Header header;
     header.read(in);
+    has_block_skip_index = header.has_block_skip_index;
 
+    if (has_block_skip_index)
     {
         std::vector<uint32_t> block_row_ends;
         std::vector<size_t> offsets;
@@ -77,10 +80,10 @@ void PostingListCodecBitpackingImpl::decode(ReadBuffer & in, PostingList & posti
         CodecUtil::readArrayU32(in, offsets);
     }
 
-    const size_t num_blocks = header.cardinality / POSTING_LIST_CHUNK_SIZE;
-    const size_t tail_size = header.cardinality % POSTING_LIST_CHUNK_SIZE;
+    const size_t num_blocks = header.cardinality / POSTING_LIST_UNIT_SIZE;
+    const size_t tail_size = header.cardinality % POSTING_LIST_UNIT_SIZE;
 
-    current_segment.reserve(POSTING_LIST_CHUNK_SIZE);
+    current_segment.reserve(POSTING_LIST_UNIT_SIZE);
     if (header.payload_bytes > (compressed_data.capacity() - compressed_data.size()))
         compressed_data.reserve(compressed_data.size() + header.payload_bytes);
     compressed_data.resize(header.payload_bytes);
@@ -90,7 +93,7 @@ void PostingListCodecBitpackingImpl::decode(ReadBuffer & in, PostingList & posti
     std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte*>(compressed_data.data()), compressed_data.size());
     for (size_t i = 0; i < num_blocks; i++)
     {
-        decodeBlock(compressed_data_span, POSTING_LIST_CHUNK_SIZE, current_segment);
+        decodeBlock(compressed_data_span, POSTING_LIST_UNIT_SIZE, current_segment);
         postings.addMany(current_segment.size(), current_segment.data());
     }
     if (tail_size)
@@ -109,11 +112,14 @@ void PostingListCodecBitpackingImpl::serializeTo(WriteBuffer & out, TokenPosting
     {
         info.offsets.emplace_back(out.count());
         info.ranges.emplace_back(descriptor.row_id_begin, descriptor.row_id_end);
-        Header header(descriptor.compressed_data_size, descriptor.cardinality, descriptor.row_id_begin);
+        Header header(descriptor.compressed_data_size, descriptor.cardinality, descriptor.row_id_begin, has_block_skip_index);
         header.write(out);
 
-        CodecUtil::writeArrayU32(descriptor.block_row_ends, out);
-        CodecUtil::writeArrayU32(descriptor.block_offsets, out);
+        if (has_block_skip_index)
+        {
+            CodecUtil::writeArrayU32(descriptor.block_row_ends, out);
+            CodecUtil::writeArrayU32(descriptor.block_offsets, out);
+        }
         out.write(compressed_data.data() + descriptor.compressed_data_offset, descriptor.compressed_data_size);
     }
 }
@@ -129,9 +135,12 @@ void PostingListCodecBitpackingImpl::encodeBlock(std::span<uint32_t> segment)
 
     size_t offset = compressed_data.size();
 
-    /// Block row_end & offset
-    segment_descriptor.block_row_ends.emplace_back(row_end);
-    segment_descriptor.block_offsets.emplace_back(offset - segment_descriptor.compressed_data_offset);
+    /// Record block index only when write_block_index is enabled (for lazy apply mode)
+    if (has_block_skip_index)
+    {
+        segment_descriptor.block_row_ends.emplace_back(row_end);
+        segment_descriptor.block_offsets.emplace_back(offset - segment_descriptor.compressed_data_offset);
+    }
 
     ++segment_descriptor.block_count;
 
@@ -184,9 +193,9 @@ void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings)
 }
 
 void PostingListCodecBitpacking::encode(
-        const PostingListBuilder & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const
+        const PostingListBuilder & postings, size_t max_rowids_in_segment, bool has_block_skip_index, TokenPostingsInfo & info, WriteBuffer & out) const
 {
-    PostingListCodecBitpackingImpl impl(max_rowids_in_segment);
+    PostingListCodecBitpackingImpl impl(max_rowids_in_segment, has_block_skip_index);
     if (postings.isLarge())
     {
         const auto & large_postings = postings.getLarge();
@@ -195,11 +204,11 @@ void PostingListCodecBitpacking::encode(
         large_postings.toUint32Array(rowids.data());
 
         std::span<uint32_t> rowids_view(rowids.data(), rowids.size());
-        while (rowids_view.size() >= POSTING_LIST_CHUNK_SIZE)
+        while (rowids_view.size() >= POSTING_LIST_UNIT_SIZE)
         {
-            auto front = rowids_view.first(POSTING_LIST_CHUNK_SIZE);
+            auto front = rowids_view.first(POSTING_LIST_UNIT_SIZE);
             impl.insert(front);
-            rowids_view = rowids_view.subspan(POSTING_LIST_CHUNK_SIZE);
+            rowids_view = rowids_view.subspan(POSTING_LIST_UNIT_SIZE);
         }
 
         if (!rowids_view.empty())

@@ -36,10 +36,11 @@ class PostingListCodecBitpackingImpl
     {
         Header() = default;
 
-        Header(size_t payload_bytes_, uint32_t cardinality_, uint32_t base_value_)
+        Header(size_t payload_bytes_, uint32_t cardinality_, uint32_t base_value_, bool has_block_skip_index_)
             : payload_bytes(payload_bytes_)
             , cardinality(cardinality_)
             , first_row_id(base_value_)
+            , has_block_skip_index(has_block_skip_index_)
         {
         }
 
@@ -49,6 +50,7 @@ class PostingListCodecBitpackingImpl
             writeVarUInt(payload_bytes, out);
             writeVarUInt(cardinality, out);
             writeVarUInt(first_row_id, out);
+            writeVarUInt(has_block_skip_index, out);
         }
 
         void read(ReadBuffer & in)
@@ -66,6 +68,9 @@ class PostingListCodecBitpackingImpl
 
             readVarUInt(v, in);
             first_row_id = static_cast<uint32_t>(v);
+
+            readVarUInt(v, in);
+            has_block_skip_index = static_cast<uint8_t>(v);
         }
 
         /// Number of compressed bytes (per segment) following this header
@@ -74,6 +79,7 @@ class PostingListCodecBitpackingImpl
         uint32_t cardinality = 0;
         /// The first row id in the segment (used as a base value to restore from deltas)
         uint32_t first_row_id = 0;
+        uint8_t has_block_skip_index = 0;
     };
 
     /// In-memory descriptor of one segment inside `compressed_data`.
@@ -90,13 +96,19 @@ class PostingListCodecBitpackingImpl
         uint32_t row_id_end = 0;
 
         size_t block_count = 0;
+
+        /// The following two fields are only needed when posting_list_apply_mode=lazy.
+        /// They enable block-level binary search for efficient seek/linearOr/linearAnd operations.
+        /// Max row ID of each block (for binary search to skip blocks)
         std::vector<uint32_t> block_row_ends;
+        /// Byte offset of each block within compressed_data (for direct block access)
         std::vector<size_t> block_offsets;
     };
 
 public:
     PostingListCodecBitpackingImpl() = default;
-    explicit PostingListCodecBitpackingImpl(size_t postings_list_block_size);
+
+    explicit PostingListCodecBitpackingImpl(size_t postings_list_block_size_, bool has_block_skip_index_);
 
     /// Add a single increasing row id.
     ///
@@ -200,6 +212,9 @@ private:
     size_t row_ids_in_current_segment = 0;
     /// Segment size
     const size_t max_rowids_in_segment = 1024 * 1024;
+    /// If true, write block_row_ends and block_offsets for lazy apply mode (seek/skip support).
+    /// If false, skip writing block index to save space when only materialize mode is used.
+    bool has_block_skip_index = true;
 };
 
 /// Codec for serializing/deserializing a postings list to/from a binary stream.
@@ -219,7 +234,7 @@ public:
 
     PostingListCodecBitpacking() : IPostingListCodec(Type::Bitpacking) {}
 
-    void encode(const PostingListBuilder & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const override;
+    void encode(const PostingListBuilder & postings, size_t max_rowids_in_segment, bool has_block_skip_index, TokenPostingsInfo & info, WriteBuffer & out) const override;
     void decode(ReadBuffer & in, PostingList & postings) const override;
 };
 
@@ -231,7 +246,7 @@ public:
 
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
-    void encode(const PostingListBuilder &, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
+    void encode(const PostingListBuilder &, size_t, bool, TokenPostingsInfo &, WriteBuffer &) const override {}
     void decode(ReadBuffer &, PostingList &) const override {}
 };
 

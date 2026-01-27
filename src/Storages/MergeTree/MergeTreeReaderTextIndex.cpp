@@ -26,7 +26,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsFloat text_index_hint_max_selectivity;
-    extern const SettingsUInt64 text_index_intersect_algorithm;
+    extern const SettingsBool text_index_brute_force_apply;
+    extern const SettingsFloat text_index_brute_force_density_threshold;
 }
 
 namespace ErrorCodes
@@ -92,7 +93,12 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
     const auto & text_index = assert_cast<const MergeTreeIndexText &>(*index.index);
-    direct_build_filter_column = text_index.posting_list_codec && text_index.posting_list_codec->getType() != IPostingListCodec::Type::None;
+    /// Use lazy mode for applying postings only when:
+    /// 1. The posting list codec is not 'none' (i.e., posting lists are compressed)
+    /// 2. The posting_list_apply_mode is set to 'lazy' (default)
+    lazy_apply_posting_list = text_index.posting_list_codec
+        && text_index.posting_list_codec->getType() != IPostingListCodec::Type::None
+        && text_index.params.posting_list_apply_mode == PostingListApplyMode::Lazy;
 }
 
 void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
@@ -301,7 +307,7 @@ size_t MergeTreeReaderTextIndex::readRows(
                 column_data.resize_fill(column->size() + rows_to_read, 0);
             }
         }
-        else if (direct_build_filter_column)
+        else if (lazy_apply_posting_list)
         {
             readStreamPostingsIfNeeded(from_mark);
             for (size_t i = 0; i < res_columns.size(); ++i)
@@ -681,11 +687,12 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
     const auto context = data_part_info_for_read->getContext();
 
     const auto & settings = condition_text.getContext()->getSettingsRef();
-    UInt64 intersect_algorithm = settings[Setting::text_index_intersect_algorithm];
+    bool brute_force_apply = settings[Setting::text_index_brute_force_apply];
+    float density_threshold = settings[Setting::text_index_brute_force_density_threshold];
     if (search_query->search_mode == TextSearchMode::Any || postings.size() == 1)
-        streamApplyPostingsAny(column, postings, old_size, row_offset, num_rows, intersect_algorithm);
+        lazyUnionPostingLists(column, postings, old_size, row_offset, num_rows, brute_force_apply, density_threshold);
     else if (search_query->search_mode == TextSearchMode::All)
-        streamApplyPostingsAll(column, postings, old_size, row_offset, num_rows, intersect_algorithm);
+        lazyIntersectPostingLists(column, postings, old_size, row_offset, num_rows, brute_force_apply, density_threshold);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
 }

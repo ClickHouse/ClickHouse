@@ -62,6 +62,7 @@ static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 512;
 static constexpr bool DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING = true;
 static constexpr UInt64 DEFAULT_POSTING_LIST_BLOCK_SIZE = 1024 * 1024;
 static constexpr String DEFAULT_POSTING_LIST_CODEC = "none";
+static constexpr String DEFAULT_POSTING_LIST_APPLY_MODE = "materialize";
 
 bool DictionaryBlockBase::empty() const
 {
@@ -130,13 +131,14 @@ void PostingsSerialization::serialize(const roaring::api::roaring_bitmap_t & pos
     }
 }
 
-void PostingsSerialization::serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, PostingListCodecPtr posting_list_codec, WriteBuffer & ostr)
+void PostingsSerialization::serialize(PostingListBuilder & postings, TokenPostingsInfo & info, const MergeTreeIndexTextParams & params, PostingListCodecPtr posting_list_codec, WriteBuffer & ostr)
 {
     if (info.header & IsCompressed)
     {
         chassert(posting_list_codec);
         chassert(posting_list_codec->getType() != IPostingListCodec::Type::None);
-        posting_list_codec->encode(postings, posting_list_block_size, info, ostr);
+        bool write_block_skip_index = params.posting_list_apply_mode == PostingListApplyMode::Lazy;
+        posting_list_codec->encode(postings, params.posting_list_block_size, write_block_skip_index, info, ostr);
     }
     else if (postings.isLarge())
     {
@@ -727,13 +729,13 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     /// The codec splits the posting list into blocks according to the posting_list_block_size setting.
     if (info.header & IsCompressed)
     {
-        PostingsSerialization::serialize(postings, info, params.posting_list_block_size, posting_list_codec, postings_stream.plain_hashing);
+        PostingsSerialization::serialize(postings, info, params, posting_list_codec, postings_stream.plain_hashing);
     }
     else if (info.header & SingleBlock)
     {
         info.offsets.emplace_back(postings_stream.plain_hashing.count());
         info.ranges.emplace_back(postings.minimum(), postings.maximum());
-        PostingsSerialization::serialize(postings, info, params.posting_list_block_size, posting_list_codec, postings_stream.plain_hashing);
+        PostingsSerialization::serialize(postings, info, params, posting_list_codec, postings_stream.plain_hashing);
     }
     else
     {
@@ -946,7 +948,7 @@ DictionarySparseIndex serializeTokensAndPostings(
             TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, token_info);
 
             if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
-                PostingsSerialization::serialize(postings, token_info, params.posting_list_block_size, posting_list_codec, dictionary_stream.compressed_hashing);
+                PostingsSerialization::serialize(postings, token_info, params, posting_list_codec, dictionary_stream.compressed_hashing);
         }
     }
 
@@ -1229,6 +1231,7 @@ static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
+static const String ARGUMENT_POSTING_LIST_APPLY_MODE = "posting_list_apply_mode";
 
 namespace
 {
@@ -1343,6 +1346,19 @@ std::pair<String, std::vector<Field>> extractTokenizer(std::unordered_map<String
         options.at(ARGUMENT_TOKENIZER).getTypeName());
 }
 
+PostingListApplyMode parsePostingListApplyMode(const String & mode_str, std::string_view index_name)
+{
+    if (mode_str == "lazy")
+        return PostingListApplyMode::Lazy;
+    else if (mode_str == "materialize")
+        return PostingListApplyMode::Materialize;
+    else
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Text index '{}' has invalid '{}' argument value '{}'. Allowed values are 'lazy' or 'materialize'",
+            index_name, ARGUMENT_POSTING_LIST_APPLY_MODE, mode_str);
+}
+
 }
 
 MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
@@ -1364,18 +1380,32 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     UInt64 dictionary_block_frontcoding_compression = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION).value_or(DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING);
     UInt64 posting_list_block_size = extractOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE).value_or(DEFAULT_POSTING_LIST_BLOCK_SIZE);
 
-    MergeTreeIndexTextParams index_params{
-        dictionary_block_size,
-        dictionary_block_frontcoding_compression,
-        posting_list_block_size,
-        preprocessor};
-
     String posting_list_codec_name = extractOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
     static std::vector<String> allowed_codecs
         = { PostingListCodecNone::getName(),
             PostingListCodecBitpacking::getName(),
         };
     auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, allowed_codecs, index.name);
+
+    String posting_list_apply_mode_str = extractOption<String>(options, ARGUMENT_POSTING_LIST_APPLY_MODE).value_or(DEFAULT_POSTING_LIST_APPLY_MODE);
+    PostingListApplyMode posting_list_apply_mode = parsePostingListApplyMode(posting_list_apply_mode_str, index.name);
+
+    /// posting_list_apply_mode = 'lazy' is only valid when posting_list_codec is not 'none'
+    if (posting_list_apply_mode == PostingListApplyMode::Lazy
+        && posting_list_codec->getType() == IPostingListCodec::Type::None)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Text index '{}' has '{}' = 'lazy', but this mode is only valid when '{}' is not 'none'",
+            index.name, ARGUMENT_POSTING_LIST_APPLY_MODE, ARGUMENT_POSTING_LIST_CODEC);
+    }
+
+    MergeTreeIndexTextParams index_params{
+        dictionary_block_size,
+        dictionary_block_frontcoding_compression,
+        posting_list_block_size,
+        preprocessor,
+        posting_list_apply_mode};
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
@@ -1409,7 +1439,19 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (posting_list_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
 
-    extractOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
+    String posting_list_codec_name = extractOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
+
+    String posting_list_apply_mode_str = extractOption<String>(options, ARGUMENT_POSTING_LIST_APPLY_MODE).value_or(DEFAULT_POSTING_LIST_APPLY_MODE);
+    PostingListApplyMode posting_list_apply_mode = parsePostingListApplyMode(posting_list_apply_mode_str, index.name);
+
+    /// posting_list_apply_mode = 'lazy' is only valid when posting_list_codec is not 'none'
+    if (posting_list_apply_mode == PostingListApplyMode::Lazy && posting_list_codec_name == "none")
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Text index '{}' has '{}' = 'lazy', but this mode is only valid when '{}' is not 'none'",
+            index.name, ARGUMENT_POSTING_LIST_APPLY_MODE, ARGUMENT_POSTING_LIST_CODEC);
+    }
 
     auto preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false);
 
