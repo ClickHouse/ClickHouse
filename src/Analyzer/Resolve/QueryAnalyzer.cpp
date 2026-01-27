@@ -3403,7 +3403,7 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
         resolveWindow(node, scope);
 }
 
-NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
+NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, const NameSet & interpolate_list)
 {
     ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -4895,6 +4895,15 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// INTERPOLATE columns are handled via clone-if-shared at the wrapping site.
     /// group_by_use_nulls is handled by not caching nodes in nullable_group_by_keys.
     scope.identifier_to_resolved_expression_cache.enable();
+
+    /// Build set of column names that need INTERPOLATE wrapping
+    NameSet interpolate_list;
+    if (query_node_typed.hasInterpolate())
+    {
+        auto & interpolate_node_list = query_node_typed.getInterpolate()->as<ListNode &>();
+        for (const auto & interpolate_node : interpolate_node_list.getNodes())
+            interpolate_list.insert(interpolate_node->as<InterpolateNode &>().getExpressionName());
+    }
 
     /// Resolve query node sections.
 
