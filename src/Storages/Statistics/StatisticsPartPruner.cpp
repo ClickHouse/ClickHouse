@@ -129,24 +129,21 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
     const auto & columns = metadata_->getColumns();
     Names filter_columns = filter_dag.dag->getRequiredColumnsNames();
 
-    for (const auto & col : columns)
+for (const auto & name : filter_columns)
+{
+    if (const auto * col = columns.tryGet(name))
     {
-        if (col.statistics.types_to_desc.contains(StatisticsType::MinMax))
+        if (col->statistics.types_to_desc.contains(StatisticsType::MinMax))
         {
-            if (std::find(filter_columns.begin(), filter_columns.end(), col.name) != filter_columns.end())
-            {
-                stats_column_name_to_type_map[col.name] = col.type;
-                useless = false;
-            }
+            stats_column_name_to_type_map[col->name] = col->type;
+            useless = false;
         }
     }
 }
 
 KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndTypesList & columns) const
 {
-    std::vector<String> column_names;
-    for (const auto & [name, _] : columns)
-        column_names.push_back(name);
+    const auto column_names = columns.getNames();
 
     auto it = key_condition_cache.find(column_names);
     if (it != key_condition_cache.end())
