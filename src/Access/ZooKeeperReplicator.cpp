@@ -577,17 +577,10 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
     if (all)
     {
         /// all=true means we read & parse all access entities from ZooKeeper.
-        /// Throws on error on load depending on the throw_on_invalid_entities setting.
         std::vector<std::pair<UUID, AccessEntityPtr>> entities;
         for (const auto & uuid : entity_uuids)
         {
-            AccessEntityPtr entity;
-            if (throw_on_invalid_entities)
-                entity = readEntityFromZooKeeper(zookeeper, uuid);
-            else
-                entity = tryReadEntityFromZooKeeper(zookeeper, uuid);
-
-            if (entity)
+            if (auto entity = tryReadEntityFromZooKeeper(zookeeper, uuid))
                 entities.emplace_back(uuid, entity);
         }
         memory_storage.setAll(entities);
@@ -631,7 +624,7 @@ void ZooKeeperReplicator::refreshEntityNoLock(const zkutil::ZooKeeperPtr & zooke
         removeEntityNoLock(id);
 }
 
-AccessEntityPtr ZooKeeperReplicator::readEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const
+AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const
 {
     auto watch = zookeeper->createWatchFromRawCallback(makeWatchIdFromId(id), [&]() -> Coordination::WatchCallback
     {
@@ -649,17 +642,15 @@ AccessEntityPtr ZooKeeperReplicator::readEntityFromZooKeeper(const zkutil::ZooKe
     if (!exists)
         return nullptr;
 
-    return deserializeAccessEntity(entity_definition, entity_path);
-}
-
-AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const
-{
     try
     {
-        return readEntityFromZooKeeper(zookeeper, id);
+        return deserializeAccessEntity(entity_definition, entity_path);
     }
     catch (...)
     {
+        if (throw_on_invalid_entities)
+            throw;
+
         tryLogCurrentException(&Poco::Logger::get(storage_name), "Error while reading the definition of " + toString(id));
         return nullptr;
     }

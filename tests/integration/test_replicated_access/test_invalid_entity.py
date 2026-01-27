@@ -9,14 +9,14 @@ cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.x
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/config.xml"],
+    main_configs=["configs/config_throw_on_invalid.xml"],
     with_zookeeper=True,
     stay_alive=True,
 )
 
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/config.xml"],
+    main_configs=["configs/config_throw_on_invalid.xml"],
     with_zookeeper=True,
     stay_alive=True,
 )
@@ -63,6 +63,7 @@ def test_server_fail_on_invalid_replicated_user(started_cluster):
         "Syntax error"
     ), "Expected SYNTAX_ERROR in logs"
 
+    # Cleanup: restore valid entity and restart node2 for subsequent test runs
     zk.set(entity_path, original_data.encode("utf-8"))
     node2.start_clickhouse()
     node1.query(f"DROP USER {user_name}")
