@@ -333,7 +333,7 @@ namespace DB
         {
             if (discriminators[idx] == ColumnVariant::NULL_DISCRIMINATOR || (null_bytemap && (*null_bytemap)[idx]))
             {
-                status = type_ids_builder.Append(null_idx);
+                status = type_ids_builder.Append(static_cast<int8_t>(null_idx));
                 contains_nulls = true;
             }
             else
@@ -566,7 +566,7 @@ namespace DB
         size_t dif = start == 0 ? 0 : offsets[start-1];
         for (size_t i = start; i < end; ++i)
         {
-            status = offsets_builder.Append(offsets[i] - dif);
+            status = offsets_builder.Append(static_cast<int>(offsets[i] - dif));
             checkStatus(status, column_name, format_name);
         }
 

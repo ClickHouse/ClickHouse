@@ -1560,7 +1560,7 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
                 google::protobuf::Any any_msg;
                     request.type == arrow::flight::FlightDescriptor::CMD
                     && !request.cmd.empty()
-                    && any_msg.ParseFromArray(request.cmd.data(), request.cmd.size())
+                    && any_msg.ParseFromArray(request.cmd.data(), static_cast<int>(request.cmd.size()))
             )
             {
                 auto res = commandSelector(any_msg);
@@ -1677,7 +1677,7 @@ arrow::Status ArrowFlightHandler::GetSchema(
                 google::protobuf::Any any_msg;
                     request.type == arrow::flight::FlightDescriptor::CMD
                     && !request.cmd.empty()
-                    && any_msg.ParseFromArray(request.cmd.data(), request.cmd.size())
+                    && any_msg.ParseFromArray(request.cmd.data(), static_cast<int>(request.cmd.size()))
             )
             {
                 auto res = commandSelector(any_msg, true);
@@ -1774,7 +1774,7 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
                 google::protobuf::Any any_msg;
                     request.type == arrow::flight::FlightDescriptor::CMD
                     && !request.cmd.empty()
-                    && any_msg.ParseFromArray(request.cmd.data(), request.cmd.size())
+                    && any_msg.ParseFromArray(request.cmd.data(), static_cast<int>(request.cmd.size()))
             )
             {
                 auto res = commandSelector(any_msg);
@@ -2051,7 +2051,7 @@ arrow::Status ArrowFlightHandler::DoPut(
             google::protobuf::Any any_msg;
                 request.type == arrow::flight::FlightDescriptor::CMD
                 && !request.cmd.empty()
-                && any_msg.ParseFromArray(request.cmd.data(), request.cmd.size())
+                && any_msg.ParseFromArray(request.cmd.data(), static_cast<int>(request.cmd.size()))
         )
         {
             if (any_msg.Is<arrow::flight::protocol::sql::CommandStatementUpdate>())
