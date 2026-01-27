@@ -96,7 +96,16 @@ public:
 
     /// Identifies the state representation variant used by this function.
     /// The default is Aggregation (normal GROUP BY implementation).
-    virtual AggregateFunctionStateVariant getStateVariant() const { return AggregateFunctionStateVariant::Aggregation; }
+    virtual AggregateFunctionStateVariant getStateVariant() const
+    {
+        /// Most combinators don't change the internal state layout, just wrap the nested function.
+        /// Propagate the variant through combinators by default so that haveSameStateRepresentation()
+        /// correctly detects Aggregation vs Window state mismatches
+        if (auto nested = getNestedFunction())
+            return nested->getStateVariant();
+
+        return AggregateFunctionStateVariant::Aggregation;
+    }
 
     /// Optional hook used when haveSameStateRepresentation() is false but states still need to be merged
     /// (for example, aggregation vs window variants of the same function).
