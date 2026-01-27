@@ -86,6 +86,7 @@ void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
 
 void DiskSelector::initialize(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator)
+try
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -127,6 +128,12 @@ void DiskSelector::initialize(
         recordDisk(LOCAL_DISK_NAME, std::make_shared<DiskLocal>(LOCAL_DISK_NAME, "/", 0, context, config, config_prefix));
     }
     is_initialized = true;
+}
+catch (...)
+{
+    for (const auto & [name, disk] : disks)
+        disk->shutdown();
+    throw;
 }
 
 DiskSelectorPtr DiskSelector::updateFromConfig(

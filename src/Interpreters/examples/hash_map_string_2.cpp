@@ -597,7 +597,7 @@ void NO_INLINE bench(const std::vector<std::string_view> & data, const char * na
     std::cerr << std::fixed << std::setprecision(2)
         << "HashMap (" << name << "). Size: " << map.size()
         << ", elapsed: " << watch.elapsedSeconds()
-        << " (" << data.size() / watch.elapsedSeconds() << " elem/sec.)"
+        << " (" << static_cast<double>(data.size()) / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
         << ", collisions: " << map.getCollisions()
 #endif
@@ -637,7 +637,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "Vector. Size: " << n
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 

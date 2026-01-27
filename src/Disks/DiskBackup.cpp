@@ -269,10 +269,6 @@ DataSourceDescription DiskBackup::getDataSourceDescription() const
     return description;
 }
 
-void DiskBackup::shutdown()
-{
-}
-
 String DiskBackup::replacePathPrefix(const String & path) const
 {
     if (path.starts_with(path_prefix_replacement.from))

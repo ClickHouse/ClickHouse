@@ -1,5 +1,6 @@
 #include <Common/quoteString.h>
 #include <Parsers/ASTTTLElement.h>
+#include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
 
 
@@ -31,7 +32,11 @@ ASTPtr ASTTTLElement::clone() const
 
 void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ttl()->format(ostr, settings, state, frame);
+    auto ttl_expr = ttl();
+    auto nested_frame = frame;
+    if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(ttl_expr.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+        nested_frame.need_parens = true;
+    ttl_expr->format(ostr, settings, state, nested_frame);
     if (mode == TTLMode::MOVE)
     {
         if (destination_type == DataDestinationType::DISK)
