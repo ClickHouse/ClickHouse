@@ -240,7 +240,7 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 
     function_ast->name = function_name;
     function_ast->nulls_action = nulls_action;
-    function_ast->is_operator = false;
+    function_ast->is_operator = is_operator;
 
     if (isWindowFunction())
     {
