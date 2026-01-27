@@ -2,6 +2,7 @@
 description: 'Index page for Development and Contributing'
 slug: /development/
 title: 'Development and Contributing'
+doc_type: 'landing-page'
 ---
 
 In this section of the docs you will find the following pages:

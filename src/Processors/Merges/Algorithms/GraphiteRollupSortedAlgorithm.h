@@ -27,6 +27,7 @@ public:
         SortDescription description_,
         size_t max_block_size_rows_,
         size_t max_block_size_bytes_,
+        std::optional<size_t> max_dynamic_subcolumns_,
         Graphite::Params params_,
         time_t time_of_merge_);
 

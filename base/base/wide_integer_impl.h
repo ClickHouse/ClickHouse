@@ -13,6 +13,7 @@
 #include <cassert>
 #include <tuple>
 #include <limits>
+#include <utility>
 
 
 // NOLINTBEGIN(*)
@@ -648,8 +649,8 @@ private:
             HalfType a0 = lhs.items[little(0)];
             HalfType a1 = lhs.items[little(1)];
 
-            HalfType b01 = rhs;
-            uint64_t b0 = b01;
+            HalfType b01 = static_cast<HalfType>(rhs);
+            uint64_t b0 = static_cast<uint64_t>(b01);
             uint64_t b1 = 0;
             HalfType b23 = 0;
             if constexpr (sizeof(T) > 8)
@@ -663,7 +664,7 @@ private:
             HalfType r12_x = a1 * b0;
 
             integer<Bits, Signed> res;
-            res.items[little(0)] = r01;
+            res.items[little(0)] = static_cast<base_type>(r01);
             res.items[little(3)] = r23 >> 64;
 
             if constexpr (sizeof(T) > 8)
@@ -678,7 +679,7 @@ private:
             if (r12 < r12_x)
                 ++res.items[little(3)];
 
-            res.items[little(1)] = r12;
+            res.items[little(1)] = static_cast<base_type>(r12);
             res.items[little(2)] = r12 >> 64;
             return res;
         }
@@ -689,7 +690,7 @@ private:
             CompilerUInt128 b = (CompilerUInt128(rhs.items[little(1)]) << 64) + rhs.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 c = a * b;
             integer<Bits, Signed> res;
-            res.items[little(0)] = c;
+            res.items[little(0)] = static_cast<base_type>(c);
             res.items[little(1)] = c >> 64;
             return res;
         }
@@ -999,11 +1000,11 @@ public:
             CompilerUInt128 c = a / b; // NOLINT
 
             integer<Bits, Signed> res;
-            res.items[little(0)] = c;
+            res.items[little(0)] = static_cast<base_type>(c);
             res.items[little(1)] = c >> 64;
 
             CompilerUInt128 remainder = a - b * c;
-            numerator.items[little(0)] = remainder;
+            numerator.items[little(0)] = static_cast<base_type>(remainder);
             numerator.items[little(1)] = remainder >> 64;
 
             return res;
@@ -1219,7 +1220,7 @@ constexpr integer<Bits, Signed>::integer(std::initializer_list<T> il) noexcept
         {
             if (it < il.end())
             {
-                items[_impl::little(i)] = *it;
+                items[_impl::little(i)] = static_cast<base_type>(*it);
                 ++it;
             }
             else
@@ -1375,12 +1376,9 @@ constexpr integer<Bits, Signed>::operator bool() const noexcept
 }
 
 template <size_t Bits, typename Signed>
-template <class T>
-requires(std::is_arithmetic_v<T>)
+template <std::integral T>
 constexpr integer<Bits, Signed>::operator T() const noexcept
 {
-    static_assert(std::numeric_limits<T>::is_integer);
-
     /// NOTE: memcpy will suffice, but unfortunately, this function is constexpr.
 
     using UnsignedT = std::make_unsigned_t<T>;
@@ -1408,7 +1406,7 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
         long double t = res;
         res *= static_cast<long double>(std::numeric_limits<base_type>::max());
         res += t;
-        res += tmp.items[_impl::big(i)];
+        res += static_cast<long double>(tmp.items[_impl::big(i)]);
     }
 
     if (_impl::is_negative(*this))

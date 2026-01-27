@@ -14,7 +14,6 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/checkStackSize.h>
 #include <Common/escapeString.h>
@@ -522,14 +521,12 @@ ColumnPtr FuzzJSONSource::createColumn()
         auto data = out.str();
         size_t data_len = data.size();
 
-        IColumn::Offset next_offset = offset + data_len + 1;
+        IColumn::Offset next_offset = offset + data_len;
         data_to.resize(next_offset);
 
         std::copy(data.begin(), data.end(), &data_to[offset]);
 
-        data_to[offset + data_len] = 0;
         offsets_to[row_num] = next_offset;
-
         offset = next_offset;
     }
 
@@ -672,7 +669,7 @@ void StorageFuzzJSON::processNamedCollectionResult(Configuration & configuration
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The value of the 'min_key_length' argument must be less or equal than "
-                "the value of the 'max_key_lenght' argument.");
+                "the value of the 'max_key_length' argument.");
 
         configuration.min_key_length = min_key_length;
         configuration.max_key_length = std::max(configuration.max_key_length, configuration.min_key_length);
@@ -686,7 +683,7 @@ StorageFuzzJSON::Configuration StorageFuzzJSON::getConfiguration(ASTs & engine_a
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
     {
         /// Perform strict validation of ASTs in addition to name collection extraction.
-        for (auto * args_it = std::next(engine_args.begin()); args_it != engine_args.end(); ++args_it)
+        for (auto args_it = std::next(engine_args.begin()); args_it != engine_args.end(); ++args_it)
             getKeyValueFromAST(*args_it, local_context);
 
         StorageFuzzJSON::processNamedCollectionResult(configuration, *named_collection);

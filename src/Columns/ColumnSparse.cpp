@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnReplicated.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
@@ -11,6 +12,7 @@
 
 #include <algorithm>
 #include <bit>
+
 
 namespace DB
 {
@@ -94,9 +96,9 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
-std::pair<String, DataTypePtr>  ColumnSparse::getValueNameAndType(size_t n) const
+DataTypePtr  ColumnSparse::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
-    return values->getValueNameAndType(getValueIndex(n));
+    return values->getValueNameAndTypeImpl(name_buf, getValueIndex(n), options);
 }
 
 bool ColumnSparse::getBool(size_t n) const
@@ -129,7 +131,7 @@ UInt64 ColumnSparse::get64(size_t n) const
     return values->get64(getValueIndex(n));
 }
 
-StringRef ColumnSparse::getDataAt(size_t n) const
+std::string_view ColumnSparse::getDataAt(size_t n) const
 {
     return values->getDataAt(getValueIndex(n));
 }
@@ -157,26 +159,29 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
 }
 
-StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
+    return values->serializeValueIntoArena(getValueIndex(n), arena, begin, settings);
 }
 
-char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeValueIntoMemory(getValueIndex(n), memory);
+    return values->serializeValueIntoMemory(getValueIndex(n), memory, settings);
 }
 
-const char * ColumnSparse::deserializeAndInsertFromArena(const char * pos)
+std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    const char * res = nullptr;
-    insertSingleValue([&](IColumn & column) { res = column.deserializeAndInsertFromArena(pos); });
-    return res;
+    return values->getSerializedValueSize(getValueIndex(n), settings);
 }
 
-const char * ColumnSparse::skipSerializedInArena(const char * pos) const
+void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    return values->skipSerializedInArena(pos);
+    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in, settings); });
+}
+
+void ColumnSparse::skipSerializedInArena(ReadBuffer & in) const
+{
+    values->skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -189,7 +194,7 @@ void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
         return;
 
     if (start + length > src.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parameter out of bound in IColumnString::insertRangeFrom method.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parameter out of bound in ColumnSparse::insertRangeFrom method.");
 
     auto & offsets_data = getOffsetsData();
 
@@ -295,7 +300,7 @@ void ColumnSparse::insertManyDefaults(size_t length)
 
 void ColumnSparse::popBack(size_t n)
 {
-    assert(n < _size);
+    assert(n <= _size);
 
     auto & offsets_data = getOffsetsData();
     size_t new_size = _size - n;
@@ -352,7 +357,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 
     Filter values_filter;
     values_filter.reserve_exact(values->size());
-    values_filter.push_back(1);
+    values_filter.push_back(static_cast<UInt8>(1));
     size_t values_result_size_hint = 1;
 
     size_t res_offset = 0;
@@ -366,13 +371,13 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
             if (filt[i])
             {
                 res_offsets_data.push_back(res_offset);
-                values_filter.push_back(1);
+                values_filter.push_back(static_cast<UInt8>(1));
                 ++res_offset;
                 ++values_result_size_hint;
             }
             else
             {
-                values_filter.push_back(0);
+                values_filter.push_back(static_cast<UInt8>(0));
             }
             offset_it.increaseCurrentOffset();
         }
@@ -384,6 +389,56 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 
     auto res_values = values->filter(values_filter, values_result_size_hint);
     return create(res_values, std::move(res_offsets), res_offset);
+}
+
+void ColumnSparse::filter(const Filter & filt)
+{
+    if (_size != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), _size);
+
+    if (offsets->empty())
+    {
+        _size = countBytesInFilter(filt);
+        return;
+    }
+
+    auto & res_offsets_data = getOffsetsData();
+    size_t res_offsets_pos = 0;
+
+    Filter values_filter;
+    values_filter.reserve_exact(values->size());
+    values_filter.push_back(static_cast<UInt8>(1));
+
+    size_t res_offset = 0;
+    auto offset_it = begin();
+    /// Replace the `++offset_it` with `offset_it.increaseCurrentRow()` and `offset_it.increaseCurrentOffset()`,
+    /// to remove the redundant `isDefault()` in `++` of `Interator` and reuse the following `isDefault()`.
+    for (size_t i = 0; i < _size; ++i, offset_it.increaseCurrentRow())
+    {
+        if (!offset_it.isDefault())
+        {
+            if (filt[i])
+            {
+                res_offsets_data[res_offsets_pos] = res_offset;
+                values_filter.push_back(static_cast<UInt8>(1));
+                ++res_offsets_pos;
+                ++res_offset;
+            }
+            else
+            {
+                values_filter.push_back(static_cast<UInt8>(0));
+            }
+            offset_it.increaseCurrentOffset();
+        }
+        else
+        {
+            res_offset += filt[i] != 0;
+        }
+    }
+
+    values->filter(values_filter);
+    res_offsets_data.resize_assume_reserved(res_offsets_pos);
+    _size = res_offset;
 }
 
 void ColumnSparse::expand(const Filter & mask, bool inverted)
@@ -785,7 +840,7 @@ void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t
 
 double ColumnSparse::getRatioOfDefaultRows(double) const
 {
-    return static_cast<double>(getNumberOfDefaultRows()) / _size;
+    return static_cast<double>(getNumberOfDefaultRows()) / static_cast<double>(_size);
 }
 
 UInt64 ColumnSparse::getNumberOfDefaultRows() const
@@ -872,19 +927,27 @@ ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
     return Iterator(offsets_data, _size, current_offset, n);
 }
 
-void ColumnSparse::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+void ColumnSparse::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     Columns values_source_columns;
     values_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
-    values->takeDynamicStructureFromSourceColumns(values_source_columns);
+    values->takeDynamicStructureFromSourceColumns(values_source_columns, max_dynamic_subcolumns);
+}
+
+void ColumnSparse::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+{
+    values->takeDynamicStructureFromColumn(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
 }
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
 {
     if (!column)
         return column;
+
+    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
+        return ColumnReplicated::create(recursiveRemoveSparse(column_replicated->getNestedColumn()), column_replicated->getIndexesColumn());
 
     if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
     {
@@ -899,6 +962,15 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
     }
 
     return column->convertToFullColumnIfSparse();
+}
+
+ColumnPtr removeSpecialRepresentations(const ColumnPtr & column)
+{
+    if (!column)
+        return column;
+
+    /// We can have only Replicated(Sparse) but not Sparse(Replicated).
+    return recursiveRemoveSparse(column->convertToFullColumnIfReplicated());
 }
 
 }

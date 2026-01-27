@@ -19,7 +19,7 @@ Positions: 0 1
              FUNCTION equals(id : 0, 5 :: 1) -> equals(id, 5) UInt8 : 2
     Positions: 2 0
     Row level filter
-    Row level filter column: greaterOrEquals(id, 5)
+    Row level filter column: greaterOrEquals(id, 5) (removed)
     Actions: INPUT : 0 -> id UInt64 : 0
              COLUMN Const(UInt8) -> 5 UInt8 : 1
              FUNCTION greaterOrEquals(id : 0, 5 :: 1) -> greaterOrEquals(id, 5) UInt8 : 2
@@ -49,7 +49,7 @@ Positions: 1 2
              FUNCTION equals(id : 0, 5_UInt8 :: 1) -> equals(id, 5_UInt8) UInt8 : 2
     Positions: 2 0
     Row level filter
-    Row level filter column: greaterOrEquals(id, 5_UInt8)
+    Row level filter column: greaterOrEquals(id, 5_UInt8) (removed)
     Actions: INPUT : 0 -> id UInt64 : 0
              COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 1
              FUNCTION greaterOrEquals(id : 0, 5_UInt8 :: 1) -> greaterOrEquals(id, 5_UInt8) UInt8 : 2

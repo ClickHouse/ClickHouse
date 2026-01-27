@@ -5,6 +5,7 @@ sidebar_label: 'TABLE'
 sidebar_position: 36
 slug: /sql-reference/statements/create/table
 title: 'CREATE TABLE'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -30,7 +31,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ```
 
 Creates a table named `table_name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
-The structure of the table is a list of column descriptions, secondary indexes and constraints . If [primary key](#primary-key) is supported by the engine, it will be indicated as parameter for the table engine.
+The structure of the table is a list of column descriptions, secondary indexes, projections and constraints . If [primary key](#primary-key) is supported by the engine, it will be indicated as parameter for the table engine.
 
 A column description is `name type` in the simplest case. Example: `RegionID UInt32`.
 
@@ -80,28 +81,6 @@ Creates a table with a structure like the result of the `SELECT` query, with the
 If the table already exists and `IF NOT EXISTS` is specified, the query won't do anything.
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](/engines/table-engines).
-
-:::tip
-In ClickHouse Cloud please split this into two steps:
-1. Create the table structure
-
-  ```sql
-  CREATE TABLE t1
-  ENGINE = MergeTree
-  ORDER BY ...
-  -- highlight-next-line
-  EMPTY AS
-  SELECT ...
-  ```
-
-2. Populate the table
-
-  ```sql
-  INSERT INTO t1
-  SELECT ...
-  ```
-
-:::
 
 **Example**
 
@@ -420,26 +399,13 @@ ClickHouse supports general purpose codecs and specialized codecs.
 
 High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 
-#### ZSTD_QAT {#zstd_qat}
+#### Obsolete: ZSTD_QAT {#zstd_qat}
 
 <CloudNotSupportedBadge/>
 
-`ZSTD_QAT[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable level, implemented by [Intel® QATlib](https://github.com/intel/qatlib) and [Intel® QAT ZSTD Plugin](https://github.com/intel/QAT-ZSTD-Plugin). Possible levels: \[1, 12\]. Default level: 1. Recommended level range: \[6, 12\]. Some limitations apply:
-
-- ZSTD_QAT is disabled by default and can only be used after enabling configuration setting [enable_zstd_qat_codec](../../../operations/settings/settings.md#enable_zstd_qat_codec).
-- For compression, ZSTD_QAT tries to use an Intel® QAT offloading device ([QuickAssist Technology](https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html)). If no such device was found, it will fallback to ZSTD compression in software.
-- Decompression is always performed in software.
-
-#### DEFLATE_QPL {#deflate_qpl}
+#### Obsolete: DEFLATE_QPL {#deflate_qpl}
 
 <CloudNotSupportedBadge/>
-
-`DEFLATE_QPL` — [Deflate compression algorithm](https://github.com/intel/qpl) implemented by Intel® Query Processing Library. Some limitations apply:
-
-- DEFLATE_QPL is disabled by default and can only be used after enabling configuration setting [enable_deflate_qpl_codec](../../../operations/settings/settings.md#enable_deflate_qpl_codec).
-- DEFLATE_QPL requires a ClickHouse build compiled with SSE 4.2 instructions (by default, this is the case). Refer to [Build Clickhouse with DEFLATE_QPL](/development/building_and_benchmarking_deflate_qpl) for more details.
-- DEFLATE_QPL works best if the system has a Intel® IAA (In-Memory Analytics Accelerator) offloading device. Refer to [Accelerator Configuration](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration) and [Benchmark with DEFLATE_QPL](/development/building_and_benchmarking_deflate_qpl) for more details.
-- DEFLATE_QPL-compressed data can only be transferred between ClickHouse nodes compiled with SSE 4.2 enabled.
 
 ### Specialized Codecs {#specialized-codecs}
 
@@ -447,11 +413,11 @@ These codecs are designed to make compression more effective by exploiting speci
 
 #### Delta {#delta}
 
-`Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values, except for the first value that stays unchanged. Up to `delta_bytes` are used for storing delta values, so `delta_bytes` is the maximum size of raw values. Possible `delta_bytes` values: 1, 2, 4, 8. The default value for `delta_bytes` is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it's 1. Delta is a data preparation codec, i.e. it cannot be used stand-alone.
+`Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values, except for the first value that stays unchanged. `delta_bytes` is the maximum size of raw values, the default value is `sizeof(type)`. Specifying `delta_bytes` as an argument is deprecated and support will be removed in a future release. Delta is a data preparation codec, i.e. it cannot be used stand-alone.
 
 #### DoubleDelta {#doubledelta}
 
-`DoubleDelta(bytes_size)` — Calculates delta of deltas and writes it in compact binary form. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it's 1. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-bit deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf). DoubleDelta is a data preparation codec, i.e. it cannot be used stand-alone.
+`DoubleDelta(bytes_size)` — Calculates delta of deltas and writes it in compact binary form. The `bytes_size` has a similar meaning than `delta_bytes` in [Delta](#delta) codec. Specifying `bytes_size` as an argument is deprecated and support will be removed in a future release. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any numeric type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-bit deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf). DoubleDelta is a data preparation codec, i.e. it cannot be used stand-alone.
 
 #### GCD {#gcd}
 
@@ -546,7 +512,7 @@ ClickHouse supports temporary tables which have the following characteristics:
 To create a temporary table, use the following syntax:
 
 ```sql
-CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
+CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
@@ -739,6 +705,18 @@ CREATE TABLE db.table_name
 ENGINE = engine
 COMMENT 'Comment'
 ```
+
+:::note
+The `COMMENT` clause must be specified **after** any storage-specific clauses such as `PARTITION BY`, `ORDER BY`, and storage-specific `SETTINGS`.
+
+After the `COMMENT` clause, only query-specific `SETTINGS` (like `max_threads`, etc.) will be parsed, not storage-related settings.
+
+This means the correct clause order is:
+- `ENGINE`
+- storage clauses
+- `COMMENT`
+- query settings (if any)
+:::
 
 **Example**
 

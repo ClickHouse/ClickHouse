@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-random-settings, no-random-merge-tree-settings
+# Tags: no-fasttest, no-parallel, no-random-settings, no-random-merge-tree-settings, no-flaky-check
+# no-flaky-check: the test is long and timeouts because of thread-fuzzer
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,6 +16,7 @@ SETTINGS disk = disk(type = cache,
                      max_file_segment_size = '40Mi',
                      boundary_alignment = '20Mi',
                      path = '$CLICKHOUSE_TEST_UNIQUE_NAME',
+                     name = '$CLICKHOUSE_TEST_UNIQUE_NAME',
                      disk = 's3_disk');
 
 INSERT INTO test SELECT number, randomString(100) FROM numbers(1000000);
@@ -24,7 +26,7 @@ QUERY_ID=$RANDOM
 $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" -m -q "
 SET enable_filesystem_cache_log = 1;
 SET read_through_distributed_cache=0;
-SYSTEM DROP FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE;
 SELECT * FROM test WHERE NOT ignore() LIMIT 1 FORMAT Null;
 SYSTEM FLUSH LOGS filesystem_cache_log;
 "
@@ -85,7 +87,7 @@ query2="
 SELECT *
 FROM (SELECT * FROM ($query)) AS cache_log
 INNER JOIN system.filesystem_cache AS cache
-ON cache_log.cache_path = cache.cache_path "
+ON cache_log.cache_path = cache.cache_path AND cache.cache_name = '$CLICKHOUSE_TEST_UNIQUE_NAME'"
 
 $CLICKHOUSE_CLIENT -m -q "
 SELECT count() FROM ($query2)

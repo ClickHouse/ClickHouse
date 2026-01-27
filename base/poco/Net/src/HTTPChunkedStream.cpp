@@ -140,7 +140,7 @@ int HTTPChunkedStreamBuf::readFromDevice(char* buffer, std::streamsize length)
 }
 
 
-bool HTTPChunkedStreamBuf::isComplete(bool read_from_device_to_check_eof)
+bool HTTPChunkedStreamBuf::isComplete(bool read_from_device_to_check_eof) noexcept
 {
 	if (read_from_device_to_check_eof)
 	{
@@ -150,7 +150,7 @@ bool HTTPChunkedStreamBuf::isComplete(bool read_from_device_to_check_eof)
 			/// "Unexpected EOF" exception would be thrown
 			readFromDevice(nullptr, 0);
 		}
-		catch (Poco::Net::MessageException &)
+		catch (...)
 		{
 			return false;
 		}

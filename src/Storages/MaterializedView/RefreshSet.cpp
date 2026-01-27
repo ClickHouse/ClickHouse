@@ -203,7 +203,7 @@ bool RefreshSet::refreshesStopped() const
     return refreshes_stopped.load();
 }
 
-void RefreshSet::joinBackgroundTasks(std::chrono::steady_clock::time_point deadline)
+bool RefreshSet::joinBackgroundTasks(std::chrono::steady_clock::time_point deadline)
 {
     std::vector<RefreshTaskPtr> remaining_tasks;
     std::chrono::steady_clock::time_point stopped_at;
@@ -234,7 +234,11 @@ void RefreshSet::joinBackgroundTasks(std::chrono::steady_clock::time_point deadl
             names += remaining_tasks[i]->getInfo().view_id.getNameForLogs();
         }
         LOG_ERROR(getLogger("RefreshSet"), "{} view refreshes failed to stop in {:.3}s: {}", remaining_tasks.size(), elapsed_seconds, names);
+
+        return false;
     }
+
+    return true;
 }
 
 RefreshSet::Handle::Handle(RefreshSet * parent_set_, StorageID id_, std::optional<StorageID> inner_table_id_, RefreshTaskList::iterator iter_, RefreshTaskList::iterator inner_table_iter_, std::vector<StorageID> dependencies_)

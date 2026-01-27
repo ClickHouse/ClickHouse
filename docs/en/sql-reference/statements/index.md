@@ -4,6 +4,7 @@ sidebar_label: 'List of statements'
 sidebar_position: 1
 slug: /sql-reference/statements/
 title: 'ClickHouse SQL Statements'
+doc_type: 'reference'
 ---
 
 # ClickHouse SQL Statements

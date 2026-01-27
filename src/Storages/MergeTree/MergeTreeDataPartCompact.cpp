@@ -23,12 +23,13 @@ namespace MergeTreeSetting
 }
 
 MergeTreeDataPartCompact::MergeTreeDataPartCompact(
-        const MergeTreeData & storage_,
-        const String & name_,
-        const MergeTreePartInfo & info_,
-        const MutableDataPartStoragePtr & data_part_storage_,
-        const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, data_part_storage_, Type::Compact, parent_part_)
+    const MergeTreeData & storage_,
+    const MergeTreeSettings & storage_settings,
+    const String & name_,
+    const MergeTreePartInfo & info_,
+    const MutableDataPartStoragePtr & data_part_storage_,
+    const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, storage_settings, name_, info_, data_part_storage_, Type::Compact, parent_part_)
 {
 }
 
@@ -36,6 +37,7 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
@@ -47,7 +49,7 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
 {
     return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
         read_info, columns_to_read, virtual_fields,
-        storage_snapshot, uncompressed_cache,
+        storage_snapshot, storage_settings, uncompressed_cache,
         mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
 }
@@ -112,7 +114,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
 
     auto marks_file_path = index_granularity_info_.getMarksFilePath("data");
 
-    std::unique_ptr<ReadBufferFromFileBase> buffer = data_part_storage_.readFileIfExists(marks_file_path, {}, {}, {});
+    std::unique_ptr<ReadBufferFromFileBase> buffer = data_part_storage_.readFileIfExists(marks_file_path, {}, {});
     if (!buffer)
         throw Exception(
             ErrorCodes::NO_FILE_IN_DATA_PART,
@@ -160,8 +162,6 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         return;
 
     auto context = storage.getContext();
-    auto read_settings = context->getReadSettings();
-    auto * load_marks_threadpool = read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
     auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
 
     LOG_TEST(getLogger("MergeTreeDataPartCompact"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
@@ -173,8 +173,8 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         index_granularity->getMarksCount(),
         index_granularity_info,
         /*save_marks_in_cache=*/ true,
-        read_settings,
-        load_marks_threadpool,
+        context->getReadSettings(),
+        /*load_marks_threadpool_=*/ nullptr,
         index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size());
 
     loader.loadMarks();

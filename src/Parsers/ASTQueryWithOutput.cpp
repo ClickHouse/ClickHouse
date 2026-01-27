@@ -52,6 +52,16 @@ void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s
             ostr << " TRUNCATE";
         if (is_into_outfile_with_stdout)
             ostr << " AND STDOUT";
+        if (compression)
+        {
+            ostr << " COMPRESSION ";
+            compression->format(ostr, s, state, frame);
+        }
+        if (compression_level)
+        {
+            ostr << indent_str << " LEVEL ";
+            compression_level->format(ostr, s, state, frame);
+        }
     }
 
     if (format_ast)
@@ -76,7 +86,7 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
         {
             if (p)
             {
-                if (auto * it = std::find(ast_with_output->children.begin(), ast_with_output->children.end(), p);
+                if (auto it = std::find(ast_with_output->children.begin(), ast_with_output->children.end(), p);
                     it != ast_with_output->children.end())
                     ast_with_output->children.erase(it);
                 p.reset();

@@ -1,0 +1,43 @@
+= no row policy =
+--- raw
+1	aaa	1
+1	ccc	2
+2	bbb	1
+--- final
+1	ccc	2
+2	bbb	1
+= with row policy (default behavior - filter before FINAL) =
+--- raw
+1	aaa	1
+2	bbb	1
+--- final
+1	aaa	1
+2	bbb	1
+= with row policy and apply_row_policy_after_final =
+--- raw
+1	aaa	1
+2	bbb	1
+--- final
+2	bbb	1
+
+= row policy on ORDER BY column should be applied before FINAL =
+--- final with policy on ORDER BY column
+2	bbb	1
+3	ccc	1
+
+= PREWHERE should be deferred together with row policy =
+--- without setting
+1	aaa	100	1
+2	bbb	200	1
+--- with setting
+
+= SELECT subset of columns with row policy on other column =
+--- SELECT x only (row policy on y should still work)
+2
+--- SELECT x, version (row policy on y should still work)
+2	1
+--- PREWHERE after FINAL
+2
+--- PREWHERE before FINAL
+1
+2

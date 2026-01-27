@@ -3,6 +3,7 @@
 #if USE_DELTA_KERNEL_RS
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
+#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Types.h>
@@ -16,17 +17,21 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/escapeForFileName.h>
+#include <Common/setThreadName.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
+#include <roaring/roaring.hh>
 
 
 namespace fs = std::filesystem;
@@ -34,11 +39,15 @@ namespace fs = std::filesystem;
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace DB::Setting
 {
     extern const SettingsBool delta_lake_enable_expression_visitor_logging;
+    extern const SettingsInt64 delta_lake_snapshot_version;
+    extern const SettingsBool delta_lake_throw_on_engine_predicate_error;
+    extern const SettingsBool delta_lake_enable_engine_predicate;
 }
 
 namespace ProfileEvents
@@ -55,7 +64,7 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
     {
         ReadBufferFromString buffer(value);
         auto col = data_type->createColumn();
-        auto serialization = data_type->getSerialization(ISerialization::Kind::DEFAULT);
+        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT}, {});
         serialization->deserializeWholeText(*col, buffer, FormatSettings{});
         return (*col)[0];
     }
@@ -78,18 +87,22 @@ class TableSnapshot::Iterator final : public DB::IObjectIterator
 public:
     Iterator(
         std::shared_ptr<KernelSnapshotState> kernel_snapshot_state_,
-        const std::string & data_prefix_,
+        KernelHelperPtr helper_,
+        const ReadSchema & read_schema_,
         const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
         const DB::Names & partition_columns_,
         DB::ObjectStoragePtr object_storage_,
-        const DB::ActionsDAG * filter_dag_,
+        const DB::ActionsDAG * filter_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
         bool enable_expression_visitor_logging_,
+        bool throw_on_engine_predicate_error_,
+        bool enable_engine_predicate_,
         LoggerPtr log_)
         : kernel_snapshot_state(kernel_snapshot_state_)
-        , data_prefix(data_prefix_)
+        , helper(helper_)
+        , read_schema(read_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
         , object_storage(object_storage_)
@@ -97,17 +110,14 @@ public:
         , list_batch_size(list_batch_size_)
         , log(log_)
         , enable_expression_visitor_logging(enable_expression_visitor_logging_)
-        , thread([&, thread_group = DB::CurrentThread::getGroup()] {
-            /// Attach to current query thread group, to be able to
-            /// have query id in logs and metrics from scanDataFunc.
-            DB::ThreadGroupSwitcher switcher(thread_group, "TableSnapshot");
-            scanDataFunc();
-        })
+        , throw_on_engine_predicate_error(throw_on_engine_predicate_error_)
+        , enable_engine_predicate(enable_engine_predicate_)
     {
-        if (filter_dag_)
+        if (filter_)
         {
+            filter = filter_->clone();
             pruner.emplace(
-                *filter_dag_,
+                *filter,
                 table_schema_,
                 partition_columns_,
                 physical_names_map_,
@@ -128,6 +138,15 @@ public:
             for (auto & name : partition_columns)
                 name = getPhysicalName(name, physical_names_map_);
         }
+
+        thread = ThreadFromGlobalPool(
+            [&, thread_group = DB::CurrentThread::getGroup()]
+            {
+                /// Attach to current query thread group, to be able to
+                /// have query id in logs and metrics from scanDataFunc.
+                DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
+                scanDataFunc();
+            });
     }
 
     ~Iterator() override
@@ -138,13 +157,42 @@ public:
             thread.join();
     }
 
+    const std::string & getDataPath() const { return helper->getDataPath(); }
+
+    const std::string & getTableLocation() const { return helper->getTableLocation(); }
+
+    void setScanException()
+    {
+        if (!scan_exception)
+        {
+            scan_exception = std::current_exception();
+            shutdown = true;
+        }
+    }
+
     void initScanState()
     {
-        scan = KernelUtils::unwrapResult(
-            ffi::scan(kernel_snapshot_state->snapshot.get(),
-                      kernel_snapshot_state->engine.get(),
-                      /* predicate */{}),
-            "scan");
+        if (filter.has_value() && enable_engine_predicate)
+        {
+            auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, nullptr);
+            scan = KernelUtils::unwrapResult(
+                ffi::scan(
+                    kernel_snapshot_state->snapshot.get(),
+                    kernel_snapshot_state->engine.get(),
+                    predicate.get(),
+                    /* schema */nullptr),
+                "scan");
+        }
+        else
+        {
+            scan = KernelUtils::unwrapResult(
+                ffi::scan(
+                    kernel_snapshot_state->snapshot.get(),
+                    kernel_snapshot_state->engine.get(),
+                    /* predicate */nullptr,
+                    /* schema */nullptr),
+                "scan");
+        }
 
         scan_data_iterator = KernelUtils::unwrapResult(
             ffi::scan_metadata_iter_init(kernel_snapshot_state->engine.get(), scan.get()),
@@ -153,35 +201,49 @@ public:
 
     void scanDataFunc()
     {
-        initScanState();
-        while (!shutdown.load())
+        try
         {
-            bool have_scan_data_res = KernelUtils::unwrapResult(
-                ffi::scan_metadata_next(scan_data_iterator.get(), this, visitData),
-                "scan_metadata_next");
+            initScanState();
 
-            if (have_scan_data_res)
+            LOG_TEST(log, "Starting iterator loop (predicate exception: {})", bool(engine_predicate_exception));
+
+            while (!shutdown.load())
             {
-                std::unique_lock lock(next_mutex);
-                if (!shutdown.load() && list_batch_size && data_files.size() >= list_batch_size)
-                {
-                    LOG_TEST(log, "List batch size is {}/{}", data_files.size(), list_batch_size);
+                bool have_scan_data_res = KernelUtils::unwrapResult(
+                    ffi::scan_metadata_next(scan_data_iterator.get(), this, visitData),
+                    "scan_metadata_next");
 
-                    schedule_next_batch_cv.wait(
-                        lock,
-                        [&]() { return (data_files.size() < list_batch_size) || shutdown.load(); });
+                if (have_scan_data_res)
+                {
+                    std::unique_lock lock(next_mutex);
+                    if (!shutdown.load() && list_batch_size && data_files.size() >= list_batch_size)
+                    {
+                        LOG_TEST(log, "List batch size is {}/{}", data_files.size(), list_batch_size);
+
+                        schedule_next_batch_cv.wait(
+                            lock,
+                            [&]() { return (data_files.size() < list_batch_size) || shutdown.load(); });
+                    }
+                }
+                else
+                {
+                    LOG_TEST(log, "All data files were listed");
+                    {
+                        std::lock_guard lock(next_mutex);
+                        iterator_finished = true;
+                        LOG_TEST(log, "Set finished");
+                    }
+                    data_files_cv.notify_all();
+                    LOG_TEST(log, "Notified");
+                    return;
                 }
             }
-            else
-            {
-                LOG_TEST(log, "All data files were listed");
-                {
-                    std::lock_guard lock(next_mutex);
-                    iterator_finished = true;
-                }
-                data_files_cv.notify_all();
-                return;
-            }
+        }
+        catch (...)
+        {
+            setScanException();
+            data_files_cv.notify_all();
+            LOG_DEBUG(log, "Exception during scan_metadata_next");
         }
     }
 
@@ -204,25 +266,31 @@ public:
             DB::ObjectInfoPtr object;
             {
                 std::unique_lock lock(next_mutex);
-                if (!iterator_finished && data_files.empty())
+
+                if (!iterator_finished && data_files.empty() && !shutdown)
                 {
                     LOG_TEST(log, "Waiting for next data file");
                     schedule_next_batch_cv.notify_one();
-                    data_files_cv.wait(lock, [&]() { return !data_files.empty() || iterator_finished; });
+                    data_files_cv.wait(lock, [&]() { return !data_files.empty() || iterator_finished || shutdown.load(); });
                 }
+
+                if (engine_predicate_exception && throw_on_engine_predicate_error)
+                    std::rethrow_exception(engine_predicate_exception);
 
                 if (scan_exception)
                     std::rethrow_exception(scan_exception);
 
-                if (data_files.empty())
+                if (data_files.empty() || shutdown)
+                {
+                    LOG_TEST(log, "Data files: {}", data_files.size());
                     return nullptr;
+                }
 
                 LOG_TEST(log, "Current data files: {}", data_files.size());
 
                 object = data_files.front();
                 data_files.pop_front();
-                if (data_files.empty())
-                    schedule_next_batch_cv.notify_one();
+                schedule_next_batch_cv.notify_one();
             }
 
             chassert(object);
@@ -234,12 +302,12 @@ public:
                 continue;
             }
 
-            object->metadata = object_storage->getObjectMetadata(object->getPath());
+            object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath(), /*with_tags=*/ false));
 
             if (callback)
             {
-                chassert(object->metadata);
-                callback(DB::FileProgress(0, object->metadata->size_bytes));
+                chassert(object->getObjectMetadata());
+                callback(DB::FileProgress(0, object->getObjectMetadata()->size_bytes));
             }
             return object;
         }
@@ -257,8 +325,9 @@ public:
         ffi::NullableCvoid engine_context,
         struct ffi::KernelStringSlice path,
         int64_t size,
+        int64_t /*mod_time*/,
         const ffi::Stats * stats,
-        const ffi::DvInfo * dv_info,
+        const ffi::CDvInfo * dv_info,
         const ffi::Expression * transform,
         const struct ffi::CStringMap * deprecated)
     {
@@ -269,12 +338,9 @@ public:
         catch (...)
         {
             auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
-            if (!context->scan_exception)
-            {
-                /// We cannot allow to throw exceptions from ScanCallback,
-                /// otherwise delta-kernel will panic and call terminate.
-                context->scan_exception = std::current_exception();
-            }
+            /// We cannot allow to throw exceptions from ScanCallback,
+            /// otherwise delta-kernel will panic and call terminate.
+            context->setScanException();
         }
     }
 
@@ -283,30 +349,70 @@ public:
         struct ffi::KernelStringSlice path,
         int64_t size,
         const ffi::Stats * stats,
-        const ffi::DvInfo * /* dv_info */,
+        const ffi::CDvInfo * dv_info,
         const ffi::Expression * transform,
         const struct ffi::CStringMap * /* deprecated */)
     {
         auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
-        std::string full_path = fs::path(context->data_prefix) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
-        auto object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
+        if (context->shutdown)
+        {
+            context->data_files_cv.notify_all();
+            return;
+        }
+
+        std::string full_path = fs::path(context->getDataPath()) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
+        auto object = std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
+        object->data_lake_metadata.emplace();
 
         if (transform && !context->partition_columns.empty())
         {
-            auto parsed_transform = visitScanCallbackExpression(transform, context->expression_schema, context->enable_expression_visitor_logging);
-            object->data_lake_metadata = DB::DataLakeObjectMetadata{ .transform = parsed_transform };
+            auto parsed_transform = visitScanCallbackExpression(
+                transform,
+                context->read_schema,
+                context->expression_schema,
+                context->enable_expression_visitor_logging);
 
             LOG_TEST(
                 context->log,
-                "Scanned file: {}, size: {}, num records: {}, transform: {}",
+                "Scanned file: {}, size: {}, num records: {}, transform: {}, has dv info: {}",
                 object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown",
-                parsed_transform->dumpNames());
+                parsed_transform->dumpNames(), dv_info && dv_info->has_vector);
+
+            object->data_lake_metadata->schema_transform = std::move(parsed_transform);
         }
         else
+        {
             LOG_TEST(
                 context->log,
-                "Scanned file: {}, size: {}, num records: {}",
-                object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown");
+                "Scanned file: {}, size: {}, num records: {}, has db info: {}",
+                object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown",
+                dv_info && dv_info->has_vector);
+        }
+
+        if (dv_info && dv_info->has_vector)
+        {
+            /// `row_indexes_from_dv` returns a vector of row indexes
+            /// that should be *removed* from the result set
+            ffi::KernelRowIndexArray row_indexes = KernelUtils::unwrapResult(
+                ffi::row_indexes_from_dv(
+                    dv_info->info,
+                    context->kernel_snapshot_state->engine.get(),
+                    KernelUtils::toDeltaString(context->getTableLocation())),
+                "row_indexes_from_dv");
+
+            SCOPE_EXIT({
+                ffi::free_row_indexes(row_indexes);
+            });
+
+            LOG_TEST(context->log, "Row indexes size: {}", row_indexes.len);
+
+            auto bitmap = std::make_shared<DB::DataLakeObjectMetadata::ExcludedRows>();
+            for (size_t i = 0; i < row_indexes.len; ++i)
+            {
+                bitmap->add(row_indexes.ptr[i]);
+            }
+            object->data_lake_metadata->excluded_rows = std::move(bitmap);
+        }
 
         {
             std::lock_guard lock(context->next_mutex);
@@ -323,8 +429,10 @@ private:
     KernelScan scan;
     KernelScanDataIterator scan_data_iterator;
     std::optional<PartitionPruner> pruner;
+    std::optional<DB::ActionsDAG> filter;
 
-    const std::string data_prefix;
+    KernelHelperPtr helper;
+    DB::NamesAndTypesList read_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
     const DB::ObjectStoragePtr object_storage;
@@ -332,8 +440,11 @@ private:
     const size_t list_batch_size;
     const LoggerPtr log;
     const bool enable_expression_visitor_logging;
+    const bool throw_on_engine_predicate_error;
+    const bool enable_engine_predicate;
 
     std::exception_ptr scan_exception;
+    std::exception_ptr engine_predicate_exception;
 
     /// Whether scanDataFunc should stop scanning.
     /// Set in destructor.
@@ -355,7 +466,6 @@ private:
     ThreadFromGlobalPool thread;
 };
 
-
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
     DB::ObjectStoragePtr object_storage_,
@@ -364,8 +474,8 @@ TableSnapshot::TableSnapshot(
     : helper(helper_)
     , object_storage(object_storage_)
     , log(log_)
-    , enable_expression_visitor_logging(context_->getSettingsRef()[DB::Setting::delta_lake_enable_expression_visitor_logging])
 {
+    updateSettings(context_);
 }
 
 size_t TableSnapshot::getVersion() const
@@ -374,16 +484,36 @@ size_t TableSnapshot::getVersion() const
     return kernel_snapshot_state->snapshot_version;
 }
 
-bool TableSnapshot::update()
+void TableSnapshot::updateSettings(const DB::ContextPtr & context)
 {
+    const auto & settings = context->getSettingsRef();
+    enable_expression_visitor_logging = settings[DB::Setting::delta_lake_enable_expression_visitor_logging];
+    throw_on_engine_visitor_error = settings[DB::Setting::delta_lake_throw_on_engine_predicate_error];
+    enable_engine_predicate = settings[DB::Setting::delta_lake_enable_engine_predicate];
+
+    if (settings[DB::Setting::delta_lake_snapshot_version].value == LATEST_SNAPSHOT_VERSION)
+    {
+        snapshot_version_to_read = std::nullopt;
+    }
+    else
+    {
+        if (settings[DB::Setting::delta_lake_snapshot_version].value < 0)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Snapshot version cannot be a negative value");
+
+        snapshot_version_to_read = settings[DB::Setting::delta_lake_snapshot_version];
+    }
+}
+
+void TableSnapshot::update(const DB::ContextPtr & context)
+{
+    updateSettings(context);
     if (!kernel_snapshot_state)
     {
         /// Snapshot is not yet created,
         /// so next attempt to create it would return the latest snapshot.
-        return false;
+        return;
     }
     initSnapshotImpl();
-    return true;
 }
 
 void TableSnapshot::initSnapshot() const
@@ -393,26 +523,48 @@ void TableSnapshot::initSnapshot() const
     initSnapshotImpl();
 }
 
-TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & helper_)
+TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & helper_, std::optional<size_t> snapshot_version_)
 {
     auto * engine_builder = helper_.createBuilder();
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
-    snapshot = KernelUtils::unwrapResult(
-        ffi::snapshot(KernelUtils::toDeltaString(helper_.getTableLocation()), engine.get()), "snapshot");
+    if (snapshot_version_.has_value())
+    {
+        snapshot = KernelUtils::unwrapResult(
+            ffi::snapshot_at_version(
+                KernelUtils::toDeltaString(helper_.getTableLocation()),
+                engine.get(),
+                snapshot_version_.value()),
+            "snapshot");
+    }
+    else
+    {
+        snapshot = KernelUtils::unwrapResult(
+            ffi::snapshot(
+                KernelUtils::toDeltaString(helper_.getTableLocation()),
+                engine.get()),
+            "snapshot");
+    }
     snapshot_version = ffi::version(snapshot.get());
-    scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
+    scan = KernelUtils::unwrapResult(
+        ffi::scan(snapshot.get(), engine.get(), /* predicate */{}, /* engine_schema */nullptr),
+        "scan");
 }
 
 void TableSnapshot::initSnapshotImpl() const
 {
     LOG_TEST(log, "Initializing snapshot");
 
-    kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper);
+    kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, snapshot_version_to_read);
 
     LOG_TRACE(log, "Initialized scan state. Snapshot version: {}", kernel_snapshot_state->snapshot_version);
 
     std::tie(table_schema, physical_names_map) = getTableSchemaFromSnapshot(kernel_snapshot_state->snapshot.get());
-    LOG_TRACE(log, "Table logical schema: {}", fmt::join(table_schema.getNames(), ", "));
+    LOG_TRACE(
+        log, "Table logical schema: {}, physical names map size: {}",
+        fmt::join(table_schema.getNames(), ", "), physical_names_map.size());
+
+    if (table_schema.empty())
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table schema cannot be empty");
 
     read_schema = getReadSchemaFromSnapshot(kernel_snapshot_state->scan.get());
     LOG_TRACE(log, "Table read schema: {}", fmt::join(read_schema.getNames(), ", "));
@@ -429,7 +581,8 @@ DB::ObjectIterator TableSnapshot::iterate(
     initSnapshot();
     return std::make_shared<TableSnapshot::Iterator>(
         kernel_snapshot_state,
-        helper->getDataPath(),
+        helper,
+        getReadSchema(),
         getTableSchema(),
         getPhysicalNamesMap(),
         getPartitionColumns(),
@@ -438,6 +591,8 @@ DB::ObjectIterator TableSnapshot::iterate(
         callback,
         list_batch_size,
         enable_expression_visitor_logging,
+        throw_on_engine_visitor_error,
+        enable_engine_predicate,
         log);
 }
 

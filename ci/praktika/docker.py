@@ -19,7 +19,9 @@ class Docker:
         platforms: List[str]
 
     @classmethod
-    def build(cls, config: "Docker.Config", digests, amd_only, arm_only):
+    def build(
+        cls, config: "Docker.Config", digests, amd_only, arm_only, disable_push=False
+    ):
         from .result import Result
 
         sw = Utils.Stopwatch()
@@ -57,9 +59,16 @@ class Docker:
                     continue
                 platforms.append(platform)
 
-            command = f"docker buildx build --builder default {tags_substr} {from_tag} --platform {','.join(platforms)} --cache-to type=inline --cache-from type=registry,ref={config.name} {config.path} --push"
+            # add --provenance=false --sbom=false to build an old-school image instead of a manifest list
+            command = f"docker buildx build --builder default {tags_substr} {from_tag} --platform {','.join(platforms)} --provenance=false --sbom=false --cache-to type=inline --cache-from type=registry,ref={config.name} {config.path} {'' if disable_push else ' --push'}"
 
-            return Result.from_commands_run(name=name, command=command)
+            return Result.from_commands_run(
+                name=name,
+                command=command,
+                retry_errors=[
+                    "Error response from daemon: manifest unknown: manifest unknown",
+                ],
+            )
         else:
             return Result(
                 name=name,

@@ -1,4 +1,5 @@
 -- Tags: no-random-merge-tree-settings
+-- add_minmax_index_for_numeric_columns=0: Would use the index and not the projection that we want to test (id2 = 3)
 
 DROP TABLE IF EXISTS t0;
 
@@ -18,7 +19,7 @@ CREATE TABLE t0
             c1
     )
 )
-ENGINE = MergeTree ORDER BY (c1, c2) settings min_bytes_for_wide_part = 10485760, min_rows_for_wide_part = 0;
+ENGINE = MergeTree ORDER BY (c1, c2) settings min_bytes_for_wide_part = 10485760, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns=0;
 
 SET optimize_trivial_insert_select = 1;
 INSERT INTO t0 SELECT
@@ -27,8 +28,8 @@ INSERT INTO t0 SELECT
     number
 FROM numbers_mt(1e5);
 
-SET enable_parallel_replicas = 0;
-select * from (EXPLAIN indexes = 1 SELECT c1, sum(c3) FROM t0 GROUP BY c1) where explain like '%ReadFromMergeTree%';
-select * from (EXPLAIN indexes = 1 SELECT c1, sum(c3) FROM t0 WHERE c1 = 100 GROUP BY c1) where explain like '%Granules%';
+set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
+select trimLeft(*) from (EXPLAIN indexes = 1 SELECT c1, sum(c3) FROM t0 GROUP BY c1) where explain like '%ReadFromMergeTree%';
+select trimLeft(*) from (EXPLAIN indexes = 1 SELECT c1, sum(c3) FROM t0 WHERE c1 = 100 GROUP BY c1) where explain like '%Granules%';
 
 DROP TABLE t0;

@@ -38,7 +38,7 @@ function run()
     "
 
     $CLICKHOUSE_CLIENT --query "
-        SET allow_experimental_lightweight_update = 1;
+        SET enable_lightweight_update = 1;
         SYSTEM ENABLE FAILPOINT $failpoint_name;
         UPDATE $table_name SET s = 'xx' WHERE id = 2 SETTINGS update_parallel_mode = '$mode';
     " &
@@ -46,7 +46,7 @@ function run()
     wait_for_block_allocated "/zookeeper/$CLICKHOUSE_DATABASE/$table_name/block_numbers/all" "block-0000000001"
 
     $CLICKHOUSE_CLIENT --query "
-        SET allow_experimental_lightweight_update = 1;
+        SET enable_lightweight_update = 1;
         UPDATE $table_name SET v = 200 WHERE s = 'xx' SETTINGS update_parallel_mode = '$mode';
     " &
 

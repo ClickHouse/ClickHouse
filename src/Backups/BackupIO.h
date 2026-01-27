@@ -48,7 +48,7 @@ public:
 
     virtual bool fileExists(const String & file_name) = 0;
     virtual UInt64 getFileSize(const String & file_name) = 0;
-    virtual bool fileContentsEqual(const String & file_name, const String & expected_file_contents) = 0;
+    virtual bool fileContentsEqual(const String & file_name, const String & expected_file_contents, String & actual_file_contents) = 0;
 
     virtual std::unique_ptr<WriteBuffer> writeFile(const String & file_name) = 0;
 

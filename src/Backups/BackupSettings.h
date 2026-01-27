@@ -1,8 +1,9 @@
 #pragma once
 
+#include <optional>
+#include <Backups/BackupDataFileNameGeneratorType.h>
 #include <Backups/BackupInfo.h>
 #include <Common/SettingsChanges.h>
-#include <optional>
 
 
 namespace DB
@@ -89,6 +90,25 @@ struct BackupSettings
 
     /// Is it allowed to use blob paths to calculate checksums of backup entries?
     bool allow_checksums_from_remote_paths = true;
+
+    /// Defines how backup data file names are generated.
+    /// - `FirstFileName`: use the original file name from BackupFileInfo.
+    /// - `Checksum`: derive the name from the file checksum.
+    /// Example: for a 128-bit checksum = `abcd1234ef567890abcd1234ef567890`
+    /// and `data_file_name_prefix_length = 3`, the resulting path will be: `abc/d1234ef567890abcd1234ef567890`.
+    BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::FirstFileName;
+
+    /// Optional length of the checksum prefix used as a directory path segment
+    /// when `data_file_name_generator` is `Checksum`.
+    std::optional<size_t> data_file_name_prefix_length;
+
+    /// Should we back up data from refreshable materialized view targets?
+    ///
+    /// Data is skipped only for targets of refreshable views that fully
+    /// replace the table on each refresh (without APPEND), as they contain
+    /// transient data that can be recomputed. Targets with APPEND or regular
+    /// materialized views are always backed up because they may store history.
+    bool backup_data_from_refreshable_materialized_view_targets = false;
 
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.

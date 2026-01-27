@@ -1,0 +1,6 @@
+Parquet
+a	Nullable(UInt64)					
+b	Nullable(String)					
+c	Array(Nullable(UInt64))					
+d	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+ORC

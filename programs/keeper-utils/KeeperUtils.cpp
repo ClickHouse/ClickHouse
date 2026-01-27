@@ -58,7 +58,7 @@ uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
 {
     std::filesystem::path path(snapshot_path);
     std::string filename = path.stem();
-    Strings name_parts;
+    std::vector<std::string_view> name_parts;
     splitInto<'_', '.'>(name_parts, filename);
     return parse<uint64_t>(name_parts[1]);
 }
@@ -159,13 +159,13 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                     if (with_node_stats)
                     {
                         std::cout << "Finding biggest subtrees... " << std::endl;
-                        std::unordered_map<StringRef, size_t> subtree_sizes;
+                        std::unordered_map<std::string_view, size_t> subtree_sizes;
                         for (const auto & path : result.paths)
                         {
                             if (path == "/")
                                 continue;
 
-                            StringRef current_path = path;
+                            std::string_view current_path = path;
                             while (true)
                             {
                                 auto parent = parentNodePath(current_path);
@@ -475,9 +475,9 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
             for (const auto & child : value.getChildren())
             {
                 if (key == "/")
-                    keys.push(key + child.toString());
+                    keys.push(fmt::format("/{}", child));
                 else
-                    keys.push(key + "/" + child.toString());
+                    keys.push(fmt::format("{}/{}", key, child));
             }
         }
     };
@@ -623,6 +623,7 @@ auto op_num_enum = std::make_shared<DataTypeEnum16>(DataTypeEnum16::Values
     {"CheckNotExists", static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
     {"CreateIfNotExists", static_cast<Int16>(Coordination::OpNum::CreateIfNotExists)},
     {"RemoveRecursive", static_cast<Int16>(Coordination::OpNum::RemoveRecursive)},
+    {"CheckStat", static_cast<Int16>(Coordination::OpNum::CheckStat)},
 });
 }
 

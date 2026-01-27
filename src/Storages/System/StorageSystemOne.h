@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/IStorage.h>
 
 
@@ -21,18 +23,40 @@ public:
 
     std::string getName() const override { return "SystemOne"; }
 
-    Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        size_t num_streams) override;
+    void read(
+        QueryPlan & query_plan,
+        const Names & /*column_names*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
+        SelectQueryInfo & /*query_info*/,
+        ContextPtr /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        size_t /*num_streams*/) override;
 
     bool isSystemStorage() const override { return true; }
 
     bool supportsTransactions() const override { return true; }
+};
+
+class ReadFromSystemOneStep final : public ISourceStep
+{
+public:
+    ReadFromSystemOneStep(
+        const Names & column_names_,
+        const StorageSnapshotPtr & storage_snapshot_
+    );
+
+    ReadFromSystemOneStep(const ReadFromSystemOneStep &) = default;
+    ReadFromSystemOneStep(ReadFromSystemOneStep &&) = default;
+
+    String getName() const override { return "ReadFromSystemOne"; }
+
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<ReadFromSystemOneStep>(*this);
+    }
+
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 };
 
 }

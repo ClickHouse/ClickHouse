@@ -183,8 +183,8 @@
 (1,'s')
 (1,'s')	1
 1
-((((1,'s'),'s'),'s'),'s')	Tuple(\n    t Tuple(\n        t Tuple(\n            t Tuple(\n                t Int64,\n                s String),\n            s String),\n        s String),\n    s String)
-((((2,'s'),'s'),'s'),'s')	Tuple(\n    t Tuple(\n        t Tuple(\n            t Tuple(\n                t Int64,\n                s String),\n            s String),\n        s String),\n    s String)
+((((1,'s'),'s'),'s'),'s')	Nullable(Tuple(t Tuple(t Tuple(t Tuple(t Int64, s String), s String), s String), s String))
+((((2,'s'),'s'),'s'),'s')	Nullable(Tuple(t Tuple(t Tuple(t Tuple(t Int64, s String), s String), s String), s String))
 (1,'a')
 1
 1
@@ -218,78 +218,78 @@
 1
 2
 2
-((((1,'s'),'s'),'s'),'s')	Tuple(\n    t Tuple(\n        t Tuple(\n            t Tuple(\n                t Int64,\n                s String),\n            s String),\n        s String),\n    s String)
-((((2,'s'),'s'),'s'),'s')	Tuple(\n    t Tuple(\n        t Tuple(\n            t Tuple(\n                t Int64,\n                s String),\n            s String),\n        s String),\n    s String)
-((((3,'s'),'s'),'s'),'s')	Tuple(\n    t Tuple(\n        t Tuple(\n            t Tuple(\n                t Int64,\n                s String),\n            s String),\n        s String),\n    s String)
-((1,'s'),'s')	Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)
-((2,'s'),'s')	Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)
-((0,''),'')	Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)
+((((1,'s'),'s'),'s'),'s')	Nullable(Tuple(t Tuple(t Tuple(t Tuple(t Int64, s String), s String), s String), s String))
+((((2,'s'),'s'),'s'),'s')	Nullable(Tuple(t Tuple(t Tuple(t Tuple(t Int64, s String), s String), s String), s String))
+((((3,'s'),'s'),'s'),'s')	Nullable(Tuple(t Tuple(t Tuple(t Tuple(t Int64, s String), s String), s String), s String))
+((1,'s'),'s')	Nullable(Tuple(t Tuple(t UInt32, s String), s String))
+((2,'s'),'s')	Nullable(Tuple(t Tuple(t UInt32, s String), s String))
+\N	Nullable(Tuple(t Tuple(t UInt32, s String), s String))
 1	Nullable(UInt32)
 2	Nullable(UInt32)
 \N	Nullable(UInt32)
-(((1,'s'),'s'),'s')	s	Tuple(\n    t Tuple(\n        t Tuple(\n            t Int64,\n            s String),\n        s String),\n    s String)	String
-(((2,'s'),'s'),'s')	s	Tuple(\n    t Tuple(\n        t Tuple(\n            t Int64,\n            s String),\n        s String),\n    s String)	String
-(((3,'s'),'s'),'s')	s	Tuple(\n    t Tuple(\n        t Tuple(\n            t Int64,\n            s String),\n        s String),\n    s String)	String
-((1,'s'),'s')	s	Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)	String
-((2,'s'),'s')	s	Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)	String
-((0,''),'')		Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)	String
-(1,'s')	s	Tuple(\n    t UInt32,\n    s String)	String
-(2,'s')	s	Tuple(\n    t UInt32,\n    s String)	String
-(0,'')		Tuple(\n    t UInt32,\n    s String)	String
-1	s	UInt32	String
-2	s	UInt32	String
-0		UInt32	String
-((((1,'s'),'s'),'s'),'s')	Tuple(\n    t Tuple(\n        t Tuple(\n            t Tuple(\n                t UInt32,\n                s String),\n            s String),\n        s String),\n    s String)
-((((2,'s'),'s'),'s'),'s')	Tuple(\n    t Tuple(\n        t Tuple(\n            t Tuple(\n                t UInt32,\n                s String),\n            s String),\n        s String),\n    s String)
-((((0,''),''),''),'')	Tuple(\n    t Tuple(\n        t Tuple(\n            t Tuple(\n                t UInt32,\n                s String),\n            s String),\n        s String),\n    s String)
-((1,'s'),'s')	Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)
-((2,'s'),'s')	Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)
-((0,''),'')	Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)
+(((1,'s'),'s'),'s')	s	Nullable(Tuple(t Tuple(t Tuple(t Int64, s String), s String), s String))	Nullable(String)
+(((2,'s'),'s'),'s')	s	Nullable(Tuple(t Tuple(t Tuple(t Int64, s String), s String), s String))	Nullable(String)
+(((3,'s'),'s'),'s')	s	Nullable(Tuple(t Tuple(t Tuple(t Int64, s String), s String), s String))	Nullable(String)
+((1,'s'),'s')	s	Nullable(Tuple(t Tuple(t UInt32, s String), s String))	Nullable(String)
+((2,'s'),'s')	s	Nullable(Tuple(t Tuple(t UInt32, s String), s String))	Nullable(String)
+\N	\N	Nullable(Tuple(t Tuple(t UInt32, s String), s String))	Nullable(String)
+(1,'s')	s	Nullable(Tuple(t UInt32, s String))	Nullable(String)
+(2,'s')	s	Nullable(Tuple(t UInt32, s String))	Nullable(String)
+\N	\N	Nullable(Tuple(t UInt32, s String))	Nullable(String)
+1	s	Nullable(UInt32)	Nullable(String)
+2	s	Nullable(UInt32)	Nullable(String)
+\N	\N	Nullable(UInt32)	Nullable(String)
+((((1,'s'),'s'),'s'),'s')	Nullable(Tuple(t Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String), s String))
+((((2,'s'),'s'),'s'),'s')	Nullable(Tuple(t Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String), s String))
+\N	Nullable(Tuple(t Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String), s String))
+((1,'s'),'s')	Nullable(Tuple(t Tuple(t UInt32, s String), s String))
+((2,'s'),'s')	Nullable(Tuple(t Tuple(t UInt32, s String), s String))
+\N	Nullable(Tuple(t Tuple(t UInt32, s String), s String))
 1	Nullable(UInt32)
 2	Nullable(UInt32)
 \N	Nullable(UInt32)
-(((1,'s'),'s'),'s')	s	Tuple(\n    t Tuple(\n        t Tuple(\n            t UInt32,\n            s String),\n        s String),\n    s String)	String
-(((2,'s'),'s'),'s')	s	Tuple(\n    t Tuple(\n        t Tuple(\n            t UInt32,\n            s String),\n        s String),\n    s String)	String
-(((0,''),''),'')		Tuple(\n    t Tuple(\n        t Tuple(\n            t UInt32,\n            s String),\n        s String),\n    s String)	String
-((1,'s'),'s')	s	Tuple(\n    t Tuple(\n        t Int64,\n        s String),\n    s String)	String
-((2,'s'),'s')	s	Tuple(\n    t Tuple(\n        t Int64,\n        s String),\n    s String)	String
-((3,'s'),'s')	s	Tuple(\n    t Tuple(\n        t Int64,\n        s String),\n    s String)	String
-(1,'s')	s	Tuple(\n    t UInt32,\n    s String)	String
-(2,'s')	s	Tuple(\n    t UInt32,\n    s String)	String
-(0,'')		Tuple(\n    t UInt32,\n    s String)	String
-1	s	UInt32	String
-2	s	UInt32	String
-0		UInt32	String
-((((1,'s'),'s'),'s'),'s')	Tuple(\n    t Tuple(\n        t Tuple(\n            t Tuple(\n                t UInt32,\n                s String),\n            s String),\n        s String),\n    s String)
-((((2,'s'),'s'),'s'),'s')	Tuple(\n    t Tuple(\n        t Tuple(\n            t Tuple(\n                t UInt32,\n                s String),\n            s String),\n        s String),\n    s String)
-((((0,''),''),''),'')	Tuple(\n    t Tuple(\n        t Tuple(\n            t Tuple(\n                t UInt32,\n                s String),\n            s String),\n        s String),\n    s String)
-((1,'s'),'s')	Tuple(\n    t Tuple(\n        t Int64,\n        s String),\n    s String)
-((2,'s'),'s')	Tuple(\n    t Tuple(\n        t Int64,\n        s String),\n    s String)
-((3,'s'),'s')	Tuple(\n    t Tuple(\n        t Int64,\n        s String),\n    s String)
+(((1,'s'),'s'),'s')	s	Nullable(Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String))	Nullable(String)
+(((2,'s'),'s'),'s')	s	Nullable(Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String))	Nullable(String)
+\N	\N	Nullable(Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String))	Nullable(String)
+((1,'s'),'s')	s	Nullable(Tuple(t Tuple(t Int64, s String), s String))	Nullable(String)
+((2,'s'),'s')	s	Nullable(Tuple(t Tuple(t Int64, s String), s String))	Nullable(String)
+((3,'s'),'s')	s	Nullable(Tuple(t Tuple(t Int64, s String), s String))	Nullable(String)
+(1,'s')	s	Nullable(Tuple(t UInt32, s String))	Nullable(String)
+(2,'s')	s	Nullable(Tuple(t UInt32, s String))	Nullable(String)
+\N	\N	Nullable(Tuple(t UInt32, s String))	Nullable(String)
+1	s	Nullable(UInt32)	Nullable(String)
+2	s	Nullable(UInt32)	Nullable(String)
+\N	\N	Nullable(UInt32)	Nullable(String)
+((((1,'s'),'s'),'s'),'s')	Nullable(Tuple(t Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String), s String))
+((((2,'s'),'s'),'s'),'s')	Nullable(Tuple(t Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String), s String))
+\N	Nullable(Tuple(t Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String), s String))
+((1,'s'),'s')	Nullable(Tuple(t Tuple(t Int64, s String), s String))
+((2,'s'),'s')	Nullable(Tuple(t Tuple(t Int64, s String), s String))
+((3,'s'),'s')	Nullable(Tuple(t Tuple(t Int64, s String), s String))
 1	Nullable(UInt32)
 2	Nullable(UInt32)
 \N	Nullable(UInt32)
-((((1,'s'),'s'),'s'),'s')	Tuple(\n    t Tuple(\n        t Tuple(\n            t Tuple(\n                t UInt32,\n                s String),\n            s String),\n        s String),\n    s String)
-((((2,'s'),'s'),'s'),'s')	Tuple(\n    t Tuple(\n        t Tuple(\n            t Tuple(\n                t UInt32,\n                s String),\n            s String),\n        s String),\n    s String)
-((((0,''),''),''),'')	Tuple(\n    t Tuple(\n        t Tuple(\n            t Tuple(\n                t UInt32,\n                s String),\n            s String),\n        s String),\n    s String)
-((1,'s'),'s')	Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)
-((2,'s'),'s')	Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)
-((0,''),'')	Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)
+((((1,'s'),'s'),'s'),'s')	Nullable(Tuple(t Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String), s String))
+((((2,'s'),'s'),'s'),'s')	Nullable(Tuple(t Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String), s String))
+\N	Nullable(Tuple(t Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String), s String))
+((1,'s'),'s')	Nullable(Tuple(t Tuple(t UInt32, s String), s String))
+((2,'s'),'s')	Nullable(Tuple(t Tuple(t UInt32, s String), s String))
+\N	Nullable(Tuple(t Tuple(t UInt32, s String), s String))
 1	Nullable(Int64)
 2	Nullable(Int64)
 3	Nullable(Int64)
-(((1,'s'),'s'),'s')	s	Tuple(\n    t Tuple(\n        t Tuple(\n            t UInt32,\n            s String),\n        s String),\n    s String)	String
-(((2,'s'),'s'),'s')	s	Tuple(\n    t Tuple(\n        t Tuple(\n            t UInt32,\n            s String),\n        s String),\n    s String)	String
-(((0,''),''),'')		Tuple(\n    t Tuple(\n        t Tuple(\n            t UInt32,\n            s String),\n        s String),\n    s String)	String
-((1,'s'),'s')	s	Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)	String
-((2,'s'),'s')	s	Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)	String
-((0,''),'')		Tuple(\n    t Tuple(\n        t UInt32,\n        s String),\n    s String)	String
-(1,'s')	s	Tuple(\n    t UInt32,\n    s String)	String
-(2,'s')	s	Tuple(\n    t UInt32,\n    s String)	String
-(0,'')		Tuple(\n    t UInt32,\n    s String)	String
-1	s	UInt32	String
-2	s	UInt32	String
-0		UInt32	String
+(((1,'s'),'s'),'s')	s	Nullable(Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String))	Nullable(String)
+(((2,'s'),'s'),'s')	s	Nullable(Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String))	Nullable(String)
+\N	\N	Nullable(Tuple(t Tuple(t Tuple(t UInt32, s String), s String), s String))	Nullable(String)
+((1,'s'),'s')	s	Nullable(Tuple(t Tuple(t UInt32, s String), s String))	Nullable(String)
+((2,'s'),'s')	s	Nullable(Tuple(t Tuple(t UInt32, s String), s String))	Nullable(String)
+\N	\N	Nullable(Tuple(t Tuple(t UInt32, s String), s String))	Nullable(String)
+(1,'s')	s	Nullable(Tuple(t UInt32, s String))	Nullable(String)
+(2,'s')	s	Nullable(Tuple(t UInt32, s String))	Nullable(String)
+\N	\N	Nullable(Tuple(t UInt32, s String))	Nullable(String)
+1	s	Nullable(UInt32)	Nullable(String)
+2	s	Nullable(UInt32)	Nullable(String)
+\N	\N	Nullable(UInt32)	Nullable(String)
 [([([([(1,'d')],'d')],'s')],'s')]
 [[[([(1,'d')],'d')]]]
 [[[[1]]]]

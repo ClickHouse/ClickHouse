@@ -3,13 +3,15 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
+#include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ISlotControl.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 
-#include <deque>
 #include <queue>
 #include <memory>
+
+#include <boost/container/devector.hpp>
 
 
 namespace DB
@@ -30,10 +32,13 @@ class PipelineExecutor
 public:
     /// Get pipeline as a set of processors.
     /// Processors should represent full graph. All ports must be connected, all connected nodes are mentioned in set.
-    /// Executor doesn't own processors, just stores reference.
     /// During pipeline execution new processors can appear. They will be added to existing set.
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
+    ///
+    /// PipelineExecutor must be destroyed before the corresponding QueryPipeline, because
+    /// QueryPlanResourceHolder may hold some resources referenced by processors and used in
+    /// processor destructors.
     explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem);
     ~PipelineExecutor();
 
@@ -106,12 +111,11 @@ private:
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = std::deque<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
+    using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
     using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
-    void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);
@@ -119,6 +123,10 @@ private:
     void executeSingleThread(size_t thread_num, IAcquiredSlot * cpu_slot);
     void finish();
     void cancel(ExecutionStatus reason);
+
+    // Methods for CPU scheduling
+    SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control);
+    void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
 
     /// If execution_status == from, change it to desired.
     bool tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired);

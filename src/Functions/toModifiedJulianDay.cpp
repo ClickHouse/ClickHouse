@@ -70,7 +70,7 @@ namespace DB
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const size_t next_offset = offsets ? (*offsets)[i] : current_offset + fixed_string_size;
-                const size_t string_size = offsets ? next_offset - current_offset - 1 : fixed_string_size;
+                const size_t string_size = offsets ? next_offset - current_offset : fixed_string_size;
                 ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
                 current_offset = next_offset;
 
@@ -242,12 +242,12 @@ SELECT toModifiedJulianDay('2020-01-01')
         };
         FunctionDocumentation::IntroducedIn introduced_in_toModifiedJulianDay = {21, 1};
         FunctionDocumentation::Category category_toModifiedJulianDay = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation_toModifiedJulianDay = {description_toModifiedJulianDay, syntax_toModifiedJulianDay, arguments_toModifiedJulianDay, returned_value_toModifiedJulianDay, examples_toModifiedJulianDay, introduced_in_toModifiedJulianDay, category_toModifiedJulianDay};
+        FunctionDocumentation documentation_toModifiedJulianDay = {description_toModifiedJulianDay, syntax_toModifiedJulianDay, arguments_toModifiedJulianDay, {}, returned_value_toModifiedJulianDay, examples_toModifiedJulianDay, introduced_in_toModifiedJulianDay, category_toModifiedJulianDay};
 
         factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDay, DataTypeInt32, false>>(documentation_toModifiedJulianDay);
 
         FunctionDocumentation::Description description_toModifiedJulianDayOrNull = R"(
-Similar to [`toModifiedJulianDay()`](#tomodifiedjulianday), but instead of raising exceptions it returns `NULL`.
+Similar to [`toModifiedJulianDay()`](#toModifiedJulianDay), but instead of raising exceptions it returns `NULL`.
     )";
         FunctionDocumentation::Syntax syntax_toModifiedJulianDayOrNull = R"(
 toModifiedJulianDayOrNull(date)
@@ -275,7 +275,7 @@ SELECT toModifiedJulianDayOrNull('0000-00-00'); -- invalid date, returns NULL
         FunctionDocumentation::IntroducedIn introduced_in_toModifiedJulianDayOrNull = {21, 1};
         FunctionDocumentation::Category category_toModifiedJulianDayOrNull = FunctionDocumentation::Category::DateAndTime;
         FunctionDocumentation documentation_toModifiedJulianDayOrNull =
-        {description_toModifiedJulianDayOrNull, syntax_toModifiedJulianDayOrNull, arguments_toModifiedJulianDayOrNull, returned_value_toModifiedJulianDayOrNull, examples_toModifiedJulianDayOrNull, introduced_in_toModifiedJulianDayOrNull, category_toModifiedJulianDayOrNull};
+        {description_toModifiedJulianDayOrNull, syntax_toModifiedJulianDayOrNull, arguments_toModifiedJulianDayOrNull, {}, returned_value_toModifiedJulianDayOrNull, examples_toModifiedJulianDayOrNull, introduced_in_toModifiedJulianDayOrNull, category_toModifiedJulianDayOrNull};
 
         factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDayOrNull, DataTypeInt32, true>>(documentation_toModifiedJulianDayOrNull);
     }

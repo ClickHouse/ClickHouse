@@ -1,6 +1,8 @@
+#include <DataTypes/DataTypesNumber.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
@@ -10,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -49,6 +52,17 @@ bool injectRequiredColumnsRecursively(
     /// stages.
     checkStackSize();
 
+    auto add_column = [&](const String & name)
+    {
+        /// Ensure each column is added only once
+        if (!required_columns.contains(name))
+        {
+            columns.emplace_back(name);
+            required_columns.emplace(name);
+            injected_columns.emplace(name);
+        }
+    };
+
     auto column_in_storage = storage_snapshot->tryGetColumn(options, column_name);
     if (column_in_storage)
     {
@@ -58,17 +72,18 @@ bool injectRequiredColumnsRecursively(
 
         auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
 
-        if (column_in_part
-            && (!column_in_storage->isSubcolumn()
-                || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName())))
+        if (column_in_part)
         {
-            /// ensure each column is added only once
-            if (!required_columns.contains(column_name))
+            if (!column_in_storage->isSubcolumn() || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName()))
             {
-                columns.emplace_back(column_name);
-                required_columns.emplace(column_name);
-                injected_columns.emplace(column_name);
+                add_column(column_name);
+                return true;
             }
+        }
+        /// TODO: correctly determine whether the index is present in the part
+        else if (isTextIndexVirtualColumn(column_name_in_part))
+        {
+            add_column(column_name);
             return true;
         }
     }
@@ -114,7 +129,6 @@ NameSet injectRequiredColumns(
         alter_conversions = data_part_info_for_reader.getAlterConversions();
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-        .withExtendedObjects()
         .withVirtuals()
         .withSubcolumns(with_subcolumns);
 
@@ -135,7 +149,10 @@ NameSet injectRequiredColumns(
         */
     if (!have_at_least_one_physical_column)
     {
-        auto available_columns = storage_snapshot->metadata->getColumns().get(options);
+        /// Use part's own columns to find the minimum size column.
+        /// This ensures we find a column that actually exists in this part,
+        /// even if the table metadata has changed (e.g., all columns were dropped and new ones added).
+        const auto & available_columns = data_part_info_for_reader.getColumns();
         const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
         columns.push_back(minimum_size_column_name);
         /// correctly report added column
@@ -181,7 +198,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();
             fixed_columns_bytes_per_row += column_data->sizeOfValueIfFixed();
-            max_size_per_row_fixed = std::max<double>(max_size_per_row_fixed, size_of_value);
+            max_size_per_row_fixed = std::max(max_size_per_row_fixed, static_cast<double>(size_of_value));
         }
         else
         {
@@ -191,14 +208,14 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
             ColumnSize column_size = data_part->getColumnSize(column_name);
 
             info.bytes_per_row_global = column_size.data_uncompressed
-                ? column_size.data_uncompressed / number_of_rows_in_part
-                : column_data->byteSize() / std::max<size_t>(1, column_data->size());
+                ? static_cast<double>(column_size.data_uncompressed) / static_cast<double>(number_of_rows_in_part)
+                : static_cast<double>(column_data->byteSize()) / static_cast<double>(std::max<size_t>(1, column_data->size()));
 
             dynamic_columns_infos.emplace_back(info);
         }
     }
 
-    bytes_per_row_global = fixed_columns_bytes_per_row;
+    bytes_per_row_global = static_cast<double>(fixed_columns_bytes_per_row);
     for (auto & info : dynamic_columns_infos)
     {
         info.bytes_per_row = info.bytes_per_row_global;
@@ -240,7 +257,7 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 
     size_t diff_rows = num_rows - block_size_rows;
     block_size_bytes = num_rows * fixed_columns_bytes_per_row;
-    bytes_per_row_current = fixed_columns_bytes_per_row;
+    bytes_per_row_current = static_cast<double>(fixed_columns_bytes_per_row);
     block_size_rows = num_rows;
 
     /// Make recursive updates for each read row: v_{i+1} = (1 - decay) v_{i} + decay v_{target}
@@ -254,7 +271,7 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
         size_t new_size = columns[sample_block.getPositionByName(info.name)]->byteSize();
         size_t diff_size = new_size - info.size_bytes;
 
-        double local_bytes_per_row = static_cast<double>(diff_size) / diff_rows;
+        double local_bytes_per_row = static_cast<double>(diff_size) / static_cast<double>(diff_rows);
         info.bytes_per_row = alpha * info.bytes_per_row + (1. - alpha) * local_bytes_per_row;
 
         info.size_bytes = new_size;
@@ -348,8 +365,10 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
+    const FilterDAGInfoPtr & row_level_filter,
     const PrewhereInfoPtr & prewhere_info,
     const PrewhereExprSteps & mutation_steps,
+    const IndexReadTasks & index_read_tasks,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns)
@@ -362,7 +381,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
 
     auto options = GetColumnsOptions(GetColumnsOptions::All)
-        .withExtendedObjects()
         .withVirtuals()
         .withSubcolumns(with_subcolumns);
 
@@ -421,12 +439,15 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     for (const auto & step : mutation_steps)
         add_step(*step);
 
-    if (prewhere_info)
+    if (prewhere_info || row_level_filter || !index_read_tasks.empty())
     {
         auto prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
+            row_level_filter,
             prewhere_info,
+            index_read_tasks,
             actions_settings,
-            reader_settings.enable_multiple_prewhere_read_steps, reader_settings.force_short_circuit_execution);
+            reader_settings.enable_multiple_prewhere_read_steps,
+            reader_settings.force_short_circuit_execution);
 
         for (const auto & step : prewhere_actions.steps)
             add_step(*step);
@@ -454,10 +475,12 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
         data_part_info_for_reader,
         storage_snapshot,
         required_columns,
+        /*row_level_filter=*/ nullptr,
         /*prewhere_info=*/ nullptr,
         mutation_steps,
+        /*index_read_tasks*/ {},
         /*actions_settings=*/ {},
-        /*reader_settings=*/ {},
+        /*reader_settings=*/ MergeTreeReaderSettings::createFromSettings(),
         storage_snapshot->storage.supportsSubcolumns());
 }
 

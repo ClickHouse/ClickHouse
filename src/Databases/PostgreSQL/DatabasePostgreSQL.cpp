@@ -6,23 +6,21 @@
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Storages/AlterCommands.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Common/escapeForFileName.h>
 #include <Common/parseRemoteDescription.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -65,7 +63,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     postgres::PoolWithFailoverPtr pool_,
     bool cache_tables_,
     UUID uuid)
-    : IDatabase(dbname_)
+    : DatabaseWithAltersOnDiskBase(dbname_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
@@ -75,13 +73,14 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , log(getLogger("DatabasePostgreSQL(" + dbname_ + ")"))
     , db_uuid(uuid)
 {
+    persistent = !context_->getClientInfo().is_shared_catalog_internal;
     if (persistent)
     {
         auto db_disk = getDisk();
         db_disk->createDirectories(metadata_path);
     }
 
-    cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
+    cleaner_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
 }
 
@@ -422,19 +421,15 @@ void DatabasePostgreSQL::shutdown()
     cleaner_task->deactivate();
 }
 
-void DatabasePostgreSQL::alterDatabaseComment(const AlterCommand & command)
+ASTPtr DatabasePostgreSQL::getCreateDatabaseQueryImpl() const
 {
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
-}
-
-ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const
-{
-    const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(getDatabaseName());
+    const auto & create_query = make_intrusive<ASTCreateQuery>();
+    create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_define);
+    create_query->uuid = db_uuid;
 
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+    if (!comment.empty())
+        create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
 
     return create_query;
 }
@@ -455,13 +450,13 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
         return nullptr;
     }
 
-    auto create_table_query = std::make_shared<ASTCreateQuery>();
+    auto create_table_query = make_intrusive<ASTCreateQuery>();
     auto table_storage_define = database_engine_define->clone();
     table_storage_define->as<ASTStorage>()->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
     create_table_query->set(create_table_query->storage, table_storage_define);
 
-    auto columns_declare_list = std::make_shared<ASTColumns>();
-    auto columns_expression_list = std::make_shared<ASTExpressionList>();
+    auto columns_declare_list = make_intrusive<ASTColumns>();
+    auto columns_expression_list = make_intrusive<ASTExpressionList>();
 
     columns_declare_list->set(columns_declare_list->columns, columns_expression_list);
     create_table_query->set(create_table_query->columns_list, columns_declare_list);
@@ -474,9 +469,9 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
     for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
     {
-        const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+        const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
         column_declaration->name = column_type_and_name.name;
-        column_declaration->type = getColumnDeclaration(column_type_and_name.type);
+        column_declaration->setType(getColumnDeclaration(column_type_and_name.type));
         columns_expression_list->children.emplace_back(column_declaration);
     }
 
@@ -489,7 +484,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     /// Check for named collection.
     if (typeid_cast<ASTIdentifier *>(storage_engine_arguments->children[0].get()))
     {
-        storage_engine_arguments->children.push_back(makeASTFunction("equals", std::make_shared<ASTIdentifier>("table"), std::make_shared<ASTLiteral>(table_id.table_name)));
+        storage_engine_arguments->children.push_back(makeASTOperator("equals", make_intrusive<ASTIdentifier>("table"), make_intrusive<ASTLiteral>(table_id.table_name)));
     }
     else
     {
@@ -499,7 +494,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
 
         /// Add table_name to engine arguments.
         if (storage_engine_arguments->children.size() >= 2)
-            storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, std::make_shared<ASTLiteral>(table_id.table_name));
+            storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, make_intrusive<ASTLiteral>(table_id.table_name));
     }
 
     return create_table_query;
@@ -517,7 +512,10 @@ ASTPtr DatabasePostgreSQL::getColumnDeclaration(const DataTypePtr & data_type) c
         return makeASTDataType("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
 
     if (which.isDateTime64())
-        return makeASTDataType("DateTime64", std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
+        return makeASTDataType("DateTime64", make_intrusive<ASTLiteral>(static_cast<UInt32>(6)));
+
+    if (which.isDecimal())
+        return makeASTDataType("Decimal", make_intrusive<ASTLiteral>(getDecimalPrecision(*data_type)), make_intrusive<ASTLiteral>(getDecimalScale(*data_type)));
 
     return makeASTDataType(data_type->getName());
 }
@@ -528,11 +526,12 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
     {
         auto * engine_define = args.create_query.storage;
         const ASTFunction * engine = engine_define->engine;
-        ASTs & engine_args = engine->arguments->children;
-        const String & engine_name = engine_define->engine->name;
 
         if (!engine->arguments)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `PostgreSQL` must have arguments");
+
+        ASTs & engine_args = engine->arguments->children;
+        const String & engine_name = engine_define->engine->name;
 
         auto use_table_cache = false;
         StoragePostgreSQL::Configuration configuration;

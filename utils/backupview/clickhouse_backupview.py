@@ -747,7 +747,7 @@ class Backup:
         paths = []
         if self.dir_exists(f"/shards/{shard}/replicas/{replica}/metadata/"):
             paths.append(f"/shards/{shard}/replicas/{replica}/")
-        if self.dir_exists(f"/shards/{shard}metadata/"):
+        if self.dir_exists(f"/shards/{shard}/metadata/"):
             paths.append(f"/shards/{shard}/")
         if self.dir_exists(f"/replicas/{replica}/metadata/"):
             paths.append(f"/replicas/{replica}/")

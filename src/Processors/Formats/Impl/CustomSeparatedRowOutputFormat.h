@@ -15,6 +15,8 @@ public:
 
     String getName() const override { return "CustomSeparatedRowOutputFormat"; }
 
+    bool supportsSpecialSerializationKinds() const override { return format_settings.allow_special_serialization_kinds; }
+
 private:
     using EscapingRule = FormatSettings::EscapingRule;
 

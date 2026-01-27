@@ -11,6 +11,7 @@
 #include <Parsers/queryNormalization.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ViewDefinerDependencies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -120,6 +121,9 @@ StorageMaterializedView::StorageMaterializedView(
     if (storage_metadata.sql_security_type == SQLSecurityType::INVOKER)
         throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
 
+    if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
+        ViewDefinerDependencies::instance().addViewDependency(*storage_metadata.definer, table_id_);
+
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
@@ -127,7 +131,7 @@ StorageMaterializedView::StorageMaterializedView(
     auto to_table_id = query.getTargetTableID(ViewTarget::To);
     has_inner_table = to_table_id.empty();
     auto to_inner_uuid = query.getTargetInnerUUID(ViewTarget::To);
-    auto to_table_engine = query.getTargetInnerEngine(ViewTarget::To);
+    auto * to_table_engine = query.getTargetInnerEngine(ViewTarget::To);
 
     if (has_inner_table && !to_table_engine)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -135,7 +139,7 @@ StorageMaterializedView::StorageMaterializedView(
                         "either ENGINE or an existing table in a TO clause");
 
     if (to_table_engine && to_table_engine->primary_key)
-        storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->primary_key->ptr(),
+        storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->getChild(*to_table_engine->primary_key),
                                                                      storage_metadata.columns,
                                                                      local_context->getGlobalContext());
 
@@ -196,7 +200,7 @@ StorageMaterializedView::StorageMaterializedView(
             String inner_engine;
             if (has_inner_table)
             {
-                auto storage = query.getTargetInnerEngine(ViewTarget::To);
+                auto * storage = query.getTargetInnerEngine(ViewTarget::To);
                 if (storage && storage->engine)
                     inner_engine = storage->engine->name;
             }
@@ -227,7 +231,9 @@ StorageMaterializedView::StorageMaterializedView(
 
             /// When restoring from backup, the definer user may not be backed up, which will cause the whole backup to be broken.
             /// To fix this, we don't check the permissions for the target table for the first time.
-            if (!is_restore_from_backup)
+            /// If the table is created later when adding a new replica to Replicated database,
+            /// we may also not have the definer, so don't check the permissions to avoid the database becoming stuck.
+            if (!is_restore_from_backup && mode <= LoadingStrictnessLevel::CREATE)
             {
                 auto refresh_context = storage_metadata.getSQLSecurityOverriddenContext(getContext());
                 refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, inner_db_name);
@@ -271,7 +277,7 @@ StorageMaterializedView::StorageMaterializedView(
 
         /// We will create a query to create an internal table.
         auto create_context = Context::createCopy(local_context);
-        auto manual_create_query = std::make_shared<ASTCreateQuery>();
+        auto manual_create_query = make_intrusive<ASTCreateQuery>();
         String db_name = getStorageID().database_name;
         String inner_name = generateInnerTableName(getStorageID());
         manual_create_query->setDatabase(db_name);
@@ -279,23 +285,23 @@ StorageMaterializedView::StorageMaterializedView(
         manual_create_query->uuid = to_inner_uuid;
         manual_create_query->has_uuid = to_inner_uuid != UUIDHelpers::Nil;
 
-        auto new_columns_list = std::make_shared<ASTColumns>();
+        auto new_columns_list = make_intrusive<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
         if (storage_features.supports_skipping_indices)
         {
             if (query.columns_list->indices)
-                new_columns_list->set(new_columns_list->indices, query.columns_list->indices->ptr());
+                new_columns_list->set(new_columns_list->indices, query.columns_list->getChild(*query.columns_list->indices));
             if (query.columns_list->constraints)
-                new_columns_list->set(new_columns_list->constraints, query.columns_list->constraints->ptr());
+                new_columns_list->set(new_columns_list->constraints, query.columns_list->getChild(*query.columns_list->constraints));
             if (query.columns_list->primary_key)
-                new_columns_list->set(new_columns_list->primary_key, query.columns_list->primary_key->ptr());
+                new_columns_list->set(new_columns_list->primary_key, query.columns_list->getChild(*query.columns_list->primary_key));
             if (query.columns_list->primary_key_from_columns)
-                new_columns_list->set(new_columns_list->primary_key_from_columns, query.columns_list->primary_key_from_columns->ptr());
+                new_columns_list->set(new_columns_list->primary_key_from_columns, query.columns_list->getChild(*query.columns_list->primary_key_from_columns));
         }
         if (storage_features.supports_projections)
         {
             if (query.columns_list->projections)
-                new_columns_list->set(new_columns_list->projections, query.columns_list->projections->ptr());
+                new_columns_list->set(new_columns_list->projections, query.columns_list->getChild(*query.columns_list->projections));
         }
 
         manual_create_query->set(manual_create_query->columns_list, new_columns_list);
@@ -393,7 +399,8 @@ void StorageMaterializedView::read(
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(target_header.getColumnsWithTypeAndName(),
                                                                         mv_header.getColumnsWithTypeAndName(),
-                                                                        ActionsDAG::MatchColumnsMode::Name);
+                                                                        ActionsDAG::MatchColumnsMode::Name,
+                                                                        context);
             /* Leave columns outside from materialized view structure as is.
              * They may be added in case of distributed query with JOIN.
              * In that case underlying table returns joined columns as well.
@@ -438,9 +445,9 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
 void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
-    const auto & select_query = getInMemoryMetadataPtr()->getSelectQuery();
-    if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, table_id);
+
+    if (getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
+        ViewDefinerDependencies::instance().removeViewDependencies(table_id);
 
     /// Sync flag and the setting make sense for Atomic databases only.
     /// However, with Atomic databases, IStorage::drop() can be called only from a background task in DatabaseCatalog.
@@ -532,13 +539,13 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     return refresh_context;
 }
 
-std::tuple<std::shared_ptr<ASTInsertQuery>, std::unique_ptr<CurrentThread::QueryScope>>
+std::tuple<boost::intrusive_ptr<ASTInsertQuery>, std::unique_ptr<CurrentThread::QueryScope>>
 StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const
 {
     auto inner_table_id = getTargetTableId();
     StorageID target_table = inner_table_id;
 
-    auto select_query = getInMemoryMetadataPtr()->getSelectQuery().select_query;
+    auto select_query = getInMemoryMetadataPtr()->getSelectQuery().select_query->clone();
     InterpreterSetQuery::applySettingsFromQuery(select_query, refresh_context);
 
     if (!append)
@@ -552,7 +559,8 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
         /// Pre-check the permissions. Would be awkward if we create a temporary table and can't drop it.
         refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, db_name);
 
-        auto create_query = std::dynamic_pointer_cast<ASTCreateQuery>(db->getCreateTableQuery(inner_table_id.table_name, getContext()));
+        auto create_query
+            = boost::dynamic_pointer_cast<ASTCreateQuery>(db->getCreateTableQuery(inner_table_id.table_name, getContext())->clone());
         create_query->setTable(new_table_name);
         create_query->setDatabase(db_name);
         create_query->create_or_replace = true;
@@ -574,7 +582,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     // Create a thread group for the query.
     auto query_scope = std::make_unique<CurrentThread::QueryScope>(refresh_context);
 
-    auto insert_query = std::make_shared<ASTInsertQuery>();
+    auto insert_query = make_intrusive<ASTInsertQuery>();
     insert_query->select = select_query;
     insert_query->setTable(target_table.table_name);
     insert_query->setDatabase(target_table.database_name);
@@ -586,9 +594,9 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     else
         header = InterpreterSelectWithUnionQuery(insert_query->select, refresh_context, SelectQueryOptions()).getSampleBlock();
 
-    auto columns = std::make_shared<ASTExpressionList>(',');
+    auto columns = make_intrusive<ASTExpressionList>(',');
     for (const String & name : header->getNames())
-        columns->children.push_back(std::make_shared<ASTIdentifier>(name));
+        columns->children.push_back(make_intrusive<ASTIdentifier>(name));
     insert_query->columns = std::move(columns);
 
     return {std::move(insert_query), std::move(query_scope)};
@@ -608,7 +616,7 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
 
     CurrentThread::QueryScope query_scope(refresh_context);
 
-    auto rename_query = std::make_shared<ASTRenameQuery>();
+    auto rename_query = make_intrusive<ASTRenameQuery>();
     rename_query->exchange = exchange;
     rename_query->addElement(fresh_table.database_name, fresh_table.table_name, stale_table_id.database_name, stale_table_id.table_name);
 
@@ -621,7 +629,7 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
 {
     CurrentThread::QueryScope query_scope(refresh_context);
 
-    auto drop_query = std::make_shared<ASTDropQuery>();
+    auto drop_query = make_intrusive<ASTDropQuery>();
     drop_query->setDatabase(table_id.database_name);
     drop_query->setTable(table_id.table_name);
     drop_query->kind = ASTDropQuery::Kind::Drop;
@@ -637,7 +645,7 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
     {
         auto query_for_logging = drop_query->formatForLogging(refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
         UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context, drop_query, nullptr, stopwatch.elapsedMilliseconds());
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context, drop_query, nullptr, stopwatch.elapsedMilliseconds(), /*internal*/ true);
         LOG_ERROR(getLogger("StorageMaterializedView"),
             "{}: Failed to drop temporary table after refresh. Table {} is left behind and requires manual cleanup.",
             getStorageID().getFullTableName(), table_id.getFullTableName());
@@ -674,7 +682,15 @@ void StorageMaterializedView::alter(
         checkAllTypesAreAllowedInTable(new_metadata.getColumns().getAll());
     }
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+
+    auto & instance = ViewDefinerDependencies::instance();
+    if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
+        instance.removeViewDependencies(table_id);
+
+    if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
+        instance.addViewDependency(*new_metadata.definer, table_id);
+
     setInMemoryMetadata(new_metadata);
 
     if (refresher)
@@ -749,7 +765,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 
         assert(inner_table_id.database_name == old_table_id.database_name);
 
-        auto rename = std::make_shared<ASTRenameQuery>();
+        auto rename = make_intrusive<ASTRenameQuery>();
         rename->addElement(inner_table_id.database_name, inner_table_id.table_name, new_table_id.database_name, new_target_table_name);
 
         InterpreterRenameQuery(rename, getContext()).execute();

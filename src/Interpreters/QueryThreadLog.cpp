@@ -1,9 +1,5 @@
 #include <Interpreters/QueryThreadLog.h>
-#include <array>
 #include <base/getFQDNOrHostName.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -16,7 +12,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/QueryLog.h>
-#include <Poco/Net/IPAddress.h>
 #include <Common/ClickHouseRevision.h>
 
 
@@ -62,6 +57,7 @@ ColumnsDescription QueryThreadLogElement::getColumnsDescription()
         {"initial_port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the parent query."},
         {"initial_query_start_time", std::make_shared<DataTypeDateTime>(), "Start time of the initial query execution."},
         {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Start time of the initial query execution "},
+        {"authenticated_user", low_cardinality_string, "Name of the user who was authenticated in the session."},
         {"interface", std::make_shared<DataTypeUInt8>(), "Interface that the query was initiated from. Possible values: 1 — TCP, 2 — HTTP."},
         {"is_secure", std::make_shared<DataTypeUInt8>(), "The flag which shows whether the connection was secure."},
         {"os_user", low_cardinality_string, "OSs username who runs clickhouse-client."},
@@ -115,7 +111,8 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(memory_usage);
     columns[i++]->insert(peak_memory_usage);
 
-    columns[i++]->insertData(thread_name.data(), thread_name.size());
+    auto thread_name_str = toString(thread_name);
+    columns[i++]->insertData(thread_name_str.data(), thread_name_str.size());
     columns[i++]->insert(thread_id);
     columns[i++]->insert(master_thread_id);
 

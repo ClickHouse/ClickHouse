@@ -23,6 +23,22 @@ If it is set to true, allow strings in single quotes.
     DECLARE(Bool, format_csv_allow_double_quotes, true, R"(
 If it is set to true, allow strings in double quotes.
 )", 0) \
+    DECLARE(Bool, input_format_parallel_parsing, true, R"(
+Enables or disables order-preserving parallel parsing of data formats. Supported only for [TabSeparated (TSV)](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [CSV](/interfaces/formats/CSV) and [JSONEachRow](/interfaces/formats/JSONEachRow) formats.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+)", 0) \
+    DECLARE(Bool, output_format_parallel_formatting, true, R"(
+Enables or disables parallel formatting of data formats. Supported only for [TSV](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [CSV](/interfaces/formats/CSV) and [JSONEachRow](/interfaces/formats/JSONEachRow) formats.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+)", 0) \
     DECLARE(Bool, output_format_csv_serialize_tuple_into_separate_columns, true, R"(
 If it set to true, then Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost)
 )", 0) \
@@ -168,7 +184,7 @@ Ignore case when matching ORC columns with CH columns.
 Ignore case when matching Parquet columns with CH columns.
 )", 0) \
     DECLARE(Bool, input_format_parquet_preserve_order, false, R"(
-Avoid reordering rows when reading from Parquet files. Usually makes it much slower.
+Avoid reordering rows when reading from Parquet files. Not recommended as row ordering is generally not guaranteed, and other parts of query pipeline may break it. Use `ORDER BY _row_number` instead.
 )", 0) \
     DECLARE(Bool, input_format_parquet_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.
@@ -176,12 +192,30 @@ When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE ex
     DECLARE(Bool, input_format_parquet_bloom_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.
 )", 0) \
-    DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
-When reading Parquet files, to use native reader instead of arrow reader.
+    DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
+When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
 )", 0) \
-DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
-  When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
-  )", 0) \
+    DECLARE(Bool, input_format_parquet_use_native_reader_v3, true, R"(
+Use Parquet reader v3.
+)", 0) \
+    DECLARE(UInt64, input_format_parquet_memory_low_watermark, 2ul << 20, R"(
+Schedule prefetches more aggressively if memory usage is below than threshold. Potentially useful e.g. if there are many small bloom filters to read over network.
+)", 0) \
+    DECLARE(UInt64, input_format_parquet_memory_high_watermark, 4ul << 30, R"(
+Approximate memory limit for Parquet reader v3. Limits how many row groups or columns can be read in parallel. When reading multiple files in one query, the limit is on total memory usage across those files.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_page_filter_push_down, true, R"(
+Skip pages using min/max values from column index.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
+Minor tweak to how pages are read from parquet file when no page filtering is used.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_verify_checksums, true, R"(
+Verify page checksums when reading parquet files.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_local_time_as_utc, true, R"(
+Determines the data type used by schema inference for Parquet timestamps with isAdjustedToUTC=false. If true: DateTime64(..., 'UTC'), if false: DateTime64(...). Neither behavior is fully correct as ClickHouse doesn't have a data type for local wall-clock time. Counterintuitively, 'true' is probably the less incorrect option, because formatting the 'UTC' timestamp as String will produce representation of the correct local time.
+)", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
 Allow seeks while reading in ORC/Parquet/Arrow input formats.
 
@@ -334,9 +368,13 @@ If the `schema_inference_hints` is not formatted properly, or if there is a typo
     DECLARE(SchemaInferenceMode, schema_inference_mode, "default", R"(
 Mode of schema inference. 'default' - assume that all files have the same schema and schema can be inferred from any file, 'union' - files can have different schemas and the resulting schema should be the a union of schemas of all files
 )", 0) \
-    DECLARE(UInt64Auto, schema_inference_make_columns_nullable, 1, R"(
+    DECLARE(UInt64Auto, schema_inference_make_columns_nullable, 3, R"(
 Controls making inferred types `Nullable` in schema inference.
-If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
+Possible values:
+ * 0 - the inferred type will never be `Nullable` (use input_format_null_as_default to control what do do with null values in this case),
+ * 1 - all inferred types will be `Nullable`,
+ * 2 or `auto` - the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability,
+ * 3 - the inferred type nullability will match file metadata if the format has it (e.g. Parquet), always Nullable otherwise (e.g. CSV).
 )", 0) \
     DECLARE(Bool, schema_inference_make_json_columns_nullable, 0, R"(
 Controls making inferred JSON types `Nullable` in schema inference.
@@ -431,6 +469,35 @@ Result:
 
 Enabled by default.
 )", 0) \
+DECLARE(Bool, input_format_json_infer_array_of_dynamic_from_array_of_different_types, true, R"(
+If enabled, during schema inference ClickHouse will use Array(Dynamic) type for JSON arrays with values of different data types.
+
+Example:
+
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=1;
+DESC format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
+```
+
+```response
+┌─name─┬─type───────────┐
+│ a    │ Array(Dynamic) │
+└──────┴────────────────┘
+```
+
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=0;
+DESC format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
+```
+
+```response
+┌─name─┬─type─────────────────────────────────────────────────────────────┐
+│ a    │ Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))) │
+└──────┴──────────────────────────────────────────────────────────────────┘
+```
+
+Enabled by default.
+)", 0) \
     DECLARE(Bool, input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects, false, R"(
 Use String type instead of an exception in case of ambiguous paths in JSON objects during named tuples inference
 )", 0) \
@@ -495,6 +562,15 @@ Possible values:
     DECLARE(Bool, type_json_skip_duplicated_paths, false, R"(
 When enabled, during parsing JSON object into JSON type duplicated paths will be ignored and only the first one will be inserted instead of an exception
 )", 0) \
+    DECLARE(Bool, type_json_allow_duplicated_key_with_literal_and_nested_object, false, R"(
+When enabled, JSONs like `{"a" : 42, "a" : {"b" : 42}}` where some key is duplicated but one of them is a nested object are allowed to be parsed.
+)", 0) \
+    DECLARE(Bool, type_json_use_partial_match_to_skip_paths_by_regexp, true, R"(
+When enabled, during parsing JSON object into JSON type regular expressions specified using SKIP REGEXP will require partial match to skip a path. When disabled, full match will be required.
+)", 0) \
+    DECLARE(Bool, json_type_escape_dots_in_keys, false, R"(
+When enabled, dots in JSON keys will be escaped during parsing.
+)", 0) \
     DECLARE(UInt64, input_format_json_max_depth, 1000, R"(
 Maximum depth of a field in JSON. This is not a strict limit, it does not have to be applied precisely.
 )", 0) \
@@ -505,6 +581,20 @@ Possible values:
 
 + 0 — Disable.
 + 1 — Enable.
+)", 0) \
+    DECLARE(Bool, type_json_skip_invalid_typed_paths, false, R"(
+When enabled, fields with values that cannot be coerced to their declared type in JSON type columns with typed paths are skipped instead of throwing an error. Skipped fields are treated as missing and will use default/null values based on the typed path definition.
+
+This setting only applies to JSON type columns (e.g., JSON(a Int64, b String)) where specific paths have declared types. It does not apply to regular JSON input formats like JSONEachRow when inserting into regular typed columns.
+
+Possible values:
+
++ 0 — Disable (throw error on type mismatch).
++ 1 — Enable (skip field on type mismatch).
+)", 0) \
+    DECLARE(UInt64Auto, max_dynamic_subcolumns_in_json_type_parsing, "auto", R"(
+The maximum number of dynamic subcolumns that can be created in every column during parsing of JSON column.
+It allows to control the number of dynamic subcolumns during parsing regardless of dynamic parameters specified in the data type.
 )", 0) \
     DECLARE(Bool, input_format_try_infer_integers, true, R"(
 If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats. If all numbers in the column from input data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
@@ -572,6 +662,16 @@ Allow data types conversion in Native input format
     DECLARE(Bool, input_format_native_decode_types_in_binary_format, false, R"(
 Read data types in binary format instead of type names in Native input format
 )", 0) \
+    DECLARE(UInt64, output_format_compression_level, 3, R"(
+Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
+
+Possible values: from `1` to `22`
+)", 0) \
+    DECLARE(UInt64, output_format_compression_zstd_window_log, 0, R"(
+Can be used when the output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (power of `2`) and enables a long-range mode for zstd compression. This can help to achieve a better compression ratio.
+
+Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw an exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
+)", 0) \
     DECLARE(Bool, output_format_native_encode_types_in_binary_format, false, R"(
 Write data types in binary format instead of type names in Native output format
 )", 0) \
@@ -593,7 +693,7 @@ Possible values:
 
     ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
 
-- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parsedatetimebesteffortus)
+- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parseDateTimeBestEffortUS)
 
 - `'basic'` — Use basic parser.
 
@@ -659,6 +759,24 @@ Deserialization of IPV6 will use default values instead of throwing exception on
 
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, check_conversion_from_numbers_to_enum, true, R"(
+Throw an exception during Numbers to Enum conversion if the value does not exist in Enum.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+**Example**
+
+```text
+CREATE TABLE tab (
+  val Enum('first' = 1, 'second' = 2, 'third' = 3)
+) ENGINE = Memory;
+
+INSERT INTO tab SETTINGS check_conversion_from_numbers_to_enum = 1 VALUES (4); -- returns an error
+```
+)", 0) \
     DECLARE(String, bool_true_representation, "true", R"(
 Text to represent true bool value in TSV/CSV/Vertical/Pretty formats.
 )", 0) \
@@ -692,6 +810,12 @@ The maximum allowed size for String in RowBinary format. It prevents allocating 
     DECLARE(UInt64, format_binary_max_array_size, 1_GiB, R"(
 The maximum allowed size for Array in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
 )", 0) \
+    DECLARE(UInt64, input_format_binary_max_type_complexity, 1000, R"(
+Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Protects against malicious inputs. 0 = unlimited.
+)", 0) \
+    DECLARE(UInt64, format_binary_max_object_size, 100000, R"(
+The maximum allowed number of paths in a single Object for JSON type RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
+)", 0) \
     DECLARE(Bool, input_format_binary_decode_types_in_binary_format, false, R"(
 Read data types in binary format instead of type names in RowBinaryWithNamesAndTypes input format
 )", 0) \
@@ -708,7 +832,7 @@ Read values of [JSON](../../sql-reference/data-types/newjson.md) data type as JS
 Write values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary output format.
 )", 0) \
     \
-    DECLARE(Bool, output_format_json_quote_64bit_integers, true, R"(
+    DECLARE(Bool, output_format_json_quote_64bit_integers, false, R"(
 Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](/interfaces/formats/JSON) format.
 Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
 
@@ -887,7 +1011,45 @@ Controls validation of UTF-8 sequences in JSON output formats, doesn't impact fo
 Disabled by default.
 )", 0) \
     DECLARE(Bool, output_format_json_pretty_print, true, R"(
-When enabled, values of complex data types like Tuple/Array/Map in JSON output format in 'data' section will be printed in pretty format.
+This setting determines how nested structures such as Tuples, Maps, and Arrays are displayed within the `data` array when using the JSON output format.
+
+For example, instead of output:
+
+```json
+"data":
+[
+  {
+    "tuple": {"a":1,"b":2,"c":3},
+    "array": [1,2,3],
+    "map": {"a":1,"b":2,"c":3}
+  }
+],
+```
+
+The output will be formatted as:
+
+```json
+"data":
+[
+    {
+        "tuple": {
+            "a": 1,
+            "b": 2,
+            "c": 3
+        },
+        "array": [
+            1,
+            2,
+            3
+        ],
+        "map": {
+            "a": 1,
+            "b": 2,
+            "c": 3
+        }
+    }
+],
+```
 
 Enabled by default.
 )", 0) \
@@ -944,7 +1106,7 @@ If the data rendered in Pretty formats arrived in multiple chunks, even after a 
 0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
 )", 0) \
     DECLARE(String, output_format_pretty_grid_charset, "UTF-8", R"(
-Charset for printing grid borders. Available charsets: ASCII, UTF-8 (default one).
+Charset for printing grid borders. Available charsets: ASCII, UTF-8 (default).
 )", 0) \
     DECLARE(UInt64, output_format_pretty_display_footer_column_names, true, R"(
 Display column names in the footer if there are many table rows.
@@ -988,7 +1150,7 @@ Target row group size in bytes, before compression.
 Use Parquet String type instead of Binary for String columns.
 )", 0) \
     DECLARE(Bool, output_format_parquet_fixed_string_as_fixed_byte_array, true, R"(
-Use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary for FixedString columns.
+Use Parquet FIXED_LEN_BYTE_ARRAY type instead of Binary for FixedString columns.
 )", 0) \
     DECLARE(ParquetVersion, output_format_parquet_version, "2.latest", R"(
 Parquet format version for output format. Supported versions: 1.0, 2.4, 2.6 and 2.latest (default)
@@ -1034,8 +1196,17 @@ Where in the parquet file to place the bloom filters. Bloom filters will be writ
     DECLARE(Bool, output_format_parquet_datetime_as_uint32, false, R"(
 Write DateTime values as raw unix timestamp (read back as UInt32), instead of converting to milliseconds (read back as DateTime64(3)).
 )", 0) \
-    DECLARE(Bool, output_format_parquet_enum_as_byte_array, false, R"(
+    DECLARE(Bool, output_format_parquet_date_as_uint16, false, R"(
+Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit parquet DATE type (read back as Date32).
+)", 0) \
+    DECLARE(UInt64, output_format_parquet_max_dictionary_size, 1024 * 1024, R"(
+If dictionary size grows bigger than this many bytes, switch to encoding without dictionary. Set to 0 to disable dictionary encoding.
+)", 0) \
+    DECLARE(Bool, output_format_parquet_enum_as_byte_array, true, R"(
 Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
+)", 0) \
+    DECLARE(Bool, output_format_parquet_write_checksums, true, R"(
+Put crc32 checksums in parquet page headers.
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
@@ -1097,7 +1268,7 @@ Method to write Errors to text output.
     DECLARE(String, format_schema_source, "file", R"(
 Define the source of `format_schema`.
 Possible values:
-- 'file' (default):: The `format_schema` is the name of a schema file located in the `format_schemas` directory.
+- 'file' (default): The `format_schema` is the name of a schema file located in the `format_schemas` directory.
 - 'string': The `format_schema` is the literal content of the schema.
 - 'query': The `format_schema` is a query to retrieve the schema.
 When `format_schema_source` is set to 'query', the following conditions apply:
@@ -1199,6 +1370,9 @@ The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`
     DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_columns, 5, R"(
 The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of columns is greater than the specified value.
 )", 0) \
+    DECLARE(Bool, output_format_pretty_named_tuples_as_json, true, R"(
+        Controls whether named tuples in Pretty format are output as pretty-printed JSON objects.
+)", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](/engines/table-engines/special/distributed) table when there is no distributed key.
 
@@ -1208,16 +1382,6 @@ Possible values:
 
 - 0 — Insertion is rejected if there are multiple shards and no distributed key is given.
 - 1 — Insertion is done randomly among all available shards when no distributed key is given.
-)", 0) \
-    \
-    DECLARE(Bool, exact_rows_before_limit, false, R"(
-When enabled, ClickHouse will provide exact value for rows_before_limit_at_least statistic, but with the cost that the data before limit will have to be read completely
-)", 0) \
-    DECLARE(Bool, rows_before_aggregation, false, R"(
-When enabled, ClickHouse will provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation
-)", 0) \
-    DECLARE(UInt64, cross_to_inner_join_rewrite, 1, R"(
-Use inner join instead of comma/cross join if there are joining expressions in the WHERE section. Values: 0 - no rewrite, 1 - apply if possible for comma/cross, 2 - force rewrite all comma joins, cross - if possible
 )", 0) \
     \
     DECLARE(Bool, output_format_arrow_low_cardinality_as_dictionary, false, R"(
@@ -1264,6 +1428,9 @@ How to map ClickHouse Enum and CapnProto Enum
     \
     DECLARE(Bool, format_capn_proto_use_autogenerated_schema, true, R"(
 Use autogenerated CapnProto schema when format_schema is not set
+)", 0) \
+    DECLARE(UInt64, format_capn_proto_max_message_size, 1_GiB, R"(
+Maximum size of a single CapnProto message in bytes. This protects against malformed or corrupted data causing excessive memory allocation. Default is 1 GiB.
 )", 0) \
     DECLARE(Bool, format_protobuf_use_autogenerated_schema, true, R"(
 Use autogenerated Protobuf when format_schema is not set
@@ -1320,19 +1487,6 @@ Possible values:
 -   0 — Disabled.
 -   1 — Enabled.
 )", IMPORTANT) \
-    DECLARE(Bool, regexp_dict_allow_hyperscan, true, R"(
-Allow regexp_tree dictionary using Hyperscan library.
-)", 0) \
-    DECLARE(Bool, regexp_dict_flag_case_insensitive, false, R"(
-Use case-insensitive matching for a regexp_tree dictionary. Can be overridden in individual expressions with (?i) and (?-i).
-)", 0) \
-    DECLARE(Bool, regexp_dict_flag_dotall, false, R"(
-Allow '.' to match newline characters for a regexp_tree dictionary.
-)", 0) \
-    \
-    DECLARE(Bool, dictionary_use_async_executor, false, R"(
-Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
-)", 0) \
     DECLARE(Bool, precise_float_parsing, false, R"(
 Prefer more precise (but slower) float parsing algorithm
 )", 0) \
@@ -1361,11 +1515,17 @@ Set the quoting style for identifiers in SHOW CREATE query
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.
 )", 0) \
+    DECLARE(Bool, input_format_protobuf_oneof_presence, false, R"(
+Indicate which field of protobuf oneof was found by means of setting enum value in a special column
+)", 0) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
 Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/MultiLineString/MultiPolygon types
 )", 0) \
     DECLARE(Bool, output_format_parquet_geometadata, true, R"(
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
+)", 0) \
+    DECLARE(Bool, into_outfile_create_parent_directories, false, R"(
+Automatically create parent directories when using INTO OUTFILE if they do not already exists.
 )", 0) \
 
 
@@ -1377,6 +1537,7 @@ Allow to write information about geo columns in parquet metadata and encode colu
     MAKE_OBSOLETE(M, Bool, input_format_parquet_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, output_format_enable_streaming, false) \
+    MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader, false) \
 
 #endif // __CLION_IDE__
 

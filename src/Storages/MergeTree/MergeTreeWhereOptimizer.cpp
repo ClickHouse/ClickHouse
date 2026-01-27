@@ -1,7 +1,7 @@
 #include <algorithm>
-#include <ranges>
 #include <Core/Settings.h>
 #include <DataTypes/NestedUtils.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -12,20 +12,20 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_statistics_optimize;
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsBool move_all_conditions_to_prewhere;
     extern const SettingsBool move_primary_key_columns_to_end_of_prewhere;
     extern const SettingsBool allow_reorder_prewhere_conditions;
+    extern const SettingsBool use_statistics;
 }
 
 /// Conditions like "x = N" are considered good if abs(N) > threshold.
@@ -60,16 +60,23 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
     return min_position;
 }
 
-static NameSet getTableColumns(const StorageMetadataPtr & metadata_snapshot, const Names & queried_columns)
+static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names & queried_columns)
 {
-    const auto & columns_description = metadata_snapshot->getColumns();
-    NameSet table_columns(std::from_range_t{},
-          metadata_snapshot->getColumns().getAllPhysical() | std::views::transform([](const auto & col) { return col.name; }));
+    GetColumnsOptions options(GetColumnsOptions::All);
+    options.withVirtuals();
+    options.withSubcolumns();
 
+    auto columns_list = storage_snapshot->getColumns(options);
+    NameSet table_columns;
+
+    for (const auto & column : columns_list)
+        table_columns.insert(column.name);
+
+    const auto & storage_columns = storage_snapshot->metadata->getColumns();
     /// Add also requested subcolumns to known table columns.
     for (const auto & column : queried_columns)
     {
-        if (columns_description.hasSubcolumn(column))
+        if (storage_columns.hasSubcolumn(column))
             table_columns.insert(column);
     }
 
@@ -78,18 +85,19 @@ static NameSet getTableColumns(const StorageMetadataPtr & metadata_snapshot, con
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
-    const StorageMetadataPtr & metadata_snapshot,
-    const ConditionSelectivityEstimator & estimator_,
+    const StorageSnapshotPtr & storage_snapshot,
+    ConditionSelectivityEstimatorPtr estimator_,
     const Names & queried_columns_,
     const std::optional<NameSet> & supported_columns_,
     LoggerPtr log_)
     : estimator(estimator_)
-    , table_columns(getTableColumns(metadata_snapshot, queried_columns_))
+    , table_columns(getTableColumns(storage_snapshot, queried_columns_))
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
     , sorting_key_names{NameSet(
-          metadata_snapshot->getSortingKey().column_names.begin(), metadata_snapshot->getSortingKey().column_names.end())}
-    , primary_key_names_positions(fillNamesPositions(metadata_snapshot->getPrimaryKey().column_names))
+          storage_snapshot->metadata->getSortingKey().column_names.begin(), storage_snapshot->metadata->getSortingKey().column_names.end())}
+    , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
+    , storage_metadata(storage_snapshot->metadata)
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
 {
@@ -119,7 +127,7 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
         = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = select.final();
-    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::allow_statistics_optimize];
+    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
 
     RPNBuilderTreeContext tree_context(context, std::move(block_with_constants), {} /*prepared_sets*/);
     RPNBuilderTreeNode node(select.where().get(), tree_context);
@@ -154,7 +162,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
         = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = is_final;
-    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::allow_statistics_optimize];
+    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), tree_context);
@@ -178,7 +186,13 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
         .fully_moved_to_prewhere = optimize_result->where_conditions.empty()};
 }
 
-static void collectColumns(const RPNBuilderTreeNode & node, const NameSet & columns_names, NameSet & result_set, bool & has_invalid_column)
+static void collectColumns(
+    const RPNBuilderTreeNode & node,
+    const RPNBuilderTreeNode * parent,
+    const NameSet & columns_names,
+    NameSet & result_set,
+    bool & has_invalid_column,
+    bool & may_use_primary_index)
 {
     if (node.isConstant())
         return;
@@ -204,13 +218,35 @@ static void collectColumns(const RPNBuilderTreeNode & node, const NameSet & colu
 
     /// Do not account arguments of function "indexHint"
     /// because they won't be read from table.
-    if (function_node.getFunctionName() == "indexHint")
+    const auto function_name = function_node.getFunctionName();
+    if (function_name == "indexHint")
         return;
+
+    if (!KeyCondition::atom_map.contains(function_name))
+    {
+        if (!parent)
+        {
+            /// Root function node must be contained in atom_map if we want to utilize primary index.
+            may_use_primary_index = false;
+        }
+        else
+        {
+            /// Non-root function node must be monotonic and deterministic in scope of query if we want to utilize primary index.
+            auto function_base = function_node.getFunctionBase();
+            if (arguments_size > 2 || arguments_size == 0
+                || (function_base
+                    && (!function_base->isDeterministicInScopeOfQuery() || !function_base->hasInformationAboutMonotonicity())))
+            {
+                may_use_primary_index = false;
+            }
+        }
+    }
+
 
     for (size_t i = 0; i < arguments_size; ++i)
     {
         auto function_argument = function_node.getArgumentAt(i);
-        collectColumns(function_argument, columns_names, result_set, has_invalid_column);
+        collectColumns(function_argument, &node, columns_names, result_set, has_invalid_column, may_use_primary_index);
     }
 }
 
@@ -293,7 +329,9 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     {
         Condition cond(node);
         bool has_invalid_column = false;
-        collectColumns(node, table_columns, cond.table_columns, has_invalid_column);
+        /// Is it possible to use primary index for this condition? For conditions like `lower(country) = 'xx'`, may_use_primary_index will be false.`
+        bool may_use_primary_index = true;
+        collectColumns(node, nullptr, table_columns, cond.table_columns, has_invalid_column, may_use_primary_index);
 
         cond.columns_size = getColumnsSize(cond.table_columns);
 
@@ -317,7 +355,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         {
             cond.good = cond.viable;
 
-            cond.estimated_row_count = estimator.estimateRelationProfile(node).rows;
+            cond.estimated_row_count = static_cast<Float64>(estimator->estimateRelationProfile(storage_metadata, node).rows);
 
             if (node.getASTNode() != nullptr)
                 LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getASTNode()->dumpTree(), cond.estimated_row_count);
@@ -327,8 +365,14 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         {
             /// Consider all conditions good with this setting enabled.
             cond.good = cond.viable;
-            /// Find min position in PK of any column that is used in this condition.
+
             cond.min_position_in_primary_key = findMinPosition(cond.table_columns, primary_key_names_positions);
+            if (!may_use_primary_index)
+            {
+                /// Only set min_position_in_primary_key if it is possible to use primary index for current condition.
+                cond.min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
+            }
+            /// Find min position in PK of any column that is used in this condition.
             pk_positions.emplace(cond.min_position_in_primary_key);
         }
 
@@ -376,10 +420,10 @@ ASTPtr MergeTreeWhereOptimizer::reconstructAST(const Conditions & conditions)
     if (conditions.size() == 1)
         return conditions.front().node.getASTNode()->clone();
 
-    const auto function = std::make_shared<ASTFunction>();
+    const auto function = make_intrusive<ASTFunction>();
 
     function->name = "and";
-    function->arguments = std::make_shared<ASTExpressionList>();
+    function->arguments = make_intrusive<ASTExpressionList>();
     function->children.push_back(function->arguments);
 
     for (const auto & elem : conditions)
@@ -449,7 +493,6 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     while (!where_conditions.empty())
     {
         /// Move the best condition to PREWHERE if it is viable.
-
         auto it = std::min_element(where_conditions.begin(), where_conditions.end());
 
         if (!it->viable)

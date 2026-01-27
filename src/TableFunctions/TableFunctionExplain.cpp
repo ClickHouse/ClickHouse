@@ -46,7 +46,11 @@ public:
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override { return "Explain"; }
+    const char * getStorageEngineName() const override
+    {
+        /// No underlying storage engine
+        return "";
+    }
 
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
@@ -91,7 +95,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             getName(), kind_arg->formatForErrorMessage());
 
     ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.safeGet<String>());
-    auto explain_query = std::make_shared<ASTExplainQuery>(kind);
+    auto explain_query = make_intrusive<ASTExplainQuery>(kind);
 
     const auto * settings_arg = function->arguments->children[1]->as<ASTLiteral>();
     if (!settings_arg || settings_arg->value.getType() != Field::Types::String)

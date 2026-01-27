@@ -1,5 +1,20 @@
 cmake_minimum_required(VERSION 3.25)
 
+# Some CMakeLists.txt in contrib/ are not being good citizens and change cmake cache variables
+# globally. This policy prevents such *cache* variable assignments from altering *normal* variables
+# that we've set.
+#
+# Example: suppose our root CMakeLists.txt assigns a normal variable:
+#   set(CMAKE_CXX_STANDARD 23)
+# then llvm-project assigns cache variable with the same name:
+#   set(CMAKE_CXX_STANDARD 17 CACHE STRING "...")
+# The latter assignment doesn't affect the normal variable, so llvm-project effectively uses C++23.
+#
+# Without this policy, the behavior is nonlocal and brittle: if the cache variable doesn't exists,
+# the normal variable is unset; otherwise it's left alone. So the effective value would depend e.g.
+# on the order in which contrib/ libraries are traversed.
+set (CMAKE_POLICY_DEFAULT_CMP0126 NEW)
+
 project(ClickHouse LANGUAGES C CXX ASM)
 
 # If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.
@@ -44,39 +59,9 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/sysroot/README.md")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init")
 endif ()
 
-# Take care to add prlimit in command line before ccache, or else ccache thinks that
-# prlimit is compiler, and clang++ is its input file, and refuses to work with
-# multiple inputs, e.g in ccache log:
-# [2021-03-31T18:06:32.655327 36900] Command line: /usr/bin/ccache prlimit --as=10000000000 --data=5000000000 --cpu=600 /usr/bin/clang++-11 - ...... std=gnu++2a -MD -MT src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -MF src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o.d -o src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -c ../src/Storages/MergeTree/IMergeTreeDataPart.cpp
-#
-# [2021-03-31T18:06:32.656704 36900] Multiple input files: /usr/bin/clang++-11 and ../src/Storages/MergeTree/IMergeTreeDataPart.cpp
-#
-# Another way would be to use --ccache-skip option before clang++-11 to make
-# ccache ignore it.
 option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile too long or to take too much memory while compiling." OFF)
 if (ENABLE_CHECK_HEAVY_BUILDS)
-    # set DATA (since RSS does not work since 2.6.x+) to 5G
-    set (RLIMIT_DATA 5000000000)
-    # set VIRT (RLIMIT_AS) to 10G (DATA*2)
-    set (RLIMIT_AS 10000000000)
-    # set CPU time limit to 1000 seconds
-    set (RLIMIT_CPU 1000)
-
-    # Sanitizers are too heavy. Some architectures too.
-    if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE OR ARCH_RISCV64 OR ARCH_LOONGARCH64)
-        # Twice as large
-        set (RLIMIT_DATA 10000000000)
-        set (RLIMIT_AS 20000000000)
-        set (RLIMIT_CPU 2000)
-    endif()
-
-    # For some files currently building RISCV64/LOONGARCH64 might be too slow.
-    # TODO: Improve compilation times per file
-    if (ARCH_RISCV64 OR ARCH_LOONGARCH64)
-        set (RLIMIT_CPU 1800)
-    endif()
-
-    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
+    enable_heavy_build_check_if_needed()
 endif ()
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
@@ -94,9 +79,6 @@ option (ENABLE_BUZZHOUSE "Enable BuzzHouse fuzzer on the client" OFF)
 option (ENABLE_FUZZER_TEST "Build testing fuzzers in order to test libFuzzer functionality" OFF)
 
 if (ENABLE_FUZZING)
-    # Also set WITH_COVERAGE=1 for better fuzzing process
-    # By default this is disabled, because fuzzers are built in CI with the clickhouse itself.
-    # And we don't want to enable coverage for it.
     message (STATUS "Fuzzing instrumentation enabled")
     set (FUZZER "libfuzzer")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")
@@ -109,6 +91,7 @@ if (ENABLE_FUZZING)
     set (ENABLE_CHECK_HEAVY_BUILDS 1)
     set (GLIBC_COMPATIBILITY OFF)
     set (ENABLE_BENCHMARKS 0)
+    set (ENABLE_CLICKHOUSE_KEEPER 0)
 
     # For codegen_select_fuzzer
     set (ENABLE_PROTOBUF 1)
@@ -119,6 +102,18 @@ if (ENABLE_BUZZHOUSE)
     set (ENABLE_PROTOBUF 1)
 endif()
 
+option (ENABLE_XRAY "Enable LLVM XRay" ON)
+
+if (NOT ENABLE_XRAY)
+    message (STATUS "Not using LLVM XRay because it's disabled")
+    set (ENABLE_XRAY 0)
+endif()
+
+if (NOT ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX) OR SANITIZE OR USE_MUSL)
+    message (STATUS "Not using LLVM XRay, only Linux on amd64 and aarch64 is supported without sanitizers")
+    set (ENABLE_XRAY 0)
+endif()
+
 # Global libraries
 # See:
 # - default_libs.cmake
@@ -126,8 +121,6 @@ endif()
 add_library(global-libs INTERFACE)
 
 include (cmake/sanitize.cmake)
-
-include (cmake/xray_instrumentation.cmake)
 
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
@@ -144,19 +137,6 @@ endif ()
 
 include (cmake/check_flags.cmake)
 include (cmake/add_warning.cmake)
-
-# generate ranges for fast "addr2line" search
-if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
-    # NOTE: that clang has a bug because of it does not emit .debug_aranges
-    # with ThinLTO, so custom ld.lld wrapper is shipped in docker images.
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
-endif ()
-
-# See https://blog.llvm.org/posts/2021-04-05-constructor-homing-for-debug-info/
-if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fuse-ctor-homing")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
-endif()
 
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
@@ -215,7 +195,7 @@ endif ()
 # Add a section with the hash of the compiled machine code for integrity checks.
 # Only for official builds, because adding a section can be time consuming (rewrite of several GB).
 # And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
-if (CLICKHOUSE_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE OR CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64.cmake$") AND NOT ENABLE_CLANG_TIDY)
+if (CLICKHOUSE_OFFICIAL_BUILD AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT ENABLE_CLANG_TIDY)
     message(STATUS "Official build: A checksum hash will be added to the clickhouse executable")
     set (USE_BINARY_HASH 1 CACHE STRING "Calculate binary hash and store it in the separate section")
 else ()
@@ -223,6 +203,7 @@ else ()
 endif ()
 
 # Optionally split binaries and debug symbols.
+option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
 if (SPLIT_DEBUG_SYMBOLS)
     message(STATUS "Will split binaries and debug symbols")
@@ -295,10 +276,6 @@ set (CMAKE_C_STANDARD 11)
 set (CMAKE_C_EXTENSIONS ON) # required by most contribs written in C
 set (CMAKE_C_STANDARD_REQUIRED ON)
 
-# Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
-# See https://reviews.llvm.org/D112921
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
-
 # falign-functions=64 prevents from random performance regressions with the code change. Thus, providing more stable benchmarks.
 set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64")
 
@@ -313,6 +290,21 @@ endif()
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
 set (DEBUG_INFO_FLAGS "-g")
+if (DISABLE_ALL_DEBUG_SYMBOLS)
+    set (DEBUG_INFO_FLAGS "-g0")
+endif()
+
+if (OS_DARWIN)
+    # On Darwin the optimizatiosns to reduce the debug size are off by default. `-fno-standalone-debug` enables them
+    set (DEBUG_INFO_FLAGS "${DEBUG_INFO_FLAGS} -fno-standalone-debug")
+endif()
+
+# generate ranges for fast "addr2line" search
+if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
+    # NOTE: that clang has a bug because of it does not emit .debug_aranges
+    # with ThinLTO, so custom ld.lld wrapper is shipped in docker images.
+    set(DEBUG_INFO_FLAGS "${DEBUG_INFO_FLAGS} -gdwarf-aranges")
+endif ()
 
 # Disable omit frame pointer compiler optimization using -fno-omit-frame-pointer
 option(DISABLE_OMIT_FRAME_POINTER "Disable omit frame pointer compiler optimization" OFF)
@@ -365,6 +357,10 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
+
+    if(LINKER_NAME MATCHES "lld")
+        set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
+    endif()
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
 endif ()
@@ -381,6 +377,9 @@ include(cmake/limit_jobs.cmake)
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
+# Don't use the system compiler-rt library even if it is available. Instead build it directly
+option(USE_SYSTEM_COMPILER_RT "Use the system compiler-rt if available. If disabled it will be built from sources (supported for Linux and FreeBSD)" ON)
+
 # Increase stack size on Musl. We need big stack for our recursive-descend parser.
 if (USE_MUSL)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=2097152")
@@ -395,6 +394,8 @@ elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
 elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
+elseif (OS_SUNOS)
+    include(cmake/sunos/default_libs.cmake)
 endif ()
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
@@ -464,11 +465,7 @@ endif ()
 
 enable_testing() # Enable for tests without binary
 
-if (ARCH_S390X)
-    set(ENABLE_OPENSSL_DYNAMIC_DEFAULT ON)
-else ()
-    set(ENABLE_OPENSSL_DYNAMIC_DEFAULT OFF)
-endif ()
+set(ENABLE_OPENSSL_DYNAMIC_DEFAULT OFF)
 option(ENABLE_OPENSSL_DYNAMIC "This option removes SSL from ClickHouse and will link to the OpenSSL version supplied by OS." ${ENABLE_OPENSSL_DYNAMIC_DEFAULT})
 
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
@@ -480,7 +477,22 @@ endif ()
 
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
 
+# With cross-compiling, all targets are built for the target platform which usually different from the host
+# platform. This is problematic if a build artifact X (e.g. a file or an executable) is generated by running
+# another executable Y previously produced in the build. This is solved by compiling and running Y for/on
+# the host platform. Add target to the list:
+#    add_native_target(<target> ...)
+set_property (GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
+function (add_native_target TARGET)
+    set_property (GLOBAL APPEND PROPERTY NATIVE_BUILD_TARGETS "--target" ${TARGET})
+endfunction (add_native_target)
+
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
+
+# We can only include XRay flags and defines once we know that we're building LLVM
+if (ENABLE_XRAY)
+    include (cmake/xray_instrumentation.cmake)
+endif()
 
 # Sets dummy launchers to suppress linking. Used for clang-tidy builds.
 enable_dummy_launchers_if_needed()
@@ -503,7 +515,7 @@ macro (clickhouse_add_executable target)
     # to inject memory tracking mechanism into them.
     # Sanitizers have their own way of intercepting the
     # allocations and deallocations, so we skip this step for them.
-    if (NOT (SANITIZE OR SANITIZE_COVERAGE OR OS_DARWIN OR OS_FREEBSD))
+    if (NOT (SANITIZE OR SANITIZE_COVERAGE OR OS_DARWIN OR OS_FREEBSD OR OS_SUNOS))
         target_link_options(${target} PRIVATE
             "LINKER:--wrap=malloc"
             "LINKER:--wrap=free"
@@ -543,16 +555,6 @@ macro (clickhouse_add_executable target)
         endif()
     endif()
 endmacro()
-
-# With cross-compiling, all targets are built for the target platform which usually different from the host
-# platform. This is problematic if a build artifact X (e.g. a file or an executable) is generated by running
-# another executable Y previously produced in the build. This is solved by compiling and running Y for/on
-# the host platform. Add target to the list:
-#    add_native_target(<target> ...)
-set_property (GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
-function (add_native_target)
-    set_property (GLOBAL APPEND PROPERTY NATIVE_BUILD_TARGETS ${ARGV})
-endfunction (add_native_target)
 
 set(CONFIG_INCLUDE_PATH ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
 include_directories(${CONFIG_INCLUDE_PATH})
@@ -623,12 +625,6 @@ if (FUZZER)
                 get_target_property(target_bin_dir ${target} BINARY_DIR)
                 add_custom_command(TARGET fuzzers POST_BUILD COMMAND mv "${target_bin_dir}/${target_bin_name}" "${CMAKE_CURRENT_BINARY_DIR}/programs/" VERBATIM)
             endif()
-            if (target STREQUAL "clickhouse")
-                message(STATUS "${target} instrumented with fuzzer")
-                target_link_libraries(${target} PUBLIC ch_contrib::fuzzer_no_main)
-                # Add to fuzzers bundle
-                add_dependencies(fuzzers ${target})
-            endif()
         endif()
     endforeach()
     add_custom_command(TARGET fuzzers POST_BUILD COMMAND SRC=${CMAKE_SOURCE_DIR} BIN=${CMAKE_BINARY_DIR} OUT=${CMAKE_BINARY_DIR}/programs ${CMAKE_SOURCE_DIR}/tests/fuzz/build.sh VERBATIM)
@@ -658,7 +654,7 @@ if (NATIVE_BUILD_TARGETS
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
     )
 )
-    message (STATUS "Building native targets...")
+    message (STATUS "Building native targets: ${NATIVE_BUILD_TARGETS}")
 
     set (NATIVE_BUILD_DIR "${PROJECT_BINARY_DIR}/native")
 
@@ -668,22 +664,31 @@ if (NATIVE_BUILD_TARGETS
         COMMAND_ERROR_IS_FATAL ANY
     )
 
+    disable_dummy_launchers_if_needed()
+
     execute_process(
         COMMAND ${CMAKE_COMMAND}
+            "-G${CMAKE_GENERATOR}"
+            "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
             "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
             "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
-            "-DCOMPILER_CACHE=${COMPILER_CACHE}"
+            "-DCMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER}"
+            "-DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}"
+            "-DCMAKE_BUILD_TYPE=Release"
             # Avoid overriding .cargo/config.toml with native toolchain.
             "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
+            "-DUSE_BINARY_HASH=${USE_BINARY_HASH}"
         ${PROJECT_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
         COMMAND_ECHO STDOUT
         COMMAND_ERROR_IS_FATAL ANY
     )
 
+    enable_dummy_launchers_if_needed()
+
     execute_process(
-        COMMAND ${CMAKE_COMMAND} --build "${NATIVE_BUILD_DIR}" --target ${NATIVE_BUILD_TARGETS}
+        COMMAND ${CMAKE_COMMAND} --build "${NATIVE_BUILD_DIR}" ${NATIVE_BUILD_TARGETS}
         COMMAND_ECHO STDOUT
         COMMAND_ERROR_IS_FATAL ANY
     )

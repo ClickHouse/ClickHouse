@@ -33,8 +33,10 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
+    const FilterDAGInfoPtr & row_level_filter,
     const PrewhereInfoPtr & prewhere_info,
     const PrewhereExprSteps & mutation_steps,
+    const IndexReadTasks & index_read_tasks,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns);
@@ -73,8 +75,8 @@ struct MergeTreeBlockSizePredictor
 
         double max_size_per_row
             = std::max<double>({max_size_per_row_fixed, static_cast<double>(static_cast<UInt64>(1)), max_size_per_row_dynamic});
-        return (bytes_quota > block_size_rows * max_size_per_row)
-            ? static_cast<size_t>(bytes_quota / max_size_per_row) - block_size_rows
+        return (static_cast<double>(bytes_quota) > static_cast<double>(block_size_rows) * max_size_per_row)
+            ? static_cast<size_t>(static_cast<double>(bytes_quota) / max_size_per_row) - block_size_rows
             : 0;
     }
 
@@ -89,7 +91,7 @@ struct MergeTreeBlockSizePredictor
     void updateFilteredRowsRation(size_t rows_was_read, size_t rows_was_filtered, double decay = calculateDecay())
     {
         double alpha = std::pow(1. - decay, rows_was_read);
-        double current_ration = rows_was_filtered / std::max(1.0, static_cast<double>(rows_was_read));
+        double current_ration = static_cast<double>(rows_was_filtered) / std::max(1.0, static_cast<double>(rows_was_read));
         filtered_rows_ratio = current_ration < filtered_rows_ratio
             ? current_ration
             : alpha * filtered_rows_ratio + (1.0 - alpha) * current_ration;

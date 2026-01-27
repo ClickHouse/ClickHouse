@@ -80,7 +80,7 @@ public:
 
         ColumnUInt8::MutablePtr col_null_map;
         if (error_handling == ErrorHandling::Null)
-            col_null_map = ColumnUInt8::create(input_rows_count, 0);
+            col_null_map = ColumnUInt8::create(input_rows_count, false);
 
         if (const ColumnString * col_query_string = checkAndGetColumn<ColumnString>(col_query.get()))
         {
@@ -112,7 +112,7 @@ private:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
-            const char * end = begin + offsets[i] - prev_offset - 1;
+            const char * end = begin + offsets[i] - prev_offset;
 
             ParserQuery parser(end, false, implicit_select);
             ASTPtr ast;
@@ -129,9 +129,6 @@ private:
                     const size_t res_data_new_size = res_data_size + 1;
                     if (res_data_new_size > res_data.size())
                         res_data.resize(2 * res_data_new_size);
-
-                    res_data[res_data_size] = '\0';
-                    res_data_size += 1;
 
                     res_offsets[i] = res_data_size;
                     prev_offset = offsets[i];
@@ -151,16 +148,12 @@ private:
 
             auto formatted = buf.stringView();
 
-            const size_t res_data_new_size = res_data_size + formatted.size() + 1;
+            const size_t res_data_new_size = res_data_size + formatted.size();
             if (res_data_new_size > res_data.size())
                 res_data.resize(2 * res_data_new_size);
 
             memcpy(&res_data[res_data_size], formatted.data(), formatted.size());
             res_data_size += formatted.size();
-
-            res_data[res_data_size] = '\0';
-            res_data_size += 1;
-
             res_offsets[i] = res_data_size;
             prev_offset = offsets[i];
         }

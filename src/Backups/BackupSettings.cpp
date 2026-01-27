@@ -40,6 +40,8 @@ namespace ErrorCodes
     M(Bool, allow_backup_broken_projections) \
     M(Bool, write_access_entities_dependents) \
     M(Bool, allow_checksums_from_remote_paths) \
+    M(BackupDataFileNameGeneratorType, data_file_name_generator) \
+    M(Bool, backup_data_from_refreshable_materialized_view_targets) \
     M(Bool, internal) \
     M(Bool, experimental_lightweight_snapshot) \
     M(String, host_id) \
@@ -57,6 +59,8 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
         {
             if (setting.name == "compression_level")
                 res.compression_level = static_cast<int>(SettingFieldInt64{setting.value}.value);
+            else if (setting.name == "data_file_name_prefix_length")
+                res.data_file_name_prefix_length = setting.value.safeGet<UInt64>();
             else
 #define GET_BACKUP_SETTINGS_FROM_QUERY(TYPE, NAME) \
             if (setting.name == #NAME) \
@@ -94,7 +98,7 @@ bool BackupSettings::isAsync(const ASTBackupQuery & query)
 
 void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
 {
-    auto query_settings = std::make_shared<ASTSetQuery>();
+    auto query_settings = make_intrusive<ASTSetQuery>();
     query_settings->is_standalone = false;
 
     /// Copy the fields of the BackupSettings to the query.
@@ -167,9 +171,10 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
     if (cluster_host_ids.empty())
         return nullptr;
 
-    auto res = std::make_shared<ASTFunction>();
+    auto res = make_intrusive<ASTFunction>();
     res->name = "array";
-    auto res_replicas = std::make_shared<ASTExpressionList>();
+    res->is_operator = true;
+    auto res_replicas = make_intrusive<ASTExpressionList>();
     res->arguments = res_replicas;
     res->children.push_back(res_replicas);
     res_replicas->children.resize(cluster_host_ids.size());
@@ -183,7 +188,7 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
         for (size_t j = 0; j != shard.size(); ++j)
             res_shard[j] = Field{shard[j]};
 
-        res_replicas->children[i] = std::make_shared<ASTLiteral>(Field{std::move(res_shard)});
+        res_replicas->children[i] = make_intrusive<ASTLiteral>(Field{std::move(res_shard)});
     }
 
     return res;

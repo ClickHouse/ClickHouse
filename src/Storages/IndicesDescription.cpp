@@ -16,6 +16,7 @@
 #include <Core/Defines.h>
 #include <Common/Exception.h>
 
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 
 namespace DB
 {
@@ -23,50 +24,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
-
-
-Tuple parseGinIndexArgumentFromAST(const ASTPtr & arguments)
-{
-    const auto & identifier = arguments->children[0]->template as<ASTIdentifier>();
-    if (identifier == nullptr)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected identifier");
-
-    const auto & literal = arguments->children[1]->template as<ASTLiteral>();
-    if (literal == nullptr)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Expected literal");
-
-    Tuple key_value_pair{};
-    key_value_pair.emplace_back(identifier->name());
-    key_value_pair.emplace_back(literal->value);
-    return key_value_pair;
-}
-
-bool parseGinIndexArgumentsFromAST(const ASTPtr & arguments, FieldVector & parsed_arguments)
-{
-    parsed_arguments.reserve(arguments->children.size());
-
-    for (const auto & argument : arguments->children)
-    {
-        if (const auto * ast_function = argument->template as<ASTFunction>();
-            ast_function && ast_function->name == "equals" && ast_function->arguments->children.size() == 2)
-        {
-            parsed_arguments.emplace_back(parseGinIndexArgumentFromAST(ast_function->arguments));
-        }
-        else
-        {
-            if (!parsed_arguments.empty())
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot mix key-value pair and single argument as GIN index arguments");
-            return false;
-        }
-    }
-
-    return true;
-}
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
@@ -79,6 +36,8 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , data_types(other.data_types)
     , sample_block(other.sample_block)
     , granularity(other.granularity)
+    , is_implicitly_created(other.is_implicitly_created)
+    , escape_filenames(other.escape_filenames)
 {
     if (other.expression)
         expression = other.expression->clone();
@@ -113,10 +72,17 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     data_types = other.data_types;
     sample_block = other.sample_block;
     granularity = other.granularity;
+    is_implicitly_created = other.is_implicitly_created;
+    escape_filenames = other.escape_filenames;
     return *this;
 }
 
-IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context)
+IndexDescription IndexDescription::getIndexFromAST(
+    const ASTPtr & definition_ast,
+    const ColumnsDescription & columns,
+    bool is_implicitly_created,
+    bool escape_filenames,
+    ContextPtr context)
 {
     const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition)
@@ -137,25 +103,10 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     result.name = index_definition->name;
     result.type = Poco::toLower(index_type->name);
     result.granularity = index_definition->granularity;
+    result.is_implicitly_created = is_implicitly_created;
+    result.escape_filenames = escape_filenames;
 
-    ASTPtr expr_list;
-    if (auto index_expression = index_definition->getExpression())
-    {
-        expr_list = extractKeyExpressionList(index_expression);
-
-        ReplaceAliasToExprVisitor::Data data{columns};
-        ReplaceAliasToExprVisitor{data}.visit(expr_list);
-
-        result.expression_list_ast = expr_list->clone();
-    }
-    else
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
-    }
-
-    auto syntax = TreeRewriter(context).analyze(expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-    result.expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
-    result.sample_block = result.expression->getSampleBlock();
+    result.initExpressionInfo(index_definition->getExpression(), columns, context);
 
     for (auto & elem : result.sample_block)
     {
@@ -168,23 +119,9 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
     if (index_type && index_type->arguments)
     {
-        bool is_text_index = index_type->name == "text";
-        bool is_legacy_text_index = index_type->name == "gin" || index_type->name == "inverted" || index_type->name == "full_text";
-        if ((is_text_index || is_legacy_text_index) && parseGinIndexArgumentsFromAST(index_type->arguments, result.arguments))
-            return result;
-
-        for (size_t i = 0; i < index_type->arguments->children.size(); ++i)
-        {
-            const auto & child = index_type->arguments->children[i];
-            if (const auto * ast_literal = child->as<ASTLiteral>(); ast_literal != nullptr)
-                /// E.g. INDEX index_name column_name TYPE vector_similarity('hnsw', 'f32')
-                result.arguments.emplace_back(ast_literal->value);
-            else if (const auto * ast_identifier = child->as<ASTIdentifier>(); ast_identifier != nullptr)
-                /// E.g. INDEX index_name column_name TYPE vector_similarity(hnsw, f32)
-                result.arguments.emplace_back(ast_identifier->name());
-            else
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only literals can be skip index arguments");
-        }
+        result.arguments = (index_type->name == TEXT_INDEX_NAME)
+            ? MergeTreeIndexText::parseArgumentsListFromAST(index_type->arguments)
+            : IndexDescription::parsePositionalArgumentsFromAST(index_type->arguments);
     }
 
     return result;
@@ -192,8 +129,59 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
 void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context)
 {
-    *this = getIndexFromAST(definition_ast, new_columns, context);
+    *this = getIndexFromAST(definition_ast, new_columns, is_implicitly_created, escape_filenames, context);
 }
+
+void IndexDescription::initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context)
+{
+    chassert(index_expression != nullptr);
+
+    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+
+    ASTPtr expr_list = extractKeyExpressionList(index_expression);
+    if (expr_list == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
+
+    ReplaceAliasToExprVisitor::Data data{columns};
+    ReplaceAliasToExprVisitor{data}.visit(expr_list);
+
+    expression_list_ast = expr_list->clone();
+
+    TreeRewriterResultPtr syntax = TreeRewriter(context).analyze(
+        expr_list,
+        columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns())
+    );
+
+    expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
+
+    sample_block = expression->getSampleBlock();
+}
+
+FieldVector IndexDescription::parsePositionalArgumentsFromAST(const ASTPtr & arguments)
+{
+    FieldVector result;
+
+    for (size_t i = 0; i < arguments->children.size(); ++i)
+    {
+        const auto & child = arguments->children[i];
+        if (const auto * ast_literal = child->as<ASTLiteral>(); ast_literal != nullptr)
+            /// E.g. INDEX index_name column_name TYPE vector_similarity('hnsw', 'f32')
+            result.emplace_back(ast_literal->value);
+        else if (const auto * ast_identifier = child->as<ASTIdentifier>(); ast_identifier != nullptr)
+            /// E.g. INDEX index_name column_name TYPE vector_similarity(hnsw, f32)
+            result.emplace_back(ast_identifier->name());
+        else
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Only literals can be skip index arguments");
+    }
+
+    return result;
+}
+
+bool IndexDescription::isSimpleSingleColumnIndex() const
+{
+    return expression_list_ast && expression_list_ast->children.size() == 1 && expression_list_ast->children[0]->as<ASTIdentifier>();
+}
+
 
 bool IndicesDescription::has(const String & name) const
 {
@@ -211,7 +199,22 @@ bool IndicesDescription::hasType(const String & type) const
     return false;
 }
 
-String IndicesDescription::toString() const
+String IndicesDescription::explicitToString() const
+{
+    if (empty())
+        return {};
+
+    ASTExpressionList list;
+    for (const auto & index : *this)
+    {
+        if (!index.isImplicitlyCreated())
+            list.children.push_back(index.definition_ast);
+    }
+
+    return list.formatWithSecretsOneLine();
+}
+
+String IndicesDescription::allToString() const
 {
     if (empty())
         return {};
@@ -224,7 +227,8 @@ String IndicesDescription::toString() const
 }
 
 
-IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context)
+IndicesDescription
+IndicesDescription::parse(const String & str, const ColumnsDescription & columns, bool escape_index_filenames, ContextPtr context)
 {
     IndicesDescription result;
     if (str.empty())
@@ -234,7 +238,8 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
     ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     for (const auto & index : list->children)
-        result.emplace_back(IndexDescription::getIndexFromAST(index, columns, context));
+        result.emplace_back(
+            IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, escape_index_filenames, context));
 
     return result;
 }
@@ -242,7 +247,7 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
 
 ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const ColumnsDescription & columns, ContextPtr context) const
 {
-    ASTPtr combined_expr_list = std::make_shared<ASTExpressionList>();
+    ASTPtr combined_expr_list = make_intrusive<ASTExpressionList>();
     for (const auto & index : *this)
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
@@ -260,4 +265,23 @@ Names IndicesDescription::getAllRegisteredNames() const
     }
     return result;
 }
+
+ASTPtr createImplicitMinMaxIndexAST(const String & column_name)
+{
+    auto index_type = makeASTFunction("minmax");
+    auto index_ast = make_intrusive<ASTIndexDeclaration>(
+        make_intrusive<ASTIdentifier>(column_name), index_type,
+        IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name);
+
+    index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+    return index_ast;
+}
+
+IndexDescription createImplicitMinMaxIndexDescription(
+    const String & column_name, const ColumnsDescription & columns, bool escape_index_filenames, ContextPtr context)
+{
+    auto index_ast = createImplicitMinMaxIndexAST(column_name);
+    return IndexDescription::getIndexFromAST(index_ast, columns, /* is_implicitly_created */ true, escape_index_filenames, context);
+}
+
 }

@@ -55,3 +55,18 @@ SELECT '-28.740781574102936', '7.667329672103986e-133';
 SELECT roundBankers(studentTTest(left, right).1, 6) as t_stat, roundBankers(studentTTest(left, right).2, 6) as p_value from student_ttest;
 SELECT roundBankers(studentTTest(0.95)(left, right).3, 6) as t_stat, roundBankers(studentTTest(0.95)(left, right).4, 6) as p_value from student_ttest;
 DROP TABLE IF EXISTS student_ttest;
+
+/* One-sample t-test against population mean 75 */
+DROP TABLE IF EXISTS onesample_ttest;
+CREATE TABLE onesample_ttest (value Float64) ENGINE = Memory;
+
+INSERT INTO onesample_ttest VALUES
+(83.96056984), (76.34082839), (85.77226246), (96.27635828), (75.1901595), (75.19035652),
+(96.95055379), (87.20921675), (72.36630737), (84.51072052), (72.43898769), (72.41124296),
+(80.90354726), (55.04063706), (57.30098601), (71.25254965), (65.84602656), (81.77096799),
+(67.10371109), (61.05235558), (95.58778523), (75.29068439), (78.81033846), (60.90302177),
+(71.46740731), (79.33107108), (64.18807707), (82.50837622), (70.79233572), (74.499675);
+
+SELECT '0.376423', '0.709342';
+SELECT roundBankers(studentTTestOneSample(value, 75).1, 6) as t_stat, roundBankers(studentTTestOneSample(value, 75).2, 6) as p_value from onesample_ttest;
+DROP TABLE IF EXISTS onesample_ttest;

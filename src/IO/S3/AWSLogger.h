@@ -29,6 +29,8 @@ public:
 
     void Flush() final {}
 
+    void vaLog(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, va_list args) final;
+
 private:
     LoggerPtr default_logger;
     bool enable_s3_requests_logging;

@@ -19,6 +19,7 @@ USE_ASYNC_INSERT=${USE_ASYNC_INSERT:0}
 BUGFIX_VALIDATE_CHECK=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
+REMOTE_DATABASE_DISK=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -39,6 +40,8 @@ while [[ "$#" -gt 0 ]]; do
         --bugfix-validation) BUGFIX_VALIDATE_CHECK=1 ;;
 
         --no-keeper-inject-auth) KEEPER_INJECT_AUTH=0 ;;
+        --remote-database-disk) REMOTE_DATABASE_DISK=1 ;;
+        --no-remote-database-disk) REMOTE_DATABASE_DISK=0 ;;
 
         --encrypted-storage) USE_ENCRYPTED_STORAGE=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
@@ -102,6 +105,9 @@ ln -sf $SRC_PATH/config.d/merge_tree_old_dirs_cleanup.xml $DEST_SERVER_PATH/conf
 ln -sf $SRC_PATH/config.d/test_cluster_with_incorrect_pw.xml $DEST_SERVER_PATH/config.d/
 # copy to not update original file later on in the script
 cp $SRC_PATH/config.d/keeper_port.xml $DEST_SERVER_PATH/config.d/
+if check_clickhouse_version 25.10; then
+    ln -sf $SRC_PATH/config.d/keeper_max_request_size.xml $DEST_SERVER_PATH/config.d/
+fi
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/lost_forever_check.xml $DEST_SERVER_PATH/config.d/
@@ -132,8 +138,10 @@ ln -sf $SRC_PATH/config.d/ssl_certs.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_cache_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_read_prefetches_log.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/session_log.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/background_schedule_pool_log.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/system_unfreeze.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/nlp.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/nb_models.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/forbidden_headers.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_keeper_map.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/custom_disks_base_path.xml $DEST_SERVER_PATH/config.d/
@@ -148,9 +156,17 @@ ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/memory_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_03008.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/memory_access.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/jemalloc_flush_profile.yaml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/allow_impersonate_user.xml $DEST_SERVER_PATH/config.d/
+
+if [ "$FAST_TEST" != "1" ]; then
+    ln -sf $SRC_PATH/config.d/abort_on_logical_error.yaml $DEST_SERVER_PATH/config.d/
+fi
 
 # Not supported with fasttest.
 if [ "$FAST_TEST" != "1" ]; then
@@ -176,6 +192,9 @@ ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
+if check_clickhouse_version 26.1; then
+    ln -sf $SRC_PATH/users.d/distributed_index_analysis.yaml $DEST_SERVER_PATH/users.d/
+fi
 if [[ $(is_fast_build) == 1 ]]; then
     ln -sf $SRC_PATH/users.d/limits_fast.yaml $DEST_SERVER_PATH/users.d/
 fi
@@ -208,6 +227,10 @@ ln -sf $SRC_PATH/regions_names_es.txt $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/ext-en.txt $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/ext-ru.txt $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/lem-en.bin $DEST_SERVER_PATH/config.d/
+
+ln -sf $SRC_PATH/nb_model_sentiment_token_1.bin $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/nb_model_lang_codepoint_1.bin $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/nb_model_lang_byte_2.bin $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/server.key $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/server.crt $DEST_SERVER_PATH/
@@ -268,7 +291,7 @@ if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; th
     ln -sf $SRC_PATH/users.d/database_ordinary.xml $DEST_SERVER_PATH/users.d/
 fi
 
-object_key_types_options=("generate-suffix" "generate-full-key" "generate-template-key")
+object_key_types_options=("generate-full-key" "generate-template-key")
 object_key_type="${object_key_types_options[0]}"
 
 if [[ -n "$RANDOMIZE_OBJECT_KEY_TYPE" ]] && [[ "$RANDOMIZE_OBJECT_KEY_TYPE" -eq 1 ]]; then
@@ -279,15 +302,10 @@ function setup_storage_policy()
 {
     case $object_key_type in
         "generate-full-key")
-            ln -sf $SRC_PATH/config.d/storage_metadata_with_full_object_key.xml $DEST_SERVER_PATH/config.d/
             ln -sf $SRC_PATH/config.d/s3_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
             ;;
         "generate-template-key")
-            ln -sf $SRC_PATH/config.d/storage_metadata_with_full_object_key.xml $DEST_SERVER_PATH/config.d/
             ln -sf $SRC_PATH/config.d/s3_storage_policy_with_template_object_key.xml $DEST_SERVER_PATH/config.d/s3_storage_policy_by_default.xml
-            ;;
-        "generate-suffix"|*)
-            ln -sf $SRC_PATH/config.d/s3_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
             ;;
     esac
 }
@@ -325,9 +343,12 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/storage_conf_02963.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02961.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_03517.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/storage_conf_03755.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/users.d/s3_cache.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/users.d/s3_cache_new.xml $DEST_SERVER_PATH/users.d/
 fi
+
+ln -sf $SRC_PATH/config.d/storage_conf_local.xml $DEST_SERVER_PATH/config.d/
 
 if [[ "$USE_PARALLEL_REPLICAS" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/users.d/
@@ -343,6 +364,7 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
     rm $DEST_SERVER_PATH/config.d/zookeeper.xml
     rm $DEST_SERVER_PATH/config.d/keeper_port.xml
+    rm $DEST_SERVER_PATH/config.d/keeper_max_request_size.xml
 
     # There is a bug in config reloading, so we cannot override macros using --macros.replica r2
     # And we have to copy configs...
@@ -391,9 +413,7 @@ if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
     remove_keeper_config "use_xid_64" "[[:digit:]]\+"
 fi
 
-# Enable remote_database_disk in DEBUG and ASAN build
-build_opts=$(clickhouse local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-if [[ "$build_opts" != *NDEBUG* && "$build_opts" == *-fsanitize=address* ]]; then
+if [[ $REMOTE_DATABASE_DISK -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
     echo "Installed remote_database_disk.xml config"
 fi

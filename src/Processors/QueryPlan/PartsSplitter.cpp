@@ -51,7 +51,6 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         case TypeIndex::Float64:
         case TypeIndex::BFloat16:
         case TypeIndex::Nullable:
-        case TypeIndex::ObjectDeprecated:
         case TypeIndex::Object:
         case TypeIndex::Variant:
         case TypeIndex::Dynamic:
@@ -847,7 +846,7 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
             [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
     }
 
-    return {std::move(result_layers), std::move(borders)};
+    return {std::move(result_layers), std::move(borders), in_reverse_order};
 }
 
 
@@ -876,7 +875,7 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
             if (type->isNullable())
             {
                 pks_ast.push_back(makeASTFunction("isNull", pk_ast));
-                values_ast.push_back(std::make_shared<ASTLiteral>(values[i].isNull() ? 1 : 0));
+                values_ast.push_back(make_intrusive<ASTLiteral>(values[i].isNull() ? 1 : 0));
                 pk_ast = makeASTFunction("assumeNotNull", pk_ast);
             }
 
@@ -890,12 +889,12 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
             }
             else
             {
-                ASTPtr component_ast = std::make_shared<ASTLiteral>(values[i]);
+                ASTPtr component_ast = make_intrusive<ASTLiteral>(values[i]);
                 auto decayed_type = removeNullable(removeLowCardinality(primary_key.data_types.at(i)));
 
                 // Values of some types (e.g. Date, DateTime) are stored in columns as numbers and we get them as just numbers from the index.
                 // So we need an explicit Cast for them.
-                component_ast = makeASTFunction("cast", std::move(component_ast), std::make_shared<ASTLiteral>(decayed_type->getName()));
+                component_ast = makeASTFunction("cast", std::move(component_ast), make_intrusive<ASTLiteral>(decayed_type->getName()));
 
                 values_ast.push_back(std::move(component_ast));
             }
@@ -947,6 +946,14 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
         const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
+
+        /// The optimization's logic needs the final mark to get the primary key upper bound of this part.
+        /// The final mark may not be written under some situations e.g index_granularity_bytes = 0.
+        if (!index_granularity->hasFinalMark())
+        {
+            return skip_and_return_all_part_ranges();
+        }
+
         for (const auto & range : ranges_in_data_parts[part_index].ranges)
         {
             const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
@@ -1168,8 +1175,9 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     if (max_layers <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
-    auto split_ranges = splitIntersectingPartsRangesIntoLayers(intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
-    result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, in_reverse_order, context);
+    auto split_ranges = splitIntersectingPartsRangesIntoLayers(
+        intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
+    result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, context);
     return result;
 }
 
@@ -1177,10 +1185,9 @@ Pipes readByLayers(
     SplitPartsByRanges split_ranges,
     const KeyDescription & primary_key,
     ReadingInOrderStepGetter && step_getter,
-    bool in_reverse_order,
     ContextPtr context)
 {
-    auto && [layers, borders] = std::move(split_ranges);
+    auto && [layers, borders, in_reverse_order] = std::move(split_ranges);
     auto filters = buildFilters(primary_key, borders, in_reverse_order);
     Pipes merging_pipes(layers.size());
 

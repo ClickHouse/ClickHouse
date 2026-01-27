@@ -26,14 +26,14 @@ public:
         const IDataType & new_type,
         const Settings & new_settings) const override;
 
-    void serialializeKindBinary(WriteBuffer & out) const override;
+    void serialializeKindStackBinary(WriteBuffer & out) const override;
     void deserializeFromKindsBinary(ReadBuffer & in) override;
 
     void toJSON(Poco::JSON::Object & object) const override;
     void fromJSON(const Poco::JSON::Object & object) override;
 
     const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }
-    ISerialization::Kind getElementKind(size_t i) const { return elems[i]->getKind(); }
+    ISerialization::KindStack getElementKindStack(size_t i) const { return elems[i]->getKindStack(); }
 
 private:
     MutableSerializationInfos elems;

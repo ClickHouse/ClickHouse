@@ -21,8 +21,8 @@ for option in "${options[@]}"; do
     ${CLICKHOUSE_CURL} -sS "${urls[@]}" > /dev/null
 done
 
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d @- <<< "SYSTEM FLUSH LOGS system.query_log"
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d @- <<< "
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS system.query_log"
+$CLICKHOUSE_CLIENT -q "
     SELECT formatQuerySingleLine(query), replace(query_id, '$CLICKHOUSE_TEST_UNIQUE_NAME-', ''), ProfileEvents['NetworkSendBytes'] > 0
     FROM system.query_log
     WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id LIKE '$CLICKHOUSE_TEST_UNIQUE_NAME%' AND type != 'QueryStart'

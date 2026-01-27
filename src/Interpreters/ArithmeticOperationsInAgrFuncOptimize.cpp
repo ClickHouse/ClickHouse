@@ -38,7 +38,9 @@ ASTPtr exchangeExtractFirstArgument(const String & func_name, const ASTFunction 
     new_args.push_back(child_func.arguments->children[0]);
     new_args.push_back(new_child);
 
-    return makeASTFunction(child_func.name, new_args);
+    auto res = makeASTFunction(child_func.name, new_args);
+    res->is_operator = child_func.is_operator;
+    return res;
 }
 
 ASTPtr exchangeExtractSecondArgument(const String & func_name, const ASTFunction & child_func)
@@ -52,7 +54,9 @@ ASTPtr exchangeExtractSecondArgument(const String & func_name, const ASTFunction
     new_args.push_back(new_child);
     new_args.push_back(child_func.arguments->children[1]);
 
-    return makeASTFunction(child_func.name, new_args);
+    auto res = makeASTFunction(child_func.name, new_args);
+    res->is_operator = child_func.is_operator;
+    return res;
 }
 
 Field zeroField(const Field & value)

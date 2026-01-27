@@ -1,20 +1,21 @@
 #include <Backups/BackupsWorker.h>
 
 #include <Backups/BackupConcurrencyCheck.h>
+#include <Backups/BackupCoordinationLocal.h>
+#include <Backups/BackupCoordinationOnCluster.h>
+#include <Backups/BackupCoordinationStage.h>
+#include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupFactory.h>
+#include <Backups/BackupInMemory.h>
 #include <Backups/BackupInfo.h>
 #include <Backups/BackupSettings.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/IBackupEntry.h>
-#include <Backups/BackupEntriesCollector.h>
-#include <Backups/BackupCoordinationStage.h>
-#include <Backups/BackupCoordinationOnCluster.h>
-#include <Backups/BackupCoordinationLocal.h>
-#include <Backups/BackupInMemory.h>
-#include <Backups/RestoreCoordinationOnCluster.h>
 #include <Backups/RestoreCoordinationLocal.h>
+#include <Backups/RestoreCoordinationOnCluster.h>
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Backups/getBackupDataFileName.h>
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
 #endif
@@ -60,6 +61,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsUInt64 readonly;
     extern const SettingsBool s3_disable_checksum;
 }
 
@@ -70,6 +72,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
@@ -163,6 +166,7 @@ namespace
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = false;
         read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
+        read_settings.read_through_distributed_cache = false;
         return read_settings;
     }
 
@@ -358,7 +362,7 @@ struct BackupsWorker::BackupStarter
 {
     BackupsWorker & backups_worker;
     LoggerPtr log;
-    std::shared_ptr<ASTBackupQuery> backup_query;
+    boost::intrusive_ptr<ASTBackupQuery> backup_query;
     ContextPtr query_context; /// We have to keep `query_context` until the end of the operation because a pointer to it is stored inside the ThreadGroup we're using.
     ContextMutablePtr backup_context;
     BackupSettings backup_settings;
@@ -375,7 +379,7 @@ struct BackupsWorker::BackupStarter
     BackupStarter(BackupsWorker & backups_worker_, const ASTPtr & query_, const ContextPtr & context_)
         : backups_worker(backups_worker_)
         , log(backups_worker.log)
-        , backup_query(std::static_pointer_cast<ASTBackupQuery>(query_->clone()))
+        , backup_query(boost::static_pointer_cast<ASTBackupQuery>(query_->clone()))
         , query_context(context_)
         , backup_context(Context::createCopy(query_context))
     {
@@ -388,6 +392,12 @@ struct BackupsWorker::BackupStarter
         backup_info = BackupInfo::fromAST(*backup_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_backup = backup_settings.internal;
+
+        /// The "internal" option can only be used by a query that was initiated by another query (e.g., ON CLUSTER query).
+        /// It should not be allowed for an initial query explicitly specified by a user.
+        if (is_internal_backup && (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY))
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
+
         on_cluster = !backup_query->cluster.empty() || is_internal_backup;
 
         if (!backup_settings.backup_uuid)
@@ -402,6 +412,14 @@ struct BackupsWorker::BackupStarter
         /// We should avoid a collision if both internal and non-internal backups are on the same host.
         if (is_internal_backup)
             backup_id += "-internal-" + backup_settings.host_id;
+
+        if (backup_settings.data_file_name_generator == BackupDataFileNameGeneratorType::FirstFileName)
+            backup_settings.data_file_name_generator = SettingFieldBackupDataFileNameGeneratorTypeTraits::fromString(
+                backup_context->getConfigRef().getString("backups.data_file_name_generator", ""));
+
+        if (!backup_settings.data_file_name_prefix_length)
+            backup_settings.data_file_name_prefix_length
+                = backup_context->getConfigRef().getUInt64("backups.data_file_name_prefix_length", 3);
 
         /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
         auto process_list_element = backup_context->getProcessListElement();
@@ -452,13 +470,25 @@ struct BackupsWorker::BackupStarter
             cluster = backup_context->getCluster(backup_query->cluster);
             backup_settings.cluster_host_ids = cluster->getHostIDs();
         }
+
+        /// Check access rights before opening the backup destination (e.g., S3).
+        /// This ensures we fail fast with a proper ACCESS_DENIED error instead of trying to connect to external storage first.
+        /// For ON CLUSTER queries, access rights are checked in executeDDLQueryOnCluster() before distributing the query.
+        if (!on_cluster)
+        {
+            backup_query->setCurrentDatabase(backup_context->getCurrentDatabase());
+            auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
+            query_context->checkAccess(required_access);
+        }
+
+        chassert(backup_settings.data_file_name_prefix_length);
         backup_coordination = backups_worker.makeBackupCoordination(on_cluster, backup_settings, backup_context);
         backup_coordination->startup();
 
         chassert(!backup);
         backup = backups_worker.openBackupForWriting(backup_info, backup_settings, backup_coordination, backup_context);
 
-        backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context, query_context,
+        backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context,
                                 on_cluster, cluster);
 
         if (!is_internal_backup)
@@ -540,7 +570,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
     try
     {
         auto thread_pool_id = starter->is_internal_backup ? ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP: ThreadPoolId::ASYNC_BACKGROUND_BACKUP;
-        String thread_name = starter->is_internal_backup ? "BackupAsyncInt" : "BackupAsync";
+        ThreadName thread_name = starter->is_internal_backup ? ThreadName::BACKUP_ASYNC_INTERNAL : ThreadName::BACKUP_ASYNC;
         auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
         schedule([starter]
@@ -566,7 +596,11 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
 }
 
 
-BackupMutablePtr BackupsWorker::openBackupForWriting(const BackupInfo & backup_info, const BackupSettings & backup_settings, std::shared_ptr<IBackupCoordination> backup_coordination, const ContextPtr & context) const
+BackupMutablePtr BackupsWorker::openBackupForWriting(
+    const BackupInfo & backup_info,
+    const BackupSettings & backup_settings,
+    std::shared_ptr<IBackupCoordination> backup_coordination,
+    const ContextPtr & context) const
 {
     LOG_TRACE(log, "Opening backup for writing");
     BackupFactory::CreateParams backup_create_params;
@@ -580,6 +614,9 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(const BackupInfo & backup_i
     backup_create_params.s3_storage_class = backup_settings.s3_storage_class;
     backup_create_params.is_internal_backup = backup_settings.internal;
     backup_create_params.is_lightweight_snapshot = backup_settings.experimental_lightweight_snapshot;
+    backup_create_params.data_file_name_generator = backup_settings.data_file_name_generator;
+    chassert(backup_settings.data_file_name_prefix_length);
+    backup_create_params.data_file_name_prefix_length = *backup_settings.data_file_name_prefix_length;
     backup_create_params.backup_coordination = backup_coordination;
     backup_create_params.backup_uuid = backup_settings.backup_uuid;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
@@ -598,12 +635,11 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(const BackupInfo & backup_i
 
 void BackupsWorker::doBackup(
     BackupMutablePtr backup,
-    const std::shared_ptr<ASTBackupQuery> & backup_query,
+    const boost::intrusive_ptr<ASTBackupQuery> & backup_query,
     const OperationID & backup_id,
     const BackupSettings & backup_settings,
     std::shared_ptr<IBackupCoordination> backup_coordination,
     ContextMutablePtr context,
-    const ContextPtr & query_context,
     bool on_cluster,
     const ClusterPtr & cluster)
 {
@@ -618,17 +654,13 @@ void BackupsWorker::doBackup(
 
     bool is_internal_backup = backup_settings.internal;
 
-    /// Checks access rights if this is not ON CLUSTER query.
-    /// (If this is ON CLUSTER query executeDDLQueryOnCluster() will check access rights later.)
-    auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
-    if (!on_cluster)
-        query_context->checkAccess(required_access);
-
     maybeSleepForTesting();
 
     /// Write the backup.
     if (on_cluster && !is_internal_backup)
     {
+        auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
+
         /// Send the BACKUP query to other hosts.
         backup_settings.copySettingsToQuery(*backup_query);
         sendQueryToOtherHosts(*backup_query, cluster, backup_settings.shard_num, backup_settings.replica_num,
@@ -648,8 +680,13 @@ void BackupsWorker::doBackup(
         BackupEntries backup_entries;
         {
             BackupEntriesCollector backup_entries_collector(
-                backup_query->elements, backup_settings, backup_coordination,
-                read_settings, context, getThreadPool(ThreadPoolId::BACKUP));
+                backup_query->elements,
+                backup_settings,
+                backup_id,
+                backup_coordination,
+                read_settings,
+                context,
+                getThreadPool(ThreadPoolId::BACKUP));
             backup_entries = backup_entries_collector.run();
         }
 
@@ -739,7 +776,7 @@ void BackupsWorker::writeBackupEntries(
         std::shuffle(writing_order.begin(), writing_order.end(), thread_local_rng);
     }
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::BACKUP_WORKER);
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {
         if (failed)
@@ -789,7 +826,7 @@ void BackupsWorker::writeBackupEntries(
             continue;
         }
 
-        runner(std::move(job));
+        runner.enqueueAndKeepTrack(std::move(job));
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
@@ -800,7 +837,7 @@ struct BackupsWorker::RestoreStarter
 {
     BackupsWorker & backups_worker;
     LoggerPtr log;
-    std::shared_ptr<ASTBackupQuery> restore_query;
+    boost::intrusive_ptr<ASTBackupQuery> restore_query;
     ContextPtr query_context; /// We have to keep `query_context` until the end of the operation because a pointer to it is stored inside the ThreadGroup we're using.
     ContextMutablePtr restore_context;
     RestoreSettings restore_settings;
@@ -816,7 +853,7 @@ struct BackupsWorker::RestoreStarter
     RestoreStarter(BackupsWorker & backups_worker_, const ASTPtr & query_, const ContextPtr & context_)
         : backups_worker(backups_worker_)
         , log(backups_worker.log)
-        , restore_query(std::static_pointer_cast<ASTBackupQuery>(query_->clone()))
+        , restore_query(boost::static_pointer_cast<ASTBackupQuery>(query_->clone()))
         , query_context(context_)
         , restore_context(Context::createCopy(query_context))
     {
@@ -829,6 +866,19 @@ struct BackupsWorker::RestoreStarter
         backup_info = BackupInfo::fromAST(*restore_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_restore = restore_settings.internal;
+
+        /// The "internal" option can only be used by a query that was initiated by another query (e.g., ON CLUSTER query).
+        /// It should not be allowed for an initial query explicitly specified by a user.
+        if (is_internal_restore && (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY))
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
+
+        /// RESTORE is a write operation, it should be forbidden in strict readonly mode (readonly=1).
+        /// Note: readonly=2 allows changing settings but still restricts writes - however it's set automatically
+        /// by the HTTP interface for GET requests (to protect against accidental writes), so we only block readonly=1
+        /// which is explicitly set by the user to enforce read-only mode.
+        if (query_context->getSettingsRef()[Setting::readonly] == 1)
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Cannot execute RESTORE in readonly mode");
+
         on_cluster = !restore_query->cluster.empty() || is_internal_restore;
 
         if (!restore_settings.restore_uuid)
@@ -943,7 +993,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startRestoring(const A
     try
     {
         auto thread_pool_id = starter->is_internal_restore ? ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_RESTORE : ThreadPoolId::ASYNC_BACKGROUND_RESTORE;
-        String thread_name = starter->is_internal_restore ? "RestoreAsyncInt" : "RestoreAsync";
+        ThreadName thread_name = starter->is_internal_restore ? ThreadName::BACKUP_ASYNC_INTERNAL : ThreadName::BACKUP_ASYNC;
         auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
         schedule([starter]
@@ -991,7 +1041,7 @@ BackupPtr BackupsWorker::openBackupForReading(const BackupInfo & backup_info, co
 }
 
 void BackupsWorker::doRestore(
-    const std::shared_ptr<ASTBackupQuery> & restore_query,
+    const boost::intrusive_ptr<ASTBackupQuery> & restore_query,
     const OperationID & restore_id,
     const BackupInfo & backup_info,
     RestoreSettings restore_settings,
@@ -1091,8 +1141,7 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
 {
     if (!on_cluster)
     {
-        return std::make_shared<BackupCoordinationLocal>(
-            !backup_settings.deduplicate_files, allow_concurrent_backups, *concurrency_counters);
+        return std::make_shared<BackupCoordinationLocal>(backup_settings, allow_concurrent_backups, *concurrency_counters);
     }
 
     bool is_internal_backup = backup_settings.internal;
@@ -1108,12 +1157,12 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
     String current_host = is_internal_backup ? backup_settings.host_id : String{BackupCoordinationOnCluster::kInitiator};
 
     auto thread_pool_id = is_internal_backup ? ThreadPoolId::ON_CLUSTER_COORDINATION_INTERNAL_BACKUP : ThreadPoolId::ON_CLUSTER_COORDINATION_BACKUP;
-    String thread_name = is_internal_backup ? "BackupCoordInt" : "BackupCoord";
+    auto thread_name = is_internal_backup ? ThreadName::BACKUP_COORDINATION_INTERNAL : ThreadName::BACKUP_COORDINATION;
     auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
+    chassert(backup_settings.backup_uuid);
     return std::make_shared<BackupCoordinationOnCluster>(
-        *backup_settings.backup_uuid,
-        !backup_settings.deduplicate_files,
+        backup_settings,
         root_zk_path,
         get_zookeeper,
         keeper_settings,
@@ -1146,7 +1195,7 @@ BackupsWorker::makeRestoreCoordination(bool on_cluster, const RestoreSettings & 
     String current_host = is_internal_restore ? restore_settings.host_id : String{RestoreCoordinationOnCluster::kInitiator};
 
     auto thread_pool_id = is_internal_restore ? ThreadPoolId::ON_CLUSTER_COORDINATION_INTERNAL_RESTORE : ThreadPoolId::ON_CLUSTER_COORDINATION_RESTORE;
-    String thread_name = is_internal_restore ? "RestoreCoordInt" : "RestoreCoord";
+    auto thread_name = is_internal_restore ? ThreadName::RESTORE_COORDINATION_INTERNAL : ThreadName::RESTORE_COORDINATION;
     auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
     return std::make_shared<RestoreCoordinationOnCluster>(

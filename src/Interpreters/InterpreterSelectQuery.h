@@ -130,8 +130,17 @@ public:
 
     static bool isQueryWithFinal(const SelectQueryInfo & info);
 
+    struct LimitInfo
+    {
+        UInt64 limit_length{0};
+        UInt64 limit_offset{0};
+        Float64 fractional_limit{0};
+        Float64 fractional_offset{0};
+        bool is_limit_length_negative{false};
+        bool is_limit_offset_negative{false};
+    };
 
-    static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
+    static LimitInfo getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
 
     /// Adjust the parallel replicas settings (enabled, disabled) based on the query analysis
     bool adjustParallelReplicasAfterAnalysis();
@@ -176,7 +185,6 @@ private:
     void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final, bool has_grouping_sets);
     void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter, bool overflow_row, bool final);
     void executeHaving(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter);
-    static void executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const std::string & description);
     /// FIXME should go through ActionsDAG to behave as a proper function
     void executeWindow(QueryPlan & query_plan);
     void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info);
@@ -220,7 +228,7 @@ private:
     ExpressionAnalysisResult analysis_result;
     /// For row-level security.
     RowPolicyFilterPtr row_policy_filter;
-    FilterDAGInfoPtr filter_info;
+    FilterDAGInfoPtr row_policy_info;
 
     /// For additional_filter setting.
     FilterDAGInfoPtr additional_filter_info;

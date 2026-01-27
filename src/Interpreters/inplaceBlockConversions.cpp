@@ -19,7 +19,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -34,7 +33,6 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
 
-
 namespace DB
 {
 
@@ -43,9 +41,10 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
 }
 
-namespace ErrorCode
+namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -83,13 +82,13 @@ void addDefaultRequiredExpressionsRecursively(
         RequiredSourceColumnsVisitor::Data columns_context;
         RequiredSourceColumnsVisitor(columns_context).visit(column_default_expr);
         NameSet required_columns_names = columns_context.requiredColumns();
-        auto required_type = std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName());
+        auto required_type = make_intrusive<ASTLiteral>(columns.get(required_column_name).type->getName());
 
         auto expr = makeASTFunction("_CAST", column_default_expr, required_type);
 
         if (is_column_in_query && convert_null_to_default)
         {
-            expr = makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column_name), std::move(expr));
+            expr = makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column_name), std::move(expr));
             /// ifNull does not respect LowCardinality.
             /// It may be fixed later or re-implemented properly for identical types.
             expr = makeASTFunction("_CAST", std::move(expr), required_type);
@@ -127,12 +126,12 @@ void addDefaultRequiredExpressionsRecursively(
         /// This column is required, but doesn't have default expression, so lets use "default default"
         const auto & column = columns.get(required_column_name);
         auto default_value = column.type->getDefault();
-        ASTPtr expr = std::make_shared<ASTLiteral>(default_value);
+        ASTPtr expr = make_intrusive<ASTLiteral>(default_value);
         if (is_column_in_query && convert_null_to_default)
         {
             /// We should CAST default value to required type, otherwise the result of ifNull function can be different type.
-            auto cast_expr = makeASTFunction("_CAST", std::move(expr), std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName()));
-            expr = makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column_name), std::move(cast_expr));
+            auto cast_expr = makeASTFunction("_CAST", std::move(expr), make_intrusive<ASTLiteral>(columns.get(required_column_name).type->getName()));
+            expr = makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column_name), std::move(cast_expr));
         }
         default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
         added_columns.emplace(required_column_name);
@@ -141,7 +140,7 @@ void addDefaultRequiredExpressionsRecursively(
 
 ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns, bool null_as_default)
 {
-    ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
+    ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
 
     NameSet added_columns;
     for (const auto & column : required_columns)
@@ -153,9 +152,9 @@ ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList &
     return default_expr_list;
 }
 
-ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & required_columns)
+ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & required_columns, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
 {
-    ASTPtr conversion_expr_list = std::make_shared<ASTExpressionList>();
+    ASTPtr conversion_expr_list = make_intrusive<ASTExpressionList>();
     for (const auto & required_column : required_columns)
     {
         if (!block.has(required_column.name))
@@ -165,8 +164,34 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
         if (column_in_block.type->equals(*required_column.type))
             continue;
 
+        /// Converting a column from nullable to non-nullable may cause 'Cannot convert column' error when NULL values exist.
+        /// Users should specify DEFAULT expression in ALTER MODIFY COLUMN statement to replace NULL values.
+        if (isNullableOrLowCardinalityNullable(column_in_block.type) && !isNullableOrLowCardinalityNullable(required_column.type))
+        {
+            /// Before executing ALTER we explicitly check that user provided DEFAULT value to make it a conscious decision.
+            /// However, we may still need to use type's default value in some cases
+            /// (e.g. if a second ALTER removes the DEFAULT, but first is not completed).
+            ASTPtr default_value;
+            if (auto it = column_defaults.find(required_column.name); it != column_defaults.end())
+                default_value = it->second.expression;
+            else if (!forbid_default_defaults)
+                default_value = make_intrusive<ASTLiteral>(required_column.type->getDefault());
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot convert column '{}' from nullable type {} to non-nullable type {}. "
+                    "Please specify `DEFAULT` expression in ALTER MODIFY COLUMN statement",
+                    required_column.name, column_in_block.type->getName(), required_column.type->getName());
+
+            auto convert_func = makeASTFunction("_CAST",
+                makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column.name), default_value),
+                make_intrusive<ASTLiteral>(required_column.type->getName()));
+
+            conversion_expr_list->children.emplace_back(setAlias(convert_func, required_column.name));
+            continue;
+        }
+
         auto cast_func = makeASTFunction(
-            "_CAST", std::make_shared<ASTIdentifier>(required_column.name), std::make_shared<ASTLiteral>(required_column.type->getName()));
+            "_CAST", make_intrusive<ASTIdentifier>(required_column.name), make_intrusive<ASTLiteral>(required_column.type->getName()));
 
         conversion_expr_list->children.emplace_back(setAlias(cast_func, required_column.name));
 
@@ -202,7 +227,10 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     auto execution_context = Context::createCopy(context);
     auto expression = buildQueryTree(expr_list, execution_context);
 
-    ColumnsDescription fake_column_descriptions(header.getNamesAndTypesList());
+    ColumnsDescription fake_column_descriptions{};
+    // Add columns from index to ensure names are unique in case of duplicated columns.
+    for (const auto & column : header.getIndexByName())
+        fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type), /*after_column=*/ "", /*first=*/false, /*add_subcolumns=*/false);
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
@@ -239,9 +267,9 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 }
 }
 
-void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context)
+void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
 {
-    ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns);
+    ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns, column_defaults, forbid_default_defaults);
     if (conversion_expr_list->children.empty())
         return;
 
@@ -296,13 +324,17 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
         if (res_columns[i] == nullptr || isColumnConst(*res_columns[i]))
             continue;
 
-        auto serialization = IDataType::getSerialization(*available_column);
+        /// Small hack. Currently sparse serialization is not supported with Arrays.
+        if (res_columns[i]->isSparse())
+            continue;
+
+        auto serialization = available_column->type->getSerialization(*available_column->type->getSerializationInfo(*res_columns[i]));
         serialization->enumerateStreams([&](const auto & subpath)
         {
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
                 return;
 
-            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath);
+            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath, {});
             const auto & current_offsets_column = subpath.back().data.column;
 
             /// If for some reason multiple offsets columns are present
@@ -421,10 +453,10 @@ void fillMissingColumns(
         const auto * array_type = typeid_cast<const DataTypeArray *>(requested_column->type.get());
         if (array_type && !offsets_columns.empty())
         {
-            num_dimensions = getNumberOfDimensions(*array_type);
+            num_dimensions = array_type->getNumberOfDimensions();
             current_offsets.resize(num_dimensions);
 
-            auto serialization = IDataType::getSerialization(*requested_column);
+            SerializationPtr serialization = IDataType::getSerialization(*requested_column);
             serialization->enumerateStreams([&](const auto & subpath)
             {
                 if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
@@ -435,7 +467,7 @@ void fillMissingColumns(
                 if (level >= num_dimensions)
                     return;
 
-                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath);
+                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath, {});
                 auto it = offsets_columns.find(stream_name);
                 if (it != offsets_columns.end())
                     current_offsets[level] = it->second;
@@ -454,7 +486,7 @@ void fillMissingColumns(
         if (!current_offsets.empty())
         {
             Names tuple_elements;
-            auto serialization = IDataType::getSerialization(*requested_column);
+            SerializationPtr serialization = IDataType::getSerialization(*requested_column);
 
             /// For Nested columns collect names of tuple elements and skip them while getting the base type of array.
             IDataType::forEachSubcolumn([&](const auto & path, const auto &, const auto &)

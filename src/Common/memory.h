@@ -6,6 +6,7 @@
 #include <Common/AllocationInterceptors.h>
 #include <Common/Concepts.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 
 #include "config.h"
@@ -71,7 +72,7 @@ inline ALWAYS_INLINE void * newNoExcept(std::size_t size) noexcept
 
 inline ALWAYS_INLINE void * newNoExcept(std::size_t size, std::align_val_t align) noexcept
 {
-    return __real_aligned_alloc(static_cast<size_t>(align), size);
+    return __real_aligned_alloc(static_cast<size_t>(align), alignUp(size, static_cast<size_t>(align)));
 }
 
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
@@ -135,6 +136,17 @@ inline ALWAYS_INLINE size_t trackMemory(std::size_t size, AllocationTrace & trac
     return actual_size;
 }
 
+/// We cannot throw from C API
+template <std::same_as<std::align_val_t>... TAlign>
+requires DB::OptionalArgument<TAlign...>
+inline ALWAYS_INLINE size_t trackMemoryFromC(std::size_t size, AllocationTrace & trace, TAlign... align)
+{
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    std::size_t actual_size = getActualAllocationSize(size, align...);
+    trace = CurrentMemoryTracker::allocNoThrow(actual_size);
+    return actual_size;
+}
+
 template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], AllocationTrace & trace, std::size_t size [[maybe_unused]] = 0, TAlign... align [[maybe_unused]]) noexcept
@@ -160,6 +172,9 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
         /// It's innaccurate resource free for sanitizers. malloc_usable_size() result is greater or equal to allocated size.
         else
             actual_size = malloc_usable_size(ptr);
+#    elif defined(OS_DARWIN)
+        else
+            actual_size = malloc_size(ptr);
 #    endif
 #endif
         trace = CurrentMemoryTracker::free(actual_size);

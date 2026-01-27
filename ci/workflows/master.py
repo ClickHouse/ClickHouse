@@ -12,6 +12,7 @@ workflow = Workflow.Config(
     jobs=[
         *JobConfigs.tidy_build_arm_jobs,
         *JobConfigs.build_jobs,
+        *JobConfigs.release_build_jobs,
         *[
             job.set_dependency(
                 REGULAR_BUILD_NAMES + [JobConfigs.tidy_build_arm_jobs[0].name]
@@ -19,23 +20,24 @@ workflow = Workflow.Config(
             for job in JobConfigs.special_build_jobs
         ],
         *JobConfigs.unittest_jobs,
-        JobConfigs.docker_sever,
+        JobConfigs.docker_server,
         JobConfigs.docker_keeper,
-        *JobConfigs.install_check_jobs,
+        *JobConfigs.install_check_master_jobs,
         *JobConfigs.compatibility_test_jobs,
         *JobConfigs.functional_tests_jobs,
         *JobConfigs.functional_tests_jobs_azure_master_only,
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
-        *JobConfigs.functional_tests_jobs_coverage,
         *JobConfigs.stress_test_jobs,
-        *JobConfigs.stress_test_azure_master_jobs,
+        *JobConfigs.stress_test_azure_jobs,
         *JobConfigs.ast_fuzzer_jobs,
         *JobConfigs.buzz_fuzzer_jobs,
         *JobConfigs.performance_comparison_with_master_head_jobs,
         *JobConfigs.performance_comparison_with_release_base_jobs,
         *JobConfigs.clickbench_master_jobs,
-        *JobConfigs.sqlancer_master_jobs,
+        # TODO: sqlancer needs adjustment after https://github.com/ClickHouse/ClickHouse/pull/81835
+        #   job error: java.lang.AssertionError: CREATE TABLE IF NOT EXISTS database0NoREC.t1 (c0 String MATERIALIZED (-1457864079) CODEC (NONE)) ENGINE = MergeTree()  ORDER BY tuple()  SETTINGS allow_suspicious_indices=1;
+        # *JobConfigs.sqlancer_master_jobs,
         JobConfigs.sqltest_master_job,
     ],
     artifacts=[
@@ -56,6 +58,7 @@ workflow = Workflow.Config(
     enable_report=True,
     enable_cidb=True,
     enable_commit_status_on_failure=True,
+    enable_slack_feed=True,
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",

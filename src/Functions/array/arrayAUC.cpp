@@ -339,7 +339,7 @@ private:
             /// Later we can divide it by (TP + FN) to obtain the correct AUC.
             ///
             /// This can be done because (TP + FN) is constant and equal to total positive labels.
-            return static_cast<Float64>(curr_tp) / (curr_tp + curr_fp) * (curr_tp - prev_tp);
+            return static_cast<Float64>(curr_tp) / static_cast<Float64>(curr_tp + curr_fp) * static_cast<Float64>(curr_tp - prev_tp);
         else
             /// ROC curve plots TPR x FPR
             ///
@@ -359,7 +359,7 @@ private:
             ///
             /// This can be done because both (TP + FN) and (FP + TN) are constant and
             ///   equal to total positive labels and total negative labels, respectively.
-            return (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0;
+            return static_cast<Float64>(curr_fp - prev_fp) * static_cast<Float64>(curr_tp + prev_tp) / 2.0;
     }
 
     static Float64 scale_back_area(Float64 area, size_t total_positive_labels, size_t total_negative_labels)
@@ -367,11 +367,11 @@ private:
         if constexpr (is_pr)
             /// To simplify the calculations, previously we calculated the AUC for the Precision x TP curve.
             /// This scales back to Precision x Recall by dividing the area by (TP + FN).
-            return area / total_positive_labels;
+            return area / static_cast<Float64>(total_positive_labels);
         else
             /// To simplify the calculations, previously we calculated the AUC for the TP x FP curve.
             /// This scales back to TPR x FPR by dividing the area by (TP + FN) and (FP + TN).
-            return area / total_positive_labels / total_negative_labels;
+            return area / static_cast<Float64>(total_positive_labels) / static_cast<Float64>(total_negative_labels);
     }
 
     static Float64 apply(
@@ -512,20 +512,20 @@ For more details, please see [here](https://developers.google.com/machine-learni
     - `total_positives`: The total number of positive samples in the entire dataset.
     - `total_negatives`: The total number of negative samples in the entire dataset.
 
-::::note
+:::note
 When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
 The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
 For example:
 - One partition could contain all scores in the range [0, 0.5).
 - Another partition could contain scores in the range [0.5, 1.0].
-::::
+:::
 )"}
     };
     FunctionDocumentation::ReturnedValue returned_value_roc = {"Returns area under the receiver operating characteristic (ROC) curve.", {"Float64"}};
     FunctionDocumentation::Examples examples_roc = {{"Usage example", "SELECT arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);", "0.75"}};
     FunctionDocumentation::IntroducedIn introduced_in_roc = {20, 4};
     FunctionDocumentation::Category category_roc = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_roc = {description_roc, syntax_roc, arguments_roc, returned_value_roc, examples_roc, introduced_in_roc, category_roc};
+    FunctionDocumentation documentation_roc = {description_roc, syntax_roc, arguments_roc, {}, returned_value_roc, examples_roc, introduced_in_roc, category_roc};
 
     factory.registerFunction<FunctionArrayAUC<false>>(documentation_roc);
     factory.registerAlias("arrayAUC", "arrayROCAUC"); /// Backward compatibility, also ROC AUC is often shorted to just AUC
@@ -548,13 +548,13 @@ For more details, please see [here](https://developers.google.com/machine-learni
     - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
     - `total_positives`: The total number of positive samples in the entire dataset.
 
-::::note
+:::note
 When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
 The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
 For example:
 - One partition could contain all scores in the range [0, 0.5).
 - Another partition could contain scores in the range [0.5, 1.0].
-::::
+:::
 )"}
     };
     FunctionDocumentation::ReturnedValue returned_value_pr = {"Returns area under the precision-recall (PR) curve.", {"Float64"}};
@@ -565,7 +565,7 @@ For example:
 )"}};
     FunctionDocumentation::IntroducedIn introduced_in_pr = {20, 4};
     FunctionDocumentation::Category category_pr = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_pr = {description_pr, syntax_pr, arguments_pr, returned_value_pr, examples_pr, introduced_in_pr, category_pr};
+    FunctionDocumentation documentation_pr = {description_pr, syntax_pr, arguments_pr, {}, returned_value_pr, examples_pr, introduced_in_pr, category_pr};
 
     factory.registerFunction<FunctionArrayAUC<true>>(documentation_pr);
     factory.registerAlias("arrayPRAUC", "arrayAUCPR");

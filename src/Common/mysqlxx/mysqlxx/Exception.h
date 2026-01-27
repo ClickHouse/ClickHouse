@@ -14,6 +14,9 @@ struct Exception : public Poco::Exception
     int errnum() const { return code(); }
     const char * name() const noexcept override { return "mysqlxx::Exception"; }
     const char * className() const noexcept override { return "mysqlxx::Exception"; }
+
+    Exception * clone() const override { return new Exception(*this); }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 };
 
 
@@ -23,6 +26,9 @@ struct ConnectionFailed : public Exception
     explicit ConnectionFailed(const std::string & msg, int code = 0) : Exception(msg, code) {}
     const char * name() const noexcept override { return "mysqlxx::ConnectionFailed"; }
     const char * className() const noexcept override { return "mysqlxx::ConnectionFailed"; }
+
+    ConnectionFailed * clone() const override { return new ConnectionFailed(*this); }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 };
 
 
@@ -32,6 +38,9 @@ struct ConnectionLost : public Exception
     explicit ConnectionLost(const std::string & msg, int code = 0) : Exception(msg, code) {}
     const char * name() const noexcept override { return "mysqlxx::ConnectionLost"; }
     const char * className() const noexcept override { return "mysqlxx::ConnectionLost"; }
+
+    ConnectionLost * clone() const override { return new ConnectionLost(*this); }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 };
 
 
@@ -41,6 +50,9 @@ struct BadQuery : public Exception
     explicit BadQuery(const std::string & msg, int code = 0) : Exception(msg, code) {}
     const char * name() const noexcept override { return "mysqlxx::BadQuery"; }
     const char * className() const noexcept override { return "mysqlxx::BadQuery"; }
+
+    BadQuery * clone() const override { return new BadQuery(*this); }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 };
 
 
@@ -50,6 +62,9 @@ struct CannotParseValue : public Exception
     explicit CannotParseValue(const std::string & msg, int code = 0) : Exception(msg, code) {}
     const char * name() const noexcept override { return "mysqlxx::CannotParseValue"; }
     const char * className() const noexcept override { return "mysqlxx::CannotParseValue"; }
+
+    CannotParseValue * clone() const override { return new CannotParseValue(*this); }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 };
 
 

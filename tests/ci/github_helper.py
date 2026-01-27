@@ -131,12 +131,17 @@ class GitHub(github.Github):
         return prs
 
     def get_release_pulls(self, repo_name: str) -> PullRequests:
-        return self.get_pulls_from_search(
+        prs = self.get_pulls_from_search(
             query=f"type:pr repo:{repo_name} is:open",
             sort="created",
             order="asc",
             label="release",
         )
+        # All PRs should belong to the repo_name
+        prs = [pr for pr in prs if pr.head.repo.full_name == repo_name]
+        # Ensure that the answer from GitHub is correct (we should always have some releases)
+        assert prs
+        return prs
 
     def sleep_on_rate_limit(self) -> None:
         for limit, data in self.get_rate_limit().raw_data.items():

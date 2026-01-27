@@ -13,6 +13,7 @@ namespace DataLake
 
 using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
+StorageType parseStorageTypeFromString(const std::string &type);
 
 struct DataLakeSpecificProperties
 {
@@ -39,6 +40,7 @@ public:
     void setLocation(const std::string & location_);
     std::string getLocation() const;
     std::string getLocationWithEndpoint(const std::string & endpoint_) const;
+    std::string getMetadataLocation(const std::string & iceberg_metadata_file_location) const;
 
     void setEndpoint(const std::string & endpoint_);
     std::string getEndpoint() const { return endpoint; }
@@ -82,8 +84,13 @@ private:
     /// Path to table's data: `/path/to/table/data/`
     std::string path;
     DB::NamesAndTypesList schema;
+    // Type of storage
+    std::string storage_type_str;
 
     std::string bucket;
+    /// For Azure ABFSS URLs: stores the account with suffix (e.g., "account.dfs.core.windows.net")
+    /// This is extracted from URLs like: abfss://container@account.dfs.core.windows.net/path
+    std::string azure_account_with_suffix;
     /// Endpoint is set and used in case we have non-AWS storage implementation, for example, Minio.
     /// Also not all catalogs support non-AWS storages.
     std::string endpoint;
@@ -164,6 +171,9 @@ public:
 
     /// Updates metadata in catalog.
     virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
+
+    /// Drop table from catalog.
+    virtual void dropTable(const String & namespace_name, const String & table_name) const;
 
     /// Does the catalog support transactions or anything like that?
     /// For example, the Iceberg REST catalog supports atomic operations "compare if snapshot X is equal to" and "add new snapshot Y".

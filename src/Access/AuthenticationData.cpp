@@ -10,6 +10,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTPublicSSHKey.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Poco/LRUCache.h>
 
 #include <boost/algorithm/hex.hpp>
 #include <Poco/SHA1Engine.h>
@@ -26,6 +27,13 @@
 #if USE_BCRYPT
 #     include <bcrypt.h>
 #endif
+
+namespace CurrentMetrics
+{
+    extern const Metric BcryptCacheBytes;
+    extern const Metric BcryptCacheSize;
+}
+
 
 namespace DB
 {
@@ -90,7 +98,7 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
     if (ret != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_gensalt returned {}", ret);
 
-    ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data())); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     if (ret != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_hashpw returned {}", ret);
 
@@ -105,12 +113,31 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
 bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[maybe_unused]], const Digest & password_bcrypt [[maybe_unused]])
 {
 #if USE_BCRYPT
-    int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
-    /// and it could not be decoded by the library
-    if (ret == -1)
-        throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
-    return (ret == 0);
+    /// Bcrypt takes a long time to compute, so we cache the results.
+    /// To avoid storing plaintext passwords in memory we only store SHA256 of the password from the user.
+    /// We store a mapping of the pair of SHA256 of the password and bcrypt hash to the result of the comparison.
+    using SimpleCacheBase = DB::CacheBase<std::string, bool>;
+    static auto bcrypt_cache = SimpleCacheBase("LRU", CurrentMetrics::BcryptCacheBytes, CurrentMetrics::BcryptCacheSize, /*max_size_in_bytes*/ 1024, /*max_count*/ 1024, /*size_ratio*/ 0.5);
+
+    auto password_digest = encodeSHA256(password);
+    /// Both `password_digest` and `password_bcrypt` are fixed length, so we don't need a separator.
+    auto cache_key = fmt::format(
+        "{}{}",
+        std::string_view{reinterpret_cast<const char *>(password_digest.data()), password_digest.size()},
+        std::string_view{reinterpret_cast<const char *>(password_bcrypt.data()), password_bcrypt.size()});
+
+    auto [result, _] = bcrypt_cache.getOrSet(cache_key, [&] -> std::shared_ptr<bool>
+        {
+            int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+            /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
+            /// and it could not be decoded by the library
+            if (ret == -1)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
+
+            return std::make_shared<bool>(ret == 0);
+        });
+
+    return *result;
 #else
     throw Exception(
         ErrorCodes::SUPPORT_IS_DISABLED,
@@ -162,6 +189,7 @@ void AuthenticationData::setPassword(const String & password_, bool validate)
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
         case AuthenticationType::HTTP:
+        case AuthenticationType::NO_AUTHENTICATION:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password for authentication type {}", toString(type));
 
         case AuthenticationType::MAX:
@@ -288,6 +316,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validat
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
         case AuthenticationType::HTTP:
+        case AuthenticationType::NO_AUTHENTICATION:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password binary hash for authentication type {}", toString(type));
 
         case AuthenticationType::MAX:
@@ -322,9 +351,9 @@ void AuthenticationData::addSSLCertificateSubject(X509Certificate::Subjects::Typ
 }
 #endif
 
-std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
+boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 {
-    auto node = std::make_shared<ASTAuthenticationData>();
+    auto node = make_intrusive<ASTAuthenticationData>();
     auto auth_type = getType();
     node->type = auth_type;
 
@@ -333,42 +362,42 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         case AuthenticationType::PLAINTEXT_PASSWORD:
         {
             node->contains_password = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(getPassword()));
+            node->children.push_back(make_intrusive<ASTLiteral>(getPassword()));
             break;
         }
         case AuthenticationType::SHA256_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
+            node->children.push_back(make_intrusive<ASTLiteral>(getPasswordHashHex()));
 
             if (!getSalt().empty())
-                node->children.push_back(std::make_shared<ASTLiteral>(getSalt()));
+                node->children.push_back(make_intrusive<ASTLiteral>(getSalt()));
             break;
         }
         case AuthenticationType::SCRAM_SHA256_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
+            node->children.push_back(make_intrusive<ASTLiteral>(getPasswordHashHex()));
 
             if (!getSalt().empty())
-                node->children.push_back(std::make_shared<ASTLiteral>(getSalt()));
+                node->children.push_back(make_intrusive<ASTLiteral>(getSalt()));
             break;
         }
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
+            node->children.push_back(make_intrusive<ASTLiteral>(getPasswordHashHex()));
             break;
         }
         case AuthenticationType::BCRYPT_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(AuthenticationData::Util::digestToString(getPasswordHashBinary())));
+            node->children.push_back(make_intrusive<ASTLiteral>(AuthenticationData::Util::digestToString(getPasswordHashBinary())));
             break;
         }
         case AuthenticationType::LDAP:
         {
-            node->children.push_back(std::make_shared<ASTLiteral>(getLDAPServerName()));
+            node->children.push_back(make_intrusive<ASTLiteral>(getLDAPServerName()));
             break;
         }
         case AuthenticationType::JWT:
@@ -380,7 +409,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             const auto & realm = getKerberosRealm();
 
             if (!realm.empty())
-                node->children.push_back(std::make_shared<ASTLiteral>(realm));
+                node->children.push_back(make_intrusive<ASTLiteral>(realm));
 
             break;
         }
@@ -395,7 +424,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 
             node->ssl_cert_subject_type = toString(cert_subject_type);
             for (const auto & name : getSSLCertificateSubjects().at(cert_subject_type))
-                node->children.push_back(std::make_shared<ASTLiteral>(name));
+                node->children.push_back(make_intrusive<ASTLiteral>(name));
 
             break;
 #else
@@ -406,7 +435,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         {
 #if USE_SSH
             for (const auto & key : getSSHKeys())
-                node->children.push_back(std::make_shared<ASTPublicSSHKey>(key.getBase64(), key.getKeyType()));
+                node->children.push_back(make_intrusive<ASTPublicSSHKey>(key.getBase64(), key.getKeyType()));
 
             break;
 #else
@@ -415,12 +444,14 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::HTTP:
         {
-            node->children.push_back(std::make_shared<ASTLiteral>(getHTTPAuthenticationServerName()));
-            node->children.push_back(std::make_shared<ASTLiteral>(toString(getHTTPAuthenticationScheme())));
+            node->children.push_back(make_intrusive<ASTLiteral>(getHTTPAuthenticationServerName()));
+            node->children.push_back(make_intrusive<ASTLiteral>(toString(getHTTPAuthenticationScheme())));
             break;
         }
 
         case AuthenticationType::NO_PASSWORD:
+            break;
+        case AuthenticationType::NO_AUTHENTICATION:
             break;
         case AuthenticationType::MAX:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(auth_type));
@@ -432,7 +463,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         WriteBufferFromOwnString out;
         writeDateTimeText(valid_until, out);
 
-        node->valid_until = std::make_shared<ASTLiteral>(out.str());
+        node->valid_until = make_intrusive<ASTLiteral>(out.str());
     }
 
     return node;
@@ -452,6 +483,12 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     {
         AuthenticationData auth_data;
         auth_data.setValidUntil(valid_until);
+        return auth_data;
+    }
+
+    if (query.type && query.type == AuthenticationType::NO_AUTHENTICATION)
+    {
+        AuthenticationData auth_data{AuthenticationType::NO_AUTHENTICATION};
         return auth_data;
     }
 

@@ -1,3 +1,0 @@
-data	Object(\'json\')					
-data	Tuple(\n    k1 Int8)					
-data	Tuple(\n    k1 String,\n    k2 Array(Int8))					

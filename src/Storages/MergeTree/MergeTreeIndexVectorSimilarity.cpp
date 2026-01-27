@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
+#include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
@@ -128,8 +129,17 @@ void USearchIndexWithSerialization::serialize(WriteBuffer & ostr) const
 {
     auto callback = [&ostr](void * from, size_t n)
     {
-        ostr.write(reinterpret_cast<const char *>(from), n);
-        return true;
+        /// USearch may call callback from noexcept function
+        try
+        {
+            ostr.write(reinterpret_cast<const char *>(from), n);
+            return true;
+        }
+        catch (...)
+        {
+            tryLogCurrentException("VectorSimilarityIndex", "An error while serializing USearch index");
+            return false;
+        }
     };
 
     if (auto result = Base::save_to_stream(callback); !result)
@@ -140,8 +150,17 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
 {
     auto callback = [&istr](void * from, size_t n)
     {
-        istr.readStrict(reinterpret_cast<char *>(from), n);
-        return true;
+        /// USearch may call callback from noexcept function
+        try
+        {
+            istr.readStrict(reinterpret_cast<char *>(from), n);
+            return true;
+        }
+        catch (...)
+        {
+            tryLogCurrentException("VectorSimilarityIndex", "An error while deserializing USearch index");
+            return false;
+        }
     };
 
     if (auto result = Base::load_from_stream(callback); !result)
@@ -306,7 +325,7 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     /// indexes are build simultaneously (e.g. multiple merges run at the same time).
     auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "VectorSimIndex");
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
     auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row)
     {
         const typename Column::ValueType & value = column_array_data_float_data[column_array_offsets[row - 1]];
@@ -338,7 +357,7 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     for (size_t row = 0; row < rows; ++row)
     {
         auto key = static_cast<USearchIndex::vector_key_t>(index_size + row);
-        runner([&add_vector_to_index, key, row] { add_vector_to_index(key, row); });
+        runner.enqueueAndKeepTrack([&add_vector_to_index, key, row] { add_vector_to_index(key, row); });
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
@@ -431,11 +450,11 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
 
     if (!std::isfinite(index_fetch_multiplier)
         || index_fetch_multiplier <= 0.0 || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
-        || (parameters && !std::isfinite(index_fetch_multiplier * parameters->limit)))
+        || (parameters && !std::isfinite(index_fetch_multiplier * static_cast<double>(parameters->limit))))
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_INDEX_FETCH_MULTIPLIER);
 }
 
-bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
+bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr, const UpdatePartialDisjunctionResultFn & /*update_partial_disjunction_result_fn*/) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "mayBeTrueOnGranule is not supported for vector similarity indexes");
 }
@@ -478,7 +497,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
     if (parameters->additional_filters_present || is_rescoring)
         /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
         /// Similarly, if rescoring is on, fetch more neighbours from the index and pass them for the final re-ranking by ORDER BY ... LIMIT.
-        limit = std::min(static_cast<size_t>(limit * index_fetch_multiplier), max_limit);
+        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
 
     /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
     /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to
@@ -526,7 +545,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexVectorSimilarity::createIndexGranule() co
     return std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index.name, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 }

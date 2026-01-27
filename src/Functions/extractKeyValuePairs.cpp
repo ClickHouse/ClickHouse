@@ -48,16 +48,15 @@ class ExtractKeyValuePairs : public IFunction
             builder.withQuotingCharacter(parsed_arguments.quoting_character.value());
         }
 
-        bool is_number_of_pairs_unlimited = context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row] == 0;
-
+        bool is_number_of_pairs_unlimited = extract_key_value_pairs_max_pairs_per_row == 0;
         if (!is_number_of_pairs_unlimited)
         {
-            builder.withMaxNumberOfPairs(context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row]);
+            builder.withMaxNumberOfPairs(extract_key_value_pairs_max_pairs_per_row);
         }
 
         if (parsed_arguments.unexpected_quoting_character_strategy)
         {
-            const auto unexpected_quoting_character_strategy_string = parsed_arguments.unexpected_quoting_character_strategy->getDataAt(0).toString();
+            const std::string unexpected_quoting_character_strategy_string{parsed_arguments.unexpected_quoting_character_strategy->getDataAt(0)};
             const auto unexpected_quoting_character_strategy = magic_enum::enum_cast<extractKV::Configuration::UnexpectedQuotingCharacterStrategy>(
                     unexpected_quoting_character_strategy_string, magic_enum::case_insensitive);
 
@@ -90,7 +89,7 @@ class ExtractKeyValuePairs : public IFunction
 
         for (auto i = 0u; i < input_rows_count; i++)
         {
-            auto row = data_column->getDataAt(i).toView();
+            auto row = data_column->getDataAt(i);
 
             auto pairs_count = extractor.extract(row, keys, values);
 
@@ -108,7 +107,9 @@ class ExtractKeyValuePairs : public IFunction
     }
 
 public:
-    explicit ExtractKeyValuePairs(ContextPtr context_) : context(context_) {}
+    explicit ExtractKeyValuePairs(ContextPtr context)
+        : extract_key_value_pairs_max_pairs_per_row(context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row])
+    {}
 
     static constexpr auto name = Name::name;
 
@@ -157,7 +158,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    const UInt64 extract_key_value_pairs_max_pairs_per_row;
 };
 
 struct NameExtractKeyValuePairs
@@ -315,7 +316,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
 
             Escape sequences supported: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0`.
             Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
-            `\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).
+            `\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (`c <= 31`).
 
             This function will satisfy the use case where pre-escaping and post-escaping are not suitable. For instance, consider the following
             input string: `a: "aaaa\"bbb"`. The expected output is: `a: aaaa\"bbbb`.

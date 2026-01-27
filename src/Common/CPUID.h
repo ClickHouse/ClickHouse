@@ -8,6 +8,9 @@
 
 #include <cstring>
 
+#ifdef OS_LINUX
+#include <sched.h>
+#endif
 
 namespace DB
 {
@@ -54,6 +57,15 @@ inline bool cpuid(UInt32 op, UInt32 * res) noexcept /// NOLINT
     memset(res, 0, 4 * sizeof(*res));
 
     return false;
+#endif
+}
+
+inline int get_cpuid()
+{
+#ifdef OS_LINUX
+    return sched_getcpu();
+#else
+    return 0;
 #endif
 }
 
@@ -305,47 +317,67 @@ inline bool haveAMXINT8() noexcept
             && ((CPUInfo(0x7, 0).registers.edx >> 25) & 1u);  // AMX-INT8 bit
 }
 
+inline bool haveGenuineIntel() noexcept
+{
+#if defined(__x86_64__)
+    unsigned eax = 0;
+    unsigned ebx = 0;
+    unsigned ecx = 0;
+    unsigned edx = 0;
+    __asm__("movq\t%%rbx, %%rsi\n\t"
+            "cpuid\n\t"
+            "xchgq\t%%rbx, %%rsi\n\t"
+            : "=a"(eax), "=S"(ebx), "=c"(ecx), "=d"(edx)
+            : "a"(0));
+
+    return (ebx == 0x756e6547 && edx == 0x49656e69 && ecx == 0x6c65746e);
+#else
+    return false;
+#endif
+}
+
 #define CPU_ID_ENUMERATE(OP) \
-    OP(SSE)                  \
-    OP(SSE2)                 \
-    OP(SSE3)                 \
-    OP(SSSE3)                \
-    OP(SSE41)                \
-    OP(SSE42)                \
-    OP(F16C)                 \
-    OP(POPCNT)               \
-    OP(BMI1)                 \
-    OP(BMI2)                 \
-    OP(PCLMUL)               \
-    OP(AES)                  \
-    OP(AVX)                  \
-    OP(FMA)                  \
-    OP(AVX2)                 \
-    OP(AVX512F)              \
-    OP(AVX512DQ)             \
-    OP(AVX512IFMA)           \
-    OP(AVX512PF)             \
-    OP(AVX512ER)             \
-    OP(AVX512CD)             \
-    OP(AVX512BW)             \
-    OP(AVX512VL)             \
-    OP(AVX512VBMI)           \
-    OP(AVX512VBMI2)          \
-    OP(AVX512BF16)           \
-    OP(PREFETCHWT1)          \
-    OP(SHA)                  \
-    OP(ADX)                  \
-    OP(RDRAND)               \
-    OP(RDSEED)               \
-    OP(PCOMMIT)              \
-    OP(RDTSCP)               \
-    OP(CLFLUSHOPT)           \
-    OP(CLWB)                 \
-    OP(XSAVE)                \
-    OP(OSXSAVE)              \
-    OP(AMXBF16)              \
-    OP(AMXTILE)              \
-    OP(AMXINT8)
+    OP(SSE) \
+    OP(SSE2) \
+    OP(SSE3) \
+    OP(SSSE3) \
+    OP(SSE41) \
+    OP(SSE42) \
+    OP(F16C) \
+    OP(POPCNT) \
+    OP(BMI1) \
+    OP(BMI2) \
+    OP(PCLMUL) \
+    OP(AES) \
+    OP(AVX) \
+    OP(FMA) \
+    OP(AVX2) \
+    OP(AVX512F) \
+    OP(AVX512DQ) \
+    OP(AVX512IFMA) \
+    OP(AVX512PF) \
+    OP(AVX512ER) \
+    OP(AVX512CD) \
+    OP(AVX512BW) \
+    OP(AVX512VL) \
+    OP(AVX512VBMI) \
+    OP(AVX512VBMI2) \
+    OP(AVX512BF16) \
+    OP(PREFETCHWT1) \
+    OP(SHA) \
+    OP(ADX) \
+    OP(RDRAND) \
+    OP(RDSEED) \
+    OP(PCOMMIT) \
+    OP(RDTSCP) \
+    OP(CLFLUSHOPT) \
+    OP(CLWB) \
+    OP(XSAVE) \
+    OP(OSXSAVE) \
+    OP(AMXBF16) \
+    OP(AMXTILE) \
+    OP(AMXINT8) \
+    OP(GenuineIntel)
 
 struct CPUFlagsCache
 {

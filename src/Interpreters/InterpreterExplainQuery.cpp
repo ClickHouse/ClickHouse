@@ -10,6 +10,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableOverrideUtils.h>
@@ -43,8 +44,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool format_display_secrets_in_show_and_select;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
 }
 
 namespace ErrorCodes
@@ -260,12 +261,15 @@ struct QueryPlanSettings
             {"description", query_plan_options.description},
             {"actions", query_plan_options.actions},
             {"indexes", query_plan_options.indexes},
+            {"indices", query_plan_options.indexes},
             {"projections", query_plan_options.projections},
             {"optimize", optimize},
             {"json", json},
             {"sorting", query_plan_options.sorting},
             {"distributed", query_plan_options.distributed},
             {"keep_logical_steps", keep_logical_steps},
+            {"input_headers", query_plan_options.input_headers},
+            {"column_structure", query_plan_options.column_structure},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -479,9 +483,19 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     bool single_line = false;
     bool insert_buf = true;
 
-    options.setExplain();
-
     ContextPtr query_context = getContext();
+
+    options.setExplain();
+    options.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+
+    /// https://github.com/ClickHouse/ClickHouse/issues/88467
+    /// EXPLAIN is to get a good picture of how the query will execute after *static* planning.
+    /// Hence disable any optimizations that stagger the planning or introduce variablility due to caches.
+    auto explain_query_context = Context::createCopy(query_context);
+    explain_query_context->setSetting("use_skip_indexes_on_data_read", false);
+    explain_query_context->setSetting("use_query_condition_cache", false);
+    InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
+    query_context = std::move(explain_query_context);
 
     switch (ast.getKind())
     {
@@ -571,6 +585,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
                 optimization_settings.keep_logical_steps = settings.keep_logical_steps;
                 optimization_settings.is_explain = true;
+                optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 plan.optimize(optimization_settings);
             }
 
@@ -596,7 +611,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 single_line = true;
             }
             else
-                plan.explainPlan(buf, settings.query_plan_options);
+                plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
             break;
         }
         case ASTExplainQuery::QueryPipeline:
@@ -620,7 +635,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     context = interpreter.getContext();
                 }
 
-                auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+                auto optimization_settings = QueryPlanOptimizationSettings(context);
+                optimization_settings.is_explain = true;
+                optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+                auto pipeline = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
                 if (settings.graph)
                 {
@@ -641,16 +659,17 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
             else if (dynamic_cast<const ASTInsertQuery *>(ast.getExplainedQuery().get()))
             {
+                auto insert_context = Context::createCopy(getContext());
                 InterpreterInsertQuery insert(
                     ast.getExplainedQuery(),
-                    query_context,
+                    insert_context,
                     /* allow_materialized */ false,
                     /* no_squash */ false,
                     /* no_destination */ false,
-                    /* async_isnert */ false);
+                    /* async_insert */ false);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
-                // we do not need it anymore, it would be executed
+                // we do not need it anymore, it would not be executed
                 io.pipeline.cancel();
             }
             else

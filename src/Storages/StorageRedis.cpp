@@ -412,7 +412,7 @@ namespace
         if (!args.storage_def->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageRedis must require one column in primary key");
 
-        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->primary_key), metadata.columns, args.getContext());
         auto primary_key_names = primary_key_desc.expression->getRequiredColumns();
 
         if (primary_key_names.size() != 1)
@@ -534,7 +534,7 @@ RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
     return ret;
 }
 
-Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const
+Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const
 {
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageRedis supports only one key, got: {}", keys.size());

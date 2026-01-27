@@ -4,6 +4,7 @@ sidebar_label: 'OPTIMIZE'
 sidebar_position: 47
 slug: /sql-reference/statements/optimize
 title: 'OPTIMIZE Statement'
+doc_type: 'reference'
 ---
 
 This query tries to initialize an unscheduled merge of data parts for tables. Note that we generally recommend against using `OPTIMIZE TABLE ... FINAL` (see these [docs](/optimize/avoidoptimizefinal)) as its use case is meant for administration, not for daily operations.
@@ -35,7 +36,7 @@ If the `alter_sync` is set to `2` and some replicas are not active for more than
 
 ## BY expression {#by-expression}
 
-If you want to perform deduplication on custom set of columns rather than on all, you can specify list of columns explicitly or use any combination of [`*`](../../sql-reference/statements/select/index.md#asterisk), [`COLUMNS`](/sql-reference/statements/select#select-clause) or [`EXCEPT`](/sql-reference/statements/select#except) expressions. The explicitly written or implicitly expanded list of columns must include all columns specified in row ordering expression (both primary and sorting keys) and partitioning expression (partitioning key).
+If you want to perform deduplication on custom set of columns rather than on all, you can specify list of columns explicitly or use any combination of [`*`](../../sql-reference/statements/select/index.md#asterisk), [`COLUMNS`](/sql-reference/statements/select#select-clause) or [`EXCEPT`](/sql-reference/statements/select/except-modifier) expressions. The explicitly written or implicitly expanded list of columns must include all columns specified in row ordering expression (both primary and sorting keys) and partitioning expression (partitioning key).
 
 :::note    
 Notice that `*` behaves just like in `SELECT`: [MATERIALIZED](/sql-reference/statements/create/view#materialized-view) and [ALIAS](../../sql-reference/statements/create/table.md#alias) columns are not used for expansion.

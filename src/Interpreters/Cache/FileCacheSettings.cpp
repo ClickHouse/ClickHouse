@@ -46,12 +46,14 @@ namespace ErrorCodes
     DECLARE(Double, keep_free_space_elements_ratio, FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO, "A ratio of free elements which cache would try to uphold in the background", 0) \
     DECLARE(UInt64, keep_free_space_remove_batch, FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH, "A remove batch size of cache elements made by background thread which upholds free space/elements ratio", 0) \
     DECLARE(Bool, enable_filesystem_query_cache_limit, false, "Enable limiting maximum size of cache which can be written within a query", 0) \
-    DECLARE(UInt64, cache_hits_threshold, FILECACHE_DEFAULT_HITS_THRESHOLD, "Number of cache hits required to cache corresponding file segment", 0) \
+    DECLARE(UInt64, cache_hits_threshold, 0, "Deprecated setting", 0) \
     DECLARE(Bool, enable_bypass_cache_with_threshold, false, "Undocumented. Not recommended for use", 0) \
     DECLARE(UInt64, bypass_cache_threshold, FILECACHE_BYPASS_THRESHOLD, "Undocumented. Not recommended for use", 0) \
     DECLARE(Bool, write_cache_per_user_id_directory, false, "Internal ClickHouse Cloud setting", 0) \
     DECLARE(Bool, allow_dynamic_cache_resize, false, "Allow dynamic resize of filesystem cache", 0) \
     DECLARE(Double, max_size_ratio_to_total_space, 0, "Ratio of `max_size` to total disk space", 0) \
+    DECLARE(UInt64, overcommit_eviction_evict_step, 10 * 1_MiB, "Eviction step in bytes for overcommit eviction policy. Used for keep_free_space_*_ratio settings", 0) \
+    DECLARE(Double, check_cache_probability, 0.01, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
@@ -115,7 +117,7 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
         desc.name = setting.getName();
         desc.type = [&]() -> DataTypePtr
         {
-            const std::string type_name = setting.getTypeName();
+            const auto type_name = setting.getTypeName();
             if (type_name == "UInt64")
                 return std::make_shared<DataTypeUInt64>();
             else if (type_name == "String")
@@ -232,7 +234,7 @@ void FileCacheSettings::validate()
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`path` is required parameter of cache configuration");
 
     if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "`path` was not normalized to absolute");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "`path` was not normalized to absolute: {}", (*this)[FileCacheSetting::path].value);
 
     if (!settings[FileCacheSetting::max_size].changed && !settings[FileCacheSetting::max_size_ratio_to_total_space].changed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either `max_size` or `max_size_ratio_to_total_space` must be defined in cache configuration");
@@ -243,6 +245,9 @@ void FileCacheSettings::validate()
     if (settings[FileCacheSetting::max_size].changed && settings[FileCacheSetting::max_size] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`max_size` cannot be 0");
 
+    if (settings[FileCacheSetting::overcommit_eviction_evict_step] == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`overcommit_eviction_evict_step` cannot be zero");
+
     if (settings[FileCacheSetting::max_size_ratio_to_total_space].changed)
     {
         if (settings[FileCacheSetting::max_size_ratio_to_total_space] <= 0 || settings[FileCacheSetting::max_size_ratio_to_total_space] > 1)
@@ -252,7 +257,7 @@ void FileCacheSettings::validate()
         struct statvfs stat = getStatVFS(settings[FileCacheSetting::path]);
         const auto total_space = stat.f_blocks * stat.f_frsize;
         settings[FileCacheSetting::max_size] =
-            static_cast<UInt64>(std::floor(settings[FileCacheSetting::max_size_ratio_to_total_space].value * total_space));
+            static_cast<UInt64>(std::floor(settings[FileCacheSetting::max_size_ratio_to_total_space].value * static_cast<double>(total_space)));
 
         LOG_INFO(
             getLogger("FileCacheSettings"),

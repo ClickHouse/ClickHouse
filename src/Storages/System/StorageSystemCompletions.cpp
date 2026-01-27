@@ -1,28 +1,29 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Access/ContextAccess.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/ColumnString.h>
-#include <Common/Macros.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Databases/IDatabase.h>
+#include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryStructure.h>
 #include <Formats/FormatFactory.h>
-#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/IFunction.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/CommonParsers.h>
-#include <Storages/System/StorageSystemCompletions.h>
-#include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/System/StorageSystemCompletions.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/Macros.h>
 
 
 namespace DB
@@ -32,12 +33,14 @@ namespace Setting
 {
     extern const SettingsUInt64 readonly;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
 
 static constexpr const char * DATABASE_CONTEXT = "database";
 static constexpr const char * TABLE_CONTEXT = "table";
 static constexpr const char * COLUMN_CONTEXT = "column";
 static constexpr const char * FUNCTION_CONTEXT = "function";
+static constexpr const char * AGGREGATE_FUNCTION_COMBINATOR_PAIR_CONTEXT = "aggregate function combinator pair";
 static constexpr const char * TABLE_ENGINE_CONTEXT = "table engine";
 static constexpr const char * FORMAT_CONTEXT = "format";
 static constexpr const char * TABLE_FUNCTION_CONTEXT = "table function";
@@ -51,19 +54,25 @@ static constexpr const char * DICTIONARY_CONTEXT = "dictionary";
 
 ColumnsDescription StorageSystemCompletions::getColumnsDescription()
 {
-    auto description = ColumnsDescription
-    {
+    auto description = ColumnsDescription{
         {"word", std::make_shared<DataTypeString>(), "Completion token."},
         {"context", std::make_shared<DataTypeString>(), "Token entity kind (e.g. table)."},
-        {"belongs", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Token for entity, this token belongs to (e.g. name of owning database)."}
-    };
+        {"belongs",
+         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
+         "Token for entity, this token belongs to (e.g. name of owning database)."}};
     return description;
 }
 
-void fillDataWithTableColumns(const String & database_name, const String & table_name, const StoragePtr & table, MutableColumns & res_columns, const ContextPtr & context)
+void fillDataWithTableColumns(
+    const String & database_name,
+    const String & table_name,
+    const StoragePtr & table,
+    MutableColumns & res_columns,
+    const ContextPtr & context)
 {
     const auto & access = context->getAccess();
-    if (!access->isGranted(AccessType::SHOW_TABLES) || !access->isGranted(AccessType::SHOW_TABLES, database_name) || !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+    if (!access->isGranted(AccessType::SHOW_TABLES) || !access->isGranted(AccessType::SHOW_TABLES, database_name)
+        || !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
         return;
 
     if (!table)
@@ -80,8 +89,11 @@ void fillDataWithTableColumns(const String & database_name, const String & table
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
-    const auto & snapshot = table->getInMemoryMetadataPtr();
-    const auto & columns = snapshot->getColumns();
+    auto snapshot = table->tryGetInMemoryMetadataPtr();
+    if (!snapshot)
+        return;
+
+    const auto & columns = (*snapshot)->getColumns();
     for (const auto & column : columns)
     {
         if (!access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
@@ -96,7 +108,8 @@ void fillDataWithTableColumns(const String & database_name, const String & table
 void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, const ContextPtr & context)
 {
     const auto & access = context->getAccess();
-    const auto & databases = DatabaseCatalog::instance().getDatabases();
+    const auto & settings = context->getSettingsRef();
+    const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
     for (const auto & [database_name, database_ptr] : databases)
     {
         if (!access->isGranted(AccessType::SHOW_DATABASES) || !access->isGranted(AccessType::SHOW_DATABASES, database_name))
@@ -109,17 +122,12 @@ void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, const Cont
         res_columns[1]->insert(DATABASE_CONTEXT);
         res_columns[2]->insertDefault();
 
-        /// We are skipping "Lazy" database because we cannot afford initialization of all its tables.
-        if (database_ptr->getEngineName() == "Lazy")
-            continue;
-
         for (auto iterator = database_ptr->getLightweightTablesIterator(context); iterator->isValid(); iterator->next())
         {
             const auto & table_name = iterator->name();
             const auto & table = iterator->table();
             fillDataWithTableColumns(database_name, table_name, table, res_columns, context);
         }
-
     }
 
     if (context->hasSessionContext())
@@ -154,6 +162,23 @@ void fillDataWithFunctions(MutableColumns & res_columns, const ContextPtr & cont
         insert_function(function_name);
 }
 
+void fillDataWithAggregateFunctionCombinatorPair(MutableColumns & res_columns)
+{
+    const auto & aggregate_functions = AggregateFunctionFactory::instance().getAllRegisteredNames();
+    const auto & aggregate_function_combinators = AggregateFunctionCombinatorFactory::instance().getAllAggregateFunctionCombinators();
+    for (const auto & function_name : aggregate_functions)
+    {
+        for (const auto & [combinator_name, combinator] : aggregate_function_combinators)
+        {
+            if (combinator->isForInternalUsageOnly())
+                continue;
+            res_columns[0]->insert(function_name + combinator_name);
+            res_columns[1]->insert(AGGREGATE_FUNCTION_COMBINATOR_PAIR_CONTEXT);
+            res_columns[2]->insertDefault();
+        }
+    }
+}
+
 void fillDataWithTableEngines(MutableColumns & res_columns)
 {
     const auto & storage_factory = StorageFactory::instance();
@@ -170,9 +195,9 @@ void fillDataWithFormats(MutableColumns & res_columns)
 {
     const auto & format_factory = FormatFactory::instance();
     const auto & formats = format_factory.getAllFormats();
-    for (const auto & [format_name, _] : formats)
+    for (const auto & [_, creators] : formats)
     {
-        res_columns[0]->insert(format_name);
+        res_columns[0]->insert(creators.name);
         res_columns[1]->insert(FORMAT_CONTEXT);
         res_columns[2]->insertDefault();
     }
@@ -272,7 +297,7 @@ void fillDataWithPolicies(MutableColumns & res_columns, const ContextPtr & conte
 void fillDataWithDictionaries(MutableColumns & res_columns, const ContextPtr & context)
 {
     const auto & access = context->getAccess();
-    if (access->isGranted(AccessType::SHOW_DICTIONARIES))
+    if (!access->isGranted(AccessType::SHOW_DICTIONARIES))
         return;
 
     const auto & external_dictionaries = context->getExternalDictionariesLoader();
@@ -297,7 +322,8 @@ void fillDataWithDictionaries(MutableColumns & res_columns, const ContextPtr & c
     }
 }
 
-void StorageSystemCompletions::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemCompletions::fillData(
+    MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     fillDataWithDatabasesTablesColumns(res_columns, context);
     fillDataWithFunctions(res_columns, context);
@@ -312,6 +338,7 @@ void StorageSystemCompletions::fillData(MutableColumns & res_columns, ContextPtr
     fillDataWithMacros(res_columns, context);
     fillDataWithPolicies(res_columns, context);
     fillDataWithDictionaries(res_columns, context);
+    fillDataWithAggregateFunctionCombinatorPair(res_columns);
 }
 
 }

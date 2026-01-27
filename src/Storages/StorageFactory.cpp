@@ -88,13 +88,6 @@ StoragePtr StorageFactory::get(
 
         name = "View";
     }
-    else if (query.is_live_view)
-    {
-        if (query.storage)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Specifying ENGINE is not allowed for a LiveView");
-
-        name = "LiveView";
-    }
     else if (query.is_dictionary)
     {
         if (query.storage)
@@ -148,13 +141,6 @@ StoragePtr StorageFactory::get(
                     ErrorCodes::INCORRECT_QUERY,
                     "Direct creation of tables with ENGINE MaterializedView "
                     "is not supported, use CREATE MATERIALIZED VIEW statement");
-            }
-            if (name == "LiveView")
-            {
-                throw Exception(
-                    ErrorCodes::INCORRECT_QUERY,
-                    "Direct creation of tables with ENGINE LiveView "
-                    "is not supported, use CREATE LIVE VIEW statement");
             }
             if (name == "WindowView")
             {
@@ -244,7 +230,7 @@ StoragePtr StorageFactory::get(
     {
         /// Storage creator modified empty arguments list, so we should modify the query
         assert(storage_def && storage_def->engine && !storage_def->engine->arguments);
-        storage_def->engine->arguments = std::make_shared<ASTExpressionList>();  /// NOLINT(clang-analyzer-core.NullDereference)
+        storage_def->engine->arguments = make_intrusive<ASTExpressionList>();  /// NOLINT(clang-analyzer-core.NullDereference)
         storage_def->engine->children.push_back(storage_def->engine->arguments);
         storage_def->engine->arguments->children = empty_engine_args;
     }
@@ -264,9 +250,11 @@ StorageFactory & StorageFactory::instance()
 
 std::optional<AccessTypeObjects::Source> StorageFactory::getSourceAccessObject(const String & table_engine) const
 {
-    auto it = storages.find(table_engine);
+    if (table_engine.empty())
+        return {};
+    const auto it = storages.find(table_engine);
     if (it == storages.end())
-        return std::nullopt;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown table engine '{}' when checking for access type", table_engine);
     return it->second.features.source_access_type;
 }
 

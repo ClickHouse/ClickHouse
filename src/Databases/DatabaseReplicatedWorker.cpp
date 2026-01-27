@@ -7,11 +7,13 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageMaterializedView.h>
 #include <base/sleep.h>
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/thread_local_rng.h>
+#include <Parsers/ASTRenameQuery.h>
 
 namespace fs = std::filesystem;
 
@@ -28,6 +30,7 @@ namespace DatabaseReplicatedSetting
     extern const DatabaseReplicatedSettingsUInt64 max_replication_lag_to_enqueue;
     extern const DatabaseReplicatedSettingsUInt64 max_retries_before_automatic_recovery;
     extern const DatabaseReplicatedSettingsUInt64 wait_entry_commited_timeout_sec;
+    extern const DatabaseReplicatedSettingsBool allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views;
 }
 
 namespace ErrorCodes
@@ -44,9 +47,9 @@ namespace FailPoints
 {
     extern const char database_replicated_delay_recovery[];
     extern const char database_replicated_delay_entry_execution[];
+    extern const char database_replicated_stop_entry_execution[];
 }
 
-static constexpr const char * FORCE_AUTO_RECOVERY_DIGEST = "42";
 
 DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_)
     : DDLWorker(
@@ -59,6 +62,10 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
           fmt::format("DDLWorker({})", db->getDatabaseName()))
     , database(db)
 {
+    LOG_INFO(
+        log,
+        "allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views {}",
+        database->db_settings[DatabaseReplicatedSetting::allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views].value);
     /// Pool size must be 1 to avoid reordering of log entries.
     /// TODO Make a dependency graph of DDL queries. It will allow to execute independent entries in parallel.
     /// We also need similar graph to load tables on server startup in order of topsort.
@@ -473,6 +480,82 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     return entry_path;
 }
 
+static bool getRMVCoordinationInfo(
+    LoggerPtr log,
+    const ZooKeeperPtr & zookeeper,
+    UUID parent_uuid,
+    Coordination::Stat & stats,
+    RefreshTask::CoordinationZnode & coordination_znode)
+{
+    if (parent_uuid == UUIDHelpers::Nil)
+        return false;
+
+    const auto storage = DatabaseCatalog::instance().tryGetByUUID(parent_uuid).second;
+    if (!storage)
+        return false;
+    auto in_memory_metadata = storage->getInMemoryMetadataPtr();
+    const auto * refresh = in_memory_metadata->refresh->as<ASTRefreshStrategy>();
+    if (!refresh || refresh->append)
+        return false;
+    const auto * mv = dynamic_cast<const StorageMaterializedView *>(storage.get());
+    if (!mv)
+        return false;
+
+    const auto coordination_path = mv->getCoordinationPath();
+
+    if (!coordination_path.has_value() || (*coordination_path).empty())
+        return false;
+    try
+    {
+        String data;
+        if (!zookeeper->tryGet(*coordination_path, data, &stats))
+            return false;
+        coordination_znode.parse(data);
+        return true;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Unable to get coordination information: " + *coordination_path);
+        return false;
+    }
+}
+
+bool DatabaseReplicatedDDLWorker::shouldSkipCreatingRMVTempTable(
+    const ZooKeeperPtr & zookeeper, UUID parent_uuid, UUID create_uuid, int64_t ddl_log_ctime)
+{
+    if (create_uuid == UUIDHelpers::Nil)
+        return false;
+
+    Coordination::Stat stats;
+    RefreshTask::CoordinationZnode coordination_znode;
+
+    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode))
+        return false;
+
+    LOG_TEST(log, "MV {}, coordination info: {}", parent_uuid, coordination_znode.toString());
+    if (coordination_znode.last_success_table_uuid == create_uuid)
+        return false;
+
+    LOG_TEST(log, "ddl_log_ctime {}, stats.mtime {}", ddl_log_ctime, stats.mtime);
+    // It is possible the the temporary table is created and replicated before the coordiation info is updated.
+    // So if ddl_log_ctime >= stats.mtime, the table is new and should not be skip.
+    return ddl_log_ctime < stats.mtime;
+}
+
+bool DatabaseReplicatedDDLWorker::shouldSkipRenamingRMVTempTable(
+    const ZooKeeperPtr & zookeeper, UUID parent_uuid, const QualifiedTableName & rename_from_table)
+{
+    Coordination::Stat stats;
+    RefreshTask::CoordinationZnode coordination_znode;
+
+    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode))
+        return false;
+
+    StorageID storage_id{rename_from_table};
+    // If the temporary table creating DDL is skipped, there is no table, we skip renaming
+    return !DatabaseCatalog::instance().isTableExist(storage_id, context);
+}
+
 DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run)
 {
     if (!dry_run)
@@ -496,9 +579,10 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     fiu_do_on(FailPoints::database_replicated_delay_entry_execution,
     {
-        std::chrono::milliseconds sleep_time{thread_local_rng() % 2000};
+        std::chrono::milliseconds sleep_time{1000 + thread_local_rng() % 1000};
         std::this_thread::sleep_for(sleep_time);
     });
+    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_stop_entry_execution);
 
     if (unsynced_after_recovery)
     {
@@ -520,7 +604,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     auto task = std::make_unique<DatabaseReplicatedTask>(entry_name, entry_path, database);
 
     String initiator_name;
-    zkutil::EventPtr wait_committed_or_failed = std::make_shared<Poco::Event>();
+    Coordination::EventPtr wait_committed_or_failed = std::make_shared<Poco::Event>();
 
     String try_node_path = fs::path(entry_path) / "try";
     if (!dry_run && zookeeper->tryGet(try_node_path, initiator_name, nullptr, wait_committed_or_failed))
@@ -577,7 +661,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         return {};
     }
 
-    String node_data = zookeeper->get(entry_path);
+    Coordination::Stat stats;
+    String node_data = zookeeper->get(entry_path, &stats);
     task->entry.parse(node_data);
 
     if (task->entry.query.empty())
@@ -602,6 +687,63 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     {
         out_reason = fmt::format("Parent table {} doesn't exist", task->entry.parent_table_uuid.value());
         return {};
+    }
+    if (database->db_settings[DatabaseReplicatedSetting::allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views]
+        && task->entry.parent_table_uuid)
+    {
+        // Refreshing in non-append Refreshable Materialized Views:
+        // 1. Create a temporary table: .tmp_inner.<uuid of the parent MV>
+        // 2. Fill in the data from the SELECT clause
+        // 3. Rename (with exchange) the temporary table to the target table name. The target table name can be the inner table of the view, or the table specified in the view create query.
+        // 4. Drop the temporary table after exchanging. Note that the temporary table after exchanging is not the table created in step 1. It is the one exchanged in step 3.
+        // 5. Update the coordination info in Keeper
+
+        // Queries created in steps 1, 3, and 4 are replicated through the DDL logs.
+        // If a replica is woken up after a long sleep, there are lots of creating, renaming and dropping DDLs generated by the RMVs.
+        // To speed up the DDL processing, these old create DDLs are skipped.
+        // Once the creating DDL is skipped, there is no table to rename in the renaming DDL, so the renaming DDL is skipped if the table name does not exist.
+        // For the dropping DDLs, as the query contains `IF EXISTS`, we don't need to skip.
+        const auto & parent_table_uuid = *task->entry.parent_table_uuid;
+        LOG_DEBUG(log, "Entry {}, parent_uuid {}", entry_name, parent_table_uuid);
+        if (const auto * create_query = task->query->as<ASTCreateQuery>())
+        {
+            if (create_query->uuid != UUIDHelpers::Nil
+                && shouldSkipCreatingRMVTempTable(zookeeper, *task->entry.parent_table_uuid, create_query->uuid, stats.ctime))
+            {
+                LOG_INFO(
+                    log,
+                    "Skip DDL {} as creating the old temp table of RMV '{}', query {}",
+                    entry_name,
+                    parent_table_uuid,
+                    create_query->formatForLogging());
+                out_reason = fmt::format(
+                    "Creating the old temp table '{}' of Refreshable Materialized View '{}'", create_query->uuid, parent_table_uuid);
+                return {};
+            }
+        }
+        else if (const auto * rename_query = task->query->as<ASTRenameQuery>())
+        {
+            if (rename_query->getElements().size() == 1)
+            {
+                const auto & element = rename_query->getElements().front();
+                QualifiedTableName from_table{.database = element.from.getDatabase(), .table = element.from.getTable()};
+                if (shouldSkipRenamingRMVTempTable(zookeeper, *task->entry.parent_table_uuid, from_table))
+                {
+                    LOG_INFO(
+                        log,
+                        "Skip DDL {} as renaming the old temp table of RMV '{}', query {}",
+                        entry_name,
+                        parent_table_uuid,
+                        rename_query->formatForLogging());
+
+                    out_reason = fmt::format(
+                        "Renaming the old temp table '{}' of Refreshable Materialized View '{}'",
+                        from_table.getFullName(),
+                        parent_table_uuid);
+                    return {};
+                }
+            }
+        }
     }
 
     return task;

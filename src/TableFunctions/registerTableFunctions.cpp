@@ -10,6 +10,7 @@ void registerTableFunctions()
     registerTableFunctionMerge(factory);
     registerTableFunctionRemote(factory);
     registerTableFunctionNumbers(factory);
+    registerTableFunctionPrimes(factory);
     registerTableFunctionLoop(factory);
     registerTableFunctionGenerateSeries(factory);
     registerTableFunctionNull(factory);
@@ -32,6 +33,7 @@ void registerTableFunctions()
 #endif
 
     registerTableFunctionMergeTreeIndex(factory);
+    registerTableFunctionMergeTreeAnalyzeIndexes(factory);
     registerTableFunctionMergeTreeProjection(factory);
     registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
@@ -70,6 +72,11 @@ void registerTableFunctions()
     registerTableFunctionObjectStorageCluster(factory);
     registerDataLakeTableFunctions(factory);
     registerDataLakeClusterTableFunctions(factory);
+
+#if USE_YTSAURUS
+    registerTableFunctionYTsaurus(factory);
+#endif
+
 }
 
 }

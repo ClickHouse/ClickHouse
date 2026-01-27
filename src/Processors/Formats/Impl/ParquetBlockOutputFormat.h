@@ -6,6 +6,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/Impl/Parquet/Write.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Common/ThreadPool.h>
 
 namespace arrow
@@ -30,7 +31,7 @@ class CHColumnToArrowColumn;
 class ParquetBlockOutputFormat : public IOutputFormat
 {
 public:
-    ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
+    ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, FormatFilterInfoPtr format_filter_info_);
     ~ParquetBlockOutputFormat() override;
 
     String getName() const override { return "ParquetBlockOutputFormat"; }
@@ -151,6 +152,7 @@ private:
 
     std::deque<Task> task_queue;
     std::deque<RowGroupState> row_groups;
+    FormatFilterInfoPtr format_filter_info;
 };
 
 }

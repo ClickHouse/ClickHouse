@@ -13,7 +13,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/TablesLoader.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -37,6 +37,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/AsyncLoader.h>
 #include <Interpreters/TransactionLog.h>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -88,7 +89,7 @@ DatabaseOrdinary::DatabaseOrdinary(
     : DatabaseOrdinary(
           name_,
           metadata_path_,
-          std::filesystem::path("data") / escapeForFileName(name_) / "",
+          DatabaseCatalog::getDataDirPath(name_) / "",
           "DatabaseOrdinary (" + name_ + ")",
           context_,
           database_metadata_disk_settings_)
@@ -140,8 +141,8 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
 void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
 {
     auto * storage = create_query.storage;
-    auto args = std::make_shared<ASTExpressionList>();
-    auto engine = std::make_shared<ASTFunction>();
+    auto args = make_intrusive<ASTExpressionList>();
+    auto engine = make_intrusive<ASTFunction>();
     String engine_name;
 
     if (replicated)
@@ -150,8 +151,8 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
         String replica_path = server_settings[ServerSetting::default_replica_path];
         String replica_name = server_settings[ServerSetting::default_replica_name];
 
-        args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
-        args->children.push_back(std::make_shared<ASTLiteral>(replica_name));
+        args->children.push_back(make_intrusive<ASTLiteral>(replica_path));
+        args->children.push_back(make_intrusive<ASTLiteral>(replica_name));
 
         /// Add old engine's arguments
         if (storage->engine->arguments)
@@ -627,7 +628,7 @@ Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
     return {unique_names.begin(), unique_names.end()};
 }
 
-void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
     auto db_disk = getDisk();
     waitDatabaseStarted();
@@ -653,7 +654,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     if (table_id.uuid != UUIDHelpers::Nil && create_query.uuid != table_id.uuid)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter table {}: metadata file {} has different UUID", table_id.getNameForLogs(), table_metadata_path);
 
-    applyMetadataChangesToCreateQuery(ast, metadata, local_context);
+    applyMetadataChangesToCreateQuery(ast, metadata, local_context, validate_new_create_query);
 
     statement = getObjectDefinitionFromCreateQuery(ast);
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());

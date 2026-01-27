@@ -4,8 +4,10 @@
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <Common/memory.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Core/Settings.h>
 #include <base/getPageSize.h>
 #include <Interpreters/Context.h>
 
@@ -85,7 +87,7 @@ struct ThreadStack
 
     static size_t getSize()
     {
-        auto size = std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ);
+        auto size = std::max<size_t>({UNWIND_MINSIGSTKSZ, static_cast<size_t>(MINSIGSTKSZ), static_cast<size_t>(getPageSize())});
 
         if constexpr (guardPagesEnabled())
             size += getPageSize();
@@ -95,7 +97,6 @@ struct ThreadStack
     void * getData() const { return data; }
 
 private:
-    /// 16 KiB - not too big but enough to handle error.
     void * data = nullptr;
 };
 
@@ -105,10 +106,6 @@ static thread_local ThreadStack alt_stack;
 static thread_local bool has_alt_stack = false;
 #endif
 
-ThreadGroup::ThreadGroup()
-    : master_thread_id(CurrentThread::get().thread_id)
-    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(false))
-{}
 
 ThreadStatus::ThreadStatus()
     : thread_id(getThreadId())
@@ -341,6 +338,7 @@ MainThreadStatus::MainThreadStatus()
 
 MainThreadStatus::~MainThreadStatus()
 {
+    reset();
     /// Stop gathering task stats. We do this to avoid issues due to static object destruction order
     /// `MainThreadStatus thread_status` inside MainThreadStatus::getInstance might call detachFromGroup which calls taskstats->updateCounters
     /// `thread_local auto metrics_provider` inside TasksStatsCounters::TasksStatsCounters holds the file descriptors open
@@ -348,7 +346,7 @@ MainThreadStatus::~MainThreadStatus()
     /// the file descriptors are closed, which will throw errors.
     /// As we don't really care about stats of the main thread (they won't be used) it's simpler to just disable them before the
     /// implicit ~ThreadStatus is called here
-    getInstance().taskstats.reset();
+    getInstance().taskstats = nullptr;
     main_thread = nullptr;
 }
 

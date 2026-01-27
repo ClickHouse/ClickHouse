@@ -9,6 +9,7 @@ set(DBMS_FUNCTIONS
     IFunction.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
     IFunctionAdaptors.cpp # FunctionToFunctionBaseAdaptor (Used by FunctionFactory.cpp)
     FunctionDynamicAdaptor.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
+    FunctionVariantAdaptor.cpp # IFunctionOverloadResolver::build, IExecutableFunction::execute... (For Variant type support)
     FunctionFactory.cpp # FunctionFactory::instance() (Many AST visitors, analyzer passes, some storages...)
     FunctionHelpers.cpp # convertConstTupleToConstantElements, checkAndGetColumnConstStringOrFixedString, checkAndGetNestedArrayOffset ...)
     FunctionsLogical.cpp # createInternalFunctionAndOverloadResolve / createInternalFunctionOrOverloadResolver ... (Multiple)
@@ -18,11 +19,40 @@ set(DBMS_FUNCTIONS
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
-    searchAnyAll.cpp # FunctionSearchImpl (Used by MergeTreeIndexGin.cpp)
-    FunctionsConversion_impl0.cpp
+    hasAnyAllTokens.cpp # FunctionSearchImpl (Used by MergeTreeIndexConditionText.cpp)
+    FunctionsConversion_impl00.cpp
+    FunctionsConversion_impl01.cpp
+    FunctionsConversion_impl02.cpp
+    FunctionsConversion_impl03.cpp
+    FunctionsConversion_impl04.cpp
+    FunctionsConversion_impl05.cpp
+    FunctionsConversion_impl06.cpp
+    FunctionsConversion_impl07.cpp
+    FunctionsConversion_impl08.cpp
+    FunctionsConversion_impl09.cpp
+    FunctionsConversion_impl10.cpp
+    FunctionsConversion_impl11.cpp
+    FunctionsConversion_impl12.cpp
+    FunctionsConversion_impl13.cpp
+    FunctionsConversion_impl14.cpp
+    FunctionsConversion_impl15.cpp
+    FunctionsConversion_impl16.cpp
+    FunctionsConversion_impl17.cpp
+    FunctionsConversion_impl18.cpp
+    FunctionsConversion_impl19.cpp
+    FunctionsConversion_impl20.cpp
+    FunctionsConversion_impl21.cpp
+    FunctionsConversion_impl22.cpp
+    FunctionsConversion_impl23.cpp
+    FunctionsConversion_impl24.cpp
+    FunctionsConversion_impl25.cpp
+    FunctionsConversion_impl26.cpp
+    FunctionsConversion_impl27.cpp
+    FunctionsConversion_impl28.cpp
     FunctionsConversion_impl1.cpp
     FunctionsConversion_impl2.cpp
     FunctionsConversion_impl3.cpp
+    FunctionTopKFilter.cpp # createInternalFunctionTopKFilterResolver used from optimizeTopK.cpp
     extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
     generateSnowflakeID.cpp
 )
@@ -38,7 +68,7 @@ extract_into_parent_list(clickhouse_functions_headers dbms_headers
 
 add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_headers} ${clickhouse_functions_sources})
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options(clickhouse_functions_obj PRIVATE "-g0")
+    target_compile_options(clickhouse_functions_obj PRIVATE "-g1")
 endif()
 
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_obj>)
@@ -63,6 +93,7 @@ list (APPEND PRIVATE_LIBS
         boost::filesystem
         divide_impl
         ch_contrib::xxHash
+        ch_contrib::stringzilla
 )
 
 if (TARGET OpenSSL::Crypto)
@@ -136,6 +167,9 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_array>)
 
 add_subdirectory(Kusto)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_kusto>)
+
+add_subdirectory(TimeSeries)
+list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_time_series>)
 
 if (TARGET ch_contrib::datasketches)
     add_subdirectory(UniqTheta)

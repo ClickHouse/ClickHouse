@@ -1,0 +1,16 @@
+-- { echo }
+select count() from test_materialize;
+10000
+-- { echo }
+select rows, index_granularity_bytes_in_memory_allocated>25 from system.parts where database = currentDatabase() and table = 'test_materialize' order by 1;
+10000	1
+alter table test_materialize modify setting use_const_adaptive_granularity;
+alter table test_materialize rewrite parts settings mutations_sync=2;
+select rows, index_granularity_bytes_in_memory_allocated from system.parts where database = currentDatabase() and table = 'test_materialize' and active order by 1;
+10000	25
+select count() from test_materialize;
+10000
+select * from system.mutations where database = currentDatabase() and not is_done format Vertical;
+detach table test_materialize;
+attach table test_materialize;
+Hashes are the same

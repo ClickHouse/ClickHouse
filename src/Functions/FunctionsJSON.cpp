@@ -8,11 +8,9 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
-#include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
@@ -26,7 +24,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/IFunction.h>
@@ -87,7 +84,7 @@ concept Preparable = requires (T t)
 class FunctionJSONHelpers
 {
 public:
-    template <typename Name, template<typename> typename Impl, class JSONParser, bool case_insensitive = false>
+    template <typename Name, template <typename> typename Impl, typename JSONParser, bool case_insensitive = false>
     class Executor
     {
     public:
@@ -140,7 +137,7 @@ public:
             bool document_ok = false;
             if (col_json_const)
             {
-                std::string_view json{reinterpret_cast<const char *>(chars.data()), offsets[0] - 1};
+                std::string_view json{reinterpret_cast<const char *>(chars.data()), offsets[0]};
                 document_ok = parser.parse(json, document);
             }
 
@@ -149,7 +146,7 @@ public:
             {
                 if (!col_json_const)
                 {
-                    std::string_view json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1] - 1};
+                    std::string_view json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1]};
                     document_ok = parser.parse(json, document);
                 }
 
@@ -241,7 +238,7 @@ private:
         typename JSONParser::Element res_element = document;
         std::string_view key;
 
-        for (size_t j = 0; j != moves.size(); ++j)
+        for (size_t j = 0, size = moves.size(); j != size; ++j)
         {
             switch (moves[j].type)
             {
@@ -275,7 +272,7 @@ private:
                 }
                 case MoveType::Key:
                 {
-                    key = arguments[j + 1].column->getDataAt(row).toView();
+                    key = arguments[j + 1].column->getDataAt(row);
                     if constexpr (case_insensitive)
                     {
                         if (!moveToElementByKeyCaseInsensitive<JSONParser>(res_element, key))
@@ -529,7 +526,7 @@ private:
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
 /// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class JSONOverloadResolver : public IFunctionOverloadResolver, WithContext
+class JSONOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;
@@ -541,7 +538,10 @@ public:
         return std::make_unique<JSONOverloadResolver>(context_);
     }
 
-    explicit JSONOverloadResolver(ContextPtr context_) : WithContext(context_) {}
+    explicit JSONOverloadResolver(ContextPtr context)
+        : allow_simdjson(context->getSettingsRef()[Setting::allow_simdjson])
+        , format_settings(getFormatSettings(context))
+    {}
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -574,8 +574,12 @@ public:
         for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
         return std::make_unique<FunctionBaseFunctionJSON<Name, Impl, case_insensitive>>(
-            null_presence, getContext()->getSettingsRef()[Setting::allow_simdjson], argument_types, return_type, json_return_type, getFormatSettings(getContext()));
+            null_presence, allow_simdjson, argument_types, return_type, json_return_type, format_settings);
     }
+
+private:
+    const bool allow_simdjson;
+    FormatSettings format_settings;
 };
 
 struct NameJSONHas { static constexpr auto name{"JSONHas"}; };
@@ -773,7 +777,7 @@ public:
 };
 
 
-template <typename JSONParser, typename NumberType, bool convert_bool_to_integer = false>
+template <typename JSONParser, typename NumberType>
 class JSONExtractNumericImpl
 {
 public:
@@ -795,7 +799,7 @@ public:
     {
         NumberType value;
 
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, convert_bool_to_integer, /*allow_type_conversion=*/true, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/false, /*allow_type_conversion=*/true, error))
             return false;
         auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
         col_vec.insertValue(value);
@@ -1009,7 +1013,6 @@ public:
             WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
             jsonElementToString<JSONParser>(element, buf, format_settings);
         }
-        chars.push_back(0);
         col_str.getOffsets().push_back(chars.size());
         return true;
     }
@@ -1119,56 +1122,511 @@ public:
 
 REGISTER_FUNCTION(JSON)
 {
-    factory.registerFunction<JSONOverloadResolver<NameJSONHas, JSONHasImpl>>();
-    factory.registerFunction<JSONOverloadResolver<NameIsValidJSON, IsValidJSONImpl>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONLength, JSONLengthImpl>>();
+    /// JSONHas
+    {
+        FunctionDocumentation::Description description = R"(
+Checks for the existence of the provided value(s) in the JSON document.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONHas(json[ ,indices_or_keys, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"[ ,indices_or_keys, ...]", "A list of zero or more arguments.", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the value exists in `json`, otherwise `0`", {"UInt8"}};
+        FunctionDocumentation::Examples example = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1;
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0;
+            )",
+            R"(
+1
+0
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
+
+        factory.registerFunction<JSONOverloadResolver<NameJSONHas, JSONHasImpl>>(documentation);
+    }
+
+    /// isValidJSON
+    {
+        FunctionDocumentation::Description description = R"(
+Checks that the string passed is valid JSON.
+        )";
+        FunctionDocumentation::Syntax syntax = "isValidJSON(json)";
+        FunctionDocumentation::Arguments argument = {{"json", "JSON string to validate", {"String"}}};
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string is valid JSON, otherwise `0`.", {"UInt8"}};
+        FunctionDocumentation::Examples example = {
+        {
+            "Usage example",
+            R"(
+SELECT isValidJSON('{"a": "hello", "b": [-100, 200.0, 300]}') = 1;
+SELECT isValidJSON('not JSON') = 0;
+            )",
+            R"(
+1
+0
+            )"
+        },
+        {
+            "Using integers to access both JSON arrays and JSON objects",
+            R"(
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 0);
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 1);
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 2);
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', -1);
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', -2);
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 3);
+            )",
+            R"(
+0
+1
+1
+1
+1
+1
+0
+
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, argument, {}, returned_value, example, introduced_in, category};
+
+        factory.registerFunction<JSONOverloadResolver<NameIsValidJSON, IsValidJSONImpl>>(documentation);
+    }
+
+    /// JSONLength
+    {
+        FunctionDocumentation::Description description = R"(
+Return the length of a JSON array or a JSON object.
+If the value does not exist or has the wrong type, `0` will be returned.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONLength(json [, indices_or_keys, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"[, indices_or_keys, ...]", "Optional. A list of zero or more arguments.", {"String", "(U)Int8/16/32/64"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the length of the JSON array or JSON object, otherwise returns `0` if the value does not exist or has the wrong type.", {"UInt64"}};
+        FunctionDocumentation::Examples example = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3;
+SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2;
+            )",
+            R"(
+1
+1
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
+
+        factory.registerFunction<JSONOverloadResolver<NameJSONLength, JSONLengthImpl>>(documentation);
+    }
     factory.registerFunction<JSONOverloadResolver<NameJSONKey, JSONKeyImpl>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONType, JSONTypeImpl>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractInt, JSONExtractInt64Impl>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractUInt, JSONExtractUInt64Impl>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractFloat, JSONExtractFloat64Impl>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractBool, JSONExtractBoolImpl>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractString, JSONExtractStringImpl>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtract, JSONExtractImpl>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValues, JSONExtractKeysAndValuesImpl>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractRaw, JSONExtractRawImpl>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractArrayRaw, JSONExtractArrayRawImpl>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesRaw, JSONExtractKeysAndValuesRawImpl>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeys, JSONExtractKeysImpl>>();
+
+    /// JSONType
+    {
+        FunctionDocumentation::Description description = R"(
+Return the type of a JSON value. If the value does not exist, `Null=0` will be returned.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONType(json[, indices_or_keys, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"json[, indices_or_keys, ...]", "A list of zero or more arguments, each of which can be either string or integer.", {"String", "(U)Int8/16/32/64"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the type of a JSON value as a string, otherwise if the value doesn't exist it returns `Null=0`", {"Enum"}};
+        FunctionDocumentation::Examples example = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}') = 'Object';
+SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String';
+SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array';
+            )",
+            R"(
+1
+1
+1
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
+
+        factory.registerFunction<JSONOverloadResolver<NameJSONType, JSONTypeImpl>>(documentation);
+    }
+    /// JSONExtractInt
+    {
+        FunctionDocumentation::Description description = R"(
+Parses JSON and extracts a value of Int type.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONExtractInt(json[, indices_or_keys, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse.", {"String"}},
+            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns an Int value if it exists, otherwise returns `0`.", {"Int64"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) AS res;
+            )",
+            R"(
+┌──res─┐
+│ -100 │
+└──────┘
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractInt, JSONExtractInt64Impl>>(documentation);
+    }
+
+    /// JSONExtractUInt
+    {
+        FunctionDocumentation::Description description = R"(
+Parses JSON and extracts a value of UInt type.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONExtractUInt(json [, indices_or_keys, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse.", {"String"}},
+            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a UInt value if it exists, otherwise returns `0`.", {"UInt64"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) AS res;
+            )",
+            R"(
+┌─res─┐
+│ 300 │
+└─────┘
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractUInt, JSONExtractUInt64Impl>>(documentation);
+    }
+
+    /// JSONExtractFloat
+    {
+        FunctionDocumentation::Description description = R"(
+Parses JSON and extracts a value of Float type.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONExtractFloat(json[, indices_or_keys, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse.", {"String"}},
+            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a Float value if it exists, otherwise returns `0`.", {"Float64"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) AS res;
+            )",
+            R"(
+┌─res─┐
+│ 200 │
+└─────┘
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractFloat, JSONExtractFloat64Impl>>(documentation);
+    }
+
+    /// JSONExtractBool
+    {
+        FunctionDocumentation::Description description = R"(
+Parses JSON and extracts a value of Bool type.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONExtractBool(json[, indices_or_keys, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse.", {"String"}},
+            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a Bool value if it exists, otherwise returns `0`.", {"Bool"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONExtractBool('{"passed": true}', 'passed') AS res;
+            )",
+            R"(
+┌─res─┐
+│   1 │
+└─────┘
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractBool, JSONExtractBoolImpl>>(documentation);
+    }
+
+    /// JSONExtractString
+    {
+        FunctionDocumentation::Description description = R"(
+Parses JSON and extracts a value of String type.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONExtractString(json[, indices_or_keys, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse.", {"String"}},
+            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a String value if it exists, otherwise returns an empty string.", {"String"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') AS res;
+            )",
+            R"(
+┌─res───┐
+│ hello │
+└───────┘
+            )"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractString, JSONExtractStringImpl>>(documentation);
+    }
+
+    /// JSONExtract
+    {
+        FunctionDocumentation::Description description = R"(
+Parses JSON and extracts a value with given ClickHouse data type.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONExtract(json[, indices_or_keys, ...], return_type)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse.", {"String"}},
+            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}},
+            {"return_type", "ClickHouse data type to return.", {"String"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of specified ClickHouse data type if possible, otherwise returns the default value for that type.", {}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Array(Float64))') AS res;
+            )",
+            R"(
+┌─res──────────────────────────────┐
+│ ('hello',[-100,200,300])         │
+└──────────────────────────────────┘
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {19, 14};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtract, JSONExtractImpl>>(documentation);
+    }
+
+    /// JSONExtractKeysAndValues
+    {
+        FunctionDocumentation::Description description = R"(
+Parses key-value pairs from a JSON where the values are of the given ClickHouse data type.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValues(json[, indices_or_keys, ...], value_type)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse.", {"String"}},
+            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}},
+            {"value_type", "ClickHouse data type of the values.", {"String"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of tuples with the parsed key-value pairs.", {"Array(Tuple(String, value_type))"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'Int8', 'x') AS res;
+            )",
+            R"(
+┌─res────────────────────┐
+│ [('a',5),('b',7),('c',11)] │
+└────────────────────────┘
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValues, JSONExtractKeysAndValuesImpl>>(documentation);
+    }
+
+    /// JSONExtractRaw
+    {
+        FunctionDocumentation::Description description = R"(
+Returns a part of JSON as unparsed string.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONExtractRaw(json[, indices_or_keys, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse.", {"String"}},
+            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the part of JSON as an unparsed string. If the part does not exist or has a wrong type, an empty string will be returned.", {"String"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') AS res;
+            )",
+            R"(
+┌─res──────────────┐
+│ [-100,200.0,300] │
+└──────────────────┘
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractRaw, JSONExtractRawImpl>>(documentation);
+    }
+
+    /// JSONExtractArrayRaw
+    {
+        FunctionDocumentation::Description description = R"(
+Returns an array with elements of JSON array, each represented as unparsed string.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONExtractArrayRaw(json[, indices_or_keys, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse.", {"String"}},
+            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of strings with JSON array elements. If the part is not an array or does not exist, an empty array will be returned.", {"Array(String)"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') AS res;
+            )",
+            R"(
+┌─res──────────────────────────┐
+│ ['-100','200.0','"hello"']   │
+└──────────────────────────────┘
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractArrayRaw, JSONExtractArrayRawImpl>>(documentation);
+    }
+
+    /// JSONExtractKeysAndValuesRaw
+    {
+        FunctionDocumentation::Description description = R"(
+Returns an array of tuples with keys and values from a JSON object. All values are represented as unparsed strings.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValuesRaw(json[, indices_or_keys, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse.", {"String"}},
+            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of tuples with parsed key-value pairs where values are unparsed strings.", {"Array(Tuple(String, String))"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b": "hello"}') AS res;
+            )",
+            R"(
+┌─res──────────────────────────────────┐
+│ [('a','[-100,200.0]'),('b','"hello"')] │
+└──────────────────────────────────────┘
+            )"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 4};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesRaw, JSONExtractKeysAndValuesRawImpl>>(documentation);
+    }
+
+    /// JSONExtractKeys
+    {
+        FunctionDocumentation::Description description = R"(
+Parses a JSON string and extracts the keys.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONExtractKeys(json[, indices_or_keys, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse.", {"String"}},
+            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with the keys of the JSON object.", {"Array(String)"}};
+        FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}') AS res;
+            )",
+            R"(
+┌─res─────────┐
+│ ['a','b']   │
+└─────────────┘
+            )"
+        }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeys, JSONExtractKeysImpl>>(documentation);
+    }
 }
 
 REGISTER_FUNCTION(JSONExtractCaseInsensitive)
 {
-    // JSONExtractIntCaseInsensitive
+    /// JSONExtractIntCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses JSON and extracts a value of Int type using case-insensitive key matching. This function is similar to [`JSONExtractInt`](#jsonextractint).
-)";
+Parses JSON and extracts a value of Int type using case-insensitive key matching. This function is similar to [`JSONExtractInt`](#JSONExtractInt).
+        )";
         FunctionDocumentation::Syntax syntax = "JSONExtractIntCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse", {"String"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {
-            "Returns the extracted Int value, 0 if not found or cannot be converted.",
-            {"Int64"}
-        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the extracted Int value, 0 if not found or cannot be converted.", {"Int64"}};
         FunctionDocumentation::Examples examples = {
             {"basic", R"(SELECT JSONExtractIntCaseInsensitive('{"Value": 123}', 'value'))", "123"},
             {"nested", R"(SELECT JSONExtractIntCaseInsensitive('{"DATA": {"COUNT": 42}}', 'data', 'Count'))", "42"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractIntCaseInsensitive, JSONExtractInt64Impl, true>>(documentation);
     }
 
-    // JSONExtractUIntCaseInsensitive
+    /// JSONExtractUIntCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses JSON and extracts a value of UInt type using case-insensitive key matching. This function is similar to [`JSONExtractUInt`](#jsonextractuint).
-)";
+Parses JSON and extracts a value of UInt type using case-insensitive key matching. This function is similar to [`JSONExtractUInt`](#JSONExtractUInt).
+        )";
         FunctionDocumentation::Syntax syntax = "JSONExtractUIntCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse", {"String"}},
@@ -1183,16 +1641,16 @@ Parses JSON and extracts a value of UInt type using case-insensitive key matchin
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractUIntCaseInsensitive, JSONExtractUInt64Impl, true>>(documentation);
     }
 
-    // JSONExtractFloatCaseInsensitive
+    /// JSONExtractFloatCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses JSON and extracts a value of Float type using case-insensitive key matching. This function is similar to [`JSONExtractFloat`](#jsonextractfloat).
-)";
+Parses JSON and extracts a value of Float type using case-insensitive key matching. This function is similar to [`JSONExtractFloat`](#JSONExtractFloat).
+        )";
         FunctionDocumentation::Syntax syntax = "JSONExtractFloatCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse", {"String"}},
@@ -1207,16 +1665,16 @@ Parses JSON and extracts a value of Float type using case-insensitive key matchi
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractFloatCaseInsensitive, JSONExtractFloat64Impl, true>>(documentation);
     }
 
-    // JSONExtractBoolCaseInsensitive
+    /// JSONExtractBoolCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses JSON and extracts a boolean value using case-insensitive key matching. This function is similar to [`JSONExtractBool`](#jsonextractbool).
-)";
+Parses JSON and extracts a boolean value using case-insensitive key matching. This function is similar to [`JSONExtractBool`](#JSONExtractBool).
+        )";
         FunctionDocumentation::Syntax syntax = "JSONExtractBoolCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse", {"String"}},
@@ -1231,16 +1689,16 @@ Parses JSON and extracts a boolean value using case-insensitive key matching. Th
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractBoolCaseInsensitive, JSONExtractBoolImpl, true>>(documentation);
     }
 
-    // JSONExtractStringCaseInsensitive
+    /// JSONExtractStringCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses JSON and extracts a string using case-insensitive key matching. This function is similar to [`JSONExtractString`](#jsonextractstring).
-)";
+Parses JSON and extracts a string using case-insensitive key matching. This function is similar to [`JSONExtractString`](#JSONExtractString).
+        )";
         FunctionDocumentation::Syntax syntax = "JSONExtractStringCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse", {"String"}},
@@ -1256,67 +1714,61 @@ Parses JSON and extracts a string using case-insensitive key matching. This func
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractStringCaseInsensitive, JSONExtractStringImpl, true>>(documentation);
     }
 
-    // JSONExtractCaseInsensitive
+    /// JSONExtractCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses JSON and extracts a value of the given ClickHouse data type using case-insensitive key matching. This function is similar to [`JSONExtract`](#jsonextract).
-)";
+Parses JSON and extracts a value of the given ClickHouse data type using case-insensitive key matching. This function is similar to [`JSONExtract`](#JSONExtract).
+        )";
         FunctionDocumentation::Syntax syntax = "JSONExtractCaseInsensitive(json [, indices_or_keys...], return_type)";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse", {"String"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}},
             {"return_type", "The ClickHouse data type to extract", {"String"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {
-            "Returns the extracted value in the specified data type.",
-            {}
-        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the extracted value in the specified data type.", {"Any"}};
         FunctionDocumentation::Examples examples = {
             {"int_type", R"(SELECT JSONExtractCaseInsensitive('{"Number": 123}', 'number', 'Int32'))", "123"},
             {"array_type", R"(SELECT JSONExtractCaseInsensitive('{"List": [1, 2, 3]}', 'list', 'Array(Int32)'))", "[1,2,3]"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractCaseInsensitive, JSONExtractImpl, true>>(documentation);
     }
 
-    // JSONExtractKeysAndValuesCaseInsensitive
+    /// JSONExtractKeysAndValuesCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses key-value pairs from JSON using case-insensitive key matching. This function is similar to [`JSONExtractKeysAndValues`](#jsonextractkeysandvalues).
-)";
+Parses key-value pairs from JSON using case-insensitive key matching. This function is similar to [`JSONExtractKeysAndValues`](#JSONExtractKeysAndValues).
+        )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValuesCaseInsensitive(json [, indices_or_keys...], value_type)";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse", {"String"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the object. Keys use case-insensitive matching", {"String", "(U)Int*"}},
             {"value_type", "The ClickHouse data type of the values", {"String"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {
-            "Returns an array of tuples containing key-value pairs.",
-            {"Array(Tuple(String, T))"}
-        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of tuples containing key-value pairs.", {"Array(Tuple(String, T))"}};
         FunctionDocumentation::Examples examples = {
             {"basic", R"(SELECT JSONExtractKeysAndValuesCaseInsensitive('{"Name": "Alice", "AGE": 30}', 'String'))", "[('Name','Alice'),('AGE','30')]"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesCaseInsensitive, JSONExtractKeysAndValuesImpl, true>>(documentation);
     }
 
-    // JSONExtractRawCaseInsensitive
+    /// JSONExtractRawCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Returns part of the JSON as an unparsed string using case-insensitive key matching. This function is similar to [`JSONExtractRaw`](#jsonextractraw).
-)";
+Returns part of the JSON as an unparsed string using case-insensitive key matching. This function is similar to [`JSONExtractRaw`](#JSONExtractRaw).
+        )";
         FunctionDocumentation::Syntax syntax = "JSONExtractRawCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse", {"String"}},
@@ -1331,16 +1783,16 @@ Returns part of the JSON as an unparsed string using case-insensitive key matchi
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractRawCaseInsensitive, JSONExtractRawImpl, true>>(documentation);
     }
 
-    // JSONExtractArrayRawCaseInsensitive
+    /// JSONExtractArrayRawCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Returns an array with elements of JSON array, each represented as unparsed string, using case-insensitive key matching. This function is similar to [`JSONExtractArrayRaw`](#jsonextractarrayraw).
-)";
+Returns an array with elements of JSON array, each represented as unparsed string, using case-insensitive key matching. This function is similar to [`JSONExtractArrayRaw`](#JSONExtractArrayRaw).
+        )";
         FunctionDocumentation::Syntax syntax = "JSONExtractArrayRawCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse", {"String"}},
@@ -1355,16 +1807,16 @@ Returns an array with elements of JSON array, each represented as unparsed strin
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractArrayRawCaseInsensitive, JSONExtractArrayRawImpl, true>>(documentation);
     }
 
-    // JSONExtractKeysAndValuesRawCaseInsensitive
+    /// JSONExtractKeysAndValuesRawCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Extracts raw key-value pairs from JSON using case-insensitive key matching. This function is similar to [`JSONExtractKeysAndValuesRaw`](#jsonextractkeysandvaluesraw).
-)";
+Extracts raw key-value pairs from JSON using case-insensitive key matching. This function is similar to [`JSONExtractKeysAndValuesRaw`](#JSONExtractKeysAndValuesRaw).
+        )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValuesRawCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse", {"String"}},
@@ -1379,16 +1831,16 @@ Extracts raw key-value pairs from JSON using case-insensitive key matching. This
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesRawCaseInsensitive, JSONExtractKeysAndValuesRawImpl, true>>(documentation);
     }
 
-    // JSONExtractKeysCaseInsensitive
+    /// JSONExtractKeysCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses a JSON string and extracts the keys using case-insensitive key matching to navigate to nested objects. This function is similar to [`JSONExtractKeys`](#jsonextractkeys).
-)";
+Parses a JSON string and extracts the keys using case-insensitive key matching to navigate to nested objects. This function is similar to [`JSONExtractKeys`](#JSONExtractKeys).
+        )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse", {"String"}},
@@ -1404,7 +1856,7 @@ Parses a JSON string and extracts the keys using case-insensitive key matching t
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysCaseInsensitive, JSONExtractKeysImpl, true>>(documentation);
     }

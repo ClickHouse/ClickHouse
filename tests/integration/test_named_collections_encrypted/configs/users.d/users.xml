@@ -2,6 +2,7 @@
     <profiles>
         <default>
             <ignore_on_cluster_for_replicated_named_collections_queries>0</ignore_on_cluster_for_replicated_named_collections_queries>
+            <format_display_secrets_in_show_and_select>1</format_display_secrets_in_show_and_select>
         </default>
     </profiles>
     <users>

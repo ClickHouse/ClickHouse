@@ -1,3 +1,4 @@
+import shlex
 import sys
 import traceback
 
@@ -12,9 +13,15 @@ def check():
     if info.user_name not in ("yariks5s", "maxknv"):
         print(f"Not enabled for [{info.user_name}]")
         return
-    if not Shell.check(
-        f"gh workflow run private_quick_sync.yml --repo ClickHouse/clickhouse-private --ref master --field pr_number={info.pr_number} --field branch_name={info.git_branch} --field title='{info.pr_title}' --field sha={info.sha}",
-    ):
+    cmd = (
+        "gh workflow run private_quick_sync.yml --repo ClickHouse/clickhouse-private --ref master "
+        + f"--field pr_number={shlex.quote(str(info.pr_number))} "
+        + f"--field branch_name={shlex.quote(str(info.git_branch))} "
+        + f"--field title={shlex.quote(str(info.pr_title))} "
+        + f"--field sha={shlex.quote(str(info.sha))}"
+    )
+
+    if not Shell.check(cmd):
         GH.post_commit_status(
             name=SYNC, status="error", description="failed to start the sync", url=""
         )

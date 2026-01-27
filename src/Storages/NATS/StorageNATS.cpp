@@ -17,7 +17,10 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MessageQueueSink.h>
-#include <Storages/NATS/NATSProducer.h>
+#include <Storages/NATS/NATSJetStreamConsumer.h>
+#include <Storages/NATS/NATSCoreConsumer.h>
+#include <Storages/NATS/NATSJetStreamProducer.h>
+#include <Storages/NATS/NATSCoreProducer.h>
 #include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATSSource.h>
 #include <Storages/NATS/StorageNATS.h>
@@ -52,6 +55,7 @@ namespace NATSSetting
     extern const NATSSettingsStreamingHandleErrorMode nats_handle_error_mode;
     extern const NATSSettingsUInt64 nats_max_block_size;
     extern const NATSSettingsUInt64 nats_max_rows_per_message;
+    extern const NATSSettingsString nats_consumer_name;
     extern const NATSSettingsUInt64 nats_num_consumers;
     extern const NATSSettingsString nats_password;
     extern const NATSSettingsString nats_queue_group;
@@ -64,6 +68,7 @@ namespace NATSSetting
     extern const NATSSettingsString nats_subjects;
     extern const NATSSettingsString nats_token;
     extern const NATSSettingsString nats_url;
+    extern const NATSSettingsString nats_stream;
     extern const NATSSettingsString nats_username;
 }
 
@@ -146,10 +151,10 @@ StorageNATS::StorageNATS(
         tryLogCurrentException(log);
     }
 
-    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSStreamingTask", [this] { streamingToViewsFunc(); });
+    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "NATSStreamingTask", [this] { streamingToViewsFunc(); });
     streaming_task->deactivate();
 
-    initialize_consumers_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
+    initialize_consumers_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
     initialize_consumers_task->deactivate();
 }
 StorageNATS::~StorageNATS()
@@ -369,10 +374,13 @@ void StorageNATS::read(
 
     if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
         throw Exception(
-            ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+            ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
 
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageNATS with attached materialized views");
+
+    if (!getStreamName().empty() && getConsumerName().empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "To read from NATS jet stream, you must specify `nats_consumer_name` setting");
 
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
     auto modified_context = addSettings(local_context);
@@ -390,7 +398,8 @@ void StorageNATS::read(
         auto converting_dag = ActionsDAG::makeConvertingActions(
             nats_source->getPort().getHeader().getColumnsWithTypeAndName(),
             sample_block.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+            ActionsDAG::MatchColumnsMode::Name,
+            local_context);
 
         auto converting = std::make_shared<ExpressionActions>(std::move(converting_dag));
         auto converting_transform = std::make_shared<ExpressionTransform>(nats_source->getPort().getSharedHeader(), std::move(converting));
@@ -442,15 +451,12 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
     if (!isSubjectInSubscriptions(subject))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Selected subject is not among engine subjects");
 
-    auto connection_future = event_handler.createConnection(configuration);
-
-    auto producer = std::make_unique<NATSProducer>(connection_future.get(), subject, shutdown_called, log);
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
-        std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized()), getFormatName(), max_rows, std::move(producer), getName(), modified_context);}
+        std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized()), getFormatName(), max_rows, createProducer(std::move(subject)), getName(), modified_context);}
 
 
 void StorageNATS::startup()
@@ -495,20 +501,20 @@ void StorageNATS::shutdown(bool /* is_drop */)
     stopEventLoop();
 }
 
-void StorageNATS::pushConsumer(NATSConsumerPtr consumer)
+void StorageNATS::pushConsumer(INATSConsumerPtr consumer)
 {
     std::lock_guard lock(consumers_mutex);
     consumers.push_back(consumer);
     semaphore.set();
 }
 
-NATSConsumerPtr StorageNATS::popConsumer()
+INATSConsumerPtr StorageNATS::popConsumer()
 {
     return popConsumer(std::chrono::milliseconds::zero());
 }
 
 
-NATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
+INATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
 {
     // Wait for the first free consumer
     if (timeout == std::chrono::milliseconds::zero())
@@ -528,12 +534,28 @@ NATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
 }
 
 
-NATSConsumerPtr StorageNATS::createConsumer()
+INATSConsumerPtr StorageNATS::createConsumer()
 {
-    return std::make_shared<NATSConsumer>(
-        consumers_connection, subjects,
-        (*nats_settings)[NATSSetting::nats_queue_group].changed ? (*nats_settings)[NATSSetting::nats_queue_group].value : getStorageID().getFullTableName(),
-        log, queue_size, shutdown_called);
+    auto stream_name = getStreamName();
+    if (stream_name.empty())
+    {
+        auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group].changed ? (*nats_settings)[NATSSetting::nats_queue_group].value : getStorageID().getFullTableName();
+        return std::make_shared<NATSCoreConsumer>(consumers_connection, subjects, queue_name, log, queue_size, shutdown_called);
+    }
+
+    auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group];
+
+    return std::make_shared<NATSJetStreamConsumer>(consumers_connection, std::move(stream_name), getConsumerName(), subjects, queue_name, log, queue_size, shutdown_called);
+}
+
+INATSProducerPtr StorageNATS::createProducer(String subject)
+{
+    auto connection_future = event_handler.createConnection(configuration);
+
+    if (!getStreamName().empty())
+        return std::make_unique<NATSJetStreamProducer>(connection_future.get(), std::move(subject), shutdown_called, log);
+    else
+        return std::make_unique<NATSCoreProducer>(connection_future.get(), std::move(subject), shutdown_called, log);
 }
 
 bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
@@ -684,13 +706,19 @@ bool StorageNATS::streamToViews()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist", table_id.getNameForLogs());
 
     // Create an INSERT query for streaming data
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
+
+    auto new_context = Context::createCopy(nats_context);
+
+    /// Create a fresh query context from nats_context, discarding any caches attached to the previous context to
+    /// ensure no stale state is reused.
+    new_context->makeQueryContext();
 
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(
         insert,
-        nats_context,
+        new_context,
         /* allow_materialized */ false,
         /* no_squash */ true,
         /* no_destination */ true,
@@ -711,7 +739,7 @@ bool StorageNATS::streamToViews()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
+        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, new_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
@@ -753,6 +781,14 @@ bool StorageNATS::streamToViews()
     return false;
 }
 
+String StorageNATS::getStreamName() const
+{
+    return getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_stream]);
+}
+String StorageNATS::getConsumerName() const
+{
+    return getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_consumer_name]);
+}
 
 void registerStorageNATS(StorageFactory & factory)
 {
@@ -776,6 +812,9 @@ void registerStorageNATS(StorageFactory & factory)
 
         if (!(*nats_settings)[NATSSetting::nats_subjects].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
+
+        if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
 
         return std::make_shared<StorageNATS>(args.table_id, args.getContext(), args.columns, args.comment, std::move(nats_settings), args.mode);
     };

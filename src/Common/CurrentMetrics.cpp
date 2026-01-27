@@ -7,6 +7,7 @@
 /// it should be also added to src/Coordination/KeeperConstant.cpp
 #define APPLY_FOR_BUILTIN_METRICS(M) \
     M(Query, "Number of executing queries") \
+    M(QueryNonInternal, "Number of executing non-internal queries (queries initiated by users, excluding internal queries from ClickHouse)") \
     M(Merge, "Number of executing background merges") \
     M(MergeParts, "Number of source parts participating in current background merges") \
     M(Move, "Number of currently executing moves") \
@@ -62,11 +63,14 @@
     M(SendExternalTables, "Number of connections that are sending data for external tables to remote servers. External tables are used to implement GLOBAL IN and GLOBAL JOIN operators with distributed subqueries.") \
     M(QueryThread, "Number of query processing threads") \
     M(ReadonlyReplica, "Number of Replicated tables that are currently in readonly state due to re-initialization after ZooKeeper session loss or due to startup without ZooKeeper configured.") \
+    M(ReplicaReady, "Indicates if the replica is ready for queries: 0 = no, 1 = yes") \
     M(MemoryTracking, "Total amount of memory (bytes) allocated by the server.") \
     M(MemoryTrackingUncorrected, "Total amount of memory (bytes) allocated by the server not corrected by RSS.") \
     M(MergesMutationsMemoryTracking, "Total amount of memory (bytes) allocated by background tasks (merges and mutations).") \
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
     M(ZooKeeperSession, "Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.") \
+    M(ZooKeeperSessionExpired, "Number of expired global ZooKeeper sessions.") \
+    M(ZooKeeperConnectionLossStartedTimestampSeconds, "Unix timestamp in seconds when ZooKeeper connection was lost, or 0 if connected successfully.") \
     M(ZooKeeperWatch, "Number of watches (event subscriptions) in ZooKeeper.") \
     M(ZooKeeperRequest, "Number of requests to ZooKeeper in fly.") \
     M(DelayedInserts, "Number of INSERT queries that are throttled due to high number of active data parts for partition in a MergeTree table.") \
@@ -195,6 +199,9 @@
     M(BuildVectorSimilarityIndexThreads, "Number of threads in the build vector similarity index thread pool.") \
     M(BuildVectorSimilarityIndexThreadsActive, "Number of threads in the build vector similarity index thread pool running a task.") \
     M(BuildVectorSimilarityIndexThreadsScheduled, "Number of queued or active jobs in the build vector similarity index thread pool.") \
+    M(DistributedIndexAnalysisThreads, "Number of threads in the thread pool for distributed index analysis.") \
+    M(DistributedIndexAnalysisThreadsActive, "Number of threads in the thread pool for distributed index analysis running a task.") \
+    M(DistributedIndexAnalysisThreadsScheduled, "Number of queued or active jobs in the distributed idnex analysis thread pool.") \
     M(ObjectStorageQueueRegisteredServers, "Number of registered servers in StorageS3(Azure)Queue")\
     M(IcebergCatalogThreads, "Number of threads in the IcebergCatalog thread pool.") \
     M(IcebergCatalogThreadsActive, "Number of threads in the IcebergCatalog thread pool running a task.") \
@@ -232,8 +239,11 @@
     M(IDiskCopierThreadsActive, "Number of threads for copying data between disks of different types running a task.") \
     M(IDiskCopierThreadsScheduled, "Number of queued or active jobs for copying data between disks of different types.") \
     M(SystemReplicasThreads, "Number of threads in the system.replicas thread pool.") \
+    M(SystemDatabaseReplicasThreads, "Number of threads in the system.database_replicas thread pool.") \
     M(SystemReplicasThreadsActive, "Number of threads in the system.replicas thread pool running a task.") \
+    M(SystemDatabaseReplicasThreadsActive, "Number of threads in the system.database_replicas thread pool running a task.") \
     M(SystemReplicasThreadsScheduled, "Number of queued or active jobs in the system.replicas thread pool.") \
+    M(SystemDatabaseReplicasThreadsScheduled, "Number of queued or active jobs in the system.database_replicas thread pool.") \
     M(RestartReplicaThreads, "Number of threads in the RESTART REPLICA thread pool.") \
     M(RestartReplicaThreadsActive, "Number of threads in the RESTART REPLICA thread pool running a task.") \
     M(RestartReplicaThreadsScheduled, "Number of queued or active jobs in the RESTART REPLICA thread pool.") \
@@ -252,6 +262,9 @@
     M(OutdatedPartsLoadingThreads, "Number of threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsScheduled, "Number of queued or active jobs in the threadpool for loading Outdated data parts.") \
+    M(FreezePartThreads, "Number of threads in the threadpool for freezing data parts.") \
+    M(FreezePartThreadsActive, "Number of active threads in the threadpool for freezing data parts.") \
+    M(FreezePartThreadsScheduled, "Number of queued or active jobs in the threadpool for freezing data parts.") \
     M(PolygonDictionaryThreads, "Number of threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsActive, "Number of active threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsScheduled, "Number of queued or active jobs in the threadpool for polygon dictionaries.") \
@@ -299,9 +312,10 @@
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
     M(FilesystemCacheKeys, "Number of keys in filesystem cache") \
+    M(FilesystemCacheReserveThreads, "Threads number trying to reserve space in cache") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
-    M(IcebergMetadataFilesCacheBytes, "Size of the iceberg metadata cache in bytes") \
-    M(IcebergMetadataFilesCacheFiles, "Number of cached files in the iceberg metadata cache") \
+    M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
+    M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
     M(AvroSchemaCacheBytes, "Size of the Avro schema cache in bytes") \
     M(AvroSchemaCacheCells, "Number of cached Avro schemas") \
     M(AvroSchemaRegistryCacheBytes, "Size of the Avro schema registry cache in bytes") \
@@ -311,13 +325,20 @@
     M(HiveMetadataFilesCacheBytes, "Size of the hive metadata cache in bytes") \
     M(HiveMetadataFilesCacheFiles, "Number of cached files in the hive metadata cache") \
     M(VectorSimilarityIndexCacheBytes, "Size of the vector similarity index cache in bytes") \
-    M(VectorSimilarityIndexCacheCells, "Number of entries in vector similarity index cache") \
+    M(VectorSimilarityIndexCacheCells, "Number of entries in the vector similarity index cache") \
+    M(TextIndexDictionaryBlockCacheBytes, "Size of the text index dictionary block cache in bytes") \
+    M(TextIndexDictionaryBlockCacheCells, "Number of entries in the text index dictionary block cache") \
+    M(TextIndexHeaderCacheBytes, "Size of the text index header cache in bytes") \
+    M(TextIndexHeaderCacheCells, "Number of entries in text index header cache") \
+    M(TextIndexPostingsCacheBytes, "Size of the text index posting lists cache in bytes") \
+    M(TextIndexPostingsCacheCells, "Number of entries in the text index posting lists cache") \
     M(DNSHostsCacheBytes, "Size of the DNS hosts cache in bytes") \
     M(DNSHostsCacheSize, "Number of cached DNS hosts") \
     M(DNSAddressesCacheBytes, "Size of the DNS addresses cache in bytes") \
     M(DNSAddressesCacheSize, "Number of cached DNS addresses") \
     M(MarkCacheBytes, "Total size of mark cache in bytes") \
     M(MarkCacheFiles, "Total number of mark files cached in the mark cache") \
+    M(NamedCollection, "Number of named collections") \
     M(PrimaryIndexCacheBytes, "Total size of primary index cache in bytes") \
     M(PrimaryIndexCacheFiles, "Total number of index files cached in the primary index cache") \
     M(PageCacheBytes, "Total size of userspace page cache in bytes") \
@@ -337,6 +358,9 @@
     M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled code") \
     M(MergeJoinBlocksCacheBytes, "Total bytes used for cached blocks in MergeJoin") \
     M(MergeJoinBlocksCacheCount, "Total cached blocks in MergeJoin") \
+    M(BcryptCacheBytes, "Total size of the bcrypt authentication cache in bytes") \
+    M(BcryptCacheSize, "Total number of entries in the bcrypt authentication cache") \
+    M(ColumnsDescriptionsCacheSize, "Size of ColumnsDescriptions cache (per-table cache)") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \
@@ -358,13 +382,19 @@
     M(SharedMergeTreeThreadsScheduled, "Number of queued or active threads in the thread pools in internals of SharedMergeTree") \
     M(SharedMergeTreeFetch, "Number of fetches in progress") \
     M(SharedMergeTreeAssignedCurrentParts, "Number of parts locked by merge or mutation") \
+    M(SharedMergeTreeOutdatedPartsInKeeper, "How many outdated part records stored in keeper") \
+    M(SharedMergeTreeCondemnedPartsInKeeper, "How many condemned part records stored in keeper") \
+    M(SharedMergeTreeBrokenCondemnedPartsInKeeper, "How many broken condemned part records stored in keeper") \
     M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
+    M(DistrCacheSharedLimitCount, "Number of opened connections according to DistributedCache::ConnectionPool::SharedLimit") \
     M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
     M(DistrCacheAllocatedConnections, "Number of currently allocated connections to Distributed Cache connection pool") \
     M(DistrCacheBorrowedConnections, "Number of currently borrowed connections to Distributed Cache connection pool") \
     M(DistrCacheReadRequests, "Number of executed Read requests to Distributed Cache") \
     M(DistrCacheWriteRequests, "Number of executed Write requests to Distributed Cache") \
+    M(DistrCacheWriteBuffers, "Number of distributed cache write buffers") \
+    M(DistrCacheReadBuffers, "Number of distributed cache read buffers") \
     M(DistrCacheServerConnections, "Number of open connections to ClickHouse server from Distributed Cache") \
     M(DistrCacheRegisteredServers, "Number of distributed cache registered servers") \
     M(DistrCacheRegisteredServersCurrentAZ, "Number of distributed cache registered servers in current az") \
@@ -441,6 +471,9 @@
     M(DropDistributedCacheThreads, "Number of threads in the threadpool for drop distributed cache query.") \
     M(DropDistributedCacheThreadsActive, "Number of active threads in the threadpool for drop distributed cache query.") \
     M(DropDistributedCacheThreadsScheduled, "Number of queued or active jobs in the threadpool for drop distributed cache.") \
+    \
+    M(S3CachedCredentialsProviders, "Total number of cached credentials providers") \
+
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
@@ -459,28 +492,28 @@ namespace CurrentMetrics
     /// +1 to allow using END as a placeholder
     std::atomic<Value> values[END + 1] {};    /// Global variable, initialized by zeros.
 
-    const char * getName(Metric event)
+    static const std::array<std::string_view, END> names =
     {
-        static const char * strings[] =
-        {
-        #define M(NAME, DOCUMENTATION) #NAME,
-            APPLY_FOR_METRICS(M)
-        #undef M
-        };
+    #define M(NAME, DOCUMENTATION) #NAME,
+        APPLY_FOR_METRICS(M)
+    #undef M
+    };
 
-        return strings[event];
+    const std::string_view & getName(Metric event)
+    {
+        return names[event];
     }
 
-    const char * getDocumentation(Metric event)
+    static const std::array<std::string_view, END> docs =
     {
-        static const char * strings[] =
-        {
-        #define M(NAME, DOCUMENTATION) DOCUMENTATION,
-            APPLY_FOR_METRICS(M)
-        #undef M
-        };
+    #define M(NAME, DOCUMENTATION) DOCUMENTATION,
+        APPLY_FOR_METRICS(M)
+    #undef M
+    };
 
-        return strings[event];
+    const std::string_view & getDocumentation(Metric event)
+    {
+        return docs[event];
     }
 
     Metric end() { return END; }

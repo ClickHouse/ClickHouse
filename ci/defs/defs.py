@@ -15,8 +15,6 @@ S3_REPORT_BUCKET_HTTP_ENDPOINT = "s3.amazonaws.com/clickhouse-test-reports"
 class RunnerLabels:
     CI_SERVICES = "ci_services"
     CI_SERVICES_EBS = "ci_services_ebs"
-    BUILDER_AMD = ["self-hosted", "builder"]
-    BUILDER_ARM = ["self-hosted", "builder-aarch64"]
     FUNC_TESTER_AMD = ["self-hosted", "amd-medium"]
     FUNC_TESTER_ARM = ["self-hosted", "arm-medium"]
     AMD_LARGE = ["self-hosted", "amd-large"]
@@ -44,27 +42,37 @@ BASE_BRANCH = "master"
 
 azure_secret = Secret.Config(
     name="azure_connection_string",
-    type=Secret.Type.AWS_SSM_VAR,
+    type=Secret.Type.AWS_SSM_PARAMETER,
+)
+
+chcache_secret = Secret.Config(
+    name="chcache_password",
+    type=Secret.Type.AWS_SSM_PARAMETER,
+    region="us-east-1",
 )
 
 SECRETS = [
     Secret.Config(
         name="dockerhub_robot_password",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
     ),
     Secret.Config(
         name="clickhouse-test-stat-url",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
     ),
     Secret.Config(
         name="clickhouse-test-stat-login",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
     ),
     Secret.Config(
         name="clickhouse-test-stat-password",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
     ),
     azure_secret,
+    chcache_secret,
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
@@ -93,18 +101,6 @@ DOCKERS = [
         path="./ci/docker/binary-builder",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/fasttest"],
-    ),
-    Docker.Config(
-        name="clickhouse/test-old-centos",
-        path="./ci/docker/compatibility/centos",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
-        name="clickhouse/test-old-ubuntu",
-        path="./ci/docker/compatibility/ubuntu",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
     ),
     Docker.Config(
         name="clickhouse/stateless-test",
@@ -164,7 +160,7 @@ DOCKERS = [
         name="clickhouse/integration-tests-runner",
         path="./ci/docker/integration/runner",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
         name="clickhouse/integration-test-with-unity-catalog",
@@ -188,6 +184,18 @@ DOCKERS = [
         name="clickhouse/kerberos-kdc",
         path="./ci/docker/integration/kerberos_kdc",
         platforms=[Docker.Platforms.AMD],
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/test-mysql80",
+        path="./ci/docker/integration/mysql80",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/test-mysql57",
+        path="./ci/docker/integration/mysql57",
+        platforms=Docker.Platforms.AMD,
         depends_on=[],
     ),
     Docker.Config(
@@ -293,8 +301,9 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_UBSAN = "amd_ubsan"
     ARM_RELEASE = "arm_release"
     ARM_ASAN = "arm_asan"
+    ARM_TSAN = "arm_tsan"
 
-    ARM_COVERAGE = "arm_coverage"
+    AMD_COVERAGE = "amd_coverage"
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
     ARM_TIDY = "arm_tidy"
@@ -308,13 +317,14 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     RISCV64 = "riscv64"
     S390X = "s390x"
     LOONGARCH64 = "loongarch64"
-    FUZZERS = "fuzzers"
+    ARM_FUZZERS = "arm_fuzzers"
 
 
 class JobNames:
     DOCKER_BUILDS_ARM = "Dockers build (arm)"
     DOCKER_BUILDS_AMD = "Dockers build (amd)"
     STYLE_CHECK = "Style check"
+    PR_BODY = "PR formatter"
     FAST_TEST = "Fast test"
     BUILD = "Build"
     UNITTEST = "Unit tests"
@@ -325,7 +335,7 @@ class JobNames:
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
-    Docs = "Docs check"
+    DOCS = "Docs check"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"
@@ -344,8 +354,11 @@ class JobNames:
 
 
 class ToolSet:
-    COMPILER_C = "clang-19"
-    COMPILER_CPP = "clang++-19"
+    COMPILER_C = "clang-21"
+    COMPILER_CPP = "clang++-21"
+
+    COMPILER_CACHE = "sccache"
+    COMPILER_CACHE_LEGACY = "sccache"
 
 
 class ArtifactNames:
@@ -358,6 +371,7 @@ class ArtifactNames:
     CH_AMD_BINARY = "CH_AMD_BINARY"
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
     CH_ARM_ASAN = "CH_ARM_ASAN"
+    CH_ARM_TSAN = "CH_ARM_TSAN"
 
     CH_COV_BIN = "CH_COV_BIN"
     CH_ARM_BINARY = "CH_ARM_BIN"
@@ -381,10 +395,9 @@ class ArtifactNames:
 
     DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
-    DEB_COV = "DEB_COV"
     DEB_AMD_ASAN = "DEB_AMD_ASAN"
     DEB_AMD_TSAN = "DEB_AMD_TSAN"
-    DEB_AMD_MSAM = "DEB_AMD_MSAM"
+    DEB_AMD_MSAN = "DEB_AMD_MSAM"
     DEB_AMD_UBSAN = "DEB_AMD_UBSAN"
     DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
     DEB_ARM_ASAN = "DEB_ARM_ASAN"
@@ -395,7 +408,7 @@ class ArtifactNames:
     TGZ_AMD_RELEASE = "TGZ_AMD_RELEASE"
     TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
 
-    FUZZERS = "FUZZERS"
+    ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
 
 
@@ -415,6 +428,7 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_BINARY,
             ArtifactNames.CH_ARM_RELEASE,
             ArtifactNames.CH_ARM_ASAN,
+            ArtifactNames.CH_ARM_TSAN,
             ArtifactNames.CH_COV_BIN,
             ArtifactNames.CH_ARM_BINARY,
             ArtifactNames.CH_TIDY_BIN,
@@ -440,9 +454,8 @@ class ArtifactConfigs:
             ArtifactNames.DEB_AMD_DEBUG,
             ArtifactNames.DEB_AMD_ASAN,
             ArtifactNames.DEB_AMD_TSAN,
-            ArtifactNames.DEB_AMD_MSAM,
+            ArtifactNames.DEB_AMD_MSAN,
             ArtifactNames.DEB_AMD_UBSAN,
-            ArtifactNames.DEB_COV,
             ArtifactNames.DEB_ARM_RELEASE,
             ArtifactNames.DEB_ARM_ASAN,
         ]
@@ -481,7 +494,7 @@ class ArtifactConfigs:
         ]
     )
     fuzzers = Artifact.Config(
-        name=ArtifactNames.FUZZERS,
+        name=ArtifactNames.ARM_FUZZERS,
         type=Artifact.Type.S3,
         path=[
             f"{TEMP_DIR}/build/programs/*_fuzzer",

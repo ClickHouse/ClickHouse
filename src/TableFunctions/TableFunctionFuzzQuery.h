@@ -32,7 +32,7 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override { return "fuzzQuery"; }
+    const char * getStorageEngineName() const override { return "FuzzQuery"; }
 
     String source;
     std::optional<UInt64> random_seed;

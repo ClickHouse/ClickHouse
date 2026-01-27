@@ -11,7 +11,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 #include <Common/BinStringDecodeHelper.h>
-#include <Common/BitHelpers.h>
 
 namespace DB
 {
@@ -44,12 +43,12 @@ struct HexImpl
     static constexpr size_t word_size = 2;
 
     template <typename T>
-    static void executeOneUIntOrInt(T x, char *& out, bool skip_leading_zero = true, bool auto_close = true)
+    static void executeOneUIntOrInt(T x, char *& out, bool skip_leading_zero = true)
     {
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
         {
-            UInt8 byte = x >> offset;
+            UInt8 byte = static_cast<UInt8>(x >> offset);
 
             /// Skip leading zeros
             if (byte == 0 && !was_nonzero && offset && skip_leading_zero)
@@ -58,11 +57,6 @@ struct HexImpl
             was_nonzero = true;
             writeHexByteUppercase(byte, out);
             out += word_size;
-        }
-        if (auto_close)
-        {
-            *out = '\0';
-            ++out;
         }
     }
 
@@ -88,14 +82,12 @@ struct HexImpl
                 out += word_size;
             }
         }
-        *out = '\0';
-        ++out;
     }
 
     template <typename T>
     static void executeFloatAndDecimal(const T & in_vec, ColumnPtr & col_res, const size_t type_size_in_bytes)
     {
-        const size_t hex_length = type_size_in_bytes * word_size + 1; /// Including trailing zero byte.
+        const size_t hex_length = type_size_in_bytes * word_size;
         auto col_str = ColumnString::create();
 
         ColumnString::Chars & out_vec = col_str->getChars();
@@ -137,12 +129,12 @@ struct BinImpl
     static constexpr size_t word_size = 8;
 
     template <typename T>
-    static void executeOneUIntOrInt(T x, char *& out, bool skip_leading_zero = true, bool auto_close = true)
+    static void executeOneUIntOrInt(T x, char *& out, bool skip_leading_zero = true)
     {
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
         {
-            UInt8 byte = x >> offset;
+            UInt8 byte = static_cast<UInt8>(x >> offset);
 
             /// Skip leading zeros
             if (byte == 0 && !was_nonzero && offset && skip_leading_zero)
@@ -152,17 +144,12 @@ struct BinImpl
             writeBinByte(byte, out);
             out += word_size;
         }
-        if (auto_close)
-        {
-            *out = '\0';
-            ++out;
-        }
     }
 
     template <typename T>
     static void executeFloatAndDecimal(const T & in_vec, ColumnPtr & col_res, const size_t type_size_in_bytes)
     {
-        const size_t hex_length = type_size_in_bytes * word_size + 1; /// Including trailing zero byte.
+        const size_t hex_length = type_size_in_bytes * word_size;
         auto col_str = ColumnString::create();
 
         ColumnString::Chars & out_vec = col_str->getChars();
@@ -209,8 +196,6 @@ struct BinImpl
                 out += word_size;
             }
         }
-        *out = '\0';
-        ++out;
     }
 };
 
@@ -318,7 +303,7 @@ public:
     {
         const ColumnVector<T> * col_vec = checkAndGetColumn<ColumnVector<T>>(col);
 
-        static constexpr size_t MAX_LENGTH = sizeof(T) * word_size + 1;    /// Including trailing zero byte.
+        static constexpr size_t MAX_LENGTH = sizeof(T) * word_size;
 
         if (col_vec)
         {
@@ -330,7 +315,7 @@ public:
 
             size_t size = in_vec.size();
             out_offsets.resize(size);
-            out_vec.resize(size * (word_size+1) + MAX_LENGTH); /// word_size+1 is length of one byte in hex/bin plus zero byte.
+            out_vec.resize(size * word_size + MAX_LENGTH);
 
             size_t pos = 0;
             for (size_t i = 0; i < size; ++i)
@@ -355,7 +340,7 @@ public:
         return false;
     }
 
-    bool tryExecuteString(const IColumn *col, ColumnPtr &col_res) const
+    bool tryExecuteString(const IColumn * col, ColumnPtr & col_res) const
     {
         const ColumnString * col_str_in = checkAndGetColumn<ColumnString>(col);
 
@@ -371,8 +356,8 @@ public:
             size_t size = in_offsets.size();
 
             out_offsets.resize(size);
-            /// reserve `word_size` bytes for each non trailing zero byte from input + `size` bytes for trailing zeros
-            out_vec.resize((in_vec.size() - size) * word_size + size);
+            /// reserve `word_size` bytes for each input byte
+            out_vec.resize(in_vec.size() * word_size);
 
             char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
@@ -382,7 +367,7 @@ public:
             {
                 size_t new_offset = in_offsets[i];
 
-                Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset - 1], pos);
+                Impl::executeOneString(&in_vec[prev_offset], &in_vec[new_offset], pos);
 
                 out_offsets[i] = pos - begin;
 
@@ -427,7 +412,7 @@ public:
             size_t size = col_fstr_in->size();
 
             out_offsets.resize(size);
-            out_vec.resize(in_vec.size() * word_size + size);
+            out_vec.resize(in_vec.size() * word_size);
 
             char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
@@ -474,7 +459,7 @@ public:
     {
         const ColumnUUID * col_vec = checkAndGetColumn<ColumnUUID>(col);
 
-        static constexpr size_t MAX_LENGTH = sizeof(UUID) * word_size + 1;    /// Including trailing zero byte.
+        static constexpr size_t MAX_LENGTH = sizeof(UUID) * word_size;
 
         if (col_vec)
         {
@@ -487,7 +472,7 @@ public:
 
             size_t size = in_vec.size();
             out_offsets.resize(size);
-            out_vec.resize(size * (word_size+1) + MAX_LENGTH); /// word_size+1 is length of one byte in hex/bin plus zero byte.
+            out_vec.resize(size * word_size + MAX_LENGTH);
 
             size_t pos = 0;
             for (size_t i = 0; i < size; ++i)
@@ -501,8 +486,8 @@ public:
 
                 // use executeOnUInt instead of using executeOneString
                 // because the latter one outputs the string in the memory order
-                Impl::executeOneUIntOrInt(UUIDHelpers::getHighBytes(uuid[i]), end, false, false);
-                Impl::executeOneUIntOrInt(UUIDHelpers::getLowBytes(uuid[i]), end, false, true);
+                Impl::executeOneUIntOrInt(UUIDHelpers::getHighBytes(uuid[i]), end, false);
+                Impl::executeOneUIntOrInt(UUIDHelpers::getLowBytes(uuid[i]), end, false);
 
                 pos += end - begin;
                 out_offsets[i] = pos;
@@ -520,7 +505,7 @@ public:
     {
         const ColumnIPv6 * col_vec = checkAndGetColumn<ColumnIPv6>(col);
 
-        static constexpr size_t MAX_LENGTH = sizeof(IPv6) * word_size + 1;    /// Including trailing zero byte.
+        static constexpr size_t MAX_LENGTH = sizeof(IPv6) * word_size;
 
         if (!col_vec)
             return false;
@@ -534,7 +519,7 @@ public:
 
         size_t size = in_vec.size();
         out_offsets.resize(size);
-        out_vec.resize(size * (word_size+1) + MAX_LENGTH); /// word_size+1 is length of one byte in hex/bin plus zero byte.
+        out_vec.resize(size * word_size + MAX_LENGTH);
 
         size_t pos = 0;
         for (size_t i = 0; i < size; ++i)
@@ -561,7 +546,7 @@ public:
     {
         const ColumnIPv4 * col_vec = checkAndGetColumn<ColumnIPv4>(col);
 
-        static constexpr size_t MAX_LENGTH = sizeof(IPv4) * word_size + 1;    /// Including trailing zero byte.
+        static constexpr size_t MAX_LENGTH = sizeof(IPv4) * word_size;
 
         if (!col_vec)
             return false;
@@ -575,7 +560,7 @@ public:
 
         size_t size = in_vec.size();
         out_offsets.resize(size);
-        out_vec.resize(size * (word_size+1) + MAX_LENGTH); /// word_size+1 is length of one byte in hex/bin plus zero byte.
+        out_vec.resize(size * word_size + MAX_LENGTH);
 
         size_t pos = 0;
         for (size_t i = 0; i < size; ++i)
@@ -651,9 +636,8 @@ public:
             size_t max_out_len = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const size_t len = in_offsets[i] - (i == 0 ? 0 : in_offsets[i - 1])
-                    - /* trailing zero symbol that is always added in ColumnString and that is ignored while decoding */ 1;
-                max_out_len += (len + word_size - 1) / word_size + /* trailing zero symbol that is always added by Impl::decode */ 1;
+                const size_t len = in_offsets[i] - in_offsets[i - 1];
+                max_out_len += (len + word_size - 1) / word_size;
             }
             out_vec.resize(max_out_len);
 
@@ -665,11 +649,9 @@ public:
             {
                 size_t new_offset = in_offsets[i];
 
-                /// `new_offset - 1` because in ColumnString each string is stored with trailing zero byte
-                Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset - 1]), pos);
+                Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
 
                 out_offsets[i] = pos - begin;
-
                 prev_offset = new_offset;
             }
 
@@ -691,8 +673,7 @@ public:
             const size_t n = col_fix_string->getN();
 
             out_offsets.resize(input_rows_count);
-            out_vec.resize(
-                ((n + word_size - 1) / word_size + /* trailing zero symbol that is always added by Impl::decode */ 1) * input_rows_count);
+            out_vec.resize((n + word_size - 1) / word_size * input_rows_count);
 
             char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
@@ -702,12 +683,10 @@ public:
             {
                 size_t new_offset = prev_offset + n;
 
-                /// here we don't subtract 1 from `new_offset` because in ColumnFixedString strings are stored without trailing zero byte
                 Impl::decode(
                     reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
 
                 out_offsets[i] = pos - begin;
-
                 prev_offset = new_offset;
             }
 
@@ -783,7 +762,7 @@ The function uses uppercase letters `A-F` and not using any prefixes (like `0x`)
     };
     FunctionDocumentation::IntroducedIn hex_introduced_in = {1, 1};
     FunctionDocumentation::Category hex_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation hex_documentation = {hex_description, hex_syntax, hex_arguments, hex_returned_value, hex_examples, hex_introduced_in, hex_category};
+    FunctionDocumentation hex_documentation = {hex_description, hex_syntax, hex_arguments, {}, hex_returned_value, hex_examples, hex_introduced_in, hex_category};
 
     FunctionDocumentation::Description unhex_description = R"(
 Performs the opposite operation of [`hex`](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts
@@ -828,7 +807,7 @@ For a numeric argument the inverse of hex(N) is not performed by unhex().
     };
     FunctionDocumentation::IntroducedIn unhex_introduced_in = {1, 1};
     FunctionDocumentation::Category unhex_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation unhex_documentation = {unhex_description, unhex_syntax, unhex_arguments, unhex_returned_value, unhex_examples, unhex_introduced_in, unhex_category};
+    FunctionDocumentation unhex_documentation = {unhex_description, unhex_syntax, unhex_arguments, {}, unhex_returned_value, unhex_examples, unhex_introduced_in, unhex_category};
 
     FunctionDocumentation::Description bin_description = R"(
 Returns a string containing the argument's binary representation according
@@ -888,12 +867,12 @@ to the following logic for different types:
     };
     FunctionDocumentation::IntroducedIn bin_introduced_in = {21, 8};
     FunctionDocumentation::Category bin_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation bin_documentation = {bin_description, bin_syntax, bin_arguments, bin_returned_value, bin_examples, bin_introduced_in, bin_category};
+    FunctionDocumentation bin_documentation = {bin_description, bin_syntax, bin_arguments, {}, bin_returned_value, bin_examples, bin_introduced_in, bin_category};
 
     FunctionDocumentation::Description unbin_description = R"(
 Interprets each pair of binary digits (in the argument) as a number and converts it to the byte represented by the number. The functions performs the opposite operation to bin.
 
-For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the reverse and reinterpretAs<Type> functions.
+For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the reverse and `reinterpretAs<Type>` functions.
 
 :::note
 If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
@@ -928,7 +907,7 @@ the result is undefined (no exception is thrown).
     };
     FunctionDocumentation::IntroducedIn unbin_introduced_in = {21, 8};
     FunctionDocumentation::Category unbin_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation unbin_documentation = {unbin_description, unbin_syntax, unbin_arguments, unbin_returned_value, unbin_examples, unbin_introduced_in, unbin_category};
+    FunctionDocumentation unbin_documentation = {unbin_description, unbin_syntax, unbin_arguments, {}, unbin_returned_value, unbin_examples, unbin_introduced_in, unbin_category};
 
     factory.registerFunction<EncodeToBinaryRepresentation<HexImpl>>(hex_documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>(unhex_documentation, FunctionFactory::Case::Insensitive);

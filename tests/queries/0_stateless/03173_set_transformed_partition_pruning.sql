@@ -1,4 +1,4 @@
--- Tags: no-msan
+-- Tags: no-msan, long
 -- msan: too slow
 
 SELECT '-- Single partition by function';
@@ -234,7 +234,7 @@ SELECT toString(toDate('2000-01-01') + 10 * number) FROM numbers(50)
 UNION ALL
 SELECT toString(toDate('2100-01-01') + 10 * number) FROM numbers(50);
 
-SELECT count() FROM 03173_nested_date_parsing WHERE id IN ('2000-01-21', '2023-05-02') SETTINGS log_comment='03173_nested_date_parsing';
+SELECT count() FROM 03173_nested_date_parsing WHERE id IN ('2000-01-21', '2023-05-02') SETTINGS log_comment='03173_nested_date_parsing', session_timezone = '';
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '03173_nested_date_parsing';
 SELECT count() FROM 03173_nested_date_parsing WHERE id IN ('not a date');

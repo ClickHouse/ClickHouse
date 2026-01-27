@@ -65,6 +65,11 @@ int64_t RandomGenerator::nextRandomInt64()
     return ints64(generator);
 }
 
+uint64_t RandomGenerator::nextInFullRange()
+{
+    return full_range(generator);
+}
+
 uint32_t RandomGenerator::nextStrlen()
 {
     return strlens(generator);
@@ -80,96 +85,161 @@ bool RandomGenerator::nextBool()
     return dist4(generator) == 2;
 }
 
-String RandomGenerator::nextDate()
+String RandomGenerator::nextDate(const String & separator, const bool allow_func)
 {
-    const uint32_t month = months(generator);
-    const uint32_t day = days[month - 1](generator);
+    if (allow_func && this->nextMediumNumber() < 16)
+    {
+        return "today()";
+    }
+    else
+    {
+        const uint32_t month = months(generator);
+        const uint32_t day = days[month - 1](generator);
 
-    return fmt::format("{}-{}{}-{}{}", 1970 + date_years(generator), month < 10 ? "0" : "", month, day < 10 ? "0" : "", day);
+        return fmt::format(
+            "{}{}-{}{}-{}{}{}", separator, 1970 + date_years(generator), month < 10 ? "0" : "", month, day < 10 ? "0" : "", day, separator);
+    }
 }
 
-String RandomGenerator::nextDate32()
+String RandomGenerator::nextDate32(const String & separator, const bool allow_func)
 {
-    const uint32_t month = months(generator);
-    const uint32_t day = days[month - 1](generator);
+    if (allow_func && this->nextMediumNumber() < 16)
+    {
+        return "today()";
+    }
+    else
+    {
+        const uint32_t month = months(generator);
+        const uint32_t day = days[month - 1](generator);
 
-    return fmt::format("{}-{}{}-{}{}", 1900 + datetime64_years(generator), month < 10 ? "0" : "", month, day < 10 ? "0" : "", day);
+        return fmt::format(
+            "{}{}-{}{}-{}{}{}",
+            separator,
+            1900 + datetime64_years(generator),
+            month < 10 ? "0" : "",
+            month,
+            day < 10 ? "0" : "",
+            day,
+            separator);
+    }
 }
 
-String RandomGenerator::nextTime()
+String RandomGenerator::nextTime(const String & separator, const bool allow_func)
 {
-    const int32_t hour = time_hours(generator);
-    const uint32_t minute = minutes(generator);
-    const uint32_t second = minutes(generator);
+    if (allow_func && this->nextMediumNumber() < 21)
+    {
+        const int32_t offset_seconds = second_offsets(generator);
 
-    return fmt::format("{}:{}{}:{}{}", hour, minute < 10 ? "0" : "", minute, second < 10 ? "0" : "", second);
+        return fmt::format("addSeconds(now(), {})", offset_seconds);
+    }
+    else
+    {
+        const int32_t hour = time_hours(generator);
+        const uint32_t minute = minutes(generator);
+        const uint32_t second = minutes(generator);
+
+        return fmt::format("{}{}:{}{}:{}{}{}", separator, hour, minute < 10 ? "0" : "", minute, second < 10 ? "0" : "", second, separator);
+    }
 }
 
-String RandomGenerator::nextTime64(const bool has_subseconds)
+String RandomGenerator::nextTime64(const String & separator, const bool allow_func, const bool has_subseconds)
 {
-    const int32_t hour = time_hours(generator);
-    const uint32_t minute = minutes(generator);
-    const uint32_t second = minutes(generator);
+    if (allow_func && this->nextMediumNumber() < 21)
+    {
+        const int32_t offset_seconds = second_offsets(generator);
 
-    return fmt::format(
-        "{}:{}{}:{}{}{}{}",
-        hour,
-        minute < 10 ? "0" : "",
-        minute,
-        second < 10 ? "0" : "",
-        second,
-        has_subseconds ? "." : "",
-        has_subseconds ? std::to_string(subseconds(generator)) : "");
+        return fmt::format("addSeconds(now(), {})", offset_seconds);
+    }
+    else
+    {
+        const int32_t hour = time_hours(generator);
+        const uint32_t minute = minutes(generator);
+        const uint32_t second = minutes(generator);
+
+        return fmt::format(
+            "{}{}:{}{}:{}{}{}{}{}",
+            separator,
+            hour,
+            minute < 10 ? "0" : "",
+            minute,
+            second < 10 ? "0" : "",
+            second,
+            has_subseconds ? "." : "",
+            has_subseconds ? std::to_string(subseconds(generator)) : "",
+            separator);
+    }
 }
 
-String RandomGenerator::nextDateTime(const bool has_subseconds)
+String RandomGenerator::nextDateTime(const String & separator, const bool allow_func, const bool has_subseconds)
 {
-    const uint32_t month = months(generator);
-    const uint32_t day = days[month - 1](generator);
-    const uint32_t hour = hours(generator);
-    const uint32_t minute = minutes(generator);
-    const uint32_t second = minutes(generator);
+    if (allow_func && this->nextMediumNumber() < 21)
+    {
+        const int32_t offset_seconds = second_offsets(generator);
 
-    return fmt::format(
-        "{}-{}{}-{}{} {}{}:{}{}:{}{}{}{}",
-        1970 + datetime_years(generator),
-        month < 10 ? "0" : "",
-        month,
-        day < 10 ? "0" : "",
-        day,
-        hour < 10 ? "0" : "",
-        hour,
-        minute < 10 ? "0" : "",
-        minute,
-        second < 10 ? "0" : "",
-        second,
-        has_subseconds ? "." : "",
-        has_subseconds ? std::to_string(subseconds(generator)) : "");
+        return fmt::format("addSeconds(now(), {})", offset_seconds);
+    }
+    else
+    {
+        const uint32_t month = months(generator);
+        const uint32_t day = days[month - 1](generator);
+        const uint32_t hour = hours(generator);
+        const uint32_t minute = minutes(generator);
+        const uint32_t second = minutes(generator);
+
+        return fmt::format(
+            "{}{}-{}{}-{}{} {}{}:{}{}:{}{}{}{}{}",
+            separator,
+            1970 + datetime_years(generator),
+            month < 10 ? "0" : "",
+            month,
+            day < 10 ? "0" : "",
+            day,
+            hour < 10 ? "0" : "",
+            hour,
+            minute < 10 ? "0" : "",
+            minute,
+            second < 10 ? "0" : "",
+            second,
+            has_subseconds ? "." : "",
+            has_subseconds ? std::to_string(subseconds(generator)) : "",
+            separator);
+    }
 }
 
-String RandomGenerator::nextDateTime64(const bool has_subseconds)
+String RandomGenerator::nextDateTime64(const String & separator, const bool allow_func, const bool has_subseconds)
 {
-    const uint32_t month = months(generator);
-    const uint32_t day = days[month - 1](generator);
-    const uint32_t hour = hours(generator);
-    const uint32_t minute = minutes(generator);
-    const uint32_t second = minutes(generator);
+    if (allow_func && this->nextMediumNumber() < 21)
+    {
+        const int32_t offset_seconds = second_offsets(generator);
 
-    return fmt::format(
-        "{}-{}{}-{}{} {}{}:{}{}:{}{}{}{}",
-        1900 + datetime64_years(generator),
-        month < 10 ? "0" : "",
-        month,
-        day < 10 ? "0" : "",
-        day,
-        hour < 10 ? "0" : "",
-        hour,
-        minute < 10 ? "0" : "",
-        minute,
-        second < 10 ? "0" : "",
-        second,
-        has_subseconds ? "." : "",
-        has_subseconds ? std::to_string(subseconds(generator)) : "");
+        return fmt::format("addSeconds(now(), {})", offset_seconds);
+    }
+    else
+    {
+        const uint32_t month = months(generator);
+        const uint32_t day = days[month - 1](generator);
+        const uint32_t hour = hours(generator);
+        const uint32_t minute = minutes(generator);
+        const uint32_t second = minutes(generator);
+
+        return fmt::format(
+            "{}{}-{}{}-{}{} {}{}:{}{}:{}{}{}{}{}",
+            separator,
+            1900 + datetime64_years(generator),
+            month < 10 ? "0" : "",
+            month,
+            day < 10 ? "0" : "",
+            day,
+            hour < 10 ? "0" : "",
+            hour,
+            minute < 10 ? "0" : "",
+            minute,
+            second < 10 ? "0" : "",
+            second,
+            has_subseconds ? "." : "",
+            has_subseconds ? std::to_string(subseconds(generator)) : "",
+            separator);
+    }
 }
 
 double RandomGenerator::randomGauss(const double mean, const double stddev)
@@ -185,9 +255,12 @@ double RandomGenerator::randomZeroOne()
 
 String RandomGenerator::nextJSONCol()
 {
-    const String & pick = pickRandomly(jcols);
+    return pickRandomly(jcols);
+}
 
-    return pick;
+String RandomGenerator::nextTokenString()
+{
+    return pickRandomly(this->nextSmallNumber() < 3 ? nasty_strings : (this->nextBool() ? common_english : common_chinese));
 }
 
 String RandomGenerator::nextString(const String & delimiter, const bool allow_nasty, const uint32_t limit)
@@ -212,10 +285,11 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
         {
             ret += pick;
             /// A few times, generate a large string
-            if (this->nextLargeNumber() < 4)
+            if (this->nextMediumNumber() < 16)
             {
                 uint32_t i = 0;
                 uint32_t len = static_cast<uint32_t>(pick.size());
+                const bool use_space = this->nextBool();
                 const uint32_t max_iterations = this->nextBool() ? 10000 : this->nextMediumNumber();
 
                 while (i < max_iterations)
@@ -225,9 +299,10 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
                                      : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings
                                                                                    : (this->nextBool() ? common_english : common_chinese)));
 
-                    len += (npick.length() >> (use_bad_utf8 ? 1 : 0));
+                    len += ((use_space ? 1 : 0) + (npick.length() >> (use_bad_utf8 ? 1 : 0)));
                     if (len < limit)
                     {
+                        ret += use_space ? " " : "";
                         ret += npick;
                     }
                     else

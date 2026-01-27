@@ -6,6 +6,7 @@ keywords: ['RowBinary']
 output_format: true
 slug: /interfaces/formats/RowBinary
 title: 'RowBinary'
+doc_type: 'reference'
 ---
 
 import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'

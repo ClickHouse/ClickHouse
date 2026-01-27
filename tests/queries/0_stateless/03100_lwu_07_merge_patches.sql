@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS t_lightweight SYNC;
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 
 CREATE TABLE t_lightweight (id UInt64, c1 UInt64)
 ENGINE = MergeTree ORDER BY id

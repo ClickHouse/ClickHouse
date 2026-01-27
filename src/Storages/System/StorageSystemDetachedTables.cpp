@@ -47,7 +47,7 @@ public:
         detached_tables.reserve(size);
         for (size_t idx = 0; idx < size; ++idx)
         {
-            detached_tables.insert(detached_tables_->getDataAt(idx).toString());
+            detached_tables.insert(std::string{detached_tables_->getDataAt(idx)});
         }
     }
 
@@ -67,7 +67,7 @@ protected:
         size_t rows_count = 0;
         for (; database_idx < databases->size(); ++database_idx)
         {
-            database_name = databases->getDataAt(database_idx).toString();
+            database_name = databases->getDataAt(database_idx);
             database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
             if (!database)

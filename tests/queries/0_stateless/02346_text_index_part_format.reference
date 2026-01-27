@@ -6,12 +6,12 @@ Check tab_compact_full
 3	foo bar
 4	foo baz
 Granules: 3/3
-Description: text GRANULARITY 2
+Description: text GRANULARITY 100000000
 Granules: 2/3
 Check tab_wide_full
 0	foo
 3	foo bar
 4	foo baz
 Granules: 3/3
-Description: text GRANULARITY 2
+Description: text GRANULARITY 100000000
 Granules: 2/3

@@ -4,6 +4,7 @@
 #include <Common/iota.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/setThreadName.h>
 #include <Poco/Logger.h>
 
 #include <boost/geometry.hpp>
@@ -12,8 +13,6 @@
 #include <boost/geometry/geometries/polygon.hpp>
 
 #include <Dictionaries/PolygonDictionary.h>
-
-#include <numeric>
 
 namespace CurrentMetrics
 {
@@ -170,7 +169,7 @@ public:
         /// => x_bin (y_bin) will be 4, which can lead to wrong vector access.
         if (y_bin == kSplit)
             --y_bin;
-        return children[y_bin + x_bin * kSplit]->find(x_ratio - x_bin, y_ratio - y_bin);
+        return children[y_bin + x_bin * kSplit]->find(x_ratio - static_cast<Coord>(x_bin), y_ratio - static_cast<Coord>(y_bin));
     }
 
     /** When a cell is split every side is split into kSplit pieces producing kSplit * kSplit equal smaller cells. */
@@ -259,7 +258,7 @@ private:
         children.resize(DividedCell<ReturnCell>::kSplit * DividedCell<ReturnCell>::kSplit);
 
         ThreadPool pool(CurrentMetrics::PolygonDictionaryThreads, CurrentMetrics::PolygonDictionaryThreadsActive, CurrentMetrics::PolygonDictionaryThreadsScheduled, 128);
-        ThreadPoolCallbackRunnerLocal<void> runner(pool, "PolygonDict");
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::POLYGON_DICT_LOAD);
         for (size_t i = 0; i < DividedCell<ReturnCell>::kSplit; current_min_x += x_shift, ++i)
         {
             auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &depth, i, x = current_min_x, y = current_min_y]() mutable
@@ -270,7 +269,7 @@ private:
                 }
             };
             if (depth <= kMultiProcessingDepth)
-                runner(std::move(handle_row));
+                runner.enqueueAndKeepTrack(std::move(handle_row));
             else
                 handle_row();
         }

@@ -150,7 +150,7 @@ namespace detail
 
                     size_t array_element_offset = index.array_element_offset;
 
-                    size_t previous_offset_size = offset > 0 ? offsets[offset - 1] : 0;
+                    size_t previous_offset_size = offsets[offset - 1];
                     size_t start_index = previous_offset_size + array_element_offset;
                     size_t end_index = offsets[offset];
 

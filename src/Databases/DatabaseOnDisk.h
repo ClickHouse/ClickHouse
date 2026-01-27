@@ -58,8 +58,6 @@ public:
         bool exchange,
         bool dictionary) override;
 
-    ASTPtr getCreateDatabaseQuery() const override;
-
     void drop(ContextPtr context) override;
 
     String getObjectMetadataPath(const String & object_name) const override;
@@ -87,11 +85,9 @@ public:
     void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const TSA_REQUIRES(mutex);
 
     void checkTableNameLength(const String & table_name) const override;
-    void checkTableNameLengthUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
+    static void checkTableNameLengthUnlocked(const String & database_name_, const String & table_name, ContextPtr context_);
 
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
-
-    void alterDatabaseComment(const AlterCommand & alter_command) override;
 
 protected:
     static constexpr const char * create_suffix = ".tmp";
@@ -102,6 +98,7 @@ protected:
 
     void iterateMetadataFiles(const IteratingFunction & process_metadata_file) const;
 
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(
         const String & table_name,
         ContextPtr context,

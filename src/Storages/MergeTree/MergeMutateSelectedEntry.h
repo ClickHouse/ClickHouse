@@ -21,6 +21,7 @@ struct CurrentlyMergingPartsTagger
     StorageMergeTree & storage;
     // Optional tagger to maintain volatile parts for the JBOD balancer
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
+    bool finalized{false};
 
     CurrentlyMergingPartsTagger(
         FutureMergedMutatedPartPtr future_part_,
@@ -29,6 +30,10 @@ struct CurrentlyMergingPartsTagger
         const StorageMetadataPtr & metadata_snapshot,
         bool is_mutation);
 
+    /// The finalize() method acquires the `currently_processing_in_background_mutex` lock
+    /// to remove the parts from the `currently_merging_mutating_parts` set.
+    /// This might take a lot of time and it's important not to do it in the destructor.
+    void finalize();
     ~CurrentlyMergingPartsTagger();
 };
 
@@ -40,6 +45,7 @@ struct MergeMutateSelectedEntry
     CurrentlyMergingPartsTaggerPtr tagger;
     MutationCommandsConstPtr commands;
     MergeTreeTransactionPtr txn;
+    bool finalized{false};
     MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
                              MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR)
         : future_part(future_part_)
@@ -47,6 +53,9 @@ struct MergeMutateSelectedEntry
         , commands(commands_)
         , txn(txn_)
     {}
+
+    void finalize();
+    ~MergeMutateSelectedEntry();
 };
 
 using MergeMutateSelectedEntryPtr = std::shared_ptr<MergeMutateSelectedEntry>;

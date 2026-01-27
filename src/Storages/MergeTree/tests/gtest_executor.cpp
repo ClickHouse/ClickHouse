@@ -1,14 +1,15 @@
 #include <gtest/gtest.h>
 
-#include <atomic>
-#include <barrier>
-#include <memory>
-#include <random>
-#include <functional>
-
 #include <Common/Exception.h>
+#include <Common/setThreadName.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
+
+#include <barrier>
+#include <functional>
+#include <memory>
+#include <random>
+#include <thread>
 
 
 using namespace DB;
@@ -17,6 +18,14 @@ namespace CurrentMetrics
 {
     extern const Metric BackgroundMergesAndMutationsPoolTask;
     extern const Metric BackgroundMergesAndMutationsPoolSize;
+}
+
+namespace ProfileEvents
+{
+    extern const Event CommonBackgroundExecutorTaskExecuteStepMicroseconds;
+    extern const Event CommonBackgroundExecutorTaskCancelMicroseconds;
+    extern const Event CommonBackgroundExecutorTaskResetMicroseconds;
+    extern const Event CommonBackgroundExecutorWaitMicroseconds;
 }
 
 std::random_device device;
@@ -107,11 +116,15 @@ TEST(Executor, Simple)
 {
     auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
     (
-        "GTest",
+        ThreadName::TEST_SCHEDULER,
         1, // threads
         100, // max_tasks
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
     );
 
     String schedule; // mutex is not required because we have a single worker
@@ -150,11 +163,15 @@ TEST(Executor, RemoveTasks)
 
     auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
     (
-        "GTest",
+        ThreadName::TEST_SCHEDULER,
         tasks_kinds,
         tasks_kinds * batch,
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
     );
 
     for (size_t i = 0; i < batch; ++i)
@@ -191,11 +208,15 @@ TEST(Executor, RemoveTasksStress)
 
     auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
     (
-        "GTest",
+        ThreadName::TEST_SCHEDULER,
         tasks_kinds,
         tasks_kinds * batch * (schedulers_count + removers_count),
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
     );
 
     std::barrier<std::__empty_completion> barrier(schedulers_count + removers_count);
@@ -242,11 +263,15 @@ TEST(Executor, UpdatePolicy)
 {
     auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<DynamicRuntimeQueue>>
     (
-        "GTest",
+        ThreadName::TEST_SCHEDULER,
         1, // threads
         100, // max_tasks
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
     );
 
     String schedule; // mutex is not required because we have a single worker

@@ -279,6 +279,17 @@ SELECT number, count(number) FROM distributed_01099_b group by number order by n
 SELECT 'local';
 SELECT number, count(number) FROM local_01099_b group by number order by number;
 
+truncate table local_01099_b;
+
+SET send_logs_level='error';
+INSERT INTO distributed_01099_b with 'http://localhost:8123/?query=' || 'select+{1,2,3}+format+TSV' as url SELECT * FROM urlCluster('test_cluster_two_shards', (select url), 'TSV', 's String');
+SET send_logs_level='warning';
+
+SELECT 'distributed';
+SELECT number, count(number) FROM distributed_01099_b group by number order by number;
+SELECT 'local';
+SELECT number, count(number) FROM local_01099_b group by number order by number;
+
 DROP TABLE local_01099_b;
 SET send_logs_level='fatal';
 DROP TABLE distributed_01099_b;

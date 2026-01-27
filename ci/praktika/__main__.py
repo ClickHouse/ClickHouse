@@ -8,72 +8,142 @@ from .yaml_generator import YamlGenerator
 
 
 def create_parser():
-    parser = argparse.ArgumentParser(prog="praktika")
+    parser = argparse.ArgumentParser(
+        prog="praktika",
+        description=(
+            "Praktika CLI: run CI jobs locally or in CI, generate YAML workflows"
+        ),
+    )
 
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
-    run_parser = subparsers.add_parser("run", help="Job Runner")
-    run_parser.add_argument("job", help="Job Name", type=str)
+    run_parser = subparsers.add_parser("run", help="Run a CI job")
+    run_parser.add_argument("job", help="Name of the job to run", type=str)
     run_parser.add_argument(
         "--workflow",
-        help="Workflow Name (required if job name is not uniq per config)",
+        help=(
+            "Workflow name to disambiguate when the job name is not unique in the config"
+        ),
         type=str,
         default="",
     )
     run_parser.add_argument(
         "--no-docker",
-        help="Do not run job in docker even if job config says so, for local test",
+        help=(
+            "Run directly on the host even if the job is configured to use Docker (useful for local tests)"
+        ),
         action="store_true",
     )
     run_parser.add_argument(
         "--docker",
-        help="Custom docker image for job run, for local test",
+        help=(
+            "Override Docker image to run the job in (e.g. repo/image:tag). Only used when the job runs in Docker"
+        ),
         type=str,
         default="",
     )
     run_parser.add_argument(
         "--param",
-        help="Custom parameter to pass into a job script, it's up to job script how to use it, for local test",
+        help=(
+            "Opaque string passed to the job script as --param (job script defines semantics). Useful for local tests"
+        ),
         type=str,
         default=None,
     )
     run_parser.add_argument(
         "--test",
-        help="Custom parameter to pass into a job script, it's up to job script how to use it, for local test",
+        help=(
+            "One or more values passed to the job script as --test (space-separated) (job script defines semantics). Useful for selecting tests"
+        ),
+        nargs="+",
+        type=str,
+        default=[],
+    )
+    run_parser.add_argument(
+        "--path",
+        help=(
+            "PATH parameter forwarded to the job as --path and mounted into Docker when applicable (job script defines semantics). Useful for local tests"
+        ),
         type=str,
         default="",
     )
     run_parser.add_argument(
+        "--path_1",
+        help=(
+            "Additional PATH parameter forwarded to the job as --path and mounted into Docker when applicable (job script defines semantics). Useful for local tests"
+        ),
+        type=str,
+        default="",
+    )
+    run_parser.add_argument(
+        "--count",
+        help=(
+            "Integer parameter forwarded to the job script (commonly used as number of reruns) (job script defines semantics). Useful for local tests"
+        ),
+        type=int,
+        default=None,
+    )
+    run_parser.add_argument(
+        "--debug",
+        help=(
+            "Enable debug mode for the job script (passed as --debug) (job script defines semantics). Useful for local tests"
+        ),
+        action="store_true",
+        default="",
+    )
+    run_parser.add_argument(
+        "--workers",
+        help=(
+            "Integer parameter forwarded to the job script (commonly used as number of parallel workers) (job script defines semantics). Useful for local tests"
+        ),
+        type=int,
+        default=None,
+    )
+    run_parser.add_argument(
         "--pr",
-        help="PR number. Optional parameter for local run. Set if you want an required artifact to be uploaded from CI run in that PR",
+        help=(
+            "PR number to fetch required artifacts from its CI run (for local runs). Optional"
+        ),
         type=int,
         default=None,
     )
     run_parser.add_argument(
         "--sha",
-        help="Commit sha. Optional parameter for local run. Set if you want an required artifact to be uploaded from CI run on that sha, head sha will be used if not set",
+        help=(
+            "Commit SHA whose CI artifacts should be used for required inputs (for local runs). Defaults to HEAD when not set"
+        ),
         type=str,
         default=None,
     )
     run_parser.add_argument(
         "--branch",
-        help="Commit sha. Optional parameter for local run. Set if you want an required artifact to be uploaded from CI run on that branch, main branch name will be used if not set",
+        help=(
+            "Branch name whose CI artifacts should be used for required inputs (for local runs). Defaults to the main branch when not set"
+        ),
         type=str,
         default=None,
     )
     run_parser.add_argument(
         "--ci",
-        help="When not set - dummy env will be generated, for local test",
+        help=(
+            "Run in CI flag. When not set, a dummy local environment is generated (for local tests)"
+        ),
         action="store_true",
         default="",
     )
 
-    _yaml_parser = subparsers.add_parser("yaml", help="Generates Yaml Workflows")
+    _yaml_parser = subparsers.add_parser("yaml", help="Generate YAML workflows")
 
-    _html_parser = subparsers.add_parser("html", help="Uploads HTML page for reports")
+    # TODO: Merge with infra
+    _html_parser = subparsers.add_parser("html", help="Upload an HTML report page")
     _html_parser.add_argument(
         "--test",
-        help="Upload page to test location",
+        action="store_true",
+        default="",
+    )
+    _infra_parser = subparsers.add_parser("deploy", help="Deploy cloud infrastructure")
+    _infra_parser.add_argument(
+        "--all",
         action="store_true",
         default="",
     )
@@ -88,6 +158,10 @@ def main():
     if args.command == "yaml":
         Validator().validate()
         YamlGenerator().generate()
+    elif args.command == "deploy":
+        from .mangle import _get_infra_config
+
+        _get_infra_config().deploy(all=args.all)
     elif args.command == "html":
         Html.prepare(args.test)
     elif args.command == "run":
@@ -123,10 +197,15 @@ def main():
                 local_run=not args.ci,
                 no_docker=args.no_docker,
                 param=args.param,
-                test=args.test,
+                test=" ".join(args.test),
                 pr=args.pr,
                 branch=args.branch,
                 sha=args.sha,
+                count=args.count,
+                debug=args.debug,
+                path=args.path,
+                path_1=args.path_1,
+                workers=args.workers,
             )
     else:
         parser.print_help()

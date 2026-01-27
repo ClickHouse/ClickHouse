@@ -1,12 +1,13 @@
 #pragma once
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <boost/math/distributions/students_t.hpp>
-#include <boost/math/distributions/normal.hpp>
-#include <boost/math/distributions/fisher_f.hpp>
 #include <cfloat>
 #include <numeric>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <boost/math/distributions/fisher_f.hpp>
+#include <boost/math/distributions/normal.hpp>
+#include <boost/math/distributions/students_t.hpp>
+#include <Common/ContainersWithMemoryTracking.h>
 
 
 namespace DB
@@ -361,6 +362,103 @@ struct TTestMoments
     }
 };
 
+/// Data for calculation of One-Sample T-Tests.
+template <typename T>
+struct OneSampleTTestMoments
+{
+    T n{};      // sample size
+    T x1{};     // sum of values
+    T x2{};     // sum of squared values
+    Float64 population_mean = 0.0;  // known population mean
+
+    void add(T value)
+    {
+        ++n;
+        x1 += value;
+        x2 += value * value;
+    }
+
+    void setPopulationMean(Float64 mean)
+    {
+        population_mean = mean;
+    }
+
+    void merge(const OneSampleTTestMoments & rhs)
+    {
+        n += rhs.n;
+        x1 += rhs.x1;
+        x2 += rhs.x2;
+        // Note: population_mean should be the same for merged data
+    }
+
+    void write(WriteBuffer & buf) const
+    {
+        writePODBinary(*this, buf);
+    }
+
+    void read(ReadBuffer & buf)
+    {
+        readPODBinary(*this, buf);
+    }
+
+    Float64 getMean() const
+    {
+        return x1 / n;
+    }
+
+    Float64 getVariance() const
+    {
+        if (n <= 1)
+            return std::numeric_limits<Float64>::quiet_NaN();
+        Float64 mean = getMean();
+        return (x2 + n * mean * mean - 2 * mean * x1) / (n - 1);
+    }
+
+    Float64 getStandardError() const
+    {
+        Float64 variance = getVariance();
+        return sqrt(variance / n);
+    }
+
+    Float64 getTStatistic() const
+    {
+        Float64 sample_mean = getMean();
+        Float64 standard_error = getStandardError();
+        return (sample_mean - population_mean) / standard_error;
+    }
+
+    Float64 getDegreesOfFreedom() const
+    {
+        return n - 1;
+    }
+
+    std::pair<Float64, Float64> getConfidenceIntervals(Float64 confidence_level) const
+    {
+        Float64 sample_mean = getMean();
+        Float64 standard_error = getStandardError();
+        Float64 degrees_of_freedom = getDegreesOfFreedom();
+
+        boost::math::students_t dist(degrees_of_freedom);
+        Float64 t = boost::math::quantile(boost::math::complement(dist, (1.0 - confidence_level) / 2.0));
+
+        Float64 ci_low = sample_mean - t * standard_error;
+        Float64 ci_high = sample_mean + t * standard_error;
+
+        return {ci_low, ci_high};
+    }
+
+    bool isEssentiallyConstant() const
+    {
+        Float64 standard_error = getStandardError();
+        return standard_error < 10 * DBL_EPSILON * std::abs(getMean());
+    }
+
+    bool hasEnoughObservations() const
+    {
+        return n > 1;
+    }
+};
+
 template <typename T>
 struct ZTestMoments
 {
@@ -437,11 +535,11 @@ struct AnalysisOfVarianceMoments
     constexpr static size_t MAX_GROUPS_NUMBER = 1024 * 1024;
 
     /// Sums of values within a group
-    std::vector<T> xs1{};
+    VectorWithMemoryTracking<T> xs1{};
     /// Sums of squared values within a group
-    std::vector<T> xs2{};
+    VectorWithMemoryTracking<T> xs2{};
     /// Sizes of each group. Total number of observations is just a sum of all these values
-    std::vector<size_t> ns{};
+    VectorWithMemoryTracking<size_t> ns{};
 
     void resizeIfNeeded(size_t possible_size)
     {
@@ -500,7 +598,7 @@ struct AnalysisOfVarianceMoments
         if (n == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no observations to calculate mean value");
 
-        return std::accumulate(xs1.begin(), xs1.end(), 0.0) / n;
+        return std::accumulate(xs1.begin(), xs1.end(), 0.0) / static_cast<Float64>(n);
     }
 
     Float64 getMeanGroup(size_t group) const
@@ -508,7 +606,7 @@ struct AnalysisOfVarianceMoments
         if (ns[group] == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no observations for group {}", group);
 
-        return xs1[group] / ns[group];
+        return xs1[group] / static_cast<T>(ns[group]);
     }
 
     Float64 getBetweenGroupsVariation() const
@@ -519,7 +617,7 @@ struct AnalysisOfVarianceMoments
         for (size_t i = 0; i < xs1.size(); ++i)
         {
             auto group_mean = getMeanGroup(i);
-            res += ns[i] * (group_mean - mean) * (group_mean - mean);
+            res += static_cast<Float64>(ns[i]) * (group_mean - mean) * (group_mean - mean);
         }
         return res;
     }
@@ -530,7 +628,7 @@ struct AnalysisOfVarianceMoments
         for (size_t i = 0; i < xs1.size(); ++i)
         {
             auto group_mean = getMeanGroup(i);
-            res += xs2[i] + ns[i] * group_mean * group_mean - 2 * group_mean * xs1[i];
+            res += xs2[i] + static_cast<Float64>(ns[i]) * group_mean * group_mean - 2 * group_mean * xs1[i];
         }
         return res;
     }
@@ -546,7 +644,7 @@ struct AnalysisOfVarianceMoments
         if (k == n)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
 
-        return (getBetweenGroupsVariation() * (n - k)) / (getWithinGroupsVariation() * (k - 1));
+        return (getBetweenGroupsVariation() * static_cast<double>(n - k)) / (getWithinGroupsVariation() * static_cast<double>(k - 1));
     }
 
     Float64 getPValue(Float64 f_statistic) const
@@ -563,7 +661,7 @@ struct AnalysisOfVarianceMoments
         if (k == n)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
 
-        return 1.0f - boost::math::cdf(boost::math::fisher_f(k - 1, n - k), f_statistic);
+        return 1.0f - boost::math::cdf(boost::math::fisher_f(static_cast<double>(k - 1), static_cast<double>(n - k)), f_statistic);
     }
 };
 

@@ -1,7 +1,5 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionSpaceFillingCurve.h>
@@ -385,7 +383,7 @@ SELECT untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) FR
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMortonDecode>(documentation);
 }

@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, use-rocksdb
 
 SET prefer_localhost_replica = 0;
 

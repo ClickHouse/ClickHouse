@@ -286,7 +286,7 @@ inline char* writeNonce(const String& nonce, char* dest)
 /// Firstly, read a byte, which shows if the nonce will be put in text (if it was defined in config)
 /// Secondly, read nonce in text (this step depends from first step)
 /// return new position to read
-inline const char* readNonce(String& nonce, const char* source)
+inline const char * readNonce(String & nonce, const char * source)
 {
     /// If first is zero byte: move source and set zero-bytes nonce
     if (!*source)
@@ -537,7 +537,7 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
     return safe_cast<UInt32>(out_size);
 }
 
-void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+UInt32 CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     /// The key is needed for decrypting. That's why it is read at the beginning of process.
     UInt64 key_id;
@@ -566,6 +566,8 @@ void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 sou
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Can't decrypt data, out length after decryption {} is wrong, expected {}",
                         out_len, ciphertext_size - tag_size);
+
+    return static_cast<UInt32>(out_len);
 }
 
 }

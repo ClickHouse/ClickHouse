@@ -1,9 +1,13 @@
 #include <ranges>
+#include <tuple>
+#include <utility>
 #include <Access/AccessControl.h>
 
+#include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeInterval.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -47,6 +51,8 @@
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/Context.h>
 
+#include <Processors/QueryPlan/FractionalLimitStep.h>
+#include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -61,9 +67,11 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
@@ -96,6 +104,8 @@
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <base/types.h>
+#include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
@@ -195,6 +205,9 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
+    extern const SettingsBool enable_lazy_columns_replication;
+    extern const SettingsBool serialize_string_in_memory_with_zero_byte;
 }
 
 namespace ServerSetting
@@ -202,7 +215,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
-static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
+static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
 
 namespace ErrorCodes
 {
@@ -240,10 +253,10 @@ try
     const auto & table_name = table_id.getTableName();
 
     /// TODO: implement some AST builders for this kind of stuff
-    ASTPtr query_ast = std::make_shared<ASTSelectQuery>();
+    ASTPtr query_ast = make_intrusive<ASTSelectQuery>();
     auto * select_ast = query_ast->as<ASTSelectQuery>();
 
-    select_ast->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+    select_ast->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
     auto expr_list = select_ast->select();
 
     /// The first column is our filter expression.
@@ -264,14 +277,14 @@ try
             context->getSettingsRef()[Setting::max_parser_backtracks]));
     }
 
-    select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
+    select_ast->setExpression(ASTSelectQuery::Expression::TABLES, make_intrusive<ASTTablesInSelectQuery>());
     auto tables = select_ast->tables();
-    auto tables_elem = std::make_shared<ASTTablesInSelectQueryElement>();
-    auto table_expr = std::make_shared<ASTTableExpression>();
+    auto tables_elem = make_intrusive<ASTTablesInSelectQueryElement>();
+    auto table_expr = make_intrusive<ASTTableExpression>();
     tables->children.push_back(tables_elem);
     tables_elem->table_expression = table_expr;
     tables_elem->children.push_back(table_expr);
-    table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(db_name, table_name);
+    table_expr->database_and_table_name = make_intrusive<ASTTableIdentifier>(db_name, table_name);
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
@@ -574,21 +587,17 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        if (storage->updateExternalDynamicMetadataIfExists(context))
-        {
-            metadata_snapshot = storage->getInMemoryMetadataPtr();
-        }
-
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
         table_id = storage->getStorageID();
 
+        storage->updateExternalDynamicMetadataIfExists(context);
         if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
 
         if (options.only_analyze)
             storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
         else
-            storage_snapshot = storage->getStorageSnapshotForQuery(metadata_snapshot, query_ptr, context);
+            storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
     }
 
     if (has_input || !joined_tables.resolveTables())
@@ -805,10 +814,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
 
+                const auto parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
+
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
-                    metadata_snapshot,
-                    storage->getConditionSelectivityEstimatorByPredicate(storage_snapshot, nullptr, context),
+                    storage_snapshot,
+                    storage->getConditionSelectivityEstimator(parts ? *parts : RangesInDataParts{}, context),
                     queried_columns,
                     supported_prewhere_columns,
                     log};
@@ -821,7 +832,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             /// Filter block in WHERE instead to get better performance
             query.setExpression(
-                ASTSelectQuery::Expression::WHERE, makeASTFunction("and", query.prewhere()->clone(), query.where()->clone()));
+                ASTSelectQuery::Expression::WHERE, makeASTOperator("and", query.prewhere()->clone(), query.where()->clone()));
         }
 
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
@@ -893,7 +904,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             /// Fix source_header for filter actions.
             if (row_policy_filter && !row_policy_filter->empty())
             {
-                filter_info = generateFilterActions(
+                row_policy_info = generateFilterActions(
                     table_id, row_policy_filter->expression, context, storage, storage_snapshot, metadata_snapshot, required_columns,
                     prepared_sets);
 
@@ -965,7 +976,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (analysis_result.prewhere_constant_filter_description.always_true)
             query.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
         else
-            query.setExpression(ASTSelectQuery::Expression::PREWHERE, std::make_shared<ASTLiteral>(0u));
+            query.setExpression(ASTSelectQuery::Expression::PREWHERE, make_intrusive<ASTLiteral>(0u));
         need_analyze_again = true;
     }
 
@@ -975,7 +986,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (analysis_result.where_constant_filter_description.always_true)
             query.setExpression(ASTSelectQuery::Expression::WHERE, {});
         else
-            query.setExpression(ASTSelectQuery::Expression::WHERE, std::make_shared<ASTLiteral>(0u));
+            query.setExpression(ASTSelectQuery::Expression::WHERE, make_intrusive<ASTLiteral>(0u));
         need_analyze_again = true;
     }
 
@@ -1062,8 +1073,6 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
         max_rows = max_rows ? std::min(max_rows, settings[Setting::max_rows_to_read].value) : settings[Setting::max_rows_to_read];
     query_info_copy.trivial_limit = max_rows;
 
-    /// Apply filters to prewhere and add them to the query_info so we can filter out parts efficiently during row estimation
-    applyFiltersToPrewhereInAnalysis(analysis_copy);
     if (analysis_copy.prewhere_info)
     {
         query_info_copy.prewhere_info = analysis_copy.prewhere_info;
@@ -1079,13 +1088,13 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
                 = query_info_copy.prewhere_info->prewhere_actions.findInOutputs(query_info_copy.prewhere_info->prewhere_column_name);
             added_filter_nodes.nodes.push_back(&node);
         }
+    }
 
-        if (query_info_copy.prewhere_info->row_level_filter)
-        {
-            const auto & node
-                = query_info_copy.prewhere_info->row_level_filter->findInOutputs(query_info_copy.prewhere_info->row_level_column_name);
-            added_filter_nodes.nodes.push_back(&node);
-        }
+    if (query_info_copy.row_level_filter)
+    {
+        const auto & node
+            = query_info_copy.row_level_filter->actions.findInOutputs(query_info_copy.row_level_filter->column_name);
+        added_filter_nodes.nodes.push_back(&node);
     }
 
     if (auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes))
@@ -1122,6 +1131,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
             result_header->getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name,
+            context,
             true);
 
         auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
@@ -1188,7 +1198,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         && options.to_stage > QueryProcessingStage::WithMergeableState;
 
     analysis_result = ExpressionAnalysisResult(
-        *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, filter_info, additional_filter_info, *source_header);
+        *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, row_policy_info, additional_filter_info, *source_header);
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
@@ -1372,13 +1382,17 @@ SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery 
         if (order_by_elem.getCollation())
             collator = std::make_shared<Collator>(order_by_elem.getCollation()->as<ASTLiteral &>().value.safeGet<String>());
 
+        std::string alias;
+        if (auto * identifier = order_by_elem.children[0]->as<ASTIdentifier>())
+            alias = identifier->name();
+
         if (order_by_elem.with_fill)
         {
             FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context_);
-            order_descr.emplace_back(column_name, order_by_elem.direction, order_by_elem.nulls_direction, collator, true, fill_desc);
+            order_descr.emplace_back(alias, column_name, order_by_elem.direction, order_by_elem.nulls_direction, collator, true, fill_desc);
         }
         else
-            order_descr.emplace_back(column_name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
+            order_descr.emplace_back(alias, column_name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
     }
 
     order_descr.compile_sort_description = context_->getSettingsRef()[Setting::compile_sort_description];
@@ -1395,7 +1409,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
     {
         NamesAndTypesList source_columns;
         ColumnsWithTypeAndName result_columns;
-        ASTPtr exprs = std::make_shared<ASTExpressionList>();
+        ASTPtr exprs = make_intrusive<ASTExpressionList>();
 
         if (query.interpolate()->children.empty())
         {
@@ -1409,7 +1423,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
             {
                 source_columns.emplace_back(name, type);
                 result_columns.emplace_back(type, name);
-                exprs->children.emplace_back(std::make_shared<ASTIdentifier>(name));
+                exprs->children.emplace_back(make_intrusive<ASTIdentifier>(name));
             }
         }
         else
@@ -1449,7 +1463,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
         ExpressionAnalyzer analyzer(exprs, syntax_result, context);
         ActionsDAG actions = analyzer.getActionsDAG(true);
         ActionsDAG conv_dag = ActionsDAG::makeConvertingActions(actions.getResultColumns(),
-            result_columns, ActionsDAG::MatchColumnsMode::Position, true);
+            result_columns, ActionsDAG::MatchColumnsMode::Position, context, true);
         ActionsDAG merge_dag = ActionsDAG::merge(std::move(actions), std::move(conv_dag));
 
         interpolate_descr = std::make_shared<InterpolateDescription>(std::move(merge_dag), aliases);
@@ -1475,50 +1489,93 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
     return order_descr;
 }
 
-static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
+/// The LIMIT/OFFSET expression value can be either UInt64 or Float64, negative or positive.
+static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
     if (!isNativeNumber(type))
-        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "Illegal type {} of {} expression, must be numeric type",
-            type->getName(), expr);
+        throw Exception(
+            ErrorCodes::INVALID_LIMIT_EXPRESSION, "Illegal type {} of {} expression, must be numeric type", type->getName(), expr);
 
-    Field converted = convertFieldToType(field, DataTypeUInt64());
-    if (converted.isNull())
-        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The value {} of {} expression is not representable as UInt64",
-            applyVisitor(FieldVisitorToString(), field), expr);
+    // First check if it is nonnegative limit since they are more common
+    {
+        const Field converted_value = convertFieldToType(field, DataTypeUInt64());
+        if (!converted_value.isNull())
+            return {converted_value.safeGet<UInt64>(), 0, false};
+    }
 
-    return converted.safeGet<UInt64>();
+    {
+        const Field converted_value = convertFieldToType(field, DataTypeInt64());
+        if (!converted_value.isNull())
+        {
+            Int64 int_value = converted_value.safeGet<Int64>();
+            assert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
+
+            // We need to be careful because -Int64::min() is not representable as Int64
+            const UInt64 magnitude = (int_value == std::numeric_limits<Int64>::min())
+                ? (static_cast<UInt64>(std::numeric_limits<Int64>::max()) + 1ULL)
+                : static_cast<UInt64>(-int_value);
+            return {magnitude, 0, true};
+        }
+    }
+
+    {
+        Field converted_value = convertFieldToType(field, DataTypeFloat64());
+        if (!converted_value.isNull())
+        {
+            auto value = converted_value.safeGet<Float64>();
+            if (value < 1 && value > 0)
+                return {0, value, false};
+        }
+    }
+
+    throw Exception(
+        ErrorCodes::INVALID_LIMIT_EXPRESSION,
+        "The value {} of {} expression is not representable as UInt64 or Int64 or Float64 in the range (0, 1)",
+        applyVisitor(FieldVisitorToString(), field),
+        expr);
 }
 
-
-std::pair<UInt64, UInt64> InterpreterSelectQuery::getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context_)
+InterpreterSelectQuery::LimitInfo InterpreterSelectQuery::getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context_)
 {
-    UInt64 length = 0;
-    UInt64 offset = 0;
+    // Holds the magnitude, sign, and fraction of limit and offset
+    LimitInfo lim_info;
 
     if (query.limitLength())
     {
-        length = getLimitUIntValue(query.limitLength(), context_, "LIMIT");
-        if (query.limitOffset() && length)
-            offset = getLimitUIntValue(query.limitOffset(), context_, "OFFSET");
+        std::tie(lim_info.limit_length, lim_info.fractional_limit, lim_info.is_limit_length_negative)
+            = getLimitOffsetValue(query.limitLength(), context_, "LIMIT");
+
+        if (query.limitOffset() && (lim_info.limit_length || lim_info.fractional_limit > 0))
+        {
+            std::tie(lim_info.limit_offset, lim_info.fractional_offset, lim_info.is_limit_offset_negative)
+                = getLimitOffsetValue(query.limitOffset(), context_, "OFFSET");
+        }
     }
     else if (query.limitOffset())
-        offset = getLimitUIntValue(query.limitOffset(), context_, "OFFSET");
-    return {length, offset};
+    {
+        std::tie(lim_info.limit_offset, lim_info.fractional_offset, lim_info.is_limit_offset_negative)
+            = getLimitOffsetValue(query.limitOffset(), context_, "OFFSET");
+    }
+    return lim_info;
 }
 
 
 UInt64 InterpreterSelectQuery::getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context_)
 {
-    /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
+    /// Partial sort can be done if there is LIMIT but no DISTINCT, LIMIT BY, ARRAY JOIN, Fractional Offset, Negative or Fractional Limit.
     if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList().first && query.limitLength())
     {
-        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context_);
-        if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
+        const LimitInfo lim_info = getLimitLengthAndOffset(query, context_);
+
+        if (lim_info.is_limit_length_negative || lim_info.fractional_offset > 0 || lim_info.fractional_limit > 0)
             return 0;
 
-        return limit_length + limit_offset;
+        if (lim_info.limit_length > std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
+            return 0;
+
+        return lim_info.limit_length + lim_info.limit_offset;
     }
     return 0;
 }
@@ -1574,6 +1631,21 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
     return false;
 }
 
+template <size_t size>
+ALWAYS_INLINE void executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const char (&description)[size])
+{
+    if (!expression)
+        return;
+
+    auto dag = expression->dag.clone();
+    if (expression->project_input)
+        dag.appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
+
+    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
+
+    expression_step->setStepDescription(description);
+    query_plan.addStep(std::move(expression_step));
+}
 
 void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe)
 {
@@ -1631,13 +1703,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         auto read_nothing = std::make_unique<ReadNothingStep>(source_header);
         query_plan.addStep(std::move(read_nothing));
 
-        if (expressions.filter_info)
+        if (expressions.row_policy_info)
         {
             auto row_level_security_step = std::make_unique<FilterStep>(
                 query_plan.getCurrentHeader(),
-                expressions.filter_info->actions.clone(),
-                expressions.filter_info->column_name,
-                expressions.filter_info->do_remove_column);
+                expressions.row_policy_info->actions.clone(),
+                expressions.row_policy_info->column_name,
+                expressions.row_policy_info->do_remove_column);
 
             row_level_security_step->setStepDescription("Row-level security filter");
             query_plan.addStep(std::move(row_level_security_step));
@@ -1645,18 +1717,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
         if (expressions.prewhere_info)
         {
-            if (expressions.prewhere_info->row_level_filter)
-            {
-                auto row_level_filter_step = std::make_unique<FilterStep>(
-                    query_plan.getCurrentHeader(),
-                    expressions.prewhere_info->row_level_filter->clone(),
-                    expressions.prewhere_info->row_level_column_name,
-                    true);
-
-                row_level_filter_step->setStepDescription("Row-level security filter (PREWHERE)");
-                query_plan.addStep(std::move(row_level_filter_step));
-            }
-
             auto prewhere_step = std::make_unique<FilterStep>(
                 query_plan.getCurrentHeader(),
                 expressions.prewhere_info->prewhere_actions.clone(),
@@ -1734,7 +1794,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                 /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
                 if (query.limitLength() && !query.limitBy() && !query.limit_with_ties)
-                    executePreLimit(query_plan, true);
+                {
+                    /// Preliminary Limits mustn't be added if there is a fractional limit/offset
+                    /// because in order to correctly calculate the number of rows to be produced
+                    /// based on the given fraction the final limit/offset processor must count the entire dataset.
+                    /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
+                    LimitInfo lim_info = getLimitLengthAndOffset(query, context);
+                    if (lim_info.fractional_offset == 0 && lim_info.fractional_limit == 0)
+                        executePreLimit(query_plan, true);
+                }
             }
         };
 
@@ -1758,19 +1826,19 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         {
             // If there is a storage that supports prewhere, this will always be nullptr
             // Thus, we don't actually need to check if projection is active.
-            if (expressions.filter_info)
+            if (expressions.row_policy_info && !(!input_pipe && storage && storage->supportsPrewhere()))
             {
                 auto row_level_security_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentHeader(),
-                    expressions.filter_info->actions.clone(),
-                    expressions.filter_info->column_name,
-                    expressions.filter_info->do_remove_column);
+                    expressions.row_policy_info->actions.clone(),
+                    expressions.row_policy_info->column_name,
+                    expressions.row_policy_info->do_remove_column);
 
                 row_level_security_step->setStepDescription("Row-level security filter");
                 query_plan.addStep(std::move(row_level_security_step));
             }
 
-            const auto add_filter_step = [&](auto & new_filter_info, const std::string & description)
+            const auto add_filter_step = [&](auto & new_filter_info, const auto & description)
             {
                 auto filter_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentHeader(),
@@ -1798,7 +1866,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         query_plan.getCurrentHeader(),
                         *expressions.array_join,
                         settings[Setting::enable_unaligned_array_join],
-                        settings[Setting::max_block_size]);
+                        settings[Setting::max_block_size],
+                        settings[Setting::enable_lazy_columns_replication]
+                        );
 
                 array_join_step->setStepDescription("ARRAY JOIN");
                 query_plan.addStep(std::move(array_join_step));
@@ -1841,13 +1911,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             plan.getCurrentHeader(),
                             std::move(order_descr),
                             0 /* LIMIT */, sort_settings);
-                        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos));
+                        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos), options.max_step_description_length);
                         plan.addStep(std::move(sorting_step));
                     };
 
                     auto crosswise_connection = CreateSetAndFilterOnTheFlyStep::createCrossConnection();
                     auto add_create_set
-                        = [&settings, crosswise_connection](QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
+                        = [&settings, crosswise_connection, max_len = options.max_step_description_length](QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
                     {
                         auto creating_set_step = std::make_unique<CreateSetAndFilterOnTheFlyStep>(
                             plan.getCurrentHeader(),
@@ -1855,7 +1925,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             settings[Setting::max_rows_in_set_to_optimize_join],
                             crosswise_connection,
                             join_pos);
-                        creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_pos));
+                        creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_pos), max_len);
 
                         auto * step_raw_ptr = creating_set_step.get();
                         plan.addStep(std::move(creating_set_step));
@@ -1918,7 +1988,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         analysis_result.optimize_read_in_order,
                         /* use_new_analyzer_ = */ false);
 
-                    join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()));
+                    join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()), options.max_step_description_length);
                     std::vector<QueryPlanPtr> plans;
                     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
                     plans.emplace_back(std::move(joined_plan));
@@ -2081,6 +2151,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     }
             }
 
+
             bool apply_limit = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregation;
             bool apply_prelimit = apply_limit &&
                                   query.limitLength() && !query.limit_with_ties &&
@@ -2090,6 +2161,16 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                                   !expressions.hasLimitBy() &&
                                   !settings[Setting::extremes] &&
                                   !has_withfill;
+            /// Preliminary Limits mustn't be added if there is a fractional limit/offset
+            /// because in order to correctly calculate the number of rows to be produced
+            /// based on the given fraction the final limit/offset processor must count the entire dataset.
+            /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
+            if (apply_prelimit)
+            {
+                const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
+                apply_prelimit = apply_prelimit && (lim_info.fractional_limit == 0 && lim_info.fractional_offset == 0);
+            }
+
             bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
             if (apply_prelimit)
             {
@@ -2181,7 +2262,9 @@ static void executeMergeAggregatedImpl(
         overflow_row,
         settings[Setting::max_threads],
         settings[Setting::max_block_size],
-        settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization]);
+        settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
+        settings[Setting::serialize_string_in_memory_with_zero_byte]);
+
     auto grouping_sets_params = getAggregatorGroupingSetsParams(aggregation_keys_list, keys);
 
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
@@ -2204,21 +2287,21 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
 {
     Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(source_header)));
 
+    if (query_info.row_level_filter)
+    {
+        auto row_level_actions = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone());
+        pipe.addSimpleTransform([&](const SharedHeader & header)
+        {
+            return std::make_shared<FilterTransform>(header,
+                row_level_actions,
+                query_info.row_level_filter->column_name,
+                query_info.row_level_filter->do_remove_column);
+        });
+    }
+
     if (query_info.prewhere_info)
     {
         auto & prewhere_info = *query_info.prewhere_info;
-
-        if (prewhere_info.row_level_filter)
-        {
-            auto row_level_actions = std::make_shared<ExpressionActions>(prewhere_info.row_level_filter->clone());
-            pipe.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<FilterTransform>(header,
-                    row_level_actions,
-                    prewhere_info.row_level_column_name, true);
-            });
-        }
-
         auto filter_actions = std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions.clone());
         pipe.addSimpleTransform([&](const SharedHeader & header)
         {
@@ -2257,38 +2340,9 @@ bool InterpreterSelectQuery::shouldMoveToPrewhere() const
     return settings[Setting::optimize_move_to_prewhere] && (!query.final() || settings[Setting::optimize_move_to_prewhere_if_final]);
 }
 
-/// Note that this is const and accepts the analysis ref to be able to use it to do analysis for parallel replicas
-/// without affecting the final analysis multiple times
-void InterpreterSelectQuery::applyFiltersToPrewhereInAnalysis(ExpressionAnalysisResult & analysis) const
-{
-    if (!analysis.filter_info)
-        return;
-
-    if (!analysis.prewhere_info)
-    {
-        const bool does_storage_support_prewhere = !input_pipe && storage && storage->supportsPrewhere();
-        if (does_storage_support_prewhere && shouldMoveToPrewhere())
-        {
-            /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
-            analysis.prewhere_info = std::make_shared<PrewhereInfo>(std::move(analysis.filter_info->actions), analysis.filter_info->column_name);
-            analysis.prewhere_info->remove_prewhere_column = std::move(analysis.filter_info->do_remove_column);
-            analysis.prewhere_info->need_filter = true;
-            analysis.filter_info = nullptr;
-        }
-    }
-    else
-    {
-        /// Add row level security actions to prewhere.
-        analysis.prewhere_info->row_level_filter = std::move(analysis.filter_info->actions);
-        analysis.prewhere_info->row_level_column_name = std::move(analysis.filter_info->column_name);
-        analysis.filter_info = nullptr;
-    }
-}
-
-
 void InterpreterSelectQuery::addPrewhereAliasActions()
 {
-    applyFiltersToPrewhereInAnalysis(analysis_result);
+    auto & row_level_filter = analysis_result.row_policy_info;
     auto & prewhere_info = analysis_result.prewhere_info;
     auto & columns_to_remove_after_prewhere = analysis_result.columns_to_remove_after_prewhere;
 
@@ -2315,12 +2369,12 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             /// Get some columns directly from PREWHERE expression actions
             auto prewhere_required_columns = prewhere_info->prewhere_actions.getRequiredColumns().getNames();
             columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
+        }
 
-            if (prewhere_info->row_level_filter)
-            {
-                auto row_level_required_columns = prewhere_info->row_level_filter->getRequiredColumns().getNames();
-                columns.insert(row_level_required_columns.begin(), row_level_required_columns.end());
-            }
+        if (row_level_filter)
+        {
+            auto row_level_required_columns = row_level_filter->actions.getRequiredColumns().getNames();
+            columns.insert(row_level_required_columns.begin(), row_level_required_columns.end());
         }
 
         return columns;
@@ -2339,10 +2393,10 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         NameSet required_aliases_from_prewhere; /// Set of ALIAS required columns for PREWHERE
 
         /// Expression, that contains all raw required columns
-        ASTPtr required_columns_all_expr = std::make_shared<ASTExpressionList>();
+        ASTPtr required_columns_all_expr = make_intrusive<ASTExpressionList>();
 
         /// Expression, that contains raw required columns for PREWHERE
-        ASTPtr required_columns_from_prewhere_expr = std::make_shared<ASTExpressionList>();
+        ASTPtr required_columns_from_prewhere_expr = make_intrusive<ASTExpressionList>();
 
         /// Sort out already known required columns between expressions,
         /// also populate `required_aliases_from_prewhere`.
@@ -2364,7 +2418,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 column_expr = setAlias(column_expr, column);
             }
             else
-                column_expr = std::make_shared<ASTIdentifier>(column);
+                column_expr = make_intrusive<ASTIdentifier>(column);
 
             if (required_columns_from_prewhere.contains(column))
             {
@@ -2397,7 +2451,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 if (columns_to_remove.contains(column.name))
                     continue;
 
-                required_columns_all_expr->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+                required_columns_all_expr->children.emplace_back(make_intrusive<ASTIdentifier>(column.name));
                 required_columns_after_prewhere.emplace_back(column.name, column.type);
             }
 
@@ -2451,11 +2505,16 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_experimental_parallel_reading_from_replicas)
 {
     const Settings & settings = context->getSettingsRef();
+
+    bool empty_result_for_aggregation_by_empty_set = settings[Setting::empty_result_for_aggregation_by_empty_set]
+            || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && query_analyzer->aggregationKeys().empty()
+                && query_analyzer->hasConstAggregationKeys());
+
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
         && (allow_experimental_parallel_reading_from_replicas == 0)
         && !settings[Setting::allow_experimental_query_deduplication]
-        && !settings[Setting::empty_result_for_aggregation_by_empty_set]
+        && !empty_result_for_aggregation_by_empty_set
         && storage
         && storage->supportsTrivialCountOptimization(storage_snapshot, getContext())
         && query_info.filter_asts.empty()
@@ -2478,13 +2537,15 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
 
     // It's possible to optimize count() given only partition predicates
     ActionsDAG::NodeRawConstPtrs filter_nodes;
+    if (analysis_result.hasRowPolicyFilter())
+    {
+        auto & row_level_filter = analysis_result.row_policy_info;
+        filter_nodes.push_back(&row_level_filter->actions.findInOutputs(row_level_filter->column_name));
+    }
     if (analysis_result.hasPrewhere())
     {
         auto & prewhere_info = analysis_result.prewhere_info;
         filter_nodes.push_back(&prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name));
-
-        if (prewhere_info->row_level_filter)
-            filter_nodes.push_back(&prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name));
     }
     if (analysis_result.hasWhere())
     {
@@ -2507,7 +2568,7 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
 {
     const auto & query = query_ptr->as<const ASTSelectQuery &>();
 
-    auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+    const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
     if (!query.distinct
        && !query.limit_with_ties
@@ -2521,9 +2582,12 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
        && !query.join()
        && !query_analyzer->hasAggregation()
        && !query_analyzer->hasWindow()
+       && lim_info.fractional_limit == 0
+       && lim_info.fractional_offset == 0
        && query.limitLength()
-       && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
-        return limit_length + limit_offset;
+       && lim_info.limit_length <= std::numeric_limits<UInt64>::max() - lim_info.limit_offset
+       && !lim_info.is_limit_length_negative)
+        return lim_info.limit_length + lim_info.limit_offset;
 
     return 0;
 }
@@ -2662,7 +2726,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_sync_remote)
         {
-            if (auto streams_with_ratio = max_streams * settings[Setting::max_streams_to_max_threads_ratio];
+            if (auto streams_with_ratio = static_cast<double>(max_streams) * settings[Setting::max_streams_to_max_threads_ratio];
                 canConvertTo<size_t>(streams_with_ratio))
                 max_streams = static_cast<size_t>(streams_with_ratio);
             else
@@ -2675,10 +2739,11 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (max_streams == 0)
             max_streams = 1;
 
-        auto & prewhere_info = analysis_result.prewhere_info;
+        if (analysis_result.row_policy_info && (!input_pipe && storage && storage->supportsPrewhere()))
+            query_info.row_level_filter = analysis_result.row_policy_info;
 
-        if (prewhere_info)
-            query_info.prewhere_info = prewhere_info;
+        if (analysis_result.prewhere_info)
+            query_info.prewhere_info = analysis_result.prewhere_info;
 
         bool optimize_read_in_order = analysis_result.optimize_read_in_order;
         bool optimize_aggregation_in_order = analysis_result.optimize_read_in_order && !query_analyzer->useGroupingSetKey();
@@ -2782,8 +2847,7 @@ static Aggregator::Params getAggregatorParams(
         context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
 
-    return Aggregator::Params
-    {
+    return Aggregator::Params{
         keys,
         aggregates,
         overflow_row,
@@ -2791,7 +2855,8 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::group_by_overflow_mode],
         group_by_two_level_threshold,
         group_by_two_level_threshold_bytes,
-        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
+        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
+            settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && keys.empty()
                 && query_analyzer.hasConstAggregationKeys()),
@@ -2805,8 +2870,9 @@ static Aggregator::Params getAggregatorParams(
         /* only_merge */ false,
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
-        stats_collecting_params
-    };
+        stats_collecting_params,
+        settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
+        settings[Setting::serialize_string_in_memory_with_zero_byte]};
 }
 
 void InterpreterSelectQuery::executeAggregation(
@@ -2972,21 +3038,6 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     query_plan.addStep(std::move(step));
 }
 
-void InterpreterSelectQuery::executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const std::string & description)
-{
-    if (!expression)
-        return;
-
-    auto dag = expression->dag.clone();
-    if (expression->project_input)
-        dag.appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
-
-    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
-
-    expression_step->setStepDescription(description);
-    query_plan.addStep(std::move(expression_step));
-}
-
 static bool windowDescriptionComparator(const WindowDescription * _left, const WindowDescription * _right)
 {
     const auto & left = _left->full_sort_description;
@@ -3070,7 +3121,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
                 window.partition_by,
                 0 /* LIMIT */,
                 sort_settings);
-            sorting_step->setStepDescription("Sorting for window '" + window.window_name + "'");
+            sorting_step->setStepDescription(fmt::format("Sorting for window '{}'", window.window_name), options.max_step_description_length);
             query_plan.addStep(std::move(sorting_step));
         }
 
@@ -3080,7 +3131,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             = settings[Setting::query_plan_enable_multithreading_after_window_functions] && ((i + 1) == windows_sorted.size());
 
         auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentHeader(), window, window.window_functions, streams_fan_out);
-        window_step->setStepDescription("Window step for window '" + window.window_name + "'");
+        window_step->setStepDescription(fmt::format("Window step for window '{}'", window.window_name), options.max_step_description_length);
 
         query_plan.addStep(std::move(window_step));
     }
@@ -3143,7 +3194,7 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const st
 
     auto merging_sorted = std::make_unique<SortingStep>(
         query_plan.getCurrentHeader(), std::move(sort_description), max_block_size, limit, exact_rows_before_limit);
-    merging_sorted->setStepDescription("Merge sorted streams " + description);
+    merging_sorted->setStepDescription(fmt::format("Merge sorted streams {}", description), options.max_step_description_length);
     query_plan.addStep(std::move(merging_sorted));
 }
 
@@ -3169,9 +3220,9 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
         /// then you can get no more than limit_length + limit_offset of different rows.
         if ((!query.orderBy() || !before_order) && !query.limitBy())
         {
-            auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
-            if (limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
-                limit_for_distinct = limit_length + limit_offset;
+            const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
+            if (lim_info.limit_length <= std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
+                limit_for_distinct = lim_info.limit_length + lim_info.limit_offset;
         }
 
         SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
@@ -3198,27 +3249,57 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
     /// If there is LIMIT
     if (query.limitLength())
     {
-        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+        LimitInfo lim_info = getLimitLengthAndOffset(query, context);
+
+        if (lim_info.fractional_offset > 0 || lim_info.fractional_limit > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Preliminary LIMIT with Fractional LIMIT/OFFSET non-zero");
 
         if (do_not_skip_offset)
         {
-            if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
+            if (lim_info.limit_length > std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
                 return;
 
-            limit_length += limit_offset;
-            limit_offset = 0;
+            lim_info.limit_length += lim_info.limit_offset;
+            lim_info.limit_offset = 0;
         }
 
         const Settings & settings = context->getSettingsRef();
 
-        auto limit
-            = std::make_unique<LimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset, settings[Setting::exact_rows_before_limit]);
-        if (do_not_skip_offset)
-            limit->setStepDescription("preliminary LIMIT (with OFFSET)");
-        else
-            limit->setStepDescription("preliminary LIMIT (without OFFSET)");
+        if (!lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative) [[likely]]
+        {
+            auto limit = std::make_unique<LimitStep>(
+                query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset, settings[Setting::exact_rows_before_limit]);
+            if (do_not_skip_offset)
+                limit->setStepDescription("preliminary LIMIT (with OFFSET)");
+            else
+                limit->setStepDescription("preliminary LIMIT");
 
-        query_plan.addStep(std::move(limit));
+            query_plan.addStep(std::move(limit));
+        }
+        else if (lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
+        {
+            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
+
+            query_plan.addStep(std::move(limit));
+        }
+        else if (lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative)
+        {
+            auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
+            query_plan.addStep(std::move(offsets_step));
+
+            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, 0);
+            query_plan.addStep(std::move(limit));
+        }
+        else // if (!lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
+        {
+            auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
+            query_plan.addStep(std::move(offsets_step));
+
+            auto limit = std::make_unique<LimitStep>(
+                query_plan.getCurrentHeader(), lim_info.limit_length, 0, settings[Setting::exact_rows_before_limit]);
+
+            query_plan.addStep(std::move(limit));
+        }
     }
 }
 
@@ -3233,10 +3314,20 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
     for (const auto & elem : query.limitBy()->children)
         columns.emplace_back(elem->getColumnName());
 
-    UInt64 length = getLimitUIntValue(query.limitByLength(), context, "LIMIT");
-    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), context, "OFFSET") : 0);
+    auto [limit_length, fractional_limit, is_limit_length_negative]
+        = getLimitOffsetValue(query.limitByLength(), context, "LIMIT");
 
-    auto limit_by = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), length, offset, columns);
+    auto [limit_offset, fractional_offset, is_limit_offset_negative]
+        = (query.limitByOffset() ? getLimitOffsetValue(query.limitByOffset(), context, "OFFSET")
+                                 : std::tuple<UInt64, Float64, bool>{0, 0, false});
+
+    if (is_limit_length_negative || is_limit_offset_negative)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT/OFFSET with LIMIT BY is not supported yet");
+
+    if (fractional_limit > 0 || fractional_offset > 0)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
+
+    auto limit_by = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_length, limit_offset, columns);
     query_plan.addStep(std::move(limit_by));
 }
 
@@ -3295,9 +3386,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
             always_read_till_end = true;
 
-        UInt64 limit_length;
-        UInt64 limit_offset;
-        std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, context);
+        const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
         SortDescription order_descr;
         if (query.limit_with_ties)
@@ -3305,16 +3394,95 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             if (!query.orderBy())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT WITH TIES without ORDER BY");
             order_descr = getSortDescription(query, context);
+
+            if (lim_info.is_limit_length_negative || lim_info.is_limit_offset_negative)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported yet");
         }
 
-        auto limit = std::make_unique<LimitStep>(
+        if (lim_info.is_limit_length_negative && lim_info.fractional_offset > 0)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT is not supported with fractional OFFSET yet");
+
+        if (lim_info.is_limit_offset_negative && lim_info.fractional_limit > 0)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT is not supported with negative OFFSET yet");
+
+        /// only one of limit_length or fractional_limit should have a value not both
+        if (lim_info.limit_length && lim_info.fractional_limit > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT can't have both absolute and fractional values non-zero");
+        /// only one of limit_offset or fractional_offset should have a value not both
+        if (lim_info.limit_offset && lim_info.fractional_offset > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both absolute and fractional values non-zero");
+
+        /// if fractional_limit has value is_limit_length_negative should be always false
+        if (lim_info.fractional_limit > 0 && lim_info.is_limit_length_negative)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT can't have both negative and fractional values non-zero");
+        /// if fractional_offset has value is_limit_offset_negative should be always false
+        if (lim_info.fractional_offset > 0 && lim_info.is_limit_offset_negative)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both negative and fractional values non-zero");
+
+        if (!lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative
+            && lim_info.fractional_offset == 0 && lim_info.fractional_limit == 0) [[likely]]
+        {
+            auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(),
-                limit_length, limit_offset, always_read_till_end, query.limit_with_ties, order_descr);
+                lim_info.limit_length,
+                lim_info.limit_offset,
+                always_read_till_end,
+                query.limit_with_ties,
+                order_descr);
 
-        if (query.limit_with_ties)
-            limit->setStepDescription("LIMIT WITH TIES");
+            if (query.limit_with_ties)
+                limit->setStepDescription("LIMIT WITH TIES");
 
-        query_plan.addStep(std::move(limit));
+            query_plan.addStep(std::move(limit));
+        }
+        else if (lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
+        {
+            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
+
+            query_plan.addStep(std::move(limit));
+        }
+        else if (lim_info.is_limit_length_negative && !lim_info.is_limit_offset_negative)
+        {
+            auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
+            query_plan.addStep(std::move(offsets_step));
+
+            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, 0);
+            query_plan.addStep(std::move(limit));
+        }
+        else if (!lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
+        {
+            auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
+            query_plan.addStep(std::move(offsets_step));
+
+            auto limit = std::make_unique<LimitStep>(
+                query_plan.getCurrentHeader(), lim_info.limit_length, 0, always_read_till_end, query.limit_with_ties, order_descr);
+
+            if (query.limit_with_ties)
+                limit->setStepDescription("LIMIT WITH TIES");
+
+            query_plan.addStep(std::move(limit));
+        }
+        else if (lim_info.limit_length && lim_info.fractional_offset > 0)
+        {
+            auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(query_plan.getCurrentHeader(), lim_info.fractional_offset);
+            query_plan.addStep(std::move(fractional_offset_step));
+
+            auto limit = std::make_unique<LimitStep>(
+                query_plan.getCurrentHeader(), lim_info.limit_length, 0, always_read_till_end, query.limit_with_ties, order_descr);
+            query_plan.addStep(std::move(limit));
+        }
+        else
+        {
+            // Else its fractional limit + fractional offset or normal offset
+            auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
+                query_plan.getCurrentHeader(),
+                lim_info.fractional_limit,
+                lim_info.fractional_offset,
+                lim_info.limit_offset,
+                query.limit_with_ties,
+                order_descr);
+            query_plan.addStep(std::move(fractional_limit_step));
+        }
     }
 }
 
@@ -3325,12 +3493,31 @@ void InterpreterSelectQuery::executeOffset(QueryPlan & query_plan)
     /// If there is not a LIMIT but an offset
     if (!query.limitLength() && query.limitOffset())
     {
-        UInt64 limit_length;
-        UInt64 limit_offset;
-        std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, context);
+        const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
-        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), limit_offset);
-        query_plan.addStep(std::move(offsets_step));
+        // only one of limit_offset or fractional_offset should have a value not both
+        if (lim_info.limit_offset && lim_info.fractional_offset > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both absolute and fractional values non-zero");
+
+        // negative fractional offset is not supported yet
+        if (lim_info.is_limit_offset_negative && lim_info.fractional_offset > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both negative and fractional values non-zero");
+
+        if (lim_info.is_limit_offset_negative) [[unlikely]]
+        {
+            auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
+            query_plan.addStep(std::move(offsets_step));
+        }
+        else if (lim_info.limit_offset) [[likely]]
+        {
+            auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
+            query_plan.addStep(std::move(offsets_step));
+        }
+        else if (lim_info.fractional_offset > 0) [[unlikely]]
+        {
+            auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(query_plan.getCurrentHeader(), lim_info.fractional_offset);
+            query_plan.addStep(std::move(fractional_offset_step));
+        }
     }
 }
 

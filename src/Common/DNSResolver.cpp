@@ -222,7 +222,7 @@ struct DNSResolver::AddressFilter
         }
         if (!dns_resolve_ipv4 && !dns_resolve_ipv6)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DNS can't resolve any address, because dns_resolve_ipv6_interfaces and dns_resolve_ipv4_interfaces both are disabled");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DNS can't resolve any address, because dns_allow_resolve_names_to_ipv6 and dns_allow_resolve_names_to_ipv4 both are disabled");
         }
 
         std::erase_if(addresses, [dns_resolve_ipv6, dns_resolve_ipv4](const Poco::Net::IPAddress& address)

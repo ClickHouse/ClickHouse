@@ -33,7 +33,6 @@ from typing import Iterable, List, Optional
 
 from cache_utils import GitHubCache
 from ci_buddy import CIBuddy
-from ci_config import Labels
 from ci_utils import Shell
 from env_helper import (
     GITHUB_REPOSITORY,
@@ -45,10 +44,15 @@ from env_helper import (
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
 from github_helper import GitHub, PullRequest, PullRequests, Repository
+from pr_info import Labels
 from report import GITHUB_JOB_URL
 from s3_helper import S3Helper
 from ssh import SSHKey
 from synchronizer_utils import SYNC_PR_PREFIX
+
+
+class BackportException(Exception):
+    pass
 
 
 class ReleaseBranch:
@@ -179,7 +183,7 @@ close it.
                 )
                 return
             self.create_cherrypick()
-        assert self.cherrypick_pr, "BUG!"
+        assert self.cherrypick_pr, "Unable to create cherry-pick PR"
 
         if self.cherrypick_pr.mergeable and self.cherrypick_pr.state != "closed":
             if dry_run:
@@ -408,8 +412,6 @@ class BackportPRs:
         self._repo_name = repo
         self.dry_run = dry_run
 
-        self.must_create_backport_labels = [Labels.MUST_BACKPORT]
-
         self._remote = ""
         self._remote_line = ""
 
@@ -499,17 +501,22 @@ class BackportPRs:
     ) -> None:
 
         since_date = since_date or self.oldest_commit_date()
-        labels_to_backport = (
-            labels_to_backport
-            or self.labels_to_backport + self.must_create_backport_labels
+        labels_to_backport = labels_to_backport or (
+            self.labels_to_backport + [Labels.MUST_BACKPORT]
         )
         repo_name = repo_name or self.repo.full_name
         # To not have a possible TZ issues
         tomorrow = date.today() + timedelta(days=1)
 
+        # The search API struggles to serve the heavy queries, so we limit the
+        # updated date to 90 days ago. It improves the response quality by an order of
+        # magnitude
+        updated = (date.today() - timedelta(days=90)).isoformat() + "..*"
+
         query_args = {
             "query": f"type:pr repo:{repo_name} -label:{backport_created_label}",
             "label": ",".join(labels_to_backport),
+            "updated": updated,
             "merged": [since_date, tomorrow],
         }
         logging.info("Query to find the backport PRs:\n %s", query_args)
@@ -533,7 +540,7 @@ class BackportPRs:
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
 
-        if any(label in pr_labels for label in self.must_create_backport_labels):
+        if Labels.MUST_BACKPORT in pr_labels:
             branches = [
                 ReleaseBranch(br, pr, self.repo) for br in self.release_branches
             ]  # type: List[ReleaseBranch]
@@ -554,7 +561,9 @@ class BackportPRs:
                     if label in self.labels_to_backport
                 ]
             ]
-        assert branches, "BUG!"
+        assert (
+            branches
+        ), f"Unable to determine branches for PR {pr.html_url}, check its labels"
 
         logging.info(
             "  PR #%s is supposed to be backported to %s",
@@ -568,13 +577,16 @@ class BackportPRs:
                 for branch in branches
             ]
         )
+
+        # Backport and cherry-pick PRs
         bp_cp_prs = self.gh.get_pulls_from_search(
             query=f"type:pr repo:{self._repo_name} {query_suffix}",
             label=f"{Labels.PR_BACKPORT},{Labels.PR_CHERRYPICK}",
         )
+        # Check that all
         for br in branches:
             bp_cp_prs = br.pop_prs(bp_cp_prs)
-        assert not bp_cp_prs, "BUG!"
+        assert not bp_cp_prs, f"Some PRs are not processed by backporting: {bp_cp_prs}"
 
         for br in branches:
             br.process(self.dry_run)
@@ -611,7 +623,9 @@ class CherryPickPRs:
         self.repo = gh.get_repo(repo)
         self.dry_run = dry_run
         self.error = None  # type: Optional[Exception]
+
         self.release_prs = gh.get_release_pulls(repo)
+        logging.info(f"Release PRs: {self.release_prs}")
 
     def get_open_cherry_pick_prs(self) -> PullRequests:
         """
@@ -791,25 +805,31 @@ def main():
 
     errors = [e for e in (bpp.error, cpp.error) if e is not None]
     if any(errors):
-        logging.error("Finished successfully, but errors occurred!")
-        if IS_CI:
-            ci_buddy = CIBuddy()
-            ci_buddy.post_job_error(
-                f"The backport process finished with errors: {errors[0]}",
-                with_instance_info=True,
-                with_wf_link=True,
-                critical=True,
-            )
-        raise errors[0]
+        logging.error("Finished successfully, but %s errors occurred!", len(errors))
+        raise BackportException(
+            "Errors occurred during backport process: "
+            + "; ".join(str(e) for e in errors)
+        )
 
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(level=logging.INFO)
 
     assert not is_shallow()
-    with stash():
-        if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
-            with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
+    try:
+        with stash():
+            if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
+                with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
+                    main()
+            else:
                 main()
-        else:
-            main()
+
+    except Exception as e:
+        if IS_CI:
+            ci_buddy = CIBuddy()
+            ci_buddy.post_job_error(
+                f"The backport process finished with errors: {e}",
+                with_instance_info=True,
+                with_wf_link=True,
+                critical=True,
+            )

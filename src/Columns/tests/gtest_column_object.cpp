@@ -1,7 +1,8 @@
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <Common/Arena.h>
 #include <Core/Field.h>
@@ -37,7 +38,7 @@ TEST(ColumnObject, GetName)
 Field deserializeFieldFromSharedData(ColumnString * values, size_t n)
 {
     auto data = values->getDataAt(n);
-    ReadBufferFromMemory buf(data.data, data.size);
+    ReadBufferFromMemory buf(data);
     Field res;
     std::make_shared<SerializationDynamic>()->deserializeBinary(res, buf, FormatSettings());
     return res;
@@ -312,15 +313,17 @@ TEST(ColumnObject, SerializeDeserializerFromArena)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos);
-    col_object.serializeValueIntoArena(1, arena, pos);
-    col_object.serializeValueIntoArena(2, arena, pos);
+    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos, nullptr);
+    col_object.serializeValueIntoArena(1, arena, pos, nullptr);
+    col_object.serializeValueIntoArena(2, arena, pos, nullptr);
 
     auto col2 = type->createColumn();
     auto & col_object2 = assert_cast<ColumnObject &>(*col);
-    pos = col_object2.deserializeAndInsertFromArena(ref1.data);
-    pos = col_object2.deserializeAndInsertFromArena(pos);
-    col_object2.deserializeAndInsertFromArena(pos);
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    col_object2.deserializeAndInsertFromArena(in, nullptr);
+    col_object2.deserializeAndInsertFromArena(in, nullptr);
+    col_object2.deserializeAndInsertFromArena(in, nullptr);
+    ASSERT_TRUE(in.eof());
 
     ASSERT_EQ(col_object2[0], (Object{{"b.d", Field(42u)}, {"a.b", Array{"Str1", "Str2"}}, {"a.a", Tuple{"Str3", 441u}}, {"a.c", Field("Str4")}, {"a.d", Array{Field(45), Field(46)}}, {"a.e", Field(47)}}));
     ASSERT_EQ(col_object2[1], (Object{{"b.d", Field{0u}}, {"a.b", Array{}}, {"b.a", Field(48)}, {"b.b", Array{Field(49), Field(50)}}}));
@@ -338,16 +341,16 @@ TEST(ColumnObject, SkipSerializedInArena)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos);
-    col_object.serializeValueIntoArena(1, arena, pos);
-    auto ref3 = col_object.serializeValueIntoArena(2, arena, pos);
+    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos, nullptr);
+    col_object.serializeValueIntoArena(1, arena, pos, nullptr);
+    col_object.serializeValueIntoArena(2, arena, pos, nullptr);
 
-    const char * end = ref3.data + ref3.size;
     auto col2 = type->createColumn();
-    pos = col2->skipSerializedInArena(ref1.data);
-    pos = col2->skipSerializedInArena(pos);
-    pos = col2->skipSerializedInArena(pos);
-    ASSERT_EQ(pos, end);
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    col2->skipSerializedInArena(in);
+    col2->skipSerializedInArena(in);
+    col2->skipSerializedInArena(in);
+    ASSERT_TRUE(in.eof());
 }
 
 TEST(ColumnObject, rollback)
@@ -410,4 +413,34 @@ TEST(ColumnObject, rollback)
 
     ASSERT_EQ((*typed_paths.at("a.a"))[0], Field{1u});
     ASSERT_EQ((*dynamic_paths.at("a.c"))[1], Field{"ccc"});
+}
+
+TEST(ColumnObject, RepairDuplicatesInDynamicPathsAndSharedData)
+{
+    auto type_with_dynamic_paths = DataTypeFactory::instance().get("JSON");
+    auto column_with_dynamic_paths = type_with_dynamic_paths->createColumn();
+    auto & column_object_with_dynamic_paths = assert_cast<ColumnObject &>(*column_with_dynamic_paths);
+    column_object_with_dynamic_paths.insert(Object{{"a", Field{1u}}});
+    column_object_with_dynamic_paths.insert(Object{{"b", Field{1u}}});
+    column_object_with_dynamic_paths.insert(Object{{"c", Field{1u}}});
+    column_object_with_dynamic_paths.insert(Object{{"d", Field{1u}}});
+
+    auto type_with_shared_data_paths = DataTypeFactory::instance().get("JSON(max_dynamic_paths=0)");
+    auto column_with_shared_data_paths = type_with_shared_data_paths->createColumn();
+    auto & column_object_with_shared_data_paths = assert_cast<ColumnObject &>(*column_with_shared_data_paths);
+    column_object_with_shared_data_paths.insert(Object{});
+    column_object_with_shared_data_paths.insert(Object{{"a", Field{1u}}, {"c", Field{1u}}});
+    column_object_with_shared_data_paths.insert(Object{{"d", Field{1u}}, {"b", Field{1u}}});
+    column_object_with_shared_data_paths.insert(Object{});
+
+    std::unordered_map<String, MutableColumnPtr> dynamic_paths;
+    for (const auto & [path, column] : column_object_with_dynamic_paths.getDynamicPaths())
+        dynamic_paths[path] = IColumn::mutate(column);
+
+    auto column_object = ColumnObject::create({}, std::move(dynamic_paths), IColumn::mutate(column_object_with_shared_data_paths.getSharedDataPtr()), 4, 4, 16);
+    column_object->repairDuplicatesInDynamicPathsAndSharedData(0);
+    ASSERT_EQ((*column_object)[0], (Object{{"a", Field(1u)}}));
+    ASSERT_EQ((*column_object)[1], (Object{{"a", Field(1u)}, {"b", Field(1u)}, {"c", Field(1u)}}));
+    ASSERT_EQ((*column_object)[2], (Object{{"b", Field(1u)}, {"c", Field(1u)}, {"d", Field(1u)}}));
+    ASSERT_EQ((*column_object)[3], (Object{{"d", Field(1u)}}));
 }

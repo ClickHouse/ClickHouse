@@ -113,7 +113,7 @@ String withOrdinalEnding(size_t i)
 }
 
 void validateArgumentsImpl(
-    const IFunction & func,
+    const String & function_name,
     const ColumnsWithTypeAndName & arguments,
     size_t argument_offset,
     const FunctionArgumentDescriptors & descriptors)
@@ -132,7 +132,7 @@ void validateArgumentsImpl(
                 "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
                 withOrdinalEnding(argument_offset + i),
                 descriptor.name,
-                func.getName(),
+                function_name,
                 descriptor.type_name,
                 arg.type ? arg.type->getName() : "<?>");
     }
@@ -156,6 +156,15 @@ int FunctionArgumentDescriptor::isValid(const DataTypePtr & data_type, const Col
 
 void validateFunctionArguments(
     const IFunction & func,
+    const ColumnsWithTypeAndName & arguments,
+    const FunctionArgumentDescriptors & mandatory_args,
+    const FunctionArgumentDescriptors & optional_args)
+{
+    validateFunctionArguments(func.getName(), arguments, mandatory_args, optional_args);
+}
+
+void validateFunctionArguments(
+    const String & function_name,
     const ColumnsWithTypeAndName & arguments,
     const FunctionArgumentDescriptors & mandatory_args,
     const FunctionArgumentDescriptors & optional_args)
@@ -184,14 +193,14 @@ void validateFunctionArguments(
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "An incorrect number of arguments was specified for function '{}'. Expected {}, got {}",
-            func.getName(),
+            function_name,
             expected_args_string,
             fmt::format("{} {}", arguments.size(), argument_singular_or_plural(arguments)));
     }
 
-    validateArgumentsImpl(func, arguments, 0, mandatory_args);
+    validateArgumentsImpl(function_name, arguments, 0, mandatory_args);
     if (!optional_args.empty())
-        validateArgumentsImpl(func, arguments, mandatory_args.size(), optional_args);
+        validateArgumentsImpl(function_name, arguments, mandatory_args.size(), optional_args);
 }
 
 std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
@@ -288,24 +297,40 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map)
         src_not_nullable = nullable->getNestedColumnPtr();
         const auto & src_null_map = nullable->getNullMapColumn().getData();
 
-        /// Reuse null_map as result_null_map if possible, thus avoiding unnecessary memory allocation.
-        auto result_null_map_column = IColumn::mutate(std::move(null_map));
-        auto & result_null_map = assert_cast<ColumnUInt8 &>(*result_null_map_column).getData();
-        for (size_t i = 0; i < result_null_map.size(); ++i)
-            result_null_map[i] |= src_null_map[i];
+        if (null_map)
+        {
+            /// Reuse null_map as result_null_map if possible, thus avoiding unnecessary memory allocation.
+            auto result_null_map_column = IColumn::mutate(std::move(null_map));
+            auto & result_null_map = assert_cast<ColumnUInt8 &>(*result_null_map_column).getData();
+            for (size_t i = 0; i < result_null_map.size(); ++i)
+                result_null_map[i] |= src_null_map[i];
+            null_map = std::move(result_null_map_column);
+        }
+        else
+        {
+            /// Share the null map between src and result.
+            null_map = nullable->getNullMapColumnPtr();
+        }
 
-        return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), std::move(result_null_map_column));
+        return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), null_map);
     }
     else if (const auto * const_src = checkAndGetColumn<ColumnConst>(src.get()))
     {
-        const NullMap & null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
-        ColumnPtr result_null_map_column = ColumnUInt8::create(1, null_map_data[0] || const_src->isNullAt(0));
+        UInt8 is_null = 0;
+        if (null_map)
+        {
+            const NullMap & null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
+            is_null = null_map_data[0];
+        }
+        ColumnPtr result_null_map_column = ColumnUInt8::create(1, is_null || const_src->isNullAt(0));
         const auto * nullable_data = checkAndGetColumn<ColumnNullable>(&const_src->getDataColumn());
         auto data_not_nullable = nullable_data ? nullable_data->getNestedColumnPtr() : const_src->getDataColumnPtr();
         return ColumnConst::create(ColumnNullable::create(data_not_nullable, result_null_map_column), const_src->size());
     }
-    else
+    else if (null_map)
         return ColumnNullable::create(src->convertToFullColumnIfConst(), null_map);
+    else
+        return ColumnNullable::create(src->convertToFullColumnIfConst(), ColumnUInt8::create(src->size(), UInt8(0)));
 }
 
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args)

@@ -38,6 +38,9 @@ struct Authentication
         explicit Require(const String & realm_);
         const String & getRealm() const;
 
+        Require * clone() const override { return new Require(*this); }
+        void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+
     private:
         const String realm;
     };

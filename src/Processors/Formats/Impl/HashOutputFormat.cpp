@@ -5,7 +5,6 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBuffer.h>
-#include <Processors/Port.h>
 
 
 namespace DB
@@ -23,11 +22,9 @@ String HashOutputFormat::getName() const
 
 void HashOutputFormat::consume(Chunk chunk)
 {
-    for (const auto & column : chunk.getColumns())
-    {
-        for (size_t i = 0; i < column->size(); ++i)
+    for (size_t i = 0, rows = chunk.getNumRows(); i < rows; ++i)
+        for (const auto & column : chunk.getColumns())
             column->updateHashWithValue(i, hash);
-    }
 }
 
 void HashOutputFormat::finalizeImpl()
@@ -41,7 +38,7 @@ void HashOutputFormat::finalizeImpl()
 void registerOutputFormatHash(FormatFactory & factory)
 {
     factory.registerOutputFormat("Hash",
-        [](WriteBuffer & buf, const Block & header, const FormatSettings &)
+        [](WriteBuffer & buf, const Block & header, const FormatSettings &, FormatFilterInfoPtr /*format_filter_info*/)
         {
             return std::make_shared<HashOutputFormat>(buf, std::make_shared<const Block>(header));
         });

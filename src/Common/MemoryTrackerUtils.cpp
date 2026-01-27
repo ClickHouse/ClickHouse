@@ -50,8 +50,13 @@ std::optional<UInt64> getCurrentQueryHardLimit()
 Int64 getCurrentQueryMemoryUsage()
 {
     /// Use query-level memory tracker
-    if (auto * memory_tracker_child = DB::CurrentThread::getMemoryTracker())
-        if (auto * memory_tracker = memory_tracker_child->getParent())
-            return memory_tracker->get();
-    return 0;
+    auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker();
+    if (!thread_memory_tracker || thread_memory_tracker->level != VariableContext::Thread)
+        return 0;
+
+    auto * query_process_memory_tracker = thread_memory_tracker->getParent();
+    if (!query_process_memory_tracker || query_process_memory_tracker->level != VariableContext::Process)
+        return 0;
+
+    return query_process_memory_tracker->get();
 }

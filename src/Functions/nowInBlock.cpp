@@ -2,7 +2,9 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Interpreters/Context.h>
@@ -13,12 +15,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_nonconst_timezone_arguments;
-}
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
@@ -48,11 +44,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() > 1)
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function {} should have 0 or 1 arguments", getName());
+        FunctionArgumentDescriptors mandatory_args{};
+        FunctionArgumentDescriptors optional_args{
+            {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+        };
 
-        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "1st argument of function {} should be String or FixedString", getName());
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         if (arguments.size() == 1)
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments));
@@ -105,7 +102,7 @@ FORMAT PrettyCompactMonoBlock
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNowInBlock>(documentation);
 }

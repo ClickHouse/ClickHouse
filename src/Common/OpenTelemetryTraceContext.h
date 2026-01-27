@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Common/OpenTelemetryTracingContext.h>
+#include <IO/WriteHelpers.h>
 #include <Core/Field.h>
 
 #include <chrono>
 #include <exception>
+
 
 namespace DB
 {
@@ -71,7 +73,22 @@ struct Span
     }
 
 private:
-    bool addAttributeImpl(std::string_view name, std::string_view value) noexcept;
+    template <class T>
+    bool addAttributeImpl(std::string_view name, T value) noexcept
+    {
+        try
+        {
+            if constexpr (std::is_same_v<T, std::string_view> || std::is_same_v<T, String> || std::is_same_v<T, const char *>)
+                this->attributes.push_back(Tuple{name, std::move(value)});
+            else
+                this->attributes.push_back(Tuple{name, toString(value)});
+        }
+        catch (...)
+        {
+            return false;
+        }
+        return true;
+    }
 };
 
 

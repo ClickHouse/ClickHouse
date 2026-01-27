@@ -17,7 +17,7 @@ namespace DB
 class ILemmatizer
 {
 public:
-    using TokenPtr = std::shared_ptr<char []>;
+    using TokenPtr = std::unique_ptr<char []>;
 
     virtual TokenPtr lemmatize(const char * token) = 0;
 

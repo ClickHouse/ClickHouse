@@ -21,7 +21,7 @@ struct BitNotImpl
 
     static ResultType NO_SANITIZE_UNDEFINED apply(A a)
     {
-        return ~static_cast<ResultType>(a);
+        return static_cast<ResultType>(~static_cast<ResultType>(a));
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -73,7 +73,7 @@ SELECT
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBitNot>(documentation);
 }

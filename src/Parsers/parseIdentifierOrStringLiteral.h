@@ -15,10 +15,13 @@ struct Settings;
   */
 bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, String & result);
 
-/** Parse a list of identifiers or string literals. */
+/// Parse a list of identifiers or string literals.
 bool parseIdentifiersOrStringLiterals(IParser::Pos & pos, Expected & expected, Strings & result);
 
-/** Parse a list of identifiers or string literals into vector of strings. */
+/// Parse a list of identifiers or string literals into vector of strings.
 std::vector<String> parseIdentifiersOrStringLiterals(const String & str, const Settings & settings);
+
+/// Parse a list of identifiers or string literals into unordered_set of Strings.
+std::unordered_set<String> parseIdentifiersOrStringLiteralsToSet(const String & str, const Settings & settings);
 
 }

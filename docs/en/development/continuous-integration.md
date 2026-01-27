@@ -4,6 +4,7 @@ sidebar_label: 'Continuous Integration (CI)'
 sidebar_position: 55
 slug: /development/continuous-integration
 title: 'Continuous Integration (CI)'
+doc_type: 'reference'
 ---
 
 # Continuous Integration (CI)
@@ -43,9 +44,17 @@ Go to the check report and look for `ERROR` and `WARNING` messages.
 Check that the description of your pull request conforms to the template [PULL_REQUEST_TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md).
 You have to specify a changelog category for your change (e.g., Bug Fix), and write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/index.md)
 
-## Push to DockerHub {#push-to-dockerhub}
+## Docker image {#docker-image}
 
-Builds docker images used for build and tests, then pushes them to DockerHub.
+Builds the ClickHouse server and keeper Docker images to verify that they build correctly.
+
+### Official docker library tests {#official-docker-library-tests}
+
+Runs the tests from the [official Docker library](https://github.com/docker-library/official-images/tree/master/test#alternate-config-files) to verify that the `clickhouse/clickhouse-server` Docker image works correctly.
+
+To add new tests, create a directory `ci/jobs/scripts/docker_server/tests/$test_name` and the script `run.sh` there.
+
+Additional details about the tests can be found in the [CI jobs scripts documentation](https://github.com/ClickHouse/ClickHouse/tree/master/ci/jobs/scripts/docker_server).
 
 ## Marker check {#marker-check}
 
@@ -104,53 +113,70 @@ No dependencies other than Python 3 and Docker are required.
 ## Build check {#build-check}
 
 Builds ClickHouse in various configurations for use in further steps.
-You have to fix the builds that fail.
-Build logs often have enough information to fix the error, but you might have to reproduce the failure locally.
-The `cmake` options can be found in the build log, grep for `cmake`.
-Use these options and follow the [general build process](../development/build.md).
 
-### Report details {#report-details}
+### Running Builds Locally {#running-builds-locally}
 
-- **Compiler**: `clang-19`, optionally with the name of a target platform
-- **Build type**: `Debug` or `RelWithDebInfo` (cmake).
-- **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
-- **Status**: `success` or `fail`
-- **Build log**: link to the building and files copying log, useful when build failed.
-- **Build time**.
-- **Artifacts**: build result files (with `XXX` being the server version e.g. `20.8.1.4344`).
-  - `clickhouse-client_XXX_amd64.deb`
-  - `clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
-  - `clickhouse-common-staticXXX_amd64.deb`
-  - `clickhouse-server_XXX_amd64.deb`
-  - `clickhouse`: Main built binary.
-  - `clickhouse-odbc-bridge`
-  - `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
-  - `performance.tar.zst`: Special package for performance tests.
+The build can be run locally in a CI-like environment using:
 
-## Special build check {#special-build-check}
-Performs static analysis and code style checks using `clang-tidy`. The report is similar to the [build check](#build-check). Fix the errors found in the build log.
-
-#### Running clang-tidy locally: {#running-clang-tidy-locally}
-
-There is a convenience `packager` script that runs the clang-tidy build in docker
-```sh
-mkdir build_tidy
-./docker/packager/packager --output-dir=./build_tidy --package-type=binary --compiler=clang-19 --debug-build --clang-tidy
+```bash
+python -m ci.praktika run "<BUILD_JOB_NAME>"
 ```
 
+No dependencies other than Python 3 and Docker are required.
+
+#### Available Build Jobs {#available-build-jobs}
+
+The build job names are exactly as they appear in the CI Report:
+
+**AMD64 Builds:**
+- `Build (amd_debug)` - Debug build with symbols
+- `Build (amd_release)` - Optimized release build
+- `Build (amd_asan)` - Address Sanitizer build
+- `Build (amd_tsan)` - Thread Sanitizer build
+- `Build (amd_msan)` - Memory Sanitizer build
+- `Build (amd_ubsan)` - Undefined Behavior Sanitizer build
+- `Build (amd_binary)` - Quick release build without Thin LTO 
+- `Build (amd_compat)` - Compatibility build for older systems
+- `Build (amd_musl)` - Build with musl libc
+- `Build (amd_darwin)` - macOS build
+- `Build (amd_freebsd)` - FreeBSD build
+
+**ARM64 Builds:**
+- `Build (arm_release)` - ARM64 optimized release build
+- `Build (arm_asan)` - ARM64 Address Sanitizer build
+- `Build (arm_coverage)` - ARM64 build with coverage instrumentation
+- `Build (arm_binary)` - ARM64 Quick release build without Thin LTO
+- `Build (arm_darwin)` - macOS ARM64 build
+- `Build (arm_v80compat)` - ARMv8.0 compatibility build
+
+**Other Architectures:**
+- `Build (ppc64le)` - PowerPC 64-bit Little Endian
+- `Build (riscv64)` - RISC-V 64-bit
+- `Build (s390x)` - IBM System/390 64-bit
+- `Build (loongarch64)` - LoongArch 64-bit
+
+If the job succeeds, build results will be available in the `<repo_root>/ci/tmp/build` directory.
+
+**Note:** For builds not in the "Other Architectures" category (which use cross-compilation), your local machine architecture must match the build type to produce the build as requested by `BUILD_JOB_NAME`.
+
+#### Example {#example-run-local}
+
+To run a local debug build:
+
+```bash
+python -m ci.praktika run "Build (amd_debug)"
+```
+
+If the above approach does not work for you, use the cmake options from the build log and follow the [general build process](../development/build.md).
 ## Functional stateless tests {#functional-stateless-tests}
+
 Runs [stateless functional tests](tests.md#functional-tests) for ClickHouse binaries built in various configurations -- release, debug, with sanitizers, etc.
 Look at the report to see which tests fail, then reproduce the failure locally as described [here](/development/tests#functional-tests).
 Note that you have to use the correct build configuration to reproduce -- a test might fail under AddressSanitizer but pass in Debug.
 Download the binary from [CI build checks page](/install/advanced), or build it locally.
 
-## Functional stateful tests {#functional-stateful-tests}
-
-Runs [stateful functional tests](tests.md#functional-tests).
-Treat them in the same way as the functional stateless tests.
-The difference is that they require `hits` and `visits` tables from the [clickstream dataset](../getting-started/example-datasets/metrica.md) to run.
-
 ## Integration tests {#integration-tests}
+
 Runs [integration tests](tests.md#integration-tests).
 
 ## Bugfix validate check {#bugfix-validate-check}
@@ -159,6 +185,7 @@ Checks that either a new test (functional or integration) or there some changed 
 This check is triggered when pull request has "pr-bugfix" label.
 
 ## Stress test {#stress-test}
+
 Runs stateless functional tests concurrently from several clients to detect concurrency-related errors. If it fails:
 
     * Fix all other test failures first;
@@ -171,10 +198,12 @@ Checks that `clickhouse` binary runs on distributions with old libc versions.
 If it fails, ask a maintainer for help.
 
 ## AST fuzzer {#ast-fuzzer}
+
 Runs randomly generated queries to catch program errors.
 If it fails, ask a maintainer for help.
 
 ## Performance tests {#performance-tests}
+
 Measure changes in query performance.
 This is the longest check that takes just below 6 hours to run.
 The performance test report is described in detail [here](https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#how-to-read-the-report).

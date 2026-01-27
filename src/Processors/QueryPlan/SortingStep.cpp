@@ -1,22 +1,25 @@
+#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/JSONBuilder.h>
-#include <Core/Settings.h>
+#include <Common/MemoryTrackerUtils.h>
 
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
+
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Common/scope_guard_safe.h>
 
 #include <memory>
 #include <optional>
@@ -24,6 +27,13 @@
 namespace CurrentMetrics
 {
     extern const Metric TemporaryFilesForSort;
+}
+
+namespace ProfileEvents
+{
+    extern const Event ExternalSortCompressedBytes;
+    extern const Event ExternalSortUncompressedBytes;
+    extern const Event ExternalSortWritePart;
 }
 
 namespace DB
@@ -41,6 +51,8 @@ namespace Setting
     extern const SettingsBool read_in_order_use_buffering;
     extern const SettingsFloat remerge_sort_lowered_memory_bytes_ratio;
     extern const SettingsOverflowMode sort_overflow_mode;
+    extern const SettingsString temporary_files_codec;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace QueryPlanSerializationSetting
@@ -55,6 +67,8 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 prefer_external_sort_block_bytes;
     extern const QueryPlanSerializationSettingsFloat remerge_sort_lowered_memory_bytes_ratio;
     extern const QueryPlanSerializationSettingsOverflowMode sort_overflow_mode;
+    extern const QueryPlanSerializationSettingsString temporary_files_codec;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace ErrorCodes
@@ -78,7 +92,7 @@ size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_extern
     auto available_system_memory = getMostStrictAvailableSystemMemory();
     if (available_system_memory.has_value())
     {
-        size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
+        size_t ratio_in_bytes = static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio);
 
         LOG_TRACE(getLogger("SortingStep"), "Adjusting memory limit before external sort with {} (ratio: {}, available system memory: {})",
             formatReadableSizeWithBinarySuffix(ratio_in_bytes),
@@ -108,6 +122,8 @@ SortingStep::Settings::Settings(const DB::Settings & settings)
     min_free_disk_space = settings[Setting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
+    temporary_files_codec = settings[Setting::temporary_files_codec];
+    temporary_files_buffer_size = settings[Setting::temporary_files_buffer_size];
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)
@@ -129,6 +145,9 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
     min_free_disk_space = settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = false; //settings.read_in_order_use_buffering;
+
+    temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
+    temporary_files_buffer_size = settings[QueryPlanSerializationSetting::temporary_files_buffer_size];
 }
 
 void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -144,6 +163,8 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_sort] = max_bytes_ratio_before_external_sort;
     settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
+    settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
+    settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
 }
 
 static ITransformingStep::Traits getTraits(size_t limit)
@@ -301,7 +322,7 @@ void SortingStep::finishSorting(
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
 
-            return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_);
+            return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker);
         });
 
     bool increase_sort_description_compile_attempts = true;
@@ -342,11 +363,13 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             result_sort_desc,
             sort_settings.max_block_size,
             /*max_block_size_bytes=*/0,
+            /*max_dynamic_subcolumns*/std::nullopt,
             SortingQueueStrategy::Batch,
             limit_,
             always_read_till_end,
-            nullptr,
-            false,
+            /*out_row_sources_buf=*/ nullptr,
+            /*filter_column_name=*/ std::nullopt,
+            /*use_average_block_sizes=*/ false,
             apply_virtual_row_conversions);
 
         pipeline.addTransform(std::move(transform));
@@ -354,13 +377,18 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
 }
 
 void SortingStep::mergeSorting(
-    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_)
+    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker)
 {
     bool increase_sort_description_compile_attempts = true;
 
     TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
     if (auto data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk())
-        tmp_data_on_disk = data->childScope(CurrentMetrics::TemporaryFilesForSort);
+        tmp_data_on_disk = data->childScope({
+            .current_metric = CurrentMetrics::TemporaryFilesForSort,
+            .bytes_compressed = ProfileEvents::ExternalSortCompressedBytes,
+            .bytes_uncompressed = ProfileEvents::ExternalSortUncompressedBytes,
+            .num_files = ProfileEvents::ExternalSortWritePart},
+            sort_settings.temporary_files_buffer_size, sort_settings.temporary_files_codec);
 
     if (sort_settings.max_bytes_in_block_before_external_sort && tmp_data_on_disk == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external sorting is not provided");
@@ -391,7 +419,7 @@ void SortingStep::mergeSorting(
                 sort_settings.max_bytes_in_block_before_external_sort / pipeline.getNumStreams(),
                 sort_settings.max_bytes_in_query_before_external_sort,
                 tmp_data_on_disk,
-                sort_settings.min_free_disk_space);
+                sort_settings.min_free_disk_space, threshold_tracker);
         });
 }
 
@@ -400,7 +428,8 @@ void SortingStep::fullSortStreams(
     const Settings & sort_settings,
     const SortDescription & result_sort_desc,
     const UInt64 limit_,
-    const bool skip_partial_sort)
+    const bool skip_partial_sort,
+    TopKThresholdTrackerPtr threshold_tracker)
 {
     if (!skip_partial_sort || limit_)
     {
@@ -410,7 +439,7 @@ void SortingStep::fullSortStreams(
                 if (stream_type != QueryPipelineBuilder::StreamType::Main)
                     return nullptr;
 
-                return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_);
+                return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker);
             });
 
         StreamLocalLimits limits;
@@ -427,7 +456,7 @@ void SortingStep::fullSortStreams(
             });
     }
 
-    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_);
+    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker);
 }
 
 void SortingStep::fullSort(
@@ -435,7 +464,7 @@ void SortingStep::fullSort(
 {
     scatterByPartitionIfNeeded(pipeline);
 
-    fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort);
+    fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort, threshold_tracker);
 
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
@@ -446,6 +475,7 @@ void SortingStep::fullSort(
             result_sort_desc,
             sort_settings.max_block_size,
             /*max_block_size_bytes=*/0,
+            /*max_dynamic_subcolumns*/std::nullopt,
             SortingQueueStrategy::Batch,
             limit_,
             always_read_till_end);
@@ -463,6 +493,9 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     if (type == Type::MergingSorted)
     {
         mergingSorted(pipeline, result_description, limit);
+        if (dataflow_cache_updater)
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                        { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
         return;
     }
 
@@ -474,6 +507,9 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
 
+        if (dataflow_cache_updater)
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                        { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
         return;
     }
 
@@ -483,10 +519,16 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
 
+        if (dataflow_cache_updater)
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                        { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
         return;
     }
 
     fullSort(pipeline, result_description, limit);
+    if (dataflow_cache_updater)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
 }
 
 void SortingStep::describeActions(FormatSettings & settings) const

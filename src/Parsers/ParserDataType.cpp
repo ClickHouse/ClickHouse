@@ -2,6 +2,7 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTEnumDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTObjectTypeArgument.h>
@@ -9,6 +10,8 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Common/StringUtils.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -16,6 +19,80 @@ namespace DB
 
 namespace
 {
+
+bool isEnumType(const String & type_name_upper)
+{
+    return type_name_upper == "ENUM" || type_name_upper == "ENUM8" || type_name_upper == "ENUM16";
+}
+
+/// Parse enum values directly into the vector without creating ASTLiteral nodes.
+/// Format: 'name1' = value1, 'name2' = value2, ...
+/// Only handles fully explicit enums (all values must have = number).
+/// Returns false to fall back to generic parser for auto-assigned values or special literals.
+bool parseEnumValues(
+    IParser::Pos & pos,
+    std::vector<std::pair<String, Int64>> & values,
+    Expected & expected)
+{
+    bool first_element = true;
+
+    while (true)
+    {
+        if (!first_element)
+        {
+            if (pos->type != TokenType::Comma)
+                break;
+            ++pos;
+        }
+        first_element = false;
+
+        if (pos->type != TokenType::StringLiteral)
+        {
+            expected.add(pos, "string literal for enum element name");
+            return false;
+        }
+
+        /// Check for prefixed string literals like b'...' or x'...' - fall back to generic parser
+        char first_char = *pos->begin;
+        if (first_char == 'b' || first_char == 'B' || first_char == 'x' || first_char == 'X')
+            return false;
+
+        String elem_name;
+        ReadBufferFromMemory in(pos->begin, pos->size());
+        if (!tryReadQuotedStringWithSQLStyle(elem_name, in) || in.count() != pos->size())
+            return false;
+        ++pos;
+
+        /// Must have explicit value - if not, fall back to generic parser for auto-assignment
+        if (pos->type != TokenType::Equals)
+            return false;
+        ++pos;
+
+        bool negative = false;
+        if (pos->type == TokenType::Minus)
+        {
+            negative = true;
+            ++pos;
+        }
+
+        if (pos->type != TokenType::Number)
+        {
+            expected.add(pos, "number for enum element value");
+            return false;
+        }
+
+        UInt64 abs_value = 0;
+        ReadBufferFromMemory num_in(pos->begin, pos->size());
+        if (!tryReadIntText(abs_value, num_in) || num_in.count() != pos->size())
+            return false;
+        ++pos;
+
+        Int64 elem_value = negative ? -static_cast<Int64>(abs_value) : static_cast<Int64>(abs_value);
+        values.emplace_back(elem_name, elem_value);
+    }
+
+    return !values.empty();
+}
 
 /// Parser of Dynamic type argument: Dynamic(max_types=N)
 class DynamicArgumentParser : public IParserBase
@@ -42,7 +119,7 @@ private:
         if (!number_parser.parse(pos, number, expected))
             return false;
 
-        node = makeASTFunction("equals", identifier, number);
+        node = makeASTOperator("equals", identifier, number);
         return true;
     }
 };
@@ -54,7 +131,7 @@ private:
     const char * getName() const override { return "JSON data type optional argument"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
-        auto argument = std::make_shared<ASTObjectTypeArgument>();
+        auto argument = make_intrusive<ASTObjectTypeArgument>();
 
         /// SKIP arguments
         if (ParserKeyword(Keyword::SKIP).ignore(pos))
@@ -99,7 +176,7 @@ private:
             if (!number_parser.parse(pos, number, expected))
                 return false;
 
-            argument->parameter = makeASTFunction("equals", identifier, number);
+            argument->parameter = makeASTOperator("equals", identifier, number);
             argument->children.push_back(argument->parameter);
             node = argument;
             return true;
@@ -110,8 +187,8 @@ private:
         if (!type_parser.parse(pos, type, expected))
             return false;
 
-        auto name_and_type = std::make_shared<ASTNameTypePair>();
-        name_and_type->name = getIdentifierName(identifier);
+        auto name_and_type = make_intrusive<ASTObjectTypedPathArgument>();
+        name_and_type->path = getIdentifierName(identifier);
         name_and_type->type = type;
         name_and_type->children.push_back(name_and_type->type);
         argument->path_with_type = name_and_type;
@@ -227,7 +304,28 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    auto data_type_node = std::make_shared<ASTDataType>();
+    /// Handle Enum types specially - parse directly into ASTEnumDataType
+    /// to avoid creating hundreds of ASTLiteral nodes for large enums.
+    /// Only handles fully explicit enums; falls back to generic parser for auto-assigned values.
+    if (isEnumType(type_name_upper) && pos->type == TokenType::OpeningRoundBracket)
+    {
+        auto saved_pos = pos;
+        ++pos;
+
+        auto enum_node = make_intrusive<ASTEnumDataType>();
+        enum_node->name = type_name;
+
+        if (parseEnumValues(pos, enum_node->values, expected) && pos->type == TokenType::ClosingRoundBracket)
+        {
+            ++pos;
+            enum_node->values.shrink_to_fit();
+            node = enum_node;
+            return true;
+        }
+        pos = saved_pos;
+    }
+
+    auto data_type_node = make_intrusive<ASTDataType>();
     data_type_node->name = type_name;
 
     if (pos->type != TokenType::OpeningRoundBracket)
@@ -238,7 +336,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     /// Parse optional parameters
-    ASTPtr expr_list_args = std::make_shared<ASTExpressionList>();
+    ASTPtr expr_list_args = make_intrusive<ASTExpressionList>();
 
     /// Allow mixed lists of nested and normal types.
     /// Parameters are either:
@@ -340,8 +438,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
-    data_type_node->arguments = expr_list_args;
-    data_type_node->children.push_back(data_type_node->arguments);
+    data_type_node->children.push_back(expr_list_args);
 
     node = data_type_node;
     return true;

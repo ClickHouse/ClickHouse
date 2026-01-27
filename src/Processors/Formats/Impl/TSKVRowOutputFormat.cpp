@@ -3,7 +3,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/Impl/TSKVRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Port.h>
 
 namespace DB
 {
@@ -41,7 +40,8 @@ void registerOutputFormatTSKV(FormatFactory & factory)
     factory.registerOutputFormat("TSKV", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings)
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
         return std::make_shared<TSKVRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });

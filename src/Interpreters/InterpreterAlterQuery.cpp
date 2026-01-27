@@ -34,6 +34,9 @@
 
 #include <boost/range/algorithm_ext/push_back.hpp>
 
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 namespace DB
 {
@@ -43,7 +46,7 @@ namespace Setting
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
-    extern const SettingsBool allow_experimental_lightweight_update;
+    extern const SettingsBool enable_lightweight_update;
 }
 
 namespace ServerSetting
@@ -64,7 +67,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_)
+InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_)
 {
 }
 
@@ -136,12 +139,29 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
     }
 
+#if CLICKHOUSE_CLOUD
+    if (database->getEngineName() == "Shared" && SharedDatabaseCatalog::instance().shouldReplicateQuery(getContext(), query_ptr))
+    {
+        return SharedDatabaseCatalog::instance().tryExecuteDDLQuery(query_ptr, getContext());
+    }
+#endif
+
     if (!table)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Could not find table: {}", table_id.table_name);
 
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
+
+#if CLICKHOUSE_CLOUD
+    if (alter.isUnlockSnapshot())
+    {
+        ContextPtr context = getContext();
+        auto & backups_worker = context->getBackupsWorker();
+        backups_worker.unlockSnapshot(query_ptr, context);
+        return res;
+    }
+#endif
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
 
@@ -153,7 +173,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
     AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
-    ASTPtr command_list_ptr = alter.command_list->ptr();
+    ASTPtr command_list_ptr = alter.getChild(*alter.command_list);
     visitor.visit(command_list_ptr);
 
     AlterCommands alter_commands;
@@ -171,7 +191,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         {
             partition_commands.emplace_back(std::move(*partition_command));
         }
-        else if (auto mut_command = MutationCommand::parse(command_ast))
+        else if (auto mut_command = MutationCommand::parse(*command_ast))
         {
             if (mut_command->type == MutationCommand::UPDATE || mut_command->type == MutationCommand::DELETE)
             {
@@ -180,7 +200,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 if (rewritten_command_ast)
                 {
                     auto * new_alter_command = rewritten_command_ast->as<ASTAlterCommand>();
-                    mut_command = MutationCommand::parse(new_alter_command);
+                    mut_command = MutationCommand::parse(*new_alter_command);
                     if (!mut_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
@@ -211,7 +231,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (mutation_commands.hasNonEmptyMutationCommands() || !partition_commands.empty())
     {
-        if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
+        if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
+            && table_id.getDatabaseName() != DatabaseCatalog::SYSTEM_DATABASE)
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
     }
 
@@ -219,8 +240,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         auto supports_lightweight_update = [&] -> std::expected<void, PreformattedMessage>
         {
-            if (!settings[Setting::allow_experimental_lightweight_update])
-                return std::unexpected(PreformattedMessage::create("Lightweight updates are not allowed. Set 'allow_experimental_lightweight_update = 1' to allow them"));
+            if (!settings[Setting::enable_lightweight_update])
+                return std::unexpected(PreformattedMessage::create("Lightweight updates are not allowed. Set 'enable_lightweight_update = 1' to allow them"));
 
             if (!alter_commands.empty() || !partition_commands.empty() || !mutation_commands.hasOnlyUpdateCommands())
                 return std::unexpected(PreformattedMessage::create("Query has non UPDATE commands"));
@@ -309,6 +330,14 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
+#if CLICKHOUSE_CLOUD
+    bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(database->getEngineName());
+    if (managed_by_shared_catalog && !getContext()->getClientInfo().is_shared_catalog_internal)
+    {
+        return SharedDatabaseCatalog::instance().tryExecuteDDLQuery(query_ptr, getContext());
+    }
+#endif
+
     if (!alter_commands.empty())
     {
         /// Only ALTER SETTING and ALTER COMMENT is supported.
@@ -329,7 +358,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
                     database->applySettingsChanges(command.settings_changes, getContext());
                     break;
                 case AlterCommand::MODIFY_DATABASE_COMMENT:
-                    database->alterDatabaseComment(command);
+                    database->alterDatabaseComment(command, getContext());
                     break;
                 default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported alter command");
@@ -492,6 +521,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_TTL, database, table);
             break;
         }
+        case ASTAlterCommand::REWRITE_PARTS:
+        {
+            required_access.emplace_back(AccessType::ALTER_REWRITE_PARTS, database, table);
+            break;
+        }
         case ASTAlterCommand::RESET_SETTING: [[fallthrough]];
         case ASTAlterCommand::MODIFY_SETTING:
         {
@@ -577,7 +611,8 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_MODIFY_DATABASE_COMMENT, database, table);
             break;
         }
-        case ASTAlterCommand::NO_TYPE: break;
+        case ASTAlterCommand::NO_TYPE:
+            break;
         case ASTAlterCommand::MODIFY_COMMENT:
         {
             required_access.emplace_back(AccessType::ALTER_MODIFY_COMMENT, database, table);

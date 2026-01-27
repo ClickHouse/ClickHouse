@@ -24,10 +24,12 @@
 #include <Parsers/ParserDeleteQuery.h>
 #include <Parsers/ParserUpdateQuery.h>
 #include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserCopyQuery.h>
 
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
 #include <Parsers/Access/ParserCreateRowPolicyQuery.h>
+#include <Parsers/Access/ParserCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ParserCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/Access/ParserDropAccessEntityQuery.h>
@@ -35,6 +37,7 @@
 #include <Parsers/Access/ParserCheckGrantQuery.h>
 #include <Parsers/Access/ParserMoveAccessEntityQuery.h>
 #include <Parsers/Access/ParserSetRoleQuery.h>
+#include <Parsers/Access/ParserExecuteAsQuery.h>
 
 
 namespace DB
@@ -53,6 +56,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateRoleQuery create_role_p;
     ParserCreateQuotaQuery create_quota_p;
     ParserCreateRowPolicyQuery create_row_policy_p;
+    ParserCreateMaskingPolicy create_masking_policy_p;
     ParserCreateSettingsProfileQuery create_settings_profile_p;
     ParserCreateFunctionQuery create_function_p;
     ParserDropFunctionQuery drop_function_p;
@@ -73,6 +77,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
     ParserUpdateQuery update_p;
+    ParserCopyQuery copy_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
@@ -84,6 +89,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_role_p.parse(pos, node, expected)
         || create_quota_p.parse(pos, node, expected)
         || create_row_policy_p.parse(pos, node, expected)
+        || create_masking_policy_p.parse(pos, node, expected)
         || create_settings_profile_p.parse(pos, node, expected)
         || create_function_p.parse(pos, node, expected)
         || drop_function_p.parse(pos, node, expected)
@@ -102,7 +108,16 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || check_grant_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
         || delete_p.parse(pos, node, expected)
-        || update_p.parse(pos, node, expected);
+        || update_p.parse(pos, node, expected)
+        || copy_p.parse(pos, node, expected);
+
+    if (!res && allow_execute_as)
+    {
+        ParserQuery subquery_p{end, allow_settings_after_format_in_insert, implicit_select};
+        subquery_p.allow_execute_as = false;
+        ParserExecuteAsQuery execute_as_p{subquery_p};
+        res = execute_as_p.parse(pos, node, expected);
+    }
 
     if (res && allow_in_parallel_with)
     {

@@ -5,6 +5,7 @@ sidebar_position: 65
 slug: /operations/caches
 title: 'Cache types'
 keywords: ['cache']
+doc_type: 'reference'
 ---
 
 # Cache types
@@ -21,10 +22,11 @@ The main cache types are:
 There are also a host of additional cache types:
 
 - DNS cache.
-- [Regexp](../interfaces/formats.md#data-format-regexp) cache.
+- [Regexp](/interfaces/formats/Regexp) cache.
 - Compiled expressions cache.
 - [Vector similarity index](../engines/table-engines/mergetree-family/annindexes.md) cache.
-- [Avro format](../interfaces/formats.md#data-format-avro) schemas cache.
+- [Text index](../engines/table-engines/mergetree-family/textindexes.md#caching) cache.
+- [Avro format](/interfaces/formats/Avro) schemas cache.
 - [Dictionaries](../sql-reference/dictionaries/index.md) data cache.
 - Schema inference cache.
 - [Filesystem cache](storing-data.md) over S3, Azure, Local and other disks.
@@ -33,5 +35,5 @@ There are also a host of additional cache types:
 - [Query condition cache](query-condition-cache.md).
 - Format schema cache.
 
-Should you wish to drop one of the caches, for performance tuning, troubleshooting, or data consistency reasons,
-you can use the [`SYSTEM DROP ... CACHE`](../sql-reference/statements/system.md) statement.
+Should you wish to clear one of the caches, for performance tuning, troubleshooting, or data consistency reasons,
+you can use the [`SYSTEM CLEAR ... CACHE`](../sql-reference/statements/system.md) statement.

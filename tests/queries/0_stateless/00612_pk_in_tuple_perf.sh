@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+# add_minmax_index_for_numeric_columns=0: Changes the plan and rows read
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,7 +15,7 @@ CREATE TABLE pk_in_tuple_perf
     u UInt32
 ) ENGINE = MergeTree()
 ORDER BY v
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO pk_in_tuple_perf SELECT number, number * 10 FROM numbers(100);
 EOF

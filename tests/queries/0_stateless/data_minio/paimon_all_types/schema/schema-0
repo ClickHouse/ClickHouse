@@ -1,0 +1,193 @@
+{
+  "version" : 3,
+  "id" : 0,
+  "fields" : [ {
+    "id" : 0,
+    "name" : "f_boolean",
+    "type" : "BOOLEAN"
+  }, {
+    "id" : 1,
+    "name" : "f_char",
+    "type" : "CHAR(1)"
+  }, {
+    "id" : 2,
+    "name" : "f_varchar",
+    "type" : "VARCHAR(1)"
+  }, {
+    "id" : 3,
+    "name" : "f_string",
+    "type" : "STRING"
+  }, {
+    "id" : 4,
+    "name" : "f_binary",
+    "type" : "BINARY(1)"
+  }, {
+    "id" : 5,
+    "name" : "f_varbinary",
+    "type" : "VARBINARY(1)"
+  }, {
+    "id" : 6,
+    "name" : "f_bytes",
+    "type" : "BYTES"
+  }, {
+    "id" : 7,
+    "name" : "f_decimal",
+    "type" : "DECIMAL(9, 1)"
+  }, {
+    "id" : 8,
+    "name" : "f_decimal2",
+    "type" : "DECIMAL(18, 1)"
+  }, {
+    "id" : 9,
+    "name" : "f_decimal3",
+    "type" : "DECIMAL(38, 1)"
+  }, {
+    "id" : 10,
+    "name" : "f_tinyint",
+    "type" : "TINYINT"
+  }, {
+    "id" : 11,
+    "name" : "f_smallint",
+    "type" : "SMALLINT"
+  }, {
+    "id" : 12,
+    "name" : "f_int",
+    "type" : "INT"
+  }, {
+    "id" : 13,
+    "name" : "f_bigint",
+    "type" : "BIGINT"
+  }, {
+    "id" : 14,
+    "name" : "f_float",
+    "type" : "FLOAT"
+  }, {
+    "id" : 15,
+    "name" : "f_double",
+    "type" : "DOUBLE"
+  }, {
+    "id" : 16,
+    "name" : "f_date",
+    "type" : "DATE"
+  }, {
+    "id" : 17,
+    "name" : "f_time",
+    "type" : "TIME(0)"
+  }, {
+    "id" : 18,
+    "name" : "f_timestamp",
+    "type" : "TIMESTAMP(3)"
+  }, {
+    "id" : 19,
+    "name" : "f_timestamp2",
+    "type" : "TIMESTAMP(1)"
+  }, {
+    "id" : 20,
+    "name" : "f_timestamp3",
+    "type" : "TIMESTAMP(3) WITH LOCAL TIME ZONE"
+  }, {
+    "id" : 21,
+    "name" : "f_boolean_nn",
+    "type" : "BOOLEAN NOT NULL"
+  }, {
+    "id" : 22,
+    "name" : "f_char_nn",
+    "type" : "CHAR(1) NOT NULL"
+  }, {
+    "id" : 23,
+    "name" : "f_varchar_nn",
+    "type" : "VARCHAR(1) NOT NULL"
+  }, {
+    "id" : 24,
+    "name" : "f_string_nn",
+    "type" : "STRING NOT NULL"
+  }, {
+    "id" : 25,
+    "name" : "f_binary_nn",
+    "type" : "BINARY(1) NOT NULL"
+  }, {
+    "id" : 26,
+    "name" : "f_varbinary_nn",
+    "type" : "VARBINARY(1) NOT NULL"
+  }, {
+    "id" : 27,
+    "name" : "f_bytes_nn",
+    "type" : "BYTES NOT NULL"
+  }, {
+    "id" : 28,
+    "name" : "f_decimal_nn",
+    "type" : "DECIMAL(9, 1) NOT NULL"
+  }, {
+    "id" : 29,
+    "name" : "f_decimal2_nn",
+    "type" : "DECIMAL(18, 1) NOT NULL"
+  }, {
+    "id" : 30,
+    "name" : "f_decimal3_nn",
+    "type" : "DECIMAL(38, 1) NOT NULL"
+  }, {
+    "id" : 31,
+    "name" : "f_tinyint_nn",
+    "type" : "TINYINT NOT NULL"
+  }, {
+    "id" : 32,
+    "name" : "f_smallint_nn",
+    "type" : "SMALLINT NOT NULL"
+  }, {
+    "id" : 33,
+    "name" : "f_int_nn",
+    "type" : "INT NOT NULL"
+  }, {
+    "id" : 34,
+    "name" : "f_bigint_nn",
+    "type" : "BIGINT NOT NULL"
+  }, {
+    "id" : 35,
+    "name" : "f_float_nn",
+    "type" : "FLOAT NOT NULL"
+  }, {
+    "id" : 36,
+    "name" : "f_double_nn",
+    "type" : "DOUBLE NOT NULL"
+  }, {
+    "id" : 37,
+    "name" : "f_date_nn",
+    "type" : "DATE NOT NULL"
+  }, {
+    "id" : 38,
+    "name" : "f_time_nn",
+    "type" : "TIME(0) NOT NULL"
+  }, {
+    "id" : 39,
+    "name" : "f_timestamp_nn",
+    "type" : "TIMESTAMP(3) NOT NULL"
+  }, {
+    "id" : 40,
+    "name" : "f_timestamp2_nn",
+    "type" : "TIMESTAMP(1) NOT NULL"
+  }, {
+    "id" : 41,
+    "name" : "f_timestamp3_nn",
+    "type" : "TIMESTAMP(3) WITH LOCAL TIME ZONE NOT NULL"
+  }, {
+    "id" : 42,
+    "name" : "f_array",
+    "type" : {
+      "type" : "ARRAY NOT NULL",
+      "element" : "INT NOT NULL"
+    }
+  }, {
+    "id" : 43,
+    "name" : "f_map",
+    "type" : {
+      "type" : "MAP NOT NULL",
+      "key" : "STRING NOT NULL",
+      "value" : "STRING NOT NULL"
+    }
+  } ],
+  "highestFieldId" : 43,
+  "partitionKeys" : [ "f_boolean", "f_string", "f_date", "f_boolean_nn", "f_char_nn", "f_varchar_nn", "f_string_nn", "f_decimal_nn", "f_decimal2_nn", "f_decimal3_nn", "f_tinyint_nn", "f_smallint_nn", "f_int_nn", "f_bigint_nn", "f_float_nn", "f_double_nn", "f_date_nn", "f_time_nn", "f_timestamp_nn", "f_timestamp2_nn" ],
+  "primaryKeys" : [ ],
+  "options" : { },
+  "timeMillis" : 1755075846784
+}

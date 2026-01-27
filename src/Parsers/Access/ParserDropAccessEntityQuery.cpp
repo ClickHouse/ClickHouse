@@ -1,4 +1,5 @@
 #include <Access/IAccessStorage.h>
+#include <Access/MaskingPolicy.h>
 #include <Parsers/Access/ParserDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ParserRowPolicyName.h>
@@ -6,6 +7,7 @@
 #include <Parsers/Access/parseUserName.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 #include <base/range.h>
 
 
@@ -36,6 +38,37 @@ namespace
             return ParserKeyword{Keyword::ON}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
+
+    bool parseMaskingPolicyName(IParserBase::Pos & pos, Expected & expected, MaskingPolicyName & name, String & cluster)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            String short_name;
+            if (!parseIdentifierOrStringLiteral(pos, expected, short_name))
+                return false;
+
+            String res_cluster;
+            if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
+            {
+                if (ASTQueryWithOnCluster::parse(pos, res_cluster, expected))
+                {
+                    cluster = res_cluster;
+                    if (!ParserKeyword{Keyword::ON}.ignore(pos, expected))
+                        return false;
+                }
+            }
+
+            String database;
+            String table_name;
+            if (!parseDatabaseAndTableName(pos, expected, database, table_name))
+                return false;
+
+            name.short_name = std::move(short_name);
+            name.database = std::move(database);
+            name.table_name = std::move(table_name);
+            return true;
+        });
+    }
 }
 
 
@@ -53,7 +86,8 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         if_exists = true;
 
     Strings names;
-    std::shared_ptr<ASTRowPolicyNames> row_policy_names;
+    boost::intrusive_ptr<ASTRowPolicyNames> row_policy_names;
+    std::shared_ptr<MaskingPolicyName> masking_policy_name;
     String storage_name;
     String cluster;
 
@@ -69,8 +103,14 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         parser.allowOnCluster();
         if (!parser.parse(pos, ast, expected))
             return false;
-        row_policy_names = typeid_cast<std::shared_ptr<ASTRowPolicyNames>>(ast);
+        row_policy_names = boost::static_pointer_cast<ASTRowPolicyNames>(ast);
         cluster = std::exchange(row_policy_names->cluster, "");
+    }
+    else if (type == AccessEntityType::MASKING_POLICY)
+    {
+        masking_policy_name = std::make_shared<MaskingPolicyName>();
+        if (!parseMaskingPolicyName(pos, expected, *masking_policy_name, cluster))
+            return false;
     }
     else
     {
@@ -84,7 +124,7 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
-    auto query = std::make_shared<ASTDropAccessEntityQuery>();
+    auto query = make_intrusive<ASTDropAccessEntityQuery>();
     node = query;
 
     query->type = type;
@@ -92,6 +132,7 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->cluster = std::move(cluster);
     query->names = std::move(names);
     query->row_policy_names = std::move(row_policy_names);
+    query->masking_policy_name = std::move(masking_policy_name);
     query->storage_name = std::move(storage_name);
 
     return true;

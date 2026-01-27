@@ -2,6 +2,7 @@
 SET optimize_move_to_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;
 SET parallel_replicas_local_plan = 1;
+SET optimize_empty_string_comparisons = 0;
 
 SELECT trimBoth(explain)
 FROM (

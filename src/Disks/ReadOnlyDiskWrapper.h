@@ -53,8 +53,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override { return delegate->readFile(path, settings, read_hint, file_size); }
+        std::optional<size_t> read_hint) const override { return delegate->readFile(path, settings, read_hint); }
 
     time_t getLastChanged(const String & path) const override { return delegate->getLastChanged(path); }
     Poco::Timestamp getLastModified(const String & path) const override { return delegate->getLastModified(path); }
@@ -108,11 +107,11 @@ public:
     void removeFile(const String &) override { throwNotAllowed(); }
     void removeFileIfExists(const String &) override { throwNotAllowed(); }
     ReservationPtr reserve(UInt64 /*bytes*/) override { throwNotAllowed(); }
+    ReservationPtr reserve(UInt64 /*bytes*/, const ReservationConstraints & /*constraints*/) override { throwNotAllowed(); }
     void removeRecursive(const String &) override { throwNotAllowed(); }
     void removeSharedFile(const String &, bool) override { throwNotAllowed(); }
     void removeSharedFileIfExists(const String &, bool) override { throwNotAllowed(); }
     void removeSharedRecursive(const String &, bool, const NameSet &) override { throwNotAllowed(); }
-    void clearDirectory(const String &) override { throwNotAllowed(); }
     void moveDirectory(const String &, const String &) override { throwNotAllowed(); }
     void removeDirectory(const String &) override { throwNotAllowed(); }
     void setLastModified(const String &, const Poco::Timestamp &) override { throwNotAllowed(); }

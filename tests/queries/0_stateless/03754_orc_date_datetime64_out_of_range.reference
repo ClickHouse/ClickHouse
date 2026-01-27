@@ -1,0 +1,13 @@
+=== Test 1: Date type with value in valid range ===
+2060-01-01
+=== Test 2: Date type with value outside valid range (too far in future) ===
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+=== Test 3: Date type with negative value (before 1970-01-01) ===
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+=== Test 4: Date32 type should still work with extended range ===
+2200-01-01
+1960-01-01
+=== Test 5: DateTime64 with value in valid range ===
+2200-01-01 00:00:00.000000000
+=== Test 6: DateTime64 with extreme value causing overflow ===
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE

@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Poco/Environment.h>
 #include <Poco/Path.h>
+#include <Poco/JSON/Parser.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils.h>
@@ -53,6 +54,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 IFourLetterCommand::IFourLetterCommand(KeeperDispatcher & keeper_dispatcher_)
@@ -65,15 +67,21 @@ int32_t IFourLetterCommand::code()
     return toCode(name());
 }
 
+String IFourLetterCommand::runWithArgument(const std::string &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Four letter command {} does not support argument", name());
+}
+
 String IFourLetterCommand::toName(int32_t code)
 {
     int reverted_code = std::byteswap(code);
     return String(reinterpret_cast<char *>(&reverted_code), 4);
 }
 
-int32_t IFourLetterCommand::toCode(const String & name)
+int32_t IFourLetterCommand::toCode(std::string_view name)
 {
-    int32_t res = *reinterpret_cast<const int32_t *>(name.data());
+    int32_t res = 0;
+    std::memcpy(&res, name.data(), sizeof(int32_t));
     /// keep consistent with Coordination::read method by changing big endian to little endian.
     return std::byteswap(res);
 }
@@ -92,7 +100,7 @@ void FourLetterCommandFactory::checkInitialization() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Four letter command not initialized");
 }
 
-bool FourLetterCommandFactory::isKnown(int32_t code)
+bool FourLetterCommandFactory::isKnown(int32_t code) const
 {
     checkInitialization();
     return commands.contains(code);
@@ -209,12 +217,15 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr toggle_request_logging = std::make_shared<ToggleRequestLogging>(keeper_dispatcher);
         factory.registerCommand(toggle_request_logging);
 
+        FourLetterCommandPtr reconfigure_command = std::make_shared<ReconfigureCommand>(keeper_dispatcher);
+        factory.registerCommand(reconfigure_command);
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
 }
 
-bool FourLetterCommandFactory::isEnabled(int32_t code)
+bool FourLetterCommandFactory::isEnabled(int32_t code) const
 {
     checkInitialization();
     if (!allow_list.empty() && *allow_list.cbegin() == ALLOW_LIST_ALL)
@@ -223,15 +234,24 @@ bool FourLetterCommandFactory::isEnabled(int32_t code)
     return std::find(allow_list.begin(), allow_list.end(), code) != allow_list.end();
 }
 
+bool FourLetterCommandFactory::supportArguments(int32_t code) const
+{
+    checkInitialization();
+
+    if (IFourLetterCommand::toName(code) == "rcfg")
+        return true;
+    return false;
+}
+
 void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dispatcher)
 {
     const auto & keeper_settings = keeper_dispatcher.getKeeperConfigurationAndSettings();
-
+    auto log = getLogger("FourLetterCommandFactory");
     String list_str = keeper_settings->four_letter_word_allow_list;
-    Strings tokens;
+    std::vector<std::string_view> tokens;
     splitInto<','>(tokens, list_str);
 
-    for (String token: tokens)
+    for (auto token : tokens)
     {
         trim(token);
 
@@ -242,15 +262,10 @@ void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dis
             return;
         }
 
-        if (commands.contains(IFourLetterCommand::toCode(token)))
-        {
-            allow_list.push_back(IFourLetterCommand::toCode(token));
-        }
+        if (auto code = IFourLetterCommand::toCode(token); commands.contains(code))
+            allow_list.push_back(code);
         else
-        {
-            auto log = getLogger("FourLetterCommandFactory");
             LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
-        }
     }
 }
 
@@ -521,7 +536,7 @@ String EnviCommand::run()
 
     String os_user;
     os_user.resize(256, '\0');
-    if (0 == getlogin_r(os_user.data(), os_user.size() - 1))
+    if (0 == getlogin_r(os_user.data(), static_cast<int>(os_user.size() - 1)))
         os_user.resize(strlen(os_user.c_str()));
     else
         os_user.clear();    /// Don't mind if we cannot determine user login.
@@ -652,19 +667,17 @@ String JemallocDumpStats::run()
 
 String JemallocFlushProfile::run()
 {
-    return flushJemallocProfile("/tmp/jemalloc_keeper");
+    return std::string{Jemalloc::flushProfile("/tmp/jemalloc_keeper")};
 }
 
 String JemallocEnableProfile::run()
 {
-    setJemallocProfileActive(true);
-    return "ok";
+    return "Commands for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler'";
 }
 
 String JemallocDisableProfile::run()
 {
-    setJemallocProfileActive(false);
-    return "ok";
+    return "Commands for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler'";
 }
 #endif
 
@@ -701,6 +714,26 @@ String ToggleRequestLogging::run()
     auto old_value = keeper_context->shouldLogRequests();
     keeper_context->setLogRequests(!old_value);
     return old_value ? "disabled" : "enabled";
+}
+
+
+String ReconfigureCommand::run()
+{
+    return "Reconfiguration command require single JSON argument";
+}
+
+String ReconfigureCommand::runWithArgument(const std::string & argument)
+{
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(argument).extract<Poco::JSON::Object::Ptr>();
+
+    if (!keeper_dispatcher.reconfigEnabled())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reconfiguration is not enabled on this keeper server");
+
+    auto result = keeper_dispatcher.reconfigureClusterFromReconfigureCommand(json);
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::JSON::Stringifier::stringify(result, oss, 4);
+    return oss.str();
 }
 
 }

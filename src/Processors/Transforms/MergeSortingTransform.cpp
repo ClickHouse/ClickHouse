@@ -17,12 +17,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event ExternalSortWritePart;
     extern const Event ExternalSortMerge;
-    extern const Event ExternalSortCompressedBytes;
-    extern const Event ExternalSortUncompressedBytes;
-    extern const Event ExternalProcessingCompressedBytesTotal;
-    extern const Event ExternalProcessingUncompressedBytesTotal;
 }
 
 
@@ -44,7 +39,6 @@ public:
     {
         outputs.emplace_back(Block(), this);
         LOG_INFO(log, "Sorting and writing part of data into temporary file {}", tmp_stream.getHolder()->describeFilePath());
-        ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
     }
 
     Status prepare() override
@@ -66,12 +60,6 @@ public:
     void onFinish() override
     {
         auto stat = tmp_stream.finishWriting();
-
-        ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, stat.compressed_size);
-        ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, stat.uncompressed_size);
-        ProfileEvents::increment(ProfileEvents::ExternalSortCompressedBytes, stat.compressed_size);
-        ProfileEvents::increment(ProfileEvents::ExternalSortUncompressedBytes, stat.uncompressed_size);
-
         LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
             tmp_stream.getHolder()->describeFilePath(),
             ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
@@ -145,7 +133,8 @@ MergeSortingTransform::MergeSortingTransform(
     size_t max_bytes_in_block_before_external_sort_,
     size_t max_bytes_in_query_before_external_sort_,
     TemporaryDataOnDiskScopePtr tmp_data_,
-    size_t min_free_disk_space_)
+    size_t min_free_disk_space_,
+    TopKThresholdTrackerPtr threshold_tracker_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
@@ -154,6 +143,7 @@ MergeSortingTransform::MergeSortingTransform(
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
     , max_block_bytes(max_block_bytes_)
+    , threshold_tracker(threshold_tracker_)
 {
 }
 
@@ -211,12 +201,12 @@ void MergeSortingTransform::consume(Chunk chunk)
 
     /** If significant amount of data was accumulated, perform preliminary merging step.
       */
-    if (chunks.size() > 1
+    if ((chunks.size() > 1
         && limit
         && limit * 2 < sum_rows_in_blocks   /// 2 is just a guess.
         && remerge_is_useful
         && max_bytes_before_remerge
-        && sum_bytes_in_blocks > max_bytes_before_remerge)
+        && sum_bytes_in_blocks > max_bytes_before_remerge) || (threshold_tracker && (static_cast<double>(sum_rows_in_blocks) > static_cast<double>(limit) * 1.5)))
     {
         remerge();
     }
@@ -243,7 +233,7 @@ void MergeSortingTransform::consume(Chunk chunk)
             /// If there's less free disk space than reserve_size, an exception will be thrown
             size_t reserve_size = sum_bytes_in_blocks + min_free_disk_space;
             SharedHeader shared_header_without_constants = std::make_shared<const Block>(header_without_constants);
-            TemporaryBlockStreamHolder tmp_stream(shared_header_without_constants, tmp_data.get(), reserve_size);
+            TemporaryBlockStreamHolder tmp_stream(shared_header_without_constants, tmp_data, reserve_size);
             size_t max_merged_block_size = this->max_merged_block_size;
             if (max_block_bytes > 0 && sum_rows_in_blocks > 0 && sum_bytes_in_blocks > 0)
             {
@@ -269,11 +259,13 @@ void MergeSortingTransform::consume(Chunk chunk)
                         0,
                         description,
                         max_merged_block_size,
-                        /*max_merged_block_size_bytes*/0,
+                        /*max_merged_block_size_bytes=*/0,
+                        /*max_dynamic_subcolumns=*/std::nullopt,
                         SortingQueueStrategy::Batch,
                         limit,
                         /*always_read_till_end_=*/ false,
-                        nullptr,
+                        /*out_row_sources_buf=*/ nullptr,
+                        /*filter_column_name=*/ std::nullopt,
                         use_average_block_sizes,
                         apply_virtual_row,
                         have_all_inputs);
@@ -346,7 +338,7 @@ void MergeSortingTransform::remerge()
     LOG_DEBUG(log, "Memory usage is lowered from {} to {}", ReadableSize(sum_bytes_in_blocks), ReadableSize(new_sum_bytes_in_blocks));
 
     /// If the memory consumption was not lowered enough - we will not perform remerge anymore.
-    if (remerge_lowered_memory_bytes_ratio > 0.0 && (new_sum_bytes_in_blocks * remerge_lowered_memory_bytes_ratio > sum_bytes_in_blocks))
+    if (remerge_lowered_memory_bytes_ratio > 0.0 && (static_cast<double>(new_sum_bytes_in_blocks) * remerge_lowered_memory_bytes_ratio > static_cast<double>(sum_bytes_in_blocks)))
     {
         remerge_is_useful = false;
         LOG_DEBUG(log, "Re-merging is not useful (memory usage was not lowered by remerge_sort_lowered_memory_bytes_ratio={})", remerge_lowered_memory_bytes_ratio);
@@ -355,6 +347,15 @@ void MergeSortingTransform::remerge()
     chunks = std::move(new_chunks);
     sum_rows_in_blocks = new_sum_rows_in_blocks;
     sum_bytes_in_blocks = new_sum_bytes_in_blocks;
+
+    /// Publish the updated TopK value if optimization is ON
+    if (threshold_tracker && sum_rows_in_blocks == limit && chunks.size() == 1)
+    {
+        Field value;
+        chunks[0].getColumns()[0]->get(limit - 1, value);
+        threshold_tracker->testAndSet(value);
+        LOG_DEBUG(log, "TopK threshold tracker is updated");
+    }
 }
 
 }

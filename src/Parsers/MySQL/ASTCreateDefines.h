@@ -32,11 +32,11 @@ protected:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported by MySQLParser::ASTCreateDefines.");
     }
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&columns));
-        f(reinterpret_cast<void **>(&indices));
-        f(reinterpret_cast<void **>(&constraints));
+        f(reinterpret_cast<IAST **>(&columns), nullptr);
+        f(reinterpret_cast<IAST **>(&indices), nullptr);
+        f(reinterpret_cast<IAST **>(&constraints), nullptr);
     }
 };
 

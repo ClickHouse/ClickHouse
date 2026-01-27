@@ -1,4 +1,3 @@
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -8,10 +7,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/castTypeToEither.h>
 #include <Interpreters/castColumn.h>
 #include <boost/math/distributions/normal.hpp>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -161,8 +158,8 @@ public:
             const UInt64 trials_y = data_trials_y[row_num];
             const Float64 confidence_level = data_confidence_level[row_num];
 
-            const Float64 props_x = static_cast<Float64>(successes_x) / trials_x;
-            const Float64 props_y = static_cast<Float64>(successes_y) / trials_y;
+            const Float64 props_x = static_cast<Float64>(successes_x) / static_cast<Float64>(trials_x);
+            const Float64 props_y = static_cast<Float64>(successes_y) / static_cast<Float64>(trials_y);
             const Float64 diff = props_x - props_y;
             const UInt64 trials_total = trials_x + trials_y;
 
@@ -173,7 +170,7 @@ public:
                 continue;
             }
 
-            Float64 se = std::sqrt(props_x * (1.0 - props_x) / trials_x + props_y * (1.0 - props_y) / trials_y);
+            Float64 se = std::sqrt(props_x * (1.0 - props_x) / static_cast<Float64>(trials_x) + props_y * (1.0 - props_y) / static_cast<Float64>(trials_y));
 
             /// z-statistics
             /// z = \frac{ \bar{p_{1}} - \bar{p_{2}} }{ \sqrt{ \frac{ \bar{p_{1}} \left ( 1 - \bar{p_{1}} \right ) }{ n_{1} } \frac{ \bar{p_{2}} \left ( 1 - \bar{p_{2}} \right ) }{ n_{2} } } }
@@ -185,8 +182,8 @@ public:
             else
             {
                 UInt64 successes_total = successes_x + successes_y;
-                Float64 p_pooled = static_cast<Float64>(successes_total) / trials_total;
-                Float64 trials_fact = 1.0 / trials_x + 1.0 / trials_y;
+                Float64 p_pooled = static_cast<Float64>(successes_total) / static_cast<Float64>(trials_total);
+                Float64 trials_fact = 1.0 / static_cast<Float64>(trials_x) + 1.0 / static_cast<Float64>(trials_y);
                 zstat = diff / std::sqrt(p_pooled * (1.0 - p_pooled) * trials_fact);
             }
 
@@ -219,6 +216,38 @@ public:
 
 REGISTER_FUNCTION(ZTest)
 {
+    FunctionDocumentation::Description description = R"(
+Returns test statistics for the two proportion Z-test - a statistical test for comparing the proportions from two populations x and y.
+The function supports both pooled and unpooled estimation methods for the standard error.
+In the pooled version, the two proportions are averaged and only one proportion is used to estimate the standard error.
+In the unpooled version, the two proportions are used separately.
+    )";
+    FunctionDocumentation::Syntax syntax = "proportionsZTest(successes_x, successes_y, trials_x, trials_y, conf_level, pool_type)";
+    FunctionDocumentation::Arguments arguments = {
+        {"successes_x", "Number of successes in population x.", {"UInt64"}},
+        {"successes_y", "Number of successes in population y.", {"UInt64"}},
+        {"trials_x", "Number of trials in population x.", {"UInt64"}},
+        {"trials_y", "Number of trials in population y.", {"UInt64"}},
+        {"conf_level", "Confidence level for the test.", {"Float64"}},
+        {"pool_type", "Selection of pooling method for standard error estimation. Can be either 'unpooled' or 'pooled'.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple containing: `z_stat` (Z statistic), `p_val` (P value), `ci_low` (lower confidence interval), `ci_high` (upper confidence interval).", {"Tuple(Float64, Float64, Float64, Float64)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT proportionsZTest(10, 11, 100, 101, 0.95, 'unpooled');
+        )",
+        R"(
+┌─proportionsZTest(10, 11, 100, 101, 0.95, 'unpooled')───────────────────────────────┐
+│ (-0.20656724435948853,0.8363478437079654,-0.09345975390115283,0.07563797172293502) │
+└────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionTwoSampleProportionsZTest>();
 }
 

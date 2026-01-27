@@ -15,6 +15,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <chrono>
+#include <functional>
 
 namespace DB
 {
@@ -33,6 +34,12 @@ struct CPULeaseSettings
 
     /// Timeout after which preempted thread should exit
     std::chrono::milliseconds preemption_timeout = default_preemption_timeout;
+
+    /// Callback to be invoked when a thread is preempted
+    std::function<void(size_t slot_id)> on_preempt;
+
+    /// Callback to be invoked when a thread is resumed
+    std::function<void(size_t slot_id)> on_resume;
 
     /// For debugging purposes, not used in production
     String workload;
@@ -149,6 +156,9 @@ public:
         CPULeaseSettings settings = {});
     ~CPULeaseAllocation() override;
 
+    /// Free all resources held by this allocation.
+    void free() override;
+
     /// Take one already granted slot if available. Never blocks or waits for slots.
     /// Should be used before spawning worker threads for a query.
     [[nodiscard]] AcquiredSlotPtr tryAcquire() override;
@@ -171,7 +181,9 @@ private:
     size_t upscale();
 
     /// Unregisters specified thread from leased set
-    void downscale(size_t thread_num);
+    /// If shutdown is true, ConcurrencyControlDownscales profile event is not incremented
+    /// (shutdown-induced termination is normal, not resource contention)
+    void downscale(size_t thread_num, bool shutdown = false);
 
     /// Preempted thread set management
     void setPreempted(size_t thread_num);

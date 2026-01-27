@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
@@ -37,22 +36,22 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        FunctionArgumentDescriptors mandatory_args{
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), isColumnConst, "const (U)Int*"},
+            {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
         if (arguments.empty())
             return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);
-
-        if (arguments.size() > 2)
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function {} should have 0, 1 or 2 arguments", getName());
-
-        if (!isInteger(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "1st argument of function {} should be (U)Int*", getName());
 
         auto scale = static_cast<UInt32>(arguments[0].column->get64(0));
 
         if (arguments.size() == 1)
             return std::make_shared<DataTypeDateTime64>(scale);
-
-        if (!isStringOrFixedString(arguments[1].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "2nd argument of function {} should be String or FixedString", getName());
 
         return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 1, false));
     }
@@ -112,7 +111,7 @@ FORMAT PrettyCompactMonoBlock
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNowInBlock64>(documentation);
 }

@@ -33,6 +33,10 @@ SET enable_analyzer=0;
 
 EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2';
 
-SET enable_analyzer=1;
+SET enable_analyzer=1, enable_parallel_replicas=0;
 
 EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2';
+
+SET enable_analyzer=1, enable_parallel_replicas=1, parallel_replicas_local_plan=1, parallel_replicas_support_projection=1, optimize_aggregation_in_order = 0;
+
+SELECT trimLeft(*) FROM (EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2') where explain like '%ReadFromPreparedSource%' or explain like '%ReadFromMergeTree%';

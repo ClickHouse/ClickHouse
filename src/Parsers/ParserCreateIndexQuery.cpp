@@ -50,8 +50,8 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
         }
         else
         {
-            auto tuple_func = makeASTFunction("tuple");
-            tuple_func->arguments = std::make_shared<ASTExpressionList>();
+            auto tuple_func = makeASTOperator("tuple");
+            tuple_func->arguments = make_intrusive<ASTExpressionList>();
 
             for (const auto & order_by_elem : order_list->children)
             {
@@ -79,34 +79,16 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     }
 
     /// name is set below in ParserCreateIndexQuery
-    auto index = std::make_shared<ASTIndexDeclaration>(expr, type, "");
+    auto index = make_intrusive<ASTIndexDeclaration>(expr, type, "");
     index->part_of_create_index_query = true;
-
-    if (granularity)
-    {
-        index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
-    }
-    else
-    {
-        index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-
-        if (auto index_type = index->getType())
-        {
-            const std::string_view name = index_type->name;
-
-            if (name == "vector_similarity")
-                index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
-            else if (name == "text")
-                index->granularity = ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
-        }
-    }
+    index->granularity = getSecondaryIndexGranularity(index->getType(), granularity);
     node = index;
     return true;
 }
 
 bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto query = std::make_shared<ASTCreateIndexQuery>();
+    auto query = make_intrusive<ASTCreateIndexQuery>();
     node = query;
 
     ParserKeyword s_create(Keyword::CREATE);

@@ -4,6 +4,7 @@ sidebar_label: 'ROW POLICY'
 sidebar_position: 41
 slug: /sql-reference/statements/create/row-policy
 title: 'CREATE ROW POLICY'
+doc_type: 'reference'
 ---
 
 Creates a [row policy](../../../guides/sre/user-management/index.md#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.

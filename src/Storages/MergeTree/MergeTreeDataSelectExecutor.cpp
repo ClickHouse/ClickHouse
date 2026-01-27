@@ -3,21 +3,19 @@
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeIndexGin.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -25,41 +23,28 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
-#include <Processors/ConcatProcessor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/QueryIdHolder.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
-#include <base/sleep.h>
+#include <Common/setThreadName.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 
-#include <IO/WriteBufferFromOStream.h>
 
 namespace CurrentMetrics
 {
@@ -76,18 +61,20 @@ extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
+extern const Event FilterPartsByVirtualColumnsMicroseconds;
 }
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool per_part_index_stats;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsInt64 max_partitions_to_read;
+    extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
@@ -96,20 +83,15 @@ namespace Setting
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
-    extern const SettingsBool use_skip_indexes_if_final_exact_mode;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsBool vector_search_with_rescoring;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsUInt64 max_concurrent_queries;
-    extern const MergeTreeSettingsInt64 max_partitions_to_read;
-    extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
+    extern const SettingsBool use_skip_indexes_for_top_k;
+    extern const SettingsUInt64 max_rows_to_read_leaf;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
 }
 
 namespace ErrorCodes
@@ -120,19 +102,16 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_PARSE_TEXT;
-    extern const int TOO_MANY_PARTITIONS;
+    extern const int TOO_MANY_ROWS;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int INCORRECT_DATA;
 }
 
-namespace FailPoints
-{
-    extern const char slowdown_index_analysis[];
-}
 
-
-MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_)
-    : data(data_), log(getLogger(data.getLogName() + " (SelectExecutor)"))
+MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_, ProjectionDescriptionRawPtr projection)
+    : data(data_)
+    , data_settings(data.getSettings(projection))
+    , log(getLogger(data.getLogName() + " (SelectExecutor)"))
 {
 }
 
@@ -388,22 +367,14 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         RelativeSize lower_limit_rational = relative_sample_offset * size_of_universum;
         RelativeSize upper_limit_rational = (relative_sample_offset + relative_sample_size) * size_of_universum;
 
-        UInt64 lower = boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational);
-        UInt64 upper = boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational);
+        UInt64 lower = static_cast<UInt64>(boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational));
+        UInt64 upper = static_cast<UInt64>(boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational));
 
         if (lower > 0)
             has_lower_limit = true;
 
         if (upper_limit_rational < size_of_universum)
             has_upper_limit = true;
-
-        /*std::cerr << std::fixed << std::setprecision(100)
-            << "relative_sample_size: " << relative_sample_size << "\n"
-            << "relative_sample_offset: " << relative_sample_offset << "\n"
-            << "lower_limit_float: " << lower_limit_rational << "\n"
-            << "upper_limit_float: " << upper_limit_rational << "\n"
-            << "lower: " << lower << "\n"
-            << "upper: " << upper << "\n";*/
 
         if ((has_upper_limit && upper == 0)
             || (has_lower_limit && has_upper_limit && lower == upper))
@@ -417,8 +388,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         {
             /// Let's add the conditions to cut off something else when the index is scanned again and when the request is processed.
 
-            std::shared_ptr<ASTFunction> lower_function;
-            std::shared_ptr<ASTFunction> upper_function;
+            boost::intrusive_ptr<ASTFunction> lower_function;
+            boost::intrusive_ptr<ASTFunction> upper_function;
 
             chassert(metadata_snapshot->getSamplingKeyAST() != nullptr);
             ASTPtr sampling_key_ast = metadata_snapshot->getSamplingKeyAST()->clone();
@@ -430,11 +401,11 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
                         Range::createLeftBounded(lower, true, isNullableOrLowCardinalityNullable(sampling_key.data_types[0]))))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
 
-                ASTPtr args = std::make_shared<ASTExpressionList>();
+                ASTPtr args = make_intrusive<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);
-                args->children.push_back(std::make_shared<ASTLiteral>(lower));
+                args->children.push_back(make_intrusive<ASTLiteral>(lower));
 
-                lower_function = std::make_shared<ASTFunction>();
+                lower_function = make_intrusive<ASTFunction>();
                 lower_function->name = "greaterOrEquals";
                 lower_function->arguments = args;
                 lower_function->children.push_back(lower_function->arguments);
@@ -449,11 +420,11 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
                         Range::createRightBounded(upper, false, isNullableOrLowCardinalityNullable(sampling_key.data_types[0]))))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
 
-                ASTPtr args = std::make_shared<ASTExpressionList>();
+                ASTPtr args = make_intrusive<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);
-                args->children.push_back(std::make_shared<ASTLiteral>(upper));
+                args->children.push_back(make_intrusive<ASTLiteral>(upper));
 
-                upper_function = std::make_shared<ASTFunction>();
+                upper_function = make_intrusive<ASTFunction>();
                 upper_function->name = "less";
                 upper_function->arguments = args;
                 upper_function->children.push_back(upper_function->arguments);
@@ -463,11 +434,11 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
             if (has_lower_limit && has_upper_limit)
             {
-                ASTPtr args = std::make_shared<ASTExpressionList>();
+                ASTPtr args = make_intrusive<ASTExpressionList>();
                 args->children.push_back(lower_function);
                 args->children.push_back(upper_function);
 
-                sampling.filter_function = std::make_shared<ASTFunction>();
+                sampling.filter_function = make_intrusive<ASTFunction>();
                 sampling.filter_function->name = "and";
                 sampling.filter_function->arguments = args;
                 sampling.filter_function->children.push_back(sampling.filter_function->arguments);
@@ -500,7 +471,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
         = {ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_offset"),
            ColumnWithTypeAndName(part_type->createColumn(), part_type, "_part")};
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
     if (!dag)
         return;
 
@@ -528,7 +499,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
         = {ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_offset"),
            ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_starting_offset")};
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
     if (!dag)
         return;
 
@@ -575,17 +546,39 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
         return {};
 
     auto sample = data.getHeaderWithVirtualsForFilter(metadata_snapshot);
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
     if (!dag)
         return {};
 
+    /// Check if the extracted DAG actually uses any virtual columns.
+    /// If it only contains constants (e.g., "greater(45, 0)"), skip the parts filtering that can be expensive
+    /// if there are many parts (because it does a linear search over all parts).
+    bool has_virtual_column_input = false;
+    for (const auto & input : dag->getInputs())
+    {
+        if (sample.has(input->result_name))
+        {
+            has_virtual_column_input = true;
+            break;
+        }
+    }
+    if (!has_virtual_column_input)
+        return {};
+
+    auto start_time = std::chrono::steady_clock::now();
+
     auto virtual_columns_block = data.getBlockWithVirtualsForFilter(metadata_snapshot, parts);
     VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), virtual_columns_block);
-    return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+    auto result = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+
+    auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start_time).count();
+    ProfileEvents::increment(ProfileEvents::FilterPartsByVirtualColumnsMicroseconds, elapsed_us);
+
+    return result;
 }
 
-void MergeTreeDataSelectExecutor::filterPartsByPartition(
-    RangesInDataParts & parts,
+RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
+    const RangesInDataParts & parts,
     const std::optional<PartitionPruner> & partition_pruner,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const std::optional<std::unordered_set<String>> & part_values,
@@ -596,6 +589,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     LoggerPtr log,
     ReadFromMergeTree::IndexStats & index_stats)
 {
+    RangesInDataParts res;
     const Settings & settings = context->getSettingsRef();
     DataTypes minmax_columns_types;
 
@@ -619,7 +613,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
 
     PartFilterCounters part_filter_counters;
     if (query_context->getSettingsRef()[Setting::allow_experimental_query_deduplication])
-        selectPartsToReadWithUUIDFilter(
+        res = selectPartsToReadWithUUIDFilter(
             parts,
             part_values,
             data.getPinnedPartUUIDs(),
@@ -631,7 +625,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
             part_filter_counters,
             log);
     else
-        selectPartsToRead(
+        res = selectPartsToRead(
             parts,
             part_values,
             minmax_idx_condition,
@@ -668,34 +662,36 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
             .num_parts_after = part_filter_counters.num_parts_after_partition_pruner,
             .num_granules_after = part_filter_counters.num_granules_after_partition_pruner});
     }
+
+    return res;
 }
 
-RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-    RangesInDataParts parts_with_ranges,
-    StorageMetadataPtr metadata_snapshot,
-    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
-    const ContextPtr & context,
-    const KeyCondition & key_condition,
-    const std::optional<KeyCondition> & part_offset_condition,
-    const std::optional<KeyCondition> & total_offset_condition,
-    const UsefulSkipIndexes & skip_indexes,
-    const MergeTreeReaderSettings & reader_settings,
-    LoggerPtr log,
-    size_t num_streams,
-    ReadFromMergeTree::IndexStats & index_stats,
-    bool use_skip_indexes,
-    bool find_exact_ranges,
-    bool is_final_query)
+RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats)
 {
-    const Settings & settings = context->getSettingsRef();
+    auto & metadata_snapshot = filter_context.metadata_snapshot;
+    auto & mutations_snapshot = filter_context.mutations_snapshot;
+    const auto & query_info = filter_context.query_info;
+    const auto & context = filter_context.context;
+    const auto & key_condition = filter_context.indexes.key_condition;
+    const auto & part_offset_condition = filter_context.indexes.part_offset_condition;
+    const auto & total_offset_condition = filter_context.indexes.total_offset_condition;
+    const auto & key_condition_rpn_template = filter_context.indexes.key_condition_rpn_template;
+    const auto & skip_indexes = filter_context.indexes.skip_indexes;
+    const auto & top_k_filter_info = filter_context.top_k_filter_info;
+    const auto & reader_settings = filter_context.reader_settings;
+    const auto & log = filter_context.log;
+    size_t num_streams = filter_context.num_streams;
+    bool use_skip_indexes = filter_context.indexes.use_skip_indexes;
+    bool use_skip_indexes_for_disjunctions_ = filter_context.indexes.use_skip_indexes_for_disjunctions;
+    bool use_skip_indexes_on_data_read_ = filter_context.indexes.use_skip_indexes_on_data_read;
+    bool use_skip_indexes_if_final_exact_mode_ = filter_context.indexes.use_skip_indexes_if_final_exact_mode;
+    bool find_exact_ranges = filter_context.find_exact_ranges;
+    bool is_final_query = filter_context.query_info.isFinal();
+    bool has_projections = filter_context.has_projections;
+    auto & result = filter_context.result;
 
-    if (context->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
-        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator])
-    {
-        // Skip index analysis and return parts with all marks
-        // The coordinator will chose ranges to read for workers based on index analysis on its side
-        return parts_with_ranges;
-    }
+    const auto original_num_parts = parts_with_ranges.size();
+    const Settings & settings = context->getSettingsRef();
 
     if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
     {
@@ -732,19 +728,47 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     };
 
     IndexStat pk_stat;
-    std::vector<IndexStat> useful_indices_stat(skip_indexes.useful_indices.size());
+
+    size_t stat_size = skip_indexes.useful_indices.size();
+    if (settings[Setting::per_part_index_stats])
+    {
+        stat_size = stat_size * parts_with_ranges.size();
+    }
+
+    std::vector<IndexStat> useful_indices_stat(stat_size);
     std::vector<IndexStat> merged_indices_stat(skip_indexes.merged_indices.size());
 
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
+    std::atomic<size_t> top_k_elapsed_us = 0;
+
+    std::atomic<size_t> sum_marks_union = 0;
 
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
+
+    std::vector<std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>> parts_top_k_granules(
+                    parts_with_ranges.size(), std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>());
+
+    bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering && !top_k_filter_info->where_clause;
 
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
     if (settings[Setting::max_threads_for_indexes])
     {
         num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
     }
+
+    bool use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
+                                && !use_skip_indexes_on_data_read_ &&
+                                key_condition.getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
+
+    auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
+    {
+        /// Vector similarity indexes are not applicable on data reads.
+        if (index->isVectorSimilarityIndex())
+            return false;
+
+        return use_skip_indexes_on_data_read_;
+    };
 
     /// Let's find what range to read from each part.
     {
@@ -753,6 +777,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         auto vector_similarity_index_cache = context->getVectorSimilarityIndexCache();
 
         auto query_status = context->getProcessListElement();
+
+        // These limits are checked per part so that we can fail very quickly
+        // if we hit row limits on large datasets. Row counts use an atomic
+        // counter as part processing typically uses multiple threads (max_threads)
+        auto [limits, leaf_limits] = getRowLimits(settings, query_info);
+        std::atomic<size_t> total_rows{0};
 
         auto process_part = [&](size_t part_index)
         {
@@ -791,108 +821,203 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (!ranges.ranges.empty())
                 sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
 
-            CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
-            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context);
-            const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
-
-            auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
+            if (!skip_indexes.empty())
             {
-                if (all_updated_columns.empty())
+                CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
+                auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context);
+                const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
+
+                auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
+                {
+                    if (all_updated_columns.empty())
+                        return {};
+
+                    auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
+                    auto required_columns_names = index ->getColumnsRequiredForIndexCalc();
+                    auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
+
+                    auto it = std::ranges::find_if(required_columns_list, [&](const auto & column)
+                    {
+                        return all_updated_columns.contains(column.getNameInStorage());
+                    });
+
+                    if (it == required_columns_list.end())
+                        return {};
+
+                    return std::unexpected(
+                        PreformattedMessage::create(
+                            "Index {} is not used for part {} because it depends on column `{}` which will be updated on the fly",
+                            index->index.name,
+                            ranges.data_part->name,
+                            it->getNameInStorage()));
+                };
+
+                auto can_use_merged_index = [&](const std::vector<MergeTreeIndexPtr> & indices) -> std::expected<void, PreformattedMessage>
+                {
+                    for (const auto & index : indices)
+                    {
+                        if (auto index_result = can_use_index(index); !index_result)
+                            return index_result;
+                    }
                     return {};
+                };
 
-                auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
-                auto required_columns_names = index ->getColumnsRequiredForIndexCalc();
-                auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
+                const auto num_indexes = skip_indexes.useful_indices.size();
 
-                auto it = std::ranges::find_if(required_columns_list, [&](const auto & column)
+                PartialDisjunctionResult partial_eval_results;
+                if (use_skip_indexes_for_disjunctions)
+                    partial_eval_results.resize(ranges.data_part->index_granularity->getMarksCountWithoutFinal() * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
+
+                for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
-                    return all_updated_columns.contains(column.getNameInStorage());
-                });
+                    if (ranges.ranges.empty())
+                        break;
 
-                if (it == required_columns_list.end())
-                    return {};
+                    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-                return std::unexpected(PreformattedMessage::create(
-                    "Index {} is not used for part {} because it depends on column {} which will be updated on fly",
-                    index->index.name, index->index.name, it->getNameInStorage()));
-            };
+                    const auto index_idx = skip_indexes.per_part_index_orders[part_index][idx];
+                    const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
 
-            auto can_use_merged_index = [&](const std::vector<MergeTreeIndexPtr> & indices) -> std::expected<void, PreformattedMessage>
-            {
-                for (const auto & index : indices)
-                {
-                    if (auto result = can_use_index(index); !result)
-                        return result;
+                    auto index_stat_idx = idx;
+                    if (settings[Setting::per_part_index_stats])
+                        index_stat_idx += num_indexes * part_index;
+
+                    auto & stat = useful_indices_stat[index_stat_idx];
+
+                    stat.total_parts.fetch_add(1, std::memory_order_relaxed);
+                    size_t total_granules = ranges.ranges.getNumberOfMarks();
+                    stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
+
+                    if (auto index_result = can_use_index(index_and_condition.index); !index_result)
+                    {
+                        LOG_TRACE(log, "{}", index_result.error().text);
+                        continue;
+                    }
+
+                    if (!is_index_supported_on_data_read(index_and_condition.index))
+                    {
+                        std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
+                            index_and_condition.index,
+                            index_and_condition.condition,
+                            key_condition_rpn_template,
+                            ranges.data_part,
+                            ranges.ranges,
+                            ranges.read_hints,
+                            reader_settings,
+                            mark_cache.get(),
+                            uncompressed_cache.get(),
+                            vector_similarity_index_cache.get(),
+                            use_skip_indexes_for_disjunctions,
+                            partial_eval_results,
+                            log);
+                    }
+
+                    stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                    if (ranges.ranges.empty())
+                        stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+                    stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
+                    skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
-                return {};
-            };
 
-            for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
-            {
-                if (ranges.ranges.empty())
-                    break;
-
-                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
-
-                const auto & index_and_condition = skip_indexes.useful_indices[idx];
-                auto & stat = useful_indices_stat[idx];
-                stat.total_parts.fetch_add(1, std::memory_order_relaxed);
-                size_t total_granules = ranges.ranges.getNumberOfMarks();
-                stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
-
-                if (auto result = can_use_index(index_and_condition.index); !result)
+                if (use_skip_indexes_for_disjunctions && key_condition_rpn_template.has_value())
                 {
-                    LOG_TRACE(log, "{}", result.error().text);
-                    continue;
+                    ranges.ranges = mergePartialResultsForDisjunctions(ranges.data_part,
+                                        ranges.ranges, key_condition_rpn_template.value(),
+                                        partial_eval_results, reader_settings, log);
+
+                    sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
                 }
 
-                std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
-                    index_and_condition.index,
-                    index_and_condition.condition,
-                    ranges.data_part,
-                    ranges.ranges,
-                    ranges.read_hints,
-                    settings,
-                    reader_settings,
-                    mark_cache.get(),
-                    uncompressed_cache.get(),
-                    vector_similarity_index_cache.get(),
-                    log);
+                for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
+                {
+                    if (ranges.ranges.empty())
+                        break;
 
-                stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
-                if (ranges.ranges.empty())
-                    stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
-                stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
-                skip_index_used_in_part[part_index] = 1; /// thread-safe
+                    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
+
+                    const auto & indices_and_condition = skip_indexes.merged_indices[idx];
+                    auto & stat = merged_indices_stat[idx];
+                    stat.total_parts.fetch_add(1, std::memory_order_relaxed);
+
+                    if (auto index_result = can_use_merged_index(indices_and_condition.indices); !index_result)
+                    {
+                        LOG_TRACE(log, "{}", index_result.error().text);
+                        continue;
+                    }
+
+                    size_t total_granules = ranges.ranges.getNumberOfMarks();
+
+                    if (!use_skip_indexes_on_data_read_)
+                    {
+                        ranges.ranges = filterMarksUsingMergedIndex(
+                            indices_and_condition.indices,
+                            indices_and_condition.condition,
+                            ranges.data_part,
+                            ranges.ranges,
+                            reader_settings,
+                            mark_cache.get(),
+                            uncompressed_cache.get(),
+                            vector_similarity_index_cache.get(),
+                            log);
+                    }
+
+                    stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
+                    stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+
+                    if (ranges.ranges.empty())
+                        stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+                }
             }
 
-            for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
+            /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
+            if (perform_top_k_optimization)
             {
-                if (ranges.ranges.empty())
-                    break;
+                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-                const auto & indices_and_condition = skip_indexes.merged_indices[idx];
-                auto & stat = merged_indices_stat[idx];
-                stat.total_parts.fetch_add(1, std::memory_order_relaxed);
+                auto min_max_granules = getMinMaxIndexGranules(ranges.data_part,
+                                            skip_indexes.skip_index_for_top_k_filtering,
+                                            ranges.ranges,
+                                            top_k_filter_info->direction,
+                                            false, /*access_by_mark*/
+                                            reader_settings,
+                                            mark_cache.get(),
+                                            uncompressed_cache.get(),
+                                            vector_similarity_index_cache.get());
 
-                if (auto result = can_use_merged_index(indices_and_condition.indices); !result)
+                if (min_max_granules) /// minmax index may have not been materialized for this part, not a fatal error
                 {
-                    LOG_TRACE(log, "{}", result.error().text);
-                    continue;
+                    min_max_granules->getTopKMarks(top_k_filter_info->limit_n, parts_top_k_granules[part_index]);
                 }
+                top_k_elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
+            }
 
-                size_t total_granules = ranges.ranges.getNumberOfMarks();
-                ranges.ranges = filterMarksUsingMergedIndex(
-                    indices_and_condition.indices, indices_and_condition.condition,
-                    ranges.data_part, ranges.ranges,
-                    settings, reader_settings,
-                    mark_cache.get(), uncompressed_cache.get(), vector_similarity_index_cache.get(), log);
+            if (!ranges.ranges.empty() && !perform_top_k_optimization)
+            {
+                if (limits.max_rows || leaf_limits.max_rows)
+                {
+                    auto current_rows_estimate = ranges.getRowsCount();
+                    size_t prev_rows_estimate = total_rows.fetch_add(current_rows_estimate, std::memory_order_relaxed);
+                    size_t total_rows_estimate = current_rows_estimate + prev_rows_estimate;
 
-                stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
-                stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                    if (query_info.trivial_limit > 0 && total_rows_estimate > query_info.trivial_limit)
+                    {
+                        total_rows_estimate = query_info.trivial_limit;
+                    }
 
-                if (ranges.ranges.empty())
-                    stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+                    bool exceeds_limits = (limits.max_rows && total_rows_estimate > limits.max_rows)
+                                       || (leaf_limits.max_rows && total_rows_estimate > leaf_limits.max_rows);
+
+                    /// Even though we exceeded limits on parent parts, we may be able to use a projection
+                    /// mark the result as unusable and return gracefully to analyze projection candidates
+                    if (exceeds_limits && has_projections)
+                    {
+                        result.exceeded_row_limits = true;
+                        return;
+                    }
+
+                    limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
+                    leaf_limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
+                }
             }
         };
 
@@ -924,7 +1049,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 pool.scheduleOrThrow(
                     [&, part_index, thread_group = CurrentThread::getGroup()]
                     {
-                        ThreadGroupSwitcher switcher(thread_group, "MergeTreeIndex");
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
 
                         process_part(part_index);
                     },
@@ -935,20 +1060,28 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             pool.wait();
         }
 
-        /// Skip empty ranges.
-        std::erase_if(
-            parts_with_ranges,
-            [&](const auto & part)
-            {
-                size_t index = &part - parts_with_ranges.data();
-                if (is_final_query && settings[Setting::use_skip_indexes_if_final_exact_mode] && skip_index_used_in_part[index])
-                {
-                    /// retain this part even if empty due to FINAL
-                    return false;
-                }
+    }
 
-                return !part.data_part || part.ranges.empty();
-            });
+    /// merge top-N results if optimization is done
+    size_t sum_marks_after_top_k = 0;
+    size_t sum_parts_after_top_k = 0;
+    if (perform_top_k_optimization)
+    {
+        std::vector<MarkRanges> top_k_granules_result;
+        MergeTreeIndexBulkGranulesMinMax::getTopKMarks(top_k_filter_info->direction, top_k_filter_info->limit_n,
+                                                       parts_top_k_granules, top_k_granules_result);
+        for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
+        {
+            if (!parts_top_k_granules[part_index].empty())
+            {
+                parts_with_ranges[part_index].ranges = std::move(top_k_granules_result[part_index]);
+            }
+            if (!parts_with_ranges[part_index].ranges.empty())
+            {
+                sum_parts_after_top_k++;
+                sum_marks_after_top_k += parts_with_ranges[part_index].ranges.getNumberOfMarks();
+            }
+        }
     }
 
     if (metadata_snapshot->hasPrimaryKey())
@@ -973,29 +1106,59 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         });
     }
 
-    for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
+    const auto num_indices = skip_indexes.useful_indices.size();
+
+    const auto part_stats_granularity = settings[Setting::per_part_index_stats] ? original_num_parts : 1;
+    for (size_t part_index = 0; part_index < part_stats_granularity; ++part_index)
     {
-        const auto & index_and_condition = skip_indexes.useful_indices[idx];
-        const auto & stat = useful_indices_stat[idx];
-        const auto & index_name = index_and_condition.index->index.name;
-        LOG_DEBUG(
-            log,
-            "Index {} has dropped {}/{} granules, it took {}ms across {} threads.",
-            backQuote(index_name),
-            stat.granules_dropped.load(),
-            stat.total_granules.load(),
-            stat.elapsed_us.load() / 1000,
-            num_threads);
+        for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
+        {
+            const auto & stat = useful_indices_stat[part_index * num_indices + idx];
+            const auto & index_and_condition = skip_indexes.useful_indices[skip_indexes.per_part_index_orders[part_index][idx]];
+            const auto & index_name = index_and_condition.index->index.name;
+            LOG_DEBUG(
+                log,
+                "Index {} has dropped {}/{} granules, it took {}ms across {} threads.",
+                backQuote(index_name),
+                stat.granules_dropped.load(),
+                stat.total_granules.load(),
+                stat.elapsed_us.load() / 1000,
+                num_threads);
 
-        std::string description
-            = index_and_condition.index->index.type + " GRANULARITY " + std::to_string(index_and_condition.index->index.granularity);
+            std::string description = index_and_condition.index->index.type + " GRANULARITY " + std::to_string(index_and_condition.index->index.granularity);
+            if (settings[Setting::per_part_index_stats])
+            {
+                description += " PART " + std::to_string(part_index) + "/" + std::to_string(part_stats_granularity);
+                index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+                    .type = ReadFromMergeTree::IndexType::Skip,
+                    .name = index_name,
+                    .part_name = parts_with_ranges[part_index].data_part->name,
+                    .description = std::move(description),
+                    .condition = index_and_condition.condition->getDescription(),
+                    .num_parts_after = stat.total_parts - stat.parts_dropped,
+                    .num_granules_after = stat.total_granules - stat.granules_dropped});
+            }
+            else
+            {
+                index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+                    .type = ReadFromMergeTree::IndexType::Skip,
+                    .name = index_name,
+                    .description = std::move(description),
+                    .condition = index_and_condition.condition->getDescription(),
+                    .num_parts_after = stat.total_parts - stat.parts_dropped,
+                    .num_granules_after = stat.total_granules - stat.granules_dropped});
+            }
+        }
 
-        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
-            .type = ReadFromMergeTree::IndexType::Skip,
-            .name = index_name,
-            .description = std::move(description),
-            .num_parts_after = stat.total_parts - stat.parts_dropped,
-            .num_granules_after = stat.total_granules - stat.granules_dropped});
+        if (use_skip_indexes_for_disjunctions)
+        {
+            index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+                .type = ReadFromMergeTree::IndexType::Skip,
+                .name = "<Combined skip indexes>",
+                .description = "Final set of granules after AND/OR processing",
+                .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
+                .num_granules_after = sum_marks_union.load(std::memory_order_relaxed)});
+        }
     }
 
     for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
@@ -1022,13 +1185,70 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .num_granules_after = stat.total_granules - stat.granules_dropped});
     }
 
+    if (perform_top_k_optimization)
+    {
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::Skip,
+            .name = skip_indexes.skip_index_for_top_k_filtering->index.name,
+            .description = "Filter TopK Granules",
+            .num_parts_after = sum_parts_after_top_k,
+            .num_granules_after = sum_marks_after_top_k});
+        LOG_DEBUG(
+            log,
+            "Skip index {} used for top N optimization, it took {}ms across {} threads.",
+            skip_indexes.skip_index_for_top_k_filtering->index.name,
+            top_k_elapsed_us.load() / 1000,
+            num_threads);
+    }
+    /// Skip empty ranges.
+    std::erase_if(
+        parts_with_ranges,
+        [&](const auto & part)
+        {
+            size_t index = &part - parts_with_ranges.data();
+            if (is_final_query && use_skip_indexes_if_final_exact_mode_ && skip_index_used_in_part[index])
+            {
+                /// retain this part even if empty due to FINAL
+                return false;
+            }
+
+            return !part.data_part || part.ranges.empty();
+        });
+
+
     return parts_with_ranges;
+}
+
+MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits(
+    const Settings & settings,
+    const SelectQueryInfo & query_info)
+{
+    RowLimits row_limits;
+
+    /// Do not check number of read rows if we are
+    /// reading in order via the sorting key with limit.
+    /// In the general case, when you have a WHERE clause
+    /// it's impossible to estimate number of rows precisely,
+    /// because we can stop reading at any time, especially given
+    /// part processing is done in multiple threads (max_threads)
+    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::max_rows_to_read]
+        && !query_info.input_order_info)
+        row_limits.limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
+
+    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
+        && settings[Setting::max_rows_to_read_leaf]
+        && !query_info.input_order_info)
+        row_limits.leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
+
+    return row_limits;
 }
 
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
     LoggerPtr log)
 {
@@ -1036,7 +1256,9 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     if (!settings[Setting::use_query_condition_cache]
             || !settings[Setting::allow_experimental_analyzer]
             || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
-            || (vector_search_parameters.has_value())) /// vector search has filter in the ORDER BY
+            || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
+            || select_query_info.isFinal()
+            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
         return;
 
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
@@ -1165,39 +1387,6 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     }
 }
 
-
-std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
-    const MergeTreeData & data,
-    const ReadFromMergeTree::AnalysisResult & result,
-    const ContextPtr & context)
-{
-    const auto & settings = context->getSettingsRef();
-    const auto data_settings = data.getSettings();
-    auto max_partitions_to_read
-        = settings[Setting::max_partitions_to_read].changed ? settings[Setting::max_partitions_to_read].value : (*data_settings)[MergeTreeSetting::max_partitions_to_read].value;
-    if (max_partitions_to_read > 0)
-    {
-        std::set<String> partitions;
-        for (const auto & part_with_ranges : result.parts_with_ranges)
-            partitions.insert(part_with_ranges.data_part->info.getPartitionId());
-        if (partitions.size() > static_cast<size_t>(max_partitions_to_read))
-            throw Exception(
-                ErrorCodes::TOO_MANY_PARTITIONS,
-                "Too many partitions to read. Current {}, max {}",
-                partitions.size(),
-                max_partitions_to_read);
-    }
-
-    if ((*data_settings)[MergeTreeSetting::max_concurrent_queries] > 0 && (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0
-        && result.selected_marks >= (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries])
-    {
-        auto query_id = context->getCurrentQueryId();
-        if (!query_id.empty())
-            return data.getQueryIdHolder(query_id, (*data_settings)[MergeTreeSetting::max_concurrent_queries]);
-    }
-    return nullptr;
-}
-
 ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     RangesInDataParts parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
@@ -1214,8 +1403,9 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 
     std::optional<ReadFromMergeTree::Indexes> indexes;
     return ReadFromMergeTree::selectRangesToRead(
-        std::move(parts),
+        parts,
         mutations_snapshot,
+        std::nullopt,
         std::nullopt,
         metadata_snapshot,
         query_info,
@@ -1223,14 +1413,18 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         num_streams,
         max_block_numbers_to_read,
         data,
+        data_settings,
         column_names_to_return,
         log,
         indexes,
-        /*find_exact_ranges*/false);
+        /*find_exact_ranges*/false,
+        /*is_parallel_reading_from_replicas*/false,
+        /*use_query_condition_cache*/true,
+        /*supports_skip_indexes_on_data_read*/false);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
-    RangesInDataParts parts,
+    RangesInDataPartsPtr parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const Names & column_names_to_return,
     const StorageSnapshotPtr & storage_snapshot,
@@ -1240,15 +1434,19 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     const size_t num_streams,
     PartitionIdToMaxBlockPtr max_block_numbers_to_read,
     ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr,
-    bool enable_parallel_reading) const
+    bool enable_parallel_reading,
+    std::shared_ptr<ParallelReadingExtension> extension_) const
 {
     /// If merge_tree_select_result_ptr != nullptr, we use analyzed result so parts will always be empty.
     if (merge_tree_select_result_ptr)
     {
-        if (merge_tree_select_result_ptr->selected_marks == 0)
+        if (merge_tree_select_result_ptr->parts_with_ranges.empty())
             return {};
     }
-    else if (parts.empty())
+    /// If merge_tree_enable_remove_parts_from_snapshot_optimization is true it nukes our list of parts
+    else if (!parts)
+        return {};
+    else if (parts->empty())
         return {};
 
     return std::make_unique<ReadFromMergeTree>(
@@ -1256,6 +1454,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         std::move(mutations_snapshot),
         column_names_to_return,
         data,
+        data_settings,
         query_info,
         storage_snapshot,
         context,
@@ -1264,8 +1463,10 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         max_block_numbers_to_read,
         log,
         merge_tree_select_result_ptr,
-        enable_parallel_reading
-    );
+        enable_parallel_reading,
+        extension_ ? std::optional(extension_->getAllRangesCallback()) : std::nullopt,
+        extension_ ? std::optional(extension_->getReadTaskCallback()) : std::nullopt,
+        extension_ ? std::optional(extension_->getNumberOfCurrentReplica()) : std::nullopt);
 }
 
 
@@ -1326,22 +1527,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     if (marks_count == 0)
         return res;
 
-    bool has_final_mark = part->index_granularity->hasFinalMark();
-
     bool key_condition_useful = !key_condition.alwaysUnknownOrTrue();
     bool part_offset_condition_useful = part_offset_condition && !part_offset_condition->alwaysUnknownOrTrue();
     bool total_offset_condition_useful = total_offset_condition && !total_offset_condition->alwaysUnknownOrTrue();
 
     /// If index is not used.
     if (!key_condition_useful && !part_offset_condition_useful && !total_offset_condition_useful)
-    {
-        if (has_final_mark)
-            res.push_back(MarkRange(0, marks_count - 1));
-        else
-            res.push_back(MarkRange(0, marks_count));
-
-        return res;
-    }
+        return part_with_ranges.ranges;
 
     /// If conditions are relaxed, don't fill exact ranges.
     if (key_condition.isRelaxed() || (part_offset_condition && part_offset_condition->isRelaxed())
@@ -1352,13 +1544,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const auto & sorting_key = metadata_snapshot->getSortingKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
     std::vector<bool> reverse_flags;
-    const auto & key_indices = key_condition.getKeyIndices();
+    size_t num_key_columns = key_condition.getNumKeyColumns();
     DataTypes key_types;
-    if (!key_indices.empty())
+    if (num_key_columns > 0)
     {
         const auto index = part->getIndex();
 
-        for (size_t i : key_indices)
+        for (size_t i = 0; i < num_key_columns; ++i)
         {
             if (i < index->size())
             {
@@ -1400,7 +1592,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     }
 
     /// NOTE Creating temporary Field objects to pass to KeyCondition.
-    size_t used_key_size = key_indices.size();
+    size_t used_key_size = num_key_columns;
     std::vector<FieldRef> index_left(used_key_size);
     std::vector<FieldRef> index_right(used_key_size);
 
@@ -1518,52 +1710,55 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part->index_granularity_info.fixed_index_granularity,
             part->index_granularity_info.index_granularity_bytes);
 
-        /// There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
-        /// At each step, take the left segment and check if it fits.
-        /// If fits, split it into smaller ones and put them on the stack. If not, discard it.
-        /// If the segment is already of one mark length, add it to response and discard it.
-        std::vector<MarkRange> ranges_stack = { {0, marks_count - (has_final_mark ? 1 : 0)} };
-
         size_t steps = 0;
 
-        while (!ranges_stack.empty())
+        for (const auto & part_range : part_with_ranges.ranges)
         {
-            MarkRange range = ranges_stack.back();
-            ranges_stack.pop_back();
+            /// There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
+            /// At each step, take the left segment and check if it fits.
+            /// If fits, split it into smaller ones and put them on the stack. If not, discard it.
+            /// If the segment is already of one mark length, add it to response and discard it.
 
-            ++steps;
-
-            auto result
-                = check_in_range(range, exact_ranges && range.end == range.begin + 1 ? BoolMask() : BoolMask::consider_only_can_be_true);
-            if (!result.can_be_true)
-                continue;
-
-            if (range.end == range.begin + 1)
+            std::vector<MarkRange> ranges_stack = {part_range};
+            while (!ranges_stack.empty())
             {
-                /// We saw a useful gap between neighboring marks. Either add it to the last range, or start a new range.
-                if (res.empty() || range.begin - res.back().end > min_marks_for_seek)
-                    res.push_back(range);
-                else
-                    res.back().end = range.end;
+                MarkRange range = ranges_stack.back();
+                ranges_stack.pop_back();
 
-                if (exact_ranges && !result.can_be_false)
+                ++steps;
+
+                auto result = check_in_range(
+                    range, exact_ranges && range.end == range.begin + 1 ? BoolMask() : BoolMask::consider_only_can_be_true);
+                if (!result.can_be_true)
+                    continue;
+
+                if (range.end == range.begin + 1)
                 {
-                    if (exact_ranges->empty() || range.begin - exact_ranges->back().end > min_marks_for_seek)
-                        exact_ranges->push_back(range);
+                    /// We saw a useful gap between neighboring marks. Either add it to the last range, or start a new range.
+                    if (res.empty() || range.begin - res.back().end > min_marks_for_seek)
+                        res.push_back(range);
                     else
-                        exact_ranges->back().end = range.end;
+                        res.back().end = range.end;
+
+                    if (exact_ranges && !result.can_be_false)
+                    {
+                        if (exact_ranges->empty() || range.begin - exact_ranges->back().end > min_marks_for_seek)
+                            exact_ranges->push_back(range);
+                        else
+                            exact_ranges->back().end = range.end;
+                    }
                 }
-            }
-            else
-            {
-                /// Break the segment and put the result on the stack from right to left.
-                size_t step = (range.end - range.begin - 1) / settings[Setting::merge_tree_coarse_index_granularity] + 1;
-                size_t end;
+                else
+                {
+                    /// Break the segment and put the result on the stack from right to left.
+                    size_t step = (range.end - range.begin - 1) / settings[Setting::merge_tree_coarse_index_granularity] + 1;
+                    size_t end;
 
-                for (end = range.end; end > range.begin + step; end -= step)
-                    ranges_stack.emplace_back(end - step, end);
+                    for (end = range.end; end > range.begin + step; end -= step)
+                        ranges_stack.emplace_back(end - step, end);
 
-                ranges_stack.emplace_back(range.begin, end);
+                    ranges_stack.emplace_back(range.begin, end);
+                }
             }
         }
 
@@ -1588,81 +1783,82 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         size_t steps = 0;
 
-        MarkRange result_range;
-
-        size_t last_mark = marks_count - (has_final_mark ? 1 : 0);
-        size_t searched_left = 0;
-        size_t searched_right = last_mark;
-
-        bool check_left = false;
-        bool check_right = false;
-        while (searched_left + 1 < searched_right)
+        for (const auto & part_range : part_with_ranges.ranges)
         {
-            const size_t middle = (searched_left + searched_right) / 2;
-            MarkRange range(0, middle);
-            if (check_in_range(range, BoolMask::consider_only_can_be_true).can_be_true)
-                searched_right = middle;
-            else
-                searched_left = middle;
-            ++steps;
-            check_left = true;
-        }
-        result_range.begin = searched_left;
-        LOG_TRACE(log, "Found (LEFT) boundary mark: {}", searched_left);
+            MarkRange result_range;
 
-        searched_right = last_mark;
-        while (searched_left + 1 < searched_right)
-        {
-            const size_t middle = (searched_left + searched_right) / 2;
-            MarkRange range(middle, last_mark);
-            if (check_in_range(range, BoolMask::consider_only_can_be_true).can_be_true)
-                searched_left = middle;
-            else
-                searched_right = middle;
-            ++steps;
-            check_right = true;
-        }
-        result_range.end = searched_right;
-        LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
+            /// Invariant: !check_in_range(part_range.begin..searched_left).can_be_true
+            ///             check_in_range(part_range.begin..searched_right).can_be_true
+            /// (part_range.end + 1 is a sentinel out-of-bounds index, such that by definition
+            ///  check_in_range(x..part_range.end+1).can_be_true is true. The binary search will never
+            ///  actually call check_in_range with this out-of-bounds index.)
+            /// If the condition is not true anywhere, we'll end up with searched_left == part_range.end.
+            size_t searched_left = part_range.begin;
+            size_t searched_right = part_range.end + 1;
 
-        if (result_range.begin < result_range.end)
-        {
-            if (exact_ranges)
+            while (searched_left + 1 < searched_right)
             {
-                if (result_range.begin + 1 == result_range.end)
-                {
-                    auto check_result = check_in_range(result_range);
-                    if (check_result.can_be_true)
-                    {
-                        if (!check_result.can_be_false)
-                            exact_ranges->emplace_back(result_range);
-                        res.emplace_back(std::move(result_range));
-                    }
-                }
+                const size_t middle = (searched_left + searched_right) / 2;
+                MarkRange range(0, middle);
+                if (check_in_range(range, BoolMask::consider_only_can_be_true).can_be_true)
+                    searched_right = middle;
                 else
+                    searched_left = middle;
+                ++steps;
+            }
+            result_range.begin = searched_left;
+            LOG_TRACE(log, "Found (LEFT) boundary mark: {}", searched_left);
+
+            /// Invariant:  check_in_range(searched_left..part_range.end).can_be_true
+            ///            !check_in_range(searched_right..part_range.end).can_be_true
+            /// (Except if searched_left was initially already equal to part_range.end.)
+            searched_right = part_range.end;
+            while (searched_left + 1 < searched_right)
+            {
+                const size_t middle = (searched_left + searched_right) / 2;
+                MarkRange range(middle, part_range.end);
+                if (check_in_range(range, BoolMask::consider_only_can_be_true).can_be_true)
+                    searched_left = middle;
+                else
+                    searched_right = middle;
+                ++steps;
+            }
+            result_range.end = searched_right;
+            LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
+
+            if (result_range.begin < result_range.end)
+            {
+                res.emplace_back(result_range);
+
+                if (exact_ranges)
                 {
-                    /// Candidate range with size > 1 is already can_be_true
                     auto result_exact_range = result_range;
-                    if (check_in_range({result_range.begin, result_range.begin + 1}, BoolMask::consider_only_can_be_false).can_be_false)
+                    if (result_exact_range.begin < result_exact_range.end &&
+                        check_in_range({result_exact_range.begin, result_exact_range.begin + 1}, BoolMask::consider_only_can_be_false).can_be_false)
                         ++result_exact_range.begin;
 
-                    if (check_in_range({result_range.end - 1, result_range.end}, BoolMask::consider_only_can_be_false).can_be_false)
+                    if (result_exact_range.begin < result_exact_range.end &&
+                        check_in_range({result_exact_range.end - 1, result_exact_range.end}, BoolMask::consider_only_can_be_false).can_be_false)
                         --result_exact_range.end;
 
                     if (result_exact_range.begin < result_exact_range.end)
                     {
-                        chassert(check_in_range(result_exact_range, BoolMask::consider_only_can_be_false) == BoolMask(true, false));
-                        exact_ranges->emplace_back(std::move(result_exact_range));
+                        if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
+                        {
+                            /// key_condition.matchesExactContinuousRange returned true, but the
+                            /// range doesn't seem to be continuous. Something's broken.
+                            /// TODO: Remove the #ifndef and always throw after
+                            ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
+#ifndef NDEBUG
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent KeyCondition behavior");
+#endif
+                        }
+                        else
+                        {
+                            exact_ranges->emplace_back(std::move(result_exact_range));
+                        }
                     }
-
-                    res.emplace_back(std::move(result_range));
                 }
-            }
-            else
-            {
-                /// Candidate range with both ends checked is already can_be_true
-                if ((check_left && check_right) || check_in_range(result_range, BoolMask::consider_only_can_be_true).can_be_true)
-                    res.emplace_back(std::move(result_range));
             }
         }
 
@@ -1673,21 +1869,22 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     return res;
 }
 
-
 std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeIndexPtr index_helper,
     MergeTreeIndexConditionPtr condition,
+    const std::optional<KeyCondition> & key_condition_rpn_template,
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
     const RangesInDataPartReadHints & in_read_hints,
-    const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
+    bool use_skip_indexes_for_disjunctions,
+    PartialDisjunctionResult & partial_disjunction_result,
     LoggerPtr log)
 {
-    if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
+    if (!index_helper->getDeserializedFormat(part->checksums, index_helper->getFileName()))
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
             (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
@@ -1695,13 +1892,13 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     }
 
     /// Whether we should use a more optimal filtering.
-    bool bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering] && index_helper->supportsBulkFiltering();
+    bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering() && !use_skip_indexes_for_disjunctions;
 
     auto index_granularity = index_helper->index.granularity;
 
     const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
-        settings[Setting::merge_tree_min_rows_for_seek],
-        settings[Setting::merge_tree_min_bytes_for_seek],
+        reader_settings.merge_tree_min_rows_for_seek,
+        reader_settings.merge_tree_min_bytes_for_seek,
         part->index_granularity_info.fixed_index_granularity,
         part->index_granularity_info.index_granularity_bytes);
 
@@ -1738,11 +1935,53 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     size_t ranges_size = ranges.size();
     RangesInDataPartReadHints read_hints = in_read_hints;
 
-    if (bulk_filtering)
+    auto create_update_partial_disjunction_result_fn = [&](size_t range_begin) -> KeyCondition::UpdatePartialDisjunctionResultFn
+    {
+        if (use_skip_indexes_for_disjunctions && key_condition_rpn_template)
+        {
+            return [range_begin, &partial_disjunction_result](size_t position, bool element_result, bool is_unknown)
+            {
+                if (!is_unknown)
+                    partial_disjunction_result[(range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position] = element_result;
+            };
+        }
+        return nullptr;
+    };
+
+    if (index_helper->isTextIndex())
+    {
+        MergeTreeIndexGranulePtr granule;
+        reader.read(0, condition.get(), granule);
+        auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+
+        for (const auto & range : ranges)
+        {
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                size_t row_begin = part->index_granularity->getMarkStartingRow(mark);
+                size_t row_end = part->index_granularity->getMarkStartingRow(mark + 1);
+
+                if (row_begin == row_end)
+                    continue;
+
+                granule_text.setCurrentRange(RowsRange(row_begin, row_end - 1));
+                bool may_be_true = condition->mayBeTrueOnGranule(granule, create_update_partial_disjunction_result_fn(mark));
+
+                if (may_be_true)
+                {
+                    if (res.empty() || mark - res.back().end > min_marks_for_seek)
+                        res.push_back(MarkRange(mark, mark + 1));
+                    else
+                        res.back().end = mark + 1;
+                }
+            }
+        }
+    }
+    else if (bulk_filtering)
     {
         MergeTreeIndexBulkGranulesPtr granules;
-
         size_t current_granule_num = 0;
+
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
@@ -1796,10 +2035,6 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
 
-        PostingsCacheForStore cache_in_store;
-        if (dynamic_cast<const MergeTreeIndexGin *>(index_helper.get()))
-            cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
-
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
@@ -1807,7 +2042,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
             {
                 if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
-                    reader.read(index_mark, granule);
+                {
+                    reader.read(index_mark, condition.get(), granule);
+                }
 
                 if (index_helper->isVectorSimilarityIndex())
                 {
@@ -1845,13 +2082,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 }
                 else
                 {
-                    bool result = false;
-                    if (const auto * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(&*condition))
-                        result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
-                    else
-                        result = condition->mayBeTrueOnGranule(granule);
+                    size_t range_begin = std::max(ranges[i].begin, index_mark * index_granularity);
+                    bool may_be_true = condition->mayBeTrueOnGranule(granule, create_update_partial_disjunction_result_fn(range_begin));
 
-                    if (!result)
+                    if (!may_be_true)
                         continue;
 
                     MarkRange data_range(
@@ -1877,7 +2111,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     MergeTreeIndexMergedConditionPtr condition,
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
-    const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
@@ -1896,8 +2129,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     auto index_granularity = indices.front()->index.granularity;
 
     const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
-        settings[Setting::merge_tree_min_rows_for_seek],
-        settings[Setting::merge_tree_min_bytes_for_seek],
+        reader_settings.merge_tree_min_rows_for_seek,
+        reader_settings.merge_tree_min_bytes_for_seek,
         part->index_granularity_info.fixed_index_granularity,
         part->index_granularity_info.index_granularity_bytes);
 
@@ -1947,7 +2180,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
             {
                 for (size_t i = 0; i < readers.size(); ++i)
                 {
-                    readers[i]->read(index_mark, granules[i]);
+                    readers[i]->read(index_mark, nullptr, granules[i]);
                     granules_filled = true;
                 }
             }
@@ -1971,8 +2204,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     return res;
 }
 
-void MergeTreeDataSelectExecutor::selectPartsToRead(
-    RangesInDataParts & parts,
+RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
+    const RangesInDataParts & parts,
     const std::optional<std::unordered_set<String>> & part_values,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
@@ -1981,23 +2214,17 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     PartFilterCounters & counters,
     QueryStatusPtr query_status)
 {
-    RangesInDataParts prev_parts;
-    std::swap(prev_parts, parts);
+    RangesInDataParts res_parts;
 
-    for (const auto & prev_part : prev_parts)
+    for (const auto & prev_part : parts)
     {
         const auto & part_or_projection = prev_part.data_part;
 
         if (query_status)
             query_status->checkTimeLimit();
 
-        fiu_do_on(FailPoints::slowdown_index_analysis,
-        {
-            sleepForMilliseconds(1000);
-        });
-
         const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-        if (part_values && part_values->find(part->name) == part_values->end())
+        if (part_values && !part_values->contains(part->name))
             continue;
 
         if (part->isEmpty())
@@ -2031,12 +2258,13 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_parts_after_partition_pruner += 1;
         counters.num_granules_after_partition_pruner += num_granules;
 
-        parts.push_back(prev_part);
+        res_parts.push_back(prev_part);
     }
+    return res_parts;
 }
 
-void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
-    RangesInDataParts & parts,
+RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
+    const RangesInDataParts & parts,
     const std::optional<std::unordered_set<String>> & part_values,
     MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
     const std::optional<KeyCondition> & minmax_idx_condition,
@@ -2049,19 +2277,16 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 {
     /// process_parts prepare parts that have to be read for the query,
     /// returns false if duplicated parts' UUID have been met
-    auto select_parts = [&](RangesInDataParts & selected_parts) -> bool
+    auto select_parts = [&](const RangesInDataParts & in_parts, RangesInDataParts & selected_parts) -> bool
     {
         auto ignored_part_uuids = query_context->getIgnoredPartUUIDs();
         std::unordered_set<UUID> temp_part_uuids;
 
-        RangesInDataParts prev_parts;
-        std::swap(prev_parts, selected_parts);
-
-        for (const auto & prev_part : prev_parts)
+        for (const auto & prev_part : in_parts)
         {
             const auto & part_or_projection = prev_part.data_part;
             const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-            if (part_values && part_values->find(part->name) == part_values->end())
+            if (part_values && !part_values->contains(part->name))
                 continue;
 
             if (part->isEmpty())
@@ -2127,7 +2352,8 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     };
 
     /// Process parts that have to be read for a query.
-    auto needs_retry = !select_parts(parts);
+    RangesInDataParts filtered_parts = {};
+    auto needs_retry = !select_parts(parts, filtered_parts);
 
     /// If any duplicated part UUIDs met during the first step, try to ignore them in second pass.
     /// This may happen when `prefer_localhost_replica` is set and "distributed" stage runs in the same process with "remote" stage.
@@ -2137,10 +2363,163 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 
         counters = PartFilterCounters();
 
+        auto initial_filtered_parts = filtered_parts;
+        filtered_parts = {};
+
         /// Second attempt didn't help, throw an exception
-        if (!select_parts(parts))
+        if (!select_parts(initial_filtered_parts, filtered_parts))
             throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate UUIDs while processing query.");
     }
+
+    return filtered_parts;
+}
+
+/// Read and return index granules from a minmax index.
+MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
+    MergeTreeData::DataPartPtr part,
+    MergeTreeIndexPtr skip_index_minmax,
+    const MarkRanges & ranges,
+    int direction,
+    bool access_by_mark,
+    const MergeTreeReaderSettings & reader_settings,
+    MarkCache * mark_cache,
+    UncompressedCache * uncompressed_cache,
+    VectorSimilarityIndexCache * vector_similarity_index_cache)
+{
+    if (!skip_index_minmax->getDeserializedFormat(part->checksums, skip_index_minmax->getFileName()))
+    {
+        return nullptr;
+    }
+
+    auto index_granularity = skip_index_minmax->index.granularity;
+    size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
+    size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
+
+    MarkRanges index_ranges;
+    for (const auto & range : ranges)
+    {
+        MarkRange index_range(
+            range.begin / index_granularity,
+            (range.end + index_granularity - 1) / index_granularity);
+        index_ranges.push_back(index_range);
+    }
+
+    MergeTreeIndexReader reader(
+            skip_index_minmax,
+            part,
+            index_marks_count,
+            index_ranges,
+            mark_cache,
+            uncompressed_cache,
+            vector_similarity_index_cache,
+            reader_settings);
+
+    auto min_max_granules = std::make_shared<MergeTreeIndexBulkGranulesMinMax>(skip_index_minmax->index.name,
+                                    skip_index_minmax->index.sample_block, direction, index_ranges.getNumberOfMarks(), access_by_mark);
+    auto bulk_granules = std::dynamic_pointer_cast<IMergeTreeIndexBulkGranules>(min_max_granules);
+
+    for (auto index_range : index_ranges)
+    {
+        for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+        {
+            reader.read(index_mark, index_mark, bulk_granules);
+        }
+    }
+    return min_max_granules;
+}
+
+/// Evaluate the predicate condition using the saved partial results.
+/// e.g (A = 5 OR (B = 5 AND C = 5))
+/// For each range, we have saved the results of evaluation with
+/// skip index A, skip index B, skip index C. Now we run a "final pass"
+/// to see if the range qualifies on the whole condition.
+/// rpn_template_for_eval_result is a "template" only. Hence the code
+/// below only processes 5 specific RPNElement types.
+MarkRanges MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
+    MergeTreeData::DataPartPtr part,
+    const MarkRanges & ranges,
+    const KeyCondition & rpn_template_for_eval_result,
+    const PartialDisjunctionResult & partial_eval_results,
+    MergeTreeReaderSettings reader_settings,
+    LoggerPtr log)
+{
+    MarkRanges res;
+
+    auto rpn_template_for_eval_result_string = rpn_template_for_eval_result.toString();
+
+    LOG_DEBUG(log, "Entered mergePartialResultsForDisjunctions for part {}, rpn = {}",
+              part->name, rpn_template_for_eval_result_string);
+
+    const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
+                reader_settings.merge_tree_min_rows_for_seek,
+                reader_settings.merge_tree_min_bytes_for_seek,
+                part->index_granularity_info.fixed_index_granularity,
+                part->index_granularity_info.index_granularity_bytes);
+
+    /// Evaluate the RPN over all the ranges.
+    auto rpn = rpn_template_for_eval_result.getRPN();
+    std::vector<bool> rpn_stack;
+    for (auto range : ranges)
+    {
+        for (auto range_begin = range.begin; range_begin < range.end; range_begin++)
+        {
+            rpn_stack.clear();
+            size_t position = 0;
+            for (const auto & element : rpn)
+            {
+                if (element.function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
+                {
+                    rpn_stack.emplace_back(partial_eval_results[(range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position]);
+                }
+                else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
+                {
+                    /// NOT x = 'acd' is always True with BloomFilter even if x = 'acd' was True.
+                    /// Hence rpn_stack.back() = !rpn_stack.back() will be wrong. We will
+                    /// push True by default for NOT. This could cause false positives for
+                    /// other skip indexes if NOT is used.
+                    rpn_stack.back() = true;
+                }
+                else if (element.function == KeyCondition::RPNElement::FUNCTION_OR)
+                {
+                    auto arg1 = rpn_stack.back();
+                    rpn_stack.pop_back();
+                    auto arg2 = rpn_stack.back();
+                    rpn_stack.back() = arg1 || arg2;
+                }
+                else if (element.function == KeyCondition::RPNElement::FUNCTION_AND)
+                {
+                    auto arg1 = rpn_stack.back();
+                    rpn_stack.pop_back();
+                    auto arg2 = rpn_stack.back();
+                    rpn_stack.back() = arg1 && arg2;
+                }
+                else if (element.function == KeyCondition::RPNElement::ALWAYS_TRUE)
+                {
+                    rpn_stack.emplace_back(true);
+                }
+                else if (element.function == KeyCondition::RPNElement::ALWAYS_FALSE)
+                {
+                    rpn_stack.emplace_back(false);
+                }
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type {} in mergePartialResultsForDisjunctions(), RPN = {}", element.function, rpn_template_for_eval_result_string);
+
+                position++;
+            }
+
+            if (rpn_stack.size() != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size {} in mergePartialResultsForDisjunctions(), RPN = {}", rpn_stack.size(), rpn_template_for_eval_result_string);
+
+            if (rpn_stack[0])
+            {
+                if (res.empty() || range_begin - res.back().end > min_marks_for_seek)
+                    res.push_back({range_begin, range_begin + 1});
+                else
+                    res.back().end = range_begin + 1;
+            }
+        }
+    }
+    return res;
 }
 
 }

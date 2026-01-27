@@ -148,7 +148,7 @@ ASTPtr makeOnExpression(const std::vector<ASTPtr> & expressions)
     for (const auto & ast : expressions)
         arguments.emplace_back(ast->clone());
 
-    return makeASTFunction("and", std::move(arguments));
+    return makeASTOperator("and", std::move(arguments));
 }
 
 std::vector<JoinedElement> getTables(const ASTSelectQuery & select)

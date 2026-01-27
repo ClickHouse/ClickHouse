@@ -95,6 +95,9 @@ public:
     Message(const Message & msg);
     /// Creates a Message by copying another one.
 
+    Message(Message && msg) = default;
+    /// Creates a Message by moving another one.
+
     Message(const Message & msg, const std::string & text);
     /// Creates a Message by copying all but the text from another message.
 

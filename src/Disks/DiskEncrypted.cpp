@@ -68,7 +68,7 @@ namespace
             if ((config_key == "key") || config_key.starts_with("key["))
             {
                 String key_path = config_prefix + "." + config_key;
-                key.plain = toString(config.getString(key_path));
+                key.plain = config.getString(key_path);
                 String key_id_path = key_path + "[@id]";
                 if (config.has(key_id_path))
                     key_id = config.getUInt64(key_id_path);
@@ -76,7 +76,7 @@ namespace
             else if ((config_key == "key_hex") || config_key.starts_with("key_hex["))
             {
                 String key_path = config_prefix + "." + config_key;
-                key.plain = unhexKey(toString(config.getString(key_path)));
+                key.plain = unhexKey(config.getString(key_path));
                 String key_id_path = key_path + "[@id]";
                 if (config.has(key_id_path))
                     key_id = config.getUInt64(key_id_path);
@@ -151,12 +151,12 @@ namespace
 
         if (config.has(key_path))
         {
-            String current_key = toString(config.getString(key_path));
+            String current_key = config.getString(key_path);
             return check_current_key_found(current_key);
         }
         if (config.has(key_hex_path))
         {
-            String current_key = unhexKey(toString(config.getString(key_hex_path)));
+            String current_key = unhexKey(config.getString(key_hex_path));
             return check_current_key_found(current_key);
         }
         if (config.has(key_id_path))
@@ -350,6 +350,14 @@ ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
     return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
 }
 
+ReservationPtr DiskEncrypted::reserve(UInt64 bytes, const ReservationConstraints & constraints)
+{
+    auto reservation = delegate->reserve(bytes, constraints);
+    if (!reservation)
+        return {};
+    return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
+}
+
 
 void DiskEncrypted::copyDirectoryContent(
     const String & from_dir,
@@ -419,17 +427,13 @@ void DiskEncrypted::copyFile(
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t> read_hint) const
 {
     if (read_hint && *read_hint > 0)
         read_hint = *read_hint + FileEncryption::Header::kSize;
 
-    if (file_size && *file_size > 0)
-        file_size = *file_size + FileEncryption::Header::kSize;
-
     auto wrapped_path = wrappedPath(path);
-    auto buffer = delegate->readFile(wrapped_path, settings, read_hint, file_size);
+    auto buffer = delegate->readFile(wrapped_path, settings, read_hint);
     if (buffer->eof())
     {
         /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().

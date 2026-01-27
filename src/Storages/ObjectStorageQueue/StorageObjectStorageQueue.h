@@ -5,6 +5,7 @@
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Storages/IStorage.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
@@ -89,6 +90,10 @@ private:
     using CommitSettings = ObjectStorageQueueSource::CommitSettings;
     using ProcessingProgress = ObjectStorageQueueSource::ProcessingProgress;
     using ProcessingProgressPtr = ObjectStorageQueueSource::ProcessingProgressPtr;
+    using LastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMap;
+    using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
+    using AfterProcessingSettings = ObjectStorageQueuePostProcessor::AfterProcessingSettings;
+    using PartitionLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::PartitionLastProcessedFileInfoMap;
 
     ObjectStorageType type;
     const std::string engine_name;
@@ -101,6 +106,12 @@ private:
     UInt64 list_objects_batch_size TSA_GUARDED_BY(mutex);
     bool enable_hash_ring_filtering TSA_GUARDED_BY(mutex);
     CommitSettings commit_settings TSA_GUARDED_BY(mutex);
+    /// The after_processing action itself is handled the old way for compatibility:
+    /// it needs to be available in Keeper metadata for older server versions.
+    /// Therefore it is not in AfterProcessingSettings.
+    AfterProcessingSettings after_processing_settings TSA_GUARDED_BY(mutex);
+    bool commit_on_select TSA_GUARDED_BY(mutex);
+
     size_t min_insert_block_size_rows_for_materialized_views TSA_GUARDED_BY(mutex);
     size_t min_insert_block_size_bytes_for_materialized_views TSA_GUARDED_BY(mutex);
 
@@ -113,7 +124,6 @@ private:
 
     UInt64 reschedule_processing_interval_ms TSA_GUARDED_BY(mutex);
 
-    std::atomic<bool> mv_attached = false;
     std::atomic<bool> shutdown_called = false;
     std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
@@ -153,6 +163,8 @@ private:
     void threadFunc(size_t streaming_tasks_index);
     /// A subset of logic executed by threadFunc.
     bool streamToViews(size_t streaming_tasks_index);
+    /// Apply after_processing action to successfully processed files.
+    void postProcess(const StoredObjects & successful_objects) const;
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,
@@ -164,6 +176,11 @@ private:
 
     const bool can_be_moved_between_databases;
     const bool keep_data_in_keeper;
+
+    const bool use_hive_partitioning;
+
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    NamesAndTypesList file_columns;
 };
 
 }

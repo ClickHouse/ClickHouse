@@ -1,17 +1,14 @@
 #pragma once
 
 #include <unordered_map>
-#include <Common/HashTable/HashMap.h>
+#include <unordered_set>
+#include <string>
+#include <Core/Names.h>
 #include <Common/NamePrompter.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_ELEMENT_OF_ENUM;
-}
 
 template <typename T>
 class EnumValues : public IHints<>
@@ -19,29 +16,24 @@ class EnumValues : public IHints<>
 public:
     using Value = std::pair<std::string, T>;
     using Values = std::vector<Value>;
-    using NameToValueMap = HashMap<StringRef, T, StringRefHash>;
-    using ValueToNameMap = std::unordered_map<T, StringRef>;
 
 private:
+    class NameToValueMap;
+    using ValueToNameMap = std::unordered_map<T, std::string_view>;
+
     Values values;
-    NameToValueMap name_to_value_map;
+    std::unique_ptr<NameToValueMap> name_to_value_map;
     ValueToNameMap value_to_name_map;
 
     void fillMaps();
 
 public:
     explicit EnumValues(const Values & values_);
+    ~EnumValues() override;
 
     const Values & getValues() const { return values; }
 
-    auto findByValue(const T & value) const
-    {
-        auto it = value_to_name_map.find(value);
-        if (it == value_to_name_map.end())
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unexpected value {} in enum", toString(value));
-
-        return it;
-    }
+    ValueToNameMap::const_iterator findByValue(const T & value) const;
 
     bool hasValue(const T & value) const
     {
@@ -49,13 +41,13 @@ public:
     }
 
     /// throws exception if value is not valid
-    const StringRef & getNameForValue(const T & value) const
+    std::string_view getNameForValue(const T & value) const
     {
         return findByValue(value)->second;
     }
 
     /// returns false if value is not valid
-    bool getNameForValue(const T & value, StringRef & result) const
+    bool getNameForValue(const T & value, std::string_view & result) const
     {
         const auto it = value_to_name_map.find(value);
         if (it == value_to_name_map.end())
@@ -65,26 +57,11 @@ public:
         return true;
     }
 
-    T getValue(StringRef field_name) const;
-    bool tryGetValue(T & x, StringRef field_name) const;
+    T getValue(std::string_view field_name) const;
+    bool tryGetValue(T & x, std::string_view field_name) const;
 
     template <typename TValues>
-    bool containsAll(const TValues & rhs_values) const
-    {
-        auto check = [&](const auto & value)
-        {
-            auto it = name_to_value_map.find(value.first);
-            /// If we don't have this name, than we have to be sure,
-            /// that this value exists in enum
-            if (it == name_to_value_map.end())
-                return value_to_name_map.count(value.second) > 0;
-
-            /// If we have this name, than it should have the same value
-            return it->value.second == value.second;
-        };
-
-        return std::all_of(rhs_values.begin(), rhs_values.end(), check);
-    }
+    bool containsAll(const TValues & rhs_values) const;
 
     Names getAllRegisteredNames() const override;
 

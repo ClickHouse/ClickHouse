@@ -3,25 +3,62 @@
 #include <stack>
 #include <iostream>
 
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/misc.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
 {
-    extern const int LOGICAL_ERROR;
+    if (filter == nullptr && prewhere == nullptr)
+    {
+        return estimateRelationProfile();
+    }
+    else if (filter == nullptr)
+    {
+        return estimateRelationProfile(metadata, prewhere);
+    }
+    else if (prewhere == nullptr)
+    {
+        return estimateRelationProfile(metadata, filter);
+    }
+    std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(filter, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
+    {
+        return extractAtomFromTree(metadata, node_, out);
+    }).extractRPN();
+    std::vector<RPNElement> prewhere_rpn = RPNBuilder<RPNElement>(prewhere, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
+    {
+        return extractAtomFromTree(metadata, node_, out);
+    }).extractRPN();
+    rpn.insert(rpn.end(), prewhere_rpn.begin(), prewhere_rpn.end());
+    RPNElement last_rpn;
+    last_rpn.function = RPNElement::FUNCTION_AND;
+    rpn.push_back(last_rpn);
+    return estimateRelationProfileImpl(rpn);
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const RPNBuilderTreeNode & node) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const
 {
     std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(node, [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
-        return extractAtomFromTree(node_, out);
+        return extractAtomFromTree(metadata, node_, out);
     }).extractRPN();
+    return estimateRelationProfileImpl(rpn);
+}
 
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn) const
+{
     /// walk through the tree and calculate selectivity for every rpn node.
     std::stack<RPNElement *> rpn_stack;
     for (auto & element : rpn)
@@ -90,16 +127,48 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const RPN
     auto* final_element = rpn_stack.top();
     final_element->finalize(column_estimators);
     RelationProfile result;
-    result.rows = final_element->selectivity * total_rows;
+    Float64 final_rows = final_element->selectivity * static_cast<Float64>(total_rows);
+    final_rows = std::max<Float64>(final_rows, 0);
+    result.rows = static_cast<UInt64>(final_rows);
     for (const auto & [column_name, estimator] : column_estimators)
     {
-        Float64 cardinality = std::min(result.rows, estimator.estimateCardinality());
-        result.column_profile.emplace(column_name, cardinality);
+        UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
+        result.column_stats.emplace(column_name, cardinality);
     }
     return result;
 }
 
-bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
+{
+    RelationProfile result;
+    result.rows = total_rows;
+    for (const auto & [column_name, estimator] : column_estimators)
+    {
+        result.column_stats.emplace(column_name, estimator.estimateCardinality());
+    }
+    return result;
+}
+
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
+{
+    RPNBuilderTreeContext tree_context(getContext());
+    return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, tree_context));
+}
+
+bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & data_parts) const
+{
+    if (data_parts.size() != parts_names.size())
+        return true;
+    size_t idx = 0;
+    for (const auto & data_part : data_parts)
+    {
+        if (parts_names[idx++] != data_part->name)
+            return true;
+    }
+    return false;
+}
+
+bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     const auto * node_dag = node.getDAGNode();
     if (node_dag && node_dag->result_type->equals(DataTypeNullable(std::make_shared<DataTypeNothing>())))
@@ -112,6 +181,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode
     Field const_value;
     DataTypePtr const_type;
     String column_name;
+    DataTypePtr column_type;
 
     if (node.isFunction())
     {
@@ -124,7 +194,37 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode
 
         if (num_args == 2)
         {
-            if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
+            const bool is_in_operator = functionIsInOperator(func_name);
+
+            /// If the second argument is built from `ASTNode`, it should fall into next branch, which directly
+            /// extracts constant value from `ASTLiteral`. Otherwise we try to build `Set` from `ActionsDAG::Node`,
+            /// and extract constant value from it.
+            if (is_in_operator && !func.getArgumentAt(1).getASTNode())
+            {
+                const auto & rhs = func.getArgumentAt(1);
+                if (!rhs.isConstant())
+                    return false;
+
+                auto future_set = rhs.tryGetPreparedSet();
+                if (!future_set)
+                    return false;
+
+                auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+                if (!prepared_set || !prepared_set->hasExplicitSetElements())
+                    return false;
+
+                Columns columns = prepared_set->getSetElements();
+                if (columns.size() != 1)
+                    return false;
+
+                Tuple tuple(columns[0]->size());
+                for (size_t i = 0; i < columns[0]->size(); ++i)
+                    tuple[i] = (*columns[0])[i];
+
+                const_value = std::move(tuple);
+                column_name = func.getArgumentAt(0).getColumnName();
+            }
+            else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
             {
                 if (const_value.isNull())
                 {
@@ -140,6 +240,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode
                     out.function = RPNElement::ALWAYS_FALSE;
                     return true;
                 }
+
                 column_name = func.getArgumentAt(1).getColumnName();
                 if (func_name == "less")
                     func_name = "greater";
@@ -152,6 +253,48 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode
             }
             else
                 return false;
+
+            if (metadata)
+            {
+                const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
+                if (column_desc)
+                    column_type = removeLowCardinalityAndNullable(column_desc->type);
+            }
+            /// In some cases we need to cast the type of const
+            bool cast_not_needed = !column_type || !const_type ||
+                ((isNativeInteger(column_type) || isDateTime(column_type))
+                && (isNativeInteger(const_type) || isDateTime(const_type)));
+
+            if (!cast_not_needed && !column_type->equals(*const_type))
+            {
+                if (const_value.getType() == Field::Types::String)
+                {
+                    const_value = convertFieldToType(const_value, *column_type);
+                    if (const_value.isNull())
+                        return false;
+                }
+                else
+                {
+                    DataTypePtr common_type = tryGetLeastSupertype(DataTypes{column_type, const_type});
+                    if (!common_type)
+                        return false;
+
+                    if (!const_type->equals(*common_type))
+                    {
+                        // Replace direct call that throws exception with try version
+                        Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                        if (converted.isNull())
+                            return false;
+
+                        const_value = converted;
+                    }
+                    if (!column_type->equals(*common_type))
+                    {
+                        /// we assume that is "cast(column) < const", will not estimate this condition.
+                        return false;
+                    }
+                }
+            }
             const auto atom_it = atom_map.find(func_name);
             atom_it->second(out, column_name, const_value);
             return true;
@@ -160,27 +303,40 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode
     return false;
 }
 
-void ConditionSelectivityEstimator::incrementRowCount(UInt64 rows)
+ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(ContextPtr context_)
+    : estimator(std::make_shared<ConditionSelectivityEstimator>(context_))
 {
-    total_rows += rows;
 }
 
-void ConditionSelectivityEstimator::addStatistics(ColumnStatisticsPtr column_stat)
+void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
 {
-    if (column_stat != nullptr)
-        column_estimators[column_stat->columnName()].addStatistics(column_stat);
+    estimator->total_rows += rows;
 }
 
-void ConditionSelectivityEstimator::ColumnEstimator::addStatistics(ColumnStatisticsPtr other_stats)
+void ConditionSelectivityEstimatorBuilder::markDataPart(const DataPartPtr & data_part)
 {
-    /// if (part_statistics.contains(part_name))
-    ///     throw Exception(ErrorCodes::LOGICAL_ERROR, "part {} has been added in column {}", part_name, stats->columnName());
-    if (stats == nullptr)
+    estimator->parts_names.push_back(data_part->name);
+    estimator->total_rows += data_part->rows_count;
+}
+
+void ConditionSelectivityEstimatorBuilder::addStatistics(ColumnStatisticsPtr column_stats)
+{
+    if (column_stats != nullptr)
     {
-        stats = other_stats;
-        return;
+        has_data = true;
+        auto & column_estimator = estimator->column_estimators[column_stats->getColumnName()];
+        if (column_estimator.stats == nullptr)
+            column_estimator.stats = column_stats;
+        else
+            column_estimator.stats->merge(column_stats);
     }
-    stats->merge(other_stats);
+}
+
+ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
+{
+    if (!has_data)
+        return nullptr;
+    return estimator;
 }
 
 Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const PlainRanges & ranges) const
@@ -190,10 +346,15 @@ Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const Pla
     {
         result += stats->estimateRange(range);
     }
-    return result / stats->rowCount();
+    /// In case that there is an empty statistics.
+    if (stats->rowCount() == 0)
+        return 0;
+    Float64 selectivity = result / static_cast<Float64>(stats->rowCount());
+    selectivity = std::max<Float64>(selectivity, 0);
+    return selectivity;
 }
 
-Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const
+UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const
 {
     return stats->estimateCardinality();
 }
@@ -279,7 +440,7 @@ const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom
 /// merge CNF or DNF
 bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & lhs, RPNElement & rhs)
 {
-    auto canMergeWith = [](const RPNElement & e, Function function_to_merge)
+    auto can_merge_with = [](const RPNElement & e, Function function_to_merge)
     {
         return (e.function == FUNCTION_IN_RANGE
                 /// if the sub-clause is also cnf/dnf, it's good to merge
@@ -313,7 +474,7 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
                 result_ranges.emplace(column_name, ranges);
         }
     };
-    if (canMergeWith(lhs, function) && canMergeWith(rhs, function))
+    if (can_merge_with(lhs, function) && can_merge_with(rhs, function))
     {
         merge_column_ranges(column_ranges, lhs.column_ranges, rhs.column_ranges, false);
         merge_column_ranges(column_not_ranges, lhs.column_not_ranges, rhs.column_not_ranges, true);
@@ -327,57 +488,63 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
 {
     if (finalized)
         return;
+
     finalized = true;
+
     if (function == FUNCTION_UNKNOWN)
     {
         selectivity = default_unknown_cond_factor;
         return;
     }
-    auto estimateUnknownRanges = [&](const PlainRanges & ranges)
+
+    auto estimate_unknown_ranges = [&](const PlainRanges & ranges)
     {
         Float64 equal_selectivity = 0;
         for (const Range & range : ranges.ranges)
         {
             if (range.isInfinite())
                 return 1.0;
+
             if (range.left == range.right)
                 equal_selectivity += default_cond_equal_factor;
             else
                 return default_cond_range_factor;
         }
-        return equal_selectivity;
+        return std::min(equal_selectivity, 1.0);
     };
+
     std::vector<Float64> estimate_results;
     for (const auto & [column_name, ranges] : column_ranges)
     {
         auto it = column_estimators_.find(column_name);
         if (it == column_estimators_.end())
         {
-            estimate_results.emplace_back(estimateUnknownRanges(ranges));
+            estimate_results.emplace_back(estimate_unknown_ranges(ranges));
         }
         else
             estimate_results.emplace_back(it->second.estimateRanges(ranges));
     }
+
     for (const auto & [column_name, ranges] : column_not_ranges)
     {
         auto it = column_estimators_.find(column_name);
         if (it == column_estimators_.end())
         {
-            estimate_results.emplace_back(1-estimateUnknownRanges(ranges));
+            estimate_results.emplace_back(1 - estimate_unknown_ranges(ranges));
         }
         else
-            estimate_results.emplace_back(1.0-it->second.estimateRanges(ranges));
+            estimate_results.emplace_back(1.0 - it->second.estimateRanges(ranges));
     }
+
     selectivity = 1.0;
     for (const auto & estimate_result : estimate_results)
     {
         if (function == FUNCTION_OR)
-            selectivity *= 1-estimate_result;
+            selectivity *= 1 - estimate_result;
         else
             selectivity *= estimate_result;
     }
     if (function == FUNCTION_OR)
-        selectivity = 1-selectivity;
+        selectivity = 1 - selectivity;
 }
-
 }

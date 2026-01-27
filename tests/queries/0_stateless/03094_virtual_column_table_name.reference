@@ -80,4 +80,11 @@ d8	6	60
 SELECT _table, * FROM m5 WHERE _table = 'd8' ORDER BY key ASC;
 d8	5	50
 d8	6	60
+SELECT _table, * FROM temp1 ORDER BY key ASC;
+temp1	1
+SELECT _table, * FROM temp2 ORDER BY key ASC;
+temp2	2
+SELECT *,_table FROM (SELECT *, _table FROM temp1 UNION ALL SELECT *, _table FROM temp2) ORDER BY key ASC;
+1	temp1	temp1
+2	temp2	temp2
 SELECT * FROM d1 PREWHERE _table = 'd1'; -- { serverError ILLEGAL_PREWHERE }

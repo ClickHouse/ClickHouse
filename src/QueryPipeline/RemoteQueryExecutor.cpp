@@ -408,6 +408,9 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
 
+    if (extension)
+        modified_client_info.collaborate_with_initiator = true;
+
     if (!duplicated_part_uuids.empty())
         connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
 
@@ -422,7 +425,8 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
             const auto & access_control = context->getAccessControl();
             for (const auto & e : user->granted_roles.getElements())
             {
-                auto names = access_control.readNames(e.ids);
+                // `tryReadNames` instead of `readNames` because the original user might have a dropped role.
+                auto names = access_control.tryReadNames(e.ids);
                 granted_roles.insert(names.begin(), names.end());
             }
         }
@@ -783,6 +787,9 @@ void RemoteQueryExecutor::finish()
       */
     if (!isQueryPending() || hasThrownException())
         return;
+
+    /// To make sure finish is only called once
+    SCOPE_EXIT({ finished = true; });
 
     /** If you have not read all the data yet, but they are no longer needed.
       * This may be due to the fact that the data is sufficient (for example, when using LIMIT).

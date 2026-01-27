@@ -1,4 +1,4 @@
-// Copyright 2021-2024 The OpenSSL Project Authors. All Rights Reserved.
+// Copyright 2021-2025 The OpenSSL Project Authors. All Rights Reserved.
 //
 // Licensed under the OpenSSL license (the "License").  You may not use
 // this file except in compliance with the License.  You can obtain a copy
@@ -44,7 +44,8 @@
 //   other SIMD registers corrupted
 _bsaes_decrypt8:
 	ldr	q8, [x9], #16
-	adr	x11, .LM0ISR
+	adrp	x11, .LM0ISR
+	add	x11, x11, #:lo12:.LM0ISR
 	movi	v9.16b, #0x55
 	ldr	q10, [x11], #16
 	movi	v16.16b, #0x33
@@ -460,9 +461,10 @@ _bsaes_decrypt8:
 	ret
 .size	_bsaes_decrypt8,.-_bsaes_decrypt8
 
-.type	_bsaes_const,%object
+.section	.rodata
+.type	_bsaes_consts,%object
 .align	6
-_bsaes_const:
+_bsaes_consts:
 // InvShiftRows constants
 // Used in _bsaes_decrypt8, which assumes contiguity
 // .LM0ISR used with round 0 key
@@ -498,7 +500,9 @@ _bsaes_const:
 .quad	0x090d01050c000408, 0x03070b0f060a0e02
 
 .align	6
-.size	_bsaes_const,.-_bsaes_const
+.size	_bsaes_consts,.-_bsaes_consts
+
+.previous
 
 .type	_bsaes_encrypt8,%function
 .align	4
@@ -514,7 +518,8 @@ _bsaes_const:
 //   other SIMD registers corrupted
 _bsaes_encrypt8:
 	ldr	q8, [x9], #16
-	adr	x11, .LM0SR
+	adrp	x11, .LM0SR
+	add	x11, x11, #:lo12:.LM0SR
 	ldr	q9, [x11], #16
 _bsaes_encrypt8_alt:
 	eor	v0.16b, v0.16b, v8.16b
@@ -918,9 +923,11 @@ _bsaes_encrypt8_alt:
 //   other SIMD registers corrupted
 _bsaes_key_convert:
 #ifdef __AARCH64EL__
-	adr	x11, .LM0_littleendian
+	adrp	x11, .LM0_littleendian
+	add	x11, x11, #:lo12:.LM0_littleendian
 #else
-	adr	x11, .LM0_bigendian
+	adrp	x11, .LM0_bigendian
+	add	x11, x11, #:lo12:.LM0_bigendian
 #endif
 	ldr	q0, [x9], #16               // load round 0 key
 	ldr	q1, [x11]                   // .LM0
@@ -964,7 +971,8 @@ _bsaes_key_convert:
         // don't save last round key
 #ifdef __AARCH64EL__
 	rev32	v15.16b, v15.16b
-	adr	x11, .LM0_bigendian
+	adrp	x11, .LM0_bigendian
+	add	x11, x11, #:lo12:.LM0_bigendian
 #endif
 	ret
 .size	_bsaes_key_convert,.-_bsaes_key_convert

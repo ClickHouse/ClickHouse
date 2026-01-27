@@ -5,10 +5,18 @@
 
 #include <filesystem>
 
+#include <Common/FailPoint.h>
+
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace DB::FailPoints
+{
+    extern const char database_iceberg_gcs[];
 }
 
 namespace DataLake
@@ -19,13 +27,6 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
     /// Table location in catalog metadata always starts with one of s3://, file://, etc.
     /// So just extract this part of the path and deduce storage type from it.
 
-    auto capitalize_first_letter = [] (const std::string & s)
-    {
-        auto result = Poco::toLower(s);
-        result[0] = std::toupper(result[0]);
-        return result;
-    };
-
     auto pos = location.find("://");
     if (pos == std::string::npos)
     {
@@ -34,12 +35,38 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
             "Unexpected path format: {}", location);
     }
 
-    auto storage_type_str = location.substr(0, pos);
+    return parseStorageTypeFromString(location.substr(0, pos));
+}
+
+StorageType parseStorageTypeFromString(const std::string & type)
+{
+    auto capitalize_first_letter = [] (const std::string & s)
+    {
+        auto result = Poco::toLower(s);
+        if (!result.empty())
+            result[0] = static_cast<char>(std::toupper(result[0]));
+        return result;
+    };
+
+    std::string storage_type_str = type;
+    auto pos = storage_type_str.find("://");
+    if (pos != std::string::npos)
+    {
+        // convert s3://, file://, etc. to s3, file etc.
+        storage_type_str = storage_type_str.substr(0,pos);
+    }
     if (capitalize_first_letter(storage_type_str) == "File")
         storage_type_str = "Local";
-
-    if (capitalize_first_letter(storage_type_str) == "S3a")
+    else if (capitalize_first_letter(storage_type_str) == "S3a" || storage_type_str == "oss" || storage_type_str == "gs")
+    {
+        fiu_do_on(DB::FailPoints::database_iceberg_gcs,
+        {
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Google cloud storage converts to S3");
+        });
         storage_type_str = "S3";
+    }
+    else if (storage_type_str == "abfss") /// Azure Blob File System Secure
+        storage_type_str = "Azure";
 
     auto storage_type = magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
 
@@ -62,10 +89,15 @@ void TableMetadata::setLocation(const std::string & location_)
     /// s3://<bucket>/path/to/table/data.
     /// We want to split s3://<bucket> and path/to/table/data.
 
+    /// For Azure ABFSS: abfss://<container>@<account>.dfs.core.windows.net/path/to/table/data
+    /// We want to split the bucket/container and path.
+
     auto pos = location_.find("://");
     if (pos == std::string::npos)
         throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
 
+    // pos+3 to account for ://
+    storage_type_str = location_.substr(0, pos+3);
     auto pos_to_bucket = pos + std::strlen("://");
     auto pos_to_path = location_.substr(pos_to_bucket).find('/');
 
@@ -76,11 +108,28 @@ void TableMetadata::setLocation(const std::string & location_)
 
     location_without_path = location_.substr(0, pos_to_path);
     path = location_.substr(pos_to_path + 1);
-    bucket = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
 
-    LOG_TEST(getLogger("TableMetadata"),
-             "Parsed location without path: {}, path: {}",
-             location_without_path, path);
+    /// For Azure ABFSS format: abfss://container@account.dfs.core.windows.net/path
+    /// The bucket (container) is the part before '@', not the whole string before '/'
+    String bucket_part = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
+    auto at_pos = bucket_part.find('@');
+    if (at_pos != std::string::npos)
+    {
+        /// Azure ABFSS format: extract container (before @) and account (after @)
+        bucket = bucket_part.substr(0, at_pos);
+        azure_account_with_suffix = bucket_part.substr(at_pos + 1);
+        LOG_TEST(getLogger("TableMetadata"),
+                 "Parsed Azure location - container: {}, account: {}, path: {}",
+                 bucket, azure_account_with_suffix, path);
+    }
+    else
+    {
+        /// Standard format (S3, GCS, etc.)
+        bucket = bucket_part;
+        LOG_TEST(getLogger("TableMetadata"),
+                 "Parsed location without path: {}, path: {}",
+                 location_without_path, path);
+    }
 }
 
 std::string TableMetadata::getLocation() const
@@ -111,10 +160,21 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_) cons
     if (location.ends_with('/'))
         location.pop_back();
 
+    /// For Azure storage, the endpoint format is: https://<account>.dfs.core.windows.net
+    /// We need to construct: https://<account>.dfs.core.windows.net/<container>/<path>
+    /// The bucket variable contains the container name for Azure.
+    if (!azure_account_with_suffix.empty())
+    {
+        /// Azure storage - endpoint should be https://<account>.dfs.core.windows.net
+        /// Construct the full URL with container and path
+        if (location.ends_with(bucket))
+            return std::filesystem::path(location) / path / "";
+        return std::filesystem::path(location) / bucket / path / "";
+    }
+
     if (location.ends_with(bucket))
         return std::filesystem::path(location) / path / "";
-    else
-        return std::filesystem::path(location) / bucket / path / "";
+    return std::filesystem::path(location) / bucket / path / "";
 }
 
 void TableMetadata::setEndpoint(const std::string & endpoint_)
@@ -166,6 +226,10 @@ std::optional<DataLakeSpecificProperties> TableMetadata::getDataLakeSpecificProp
 
 StorageType TableMetadata::getStorageType() const
 {
+    if (!storage_type_str.empty())
+    {
+        return parseStorageTypeFromString(storage_type_str);
+    }
     return parseStorageTypeFromLocation(location_without_path);
 }
 
@@ -180,6 +244,30 @@ bool TableMetadata::hasSchema() const
 bool TableMetadata::hasStorageCredentials() const
 {
     return storage_credentials != nullptr;
+}
+
+std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metadata_file_location) const
+{
+    std::string metadata_location = iceberg_metadata_file_location;
+    if (!metadata_location.empty())
+    {
+        std::string data_location = getLocation();
+
+        // Use the actual storage type prefix (e.g., s3://, file://, etc.)
+        if (metadata_location.starts_with(storage_type_str))
+            metadata_location = metadata_location.substr(storage_type_str.size());
+        if (data_location.starts_with(storage_type_str))
+            data_location = data_location.substr(storage_type_str.size());
+        else if (!endpoint.empty() && data_location.starts_with(endpoint))
+            data_location = data_location.substr(endpoint.size());
+
+        if (metadata_location.starts_with(data_location))
+        {
+            size_t remove_slash = metadata_location[data_location.size()] == '/' ? 1 : 0;
+            metadata_location = metadata_location.substr(data_location.size() + remove_slash);
+        }
+    }
+    return metadata_location;
 }
 
 DB::SettingsChanges CatalogSettings::allChanged() const
@@ -201,6 +289,11 @@ void ICatalog::createTable(const String & /*namespace_name*/, const String & /*t
 bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
+}
+
+void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");
 }
 
 }

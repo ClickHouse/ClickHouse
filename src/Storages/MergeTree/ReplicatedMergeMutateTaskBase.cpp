@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/setThreadName.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 
@@ -143,7 +144,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_mutate_entry)
-        switcher.emplace((*merge_mutate_entry)->thread_group, "", /*allow_existing_group*/ true);
+        switcher.emplace((*merge_mutate_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     auto remove_processed_entry = [&] () -> bool
     {
@@ -293,7 +294,7 @@ void ReplicatedMergeMutateTaskBase::maybeSleepBeforeZeroCopyLock(uint64_t estima
 
         if (log_scale)
         {
-            double start_to_sleep_seconds = std::logf(min_parts_size_sleep);
+            double start_to_sleep_seconds = std::logf(static_cast<float>(min_parts_size_sleep));
             right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_result) - start_to_sleep_seconds + 0.5) * 1000);
         }
 

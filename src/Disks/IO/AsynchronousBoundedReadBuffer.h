@@ -50,6 +50,15 @@ public:
 
     off_t getPosition() override { return file_offset_of_buffer_end - available() + bytes_to_ignore; }
 
+    /// Used only for unit test.
+    const ImplPtr & getImpl() { return impl; }
+
+    /// NOTE: readBigAt() here doesn't use async logic of AsynchronousBoundedReadBuffer and just calls impl's (when supported),
+    /// this is possible because readBigAt is asynchronous on its own
+    bool supportsReadAt() override { return impl->supportsReadAt(); }
+
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
+
 private:
     const ImplPtr impl;
     const ReadSettings read_settings;

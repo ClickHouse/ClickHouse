@@ -2,6 +2,8 @@
 -- no-shared-catalog: STOP MERGES will only stop them on the current replica, the second one will continue to merge
 -- no-parallel-replicas: the result of EXPLAIN differs with parallel replicas
 
+SET use_query_condition_cache = 0;
+
 DROP TABLE IF EXISTS t_lightweight_mut_3;
 
 SET mutations_sync = 0;
