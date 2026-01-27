@@ -9,7 +9,7 @@ class ASTJSONPathStar : public IAST
 public:
     String getID(char) const override { return "ASTJSONPathStar"; }
 
-    ASTPtr clone() const override { return std::make_shared<ASTJSONPathStar>(*this); }
+    ASTPtr clone() const override { return make_intrusive<ASTJSONPathStar>(*this); }
 };
 
 }

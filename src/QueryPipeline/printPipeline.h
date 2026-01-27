@@ -42,9 +42,9 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
 
         if (with_profile)
         {
-            out << "\\nExecution time: " << processor->getElapsedNs()/1000.0 << " us"
-                << "\\nInput wait time: " << processor->getInputWaitElapsedNs()/1000.0 << " us"
-                << "\\nOutput wait time: " << processor->getOutputWaitElapsedNs()/1000.0 << " us"
+            out << "\\nExecution time: " << static_cast<double>(processor->getElapsedNs()) / 1000.0 << " us"
+                << "\\nInput wait time: " << static_cast<double>(processor->getInputWaitElapsedNs()) / 1000.0 << " us"
+                << "\\nOutput wait time: " << static_cast<double>(processor->getOutputWaitElapsedNs()) / 1000.0 << " us"
                 << "\\nInput rows: " << processor->getProcessorDataStats().input_rows
                 << "\\nInput bytes: " << processor->getProcessorDataStats().input_bytes
                 << "\\nOutput rows: " << processor->getProcessorDataStats().output_rows

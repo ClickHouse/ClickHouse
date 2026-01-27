@@ -20,7 +20,7 @@ rnd=`tr -dc 1-9 </dev/urandom | head -c 5` # disambiguates the specific query in
 # echo $rnd
 
 # Start with empty query cache (QC).
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS admin"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER admin"
@@ -51,7 +51,7 @@ ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT ProfileEvents['QueryCacheHit
 
 # Cleanup
 ${CLICKHOUSE_CLIENT} --query "DROP USER admin"
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
 
 # -- Attack 2: (scenario from issue #58054)
 #    - create a user,
@@ -61,7 +61,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY CACHE"
 echo "Attack 2"
 
 # Start with empty query cache (QC).
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS admin"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER admin"
@@ -107,4 +107,4 @@ ${CLICKHOUSE_CLIENT} --user "admin" --query "DROP ROLE user_role_1"
 ${CLICKHOUSE_CLIENT} --user "admin" --query "DROP ROLE user_role_2"
 ${CLICKHOUSE_CLIENT} --user "admin" --query "DROP TABLE user_data"
 ${CLICKHOUSE_CLIENT} --query "DROP USER admin"
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"

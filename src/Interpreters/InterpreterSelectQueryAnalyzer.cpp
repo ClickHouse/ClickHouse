@@ -61,7 +61,7 @@ ASTPtr createIdentifierFromColumnName(const String & column_name)
     Expected expected;
     ParserCompoundIdentifier().parse(pos, res, expected);
     if (!res || getIdentifierName(res) != column_name)
-        return std::make_shared<ASTIdentifier>(column_name);
+        return make_intrusive<ASTIdentifier>(column_name);
     return res;
 }
 
@@ -82,22 +82,22 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_name
         return result_query;
 
     /// The initial query the VIEW references to is wrapped here with another SELECT query to allow reading only necessary columns.
-    auto select_query = std::make_shared<ASTSelectQuery>();
+    auto select_query = make_intrusive<ASTSelectQuery>();
 
-    auto result_table_expression_ast = std::make_shared<ASTTableExpression>();
-    result_table_expression_ast->children.push_back(std::make_shared<ASTSubquery>(std::move(result_query)));
+    auto result_table_expression_ast = make_intrusive<ASTTableExpression>();
+    result_table_expression_ast->children.push_back(make_intrusive<ASTSubquery>(std::move(result_query)));
     result_table_expression_ast->subquery = result_table_expression_ast->children.back();
 
-    auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
+    auto tables_in_select_query_element_ast = make_intrusive<ASTTablesInSelectQueryElement>();
     tables_in_select_query_element_ast->children.push_back(std::move(result_table_expression_ast));
     tables_in_select_query_element_ast->table_expression = tables_in_select_query_element_ast->children.back();
 
-    ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
+    ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
     tables_in_select_query_ast->children.push_back(std::move(tables_in_select_query_element_ast));
 
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
 
-    auto projection_expression_list_ast = std::make_shared<ASTExpressionList>();
+    auto projection_expression_list_ast = make_intrusive<ASTExpressionList>();
     projection_expression_list_ast->children.reserve(column_names.size());
 
     for (const auto & column_name : column_names)
