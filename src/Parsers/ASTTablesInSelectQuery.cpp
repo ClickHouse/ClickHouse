@@ -37,6 +37,7 @@ ASTPtr ASTTableExpression::clone() const
     CLONE(subquery);
     CLONE(sample_size);
     CLONE(sample_offset);
+    CLONE(column_aliases);
 
     return res;
 }
@@ -127,6 +128,14 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
     {
         ostr << settings.nl_or_ws << indent_str;
         subquery->format(ostr, settings, state, frame);
+    }
+
+    /// format column aliases (`AS t(a, b)` -> the (a, b) part)
+    if (column_aliases)
+    {
+        ostr << "(";
+        column_aliases->format(ostr, settings, state, frame);
+        ostr << ")";
     }
 
     if (final)

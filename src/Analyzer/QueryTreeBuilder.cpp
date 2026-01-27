@@ -933,6 +933,43 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 node->setAlias(subquery_expression.tryGetAlias());
                 node->setOriginalAST(select_with_union_query);
 
+                /// Apply column aliases from AS alias(col1, col2, ...) syntax
+                if (table_expression.column_aliases)
+                {
+                    const auto & column_aliases_list = table_expression.column_aliases->as<ASTExpressionList &>();
+                    Names column_alias_names;
+                    column_alias_names.reserve(column_aliases_list.children.size());
+                    for (const auto & column_alias : column_aliases_list.children)
+                        column_alias_names.push_back(column_alias->as<ASTIdentifier &>().name());
+
+                    if (auto * query_node = node->as<QueryNode>())
+                    {
+                        query_node->setProjectionAliasesToOverride(std::move(column_alias_names));
+                    }
+                    else if (auto * union_node = node->as<UnionNode>())
+                    {
+                        /// for UNIONs, apply aliases to the first query in the union, projection column names come from the first query (see UnionNode::computeProjectionColumns)
+                        /// we find the first QueryNode in case of nested UNIONs
+                        QueryTreeNodePtr current = union_node->getQueries().getNodes().empty() ? nullptr : union_node->getQueries().getNodes()[0];
+                        while (current)
+                        {
+                            if (auto * inner_query = current->as<QueryNode>())
+                            {
+                                inner_query->setProjectionAliasesToOverride(std::move(column_alias_names));
+                                break;
+                            }
+                            else if (auto * inner_union = current->as<UnionNode>())
+                            {
+                                current = inner_union->getQueries().getNodes().empty() ? nullptr : inner_union->getQueries().getNodes()[0];
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 if (table_expression_modifiers)
                 {
                     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
