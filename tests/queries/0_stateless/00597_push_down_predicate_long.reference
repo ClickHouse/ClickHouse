@@ -245,7 +245,7 @@ FROM
     SELECT *
     FROM test_00597
 ) AS b
-WHERE b.id = 1
+WHERE equals(b.id, 1)
 2000-01-01	1	test string 1	1
 SELECT *
 FROM
@@ -257,7 +257,7 @@ FROM
         FROM test_00597
     ) AS a
 ) AS b
-WHERE b.id = 1
+WHERE equals(b.id, 1)
 2000-01-01	1	test string 1	1
 SELECT *
 FROM
@@ -352,7 +352,7 @@ ANY LEFT JOIN
     SELECT *
     FROM test_00597
 ) AS b USING (id)
-WHERE b.id = 1
+WHERE equals(b.id, 1)
 2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
 ------- enable_analyzer=1 -------
 1	2000-01-01	test string 1	1	2000-01-01	test string 1	1

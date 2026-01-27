@@ -55,8 +55,8 @@ TEST(LikePerfectAffixRewrite, rewrite)
     test_f("col ILIKE 'hello_world%'", "ilike(col, 'hello_world%')");
 
     /// Imperfect affix NOT (I)LIKE should not be rewritten
-    test_f("col NOT LIKE 'hello_world%'", "not(like(col, 'hello_world%'))");
-    test_f("col NOT LIKE '%hello_world'", "not(like(col, '%hello_world'))");
-    test_f("col NOT ILIKE 'hello_world%'", "not(ilike(col, 'hello_world%'))");
-    test_f("col NOT ILIKE '%hello_world'", "not(ilike(col, '%hello_world'))");
+    test_f("col NOT LIKE 'hello_world%'", "notLike(col, 'hello_world%')");
+    test_f("col NOT LIKE '%hello_world'", "notLike(col, '%hello_world')");
+    test_f("col NOT ILIKE 'hello_world%'", "notILike(col, 'hello_world%')");
+    test_f("col NOT ILIKE '%hello_world'", "notILike(col, '%hello_world')");
 }
