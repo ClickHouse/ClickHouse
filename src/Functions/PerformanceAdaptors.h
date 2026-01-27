@@ -237,7 +237,7 @@ public:
         if (considerable)
         {
             // TODO(dakovalkov): Calculate something more informative than rows count.
-            statistics.complete(id, watch.elapsedSeconds(), input_rows_count);
+            statistics.complete(id, watch.elapsedSeconds(), static_cast<double>(input_rows_count));
         }
 
         return res;

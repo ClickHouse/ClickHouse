@@ -127,7 +127,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
     auto* final_element = rpn_stack.top();
     final_element->finalize(column_estimators);
     RelationProfile result;
-    Float64 final_rows = final_element->selectivity * total_rows;
+    Float64 final_rows = final_element->selectivity * static_cast<Float64>(total_rows);
     final_rows = std::max<Float64>(final_rows, 0);
     result.rows = static_cast<UInt64>(final_rows);
     for (const auto & [column_name, estimator] : column_estimators)
@@ -349,7 +349,7 @@ Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const Pla
     /// In case that there is an empty statistics.
     if (stats->rowCount() == 0)
         return 0;
-    Float64 selectivity = result / stats->rowCount();
+    Float64 selectivity = result / static_cast<Float64>(stats->rowCount());
     selectivity = std::max<Float64>(selectivity, 0);
     return selectivity;
 }
@@ -440,7 +440,7 @@ const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom
 /// merge CNF or DNF
 bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & lhs, RPNElement & rhs)
 {
-    auto canMergeWith = [](const RPNElement & e, Function function_to_merge)
+    auto can_merge_with = [](const RPNElement & e, Function function_to_merge)
     {
         return (e.function == FUNCTION_IN_RANGE
                 /// if the sub-clause is also cnf/dnf, it's good to merge
@@ -474,7 +474,7 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
                 result_ranges.emplace(column_name, ranges);
         }
     };
-    if (canMergeWith(lhs, function) && canMergeWith(rhs, function))
+    if (can_merge_with(lhs, function) && can_merge_with(rhs, function))
     {
         merge_column_ranges(column_ranges, lhs.column_ranges, rhs.column_ranges, false);
         merge_column_ranges(column_not_ranges, lhs.column_not_ranges, rhs.column_not_ranges, true);

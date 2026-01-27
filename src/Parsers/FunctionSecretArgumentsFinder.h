@@ -384,8 +384,19 @@ protected:
 
     void findURLSecretArguments()
     {
-        if (!isNamedCollectionName(0))
-            excludeS3OrURLNestedMaps();
+        if (isNamedCollectionName(0))
+            return;
+
+        excludeS3OrURLNestedMaps();
+
+        String uri;
+        if (tryGetStringFromArgument(0, &uri) && maskURIPassword(&uri))
+        {
+            chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
+            result.start = 0;
+            result.count = 1;
+            result.replacement = std::move(uri);
+        }
     }
 
     bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const

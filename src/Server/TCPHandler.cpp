@@ -477,13 +477,13 @@ void TCPHandler::runImpl()
             {
                 const auto elapsed_seconds = idle_time.elapsedSeconds();
 
-                if (elapsed_seconds > idle_connection_timeout)
+                if (elapsed_seconds > static_cast<double>(idle_connection_timeout))
                 {
                     LOG_TRACE(log, "Closing idle connection");
                     return;
                 }
 
-                if (elapsed_seconds > poll_interval && query_count > 0)
+                if (elapsed_seconds > static_cast<double>(poll_interval) && query_count > 0)
                 {
                     LOG_TRACE(log, "Resetting query count for idle connection");
                     query_count = 0;
@@ -557,7 +557,7 @@ void TCPHandler::runImpl()
             /// Fatal error callback can be called at any time, including when we already destroyed TCPHandler object that created the callback.
             /// To avoid accessing invalid memory, we capture all needed fields by value.
             /// If TCPHandler object is already destroyed, we don't need to send logs so we capture shared_ptrs as weak_ptrs.
-            query_scope.emplace(
+            query_scope = CurrentThread::QueryScope::create(
                 query_state->query_context,
                 /* fatal_error_callback */
                 [tcp_protocol_version = this->client_tcp_protocol_version,
@@ -2919,7 +2919,7 @@ bool TCPHandler::connectionLimitReached()
     double elapsed_seconds = connection_timer.elapsedSeconds();
 
     bool max_queries_exceeded = max_queries > 0 && query_count > max_queries;
-    bool max_seconds_exceeded = max_seconds > 0 && elapsed_seconds > max_seconds;
+    bool max_seconds_exceeded = max_seconds > 0 && elapsed_seconds > static_cast<double>(max_seconds);
 
     bool limit_reached = max_queries_exceeded || max_seconds_exceeded;
 

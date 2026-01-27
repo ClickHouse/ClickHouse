@@ -39,6 +39,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.2",
+        {
+
+        });
         addSettingsChanges(settings_changes_history, "26.1",
         {
             {"use_statistics", true, true, "Enable this optimization by default."},
@@ -67,7 +71,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"archive_adaptive_buffer_max_size_bytes", 8 * 1024 * 1024, 8 * 1024 * 1024, "New setting"},
             {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, false, "Add a new setting to allow duplicated paths in JSON type with literal and nested object"},
             {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
-            {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_when_possible", "change the default behavior of deduplicate_insert_select to ENABLE_WHEN_PROSSIBLE"},
+            {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_when_possible", "change the default behavior of deduplicate_insert_select to ENABLE_WHEN_POSSIBLE"},
             {"allow_experimental_qbit_type", false, true, "QBit was moved to Beta"},
             {"enable_qbit_type", false, true, "QBit was moved to Beta. Added an alias for setting 'allow_experimental_qbit_type'."},
             {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
@@ -1031,6 +1035,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.2",
+        {
+                {"add_minmax_index_for_temporal_columns", false, false, "New setting"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {
             {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
