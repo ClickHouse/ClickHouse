@@ -367,7 +367,10 @@ def wait_until_connected(
                 pass
             finally:
                 if zk_cli:
-                    zk_cli.stop(5)
+                    try:
+                        zk_cli.stop()
+                    except Exception:
+                        pass
                     zk_cli.close()
 
 
