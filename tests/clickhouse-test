@@ -70,6 +70,7 @@ MESSAGES_TO_RETRY = [
     # Next two can be caused by a flaky tmp FS; normally fine upon retry; details at #93451
     "No such file or directory",
     "Permission denied",
+    "Net Exception: Connection reset by peer",
 ]
 
 IGNORED_SANITIZER_ERRORS = [
@@ -99,7 +100,7 @@ CGROUP_VERSION = detect_cgroup_version()
 
 
 class SharedEngineReplacer:
-    SPECIALIZED_ENGINES = "Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating"
+    SPECIALIZED_ENGINES = "Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating|Coalescing"
     ENGINES_NON_REPLICATED_REGEXP = (
         rf"(?i)ENGINE[ =]{{0,5}}(({SPECIALIZED_ENGINES}|)MergeTree\(?\)?)"
     )
@@ -113,6 +114,7 @@ class SharedEngineReplacer:
         ("ReplicatedSummingMergeTree", "SharedSummingMergeTree"),
         ("ReplicatedReplacingMergeTree", "SharedReplacingMergeTree"),
         ("ReplicatedAggregatingMergeTree", "SharedAggregatingMergeTree"),
+        ("ReplicatedCoalescingMergeTree", "SharedCoalescingMergeTree"),
     ]
     NEW_SYNTAX_REPLICATED_MERGE_TREE_RE = (
         r"Replicated[a-zA-Z]*MergeTree\((\\?'.*\\?')?,?(\\?'.*\\?')?[a-zA-Z, _}{]*\)"
@@ -141,9 +143,9 @@ class SharedEngineReplacer:
     DISKS_MAP = {
         "s3_disk": "s3disk",
         "s3_plain_disk": "s3diskForSampleData",
-        "s3_cache": "s3diskWithCache",
+        "s3_cache": "s3WithKeeperDiskWithCache",
         "local_disk": "default",
-        "s3_no_cache": "s3_with_keeper",
+        "s3_no_cache": "s3WithKeeperDisk",
     }
 
     REGEX_REPLACE = {
@@ -216,7 +218,7 @@ class SharedEngineReplacer:
             else:
                 engine_path = f"('{shared_path}', '1')"
 
-            if add_path and not self.cloud:
+            if add_path:
                 shared_engine += engine_path
 
             return line.replace(non_replicated_engine, shared_engine)
@@ -338,7 +340,10 @@ class SharedEngineReplacer:
                     self.replace_non_replicated = True
 
                 if self.args.replace_log_memory_with_mergetree:
-                    line = self._replace_data_engines(line, replace_engine="MergeTree")
+                    line = self._replace_data_engines(
+                        line,
+                        replace_engine="SharedMergeTree" if self.cloud else "MergeTree",
+                    )
 
                 if (
                     self._is_select_line(line)
@@ -360,10 +365,9 @@ class SharedEngineReplacer:
                             line = line.replace(engine_from, engine_to)
                             break
 
-                if self.replace_non_replicated:
-                    line = self._replace_non_replicated(
-                        line, reference_file, use_random_path
-                    )
+                if args.shared_catalog_stress:
+                    line = self._replace_data_engines(line)
+                    line = self._replace_database_engines(line)
 
                 # Remove parameters (zk path and replica name) from SMT tables
                 # because they are not supported in cloud
@@ -382,6 +386,11 @@ class SharedEngineReplacer:
 
                     for pattern, replacement in self.REGEX_REPLACE.items():
                         line = re.sub(pattern, replacement, line)
+
+                if self.replace_non_replicated:
+                    line = self._replace_non_replicated(
+                        line, reference_file, use_random_path, add_path=not self.cloud
+                    )
 
                 modified.write(line)
 
@@ -685,12 +694,17 @@ def stop_tests():
 
 
 def get_db_engine(args, database_name):
+    if args.cloud or args.shared_catalog_stress:
+        # use default database: shared catalog / replicated
+        return ""
     if args.replicated_database:
         return f" ON CLUSTER test_cluster_database_replicated \
             ENGINE=Replicated('/test/clickhouse/db/{database_name}', \
             '{{shard}}', '{{replica}}')"
     if args.db_engine:
         return " ENGINE=" + args.db_engine
+    if args.shared_catalog:
+        return " ENGINE=Shared"
     return ""  # Will use default engine
 
 
@@ -712,6 +726,16 @@ def get_zookeeper_session_uptime(args):
                     """
             SELECT min(materialize(zookeeperSessionUptime()))
             FROM clusterAllReplicas('test_cluster_database_replicated', system.one)
+            """,
+                )
+            )
+        if args.shared_catalog:
+            return int(
+                clickhouse_execute(
+                    args,
+                    """
+            SELECT min(materialize(zookeeperSessionUptime()))
+            FROM clusterAllReplicas('test_cluster_shared_catalog', system.one)
             """,
                 )
             )
@@ -748,6 +772,18 @@ def get_processlist_size(args):
                 """,
             ).strip()
         )
+    if args.shared_catalog:
+        return int(
+            clickhouse_execute(
+                args,
+                """
+                SELECT
+                    count()
+                FROM clusterAllReplicas('test_cluster_shared_catalog', system.processes)
+                WHERE query NOT LIKE '%system.processes%'
+                """,
+            ).strip()
+        )
     return int(
         clickhouse_execute(
             args,
@@ -756,7 +792,7 @@ def get_processlist_size(args):
                     count()
                 FROM system.processes
                 WHERE query NOT LIKE '%system.processes%'
-                """,
+            """,
         ).strip()
     )
 
@@ -769,6 +805,31 @@ def get_processlist_with_stacktraces(args):
         SELECT materialize(hostName() || '::' || tcpPort()::String) as host_port, *
         -- NOTE: view() here to do JOIN on shards, instead of initiator
         FROM clusterAllReplicas('test_cluster_database_replicated', view(
+            SELECT
+                p.*,
+                arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
+                    x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
+                    s.trace), '\n') AS stacktrace
+                )) AS stacktraces
+            FROM system.processes p
+            JOIN system.stack_trace s USING (query_id)
+            WHERE query NOT LIKE '%system.processes%'
+            GROUP BY p.*
+        ))
+        ORDER BY elapsed DESC FORMAT Vertical
+        """,
+            settings={
+                "allow_introspection_functions": 1,
+            },
+            timeout=120,
+        )
+    if args.shared_catalog:
+        return clickhouse_execute(
+            args,
+            """
+        SELECT materialize(hostName() || '::' || tcpPort()::String) as host_port, *
+        -- NOTE: view() here to do JOIN on shards, instead of initiator
+        FROM clusterAllReplicas('test_cluster_shared_catalog', view(
             SELECT
                 p.*,
                 arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
@@ -817,6 +878,12 @@ def get_transactions_list(args):
                 "SELECT materialize((hostName(), tcpPort())) as host, * FROM "
                 "clusterAllReplicas('test_cluster_database_replicated', system.transactions)",
             )
+        if args.shared_catalog:
+            return clickhouse_execute_json(
+                args,
+                "SELECT materialize((hostName(), tcpPort())) as host, * FROM "
+                "clusterAllReplicas('test_cluster_shared_catalog', system.transactions)",
+            )
         return clickhouse_execute_json(args, "select * from system.transactions")
     except Exception as e:
         return f"Cannot get list of transactions: {e}"
@@ -841,27 +908,41 @@ def get_stacktraces_from_clickhouse(args):
             "--skip_unavailable_shards=1",
         ]
     )
-    replicated_msg = (
-        f"{args.client} {settings_str} --query "
-        '"SELECT materialize((hostName(), tcpPort())) as host, thread_name, thread_id, query_id, trace, '
-        "arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
-        "arrayMap(x -> addressToLine(x), trace), "
-        "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
-        "FROM clusterAllReplicas('test_cluster_database_replicated', 'system.stack_trace') "
-        'ORDER BY host, thread_id FORMAT Vertical"'
-    )
 
-    msg = (
-        f"{args.client} {settings_str} --query "
-        "\"SELECT thread_name, thread_id, query_id, trace, arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
-        "arrayMap(x -> addressToLine(x), trace), "
-        "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
-        'FROM system.stack_trace FORMAT Vertical"'
-    )
+    msg = ""
+
+    if args.replicated_database:
+        msg = (
+            f"{args.client} {settings_str} --query "
+            '"SELECT materialize((hostName(), tcpPort())) as host, thread_name, thread_id, query_id, trace, '
+            "arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
+            "arrayMap(x -> addressToLine(x), trace), "
+            "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
+            "FROM clusterAllReplicas('test_cluster_database_replicated', 'system.stack_trace') "
+            'ORDER BY host, thread_id FORMAT Vertical"'
+        )
+    elif args.shared_catalog:
+        msg = (
+            f"{args.client} {settings_str} --query "
+            '"SELECT materialize((hostName(), tcpPort())) as host, thread_name, thread_id, query_id, trace, '
+            "arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
+            "arrayMap(x -> addressToLine(x), trace), "
+            "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
+            "FROM clusterAllReplicas('test_cluster_shared_catalog', 'system.stack_trace') "
+            'ORDER BY host, thread_id FORMAT Vertical"'
+        )
+    else:
+        msg = (
+            f"{args.client} {settings_str} --query "
+            "\"SELECT thread_name, thread_id, query_id, trace, arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
+            "arrayMap(x -> addressToLine(x), trace), "
+            "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
+            'FROM system.stack_trace FORMAT Vertical"'
+        )
 
     try:
         return subprocess.check_output(
-            replicated_msg if args.replicated_database else msg,
+            msg,
             shell=True,
             stderr=subprocess.STDOUT,
         ).decode("utf-8")
@@ -875,7 +956,7 @@ def print_stacktraces() -> None:
 
     bt = None
 
-    if server_pid and not args.replicated_database:
+    if server_pid and not args.replicated_database and not args.shared_catalog:
         print("")
         print(
             f"Located ClickHouse server process {server_pid} listening at TCP port {args.tcp_port}"
@@ -1105,6 +1186,15 @@ class SettingsRandomizer:
         ),
         "throw_on_error_from_cache_on_write_operations": lambda: random.randint(0, 1),
         "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
+        "distributed_cache_discard_connection_if_unread_data": lambda: random.randint(
+            0, 1
+        ),
+        "distributed_cache_use_clients_cache_for_write": lambda: random.randint(
+            0, 1
+        ),
+        "distributed_cache_use_clients_cache_for_read": lambda: random.randint(
+            0, 1
+        ),
         "allow_prefetched_read_pool_for_remote_filesystem": lambda: random.randint(
             0, 1
         ),
@@ -1294,7 +1384,10 @@ class MergeTreeSettingsRandomizer:
         "string_serialization_version": lambda: random.choice(["single_stream", "with_size_stream"]),
         "nullable_serialization_version": lambda: random.choice(["basic", "allow_sparse"]),
         "enable_shared_storage_snapshot_in_query": lambda: random.randint(0, 1),
-        "min_columns_to_activate_adaptive_write_buffer": lambda: random.randint(0, 1000)
+        "min_columns_to_activate_adaptive_write_buffer": lambda: random.randint(0, 1000),
+        "reduce_blocking_parts_sleep_ms": lambda: random.randint(200, 2000),
+        "shared_merge_tree_outdated_parts_group_size": lambda: random.randint(1, 2),
+        "shared_merge_tree_max_outdated_parts_to_process_at_once": lambda: random.randint(1, 10),
     }
 
     @staticmethod
@@ -1522,6 +1615,21 @@ class TestCase:
 
         testcase_args.testcase_start_time = datetime.now()
         testcase_basename = os.path.basename(case_file)
+
+        if args.cloud:
+            # Sticky host is used by default
+            # For additional coverage, queries can be run on different replicas if the test is designed for this
+            if "cloud-no-sticky" in self.tags:
+                os.environ["CLICKHOUSE_HOST"] = os.environ["CLICKHOUSE_HOST_NON_STICKY"]
+            else:
+                os.environ["CLICKHOUSE_HOST"] = os.environ["CLICKHOUSE_HOST_STICKY"]
+
+            tcp_host = os.environ["CLICKHOUSE_HOST"]
+            testcase_args.tcp_host = tcp_host
+            testcase_args.client = re.sub(
+                r"--host=[^\s]*", f"--host={tcp_host}", testcase_args.client, count=1
+            )
+
         testcase_args.testcase_basename = testcase_basename
 
         if testcase_args.database:
@@ -1737,11 +1845,33 @@ class TestCase:
         if args.private and self.name in suite.private_skip_list:
             return FailureReason.NOT_SUPPORTED_IN_PRIVATE
 
-        if args.cloud and ("no-replicated-database" in tags):
-            return FailureReason.REPLICATED_DB
+        if args.cloud:
+            if "no-replicated-database" in tags:
+                return FailureReason.REPLICATED_DB
 
-        if args.cloud and self.name in suite.cloud_skip_list:
-            return FailureReason.NOT_SUPPORTED_IN_CLOUD
+            if "no-shared-merge-tree" in tags:
+                return FailureReason.SHARED_MERGE_TREE
+
+            if "zookeeper" in tags:
+                return FailureReason.NO_ZOOKEEPER
+
+            if "replica" in tags:
+                return FailureReason.REPLICATED_DB
+
+            if "use-hdfs" in tags:
+                return FailureReason.NOT_SUPPORTED_IN_CLOUD
+
+            if "test-type-expect" in tags:
+                return FailureReason.NOT_SUPPORTED_IN_CLOUD
+
+            if "no-object-storage" in tags:
+                return FailureReason.OBJECT_STORAGE
+
+            if self.name in suite.cloud_skip_list:
+                return FailureReason.NOT_SUPPORTED_IN_CLOUD
+
+        if not args.cloud and "cloud" in tags:
+            return FailureReason.SKIP
 
         if (
             os.path.exists(os.path.join(suite.suite_path, self.name) + ".disabled")
@@ -1808,7 +1938,11 @@ class TestCase:
         if (
             tags
             and ("atomic-database" in tags)
-            and (args.replicated_database or args.db_engine not in (None, "Atomic"))
+            and (
+                args.replicated_database
+                or args.shared_catalog
+                or args.db_engine not in (None, "Atomic")
+            )
         ):
             return FailureReason.NON_ATOMIC_DB
 
@@ -1818,6 +1952,35 @@ class TestCase:
             and args.replace_replicated_with_shared
         ):
             return FailureReason.SHARED_MERGE_TREE
+
+        if (
+            tags
+            and ("shared-catalog" in tags)
+            and not (args.shared_catalog or args.shared_catalog_stress)
+        ):
+            return FailureReason.SHARED_CATALOG_ONLY
+
+        if (
+            args.shared_catalog
+            and not args.cloud
+            and not args.shared_catalog_stress
+            and not SharedEngineReplacer.has_replicated_or_shared_or_cloud(
+                self.case_file
+            )
+        ):
+            return FailureReason.NO_SHARED_OR_REPLICATED_MERGE_TREE
+
+        if args.shared_catalog and not args.shared_catalog_stress and not args.cloud:
+            # shared catalog specific tests
+            if tags and ("shared-catalog" in tags):
+                return None
+
+            if tags and ("no-shared-catalog" in tags):
+                return FailureReason.SHARED_CATALOG
+            if tags and ("no-replicated-database" in tags):
+                return FailureReason.SHARED_CATALOG
+            if SharedEngineReplacer.has_non_replicated(self.case_file):
+                return FailureReason.SHARED_CATALOG
 
         if tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
@@ -1877,6 +2040,138 @@ class TestCase:
                     return FailureReason.BUILD
 
         return None
+
+    def should_skip_cloud_test(self) -> tuple[Optional[FailureReason], str]:
+        # Try to find restricted keywords in test case file.
+        # These features are not supported in the cloud env.
+        # Simple regexp grep
+        restricted_functionalities = [
+            # These table/database engines are not supported in the cloud,
+            # and it's not possible to rewrite them automatically
+            r"ENGINE\s*=?\s*(Distributed|File|EmbeddedRocksDB|Lazy|MySQL|Dictionary)",
+            # CREATE DATABASE with ENGINE clause is restricted to create.
+            # Replicated is the default and the only.
+            # r"CREATE DATABASE.*ENGINE",
+            r"CREATE DATABASE.*ENGINE\s*=?\s*(Memory)",
+            # Remote localhost nodes are not available
+            r"remote\('127",
+            r"remoteSecure\('127",
+            r"url\('http://",
+            r"localhost:8123",
+            # All engines are rewritten to SMT and this old syntax isn't supported in SMT
+            r" MergeTree\(.*[0-9]+\)",
+            # Transactions are not supported for SMT
+            r"BEGIN TRANSACTION",
+            # Temporary SMT is not supported:
+            # Temporary tables cannot be created with Replicated, Shared or KeeperMap table engines. (INCORRECT_QUERY)
+            r"CREATE TEMPORARY",
+            # Dictionaries from configs
+            r"(flat_ints|hashed_ints|hashed_sparse_ints|cache_ints|complex_hashed_ints|"
+            r"complex_cache_ints|one_cell_cache_ints|one_cell_cache_ints_overflow)",
+            # Only tables with a Replicated engine...
+            r"CREATE\s*WINDOW\s*VIEW",
+            # Backups
+            r"BACKUP\s*TABLE",
+            r"BACKUP\S*DATABASE",
+            # Local files are not present
+            r"FROM\s*file\(",
+            r"FROM\s*fileCluster\(",
+            r"FROM\s*mysql\(",
+            r"FROM\s*s3\(",
+            r" file\(",
+            # cloud tests connect to remote nodes
+            r"CLICKHOUSE_LOCAL",
+            r"CLICKHOUSE_KEEPER_CLIENT",
+            r"CLICKHOUSE_CLIENT_BINARY",
+            r"CLICKHOUSE_BENCHMARK",
+            r"\${?CLICKHOUSE_COMPRESSOR",
+            r"CLICKHOUSE_FORMAT",
+            "clickhouse-format",
+            # This works incorrectly
+            r"CLICKHOUSE_URL}&.*ENGINE",
+            # Mysql instance is not exist
+            r"MYSQL_CLIENT",
+            # No postgres
+            "psql",
+            "postgres",
+            "ENGINE ?= ?SQLite",
+            "object_storage_type ?= ?azure_blob_storage",
+            "clickhouse-disks",
+            r"disk\(name",
+            r"FROM Disk\('backups",
+            "SETTINGS disk",
+            "FROM infile",
+            r"log_queries_min_type\s*=",
+            r"log_queries=",
+            # named collections:
+            "url_with_headers",
+            "s3_conn",
+            "s3_conn_db",
+            "cache_collection",
+            "url_override1",
+            "url_override2",
+            "remote1",
+            "remote2",
+            # No local files
+            "RESTORE DATABASE ",
+            # Doesn't work with replicated
+            "non_replicated_deduplication_window",
+            # TODO: support python tests
+            "from pure_http_client",
+            "DB 'test_db'",
+            # SMT should have `shared_merge_tree_disable_merges_and_mutations_assignment=1` to
+            # fully stop merges, but enabling this setting for all tests will break everything
+            "SYSTEM STOP MERGES",
+            "SYSTEM START MERGES",
+            # https://github.com/ClickHouse/clickhouse-private/issues/10955
+            "ATTACH DATABASE",
+            r"usr/bin/expect",
+            "SYSTEM ENABLE FAILPOINT",
+            "SYSTEM FLUSH ASYNC INSERT QUEUE",
+            "python3 "
+        ]
+
+        with open(self.case_file, "r", encoding="utf-8") as f:
+            try:
+                test_content = f.read()
+            except UnicodeDecodeError:
+                # some tests are not possible to read
+                # skip restriction check
+                return None, ""
+
+        for line in test_content.splitlines():
+            for pattern in restricted_functionalities:
+                if re.match(f".*{pattern}.*", line, flags=re.IGNORECASE):
+                    return (
+                        FailureReason.NOT_SUPPORTED_IN_CLOUD_PREFILTER,
+                        f"Restriction on '{pattern}' in line '{line}'",
+                    )
+
+        return None, ""
+
+    def should_skip_stress_test(self) -> tuple[Optional[FailureReason], str]:
+        restricted_functionalities = [
+            # Temporary disable join and set engines
+            r"ENGINE\s*=?\s*(Set|Join)",
+        ]
+
+        with open(self.case_file, "r", encoding="utf-8") as f:
+            try:
+                test_content = f.read()
+            except UnicodeDecodeError:
+                # some tests are not possible to read
+                # skip restriction check
+                return None, ""
+
+        for line in test_content.splitlines():
+            for pattern in restricted_functionalities:
+                if re.match(f".*{pattern}.*", line, flags=re.IGNORECASE):
+                    return (
+                        FailureReason.NOT_SUPPORTED_IN_CLOUD_PREFILTER,
+                        f"Restriction on '{pattern}' in line '{line}'",
+                    )
+
+        return None, ""
 
     def process_result_impl(self, proc, total_time: float) -> TestResult:
         args = self.args
@@ -2114,6 +2409,26 @@ class TestCase:
             if debug_log:
                 description += "\n"
                 description += debug_log
+
+            # Skip test in case these lines are in result
+            # Because we do rewrite all possible tables to SMT
+            # and expected result is not correct
+            if args.cloud and (
+                "+CREATE TABLE" in description
+                or "+CREATE TEMPORARY TABLE" in description
+                or "+CREATE MATERIALIZED" in description
+                # Rewritten to SMT/Replicated tables have a different part naming scheme,
+                # starting from all_0_0_0 instead of all_1_1_0
+                or "+all_0_0_0" in description
+            ):
+                return TestResult(
+                    self.name,
+                    TestStatus.SKIPPED,
+                    FailureReason.RESULT_DIFF,
+                    total_time,
+                    description,
+                )
+
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
@@ -2363,6 +2678,9 @@ class TestCase:
         if args.replicated_database:
             replace_in_file(self.stdout_file, "/auto_{shard}", "")
             replace_in_file(self.stdout_file, "auto_{replica}", "")
+        if args.shared_catalog:
+            replace_in_file(self.stdout_file, "auto_{replica}", "")
+            replace_in_file(self.stdout_file, "auto_r1", "")
 
         # Normalize hostname in stdout file.
         replace_in_file(self.stdout_file, socket.gethostname(), "localhost")
@@ -2405,6 +2723,44 @@ class TestCase:
                 "https://localhost:8443/",
             )
 
+        if args.cloud:
+            replace_in_file(
+                self.stdout_file,
+                r"ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')",
+                "ENGINE = SharedMergeTree",
+            )
+            replace_in_file(
+                self.stdout_file,
+                r"ENGINE = SharedMergeTree(\'/clickhouse/tables/{uuid}/{shard}\', \'{replica}\')",
+                "ENGINE = SharedMergeTree",
+            )
+
+            replace_in_file(
+                self.stdout_file,
+                r"ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')".replace(
+                    "'", r"'\''"
+                ),
+                "ENGINE = SharedMergeTree",
+            )
+            replace_in_file(
+                self.stdout_file,
+                r"ENGINE = SharedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')".replace(
+                    "'", r"'\''"
+                ),
+                "ENGINE = SharedMergeTree",
+            )
+
+            replace_in_file_re(
+                self.stdout_file,
+                r"\(ENGINE = Shared.*MergeTree\)(\([^,.]*\), \([^,.]*\), \([^,.]*\), \([^,.]*\))",
+                r"\1(\4, \5)",
+            )
+            replace_in_file_re(
+                self.stdout_file,
+                r"\(ENGINE = Shared.*MergeTree\)(\([^,.]*\), \([^,.]*\), \([^,.]*\))",
+                r"\1(\4)",
+            )
+
         return proc, total_time
 
     def run(self, args, suite, client_options):
@@ -2413,6 +2769,12 @@ class TestCase:
         try:
             description = ""
             skip_reason = self.should_skip_test(suite)
+            if args.cloud and skip_reason is None:
+                skip_reason, description = self.should_skip_cloud_test()
+
+            # if args.shared_catalog_stress and skip_reason is None:
+            #     skip_reason, description = self.should_skip_stress_test()
+
             if skip_reason is not None:
                 return TestResult(
                     self.name, TestStatus.SKIPPED, skip_reason, 0.0, description
@@ -2501,6 +2863,14 @@ class TestCase:
                     result.description = result.description.replace("\0", "")
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(result.description)
+
+            if args.cloud and result.status == TestStatus.FAIL:
+                # If error is in list of skipped errors, mark this test as SKIPPED
+                for skip_error in self.suite.cloud_skip_errors_list:
+                    if skip_error in result.description:
+                        result.status = TestStatus.SKIPPED
+                        result.reason = FailureReason.NOT_SUPPORTED_IN_CLOUD_POSTFILTER
+                        break
 
             if self.name in suite.blacklist_check:
                 if result.status == TestStatus.OK:
@@ -2827,6 +3197,7 @@ class TestSuite:
         self.skip_list: List[str] = []
         self.cloud_skip_list: List[str] = []
         self.private_skip_list: List[str] = []
+        self.cloud_skip_errors_list: List[str] = []
         # List of tests included in a blacklist.
         # They will be run, and if they succeed, the test status will be changed to FAIL
         # to notify PR author that the changes in PR fixes this test.
@@ -3203,7 +3574,17 @@ def check_server_started(args):
             print(f"Connected to server {res}")
             sys.stdout.flush()
             return True
-        except (ConnectionError, http.client.ImproperConnectionState) as e:
+        except (
+            ConnectionError,
+            http.client.ImproperConnectionState,
+            SSLEOFError,
+            HTTPError,
+        ) as e:
+            # When connecting to cloud sticky-host:
+            # SSLEOFError :  [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1007)
+
+            # HTTPError:
+            # Code: 503. Code: 439. DB::Exception: Cannot schedule a task: failed to start the thread (threads=2, jobs=2). (CANNOT_SCHEDULE_TASK)
             if args.hung_check:
                 print("Connection error, will retry: ", str(e))
             else:
@@ -3741,6 +4122,50 @@ def main(args):
             print_stacktraces()
         raise TestException(msg)
 
+    if args.cloud:
+        # When client connects to cloud instance it connects to random node
+        # But some .sh tests do multiple connections and depend on executing queries on single node
+        # Special annotation should be enabled for sticky-routing
+        # https://docs.dp.clickhouse-dev.com/infrastructure/sticky-routing.html
+        # "annotations": {"clickhouse.com/sticky-routing-enabled": "true"}
+        hostname = get_hostname(args)
+        non_sticky_host = os.getenv("CLICKHOUSE_HOST")
+        host = hostname + ".sticky." + os.getenv("CLICKHOUSE_HOST")
+        os.environ["CLICKHOUSE_HOST"] = host
+        os.environ["CLICKHOUSE_HOST_STICKY"] = host
+        os.environ["CLICKHOUSE_HOST_NON_STICKY"] = non_sticky_host
+        print("Sticky host:", host)
+
+        user = os.getenv("CLICKHOUSE_CLIENT_USER")
+        if user is None:
+            raise ConfigException("CLICKHOUSE_CLIENT_USER env is not set")
+
+        password = os.getenv("CLICKHOUSE_CLIENT_PASSWORD")
+        if password is None:
+            raise ConfigException("CLICKHOUSE_CLIENT_PASSWORD env is not set")
+
+        config = f"""<config>
+    <user>{user}</user>
+    <password>{password}</password>
+    <secure>true</secure>
+</config>
+        """
+        client_config_path = os.path.abspath("clickhouse-client.xml")
+        with open(client_config_path, "w", encoding="utf-8") as f:
+            f.write(config)
+
+        os.environ["CLICKHOUSE_CONFIG_CLIENT"] = client_config_path
+        args.configclient = client_config_path
+
+        # Wait until the sticky host is accessible.
+        args_sticky = copy.deepcopy(args)
+        args_sticky.tcp_host = host
+        args_sticky.client += f" --host={host}"
+        # Recommended time to wait - 10 minutes
+        args_sticky.server_check_retries = 1500
+        if not check_server_started(args_sticky):
+            raise TestException(f"Sticky host '{host}' not responding")
+
     args.build_flags = collect_build_flags(args)
     args.changed_merge_tree_settings = collect_changed_merge_tree_settings(args)
 
@@ -3852,6 +4277,45 @@ def main(args):
         )
         blacklist_check.extend(skip_list_async_inserts)
 
+    if os.getenv("CLOUD_ENABLE_PARALLEL_REPLICAS", "0") == "1":
+        private_skip_list_parallel_replicas = try_get_skip_list(
+            base_dir, "../queries-no-cloud-no-pr-tests.txt"
+        )
+        cloud_skip_list.extend(private_skip_list_parallel_replicas)
+
+    # Some unsupported SQL patterns hard to parse from test case file
+    # So test case is executed at first and if its exception is in the list,
+    # then skip this test
+    cloud_skip_errors_list = [
+        # SMT arguments restricted
+        "Explicit replica_name is specified in SharedMergeTree arguments",
+        # old engine syntax
+        "Expected two string literal arguments: zookeeper_path and replica_name",
+        # executable dicts are not supported
+        "Dictionary source of type `executable` is disabled",
+        # disable after statistics tests
+        # "Create table with statistics is now disabled",
+        "Moving tables between databases is not supported for Replicated engine. (NOT_IMPLEMENTED)",
+        "Incorrect ATTACH TABLE query for Atomic database engine.",
+        "Setting max_partitions_per_insert_block should not be changed.",
+        # cloud_mode=1 restricts index_granularity=0
+        "table cannot have index granularity (bytes) equals zero",
+        # make_distributed_plan add to constraints because it doesn't work yet
+        "Setting make_distributed_plan should not be changed"
+    ]
+
+    if not args.shared_catalog:
+        cloud_skip_errors_list += [
+            # disable for SharedCatalog
+            "CREATE AS SELECT is not supported with Replicated databases",
+            # new message
+            "CREATE AS SELECT and POPULATE is not supported with Replicated databases",
+        ]
+    if args.shared_catalog:
+        # In rare cases detach table is not finished and it is expected
+        # https://github.com/ClickHouse/clickhouse-private/issues/23651
+        cloud_skip_errors_list += ["Cannot attach table with UUID"]
+
     for suite in sorted(os.listdir(base_dir), key=suite_key_func):
         if server_died.is_set():
             break
@@ -3863,6 +4327,7 @@ def main(args):
         test_suite.skip_list = skip_list
         test_suite.cloud_skip_list = cloud_skip_list
         test_suite.private_skip_list = private_skip_list
+        test_suite.cloud_skip_errors_list = cloud_skip_errors_list
         test_suite.blacklist_check = blacklist_check
         total_tests_run += do_run_tests(
             args.jobs,
@@ -4451,7 +4916,18 @@ def parse_args():
         default=False,
         help="Do not include tests that fail in OpenSSL FIPS mode",
     )
-
+    parser.add_argument(
+        "--shared-catalog",
+        action="store_true",
+        default=os.environ.get("USE_SHARED_CATALOG", "0") == "1",
+        help="Run tests with Shared Catalog",
+    )
+    parser.add_argument(
+        "--shared-catalog-stress",
+        action="store_true",
+        default=False,
+        help="Run tests stress tests with Shared Catalog",
+    )
     parser.add_argument(
         "--capture-client-stacktrace",
         action="store_true",
@@ -4613,6 +5089,9 @@ if __name__ == "__main__":
     else:
         args.tcp_host = "localhost"
 
+    if args.cloud:
+        args.secure = True
+
     tcp_port = os.getenv("CLICKHOUSE_PORT_TCP")
     if tcp_port is not None:
         args.tcp_port = int(tcp_port)
@@ -4628,8 +5107,9 @@ if __name__ == "__main__":
     else:
         args.http_port = 8443 if args.secure else 8123
         os.environ["CLICKHOUSE_PORT_HTTP"] = str(args.http_port)
-        if args.secure and os.getenv("CLICKHOUSE_PORT_HTTP_PROTO") is None:
-            os.environ["CLICKHOUSE_PORT_HTTP_PROTO"] = "https"
+
+    if args.secure and os.getenv("CLICKHOUSE_PORT_HTTP_PROTO") is None:
+        os.environ["CLICKHOUSE_PORT_HTTP_PROTO"] = "https"
 
     client_database = os.getenv("CLICKHOUSE_DATABASE")
     if client_database is not None:
@@ -4647,16 +5127,61 @@ if __name__ == "__main__":
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " "
         else:
             os.environ["CLICKHOUSE_CLIENT_OPT"] = ""
+
+        print('---------')
+        print(os.environ["CLICKHOUSE_CLIENT_OPT"])
+        print(get_additional_client_options(args))
         os.environ["CLICKHOUSE_CLIENT_OPT"] += get_additional_client_options(args)
+        print('---------')
 
         if args.secure:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " --secure "
+
+    if args.cloud:
+        enable_analyzer = os.getenv("CLOUD_ENABLE_ANALYZER", "1")
+        enable_pr = os.getenv("CLOUD_ENABLE_PARALLEL_REPLICAS", "0")
+        print("analyzer:", enable_analyzer)
+        print("pr:", enable_pr)
+        query_params = {
+            # These two are enabled by default in dev env
+            "allow_experimental_analyzer": enable_analyzer,
+            "allow_experimental_parallel_reading_from_replicas": enable_pr,
+            "allow_suspicious_types_in_order_by": 1,
+            "distributed_ddl_output_mode": "none",
+            # DETACH TABLE is not allowed for Replicated databases.
+            #   Use DETACH TABLE PERMANENTLY or SYSTEM RESTART REPLICA or
+            #   set database_replicated_always_detach_permanently to 1.
+            "database_replicated_always_detach_permanently": 1,
+            # Break some tests
+            "async_insert_deduplicate": 0,
+            "insert_deduplicate": 0,
+            "alter_sync": 2,
+            "mutations_sync": 2,
+            # Test 00765_locate.sql
+            "function_locate_has_mysql_compatible_argument_order": 1,
+            "input_format_try_infer_datetimes_only_datetime64": "false",
+            # check setting if analyzer enabled, so we will test 2 outcomes
+            # it's behaviour doesn't depend on analyzer
+            "database_replicated_allow_replicated_engine_arguments": 0,
+        }
+        cloud_settings = " ".join([f"--{k}={v}" for k, v in query_params.items()])
+
+        os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+            cloud_settings + os.environ["CLICKHOUSE_CLIENT_OPT"] + " "
+        )
+
+        args.replace_replicated_with_shared = False
+        args.replace_non_replicated_with_shared = False
+        args.server_logs_level = "error"
 
         # Set options for curl
         if "CLICKHOUSE_URL_PARAMS" in os.environ:
             os.environ["CLICKHOUSE_URL_PARAMS"] += "&"
         else:
             os.environ["CLICKHOUSE_URL_PARAMS"] = ""
+
+        cloud_settings_query = "&".join([f"{k}={v}" for k, v in query_params.items()])
+        os.environ["CLICKHOUSE_URL_PARAMS"] += cloud_settings_query + "&"
 
         client_options_query_str = get_additional_client_options_url(args)
         args.client_options_query_str = client_options_query_str + "&"
