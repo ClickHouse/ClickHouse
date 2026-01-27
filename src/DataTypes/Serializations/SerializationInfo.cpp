@@ -44,7 +44,7 @@ void SerializationInfo::Data::add(const IColumn & column)
     double ratio = column.getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
 
     num_rows += rows;
-    num_defaults += static_cast<size_t>(ratio * rows);
+    num_defaults += static_cast<size_t>(ratio * static_cast<double>(rows));
 }
 
 void SerializationInfo::Data::add(const Data & other)
@@ -269,7 +269,7 @@ void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
 ISerialization::KindStack SerializationInfo::chooseKindStack(const Data & data, const Settings & settings)
 {
     ISerialization::KindStack kind_stack = {ISerialization::Kind::DEFAULT};
-    double ratio = data.num_rows ? std::min(static_cast<double>(data.num_defaults) / data.num_rows, 1.0) : 0.0;
+    double ratio = data.num_rows ? std::min(static_cast<double>(data.num_defaults) / static_cast<double>(data.num_rows), 1.0) : 0.0;
     if (ratio > settings.ratio_of_defaults_for_sparse)
         kind_stack.push_back(ISerialization::Kind::SPARSE);
     return kind_stack;

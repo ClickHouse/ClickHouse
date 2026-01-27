@@ -1428,7 +1428,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     try
     {
         FunctionBasePtr function_base;
-        if (function_cache)
+        /** Do not use cache for functions with lambda arguments.
+          * The cache key (tree hash) is computed before lambdas are resolved,
+          * so the same AST structure with different resolved lambda types
+          * would incorrectly share the cached function base.
+          */
+        if (function_cache && !has_lambda_arguments)
         {
             auto & cached_function = function_cache->function_base;
             if (!cached_function)

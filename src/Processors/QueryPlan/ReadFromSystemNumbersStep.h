@@ -31,9 +31,6 @@ public:
     QueryPlanStepPtr clone() const override;
 
 private:
-    /// Fail fast if estimated number of rows to read exceeds the limit
-    void checkLimits(size_t rows);
-
     Pipe makePipe();
 
     const Names column_names;

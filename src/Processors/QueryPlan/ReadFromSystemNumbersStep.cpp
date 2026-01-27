@@ -1,11 +1,10 @@
 #include <memory>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
+#include <Processors/QueryPlan/numbersLikeUtils.h>
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -15,25 +14,11 @@
 #include <fmt/format.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <Core/Types.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_rows_to_read;
-    extern const SettingsUInt64 max_rows_to_read_leaf;
-    extern const SettingsOverflowMode read_overflow_mode;
-    extern const SettingsOverflowMode read_overflow_mode_leaf;
-}
-
-namespace ErrorCodes
-{
-extern const int TOO_MANY_ROWS;
-}
-
 namespace
 {
 
@@ -333,32 +318,6 @@ private:
 
 namespace
 {
-/// Whether we should push limit down to scan.
-bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSelectQuery::LimitInfo & lim_info)
-{
-    /// Reject negative, fractional, and zero limits for pushdown
-    if (lim_info.is_limit_length_negative
-        || lim_info.fractional_limit > 0
-        || lim_info.fractional_offset > 0
-        || lim_info.limit_length == 0)
-        return false;
-
-    chassert(query_info.query);
-
-    const auto & query = query_info.query->as<ASTSelectQuery &>();
-
-    /// Just ignore some minor cases, such as:
-    ///     select * from system.numbers order by number asc limit 10
-    return !query.distinct
-        && !query.limitBy()
-        && !query_info.has_order_by
-        && !query_info.need_aggregate
-        /// For new analyzer, window will be deleted from AST, so we should not use query.window()
-        && !query_info.has_window
-        && !query_info.additional_filter_ast
-        && !query.limit_with_ties;
-}
-
 /// Shrink ranges to size.
 ///     For example: ranges: [1, 5], [8, 100]; size: 7, we will get [1, 5], [8, 9]
 void shrinkRanges(RangesWithStep & ranges, size_t size)
@@ -415,20 +374,6 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
     ranges.erase(ranges.begin() + (last_range_idx + 1), ranges.end());
 }
 
-/// This is ideologically wrong. We should only get it from the query plan optimization.
-std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, const ContextPtr & context)
-{
-    if (!query_info.query)
-        return {};
-
-    const auto lim_info = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
-
-    if (!shouldPushdownLimit(query_info, lim_info))
-        return {};
-
-    return lim_info.limit_length + lim_info.limit_offset;
-}
-
 }
 
 ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
@@ -457,7 +402,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     chassert(column_names.size() == 1);
     chassert(storage->as<StorageSystemNumbers>() != nullptr);
 
-    limit = getLimitFromQueryInfo(query_info_, context);
+    limit = NumbersLikeUtils::getLimitFromQueryInfo(query_info_, context);
 }
 
 
@@ -593,7 +538,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             shrinkRanges(intersected_ranges, static_cast<size_t>(total_size));
         }
 
-        checkLimits(size_t(total_size));
+        NumbersLikeUtils::checkLimits(context->getSettingsRef(), size_t(total_size));
 
         if (total_size / max_block_size < num_streams)
             num_streams = static_cast<size_t>(total_size / max_block_size);
@@ -658,23 +603,6 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     }
 
     return pipe;
-}
-
-void ReadFromSystemNumbersStep::checkLimits(size_t rows)
-{
-    const auto & settings = context->getSettingsRef();
-
-    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
-    {
-        const auto limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
-        limits.check(rows, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
-    }
-
-    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
-    {
-        const auto leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
-        leaf_limits.check(rows, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
-    }
 }
 
 }

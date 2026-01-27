@@ -10,6 +10,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Common/ContainersWithMemoryTracking.h>
 
 
 // We start with 128 bins and grow the number of bins by 128
@@ -32,7 +33,7 @@ public:
     int min_key = std::numeric_limits<int>::max();
     int max_key = std::numeric_limits<int>::min();
     int offset = 0;
-    std::vector<Float64> bins;
+    VectorWithMemoryTracking<Float64> bins;
 
     explicit DDSketchDenseStore(UInt32 chunk_size_ = CHUNK_SIZE)
         : chunk_size(chunk_size_)
@@ -223,7 +224,7 @@ private:
 
         if (length() == 0)
         {
-            bins = std::vector<Float64>(getNewLength(new_min_key, new_max_key), 0.0);
+            bins = VectorWithMemoryTracking<Float64>(getNewLength(new_min_key, new_max_key), 0.0);
             offset = new_min_key;
             adjust(new_min_key, new_max_key);
         }
