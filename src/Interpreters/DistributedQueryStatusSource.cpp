@@ -199,7 +199,7 @@ Chunk DistributedQueryStatusSource::generate()
             return stopWaitingOfflineHosts();
         }
 
-        if ((timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds))
+        if ((timeout_seconds >= 0 && watch.elapsedSeconds() > static_cast<double>(timeout_seconds)))
         {
             return handleTimeoutExceeded();
         }
