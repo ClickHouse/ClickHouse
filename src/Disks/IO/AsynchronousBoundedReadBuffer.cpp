@@ -427,7 +427,7 @@ size_t AsynchronousBoundedReadBuffer::readBigAt(
 {
     /// If we plan to use readBigAt, then we should not call prefetch(),
     /// because readBigAt by itself is already parallelized.
-    //chassert(!prefetch_future.valid());
+    chassert(!prefetch_future.valid(), "Prefetch is valid for file " + file_name);
 
     if (impl->supportsReadAt())
         return impl->readBigAt(to, n, range_begin, progress_callback);

@@ -869,8 +869,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (!use_async_buffer)
         return impl;
 
-    LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
-
     bool prefer_bigger_buffer_size = effective_read_settings.filesystem_cache_prefer_bigger_buffer_size
         && impl->isCached();
 
@@ -880,6 +878,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     if (object_size)
         buffer_size = std::min<size_t>(object_size, buffer_size);
+
+    LOG_TRACE(
+        log, "Downloading object {} of size {} {} initial prefetch (buffer size: {}, format: {})",
+        object_info.getPath(), object_size, use_prefetch ? "with" : "without", buffer_size, format);
 
     auto & reader = context_->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     impl = std::make_unique<AsynchronousBoundedReadBuffer>(
