@@ -77,6 +77,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", true, false, "It becomes obsolete."},
             {"database_datalake_require_metadata_access", true, true, "New setting."},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 1_MiB, "Better default value derived from testing results"},
+            {"use_parquet_metadata_cache", true, true, "Enables cache of parquet file metadata."},           
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -117,14 +118,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_allow_materialized_views", false, true, "Allow usage of materialized views with parallel replicas"},
             {"distributed_cache_use_clients_cache_for_read", true, true, "New setting"},
             {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
-            {"use_parquet_metadata_cache", true, true, "Enables cache of parquet file metadata."},
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
             {"enable_full_text_index", false, false, "Text index was moved to Beta."},
             {"enable_shared_storage_snapshot_in_query", false, true, "Enable share storage snapshot in query by default"},
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
             {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_even_for_bad_queries", "New setting, replace insert_select_deduplicate"},
-
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
