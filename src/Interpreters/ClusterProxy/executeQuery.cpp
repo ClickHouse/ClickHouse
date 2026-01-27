@@ -527,7 +527,7 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
     /// we mitigate this issue by explicitly disabling it for parallel replicas
     /// until remote execution also uses the query plan, so that filter pushdown
     /// is applied uniformly on local and remote nodes.
-    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::optimize_aggregation_in_order].value)
+    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::optimize_aggregation_in_order])
     {
         if (settings[Setting::optimize_aggregation_in_order].changed)
         {
