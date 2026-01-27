@@ -81,8 +81,6 @@ Iceberg::ManifestFilePtr getManifestFile(
 
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
-        Stopwatch watch;
-        watch.start();
         RelativePathWithMetadata manifest_object_info(filename);
 
         auto read_settings = local_context->getReadSettings();
@@ -93,7 +91,7 @@ Iceberg::ManifestFilePtr getManifestFile(
         auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
         Iceberg::AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
 
-        auto manifest_file = std::make_shared<Iceberg::ManifestFileContent>(
+        return std::make_shared<Iceberg::ManifestFileContent>(
             manifest_file_deserializer,
             filename,
             persistent_table_components.format_version,
@@ -104,8 +102,6 @@ Iceberg::ManifestFilePtr getManifestFile(
             persistent_table_components.table_location,
             local_context,
             filename);
-        LOG_DEBUG(log, "Manifest file {} created in {} ms", filename, watch.elapsedMilliseconds());
-        return manifest_file;
     };
 
     if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
