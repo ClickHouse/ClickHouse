@@ -341,6 +341,9 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "is lost forever." \
            -e "Unknown index: idx." \
            -e "Cannot parse string 'Hello' as UInt64" \
+           -e "Cannot parse string 'Hello' as UInt32" \
+           -e "Cannot parse string \'Hello\' as UInt32" \
+           -e "Cannot parse string \\'Hello\\' as UInt32" \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
            -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
@@ -357,6 +360,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Container already exists" \
            -e "doesn't have metadata version on disk" \
            -e "Unknown codec family: ZSTD_QAT" \
+           -e "Unknown codec family: DEFLATE_QPL" \
            -e "Failed to flush system log" \
            -e "Bad get: has String, requested UInt64. (BAD_GET" \
            -e "Disk does not support stat. (NOT_IMPLEMENTED" \
