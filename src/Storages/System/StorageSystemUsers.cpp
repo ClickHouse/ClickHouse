@@ -165,7 +165,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
                     auth_params_json.set("subject_alt_names", subject_alt_names);
             }
 #endif
-            else if (auto otp_data = auth_data.getOneTimePassword(); otp_data.has_value())
+            else if (const auto & otp_data = auth_data.getOneTimePassword(); otp_data.has_value())
             {
                 auth_params_json.set("second_factor", "one_time_password");
                 if (otp_data->params != OneTimePasswordParams{})

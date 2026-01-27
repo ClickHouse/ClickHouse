@@ -378,42 +378,45 @@ try
     }
 #endif
 
-    bool can_ask_2fa = true;
-    bool can_ask_password = true;
-    while (true)
-    try
+    bool asked_password = false;
+    bool asked_2fa = false;
+    for (;;)
     {
-        connect();
-        break;
-    }
-    catch (const Exception & e)
-    {
-        can_ask_password = can_ask_password && (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD) &&
-            !config().has("password") &&
-            !config().getBool("ask-password", false) &&
-            is_interactive;
-
-        if (can_ask_password)
+        try
         {
-            can_ask_password = false;
-            config().setBool("ask-password", true);
-            continue;
+            connect();
+            break;
         }
-
-        can_ask_2fa = can_ask_2fa && (e.code() == ErrorCodes::REQUIRED_SECOND_FACTOR) &&
-            (config().getBool("ask-password", false) || is_interactive);
-
-        if (can_ask_2fa)
+        catch (const Exception & e)
         {
-            can_ask_2fa = false;
-            if (!connection_parameters.password.empty())
-                config().setString("password", connection_parameters.password);
-            config().setBool("ask-password", false);
-            config().setBool("ask-password-2fa", true);
-            continue;
-        }
+            auto code = e.code();
 
-        throw;
+            bool should_ask_password = !asked_password && is_interactive &&
+                (code == ErrorCodes::AUTHENTICATION_FAILED || code == ErrorCodes::REQUIRED_PASSWORD) &&
+                !config().has("password") && !config().getBool("ask-password", false);
+
+            if (should_ask_password)
+            {
+                asked_password = true;
+                config().setBool("ask-password", true);
+                continue;
+            }
+
+            bool should_ask_2fa = !asked_2fa && (code == ErrorCodes::REQUIRED_SECOND_FACTOR) &&
+                (config().getBool("ask-password", false) || is_interactive);
+
+            if (should_ask_2fa)
+            {
+                asked_2fa = true;
+                if (!connection_parameters.password.empty())
+                    config().setString("password", connection_parameters.password);
+                config().setBool("ask-password", false);
+                config().setBool("ask-password-2fa", true);
+                continue;
+            }
+
+            throw;
+        }
     }
 
     /// Show warnings at the beginning of connection.
