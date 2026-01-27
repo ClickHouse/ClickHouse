@@ -774,12 +774,14 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
     // For bigger files, parallel reading is more useful.
+    const auto format_str = boost::to_lower_copy(format);
     const bool object_too_small = object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
     const bool use_prefetch = object_too_small
         && modified_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
         && modified_read_settings.remote_fs_prefetch
-        /// Parquet reader v3 uses its own prefetches
-        && boost::to_lower_copy(format) != "parquet";
+        /// Parquet reader v3 uses its own prefetches via readBigAt
+        /// TODO: we should probably always disable prefetch if impl->supportsReadBigAt?
+        && format_str != "parquet" && format_str != "parquetmetadata";
 
     /// FIXME: Use async buffer if use_cache,
     /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
