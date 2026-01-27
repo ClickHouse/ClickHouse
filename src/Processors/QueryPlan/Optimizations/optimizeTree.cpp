@@ -717,17 +717,7 @@ void optimizeTreeSecondPass(
         {
             read_from_local_parallel_replica_plan = true;
 
-            auto local_plan = read_from_local->extractQueryPlan();
-            if (!optimization_settings.aggregation_in_order)
-                local_plan->optimize(optimization_settings);
-            else
-            {
-                /// see https://github.com/ClickHouse/ClickHouse/pull/95306 for details
-                auto pr_optimization_settings = optimization_settings;
-                pr_optimization_settings.aggregation_in_order = false;
-                local_plan->optimize(pr_optimization_settings);
-            }
-
+            auto local_plan = read_from_local->optimizeAndExtractQueryPlan(optimization_settings);
             auto * local_plan_node = frame.node;
             query_plan.replaceNodeWithPlan(local_plan_node, std::move(*local_plan));
 
