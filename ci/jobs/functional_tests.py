@@ -1,7 +1,6 @@
 import argparse
 import os
 import random
-import re
 import subprocess
 from pathlib import Path
 
@@ -284,7 +283,9 @@ def main():
         stages.remove(JobStages.COLLECT_COVERAGE)
     else:
         stages.remove(JobStages.COLLECT_LOGS)
-    if is_coverage or info.is_local_run:
+    if is_coverage or info.is_local_run or is_bugfix_validation:
+        # For bugfix validation, we intentionally skip the check error stage (checks FATAL messages):
+        # regular test failures are assumed to be sufficient to validate the test
         stages.remove(JobStages.CHECK_ERRORS)
     if info.is_local_run:
         if JobStages.COLLECT_LOGS in stages:
@@ -519,13 +520,19 @@ def main():
                             collected_test_results.append(test_case_result)
                             seen_test_names.add(test_case_result.name)
 
+                # Control elapsed time for targeted checks: exit if >30 minutes
+                stop_by_elapsed_time = False
+                if is_targeted_check and cnt > 0:
+                    stop_by_elapsed_time = stop_watch_.duration / 60 > 30
+
                 # On final run, replace results with collected ones
-                if is_final_run:
+                if is_final_run or stop_by_elapsed_time:
                     test_result.results = collected_test_results
                     # Set overall status to failed if any collected test cases failed
                     has_failures = any(not t.is_ok() for t in collected_test_results)
                     if has_failures and test_result.is_ok():
                         test_result.set_failed()
+                    break
 
         if not info.is_local_run:
             CH.stop_log_exports()
@@ -542,7 +549,11 @@ def main():
 
     if JobStages.RETRIES in stages and test_result and test_result.is_failure():
         # retry all failed tests and mark original failed either as success on retry or failed on retry
-        failed_tests = [t.name for t in test_result.results if t.is_failure()]
+        failed_tests = [
+            t.name
+            for t in test_result.results
+            if t.is_failure() and t.name and t.name[0].isdigit()
+        ]
         if len(failed_tests) > 10:
             results.append(
                 Result(
@@ -620,24 +631,28 @@ def main():
         test_result.extend_sub_results(results[-1].results)
         results[-1].results = []
 
-        # invert result status for bugfix validation
-        if is_bugfix_validation:
-            has_failure = False
-            for r in results[-1].results:
-                r.set_label("xfail")
-                if r.status == Result.StatusExtended.FAIL:
-                    r.status = Result.StatusExtended.OK
-                    has_failure = True
-                elif r.status == Result.StatusExtended.OK:
-                    r.status = Result.StatusExtended.FAIL
-            if not has_failure:
-                print("Failed to reproduce the bug")
-                results[-1].set_failed().set_info("Failed to reproduce the bug")
-            else:
-                results[-1].set_success()
+    # invert result status for bugfix validation
+    if is_bugfix_validation and test_result:
+        has_failure = False
+        for r in test_result.results:
+            r.set_label("xfail")
+            if r.status == Result.StatusExtended.FAIL:
+                r.status = Result.StatusExtended.OK
+                has_failure = True
+            elif r.status == Result.StatusExtended.OK:
+                r.status = Result.StatusExtended.FAIL
+        if not has_failure:
+            print("Failed to reproduce the bug")
+            test_result.set_failed().set_info("Failed to reproduce the bug")
+        else:
+            # For bugfix validation, the expected behavior is:
+            # - At least one test must fail (bug reproduced)
+            # - The overall Tests result is treated as success in that case
+            test_result.set_success()
 
-        if not results[-1].is_ok():
-            results[-1].set_info("Found errors added into Tests results")
+        # For bugfix validation, "Check errors" (latest in the list) is only a helper step and
+        # must not affect the overall job result.
+        results[-1].set_success()
 
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")

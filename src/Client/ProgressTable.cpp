@@ -13,7 +13,6 @@
 #include <Common/formatReadable.h>
 
 #include <mutex>
-#include <numeric>
 #include <unordered_map>
 
 #include <fmt/format.h>
@@ -406,17 +405,17 @@ double ProgressTable::MetricInfo::calculateRecentProgress(double time_now) const
     if (time_now - new_snapshot.time >= 0.5)
         return 0;
 
-    return (cur_shapshot.value - prev_shapshot.value) / (cur_shapshot.time - prev_shapshot.time);
+    return static_cast<double>(cur_shapshot.value - prev_shapshot.value) / (cur_shapshot.time - prev_shapshot.time);
 }
 
 double ProgressTable::MetricInfo::calculateAverageProgress(double time_now) const
 {
-    return cur_shapshot.value / time_now;
+    return static_cast<double>(cur_shapshot.value) / time_now;
 }
 
 double ProgressTable::MetricInfo::getValue() const
 {
-    return new_snapshot.value;
+    return static_cast<double>(new_snapshot.value);
 }
 
 void ProgressTable::MetricInfoPerHost::updateHostValue(const HostName & host, ProfileEvents::Type type, Int64 new_value, double new_time)
