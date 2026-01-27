@@ -14,25 +14,49 @@ namespace DB
   */
 class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 {
+    struct ASTQueryWithTableAndOutputFlags
+    {
+        using ParentFlags = ASTQueryWithOutput::ASTQueryWithOutputFlags;
+        static constexpr UInt32 RESERVED_BITS = 20;
+
+        UInt32 _parent_reserved : ParentFlags::RESERVED_BITS;
+        UInt32 is_temporary : 1;
+        UInt32 database_index : 8;
+        UInt32 table_index : 8;
+        UInt32 unused : 12;
+    };
+
+    UInt8 getDatabaseIndex() const { return flags<ASTQueryWithTableAndOutputFlags>().database_index; }
+    void setDatabaseIndex(UInt8 value) { flags<ASTQueryWithTableAndOutputFlags>().database_index = value; }
+
+    UInt8 getTableIndex() const { return flags<ASTQueryWithTableAndOutputFlags>().table_index; }
+    void setTableIndex(UInt8 value) { flags<ASTQueryWithTableAndOutputFlags>().table_index = value; }
+
 public:
+    ASTQueryWithTableAndOutput()
+    {
+        setDatabaseIndex(INVALID_INDEX);
+        setTableIndex(INVALID_INDEX);
+    }
+
     UUID uuid = UUIDHelpers::Nil;
 
-    ASTPtr getDatabaseAst() const { return database_index != INVALID_INDEX ? children[database_index] : nullptr; }
-    ASTPtr getTableAst() const { return table_index != INVALID_INDEX ? children[table_index] : nullptr; }
+    ASTPtr getDatabaseAst() const { return getDatabaseIndex() != INVALID_INDEX ? children[getDatabaseIndex()] : nullptr; }
+    ASTPtr getTableAst() const { return getTableIndex() != INVALID_INDEX ? children[getTableIndex()] : nullptr; }
 
     void setDatabaseAst(ASTPtr node)
     {
         if (node)
         {
-            if (database_index != INVALID_INDEX)
-                children[database_index] = std::move(node);
+            if (getDatabaseIndex() != INVALID_INDEX)
+                children[getDatabaseIndex()] = std::move(node);
             else
-                database_index = addChildAndGetIndex(std::move(node));
+                setDatabaseIndex(addChildAndGetIndex(std::move(node)));
         }
-        else if (database_index != INVALID_INDEX)
+        else if (getDatabaseIndex() != INVALID_INDEX)
         {
             /// We don't remove from children for simplicity, just invalidate the index
-            database_index = INVALID_INDEX;
+            setDatabaseIndex(INVALID_INDEX);
         }
     }
 
@@ -40,20 +64,20 @@ public:
     {
         if (node)
         {
-            if (table_index != INVALID_INDEX)
-                children[table_index] = std::move(node);
+            if (getTableIndex() != INVALID_INDEX)
+                children[getTableIndex()] = std::move(node);
             else
-                table_index = addChildAndGetIndex(std::move(node));
+                setTableIndex(addChildAndGetIndex(std::move(node)));
         }
-        else if (table_index != INVALID_INDEX)
+        else if (getTableIndex() != INVALID_INDEX)
         {
             /// We don't remove from children for simplicity, just invalidate the index
-            table_index = INVALID_INDEX;
+            setTableIndex(INVALID_INDEX);
         }
     }
 
-    bool isTemporary() const { return FLAGS & IS_TEMPORARY; }
-    void setIsTemporary(bool value) { FLAGS = value ? (FLAGS | IS_TEMPORARY) : (FLAGS & ~IS_TEMPORARY); }
+    bool isTemporary() const { return flags<ASTQueryWithTableAndOutputFlags>().is_temporary; }
+    void setIsTemporary(bool value) { flags<ASTQueryWithTableAndOutputFlags>().is_temporary = value; }
 
     /// Returns database/table name as String (for compatibility with old API)
     String getDatabase() const;
@@ -68,16 +92,10 @@ public:
     void resetOutputAST() override;
 
 protected:
-    UInt8 database_index = INVALID_INDEX;
-    UInt8 table_index = INVALID_INDEX;
-
-    /// Bit flags for ASTQueryWithTableAndOutput (bits 0-2 used by ASTQueryWithOutput)
-    static constexpr UInt32 IS_TEMPORARY = 1u << 3;
-
     void resetTableIndices()
     {
-        database_index = INVALID_INDEX;
-        table_index = INVALID_INDEX;
+        setDatabaseIndex(INVALID_INDEX);
+        setTableIndex(INVALID_INDEX);
     }
 };
 

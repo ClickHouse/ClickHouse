@@ -13,6 +13,16 @@ class ASTQueryParameter;
 class ASTWithAlias : public IAST
 {
 public:
+    struct ASTWithAliasFlags
+    {
+        using ParentFlags = void;
+        static constexpr UInt32 RESERVED_BITS = 1;
+
+        UInt32 prefer_alias_to_column_name : 1;
+        UInt32 unused : 31;
+    };
+
+public:
     ASTWithAlias();
     ASTWithAlias(const ASTWithAlias &);
     ~ASTWithAlias() override;
@@ -20,10 +30,11 @@ public:
 
     /// The alias, if any, or an empty string.
     String alias;
+
     /// If is true, getColumnName returns alias. Uses for aliases in former WITH section of SELECT query.
     /// Example: 'WITH pow(2, 2) as a SELECT pow(a, 2)' returns 'pow(a, 2)' instead of 'pow(pow(2, 2), 2)'
-    bool preferAliasToColumnName() const { return FLAGS & PREFER_ALIAS_TO_COLUMN_NAME; }
-    void setPreferAliasToColumnName(bool value) { FLAGS = value ? (FLAGS | PREFER_ALIAS_TO_COLUMN_NAME) : (FLAGS & ~PREFER_ALIAS_TO_COLUMN_NAME); }
+    bool preferAliasToColumnName() const { return flags<ASTWithAliasFlags>().prefer_alias_to_column_name; }
+    void setPreferAliasToColumnName(bool value) { flags<ASTWithAliasFlags>().prefer_alias_to_column_name = value; }
     // An alias can be defined as a query parameter,
     // in which case we can only resolve it during query execution.
     boost::intrusive_ptr<ASTQueryParameter> parametrised_alias;
@@ -41,8 +52,6 @@ public:
     virtual void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
 
 protected:
-    static constexpr UInt32 PREFER_ALIAS_TO_COLUMN_NAME = 1u << 0;
-
     /// Calls formatImplWithoutAlias, and also outputs an alias. If necessary, encloses the entire expression in brackets.
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const final;
 

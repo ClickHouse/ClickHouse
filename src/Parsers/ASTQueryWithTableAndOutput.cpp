@@ -22,10 +22,10 @@ String ASTQueryWithTableAndOutput::getTable() const
 
 void ASTQueryWithTableAndOutput::setDatabase(const String & name)
 {
-    if (database_index != INVALID_INDEX)
+    if (getDatabaseIndex() != INVALID_INDEX)
     {
         /// Note: we don't remove from children for simplicity, just invalidate the index
-        database_index = INVALID_INDEX;
+        setDatabaseIndex(INVALID_INDEX);
     }
 
     if (!name.empty())
@@ -34,10 +34,10 @@ void ASTQueryWithTableAndOutput::setDatabase(const String & name)
 
 void ASTQueryWithTableAndOutput::setTable(const String & name)
 {
-    if (table_index != INVALID_INDEX)
+    if (getTableIndex() != INVALID_INDEX)
     {
         /// Note: we don't remove from children for simplicity, just invalidate the index
-        table_index = INVALID_INDEX;
+        setTableIndex(INVALID_INDEX);
     }
 
     if (!name.empty())
@@ -74,18 +74,18 @@ void ASTQueryWithTableAndOutput::resetOutputAST()
     ASTQueryWithOutput::resetOutputAST();
 
     /// Adjust database_index and table_index after the other children were erased
-    auto adjust_index = [&indices_to_remove](UInt8 & index)
+    auto adjust_index = [&indices_to_remove](UInt8 index) -> UInt8
     {
         if (index == INVALID_INDEX)
-            return;
+            return index;
         UInt8 count_smaller = 0;
         for (UInt8 removed_idx : indices_to_remove)
             if (removed_idx < index)
                 ++count_smaller;
-        index -= count_smaller;
+        return index - count_smaller;
     };
 
-    adjust_index(database_index);
-    adjust_index(table_index);
+    setDatabaseIndex(adjust_index(getDatabaseIndex()));
+    setTableIndex(adjust_index(getTableIndex()));
 }
 }

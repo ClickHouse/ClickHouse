@@ -14,6 +14,18 @@ namespace DB
 class ASTQueryWithOutput : public IAST
 {
 public:
+    struct ASTQueryWithOutputFlags
+    {
+        using ParentFlags = void;
+        static constexpr UInt32 RESERVED_BITS = 3;
+
+        UInt32 is_into_outfile_with_stdout : 1;
+        UInt32 is_outfile_append : 1;
+        UInt32 is_outfile_truncate : 1;
+        UInt32 unused : 29;
+    };
+
+public:
     /// Indices into the children vector for optional output options.
     /// Value of INVALID_INDEX means the option is not set.
     static constexpr UInt8 INVALID_INDEX = 0xFF;
@@ -85,14 +97,14 @@ public:
             compression_level_index = INVALID_INDEX;
     }
 
-    bool isIntoOutfileWithStdout() const { return FLAGS & IS_INTO_OUTFILE_WITH_STDOUT; }
-    void setIsIntoOutfileWithStdout(bool value) { FLAGS = value ? (FLAGS | IS_INTO_OUTFILE_WITH_STDOUT) : (FLAGS & ~IS_INTO_OUTFILE_WITH_STDOUT); }
+    bool isIntoOutfileWithStdout() const { return flags<ASTQueryWithOutputFlags>().is_into_outfile_with_stdout; }
+    void setIsIntoOutfileWithStdout(bool value) { flags<ASTQueryWithOutputFlags>().is_into_outfile_with_stdout = value; }
 
-    bool isOutfileAppend() const { return FLAGS & IS_OUTFILE_APPEND; }
-    void setIsOutfileAppend(bool value) { FLAGS = value ? (FLAGS | IS_OUTFILE_APPEND) : (FLAGS & ~IS_OUTFILE_APPEND); }
+    bool isOutfileAppend() const { return flags<ASTQueryWithOutputFlags>().is_outfile_append; }
+    void setIsOutfileAppend(bool value) { flags<ASTQueryWithOutputFlags>().is_outfile_append = value; }
 
-    bool isOutfileTruncate() const { return FLAGS & IS_OUTFILE_TRUNCATE; }
-    void setIsOutfileTruncate(bool value) { FLAGS = value ? (FLAGS | IS_OUTFILE_TRUNCATE) : (FLAGS & ~IS_OUTFILE_TRUNCATE); }
+    bool isOutfileTruncate() const { return flags<ASTQueryWithOutputFlags>().is_outfile_truncate; }
+    void setIsOutfileTruncate(bool value) { flags<ASTQueryWithOutputFlags>().is_outfile_truncate = value; }
 
     /// Remove 'FORMAT <fmt> and INTO OUTFILE <file>' if exists
     static bool resetOutputASTIfExist(IAST & ast);
@@ -109,11 +121,6 @@ protected:
     UInt8 settings_ast_index = INVALID_INDEX;
     UInt8 compression_index = INVALID_INDEX;
     UInt8 compression_level_index = INVALID_INDEX;
-
-    /// Bit flags for ASTQueryWithOutput
-    static constexpr UInt32 IS_INTO_OUTFILE_WITH_STDOUT = 1u << 0;
-    static constexpr UInt32 IS_OUTFILE_APPEND = 1u << 1;
-    static constexpr UInt32 IS_OUTFILE_TRUNCATE = 1u << 2;
 
     UInt8 addChildAndGetIndex(ASTPtr node)
     {
