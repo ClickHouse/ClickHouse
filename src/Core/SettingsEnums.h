@@ -556,7 +556,7 @@ enum class DeduplicateInsertSelectMode : uint8_t
 {
     DISABLE = 0,
     FORCE_ENABLE,
-    ENABLE_WHEN_PROSSIBLE,
+    ENABLE_WHEN_POSSIBLE,
     ENABLE_EVEN_FOR_BAD_QUERIES
 };
 
