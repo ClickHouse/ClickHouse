@@ -11,6 +11,8 @@ DATA_PARTS = {
     "/data/glob/partc.tsv": "3\n",
     "/data/glob/part1.tsv": "4\n",
     "/data/glob/part2.tsv": "5\n",
+    "/data/order/a/part1.tsv": "10\n",
+    "/data/order/b/part1.tsv": "20\n",
 }
 
 
@@ -23,7 +25,17 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             return
-        if self.path in ("/data/", "/data/2025/", "/data/empty/", "/data/query/", "/data/oversize/", "/data/glob/"):
+        if self.path in (
+            "/data/",
+            "/data/2025/",
+            "/data/empty/",
+            "/data/query/",
+            "/data/oversize/",
+            "/data/glob/",
+            "/data/order/",
+            "/data/order/a/",
+            "/data/order/b/",
+        ):
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             self.end_headers()
@@ -46,6 +58,18 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         if self.path == "/data/2025/":
             body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
+            return
+        if self.path == "/data/order/":
+            body = "<a href=\"a/\">a/</a>\n<a href=\"b/\">b/</a>\n"
+            self._send_html(body)
+            return
+        if self.path == "/data/order/a/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if self.path == "/data/order/b/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
             self._send_html(body)
             return
         if self.path == "/data/glob/":
