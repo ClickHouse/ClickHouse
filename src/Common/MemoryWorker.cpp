@@ -359,7 +359,7 @@ void MemoryWorker::updateResidentMemoryThread()
     /// under the CPU starvation.
     OSThreadNiceValue::set(-20);
 
-    std::chrono::milliseconds chrono_period_ms{period_ms};
+    std::chrono::milliseconds chrono_period_ms{rss_update_period_ms};
     [[maybe_unused]] bool first_run = true;
     std::unique_lock rss_update_lock(rss_update_mutex);
 
