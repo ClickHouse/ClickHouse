@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-parallel
+-- Tags: no-parallel
 
 DROP DATABASE IF EXISTS test_dict_db;
 DROP DATABASE IF EXISTS test_normal_db;
