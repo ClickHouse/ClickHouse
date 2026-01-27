@@ -38,6 +38,7 @@ void PostingListCursor::prepare(size_t segment)
     current_values.reserve(POSTING_LIST_UNIT_SIZE);
     if (info.embedded_postings)
     {
+        chassert(!stream);
         current_values.resize(info.embedded_postings->cardinality());
         info.embedded_postings->toUint32Array(current_values.data());
         current_block = 0;

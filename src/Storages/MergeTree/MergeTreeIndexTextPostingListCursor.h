@@ -37,8 +37,10 @@ public:
         segments.push_back(segment);
         prepare(segment);
     }
-
-    MergeTreeReaderStream * stream = nullptr;
+    PostingListCursor(const TokenPostingsInfo & info_, size_t segment)
+        : PostingListCursor(nullptr, info_, segment)
+    {
+    }
 
     /// Register an additional segment to iterate over.
     void addSegment(size_t);
@@ -87,6 +89,9 @@ private:
             segments.erase(segments.begin(), segments.begin() + unused_segment_index + 1);
         }
     }
+
+    MergeTreeReaderStream * stream = nullptr;
+
     const TokenPostingsInfo & info;
     PostingListCodecBitpackingImpl::Header header;
 

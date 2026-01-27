@@ -648,18 +648,21 @@ void MergeTreeReaderTextIndex::readStreamPostingsIfNeeded(size_t mark)
     auto &granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
     const auto &remaining_tokens = granule_text.getRemainingTokens();
 
-    auto read_token_postings = [&](std::string_view token, const TokenPostingsInfo &token_info, const RowsRange &range)
+    auto read_token_postings = [&](std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range)
     {
         auto blocks_to_read = token_info.getBlocksToRead(range);
-        for (const auto & block_idx: blocks_to_read)
+        for (const auto & block_idx : blocks_to_read)
         {
-            auto *postings_stream = large_postings_streams.at(token).get();
             auto it = stream_posting_cursors.find(token);
             if (it != stream_posting_cursors.end())
+            {
                 it->second->addSegment(block_idx);
+            }
             else
             {
-                auto cursor = std::make_shared<PostingListCursor>(postings_stream, token_info, block_idx);
+                auto cursor = token_info.embedded_postings
+                    ? std::make_shared<PostingListCursor>(token_info, block_idx)
+                    : std::make_shared<PostingListCursor>(large_postings_streams.at(token).get(), token_info, block_idx);
                 stream_posting_cursors[token] = cursor;
             }
         }
