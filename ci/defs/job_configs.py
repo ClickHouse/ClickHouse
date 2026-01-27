@@ -134,8 +134,7 @@ class JobConfigs:
         runs_on=RunnerLabels.AMD_LARGE,
         command="python3 ./ci/jobs/fast_test.py",
         # --network=host required for ec2 metadata http endpoint to work
-        # --root/--privileged/--cgroupns=host is required for clickhouse-test --memory-limit
-        run_in_docker="clickhouse/fasttest+--network=host+--privileged+--cgroupns=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+root",
+        run_in_docker="clickhouse/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/fast_test.py",
