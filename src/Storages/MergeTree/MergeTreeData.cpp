@@ -6059,6 +6059,8 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
         IndexSize part_index_size = part->getSecondaryIndexSize(index.name);
         total_secondary_index_size.add(part_index_size);
     }
+
+    primary_index_size.add(part->getIndexSizeFromFile());
 }
 
 void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
