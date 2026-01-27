@@ -28,20 +28,29 @@ class SpanAttribute
 {
 private:
     String key;
-    std::variant<String, std::string_view, int64_t, uint64_t, double, bool> value;
+    std::variant<
+        String,
+        int64_t,
+        uint64_t,
+        double,
+        int,
+        bool>
+        value;
 
 public:
-    template <typename K>
-    SpanAttribute(K && k, const char * v)
-        : key(std::forward<K>(k))
-        , value(std::string_view(v))
+    template <typename V>
+    requires (!std::is_constructible_v<String, std::decay_t<V>>)
+    SpanAttribute(std::string_view k, V v)
+        : key(k)
+        , value(std::forward<V>(v))
     {
     }
 
-    template <typename K, typename V>
-    SpanAttribute(K && k, V && v)
-        : key(std::forward<K>(k))
-        , value(std::forward<V>(v))
+    template <typename V>
+    requires std::is_constructible_v<String, std::decay_t<V>>
+    SpanAttribute(std::string_view k, V && v)
+        : key(k)
+        , value(String(std::forward<V>(v)))
     {
     }
 
@@ -54,7 +63,7 @@ public:
     {
         return std::visit([](auto && v)
         {
-            if constexpr (std::is_convertible_v<std::decay_t<decltype(v)>, String>)
+            if constexpr (std::is_same_v<std::decay_t<decltype(v)>, String>)
                 return v;
             return toString(v);
         }, value);
