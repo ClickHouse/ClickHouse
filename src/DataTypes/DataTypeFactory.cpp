@@ -131,7 +131,7 @@ DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
 
     if (const auto * type = ast->as<ASTDataType>())
     {
-        return getImpl<nullptr_on_error>(type->name, type->arguments);
+        return getImpl<nullptr_on_error>(type->name, type->getArguments());
     }
 
     if (const auto * ident = ast->as<ASTIdentifier>())
