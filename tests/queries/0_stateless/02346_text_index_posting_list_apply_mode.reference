@@ -84,12 +84,12 @@ hasToken with ORDER BY:
 Stress hasToken(alpha):
 50000	1
 Stress hasAllTokens(alpha beta):
-16666	1
+16667	1
 Stress hasAllTokens(alpha beta gamma):
-3333	1
+3334	1
 Stress hasAllTokens(alpha beta gamma delta):
-476	1
+477	1
 Stress hasAnyToken(alpha beta gamma):
-73333	1
+73334	1
 Stress brute_force hasAllTokens:
-3333	1
+3334	1

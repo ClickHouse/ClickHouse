@@ -412,7 +412,9 @@ void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderSt
 
     for (const auto & [token, token_info] : remaining_tokens)
     {
-        if (token_info.header & EmbeddedPostings)
+        if (token_info.header & IsCompressed)
+            continue;
+        else if (token_info.header & EmbeddedPostings)
         {
             chassert(token_info.embedded_postings);
             rare_tokens_postings.emplace(token, token_info.embedded_postings);
@@ -700,7 +702,8 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     info.header = 0;
     info.cardinality = static_cast<UInt32>(postings.size());
 
-    if (posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None)
+    bool has_compressed_codec = posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None;
+    if (has_compressed_codec)
     {
         info.header |= IsCompressed;
     }
@@ -717,7 +720,8 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     else if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
     {
         info.header |= RawPostings;
-        info.header &= ~IsCompressed;
+        if (!has_compressed_codec || params.posting_list_apply_mode != PostingListApplyMode::Lazy)
+            info.header &= ~IsCompressed;
         info.header |= SingleBlock;
     }
     else if (info.cardinality <= params.posting_list_block_size)

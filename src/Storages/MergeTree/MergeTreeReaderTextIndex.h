@@ -63,7 +63,7 @@ private:
     void analyzeTokensCardinality();
     void initializePostingStreams();
     void fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows);
-    void fillColumn(IColumn & column, const String & column_name, std::vector<PostingListCursorPtr> & postings, size_t row_offset, size_t num_rows);
+    void fillColumn(IColumn & column, const String & column_name, PostingListCursorMap & postings, size_t row_offset, size_t num_rows);
 
     using TokenToPostingsInfosMap = MergeTreeIndexGranuleText::TokenToPostingsInfosMap;
 
@@ -104,7 +104,6 @@ private:
     std::unique_ptr<MergeTreeIndexDeserializationState> deserialization_state;
 
     PostingListCursorMap stream_posting_cursors;
-    std::vector<PostingListCursorPtr> posting_cursors;
     bool lazy_apply_posting_list = false;
 };
 

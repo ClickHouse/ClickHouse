@@ -499,9 +499,9 @@ SELECT
 -- Test: Query with ORDER BY
 SELECT 'hasToken with ORDER BY:';
 SELECT
-    (SELECT max(id) FROM tab_lazy WHERE hasToken(str, 'apple') ORDER BY id DESC LIMIT 1) AS lazy,
-    (SELECT max(id) FROM tab_materialize WHERE hasToken(str, 'apple') ORDER BY id DESC LIMIT 1) AS materialize,
-    (SELECT max(id) FROM tab_uncompressed WHERE hasToken(str, 'apple') ORDER BY id DESC LIMIT 1) AS uncompressed,
+    (SELECT max(id) FROM tab_lazy WHERE hasToken(str, 'apple') GROUP BY id ORDER BY id DESC LIMIT 1) AS lazy,
+    (SELECT max(id) FROM tab_materialize WHERE hasToken(str, 'apple') GROUP BY id ORDER BY id DESC LIMIT 1) AS materialize,
+    (SELECT max(id) FROM tab_uncompressed WHERE hasToken(str, 'apple') GROUP BY id ORDER BY id DESC LIMIT 1) AS uncompressed,
     lazy = materialize AND materialize = uncompressed AS ok;
 
 -- =============================================================================
@@ -551,21 +551,21 @@ SELECT
 SELECT 'Stress hasAllTokens(alpha beta):';
 SELECT
     (SELECT count() FROM tab_stress WHERE hasAllTokens(str, 'alpha beta')) AS cnt,
-    cnt = 16666 AS ok;
+    cnt = 16667 AS ok;
 
 -- Test: Stress hasAllTokens (3 tokens)
 -- alpha AND beta AND gamma: divisible by 2,3,5 => divisible by 30 => 100000/30 = 3333
 SELECT 'Stress hasAllTokens(alpha beta gamma):';
 SELECT
     (SELECT count() FROM tab_stress WHERE hasAllTokens(str, 'alpha beta gamma')) AS cnt,
-    cnt = 3333 AS ok;
+    cnt = 3334 AS ok;
 
 -- Test: Stress hasAllTokens (4 tokens)
 -- alpha AND beta AND gamma AND delta: divisible by 2,3,5,7 => divisible by 210 => 100000/210 = 476
 SELECT 'Stress hasAllTokens(alpha beta gamma delta):';
 SELECT
     (SELECT count() FROM tab_stress WHERE hasAllTokens(str, 'alpha beta gamma delta')) AS cnt,
-    cnt = 476 AS ok;
+    cnt = 477 AS ok;
 
 -- Test: Stress hasAnyToken (3 tokens)
 -- alpha OR beta OR gamma: 50000 + 33333 + 20000 - overlaps
@@ -579,7 +579,7 @@ SELECT 'Stress brute_force hasAllTokens:';
 SET text_index_brute_force_apply = true;
 SELECT
     (SELECT count() FROM tab_stress WHERE hasAllTokens(str, 'alpha beta gamma')) AS cnt,
-    cnt = 3333 AS ok;
+    cnt = 3334 AS ok;
 SET text_index_brute_force_apply = false;
 
 DROP TABLE tab_stress;

@@ -70,7 +70,7 @@ void PostingListCodecBitpackingImpl::decode(ReadBuffer & in, PostingList & posti
 {
     Header header;
     header.read(in);
-    has_block_skip_index = header.has_block_skip_index;
+    has_block_skip_index = header.has_block_skip_index == 1;
 
     if (has_block_skip_index)
     {

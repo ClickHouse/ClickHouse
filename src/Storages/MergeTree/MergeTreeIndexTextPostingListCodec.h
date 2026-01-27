@@ -214,7 +214,7 @@ private:
     const size_t max_rowids_in_segment = 1024 * 1024;
     /// If true, write block_row_ends and block_offsets for lazy apply mode (seek/skip support).
     /// If false, skip writing block index to save space when only materialize mode is used.
-    bool has_block_skip_index = true;
+    bool has_block_skip_index = false;
 };
 
 /// Codec for serializing/deserializing a postings list to/from a binary stream.

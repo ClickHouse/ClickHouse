@@ -321,7 +321,7 @@ size_t MergeTreeReaderTextIndex::readRows(
                 }
                 else
                 {
-                    fillColumn(column_mutable, columns_to_read[i].name, posting_cursors, from_row, rows_to_read);
+                    fillColumn(column_mutable, columns_to_read[i].name, stream_posting_cursors, from_row, rows_to_read);
                 }
             }
         }
@@ -657,7 +657,6 @@ void MergeTreeReaderTextIndex::readStreamPostingsIfNeeded(size_t mark)
             {
                 auto cursor = std::make_shared<PostingListCursor>(postings_stream, token_info, block_idx);
                 stream_posting_cursors[token] = cursor;
-                posting_cursors.emplace_back(cursor);
             }
         }
     };
@@ -672,7 +671,7 @@ void MergeTreeReaderTextIndex::readStreamPostingsIfNeeded(size_t mark)
     }
 }
 
-void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & column_name, std::vector<PostingListCursorPtr> & postings, size_t row_offset, size_t num_rows)
+void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & column_name, PostingListCursorMap & postings, size_t row_offset, size_t num_rows)
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
@@ -690,9 +689,9 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
     bool brute_force_apply = settings[Setting::text_index_brute_force_apply];
     float density_threshold = settings[Setting::text_index_brute_force_density_threshold];
     if (search_query->search_mode == TextSearchMode::Any || postings.size() == 1)
-        lazyUnionPostingLists(column, postings, old_size, row_offset, num_rows, brute_force_apply, density_threshold);
+        lazyUnionPostingLists(column, postings, search_query->tokens, old_size, row_offset, num_rows, brute_force_apply, density_threshold);
     else if (search_query->search_mode == TextSearchMode::All)
-        lazyIntersectPostingLists(column, postings, old_size, row_offset, num_rows, brute_force_apply, density_threshold);
+        lazyIntersectPostingLists(column, postings, search_query->tokens, old_size, row_offset, num_rows, brute_force_apply, density_threshold);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
 }

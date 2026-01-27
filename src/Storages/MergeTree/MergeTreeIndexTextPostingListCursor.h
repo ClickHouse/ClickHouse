@@ -76,6 +76,17 @@ private:
     uint32_t min() const { return header.first_row_id; }
     uint32_t max() const { return block_row_ends.back(); }
 
+    inline void maybeEraseUnusedSegments(int unused_segment_index)
+    {
+        chassert(static_cast<size_t>(unused_segment_index) < segments.size());
+        if (unused_segment_index >= 0 && segments.size() > 1)
+        {
+            auto end = segments.begin() + unused_segment_index + 1;
+            for (auto it = segments.begin(); it < end; ++it)
+                seen_segments.erase(*it);
+            segments.erase(segments.begin(), segments.begin() + unused_segment_index + 1);
+        }
+    }
     const TokenPostingsInfo & info;
     PostingListCodecBitpackingImpl::Header header;
 
@@ -99,9 +110,11 @@ private:
 
     /// Segments (granules) this cursor covers
     std::vector<size_t> segments;
+    std::unordered_set<size_t> seen_segments;
     size_t current_segment = std::numeric_limits<size_t>::max();
 
     bool is_valid = true;
+    bool is_embedded = false;
     double density_val = 0;
 };
 
@@ -120,7 +133,7 @@ using PostingListCursorMap = absl::flat_hash_map<std::string_view, PostingListCu
 /// @param num_rows     Number of rows to process
 /// @param brute_force_apply  Force brute-force algorithm regardless of density
 /// @param density_threshold  Switch to brute-force if density >= this value
-void lazyUnionPostingLists(IColumn & column, std::vector<PostingListCursorPtr> & postings, size_t column_offset, size_t row_offset, size_t num_rows, bool brute_force_apply, float density_threshold);
+void lazyUnionPostingLists(IColumn & column, const PostingListCursorMap & postings, const std::vector<String> & search_tokens, size_t column_offset, size_t row_offset, size_t num_rows, bool brute_force_apply, float density_threshold);
 
 /// Compute intersection (AND) of multiple posting lists using lazy decoding.
 ///
@@ -137,6 +150,6 @@ void lazyUnionPostingLists(IColumn & column, std::vector<PostingListCursorPtr> &
 /// @param num_rows     Number of rows to process
 /// @param brute_force_apply  Force brute-force algorithm regardless of density
 /// @param density_threshold  Switch to brute-force if density >= this value
-void lazyIntersectPostingLists(IColumn & column, std::vector<PostingListCursorPtr> & postings, size_t column_offset, size_t row_offset, size_t num_rows, bool brute_force_apply, float density_threshold);
+void lazyIntersectPostingLists(IColumn & column, const PostingListCursorMap & postings, const std::vector<String> & search_tokens, size_t column_offset, size_t row_offset, size_t num_rows, bool brute_force_apply, float density_threshold);
 
 }

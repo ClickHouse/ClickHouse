@@ -35,6 +35,21 @@ void PostingListCursor::prepare(size_t segment)
     if (current_segment == segment && current_segment != std::numeric_limits<size_t>::max())
         return;
 
+    current_values.reserve(POSTING_LIST_UNIT_SIZE);
+    if (info.embedded_postings)
+    {
+        current_values.resize(info.embedded_postings->cardinality());
+        info.embedded_postings->toUint32Array(current_values.data());
+        current_block = 0;
+        block_count = 1;
+        current_segment = segment;
+        is_valid = true;
+        is_embedded = true;
+        density_val = static_cast<double>(header.cardinality) / static_cast<double>(current_values.back() - current_values.front());
+        return;
+    }
+
+
     chassert(segment < info.offsets.size());
     size_t offset_in_file = info.offsets[segment];
     stream->seekToMark({offset_in_file, 0});
@@ -44,7 +59,6 @@ void PostingListCursor::prepare(size_t segment)
     chassert(header.has_block_skip_index);
     CodecUtil::readArrayU32(in, block_row_ends);
     CodecUtil::readArrayU32(in, block_offsets);
-    current_values.reserve(POSTING_LIST_UNIT_SIZE);
     if (header.payload_bytes > (compressed_data.capacity() - compressed_data.size()))
         compressed_data.reserve(compressed_data.size() + header.payload_bytes);
     compressed_data.resize(header.payload_bytes);
@@ -86,10 +100,7 @@ void PostingListCursor::seek(uint32_t target)
         }
 
         if (unused_segment_index > 0)
-        {
-            std::memmove(segments.data(), segments.data() + unused_segment_index, (segments.size() - unused_segment_index) * sizeof(uint32_t));
-            segments.resize(segments.size() - unused_segment_index);
-        }
+            maybeEraseUnusedSegments(unused_segment_index);
         is_valid = found;
     }
 }
@@ -104,6 +115,8 @@ bool PostingListCursor::seekImpl(uint32_t target)
             index = static_cast<size_t>(it - current_values.begin());
             return true;
         }
+        if (is_embedded)
+            return false;
     }
     size_t block_start = 0;
     size_t block_end = block_count;
@@ -163,29 +176,72 @@ void PostingListCursor::next()
     }
 }
 
+inline void padColumnForOr(UInt8 * __restrict out, const std::vector<uint32_t> & current_values, size_t row_begin, size_t begin, size_t length)
+{
+    const uint32_t * data = current_values.data();
+    const uint32_t * data_begin = data + begin;
+    const uint32_t * data_end = data + length;
+
+    if (data_begin >= data_end)
+        return;
+
+    const uint32_t * p = data_begin;
+    const size_t count = data_end - data_begin;
+
+    const uint32_t * loop_end = data_begin + (count / 4) * 4;
+
+    for (; p < loop_end; p += 4)
+    {
+        __builtin_prefetch(p + 16, 0, 3);
+        if (p + 4 < data_end)
+            __builtin_prefetch(&out[p[4] - row_begin], 1, 0);
+
+        out[p[0] - row_begin] = 1;
+        out[p[1] - row_begin] = 1;
+        out[p[2] - row_begin] = 1;
+        out[p[3] - row_begin] = 1;
+    }
+
+    switch (data_end - p)
+    {
+        case 3: out[p[2] - row_begin] = 1; [[fallthrough]];
+        case 2: out[p[1] - row_begin] = 1; [[fallthrough]];
+        case 1: out[p[0] - row_begin] = 1; [[fallthrough]];
+        default: break;
+    }
+}
+
 void PostingListCursor::linearOrImpl(size_t segment, UInt8 * __restrict out, size_t row_begin, size_t row_end)
 {
     chassert(segment < info.ranges.size());
+
+    if (unlikely(is_embedded))
+    {
+        auto it = std::lower_bound(current_values.begin(), current_values.end(), row_begin);
+        if (it == current_values.end())
+            return;
+        size_t idx = static_cast<size_t>(it - current_values.begin());
+        auto it_end = std::upper_bound(current_values.begin(), current_values.end(), row_end);
+        size_t length = it_end - current_values.begin();
+        padColumnForOr(out, current_values, row_begin, idx, length);
+        return;
+    }
 
     size_t block_start = 0;
     size_t block_end = block_count;
     size_t offset = 0;
 
-    if (block_count > 8)
-    {
-        const auto & row_ends = block_row_ends;
-        const auto & offsets = block_offsets;
-        size_t skip_block_begin = static_cast<size_t>(std::lower_bound(row_ends.begin(), row_ends.end(), row_begin) - row_ends.begin());
-        if (skip_block_begin >= block_count)
-        {
-            return;
-        }
-        size_t skip_block_end = static_cast<size_t>(std::lower_bound(row_ends.begin(), row_ends.end(), row_end) - row_ends.begin());
+    const auto &row_ends = block_row_ends;
+    const auto &offsets = block_offsets;
+    size_t skip_block_begin = static_cast<size_t>(std::lower_bound(row_ends.begin(), row_ends.end(), row_begin) - row_ends.begin());
+    if (skip_block_begin >= block_count)
+        return;
+    size_t skip_block_end = static_cast<size_t>(std::lower_bound(row_ends.begin(), row_ends.end(), row_end) - row_ends.begin());
 
-        block_start = skip_block_begin;
-        block_end = std::min(skip_block_end + 1, block_count);
-        offset = offsets[block_start];
-    }
+    block_start = skip_block_begin;
+    block_end = std::min(skip_block_end + 1, block_count);
+    offset = offsets[block_start];
+
     std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte *>(compressed_data.data()),compressed_data.size());
     compressed_data_span = compressed_data_span.subspan(offset);
 
@@ -196,43 +252,13 @@ void PostingListCursor::linearOrImpl(size_t segment, UInt8 * __restrict out, siz
         auto it = std::lower_bound(current_values.begin(), current_values.end(), row_begin);
         if (it == current_values.end())
             continue;
-
         size_t idx = static_cast<size_t>(it - current_values.begin());
         auto it_end = std::upper_bound(current_values.begin(), current_values.end(), row_end);
-        size_t end_k = it_end - current_values.begin();
-        const uint32_t * data = current_values.data();
-        const uint32_t * data_begin = data + idx;
-        const uint32_t * data_end = data + end_k;
+        size_t length = it_end - current_values.begin();
 
-        if (data_begin >= data_end)
-            return;
+        padColumnForOr(out, current_values, row_begin, idx, length);
 
-        const uint32_t * p = data_begin;
-        const size_t count = data_end - data_begin;
-
-        const uint32_t * loop_end = data_begin + (count / 4) * 4;
-
-        for (; p < loop_end; p += 4)
-        {
-            __builtin_prefetch(p + 16, 0, 3);
-            if (p + 4 < data_end)
-                __builtin_prefetch(&out[p[4] - row_begin], 1, 0);
-
-            out[p[0] - row_begin] = 1;
-            out[p[1] - row_begin] = 1;
-            out[p[2] - row_begin] = 1;
-            out[p[3] - row_begin] = 1;
-        }
-
-        switch (data_end - p)
-        {
-            case 3: out[p[2] - row_begin] = 1; [[fallthrough]];
-            case 2: out[p[1] - row_begin] = 1; [[fallthrough]];
-            case 1: out[p[0] - row_begin] = 1; [[fallthrough]];
-            default: break;
-        }
-
-        if (end_k < block_size)
+        if (length < block_size)
             return;
     }
 }
@@ -256,9 +282,35 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
         linearOrImpl(segment, data, row_offset, end);
     }
     if (unused_segment_index > 0)
+        maybeEraseUnusedSegments(unused_segment_index);
+}
+
+inline void padColumnForAnd(UInt8 * __restrict out, const std::vector<uint32_t> & current_values, size_t row_begin, size_t begin, size_t length)
+{
+    const uint32_t *p = current_values.data() + begin;
+    const uint32_t *end = current_values.data() + length;
+
+    for (; p + 4 <= end; p += 4)
     {
-        std::memmove(segments.data(), segments.data() + unused_segment_index, (segments.size() - unused_segment_index) * sizeof(uint32_t));
-        segments.resize(segments.size() - unused_segment_index);
+        __builtin_prefetch(p + 16, 0, 3);
+        if (p + 8 < end)
+            __builtin_prefetch(&out[p[8] - row_begin], 1, 0);
+
+        ++out[p[0] - row_begin];
+        ++out[p[1] - row_begin];
+        ++out[p[2] - row_begin];
+        ++out[p[3] - row_begin];
+    }
+
+    switch (end - p)
+    {
+        case 3: ++out[p[2] - row_begin];
+            [[fallthrough]];
+        case 2: ++out[p[1] - row_begin];
+            [[fallthrough]];
+        case 1: ++out[p[0] - row_begin];
+            [[fallthrough]];
+        default: break;
     }
 }
 
@@ -266,26 +318,34 @@ void PostingListCursor::linearAndImpl(size_t segment, UInt8 * __restrict out, si
 {
     chassert(segment < info.ranges.size());
 
+    if (unlikely(is_embedded))
+    {
+        auto it = std::lower_bound(current_values.begin(), current_values.end(), row_begin);
+        if (it == current_values.end())
+            return;
+        size_t idx = static_cast<size_t>(it - current_values.begin());
+        auto it_end = std::upper_bound(current_values.begin(), current_values.end(), row_end);
+        size_t length = it_end - current_values.begin();
+        padColumnForAnd(out, current_values, row_begin, idx, length);
+        return;
+    }
+
     size_t block_start = 0;
     size_t block_end = block_count;
     size_t offset = 0;
 
-    if (block_count > 8)
-    {
-        const auto & row_ends = block_row_ends;
-        const auto & offsets = block_offsets;
+    const auto & row_ends = block_row_ends;
+    const auto & offsets = block_offsets;
 
-        size_t skip_block_begin = static_cast<size_t>(std::lower_bound(row_ends.begin(), row_ends.end(), row_begin) - row_ends.begin());
-        if (skip_block_begin >= block_count)
-        {
-            return;
-        }
-        size_t skip_block_end = static_cast<size_t>(std::lower_bound(row_ends.begin(), row_ends.end(), row_end) - row_ends.begin());
+    size_t skip_block_begin = static_cast<size_t>(std::lower_bound(row_ends.begin(), row_ends.end(), row_begin) - row_ends.begin());
+    if (skip_block_begin >= block_count)
+        return;
+    size_t skip_block_end = static_cast<size_t>(std::lower_bound(row_ends.begin(), row_ends.end(), row_end) - row_ends.begin());
 
-        block_start = skip_block_begin;
-        block_end = std::min(skip_block_end + 1, block_count);
-        offset = offsets[block_start];
-    }
+    block_start = skip_block_begin;
+    block_end = std::min(skip_block_end + 1, block_count);
+    offset = offsets[block_start];
+
     std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte *>(compressed_data.data()),compressed_data.size());
     compressed_data_span = compressed_data_span.subspan(offset);
 
@@ -297,34 +357,13 @@ void PostingListCursor::linearAndImpl(size_t segment, UInt8 * __restrict out, si
         auto it = std::lower_bound(current_values.begin(), current_values.end(), row_begin);
         if (it == current_values.end())
             continue;
-
         size_t idx = static_cast<size_t>(it - current_values.begin());
         auto it_end = std::upper_bound(current_values.begin(), current_values.end(), row_end);
-        size_t end_k = it_end - current_values.begin();
-        const uint32_t * p = current_values.data() + idx;
-        const uint32_t * end = current_values.data() + end_k;
+        size_t length = it_end - current_values.begin();
 
-        for (; p + 4 <= end; p += 4)
-        {
-            __builtin_prefetch(p + 16, 0, 3);
-            if (p + 8 < end)
-                __builtin_prefetch(&out[p[8] - row_begin], 1, 0);
+        padColumnForAnd(out, current_values, row_begin, idx, length);
 
-            ++out[p[0] - row_begin];
-            ++out[p[1] - row_begin];
-            ++out[p[2] - row_begin];
-            ++out[p[3] - row_begin];
-        }
-
-        switch (end - p)
-        {
-            case 3: ++out[p[2] - row_begin]; [[fallthrough]];
-            case 2: ++out[p[1] - row_begin]; [[fallthrough]];
-            case 1: ++out[p[0] - row_begin]; [[fallthrough]];
-            default: break;
-        }
-
-        if (end_k < block_size)
+        if (length < block_size)
             return;
     }
 }
@@ -344,15 +383,12 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
             continue;
         }
         end = std::min(end, row_offset + num_rows - 1);
-        prepare(segment);
+        prepare(segments[i]);
         linearAndImpl(segment, data, row_offset, end);
     }
 
     if (unused_segment_index > 0)
-    {
-        std::memmove(segments.data(), segments.data() + unused_segment_index, (segments.size() - unused_segment_index) * sizeof(uint32_t));
-        segments.resize(segments.size() - unused_segment_index);
-    }
+        maybeEraseUnusedSegments(unused_segment_index);
 }
 
 namespace
@@ -682,11 +718,19 @@ void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & 
 /// Simply iterates through all cursors and sets bits for matching row IDs.
 /// brute_force_apply and density_threshold are unused here since union
 /// always uses linear scan (no skip-list optimization needed for OR).
-void lazyUnionPostingLists(IColumn & column, std::vector<PostingListCursorPtr> & cursors, size_t column_offset, size_t row_offset, size_t num_rows, bool /*brute_force_apply*/, float /*density_threshold*/)
+void lazyUnionPostingLists(IColumn & column, const PostingListCursorMap & postings, const std::vector<String> & search_tokens, size_t column_offset, size_t row_offset, size_t num_rows, bool /*brute_force_apply*/, float /*density_threshold*/)
 {
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
     UInt8 * out = data.data() + column_offset;
 
+    std::vector<PostingListCursorPtr> cursors;
+    cursors.reserve(postings.size());
+    for (const auto & token : search_tokens)
+    {
+        auto it = postings.find(token);
+        if (it != postings.end())
+            cursors.emplace_back(it->second);
+    }
     for (const auto & cursor : cursors)
         cursor->linearOr(out, row_offset, num_rows);
 }
@@ -701,11 +745,19 @@ void lazyUnionPostingLists(IColumn & column, std::vector<PostingListCursorPtr> &
 /// The density-based switching is crucial for performance:
 ///   - Sparse lists: skip-list is faster (fewer elements to process)
 ///   - Dense lists: brute-force is faster (sequential memory access pattern)
-void lazyIntersectPostingLists(IColumn & column, std::vector<PostingListCursorPtr> & cursors, size_t column_offset, size_t row_offset, size_t num_rows, bool brute_force_apply, float density_threshold)
+void lazyIntersectPostingLists(IColumn & column, const PostingListCursorMap & postings, const std::vector<String> & search_tokens, size_t column_offset, size_t row_offset, size_t num_rows, bool brute_force_apply, float density_threshold)
 {
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
     UInt8 * __restrict out = data.data() + column_offset;
 
+    std::vector<PostingListCursorPtr> cursors;
+    cursors.reserve(postings.size());
+    for (const auto & token : search_tokens)
+    {
+        auto it = postings.find(token);
+        if (it != postings.end())
+            cursors.emplace_back(it->second);
+    }
     const size_t n = cursors.size();
     const size_t end = row_offset + num_rows;
 
