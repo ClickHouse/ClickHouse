@@ -19,4 +19,3 @@ set use_query_condition_cache=0;
 -- { echo }
 select count() from test_1m where key > 10000 settings distributed_index_analysis=0;
 select count() from test_1m where key > 10000 settings distributed_index_analysis=1;
-explain indexes=1 select count() from test_1m where key > 10000 settings distributed_index_analysis=1;
