@@ -4,6 +4,7 @@
 #include <chrono>
 #include <memory>
 #include <vector>
+#include <string>
 #include <Server/TCPServerConnectionFactory.h>
 #include <Server/TCPServer.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -50,6 +51,16 @@ public:
         stack_data.socket = socket();
         stack_data.default_database = conf.getString(conf_name + ".default_database", "");
 
+        std::string peer_address_str;
+        try
+        {
+            peer_address_str = stack_data.socket.peerAddress().toString();
+        }
+        catch (...)
+        {
+            peer_address_str = "unknown";
+        }
+
         /// Keep the secure connection alive if we need to send an error message afterwards.
         std::unique_ptr<TCPServerConnection> secure_connection_holder;
 
@@ -73,7 +84,7 @@ public:
                     }
                     catch (...)
                     {
-                        LOG_WARNING(log, "TLS handshake failed for blocked client {}: {}", socket().peerAddress().toString(), getCurrentExceptionMessage(false));
+                        LOG_WARNING(log, "TLS handshake failed for blocked client {}: {}", peer_address_str, getCurrentExceptionMessage(false));
                     }
 
                     if (!handshake_ok)
@@ -87,7 +98,7 @@ public:
                 try
                 {
                     std::string message = "Code: " + std::to_string(ErrorCodes::IP_ADDRESS_NOT_ALLOWED) + ". DB::Exception: IP address not allowed.\n";
-                    LOG_DEBUG(log, "IP address {} is blocked. Sending error message.", stack_data.socket.peerAddress().toString());
+                    LOG_DEBUG(log, "IP address {} is blocked. Sending error message.", peer_address_str);
 
                     int sent = stack_data.socket.sendBytes(message.data(), static_cast<int>(message.size()));
                     stack_data.socket.shutdownSend();
@@ -107,18 +118,18 @@ public:
                     }
                     if (sent != static_cast<int>(message.size()))
                     {
-                        LOG_ERROR(log, "Failed to send complete IP block error message to client {} (sent {} of {} bytes).", stack_data.socket.peerAddress().toString(), sent, message.size());
+                        LOG_ERROR(log, "Failed to send complete IP block error message to client {} (sent {} of {} bytes).", peer_address_str, sent, message.size());
                     }
                     else
                     {
-                        LOG_INFO(log, "Sent IP access denied message to {}.", stack_data.socket.peerAddress().toString());
+                        LOG_INFO(log, "Sent IP access denied message to {}.", peer_address_str);
                     }
 
                     stack_data.socket.close();
                 }
                 catch (...)
                 {
-                    LOG_ERROR(log, "Failed to send error message to blocked client {}: {}", stack_data.socket.peerAddress().toString(), getCurrentExceptionMessage(false));
+                    LOG_ERROR(log, "Failed to send error message to blocked client {}: {}", peer_address_str, getCurrentExceptionMessage(false));
                 }
                 return;
             }
