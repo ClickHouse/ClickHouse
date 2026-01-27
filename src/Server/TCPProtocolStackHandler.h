@@ -112,7 +112,7 @@ public:
                     {
                         LOG_INFO(log, "Sent IP access denied message to {}.", stack_data.socket.peerAddress().toString());
                     }
-                    
+
                     stack_data.socket.close();
                 }
                 catch (...)
