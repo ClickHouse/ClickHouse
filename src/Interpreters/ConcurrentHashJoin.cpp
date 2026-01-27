@@ -28,7 +28,6 @@
 #include <DataTypes/NullableUtils.h>
 #include <base/defines.h>
 #include <base/types.h>
-#include <fmt/ranges.h>
 
 #include <algorithm>
 #include <numeric>
@@ -448,7 +447,6 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}",
                         table_join->kind(), table_join->strictness());
 
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: hash_joins[0]->data->twoLevelMapIsUsed() {}", __FILE__, __LINE__, hash_joins[0]->data->twoLevelMapIsUsed());
     // If two-level maps are used, the probe stage uses only slot 0 (see joinBlock()),
     // and on build finish we merged buckets into slot 0 and copied the shared map/flags to all instances
     if (hash_joins[0]->data->twoLevelMapIsUsed())
@@ -814,18 +812,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 auto used_flags = hash_join->data->getUsedFlags();
                 return !used_flags->per_row_flags.empty();
             });
-        auto dump_flags = [](const auto & v)
-        {
-            return fmt::format("{} {}",
-                fmt::join((*v.first) | std::views::transform([](const auto & e)
-                {
-                    std::vector<UInt64> data;
-                    for (size_t i = 0; i < e->size(); ++i)
-                        data.push_back(e->get64(i));
-                    return fmt::format("[{}]", fmt::join(data, ","));
-                }), ","),
-                fmt::join(v.second | std::views::transform([](const auto & flag) { return flag.load(); }), ","));
-        };
+
         //     2. Copy this common map to all the `HashJoin` instances along with the `used_flags` data structure.
         for (size_t i = 1; i < slots; ++i)
         {
@@ -833,8 +820,6 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
 
             if (use_per_row_flags)
             {
-                LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: [{}]", __FILE__, __LINE__, fmt::join(
-                    common_used_flags->per_row_flags | std::views::transform(dump_flags), "; "));
                 /// In case flag per row is used, we need to merge flags, rows in different slots can differ.
                 auto current_used_flags = hash_joins[i]->data->getUsedFlags();
                 common_used_flags->per_row_flags.merge(current_used_flags->per_row_flags);
@@ -843,9 +828,6 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             }
             hash_joins[i]->data->setUsedFlags(common_used_flags);
         }
-
-        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: [{}]", __FILE__, __LINE__, fmt::join(
-                    common_used_flags->per_row_flags | std::views::transform(dump_flags), "; "));
     }
 
     build_phase_finished = true;

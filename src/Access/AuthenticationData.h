@@ -1,22 +1,17 @@
 #pragma once
 
 #include "config.h"
+
 #include <Access/Common/AuthenticationType.h>
 #include <Access/Common/HTTPAuthenticationScheme.h>
 #include <Access/Common/OneTimePassword.h>
+#include <Common/Crypto/X509Certificate.h>
 #include <Common/SSHWrapper.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 
 #include <vector>
 #include <base/types.h>
-
-#include <Access/Common/AuthenticationType.h>
-#include <Access/Common/HTTPAuthenticationScheme.h>
-#include <Common/SSHWrapper.h>
-#include <Common/Crypto/X509Certificate.h>
-#include <Interpreters/Context_fwd.h>
-#include <Parsers/Access/ASTAuthenticationData.h>
 
 
 namespace DB
@@ -37,28 +32,27 @@ public:
     AuthenticationType getType() const { return type; }
 
     /// Sets the password and encrypt it using the authentication type set in the constructor.
-    void setPassword(const String & password_, bool validate);
+    void setPassword(const String & password_, std::optional<OneTimePasswordSecret> second_factor, bool validate);
 
     /// Returns the password. Allowed to use only for Type::PLAINTEXT_PASSWORD.
     String getPassword() const;
 
-    void setOneTimePassword(const String & password_, OneTimePasswordParams config, bool validate);
-    const OneTimePasswordSecret & getOneTimePassword() const { return otp_secret.value(); }
-
     /// Sets the password as a string of hexadecimal digits.
-    void setPasswordHashHex(const String & hash, bool validate);
+    void setPasswordHashHex(const String & hash, std::optional<OneTimePasswordSecret> second_factor, bool validate);
     String getPasswordHashHex() const;
 
     /// Sets the password in binary form.
-    void setPasswordHashBinary(const Digest & hash, bool validate);
+    void setPasswordHashBinary(const Digest & hash, std::optional<OneTimePasswordSecret> second_factor, bool validate);
     const Digest & getPasswordHashBinary() const { return password_hash; }
 
     /// Sets the salt in String form.
     void setSalt(String salt);
     String getSalt() const;
 
+    const std::optional<OneTimePasswordSecret> & getOneTimePassword() const { return otp_secret; }
+
     /// Sets the password using bcrypt hash with specified workfactor
-    void setPasswordBcrypt(const String & password_, int workfactor_, bool validate);
+    void setPasswordBcrypt(const String & password_, int workfactor_, std::optional<OneTimePasswordSecret> second_factor, bool validate);
 
     /// Sets the server name for authentication type LDAP.
     const String & getLDAPServerName() const { return ldap_server_name; }

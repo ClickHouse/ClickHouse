@@ -35,6 +35,6 @@ struct OneTimePasswordSecret
 };
 
 String getOneTimePasswordSecretLink(const OneTimePasswordSecret & secret);
-bool checkOneTimePassword(const String & password, const OneTimePasswordSecret & secret);
+bool checkOneTimePassword(std::string_view password, const OneTimePasswordSecret & secret);
 
 }

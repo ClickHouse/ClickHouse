@@ -35,6 +35,7 @@
 
                  If you want to specify secret for one time passwords, place it in 'time_based_one_time_password' element.
                  Example:
+
                  <time_based_one_time_password>
                      <secret>ALLT7V6M3NNSQXMEMPEAUSX77OOUTBSO</secret>
                      <period>30</period>

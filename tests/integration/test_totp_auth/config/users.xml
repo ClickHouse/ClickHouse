@@ -1,0 +1,31 @@
+<clickhouse>
+    <profiles>
+        <default>
+        </default>
+    </profiles>
+    <users>
+        <totuser>
+            <password>aa+bb</password>
+            <time_based_one_time_password>
+                <secret>5IPBK7HQSGAOVYTWQ3U4K35L</secret>
+                <period>60</period>
+                <digits>9</digits>
+                <algorithm>SHA256</algorithm>
+            </time_based_one_time_password>
+
+            <access_management>1</access_management>
+            <networks replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </totuser>
+
+        <totuser_no_password>
+            <no_password></no_password>
+            <time_based_one_time_password>
+                <secret>GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ</secret>
+            </time_based_one_time_password>
+        </totuser_no_password>
+    </users>
+</clickhouse>

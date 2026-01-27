@@ -64,6 +64,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
+    extern const int AUTHENTICATION_FAILED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
     extern const int USER_EXPIRED;
 }
@@ -377,20 +378,43 @@ try
     }
 #endif
 
+    bool can_ask_2fa = true;
+    bool can_ask_password = true;
+    while (true)
     try
     {
         connect();
+        break;
     }
     catch (const Exception & e)
     {
-        if ((e.code() != ErrorCodes::AUTHENTICATION_FAILED && e.code() != ErrorCodes::REQUIRED_PASSWORD) ||
-            config().has("password") ||
-            config().getBool("ask-password", false) ||
-            !is_interactive)
-            throw;
+        can_ask_password = can_ask_password && (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD) &&
+            !config().has("password") &&
+            !config().getBool("ask-password", false) &&
+            is_interactive;
 
-        config().setBool("ask-password", true);
-        connect();
+        if (can_ask_password)
+        {
+            can_ask_password = false;
+            config().setBool("ask-password", true);
+            continue;
+        }
+
+        can_ask_2fa = can_ask_2fa && (e.code() == ErrorCodes::AUTHENTICATION_FAILED_SECOND_FACTOR) &&
+            (config().getBool("ask-password", false) || is_interactive);
+
+
+        if (can_ask_2fa)
+        {
+            can_ask_2fa = false;
+            if (!connection_parameters.password.empty())
+                config().setString("password", connection_parameters.password);
+            config().setBool("ask-password", false);
+            config().setBool("ask-password-2fa", true);
+            continue;
+        }
+
+        throw;
     }
 
     /// Show warnings at the beginning of connection.

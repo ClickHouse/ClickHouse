@@ -1,3 +1,4 @@
+#include <string_view>
 #include <Access/Common/OneTimePassword.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
@@ -143,10 +144,10 @@ String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTim
 }
 
 
-bool checkOneTimePassword(const String & password, const OneTimePasswordSecret & secret)
+bool checkOneTimePassword(std::string_view password, const OneTimePasswordSecret & secret)
 {
     if (password.size() != static_cast<size_t>(secret.params.num_digits)
-     || !std::all_of(password.begin(), password.end(), isdigit))
+     || !std::all_of(password.begin(), password.end(), ::isdigit))
         return false;
 
     auto current_time = static_cast<UInt64>(std::time(nullptr));

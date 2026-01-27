@@ -127,7 +127,6 @@ namespace
 
         bool has_no_password = config.has(user_config + ".no_password");
         bool has_password_plaintext = config.has(user_config + ".password");
-        bool has_otp_secret = config.has(user_config + ".time_based_one_time_password");
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
         bool has_scram_password_sha256_hex = config.has(user_config + ".password_scram_sha256_hex");
         bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
@@ -144,11 +143,11 @@ namespace
         bool has_http_auth = config.has(http_auth_config);
 
         size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
-            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_otp_secret;
+            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex;
 
         if (num_password_fields > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
-                            "'password_double_sha1_hex', 'no_password', 'time_based_one_time_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys', "
+                            "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys', "
                             "'http_authentication' are used to specify authentication info for user {}. "
                             "Must be only one of them.", user_name);
 
@@ -157,34 +156,47 @@ namespace
                             "or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos "
                             "or 'ssl_certificates' or 'ssh_keys' or 'http_authentication' must be specified for user {}.", user_name);
 
-        if (has_password_plaintext)
+        std::optional<OneTimePasswordSecret> otp_secret;
+        if (config.has(user_config + ".time_based_one_time_password"))
         {
-            user->authentication_methods.emplace_back(AuthenticationType::PLAINTEXT_PASSWORD);
-            user->authentication_methods.back().setPassword(config.getString(user_config + ".password"), validate);
-        }
-        else if (has_password_sha256_hex)
-        {
-            user->authentication_methods.emplace_back(AuthenticationType::SHA256_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"), validate);
-        }
-        else if (has_scram_password_sha256_hex)
-        {
-            user->authentication_methods.emplace_back(AuthenticationType::SCRAM_SHA256_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_scram_sha256_hex"), validate);
-        }
-        else if (has_password_double_sha1_hex)
-        {
-            user->authentication_methods.emplace_back(AuthenticationType::DOUBLE_SHA1_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"), validate);
-        }
-        else if (has_otp_secret)
-        {
-            String secret = config.getString(user_config + ".time_based_one_time_password.secret", "");
+            bool is_password_based = has_no_password || has_password_plaintext || has_password_sha256_hex
+                || has_password_double_sha1_hex || has_scram_password_sha256_hex;
+            if (!is_password_based)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "One-time password can be used only with password based authentication for user {}.", user_name);
+
+            String otp_secret_key = config.getString(user_config + ".time_based_one_time_password.secret");
             OneTimePasswordParams otp_config(
                 config.getInt(user_config + ".time_based_one_time_password.digits", {}),
                 config.getInt(user_config + ".time_based_one_time_password.period", {}),
                 config.getString(user_config + ".time_based_one_time_password.algorithm", {}));
-            user->authentication_methods.emplace_back(AuthenticationType::ONE_TIME_PASSWORD).setOneTimePassword(secret, otp_config, validate);
+
+            otp_secret.emplace(otp_secret_key, otp_config);
+        }
+
+        if (has_no_password && otp_secret)
+        {
+            user->authentication_methods.emplace_back(AuthenticationType::NO_PASSWORD);
+            user->authentication_methods.back().setPassword("", otp_secret, validate);
+        }
+        else if (has_password_plaintext)
+        {
+            user->authentication_methods.emplace_back(AuthenticationType::PLAINTEXT_PASSWORD);
+            user->authentication_methods.back().setPassword(config.getString(user_config + ".password"), otp_secret, validate);
+        }
+        else if (has_password_sha256_hex)
+        {
+            user->authentication_methods.emplace_back(AuthenticationType::SHA256_PASSWORD);
+            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"), otp_secret, validate);
+        }
+        else if (has_scram_password_sha256_hex)
+        {
+            user->authentication_methods.emplace_back(AuthenticationType::SCRAM_SHA256_PASSWORD);
+            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_scram_sha256_hex"), otp_secret, validate);
+        }
+        else if (has_password_double_sha1_hex)
+        {
+            user->authentication_methods.emplace_back(AuthenticationType::DOUBLE_SHA1_PASSWORD);
+            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"), otp_secret, validate);
         }
         else if (has_ldap)
         {

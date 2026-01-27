@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import os
 import random
+import re
 import struct
 import time
 from fnmatch import fnmatch
@@ -10,6 +11,7 @@ from fnmatch import fnmatch
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.uclient import client, prompt
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 TOTP_SECRET = base64.b32encode(random.randbytes(random.randint(3, 64))).decode()
@@ -19,37 +21,6 @@ node = cluster.add_instance(
     "node",
     user_configs=["config/users.xml"],
 )
-
-
-def create_config(totp_secret):
-    config = f"""
-<clickhouse>
-    <profiles>
-        <default>
-        </default>
-    </profiles>
-    <users>
-        <totuser>
-            <time_based_one_time_password>
-                <secret>{totp_secret}</secret>
-                <period>10</period>
-                <digits>9</digits>
-                <algorithm>SHA256</algorithm>
-            </time_based_one_time_password>
-
-            <access_management>1</access_management>
-            <networks replace="replace">
-                <ip>::/0</ip>
-            </networks>
-            <profile>default</profile>
-            <quota>default</quota>
-        </totuser>
-    </users>
-</clickhouse>
-""".lstrip()
-
-    with open(os.path.join(SCRIPT_DIR, "config/users.xml"), "w") as f:
-        f.write(config)
 
 
 @pytest.fixture(scope="module")
@@ -62,7 +33,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def generate_totp(
+def get_one_time_password(
     secret, interval=30, digits=6, sha_version=hashlib.sha1, timepoint=None
 ):
     key = base64.b32decode(secret, casefold=True)
@@ -75,6 +46,55 @@ def generate_totp(
     return f"{otp:0{digits}d}"
 
 
+def create_config(totp_secret):
+    config = f"""
+<clickhouse>
+    <profiles>
+        <default>
+        </default>
+    </profiles>
+    <users>
+        <totuser>
+            <password>aa+bb</password>
+            <time_based_one_time_password>
+                <secret>{totp_secret}</secret>
+                <period>60</period>
+                <digits>9</digits>
+                <algorithm>SHA256</algorithm>
+            </time_based_one_time_password>
+
+            <access_management>1</access_management>
+            <networks replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </totuser>
+
+        <totuser_no_password>
+            <no_password></no_password>
+            <time_based_one_time_password>
+                <secret>GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ</secret>
+            </time_based_one_time_password>
+        </totuser_no_password>
+    </users>
+</clickhouse>
+""".lstrip()
+
+    with open(os.path.join(SCRIPT_DIR, "config/users.xml"), "w") as f:
+        f.write(config)
+
+
+def get_totp_for_config(**kwargs):
+    return get_one_time_password(
+        secret=TOTP_SECRET,
+        interval=60,
+        digits=9,
+        sha_version=hashlib.sha256,
+        **kwargs,
+    )
+
+
 def test_one_time_password(started_cluster):
     query_text = "SELECT currentUser() || toString(42)"
     totuser_secret = {
@@ -84,52 +104,19 @@ def test_one_time_password(started_cluster):
         "sha_version": hashlib.sha256,
     }
 
-    old_password = generate_totp(
-        **totuser_secret, timepoint=time.time() - 3 * totuser_secret["interval"]
+    old_password = get_totp_for_config(
+        timepoint=time.time() - 3 * totuser_secret["interval"]
     )
     assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
-        query_text, user="totuser", password=old_password
+        query_text, user="totuser", password=f"aa+bb+{old_password}"
+    )
+
+    assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
+        query_text, user="totuser", password=f"aa+bb"
     )
 
     assert "totuser42\n" == node.query(
-        query_text, user="totuser", password=generate_totp(**totuser_secret)
-    )
-
-    assert "totuser42\n" == node.query(
-        query_text, user="totuser", password=generate_totp(**totuser_secret)
-    )
-
-    assert "CREATE USER totuser IDENTIFIED WITH one_time_password" in node.query(
-        "SHOW CREATE USER totuser",
-        user="totuser",
-        password=generate_totp(**totuser_secret),
-    )
-
-    for bad_secret, error_message in [
-        ("i11egalbase32", "Invalid character in*secret"),
-        ("abc$d", "Invalid character in*secret"),
-        ("   ", "Empty secret"),
-        ("   =", "Empty secret"),
-        ("", "Empty secret"),
-    ]:
-        err_resp = node.query_and_get_error(
-            f"CREATE USER user2 IDENTIFIED WITH one_time_password BY '{bad_secret}'",
-            user="totuser",
-            password=generate_totp(**totuser_secret),
-        )
-        assert fnmatch(err_resp, f"*{error_message}*BAD_ARGUMENTS*"), err_resp
-
-    # lowercase secret with spaces is allowed
-    node.query(
-        "CREATE USER user2 IDENTIFIED WITH one_time_password BY 'inwg sy3l jbxx k43f biaa'",
-        user="totuser",
-        password=generate_totp(**totuser_secret),
-    )
-
-    assert "user242\n" == node.query(
-        query_text,
-        user="user2",
-        password=generate_totp("INWGSY3LJBXXK43FBIAA===="),
+        query_text, user="totuser", password=f"aa+bb+{get_totp_for_config()}"
     )
 
     resp = node.query(
@@ -137,14 +124,105 @@ def test_one_time_password(started_cluster):
             SELECT
                 name,
                 auth_type[1],
-                JSONExtractString(auth_params[1], 'algorithm'),
-                JSONExtractString(auth_params[1], 'num_digits'),
-                JSONExtractString(auth_params[1], 'period')
-            FROM system.users WHERE name IN ('totuser', 'user2')
-            ORDER BY 1
-            """,
+                JSONExtractString(auth_params[1], 'second_factor'),
+                JSONExtractString(auth_params[1], 'otp_algorithm'),
+                JSONExtractString(auth_params[1], 'otp_num_digits'),
+                JSONExtractString(auth_params[1], 'otp_period'),
+            FROM system.users WHERE name = 'totuser'
+        """,
         user="totuser",
-        password=generate_totp(**totuser_secret),
-    ).splitlines()
-    assert resp[0].startswith("totuser\tone_time_password\tSHA256\t9\t10"), resp
-    assert resp[1].startswith("user2\tone_time_password"), resp
+        password=f"aa+bb+{get_totp_for_config()}",
+    )
+    assert "totuser\tplaintext_password\tone_time_password\tSHA256\t9\t60" in resp
+
+
+def test_interactive_totp_authentication(started_cluster):
+    """Test TOTP authentication in interactive client mode."""
+    client_command = f"{started_cluster.get_client_cmd()} --highlight=0 --host {node.ip_address} -u totuser"
+
+    # Password and TOTP provided in command line arguments
+    with client(
+        command=f"{client_command} --password aa+bb+{get_totp_for_config()}"
+    ) as c:
+        c.expect(prompt)
+        c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
+        c.expect("totuser42")
+        c.expect(prompt)
+
+    # No password provided in command line arguments
+    with client(command=f"{client_command}") as c:
+        # Enter password + TOTP when prompted
+        c.expect("Password.*:")
+        c.send(f"aa+bb+{get_totp_for_config()}", eol="\r")
+        c.expect(prompt)
+        c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
+        c.expect("totuser42")
+        c.expect(prompt)
+
+    with client(command=f"{client_command}") as c:
+        # Enter only password when prompted first
+        c.expect("Password.*:")
+        c.send(f"aa+bb", eol="\r")
+
+        # Then enter TOTP when prompted
+        c.expect("TOTP.*:")
+        c.send(get_totp_for_config(), eol="\r")
+        c.expect(prompt)
+        c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
+        c.expect("totuser42")
+        c.expect(prompt)
+
+    # Password provided in command line arguments, then only TOTP prompted
+    with client(command=f"{client_command} --password aa+bb") as c:
+        c.expect("TOTP.*:")
+        c.send(get_totp_for_config(), eol="\r")
+        c.expect(prompt)
+        c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
+        c.expect("totuser42")
+        c.expect(prompt)
+
+    # Errors:
+    expected_error = re.compile(r"Authentication failed|password is incorrect")
+
+    with client(command=f"{client_command}") as c:
+        c.expect("Password.*:")
+        c.send(f"aa+bb", eol="\r")
+
+        # Then enter wrong TOTP when prompted
+        c.expect("TOTP.*:")
+        c.send(f"000000", eol="\r")
+        c.expect(expected_error)
+
+    with client(command=f"{client_command} --password aa+bb+000000") as c:
+        c.expect(expected_error)
+
+    with client(command=f"{client_command} --password wrongpwd") as c:
+        c.expect(expected_error)
+
+    with client(
+        command=f"{client_command} --password wrongpwd+{get_totp_for_config()}"
+    ) as c:
+        c.expect(expected_error)
+
+
+def test_one_time_only_no_password(started_cluster):
+    query_text = "SELECT currentUser() || toString(42)"
+
+    assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
+        query_text, user="totuser_no_password", password="000000"
+    )
+
+    secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+    get_otp = lambda: get_one_time_password(secret=secret)
+    assert "totuser_no_password42\n" == node.query(
+        query_text, user="totuser_no_password", password=get_otp()
+    )
+
+    client_command = f"{started_cluster.get_client_cmd()} --highlight=0 --host {node.ip_address} -u totuser_no_password"
+    with client(command=f"{client_command}") as c:
+        c.expect("TOTP.*:")
+        c.send(get_otp(), eol="\r")
+        c.expect(prompt)
+        c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
+        c.expect("totuser_no_password42")
+        c.expect(prompt)
