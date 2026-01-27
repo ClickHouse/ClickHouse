@@ -50,7 +50,7 @@ public:
     ObjectStoragePtr getObjectStorage() const { return object_storage; }
 
     /// Get the table path for this Delta Lake table
-    String getTablePath() const;
+    const String & getTablePath() const;
 
     /// Get history of Delta Lake table versions
     DataLakeHistory getHistory(ContextPtr local_context) const override;

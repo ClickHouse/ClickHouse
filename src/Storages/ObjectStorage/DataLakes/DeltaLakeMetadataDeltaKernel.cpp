@@ -475,7 +475,11 @@ DataLakeHistory DeltaLakeMetadataDeltaKernel::getHistory(ContextPtr local_contex
                 {
                     current_version = std::stoull(filename);
                 }
-                catch (...)
+                catch (const std::invalid_argument &)
+                {
+                    current_version = 0;
+                }
+                catch (const std::out_of_range &)
                 {
                     current_version = 0;
                 }
@@ -498,7 +502,11 @@ DataLakeHistory DeltaLakeMetadataDeltaKernel::getHistory(ContextPtr local_contex
                 {
                     version = std::stoull(filename);
                 }
-                catch (...)
+                catch (const std::invalid_argument &)
+                {
+                    continue;
+                }
+                catch (const std::out_of_range &)
                 {
                     continue;
                 }

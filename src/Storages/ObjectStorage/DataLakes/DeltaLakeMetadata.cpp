@@ -627,7 +627,7 @@ DeltaLakeMetadata::DeltaLakeMetadata(
         impl.log, "Found {} data files, {} partition files, schema: {}", data_files.size(), partition_columns.size(), schema.toString());
 }
 
-String DeltaLakeMetadata::getTablePath() const
+const String & DeltaLakeMetadata::getTablePath() const
 {
     return table_path;
 }
@@ -669,7 +669,11 @@ DeltaLakeHistory DeltaLakeMetadata::getHistory(ContextPtr local_context) const
                 {
                     current_version = std::stoull(filename);
                 }
-                catch (...)
+                catch (const std::invalid_argument &)
+                {
+                    current_version = 0;
+                }
+                catch (const std::out_of_range &)
                 {
                     current_version = 0;
                 }
@@ -692,7 +696,11 @@ DeltaLakeHistory DeltaLakeMetadata::getHistory(ContextPtr local_context) const
                 {
                     version = std::stoull(filename);
                 }
-                catch (...)
+                catch (const std::invalid_argument &)
+                {
+                    continue;
+                }
+                catch (const std::out_of_range &)
                 {
                     continue;
                 }

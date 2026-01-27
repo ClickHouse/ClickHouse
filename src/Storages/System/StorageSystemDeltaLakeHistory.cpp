@@ -121,7 +121,7 @@ void StorageSystemDeltaLakeHistory::fillData(
                 TableLockHolder lock = storage->tryLockForShare(
                     context_copy->getCurrentQueryId(), context_copy->getSettingsRef()[Setting::lock_acquire_timeout]);
                 if (!lock)
-                    // Table was dropped while acquiring the lock, skipping table
+                    /// Table was dropped while acquiring the lock, skipping table
                     continue;
 
                 if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get()))
