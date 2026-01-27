@@ -65,11 +65,6 @@ public:
         return nested_func->getNormalizedStateType();
     }
 
-    AggregateFunctionStateVariant getStateVariant() const override
-    {
-        return nested_func->getStateVariant();
-    }
-
     bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         if (rhs.getName() != getName())
