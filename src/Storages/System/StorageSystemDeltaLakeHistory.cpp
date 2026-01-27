@@ -13,7 +13,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/System/StorageSystemDeltaLakeHistory.h>
@@ -64,10 +64,10 @@ void StorageSystemDeltaLakeHistory::fillData(
         /// to handle properly all possible errors which we can get when attempting to read metadata of delta lake table
         try
         {
-            if (DeltaLakeMetadata * delta_metadata = dynamic_cast<DeltaLakeMetadata *>(object_storage->getExternalMetadata(context_copy));
-                delta_metadata)
+            if (IDataLakeMetadata * data_lake_metadata = object_storage->getExternalMetadata(context_copy);
+                data_lake_metadata)
             {
-                DeltaLakeHistory delta_history_items = delta_metadata->getHistory(context_copy);
+                DataLakeHistory delta_history_items = data_lake_metadata->getHistory(context_copy);
 
                 for (auto & delta_history_item : delta_history_items)
                 {

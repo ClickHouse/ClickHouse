@@ -26,17 +26,9 @@ struct DeltaLakePartitionColumn
     bool operator==(const DeltaLakePartitionColumn & other) const = default;
 };
 
-/// History record for Delta Lake version tracking
-struct DeltaLakeHistoryRecord
-{
-    UInt64 version;
-    std::optional<DateTime64> timestamp;
-    String operation;
-    std::map<String, String> operation_parameters;
-    bool is_current;
-};
-
-using DeltaLakeHistory = std::vector<DeltaLakeHistoryRecord>;
+/// Alias for backward compatibility
+using DeltaLakeHistoryRecord = DataLakeHistoryRecord;
+using DeltaLakeHistory = DataLakeHistory;
 
 /// Data file -> partition columns
 using DeltaLakePartitionColumns = std::unordered_map<std::string, std::vector<DeltaLakePartitionColumn>>;
@@ -61,7 +53,7 @@ public:
     String getTablePath() const;
 
     /// Get history of Delta Lake table versions
-    DeltaLakeHistory getHistory(ContextPtr local_context) const;
+    DataLakeHistory getHistory(ContextPtr local_context) const override;
 
     bool operator==(const IDataLakeMetadata & other) const override
     {
