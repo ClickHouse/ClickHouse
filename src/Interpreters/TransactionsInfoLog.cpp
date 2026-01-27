@@ -5,11 +5,9 @@
 #include <Interpreters/Context.h>
 #include <Common/TransactionID.h>
 #include <Common/CurrentThread.h>
-#include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
