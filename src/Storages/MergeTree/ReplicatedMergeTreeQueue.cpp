@@ -684,6 +684,18 @@ void ReplicatedMergeTreeQueue::removePartInProgressFromMutations(const String & 
     }
 }
 
+void ReplicatedMergeTreeQueue::addPartsPostponeReasons(const String & part_name, const String & postpone_reason) const
+{
+    std::lock_guard lock(state_mutex);
+    current_parts_postpone_reasons[part_name] = postpone_reason;
+}
+
+void ReplicatedMergeTreeQueue::clearPartsPostponeReasons() const
+{
+    std::lock_guard lock(state_mutex);
+    current_parts_postpone_reasons.clear();
+}
+
 void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
     zkutil::ZooKeeperPtr zookeeper,
     std::optional<time_t> min_unprocessed_insert_time_changed,
@@ -2607,6 +2619,26 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
         Names parts_to_mutate = status.parts_to_do.getParts();
         Names parts_in_progress = status.parts_in_progress.getParts();
 
+        std::map<String, String> parts_postpone_reasons_map;
+        if (!status.is_done)
+        {
+            for (const auto & [part_name, postpone_reason] : current_parts_postpone_reasons)
+            {
+                if (part_name == PostponeReasons::ALL_PARTS_KEY)
+                {
+                    chassert(current_parts_postpone_reasons.size() == 1);
+                    parts_postpone_reasons_map[part_name] = postpone_reason;
+                }
+                else
+                {
+                    auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+                    auto it = entry.block_numbers.find(part_info.getPartitionId());
+                    if (it != entry.block_numbers.end() && part_info.getDataVersion() < it->second)
+                        parts_postpone_reasons_map[part_name] = postpone_reason;
+                }
+            }
+        }
+
         for (const MutationCommand & command : entry.commands)
         {
             WriteBufferFromOwnString buf;
@@ -2620,6 +2652,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
                 entry.block_numbers,
                 parts_in_progress,
                 parts_to_mutate,
+                parts_postpone_reasons_map,
                 status.is_done,
                 status.latest_failed_part,
                 status.latest_fail_time,
