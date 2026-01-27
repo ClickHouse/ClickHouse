@@ -173,10 +173,10 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         tryGetIdentifierNameInto(format, format_str);
     }
-    else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected))
+    else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected) || s_lparen.ignore(pos, expected))
     {
-        /// If SELECT is defined, return to position before select and parse
-        /// rest of query as SELECT query.
+        /// If SELECT is defined (possibly in parentheses), return to position before select and parse
+        /// rest of query as SELECT query. Parentheses are handled by ParserSelectWithUnionQuery.
         pos = before_values;
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);

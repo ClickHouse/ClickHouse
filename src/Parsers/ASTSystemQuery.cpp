@@ -609,6 +609,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::START_REPLICATED_DDL_QUERIES:
         case Type::RECONNECT_ZOOKEEPER:
         case Type::FREE_UNTRACKED_MEMORY:
+        case Type::RESET_DDL_WORKER:
             break;
         case Type::UNKNOWN:
         case Type::END:

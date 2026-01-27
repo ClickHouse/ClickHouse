@@ -12,10 +12,17 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <algorithm>
-
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool enable_extended_results_for_datetime_functions;
+}
+
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -35,9 +42,14 @@ private:
         Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
     };
     mutable Overload overload;
+    const bool enable_extended_results_for_datetime_functions = false;
 
 public:
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToStartOfInterval>(); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionToStartOfInterval>(context_); }
+
+    explicit FunctionToStartOfInterval(ContextPtr context_): enable_extended_results_for_datetime_functions(context_->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
+    {
+    }
 
     static constexpr auto name = "toStartOfInterval";
     String getName() const override { return name; }
@@ -105,6 +117,14 @@ public:
                 case IntervalKind::Kind::Year:
                     result_type = ResultType::Date;
                     break;
+            }
+
+            if (enable_extended_results_for_datetime_functions)
+            {
+                if (result_type == ResultType::Date)
+                    result_type = ResultType::Date32;
+                else if (result_type == ResultType::DateTime)
+                    result_type = ResultType::DateTime64;
             }
         };
 
@@ -427,7 +447,7 @@ private:
 
                 result_data[i] = (result_scale < origin_scale) ? static_cast<ResultDataType::FieldType>((origin + offset) / scale_diff)
                                                                : static_cast<ResultDataType::FieldType>((origin + offset) * scale_diff);
-            }
+        }
         }
         else // Overload: Default
         {

@@ -18,7 +18,6 @@ namespace DB
 class ASTSystemQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-
     enum class Type : UInt64
     {
         UNKNOWN,
@@ -136,6 +135,7 @@ public:
         RECONNECT_ZOOKEEPER,
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
+        RESET_DDL_WORKER,
         END
     };
 

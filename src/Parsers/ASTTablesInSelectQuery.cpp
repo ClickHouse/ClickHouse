@@ -229,21 +229,27 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
     {
         ostr << " USING ";
         ostr << "(";
-        /// We should always print alias for 'USING (a AS b)' syntax (supported with analyzer only).
-        /// Otherwise query like 'SELECT a AS b FROM t1 JOIN t2 USING (a AS b)' will be broken.
-        /// See 03448_analyzer_array_join_alias_in_join_using_bug.sql
-        frame.ignore_printed_asts_with_alias = true;
         using_expression_list->format(ostr, settings, state, frame);
         ostr << ")";
     }
     else if (on_expression)
     {
         ostr << " ON ";
-        /// If there is an alias for the whole expression parens should be added, otherwise it will be invalid syntax
+
+       /** If there is an alias for the whole expression we wrap the ON clause in parens in two cases:
+         *  1. collapse_identical_nodes_to_aliases is true (meaning old analyzer is being used) AND the alias was
+         *     defined earlier in the query
+         *  2. collapse_identical_nodes_to_aliases is false (new analyzer) - because we will not make any substitutions
+         */
+        bool on_need_parens = false;
         auto on_alias = on_expression->tryGetAlias();
-        /// If this alias was alerady defined before, parens should be omitted, because only alias will be printed
-        auto on_need_parens = !on_alias.empty() && !frame.ignore_printed_asts_with_alias &&
-            !state.printed_asts_with_alias.contains({frame.current_select, on_alias, on_expression->getTreeHash(/*ignore_aliases=*/ true)});
+        if (!on_alias.empty())
+        {
+            bool was_alias_defined_earlier = state.printed_asts_with_alias.contains(
+                {frame.current_select, on_alias, on_expression->getTreeHash(/*ignore_aliases=*/true)});
+            on_need_parens = settings.collapse_identical_nodes_to_aliases ? !was_alias_defined_earlier : true;
+        }
+
 
         if (on_need_parens)
             ostr << "(";

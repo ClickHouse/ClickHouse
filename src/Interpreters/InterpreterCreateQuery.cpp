@@ -409,7 +409,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
         String type_name = column.type->getName();
         const char * pos = type_name.data();
         const char * end = pos + type_name.size();
-        column_declaration->type = parseQuery(type_parser, pos, end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        column_declaration->setType(parseQuery(type_parser, pos, end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
         columns_list->children.emplace_back(column_declaration);
     }
 
@@ -429,16 +429,15 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns, 
         String type_name = alias_column.type->getName();
         const char * type_pos = type_name.data();
         const char * type_end = type_pos + type_name.size();
-        column_declaration->type = parseQuery(type_parser, type_pos, type_end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        column_declaration->setType(parseQuery(type_parser, type_pos, type_end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
 
-        column_declaration->default_specifier = "ALIAS";
+        column_declaration->default_specifier = ColumnDefaultSpecifier::Alias;
 
         const auto & alias = alias_column.expression;
         const char * alias_pos = alias.data();
         const char * alias_end = alias_pos + alias.size();
         ParserExpression expression_parser;
-        column_declaration->default_expression = parseQuery(expression_parser, alias_pos, alias_end, "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-        column_declaration->children.push_back(column_declaration->default_expression);
+        column_declaration->setDefaultExpression(parseQuery(expression_parser, alias_pos, alias_end, "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
 
         columns_list->children.emplace_back(column_declaration);
     }
@@ -461,39 +460,34 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         String type_name = column.type->getName();
         const char * type_name_pos = type_name.data();
         const char * type_name_end = type_name_pos + type_name.size();
-        column_declaration->type = parseQuery(type_parser, type_name_pos, type_name_end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        column_declaration->setType(parseQuery(type_parser, type_name_pos, type_name_end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
 
         if (column.default_desc.expression)
         {
-            column_declaration->default_specifier = toString(column.default_desc.kind);
-            column_declaration->default_expression = column.default_desc.expression->clone();
-            column_declaration->children.push_back(column_declaration->default_expression);
+            column_declaration->default_specifier = toColumnDefaultSpecifier(column.default_desc.kind);
+            column_declaration->setDefaultExpression(column.default_desc.expression->clone());
         }
 
         column_declaration->ephemeral_default = column.default_desc.ephemeral_default;
 
         if (!column.comment.empty())
         {
-            column_declaration->comment = make_intrusive<ASTLiteral>(Field(column.comment));
-            column_declaration->children.push_back(column_declaration->comment);
+            column_declaration->setComment(make_intrusive<ASTLiteral>(Field(column.comment)));
         }
 
         if (column.codec)
         {
-            column_declaration->codec = column.codec;
-            column_declaration->children.push_back(column_declaration->codec);
+            column_declaration->setCodec(column.codec->clone());
         }
 
         if (column.statistics.hasExplicitStatistics())
         {
-            column_declaration->statistics_desc = column.statistics.getAST();
-            column_declaration->children.push_back(column_declaration->statistics_desc);
+            column_declaration->setStatisticsDesc(column.statistics.getAST());
         }
 
         if (column.ttl)
         {
-            column_declaration->ttl = column.ttl;
-            column_declaration->children.push_back(column_declaration->ttl);
+            column_declaration->setTTL(column.ttl->clone());
         }
 
         if (!column.settings.empty())
@@ -501,7 +495,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             auto settings = make_intrusive<ASTSetQuery>();
             settings->is_standalone = false;
             settings->changes = column.settings;
-            column_declaration->settings = std::move(settings);
+            column_declaration->setSettings(std::move(settings));
         }
 
         columns_list->children.push_back(column_declaration_ptr);
@@ -544,13 +538,14 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
 DataTypePtr InterpreterCreateQuery::getColumnType(
     const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable)
 {
-    if (!col_decl.type)
+    auto col_type = col_decl.getType();
+    if (!col_type)
     {
         /// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr column_type = DataTypeFactory::instance().get(col_decl.type);
+    DataTypePtr column_type = DataTypeFactory::instance().get(col_type);
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
         setVersionToAggregateFunctions(column_type, true);
@@ -566,9 +561,9 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
     {
         column_type = makeNullable(column_type);
     }
-    else if (
-        !hasNullable(column_type) && col_decl.default_specifier == "DEFAULT" && col_decl.default_expression
-        && col_decl.default_expression->as<ASTLiteral>() && col_decl.default_expression->as<ASTLiteral>()->value.isNull())
+    else if (auto default_expr = col_decl.getDefaultExpression();
+        !hasNullable(column_type) && col_decl.default_specifier == ColumnDefaultSpecifier::Default && default_expr
+        && default_expr->as<ASTLiteral>() && default_expr->as<ASTLiteral>()->value.isNull())
     {
         if (column_type->lowCardinality())
         {
@@ -599,7 +594,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     {
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
-        if (col_decl.collation && !context_->getSettingsRef()[Setting::compatibility_ignore_collation_in_create_table])
+        if (col_decl.getCollation() && !context_->getSettingsRef()[Setting::compatibility_ignore_collation_in_create_table])
         {
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED, "Cannot support collation, please set compatibility_ignore_collation_in_create_table=true");
@@ -638,7 +633,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         column.name = col_decl.name;
 
         /// ignore or not other database extensions depending on compatibility settings
-        if (col_decl.default_specifier == "AUTO_INCREMENT"
+        if (col_decl.default_specifier == ColumnDefaultSpecifier::AutoIncrement
             && !context_->getSettingsRef()[Setting::compatibility_ignore_auto_increment_in_create_table])
         {
             throw Exception(ErrorCodes::SYNTAX_ERROR,
@@ -646,7 +641,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                             "in column declaration, set `compatibility_ignore_auto_increment_in_create_table` to true");
         }
 
-        if (col_decl.default_expression)
+        if (auto default_expression = col_decl.getDefaultExpression())
         {
             if (context_->hasQueryContext() && context_->getQueryContext().get() == context_.get())
             {
@@ -654,12 +649,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 /// And for CREATE query we can pass local context, because result will not change after restart.
                 NormalizeAndEvaluateConstantsVisitor::Data visitor_data{context_};
                 NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
-                visitor.visit(col_decl.default_expression);
+                visitor.visit(default_expression);
             }
 
-            ASTPtr default_expr = col_decl.default_expression->clone();
+            ASTPtr default_expr = default_expression->clone();
 
-            if (col_decl.type)
+            if (col_decl.getType())
                 column.type = name_type_it->type;
             else
             {
@@ -669,41 +664,41 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                     column.type = makeNullable(column.type);
             }
 
-            column.default_desc.kind = columnDefaultKindFromString(col_decl.default_specifier);
+            column.default_desc.kind = toColumnDefaultKind(col_decl.default_specifier);
             column.default_desc.expression = default_expr;
             column.default_desc.ephemeral_default = col_decl.ephemeral_default;
         }
-        else if (col_decl.type)
+        else if (col_decl.getType())
             column.type = name_type_it->type;
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Neither default value expression nor type is provided for a column");
 
-        if (col_decl.comment)
-            column.comment = col_decl.comment->as<ASTLiteral &>().value.safeGet<String>();
+        if (auto comment = col_decl.getComment())
+            column.comment = comment->as<ASTLiteral &>().value.safeGet<String>();
 
-        if (col_decl.codec)
+        if (auto codec = col_decl.getCodec())
         {
-            if (col_decl.default_specifier == "ALIAS")
+            if (col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs);
+                codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs);
         }
 
-        if (col_decl.statistics_desc)
+        if (auto statistics_desc = col_decl.getStatisticsDesc())
         {
             if (!skip_checks && !context_->getSettingsRef()[Setting::allow_experimental_statistics])
                 throw Exception(
                     ErrorCodes::INCORRECT_QUERY, "Create table with statistics is now disabled. Turn on allow_experimental_statistics");
 
-            column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(col_decl.statistics_desc, column.name, column.type);
+            column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(statistics_desc, column.name, column.type);
         }
 
-        if (col_decl.ttl)
-            column.ttl = col_decl.ttl;
+        if (auto ttl = col_decl.getTTL())
+            column.ttl = ttl;
 
-        if (col_decl.settings)
+        if (auto settings = col_decl.getSettings())
         {
-            column.settings = col_decl.settings->as<ASTSetQuery &>().changes;
+            column.settings = settings->as<ASTSetQuery &>().changes;
             MergeTreeColumnSettings::validate(column.settings);
         }
 

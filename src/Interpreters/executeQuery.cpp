@@ -681,6 +681,7 @@ void logQueryFinishImpl(
         {
             double elapsed_seconds = static_cast<double>(info.elapsed_microseconds) / 1000000.0;
             double rows_per_second = static_cast<double>(elem.read_rows) / elapsed_seconds;
+            double bytes_per_second = static_cast<double>(elem.read_bytes) / elapsed_seconds;
             LOG_DEBUG(
                 getLogger("executeQuery"),
                 "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
@@ -688,7 +689,7 @@ void logQueryFinishImpl(
                 ReadableSize(elem.read_bytes),
                 elapsed_seconds,
                 rows_per_second,
-                ReadableSize(elem.read_bytes / elapsed_seconds));
+                ReadableSize(bytes_per_second));
         }
 
         context->getRuntimeFilterLookup()->logStats();
@@ -1221,9 +1222,13 @@ static BlockIO executeQueryImpl(
                 catch (const Exception & e)
                 {
                     if (e.code() == ErrorCodes::SYNTAX_ERROR)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
-                            formatted1, original_query);
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}.\nExpected AST:\n{}\n, but got\n{}",
+                            formatted1,
+                            original_query,
+                            out_ast->dumpTree(),
+                            ast2->dumpTree());
                     else
                         throw;
                 }

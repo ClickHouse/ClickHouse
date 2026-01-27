@@ -110,7 +110,7 @@ private:
         if (max_bucket.first != std::numeric_limits<UnderlyingType>::infinity())
             return std::numeric_limits<Value>::quiet_NaN();
         CumulativeHistogramValue max_position = max_bucket.second;
-        Float64 position = max_position * level;
+        Float64 position = static_cast<Float64>(max_position) * level;
         return quantileInterpolated(array, size, position);
     }
 
@@ -147,7 +147,7 @@ private:
             }
             else
             {
-                Float64 position = max_position * levels[indices[j]];
+                Float64 position = static_cast<Float64>(max_position) * levels[indices[j]];
                 result[indices[j]] = quantileInterpolated(array, size, position);
             }
         }
@@ -156,13 +156,13 @@ private:
     /// Calculate quantile, using linear interpolation between the bucket's lower and upper bound
     Value quantileInterpolated(const Pair * array, size_t size, Float64 position) const
     {
-        const auto * upper_bound_it = std::lower_bound(array, array + size, position, [](const Pair & a, Float64 b) { return a.second < b; });
+        const auto * upper_bound_it = std::lower_bound(array, array + size, position, [](const Pair & a, Float64 b) { return static_cast<Float64>(a.second) < b; });
         if (upper_bound_it == array)
         {
             if (upper_bound_it->first > 0)
             {
                 // If position is in the first bucket and the first bucket's upper bounds is positive, perform interpolation as if the first bucket's lower bounds is 0.
-                return static_cast<Value>(upper_bound_it->first * (position / upper_bound_it->second));
+                return static_cast<Value>(upper_bound_it->first * (position / static_cast<Float64>(upper_bound_it->second)));
             }
             else
             {
@@ -183,7 +183,7 @@ private:
         CumulativeHistogramValue histogram_bucket_upper_value = upper_bound_it->second;
 
         // Interpolate between the lower and upper bounds of the bucket that the position is in.
-        return static_cast<Value>(histogram_bucket_lower_bound + (histogram_bucket_upper_bound - histogram_bucket_lower_bound) * (position - histogram_bucket_lower_value) / (histogram_bucket_upper_value - histogram_bucket_lower_value));
+        return static_cast<Value>(histogram_bucket_lower_bound + (histogram_bucket_upper_bound - histogram_bucket_lower_bound) * (position - static_cast<Float64>(histogram_bucket_lower_value)) / static_cast<Float64>(histogram_bucket_upper_value - histogram_bucket_lower_value));
     }
 };
 

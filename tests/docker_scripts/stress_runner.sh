@@ -272,7 +272,7 @@ fi
 
 # Randomize concurrent_threads_scheduler (default is fair_round_robin)
 if [ $((RANDOM % 2)) -eq 1 ]; then
-    sudo echo "<concurrent_threads_scheduler>max_min_fair</concurrent_threads_scheduler>" \
+    sudo echo "<clickhouse><concurrent_threads_scheduler>max_min_fair</concurrent_threads_scheduler></clickhouse>" \
         > /etc/clickhouse-server/config.d/enable_max_min_fair_scheduler.xml
 fi
 
