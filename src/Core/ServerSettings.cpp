@@ -797,7 +797,7 @@ namespace
     ```
     )", 0) \
     DECLARE(UInt64, max_database_num_to_throw, 0lu, R"(If number of databases is greater than this value, server will throw an exception. 0 means no limitation.)", 0) \
-    DECLARE(UInt64, max_authentication_methods_per_user, 100, R"(
+    DECLARE(UInt64, max_authentication_methods_per_user, DB::AccessControl::DEFAULT_MAX_AUTHENTICATION_METHODS_PER_USER, R"(
     The maximum number of authentication methods a user can be created with or altered to.
     Changing this setting does not affect existing users. Create/alter authentication-related queries will fail if they exceed the limit specified in this setting.
     Non authentication create/alter queries will succeed.
