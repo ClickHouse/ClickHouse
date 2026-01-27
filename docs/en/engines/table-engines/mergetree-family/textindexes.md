@@ -647,8 +647,9 @@ Please refer the following server settings to configure the caches.
 ## Limitations
 
 The text index currently has the following limitations:
-- Merging parts with text indexes can consume significant amounts of memory (even with their optimized merge implementation, see [Implementation Details](#implementation)).
-- Merges currently do not materialize text indexes on parts with more than 4.294.967.296 (= 2^32 = ca. 4.2 billion) rows. As a result, queries cannot utilize the text index in such parts and fall back to slow brute-force search. Assuming the part contains a single column of type String and MergeTree setting `max_bytes_to_merge_at_max_space_in_pool` (default: 150 GB) was not changed, this situation happens if the part contains more than 29.5 characters per row on average. This is only a worst case estimation. In practice, the threshold is many multiples larger than that, depending on the number, type and size of other table columns.
+- The materialization of text indexes with a high number of tokens (e.g. 10 billion tokens) can consume significant amounts of memory. Text
+  index materialization can happen directly (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) or indirectly in part merges.
+- It is not possible to materialize text indexes on parts with more than 4.294.967.296 (= 2^32 = ca. 4.2 billion) rows. Without a materialized text index, queries fall back to slow brute-force search within the part. As a worst case estimation, assume a part contains a single columnn of type String and MergeTree setting `max_bytes_to_merge_at_max_space_in_pool` (default: 150 GB) was not changed. In this case, the situation happens if the column contains less than 29.5 characters per row on average. In practice, tables also contain other columns and the threshold is multiples times smaller than that (depending on the number, type and size of the other columns).
 
 ## Implementation Details {#implementation}
 
