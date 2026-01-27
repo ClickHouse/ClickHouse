@@ -183,14 +183,18 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
 {
     std::vector<std::string> result;
     std::unordered_set<std::string> seen;
-
     const auto & regex = getURLRegex();
     re2::StringPiece input(page_body);
     re2::StringPiece match;
+    bool used_href_extraction = false;
 
-    while (re2::RE2::FindAndConsume(&input, regex, &match))
+    const re2::RE2 href_regex(R"((?i)(?:href|src)\s*=\s*['"]([^'"]+)['"])");
+    re2::StringPiece href_input(page_body);
+    re2::StringPiece href_match;
+    while (re2::RE2::FindAndConsume(&href_input, href_regex, &href_match))
     {
-        std::string url_candidate(match.data(), match.size());
+        used_href_extraction = true;
+        std::string url_candidate(href_match.data(), href_match.size());
         if (!seen.emplace(url_candidate).second)
             continue;
 
@@ -233,6 +237,58 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
             continue;
 
         result.push_back(relative);
+
+    }
+
+    if (!used_href_extraction)
+    {
+        while (re2::RE2::FindAndConsume(&input, regex, &match))
+        {
+            std::string url_candidate(match.data(), match.size());
+            if (!seen.emplace(url_candidate).second)
+                continue;
+
+            Poco::URI candidate_uri;
+            try
+            {
+                candidate_uri = Poco::URI(url_candidate);
+            }
+            catch (const Poco::Exception &)
+            {
+                continue;
+            }
+
+            if (candidate_uri.isRelative())
+            {
+                Poco::URI resolved(listing_url);
+                resolved.resolve(candidate_uri);
+                candidate_uri = resolved;
+            }
+
+            if (candidate_uri.getPath().empty())
+                continue;
+
+            if (!isSameOrigin(candidate_uri, base_uri))
+                continue;
+
+            auto candidate_str = candidate_uri.toString();
+            if (!startsWith(candidate_str, listing_url))
+                continue;
+
+            const auto base_prefix = base_uri.toString();
+            if (!candidate_str.starts_with(base_prefix))
+                continue;
+
+            auto relative = candidate_str.substr(base_prefix.size());
+            if (relative.empty())
+                continue;
+
+            if (!relative.starts_with(path))
+                continue;
+
+            result.push_back(relative);
+
+        }
     }
 
     return result;
