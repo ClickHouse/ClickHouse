@@ -39,6 +39,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int CANNOT_READ_ALL_DATA;
+extern const int INSTRUMENTATION_ERROR;
 extern const int LOGICAL_ERROR;
 }
 
@@ -121,8 +122,10 @@ void InstrumentationManager::ensureInitialization()
 {
     callOnce(initialized, [this]()
     {
+        __xray_init();
         parseInstrumentationMap();
-        __xray_set_handler(&InstrumentationManager::dispatchHandler);
+        if (__xray_set_handler(&InstrumentationManager::dispatchHandler) == 0)
+            throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error setting handler");
     });
 }
 
@@ -130,7 +133,12 @@ void InstrumentationManager::patchFunctionIfNeeded(Int32 function_id)
 {
     if (instrumented_points.get<FunctionId>().contains(function_id))
         return;
-    __xray_patch_function(function_id);
+    const auto status = __xray_patch_function(function_id);
+    if (status != XRayPatchingStatus::SUCCESS && status != XRayPatchingStatus::ONGOING)
+    {
+        throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error patching the function {}: {}",
+            function_id, status == NOT_INITIALIZED ? "XRay not initialized" : "failed");
+    }
 }
 
 void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
@@ -140,7 +148,14 @@ void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Function id {} to unpatch not previously patched", function_id);
 
     if (count <= 1)
-        __xray_unpatch_function(function_id);
+    {
+        const auto status = __xray_unpatch_function(function_id);
+        if (status != XRayPatchingStatus::SUCCESS && status != XRayPatchingStatus::ONGOING)
+        {
+            throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error unpatching the function {}: {}",
+                function_id, status == NOT_INITIALIZED ? "XRay not initialized" : "failed");
+        }
+    }
 }
 
 bool InstrumentationManager::shouldPatchFunction(String function_to_patch, String full_qualified_function)
@@ -353,7 +368,6 @@ void InstrumentationManager::parseInstrumentationMap()
     auto & instr_map = *instr_map_or_error;
 
     const auto function_addresses = instr_map.getFunctionAddresses();
-    const auto & context = CurrentThread::getQueryContext();
 
     LOG_DEBUG(logger, "Starting to parse the XRay instrumentation map. This takes a few seconds...");
 
@@ -502,7 +516,7 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
         high_resolution_clock::time_point time;
     };
 
-    /// This is the easiest way to do store the elements, because otherwise we'd need to have a mutex to protect a
+    /// This is the easiest way to store the elements, because otherwise we'd need to have a mutex to protect a
     /// shared std::unordered_map. However, there might be a race condition in which this handler is already triggered
     /// on entry and the function is unpatched immediately afterwards. That's fine, since we're using the instrumented
     /// point ID to know for sure whether this execution is tight to the stored element or not.
