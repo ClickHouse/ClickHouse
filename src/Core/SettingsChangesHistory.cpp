@@ -39,9 +39,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "26.1",
+        addSettingsChanges(settings_changes_history, "26.2",
         {
             {"use_statistics_for_part_pruning", false, true, "New setting to use statistics for part pruning during query execution."},
+        });
+        addSettingsChanges(settings_changes_history, "26.1",
+        {
             {"use_statistics", true, true, "Enable this optimization by default."},
             {"ignore_on_cluster_for_replicated_database", false, false, "Add a new setting to ignore ON CLUSTER clause for DDL queries with a replicated database."},
             {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
