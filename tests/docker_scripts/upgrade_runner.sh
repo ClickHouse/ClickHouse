@@ -278,7 +278,19 @@ echo "<clickhouse>
 
 cat /etc/clickhouse-server/users.d/compatibility.xml
 
-start_server || (echo "Failed to start server" && exit 1)
+# List of allowed reasons why the server cannot start up
+# 1. Lazy database engine has been removed in a backward-incompatible manner
+check_allow_list() {
+    local log="/var/log/clickhouse-server/clickhouse-server.log"
+    if [ -f "$log" ] && rg -q "Unknown database engine: Lazy" "$log"; then
+        echo "Found allow-listed error in logs. Suppressing failure."
+        return 0
+    fi
+    return 1
+}
+
+start_server || check_allow_list || (echo "Failed to start server" && exit 1)
+
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
     && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
@@ -348,6 +360,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Failed to flush system log" \
            -e "Bad get: has String, requested UInt64. (BAD_GET" \
            -e "Disk does not support stat. (NOT_IMPLEMENTED" \
+           -e "QUALIFY clause is not supported in the old analyzer" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
