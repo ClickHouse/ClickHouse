@@ -213,6 +213,7 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         /// Erase storage related tasks from pending and select active tasks to wait for
         tasks_to_cancel = pending.removeTasks(id);
 
+        tasks_to_wait.reserve(active.size());
         for (auto & item : active)
         {
             if (item->task->getStorageID() == id)
