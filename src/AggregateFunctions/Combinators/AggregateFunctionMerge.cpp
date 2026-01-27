@@ -42,14 +42,9 @@ AggregateFunctionMerge::AggregateFunctionMerge(const AggregateFunctionPtr & nest
             data_type->getFunctionName(),
             nested_func->getName());
 
-    const auto & nested_base = nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
-    const auto & argument_base = argument_func->getBaseAggregateFunctionWithSameStateRepresentation();
-
-    if (nested_base.getName() == argument_base.getName() && nested_base.getStateVariant() != argument_base.getStateVariant()
-        && nested_base.canMergeStateFromDifferentVariant(argument_base))
+    if (nested_func->canMergeStateFromDifferentVariant(*argument_func))
     {
-        nested_base_for_variant_merge = &nested_base;
-        argument_base_for_variant_merge = &argument_base;
+        merge_state_from_different_variant = true;
         return;
     }
 
@@ -61,8 +56,8 @@ AggregateFunctionMerge::AggregateFunctionMerge(const AggregateFunctionPtr & nest
         "State variants: '{}' vs '{}'. State types: '{}' vs '{}'",
         argument->getName(),
         data_type->getFunctionName(),
-        toString(nested_base.getStateVariant()),
-        toString(argument_base.getStateVariant()),
+        toString(nested_func->getStateVariant()),
+        toString(argument_func->getStateVariant()),
         nested_func->getStateType()->getName(),
         argument_func->getStateType()->getName());
 }
@@ -72,10 +67,13 @@ void AggregateFunctionMerge::add(AggregateDataPtr __restrict place, const IColum
     const auto & column = assert_cast<const ColumnAggregateFunction &>(*columns[0]);
     auto * const rhs = column.getData()[row_num];
 
-    if (nested_base_for_variant_merge)
-        nested_base_for_variant_merge->mergeStateFromDifferentVariant(place, *argument_base_for_variant_merge, rhs, arena);
-    else
+    if (!merge_state_from_different_variant)
+    {
         nested_func->merge(place, rhs, arena);
+        return;
+    }
+
+    nested_func->mergeStateFromDifferentVariant(place, *argument_func, rhs, arena);
 }
 
 namespace

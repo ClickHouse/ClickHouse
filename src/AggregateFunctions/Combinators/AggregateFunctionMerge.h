@@ -22,8 +22,7 @@ class AggregateFunctionMerge final : public IAggregateFunctionHelper<AggregateFu
 private:
     AggregateFunctionPtr nested_func;
     AggregateFunctionPtr argument_func;
-    const IAggregateFunction * nested_base_for_variant_merge = nullptr;
-    const IAggregateFunction * argument_base_for_variant_merge = nullptr;
+    bool merge_state_from_different_variant = false;
 
 public:
     AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_);
