@@ -146,15 +146,17 @@ void IcebergBitmapPositionDeleteTransform::initialize()
     {
         while (auto delete_chunk = delete_source->read())
         {
-auto position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
+            auto position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
+            auto filename_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::data_file_path_column_name);
 
             auto position_column = delete_chunk.getColumns()[position_index];
+            auto filename_column = delete_chunk.getColumns()[filename_index];
 
             for (size_t i = 0; i < delete_chunk.getNumRows(); ++i)
             {
                 // Add filename matching check
                 auto filename_in_delete_record = filename_column->getDataAt(i);
-                auto current_data_file_path = iceberg_object_info->info.data_object_file_path_key;
+                auto current_data_file_path = iceberg_object_info->info.data_object_file_path_from_metadata;
 
                 // Only add to delete bitmap when the filename in delete record matches current data file path
                 if (filename_in_delete_record == current_data_file_path || filename_in_delete_record == "/" + current_data_file_path)
