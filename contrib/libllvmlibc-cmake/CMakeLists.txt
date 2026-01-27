@@ -379,10 +379,6 @@ if (ENABLE_SSE42)
 endif()
 
 if (ENABLE_AVX2)
-    target_compile_options(libllvmlibc PRIVATE
-        -mavx2
-    )
-
     list(APPEND LLVMLIBC_DEFS
         LIBC_TARGET_CPU_HAS_AVX=1
         LIBC_TARGET_CPU_HAS_AVX2=1
@@ -390,9 +386,6 @@ if (ENABLE_AVX2)
 endif()
 
 if (ENABLE_AVX512)
-    target_compile_options(libllvmlibc PRIVATE
-        -mavx512f
-    )
     list(APPEND LLVMLIBC_DEFS
         LIBC_TARGET_CPU_HAS_AVX512F=1
         LIBC_TARGET_CPU_HAS_AVX512BW=1
