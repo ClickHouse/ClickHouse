@@ -6985,6 +6985,12 @@ Allow usage of materialized views with parallel replicas
 Index analysis will be distributed across replicas.
 Beneficial for shared storage and huge amount of data in cluster.
 Uses replicas from cluster_for_parallel_replicas.
+
+**See also**
+
+- [distributed_index_analysis_for_non_shared_merge_tree](#distributed_index_analysis_for_non_shared_merge_tree)
+- [distributed_index_analysis_min_parts_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_parts_to_activate)
+- [distributed_index_analysis_min_indexes_size_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_indexes_size_to_activate)
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_index_analysis_for_non_shared_merge_tree, false, R"(
 Enable distributed index analysis even for non SharedMergeTree (cloud only engine).
