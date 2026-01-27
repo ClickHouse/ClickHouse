@@ -39,9 +39,6 @@ void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistic
 
 RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 {
-    if (!cache_key)
-        return;
-
     if (unsupported_case)
     {
         LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "Unsupported case encountered, skipping statistics update.");
@@ -61,7 +58,7 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             stats.elapsed_microseconds);
     };
 
-    RuntimeDataflowStatistics res;
+    RuntimeDataflowStatistics res{.total_rows_to_read = total_rows_to_read};
     for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
     {
         const auto & stats = input_bytes_statistics[i];
@@ -96,7 +93,7 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
     }
 
     auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
-    dataflow_cache.update(*cache_key, res);
+    dataflow_cache.update(cache_key, res);
 }
 
 /// Tries to estimate compressed size of a column by serializing a sample of it.
@@ -115,9 +112,6 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
 
 void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
 {
-    if (!cache_key)
-        return;
-
     Stopwatch watch;
 
     size_t sample_bytes = 0;
@@ -147,9 +141,6 @@ void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chun
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket)
 {
-    if (!cache_key)
-        return;
-
     Stopwatch watch;
 
     /// We want to avoid situations when there is a single very large state (think of `SELECT uniqExact(col) FROM t`).
@@ -174,9 +165,6 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggregator & aggregator, const Block & block)
 {
-    if (!cache_key)
-        return;
-
     Stopwatch watch;
 
     auto get_key_column_sizes = [&](bool compress)
@@ -223,9 +211,6 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes, size_t read_bytes)
 {
-    if (!cache_key)
-        return;
-
     Stopwatch watch;
 
     const auto type = read_bytes ? InputStatisticsType::WithByteHint : InputStatisticsType::WithoutByteHint;

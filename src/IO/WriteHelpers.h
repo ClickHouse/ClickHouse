@@ -105,8 +105,8 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
     writeStringBinary(std::string_view{s}, buf);
 }
 
-template <typename T>
-void writeVectorBinary(const std::vector<T> & v, WriteBuffer & buf)
+template <typename T, typename Alloc = std::allocator<T>>
+void writeVectorBinary(const std::vector<T, Alloc> & v, WriteBuffer & buf)
 {
     writeVarUInt(v.size(), buf);
 
@@ -1385,8 +1385,8 @@ inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, b
 inline void writeCSV(const IPv4 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const IPv6 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 
-template <typename T>
-void writeBinary(const std::vector<T> & x, WriteBuffer & buf)
+template <typename T, typename Alloc = std::allocator<T>>
+void writeBinary(const std::vector<T, Alloc> & x, WriteBuffer & buf)
 {
     size_t size = x.size();
     writeVarUInt(size, buf);
