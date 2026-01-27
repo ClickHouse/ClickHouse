@@ -1,5 +1,7 @@
-if(NOT ENABLE_SSL)
-  message(STATUS "libcotp: DISABLED because ENABLE_SSL=OFF")
+option (ENABLE_LIBCOTP "Enable libcotp" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_LIBCOTP OR NOT ENABLE_SSL)
+  message (STATUS "Not using libcotp")
   return()
 endif()
 
