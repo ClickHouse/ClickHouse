@@ -49,6 +49,7 @@
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
+#include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
@@ -243,6 +244,8 @@ namespace FailPoints
     extern const char zero_copy_unlock_zk_fail_after_op[];
     extern const char rmt_lightweight_update_sleep_after_block_allocation[];
     extern const char rmt_merge_selecting_task_pause_when_scheduled[];
+    extern const char rmt_merge_selecting_task_no_free_threads[];
+    extern const char rmt_merge_selecting_task_max_part_size[];
     extern const char rmt_delay_execute_drop_range[];
 }
 
@@ -4104,6 +4107,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         CannotSelect,
     };
 
+    queue.clearPartsPostponeReasons();
+
     auto try_assign_merge = [&]() -> AttemptStatus
     {
         /// We must select parts for merge under merge_selecting_mutex because other threads
@@ -4135,6 +4140,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 "Current background tasks memory usage: {}.",
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()),
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.get()));
+            queue.addPartsPostponeReasons(PostponeReasons::ALL_PARTS_KEY, PostponeReasons::REACH_MEMORY_LIMIT);
             return AttemptStatus::Limited;
         }
 
@@ -4145,6 +4151,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 merges_and_mutations_queued.merges,
                 merges_and_mutations_queued.mutations,
                 (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_in_queue].value);
+            queue.addPartsPostponeReasons(PostponeReasons::ALL_PARTS_KEY, PostponeReasons::EXCEED_MAX_QUEUED_MERGES);
             return AttemptStatus::Limited;
         }
 
@@ -4240,6 +4247,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             }
         }
 
+        fiu_do_on(FailPoints::rmt_merge_selecting_task_no_free_threads, { max_source_part_bytes_for_mutation = 0; });
         /// If there are many mutations in queue, it may happen, that we cannot enqueue enough merges to merge all new parts
         if (max_source_part_bytes_for_mutation == 0 || merges_and_mutations_queued.mutations >= (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue])
         {
@@ -4251,6 +4259,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 merges_and_mutations_queued.mutations,
                 (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue].value,
                 max_source_part_bytes_for_mutation_log_comment);
+            queue.addPartsPostponeReasons(PostponeReasons::ALL_PARTS_KEY, PostponeReasons::NO_FREE_THREADS);
             return AttemptStatus::Limited;
         }
 
@@ -4264,8 +4273,12 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
             for (const auto & part : data_parts)
             {
+                fiu_do_on(FailPoints::rmt_merge_selecting_task_max_part_size, { max_source_part_bytes_for_mutation = 1; });
                 if (part->getBytesOnDisk() > max_source_part_bytes_for_mutation)
+                {
+                    queue.addPartsPostponeReasons(part->name, PostponeReasons::EXCEED_MAX_PART_SIZE);
                     continue;
+                }
 
                 auto expected = merge_predicate->getExpectedMutationVersion(part);
                 if (!expected)
