@@ -712,11 +712,11 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
         LOG_TEST(log, "Bytes to predownload: {}, caller_id: {}, buffer size: {}",
                  state.bytes_to_predownload, FileSegment::getCallerId(), state.buf->internalBuffer().size());
 
-        size_t current_offset = file_segment.getCurrentWriteOffset();
+        size_t current_write_offset = file_segment.getCurrentWriteOffset();
 
-        chassert(static_cast<size_t>(state.buf->getPosition()) == current_offset);
-        chassert(state.buf->getFileOffsetOfBufferEnd() == current_offset);
-        chassert(state.buf->getFileOffsetOfBufferEnd() == offset - state.bytes_to_predownload);
+        chassert(static_cast<size_t>(state.buf->getPosition()) == current_write_offset);
+        chassert(state.buf->getFileOffsetOfBufferEnd() == current_write_offset);
+        chassert(current_write_offset == offset - state.bytes_to_predownload);
 
         char * initial_buffer = state.buf->internalBuffer().begin();
         size_t initial_buffer_size = state.buf->internalBuffer().size();
@@ -778,16 +778,16 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                 auto result = state.buf->hasPendingData();
                 if (result)
                 {
-                    auto current_write_offset = file_segment.getCurrentWriteOffset();
-                    if (current_write_offset != static_cast<size_t>(state.buf->getPosition())
-                        || current_write_offset != offset)
+                    const auto write_offset = file_segment.getCurrentWriteOffset();
+                    if (write_offset != static_cast<size_t>(state.buf->getPosition())
+                        || write_offset != offset)
                     {
                         throw Exception(
                             ErrorCodes::LOGICAL_ERROR,
                             "Buffer's offsets mismatch after predownloading; download offset: {}, "
                             "cached buffer offset: {}, implementation buffer offset: {}, "
                             "file segment info: {}",
-                            current_write_offset,
+                            write_offset,
                             offset,
                             state.buf->getPosition(),
                             file_segment.getInfoForLog());
@@ -819,14 +819,14 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                 continue_predownload = writeCache(
                     state.buf->buffer().begin(),
                     size,
-                    current_offset,
+                    current_write_offset,
                     file_segment,
                     info,
                     log);
 
                 if (continue_predownload)
                 {
-                    current_offset += size;
+                    current_write_offset += size;
                     state.buf->position() += size;
                     chassert(state.bytes_to_predownload >= size);
                     state.bytes_to_predownload -= size;
@@ -1094,7 +1094,6 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             implementation_buffer_can_be_reused,
             log);
 
-        chassert(!state->buf->internalBuffer().empty());
         chassert(state->buf->buffer().begin() == internal_buffer.begin());
         chassert(state->buf->available() == size);
     }
@@ -1129,7 +1128,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
     LOG_TEST(log, "Reading file segment: {}", getInfoForLog(&state, info, offset));
 
     const auto & current_read_range = file_segment.range();
-    chassert(file_segment.range().contains(offset));
+    chassert(current_read_range.contains(offset));
 
     size_t size = 0;
     if (state.bytes_to_predownload)
@@ -1465,7 +1464,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
         [[maybe_unused]] size_t remaining_size_in_file_segment = file_segment.range().right - offset + 1;
         current_state->buf->set(to + read_bytes, n - read_bytes);
 
-        auto size = readFromFileSegment(
+        const auto size = readFromFileSegment(
             file_segment,
             offset,
             *current_state,
@@ -1483,8 +1482,9 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
         chassert(read_bytes <= n);
         chassert(
             offset <= file_segment.range().right + 1,
-            fmt::format("Offset: {}, size: {}, remaining size in file segment: {}, file segment: {}",
-                        offset, size, remaining_size_in_file_segment, file_segment.getInfoForLog()));
+            fmt::format(
+                "Offset: {}, size: {}, remaining size in file segment: {}, file segment: {}",
+                offset, size, remaining_size_in_file_segment, file_segment.getInfoForLog()));
 
         if (!size)
         {
