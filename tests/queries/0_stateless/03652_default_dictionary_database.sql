@@ -38,7 +38,7 @@ SELECT dictHas('test_dict_db.test_dictionary', toUInt64(1));
 
 SET default_dictionary_database = 'test_dict_db';
 
-SELECT 'Test 3: Local dictionary in current database (fallback test)';
+SELECT 'Test 3: Local dictionary in current database';
 SELECT dictHas('local_dictionary', toUInt64(1));
 
 
