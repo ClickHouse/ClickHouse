@@ -1,3 +1,6 @@
+-- Tags: no-sanitizers
+-- no-sanitizers: too slow
+
 DROP TABLE IF EXISTS t;
 
 -- index_granularity: to be able to produce small blocks from reading
