@@ -282,7 +282,7 @@ void ParquetMetadataInputFormat::fillColumnsMetadata(const std::shared_ptr<parqu
             assert_cast<ColumnUInt64 &>(tuple_column.getColumn(8)).insertValue(total_compressed_size);
 
             /// space_saved
-            String space_saved = fmt::format("{:.4}%", (1 - double(total_compressed_size) / total_uncompressed_size) * 100);
+            String space_saved = fmt::format("{:.4}%", (1 - static_cast<double>(total_compressed_size) / static_cast<double>(total_uncompressed_size)) * 100);
             assert_cast<ColumnString &>(tuple_column.getColumn(9)).insertData(space_saved.data(), space_saved.size());
 
             /// encodings
@@ -374,14 +374,14 @@ void ParquetMetadataInputFormat::fillColumnStatistics(const std::shared_ptr<parq
     /// num_values
     auto & nullable_num_values = assert_cast<ColumnNullable &>(statistics_column.getColumn(0));
     assert_cast<ColumnUInt64 &>(nullable_num_values.getNestedColumn()).insertValue(statistics->num_values());
-    nullable_num_values.getNullMapData().push_back(0);
+    nullable_num_values.getNullMapData().push_back(false);
 
     /// null_count
     if (statistics->HasNullCount())
     {
         auto & nullable_null_count = assert_cast<ColumnNullable &>(statistics_column.getColumn(1));
         assert_cast<ColumnUInt64 &>(nullable_null_count.getNestedColumn()).insertValue(statistics->null_count());
-        nullable_null_count.getNullMapData().push_back(0);
+        nullable_null_count.getNullMapData().push_back(false);
     }
     else
     {
@@ -402,7 +402,7 @@ void ParquetMetadataInputFormat::fillColumnStatistics(const std::shared_ptr<parq
         else
         {
             assert_cast<ColumnUInt64 &>(nullable_distinct_count.getNestedColumn()).insertValue(distinct_count);
-            nullable_distinct_count.getNullMapData().push_back(0);
+            nullable_distinct_count.getNullMapData().push_back(false);
         }
     }
     else
@@ -471,10 +471,10 @@ void ParquetMetadataInputFormat::fillColumnStatistics(const std::shared_ptr<parq
 
         auto & nullable_min = assert_cast<ColumnNullable &>(statistics_column.getColumn(3));
         assert_cast<ColumnString &>(nullable_min.getNestedColumn()).insertData(min.data(), min.size());
-        nullable_min.getNullMapData().push_back(0);
+        nullable_min.getNullMapData().push_back(false);
         auto & nullable_max = assert_cast<ColumnNullable &>(statistics_column.getColumn(4));
         assert_cast<ColumnString &>(nullable_max.getNestedColumn()).insertData(max.data(), max.size());
-        nullable_max.getNullMapData().push_back(0);
+        nullable_max.getNullMapData().push_back(false);
     }
     else
     {

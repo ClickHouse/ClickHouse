@@ -47,7 +47,7 @@ ReadBufferPtr INATSConsumer::consume()
     if (stopped || !received.tryPop(current))
         return nullptr;
 
-    return std::make_shared<ReadBufferFromMemory>(current.message.data(), current.message.size());
+    return std::make_shared<ReadBufferFromMemory>(current.message);
 }
 
 void INATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, void * consumer)

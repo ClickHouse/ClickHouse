@@ -19,16 +19,17 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <memory>
 #include <string>
+#include <type_traits>
 
 #include <Common/ErrorCodes.h>
 #include <Common/filesystemHelpers.h>
 #include <Disks/DiskType.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 
@@ -142,7 +143,7 @@ public:
         const std::optional<FormatSettings> & format_settings) override
     {
         assertInitialized();
-        current_metadata->mutate(commands, context, storage_id, metadata_snapshot, catalog, format_settings);
+        current_metadata->mutate(commands, shared_from_this(), context, storage_id, metadata_snapshot, catalog, format_settings);
     }
 
     void checkMutationIsPossible(const MutationCommands & commands) override
@@ -296,6 +297,7 @@ public:
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
+        update(object_storage, context, /* if_not_updated_before */ true);
         return current_metadata->write(
             sample_block,
             table_id,
@@ -350,9 +352,9 @@ public:
         return current_metadata->optimize(metadata_snapshot, context, format_settings);
     }
 
-    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override
+    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override
     {
-        current_metadata->addDeleteTransformers(object_info, builder, format_settings, local_context);
+        current_metadata->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, local_context);
     }
 
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override

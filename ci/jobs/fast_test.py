@@ -12,7 +12,7 @@ from ci.praktika.settings import Settings
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
 current_directory = Utils.cwd()
-build_dir = f"{current_directory}/ci/tmp/build"
+build_dir = f"{current_directory}/ci/tmp/fast_build"
 temp_dir = f"{current_directory}/ci/tmp/"
 
 
@@ -25,7 +25,7 @@ def clone_submodules():
         "contrib/zlib-ng",
         "contrib/libxml2",
         "contrib/fmtlib",
-        "contrib/aklomp-base64",
+        "contrib/base64",
         "contrib/cctz",
         "contrib/libcpuid",
         "contrib/libdivide",
@@ -50,9 +50,9 @@ def clone_submodules():
         "contrib/morton-nd",
         "contrib/xxHash",
         "contrib/simdjson",
+        "contrib/simdcomp",
         "contrib/liburing",
         "contrib/libfiu",
-        "contrib/incbin",
         "contrib/yaml-cpp",
         "contrib/corrosion",
         "contrib/StringZilla",
@@ -129,6 +129,14 @@ def main():
 
     clickhouse_bin_path = Path(f"{build_dir}/programs/clickhouse")
     if Info().is_local_run:
+        for path in [
+            clickhouse_bin_path,
+            Path(temp_dir) / "clickhouse",
+            Path(current_directory) / "clickhouse",
+        ]:
+            if path.exists():
+                clickhouse_bin_path = path
+                break
         if clickhouse_bin_path.exists():
             print(
                 f"NOTE: It's a local run and clickhouse binary is found [{clickhouse_bin_path}] - skip the build"
@@ -139,10 +147,16 @@ def main():
                 f"NOTE: It's a local run and clickhouse binary is not found [{clickhouse_bin_path}] - will be built"
             )
             time.sleep(5)
-        clickhouse_server_link = Path(f"{build_dir}/programs/clickhouse-server")
-        if not clickhouse_server_link.is_file():
-            Shell.check(f"ln -sf {clickhouse_bin_path} {clickhouse_server_link}")
-        Shell.check(f"chmod +x {clickhouse_bin_path}")
+        resolved_clickhouse_bin_path = clickhouse_bin_path.resolve()
+        Shell.check(
+            f"ln -sf {resolved_clickhouse_bin_path} {resolved_clickhouse_bin_path.parent}/clickhouse-server",
+            strict=True,
+        )
+        Shell.check(
+            f"ln -sf {resolved_clickhouse_bin_path} {resolved_clickhouse_bin_path.parent}/clickhouse-client",
+            strict=True,
+        )
+        Shell.check(f"chmod +x {resolved_clickhouse_bin_path}", strict=True)
     else:
         os.environ["CH_HOSTNAME"] = (
             "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
@@ -156,7 +170,9 @@ def main():
         os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
         Shell.check("sccache --show-stats", verbose=True)
 
-    Utils.add_to_PATH(f"{build_dir}/programs:{current_directory}/tests")
+    Utils.add_to_PATH(
+        f"{os.path.dirname(clickhouse_bin_path)}:{current_directory}/tests"
+    )
 
     res = True
     results = []
@@ -164,7 +180,6 @@ def main():
     job_info = ""
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
-        Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
         results.append(
             Result.from_commands_run(
                 name="Checkout Submodules",
@@ -186,8 +201,8 @@ def main():
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
-                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1",
-                workdir=build_dir,
+                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
+                -B {build_dir}",
             )
         )
         res = results[-1].is_ok()
@@ -197,8 +212,8 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
-                command="command time -v ninja clickhouse-bundle clickhouse-stripped lexer_test",
-                workdir=build_dir,
+                command=f"command time -v cmake --build {build_dir} --"
+                " clickhouse-bundle clickhouse-stripped lexer_test",
             )
         )
         Shell.check(f"{build_dir}/rust/chcache/chcache stats")
@@ -274,7 +289,7 @@ def main():
 
     if attach_debug:
         attach_files += [
-            Utils.compress_file(f"{temp_dir}/build/programs/clickhouse-stripped"),
+            clickhouse_bin_path,
             f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
             f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
         ]

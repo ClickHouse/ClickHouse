@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -259,7 +258,7 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
         };
         FunctionDocumentation::IntroducedIn introduced_in_runningConcurrency = {21, 3};
         FunctionDocumentation::Category category_runningConcurrency = FunctionDocumentation::Category::Other;
-        FunctionDocumentation documentation_runningConcurrency = {description_runningConcurrency, syntax_runningConcurrency, arguments_runningConcurrency, returned_value_runningConcurrency, examples_runningConcurrency, introduced_in_runningConcurrency, category_runningConcurrency};
+        FunctionDocumentation documentation_runningConcurrency = {description_runningConcurrency, syntax_runningConcurrency, arguments_runningConcurrency, {}, returned_value_runningConcurrency, examples_runningConcurrency, introduced_in_runningConcurrency, category_runningConcurrency};
 
         factory.registerFunction<RunningConcurrencyOverloadResolver<NameRunningConcurrency, DataTypeUInt32>>(documentation_runningConcurrency);
     }

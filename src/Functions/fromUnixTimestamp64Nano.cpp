@@ -37,7 +37,7 @@ SELECT fromUnixTimestamp64Nano(1640995200123456789)
     };
     FunctionDocumentation::IntroducedIn introduced_in_fromUnixTimestamp64Nano = {20, 5};
     FunctionDocumentation::Category category_fromUnixTimestamp64Nano = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_fromUnixTimestamp64Nano = {description_fromUnixTimestamp64Nano, syntax_fromUnixTimestamp64Nano, arguments_fromUnixTimestamp64Nano, returned_value_fromUnixTimestamp64Nano, examples_fromUnixTimestamp64Nano, introduced_in_fromUnixTimestamp64Nano, category_fromUnixTimestamp64Nano};
+    FunctionDocumentation documentation_fromUnixTimestamp64Nano = {description_fromUnixTimestamp64Nano, syntax_fromUnixTimestamp64Nano, arguments_fromUnixTimestamp64Nano, {}, returned_value_fromUnixTimestamp64Nano, examples_fromUnixTimestamp64Nano, introduced_in_fromUnixTimestamp64Nano, category_fromUnixTimestamp64Nano};
 
     factory.registerFunction("fromUnixTimestamp64Nano",
         [](ContextPtr context){ return std::make_shared<FunctionFromUnixTimestamp64>(9, "fromUnixTimestamp64Nano", context); }, documentation_fromUnixTimestamp64Nano);

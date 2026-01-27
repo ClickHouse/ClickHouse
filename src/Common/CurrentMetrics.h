@@ -26,9 +26,9 @@ namespace CurrentMetrics
     using Value = Int64;
 
     /// Get name of metric by identifier. Returns statically allocated string.
-    const char * getName(Metric event);
+    const std::string_view & getName(Metric event);
     /// Get text description of metric by identifier. Returns statically allocated string.
-    const char * getDocumentation(Metric event);
+    const std::string_view & getDocumentation(Metric event);
 
     /// Metric identifier -> current value of metric.
     extern std::atomic<Value> values[];
@@ -57,6 +57,11 @@ namespace CurrentMetrics
     inline void sub(Metric metric, Value value = 1)
     {
         add(metric, -value);
+    }
+
+    inline bool cas(Metric metric, Value expected, Value desired)
+    {
+        return values[metric].compare_exchange_strong(expected, desired, std::memory_order_relaxed);
     }
 
     /// For lifetime of object, add amount for specified metric. Then subtract.

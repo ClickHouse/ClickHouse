@@ -153,7 +153,7 @@ public:
     double getTokens() const
     {
         auto now = event_queue->now();
-        double elapsed = std::chrono::nanoseconds(now - last_update).count() / 1e9;
+        double elapsed = static_cast<double>(std::chrono::nanoseconds(now - last_update).count()) / 1e9;
         return std::min(tokens + max_speed * elapsed, max_burst);
     }
 
@@ -182,9 +182,9 @@ private:
         auto now = event_queue->now();
         if (max_speed > 0.0)
         {
-            double elapsed = std::chrono::nanoseconds(now - last_update).count() / 1e9;
+            double elapsed = static_cast<double>(std::chrono::nanoseconds(now - last_update).count()) / 1e9;
             tokens = std::min(tokens + max_speed * elapsed, max_burst);
-            tokens -= use; // This is done outside min() to avoid passing large requests w/o token consumption after long idle period
+            tokens -= static_cast<double>(use); // This is done outside min() to avoid passing large requests w/o token consumption after long idle period
 
             // Postpone activation until there is positive amount of tokens
             if (!do_not_postpone && tokens < 0.0)

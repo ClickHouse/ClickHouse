@@ -179,7 +179,9 @@ protected:
                 return;
 
             /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
-            findNamedArgument(&uri, "uri", 1);
+            if (findNamedArgument(&uri, "uri", 1) == -1)
+                return;
+
             result.are_named = true;
             result.start = 1;
         }
@@ -382,8 +384,19 @@ protected:
 
     void findURLSecretArguments()
     {
-        if (!isNamedCollectionName(0))
-            excludeS3OrURLNestedMaps();
+        if (isNamedCollectionName(0))
+            return;
+
+        excludeS3OrURLNestedMaps();
+
+        String uri;
+        if (tryGetStringFromArgument(0, &uri) && maskURIPassword(&uri))
+        {
+            chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
+            result.start = 0;
+            result.count = 1;
+            result.replacement = std::move(uri);
+        }
     }
 
     bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const
@@ -722,6 +735,9 @@ protected:
 
     void findBackupDatabaseSecretArguments()
     {
+        if (function->arguments->size() < 2)
+            return;
+
         auto storage_arg = function->arguments->at(1);
         auto storage_function = storage_arg->getFunction();
 
@@ -765,6 +781,12 @@ protected:
         const String & engine_name = function->name();
         if (engine_name == "S3")
         {
+            if (isNamedCollectionName(0))
+            {
+                /// BACKUP ... TO S3(named_collection, ..., secret_access_key = 'secret_access_key', ...)
+                findSecretNamedArgument("secret_access_key", 1);
+                return;
+            }
             /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key])
             markSecretArgument(2);
         }
@@ -785,7 +807,7 @@ protected:
 
     /// Looks for an argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
     /// Returns -1 if no argument was found.
-    ssize_t findNamedArgument(String * res, const std::string_view & key, size_t start = 0)
+    ssize_t findNamedArgument(String * res, std::string_view key, size_t start = 0)
     {
         for (size_t i = start; i < function->arguments->size(); ++i)
         {
@@ -813,7 +835,7 @@ protected:
 
     /// Looks for a secret argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
     /// If the argument is found, it is marked as a secret.
-    bool findSecretNamedArgument(const std::string_view & key, size_t start = 0)
+    bool findSecretNamedArgument(std::string_view key, size_t start = 0)
     {
         ssize_t arg_idx = findNamedArgument(nullptr, key, start);
         if (arg_idx >= 0)

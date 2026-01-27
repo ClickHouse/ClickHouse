@@ -42,25 +42,9 @@ namespace Setting
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
 
-namespace
+namespace ErrorCodes
 {
-
-/// Avoid heavy operation on tables if we only queried columns that we can get without table object.
-/// Otherwise it will require table initialization for Lazy database.
-bool needTable(const DatabasePtr & database, const Block & header)
-{
-    if (database->getEngineName() != "Lazy")
-        return true;
-
-    static const std::set<std::string> columns_without_table = {"database", "name", "uuid", "metadata_modification_time"};
-    for (const auto & column : header.getColumnsWithTypeAndName())
-    {
-        if (!columns_without_table.contains(column.name))
-            return true;
-    }
-    return false;
-}
-
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -120,7 +104,7 @@ ColumnPtr getFilteredTables(
 
     for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
     {
-        const auto & database_name = filtered_databases_column->getDataAt(database_idx).toString();
+        const auto database_name = filtered_databases_column->getDataAt(database_idx);
         DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
         if (!database)
             continue;
@@ -264,7 +248,7 @@ public:
         size_t size = tables_->size();
         tables.reserve(size);
         for (size_t idx = 0; idx < size; ++idx)
-            tables.insert(tables_->getDataAt(idx).toString());
+            tables.insert(std::string{tables_->getDataAt(idx)});
     }
 
     String getName() const override { return "Tables"; }
@@ -322,7 +306,7 @@ protected:
 
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
-                database_name = databases->getDataAt(database_idx).toString();
+                database_name = databases->getDataAt(database_idx);
                 database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
                 if (!database)
@@ -467,8 +451,6 @@ protected:
                         /* filter_by_table_name */ {},
                         /* skip_not_loaded */ false);
 
-            const bool need_table = needTable(database, getPort().getHeader());
-
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
@@ -478,26 +460,23 @@ protected:
                 if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                StoragePtr table = nullptr;
-                TableLockHolder lock;
-                if (need_table)
-                {
-                    table = tables_it->table();
-                    if (!table)
-                        // Table might have just been removed or detached for Lazy engine (see DatabaseLazy::tryGetTable())
-                        continue;
+                StoragePtr table = tables_it->table();
+                if (!table)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database iterator returned nullptr for the table, which is a bug");
 
-                    /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
-                    /// and it's not protected internally by other mutexes
-                    static const size_t DATA_PATHS_INDEX = 5;
-                    if (columns_mask[DATA_PATHS_INDEX])
-                    {
-                        lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-                        if (!lock)
-                            // Table was dropped while acquiring the lock, skipping table
-                            continue;
-                    }
+                TableLockHolder lock;
+
+                /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
+                /// and it's not protected internally by other mutexes
+                static const size_t DATA_PATHS_INDEX = 5;
+                if (columns_mask[DATA_PATHS_INDEX])
+                {
+                    lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+                    if (!lock)
+                        // Table was dropped while acquiring the lock, skipping table
+                        continue;
                 }
+
                 ++rows_count;
 
                 size_t src_index = 0;

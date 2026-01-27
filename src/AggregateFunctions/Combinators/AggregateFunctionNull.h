@@ -2,12 +2,13 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
-#include <Common/assert_cast.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/ContainersWithMemoryTracking.h>
+#include <Common/assert_cast.h>
 
 #include <absl/container/inlined_vector.h>
 
@@ -204,7 +205,7 @@ public:
                     nested_function->insertMergeResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
                 else
                     nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                to_concrete.getNullMapData().push_back(0);
+                to_concrete.getNullMapData().push_back(false);
             }
             else
             {
@@ -404,6 +405,66 @@ public:
                 this->setFlag(place);
     }
 
+    void addManyDefaults(
+        AggregateDataPtr __restrict /*place*/,
+        const IColumn ** /*columns*/,
+        size_t /*length*/,
+        Arena * /*arena*/) const override
+    {
+    }
+
+    void addBatchSparseSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto & offsets = column_sparse.getOffsetsData();
+        const auto & values = column_sparse.getValuesColumn();
+        const auto * nested_column = &assert_cast<const ColumnNullable &>(values).getNestedColumn();
+
+        auto from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin() + 1;
+        auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
+
+        if (from >= to)
+            return;
+
+        this->setFlag(place);
+        this->nested_function->addBatchSinglePlace(from, to, this->nestedPlace(place), &nested_column, arena, -1);
+    }
+
+    void addBatchSparse(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto & offsets = column_sparse.getOffsetsData();
+        const auto & values = column_sparse.getValuesColumn();
+        const auto * nested_column = &assert_cast<const ColumnNullable &>(values).getNestedColumn();
+
+        size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
+        size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
+
+        for (size_t i = from; i < to; ++i)
+        {
+            size_t offset = offsets[i];
+            if (places[offset])
+            {
+                this->nested_function->add(
+                    this->nestedPlace(places[offset] + place_offset),
+                    &nested_column, i + 1, arena);
+
+                this->setFlag(places[offset] + place_offset);
+            }
+        }
+    }
+
 #if USE_EMBEDDED_COMPILER
 
     void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
@@ -515,7 +576,7 @@ public:
         ssize_t if_argument_pos) const final
     {
         /// We are going to merge all the flags into a single one to be able to call the nested batching functions
-        std::vector<const UInt8 *> nullable_filters;
+        VectorWithMemoryTracking<const UInt8 *> nullable_filters;
         absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
 
         std::unique_ptr<UInt8[]> final_flags;
@@ -617,7 +678,7 @@ public:
         ValuesWithType wrapped_arguments;
         wrapped_arguments.reserve(arguments_size);
 
-        std::vector<llvm::Value *> is_null_values;
+        VectorWithMemoryTracking<llvm::Value *> is_null_values;
         is_null_values.reserve(arguments_size);
 
         for (size_t i = 0; i < arguments_size; ++i)

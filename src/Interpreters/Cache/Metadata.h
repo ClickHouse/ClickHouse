@@ -39,37 +39,33 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     size_t size() const;
 
-    bool isEvictingOrRemoved(const CachePriorityGuard::Lock & lock) const
+    bool isEvictingOrRemoved(const LockedKey & lock) const { return isRemoved(lock) || isEvicting(lock); }
+
+    /// Whether queue entry is removed/evicted.
+    bool isRemoved(const LockedKey &) const { return removed; }
+
+    /// Whether queue entry is in evicting state.
+    bool isEvicting(const LockedKey &) const
     {
-        if (removed)
-            return true;
         auto iterator = getQueueIterator();
         if (!iterator)
-            return false; /// Iterator is set only on first space reservation attempt.
-        return iterator->getEntry()->isEvicting(lock);
+            return false;
+        const auto entry_state = iterator->getEntry()->getState();
+        return entry_state == Priority::Entry::State::Evicting;
     }
 
-    bool isEvictingOrRemoved(const LockedKey & lock) const
+    void setRemovedFlag(const LockedKey &, bool value = true)
     {
-        if (removed)
-            return true;
-        auto iterator = getQueueIterator();
-        if (!iterator)
-            return false; /// Iterator is set only on first space reservation attempt.
-        return iterator->getEntry()->isEvicting(lock);
+        removed = value;
+        chassert(!getQueueIterator());
     }
 
-    void setEvictingFlag(const LockedKey & locked_key, const CachePriorityGuard::Lock & lock) const
+    void setEvictingFlag(const LockedKey & lock) const
     {
         auto iterator = getQueueIterator();
         if (!iterator)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
-        iterator->getEntry()->setEvictingFlag(locked_key, lock);
-    }
-
-    void setRemovedFlag(const LockedKey &, const CachePriorityGuard::Lock &)
-    {
-        removed = true;
+        iterator->getEntry()->setEvictingFlag(lock);
     }
 
     void resetEvictingFlag() const
@@ -80,13 +76,15 @@ struct FileSegmentMetadata : private boost::noncopyable
 
         const auto & entry = iterator->getEntry();
         chassert(size() == entry->size);
-        entry->resetEvictingFlag();
+        entry->resetFlag(Priority::Entry::State::Evicting);
     }
 
     Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
 
     FileSegmentPtr file_segment;
+
 private:
+    /// If removed=true, then iterator is invalid.
     bool removed = false;
 };
 
@@ -163,6 +161,9 @@ class CacheMetadata : private boost::noncopyable
 {
     friend struct KeyMetadata;
     class IteratorImpl;
+    class BatchedIteratorImpl;
+    using IteratorImplPtr = std::shared_ptr<IteratorImpl>;
+    using BatchedIteratorImplPtr = std::shared_ptr<BatchedIteratorImpl>;
 
 public:
     using Key = FileCacheKey;
@@ -284,14 +285,21 @@ private:
 class CacheMetadata::Iterator
 {
 public:
-    using ImplPtr = std::shared_ptr<CacheMetadata::IteratorImpl>;
-    explicit Iterator(ImplPtr impl_) : impl(std::move(impl_)) {}
+    using Impl = std::variant<CacheMetadata::IteratorImplPtr, CacheMetadata::BatchedIteratorImplPtr>;
+    explicit Iterator(const UserID & user_id_, MetadataBuckets & metadata_buckets_);
 
     using OnFileSegmentFunc = std::function<void(const FileSegmentInfo &)>;
+    /// Execute func for one more file segment.
+    /// Cannot be used from different threads.
     bool next(OnFileSegmentFunc func);
+    /// Execute func for a batch of file segments.
+    /// Safe to be used from different threads.
+    bool nextBatch(OnFileSegmentFunc func);
 
 protected:
-    ImplPtr impl;
+    const UserID user_id;
+    MetadataBuckets & metadata_buckets;
+    std::optional<Impl> impl;
 };
 
 /**

@@ -13,7 +13,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/transformTypesRecursively.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -401,12 +401,24 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     if (partition_columns.empty())
     {
         return std::make_shared<DeltaLakeSink>(
-            delta_transaction, configuration, object_storage, context, sample_block, format_settings);
+            delta_transaction,
+            object_storage,
+            context,
+            sample_block,
+            format_settings,
+            configuration->format,
+            configuration->compression_method);
     }
 
     return std::make_shared<DeltaLakePartitionedSink>(
-        delta_transaction, configuration, partition_columns, object_storage,
-        context, sample_block, format_settings);
+        delta_transaction,
+        partition_columns,
+        object_storage,
+        context,
+        sample_block,
+        format_settings,
+        configuration->format,
+        configuration->compression_method);
 }
 
 void DeltaLakeMetadataDeltaKernel::logMetadataFiles(ContextPtr context) const

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/logger_useful.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 
@@ -10,7 +10,7 @@ namespace DB
 
 struct ObjectStorageQueueTableMetadata;
 
-class ObjectStorageQueuePostProcessor: public WithContext
+class ObjectStorageQueuePostProcessor : public WithContext
 {
 public:
     struct AfterProcessingSettings

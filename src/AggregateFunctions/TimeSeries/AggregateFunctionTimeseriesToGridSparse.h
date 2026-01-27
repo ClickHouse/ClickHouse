@@ -98,7 +98,7 @@ public:
     /// Insert the result into the column
     void doInsertResultInto(AggregateDataPtr __restrict place, IColumn & to) const
     {
-        std::vector<TimestampType> timestamps;
+        VectorWithMemoryTracking<TimestampType> timestamps;
 
         ColumnArray & arr_to = typeid_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();

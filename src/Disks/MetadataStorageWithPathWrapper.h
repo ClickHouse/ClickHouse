@@ -4,7 +4,7 @@
 
 #if USE_SSL
 
-#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <string>
 
 namespace DB
@@ -142,10 +142,7 @@ public:
         return delegate->tryGetBlobsFromTransactionIfExists(path);
     }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override
-    {
-        return delegate->generateObjectKeyForPath(path);
-    }
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) override { return delegate->generateObjectKeyForPath(path); }
 };
 
 class MetadataStorageWithPathWrapper final : public IMetadataStorage

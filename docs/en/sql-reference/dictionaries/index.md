@@ -10,6 +10,7 @@ doc_type: 'reference'
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 import CloudDetails from '@site/docs/sql-reference/dictionaries/_snippet_dictionary_in_cloud.md';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
 # Dictionaries
 
@@ -425,7 +426,6 @@ LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
 
-The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) type.
 This storage method works the same way as hashed and allows using date/time (arbitrary numeric type) ranges in addition to the key.
 
 Example: The table contains discounts for each advertiser in the format:
@@ -1108,6 +1108,7 @@ Types of sources (`source_type`):
   - [Redis](#redis)
   - [Cassandra](#cassandra)
   - [PostgreSQL](#postgresql)
+  - [YTsaurus](#ytsaurus)
 
 ### Local File {#local-file}
 
@@ -1891,6 +1892,46 @@ Setting fields:
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
 
+### YTsaurus {#ytsaurus}
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+:::info
+This is an experimental feature that may change in backwards-incompatible ways in future releases.
+Enable usage of the YTsaurus dictionary source
+using setting [`allow_experimental_ytsaurus_dictionary_source`](/operations/settings/settings#allow_experimental_ytsaurus_dictionary_source).
+:::
+
+Example of settings:
+
+```xml
+<source>
+    <ytsaurus>
+        <http_proxy_urls>http://localhost:8000</http_proxy_urls>
+        <cypress_path>//tmp/test</cypress_path>
+        <oauth_token>password</oauth_token>
+        <check_table_schema>1</check_table_schema>
+    </ytsaurus>
+</source>
+```
+
+or
+
+```sql
+SOURCE(YTSAURUS(
+    http_proxy_urls 'http://localhost:8000'
+    cypress_path '//tmp/test'
+    oauth_token 'password'
+))
+```
+
+Setting fields:
+
+- `http_proxy_urls` –  URL to the YTsaurus http proxy.
+- `cypress_path` – Cypress path to the table source.
+- `oauth_token` –  OAuth token.
+
 ### Null {#null}
 
 A special source that can be used to create dummy (empty) dictionaries. Such dictionaries can useful for tests or with setups with separated data and query nodes at nodes with Distributed tables.
@@ -2109,7 +2150,7 @@ This table contains a column `parent_region` that contains the key of the neares
 
 ClickHouse supports the hierarchical property for external dictionary attributes. This property allows you to configure the hierarchical dictionary similar to described above.
 
-The [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy) function allows you to get the parent chain of an element.
+The [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictGetHierarchy) function allows you to get the parent chain of an element.
 
 For our example, the structure of dictionary can be the following:
 
@@ -2341,7 +2382,7 @@ With a powerful YAML configure file, we can use a regexp tree dictionaries as a 
 
 #### Collecting Attribute Values {#collecting-attribute-values}
 
-Sometimes it is useful to return values from multiple regular expressions that matched, rather than just the value of a leaf node. In these cases, the specialized [`dictGetAll`](../../sql-reference/functions/ext-dict-functions.md#dictgetall) function can be used. If a node has an attribute value of type `T`, `dictGetAll` will return an `Array(T)` containing zero or more values.
+Sometimes it is useful to return values from multiple regular expressions that matched, rather than just the value of a leaf node. In these cases, the specialized [`dictGetAll`](../../sql-reference/functions/ext-dict-functions.md#dictGetAll) function can be used. If a node has an attribute value of type `T`, `dictGetAll` will return an `Array(T)` containing zero or more values.
 
 By default, the number of matches returned per key is unbounded. A bound can be passed as an optional fourth argument to `dictGetAll`. The array is populated in _topological order_, meaning that child nodes come before parent nodes, and sibling nodes follow the ordering in the source.
 

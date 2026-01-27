@@ -75,7 +75,7 @@ using Estimates = std::unordered_map<String, Estimate>;
 class ColumnStatistics
 {
 public:
-    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_);
+    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_, DataTypePtr data_type_);
 
     void serialize(WriteBuffer & buf);
     void deserialize(ReadBuffer & buf);
@@ -101,6 +101,7 @@ private:
     friend class MergeTreeStatisticsFactory;
     ColumnStatisticsDescription stats_desc;
     String column_name;
+    DataTypePtr data_type;
     std::map<StatisticsType, StatisticsPtr> stats;
     UInt64 rows = 0; /// the number of rows in the column
 };
@@ -120,8 +121,9 @@ public:
     using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
 
     ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
-    ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc) const;
     ColumnsStatistics getMany(const ColumnsDescription & columns) const;
+
+    StatisticsPtr getSingleStats(const SingleStatisticsDescription & stats_desc, DataTypePtr data_type) const;
 
     void registerValidator(StatisticsType type, Validator validator);
     void registerCreator(StatisticsType type, Creator creator);

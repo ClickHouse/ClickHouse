@@ -105,9 +105,9 @@ private:
             size_t token_start = 0;
             size_t token_length = 0;
 
-            while (cur < data.size && extractor.nextInString(data.data, data.size, &cur, &token_start, &token_length))
+            while (cur < data.size() && extractor.nextInString(data.data(), data.size(), cur, token_start, token_length))
             {
-                result_data_column.insertData(data.data + token_start, token_length);
+                result_data_column.insertData(data.data() + token_start, token_length);
                 ++current_tokens_size;
             }
 
@@ -138,7 +138,7 @@ Splits a UTF-8 string into n-grams of length `N`.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNgrams>(documentation);
 }

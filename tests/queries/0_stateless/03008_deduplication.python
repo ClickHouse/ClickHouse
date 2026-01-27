@@ -76,7 +76,10 @@ def instance_insert_statement(
         template = """
             INSERT INTO {table_name}
                 SELECT {insert_columns}
-                FROM numbers({count}) {insert_settings};
+                FROM numbers({count})
+                ORDER BY ALL
+                {insert_settings}
+                ;
             """
         return __format(
             template,
@@ -296,6 +299,8 @@ def test_insert_several_blocks(parser):
         script = f"""
             {get_logs_statement(args)}
 
+            SET enable_analyzer=1;
+
             SET max_insert_threads={1 if args.single_thread else 10};
             SET update_insert_deduplication_token_in_dependent_materialized_views=1;
             SET deduplicate_blocks_in_dependent_materialized_views=1;
@@ -435,6 +440,8 @@ def test_mv_generates_several_blocks(parser):
 
         script = f"""
             {get_logs_statement(args)}
+
+            SET enable_analyzer=1;
 
             SET max_insert_threads={1 if args.single_thread else 10};
             SET update_insert_deduplication_token_in_dependent_materialized_views=1;
@@ -584,6 +591,8 @@ def test_several_mv_into_one_table(parser):
 
         script = f"""
             {get_logs_statement(args)}
+
+            SET enable_analyzer=1;
 
             SET max_insert_threads={1 if args.single_thread else 10};
             SET update_insert_deduplication_token_in_dependent_materialized_views=1;

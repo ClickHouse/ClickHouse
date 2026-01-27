@@ -994,7 +994,7 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForTupleArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        if (!isTuple(type0) || !isTuple(type1))
+        if (!isTuple(removeNullable(type0)) || !isTuple(removeNullable(type1)))
             return {};
 
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
@@ -1023,7 +1023,8 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForTupleAndNumberArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        if (!(isTuple(type0) && isNumber(type1)) && !(isTuple(type1) && isNumber(type0)))
+        if (!(isTuple(removeNullable(type0)) && isNumber(removeNullable(type1)))
+            && !(isTuple(removeNullable(type1)) && isNumber(removeNullable(type0))))
             return {};
 
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
@@ -1883,9 +1884,6 @@ public:
             if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(new_arguments[1].type) || isString(new_arguments[1].type))
                 std::swap(new_arguments[0], new_arguments[1]);
 
-            // if (isTime(new_arguments[0].type))
-            //     new_arguments[0].type = std::make_shared<Int64>();
-
             /// Change interval argument to its representation
             new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
@@ -2221,8 +2219,8 @@ public:
                 const auto * col_left = &checkAndGetColumn<ColumnString>(col_left_const->getDataColumn());
                 const auto * col_right = &checkAndGetColumn<ColumnString>(col_right_const->getDataColumn());
 
-                std::string_view a = col_left->getDataAt(0).toView();
-                std::string_view b = col_right->getDataAt(0).toView();
+                std::string_view a = col_left->getDataAt(0);
+                std::string_view b = col_right->getDataAt(0);
 
                 auto res = OpImpl::constConst(a, b);
 
@@ -2253,12 +2251,12 @@ public:
             }
             else if (is_left_column_const)
             {
-                std::string_view str_view = col_left->getDataAt(0).toView();
+                std::string_view str_view = col_left->getDataAt(0);
                 OpImpl::vectorConstant(col_right->getChars(), col_right->getOffsets(), str_view, data);
             }
             else
             {
-                std::string_view str_view = col_right->getDataAt(0).toView();
+                std::string_view str_view = col_right->getDataAt(0);
                 OpImpl::vectorConstant(col_left->getChars(), col_left->getOffsets(), str_view, data);
             }
 
@@ -2601,12 +2599,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             {
                 auto res = removeNullable(result_type)->createColumn();
                 res->insertManyDefaults(input_rows_count);
-                auto null_map_col = ColumnUInt8::create(input_rows_count, 1);
+                auto null_map_col = ColumnUInt8::create(input_rows_count, true);
                 return !null_map_col->empty() ? wrapInNullable(std::move(res), std::move(null_map_col)) : makeNullable(std::move(res));
             }
             else if (result_type->isNullable())
             {
-                auto null_map_col = ColumnUInt8::create(input_rows_count, 0);
+                auto null_map_col = ColumnUInt8::create(input_rows_count, false);
                 PaddedPODArray<UInt8> & null_map_data = null_map_col->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
                     null_map_data[i] = left_argument.column->isNullAt(i) || !right_argument.column->getBool(i);
@@ -2723,59 +2721,73 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         if (!canBeNativeType(*arguments[0]) || !canBeNativeType(*arguments[1]) || !canBeNativeType(*result_type))
             return false;
 
-        WhichDataType data_type_lhs(arguments[0]);
-        WhichDataType data_type_rhs(arguments[1]);
+        auto denull_left_type = removeNullable(arguments[0]);
+        auto denull_right_type = removeNullable(arguments[1]);
+        WhichDataType data_type_lhs(denull_left_type);
+        WhichDataType data_type_rhs(denull_right_type);
         if ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime() || data_type_lhs.isTime()) ||
             (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime() || data_type_rhs.isTime()))
             return false;
 
-        return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
-        {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
-                !std::is_same_v<DataTypeFixedString, RightDataType> &&
-                !std::is_same_v<DataTypeString, LeftDataType> &&
-                !std::is_same_v<DataTypeString, RightDataType>)
+        return castBothTypes(
+            denull_left_type.get(),
+            denull_right_type.get(),
+            [&](const auto & left, const auto & right)
             {
-                using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-                using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-                if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
-                    return true;
-            }
-            return false;
-        });
+                using LeftDataType = std::decay_t<decltype(left)>;
+                using RightDataType = std::decay_t<decltype(right)>;
+                if constexpr (
+                    !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
+                    && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>)
+                {
+                    using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+                    using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+
+                    if constexpr (
+                        !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
+                        && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && OpSpec::compilable)
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            });
     }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
         assert(2 == arguments.size());
 
+        auto denull_left_type = removeNullable(arguments[0].type);
+        auto denull_right_type = removeNullable(arguments[1].type);
         llvm::Value * result = nullptr;
-        castBothTypes(arguments[0].type.get(), arguments[1].type.get(), [&](const auto & left, const auto & right)
-        {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
-                !std::is_same_v<DataTypeFixedString, RightDataType> &&
-                !std::is_same_v<DataTypeString, LeftDataType> &&
-                !std::is_same_v<DataTypeString, RightDataType>)
+
+        castBothTypes(
+            denull_left_type.get(),
+            denull_right_type.get(),
+            [&](const auto & left, const auto & right)
             {
-                using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-                using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-                if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
+                using LeftDataType = std::decay_t<decltype(left)>;
+                using RightDataType = std::decay_t<decltype(right)>;
+                if constexpr (
+                    !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
+                    && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>)
                 {
-                    auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    auto * lval = nativeCast(b, arguments[0], result_type);
-                    auto * rval = nativeCast(b, arguments[1], result_type);
-                    result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
-
-                    return true;
+                    using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+                    using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+                    if constexpr (
+                        !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
+                        && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && OpSpec::compilable)
+                    {
+                        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+                        auto * lval = nativeCast(b, arguments[0], result_type);
+                        auto * rval = nativeCast(b, arguments[1], result_type);
+                        result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
+                        return true;
+                    }
                 }
-            }
-
-            return false;
-        });
+                return false;
+            });
 
         return result;
     }

@@ -34,6 +34,9 @@ public:
 using AggregatorList = std::list<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 struct AggregatingTransformParams
 {
     Aggregator::Params params;
@@ -143,7 +146,7 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 class AggregatingTransform final : public IProcessor
 {
 public:
-    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_);
+    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     /// For Parallel aggregating.
     AggregatingTransform(
@@ -154,7 +157,9 @@ public:
         size_t max_threads,
         size_t temporary_data_merge_threads,
         bool should_produce_results_in_order_of_bucket_number_ = true,
-        bool skip_merging_ = false);
+        bool skip_merging_ = false,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
+
     ~AggregatingTransform() override;
 
     String getName() const override { return "AggregatingTransform"; }
@@ -188,7 +193,8 @@ private:
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;
-    bool skip_merging = false; /// If we aggregate partitioned data merging is not needed.
+    /// If we aggregate partitioned data merging is not needed.
+    bool skip_merging = false;
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;
@@ -208,6 +214,8 @@ private:
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
     std::list<TemporaryBlockStreamHolder> tmp_files;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     void initGenerate();
 };

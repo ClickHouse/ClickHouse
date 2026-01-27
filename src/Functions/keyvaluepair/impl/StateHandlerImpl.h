@@ -369,7 +369,7 @@ private:
     std::pair<bool, std::size_t> consumeWithEscapeSequence(std::string_view file, size_t start_pos, size_t character_pos, auto & output) const
     {
         std::string escaped_sequence;
-        DB::ReadBufferFromMemory buf(file.data() + character_pos, file.size() - character_pos);
+        DB::ReadBufferFromMemory buf(file.substr(character_pos));
 
         if constexpr (isKey)
         {

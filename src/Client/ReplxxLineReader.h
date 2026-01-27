@@ -21,6 +21,7 @@ public:
         bool multiline = false;
         bool ignore_shell_suspend = false;
         bool embedded_mode = false;
+        bool interactive_history_legacy_keymap = false;
         Patterns extenders;
         Patterns delimiters;
         std::span<char> word_break_characters;

@@ -22,8 +22,8 @@ using ConstantNodePtr = std::shared_ptr<ConstantNode>;
 class ConstantNode final : public IQueryTreeNode
 {
 public:
-    /// Construct constant query tree node from constant value and source expression
-    explicit ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression);
+    /// Construct constant query tree node from constant value, source expression and deterministic flag
+    explicit ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression, bool is_deterministic = true);
 
     /// Construct constant query tree node from constant value
     explicit ConstantNode(ConstantValue constant_value_);
@@ -111,6 +111,8 @@ public:
         return constant_value.getValueNameAndType(options);
     }
 
+    bool isDeterministic() const { return is_deterministic; }
+
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
 
@@ -119,19 +121,20 @@ protected:
     QueryTreeNodePtr cloneImpl() const override;
 
     template <typename F>
-    std::shared_ptr<ASTLiteral> getCachedAST(const F &ast_generator) const;
+    boost::intrusive_ptr<ASTLiteral> getCachedAST(const F &ast_generator) const;
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     ConstantValue constant_value;
     QueryTreeNodePtr source_expression;
+    bool is_deterministic = true;
     size_t mask_id = 0;
 
     static constexpr size_t children_size = 0;
 
     /// Converting to AST maybe costly (for example for large arrays), so we want
     /// to cache it using hash to check for update
-    mutable std::shared_ptr<ASTLiteral> cached_ast;
+    mutable boost::intrusive_ptr<ASTLiteral> cached_ast;
     mutable Hash hash_ast;
 };
 
