@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 set optimize_if_transform_strings_to_enum = 1;
 
 SELECT transform(number, [2, 4, 6], ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10;

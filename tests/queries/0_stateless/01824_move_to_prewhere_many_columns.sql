@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 -- Tags: no-random-merge-tree-settings
 
 SET optimize_move_to_prewhere = 1;
