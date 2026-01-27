@@ -234,6 +234,7 @@ void StorageObjectStorageConfiguration::addDeleteTransformers(
     ObjectInfoPtr,
     QueryPipelineBuilder &,
     const std::optional<FormatSettings> &,
+    FormatParserSharedResourcesPtr,
     ContextPtr) const
 {
 }

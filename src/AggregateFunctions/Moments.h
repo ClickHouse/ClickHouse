@@ -597,7 +597,7 @@ struct AnalysisOfVarianceMoments
         if (n == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no observations to calculate mean value");
 
-        return std::accumulate(xs1.begin(), xs1.end(), 0.0) / n;
+        return std::accumulate(xs1.begin(), xs1.end(), 0.0) / static_cast<Float64>(n);
     }
 
     Float64 getMeanGroup(size_t group) const
@@ -605,7 +605,7 @@ struct AnalysisOfVarianceMoments
         if (ns[group] == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no observations for group {}", group);
 
-        return xs1[group] / ns[group];
+        return xs1[group] / static_cast<T>(ns[group]);
     }
 
     Float64 getBetweenGroupsVariation() const
@@ -616,7 +616,7 @@ struct AnalysisOfVarianceMoments
         for (size_t i = 0; i < xs1.size(); ++i)
         {
             auto group_mean = getMeanGroup(i);
-            res += ns[i] * (group_mean - mean) * (group_mean - mean);
+            res += static_cast<Float64>(ns[i]) * (group_mean - mean) * (group_mean - mean);
         }
         return res;
     }
@@ -627,7 +627,7 @@ struct AnalysisOfVarianceMoments
         for (size_t i = 0; i < xs1.size(); ++i)
         {
             auto group_mean = getMeanGroup(i);
-            res += xs2[i] + ns[i] * group_mean * group_mean - 2 * group_mean * xs1[i];
+            res += xs2[i] + static_cast<Float64>(ns[i]) * group_mean * group_mean - 2 * group_mean * xs1[i];
         }
         return res;
     }
@@ -643,7 +643,7 @@ struct AnalysisOfVarianceMoments
         if (k == n)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
 
-        return (getBetweenGroupsVariation() * (n - k)) / (getWithinGroupsVariation() * (k - 1));
+        return (getBetweenGroupsVariation() * static_cast<double>(n - k)) / (getWithinGroupsVariation() * static_cast<double>(k - 1));
     }
 
     Float64 getPValue(Float64 f_statistic) const
@@ -660,7 +660,7 @@ struct AnalysisOfVarianceMoments
         if (k == n)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
 
-        return 1.0f - boost::math::cdf(boost::math::fisher_f(k - 1, n - k), f_statistic);
+        return 1.0f - boost::math::cdf(boost::math::fisher_f(static_cast<double>(k - 1), static_cast<double>(n - k)), f_statistic);
     }
 };
 

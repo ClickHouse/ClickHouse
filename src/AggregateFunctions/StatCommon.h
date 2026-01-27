@@ -38,10 +38,10 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
         size_t right = left;
         while (right < size && values[indexes[left]] == values[indexes[right]])
             ++right;
-        auto adjusted = (left + right + 1.) / 2.;
+        auto adjusted = (static_cast<Float64>(left) + static_cast<Float64>(right) + 1.) / 2.;
         auto count_equal = right - left;
 
-        tie_numenator += std::pow(count_equal, 3) - count_equal;
+        tie_numenator += std::pow(count_equal, 3) - static_cast<Float64>(count_equal);
         for (size_t iter = left; iter < right; ++iter)
             out[indexes[iter]] = adjusted;
         left = right;
@@ -51,7 +51,7 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
     Float64 tie_correction = 1.0;
     if (size > 1)
     {
-        tie_correction = 1 - (tie_numenator / (std::pow(size, 3) - size));
+        tie_correction = 1 - (tie_numenator / (std::pow(size, 3) - static_cast<Float64>(size)));
     }
 
     return {out, tie_correction};

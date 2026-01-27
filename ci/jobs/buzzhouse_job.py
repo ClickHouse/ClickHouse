@@ -221,6 +221,8 @@ def main():
         "allow_transactions": allow_transactions,
         # Run query oracles sometimes
         "allow_query_oracles": random.randint(1, 4) == 1,
+        # Run for 30 minutes max
+        "time_to_run": 30,
         "remote_servers": ["localhost:9000"],
         "remote_secure_servers": ["localhost:9440"],
         "http_servers": ["localhost:8123"],

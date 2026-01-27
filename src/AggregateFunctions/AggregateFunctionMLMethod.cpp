@@ -416,7 +416,9 @@ void LinearModelData::merge(const DB::LinearModelData & rhs)
     /// can't update rhs state because it's constant
 
     /// squared mean is more stable (in sense of quality of prediction) when two states with quietly different number of learning steps are merged
-    Float64 frac = (static_cast<Float64>(iter_num) * iter_num) / (iter_num * iter_num + rhs.iter_num * rhs.iter_num);
+    Float64 iter_num_double = static_cast<Float64>(iter_num);
+    Float64 rhs_iter_num_double = static_cast<Float64>(rhs.iter_num);
+    Float64 frac = (iter_num_double * iter_num_double) / (iter_num_double * iter_num_double + rhs_iter_num_double * rhs_iter_num_double);
 
     for (size_t i = 0; i < weights.size(); ++i)
     {
@@ -484,7 +486,7 @@ void Adam::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & b
 
     for (size_t i = 0; i != average_gradient.size(); ++i)
     {
-        Float64 normed_gradient = batch_gradient[i] / batch_size;
+        Float64 normed_gradient = batch_gradient[i] / static_cast<Float64>(batch_size);
         average_gradient[i] = beta1 * average_gradient[i] + (1 - beta1) * normed_gradient;
         average_squared_gradient[i] = beta2 * average_squared_gradient[i] +
                 (1 - beta2) * normed_gradient * normed_gradient;
@@ -547,7 +549,7 @@ void Nesterov::update(UInt64 batch_size, std::vector<Float64> & weights, Float64
 
     for (size_t i = 0; i < batch_gradient.size(); ++i)
     {
-        accumulated_gradient[i] = accumulated_gradient[i] * alpha + (learning_rate * batch_gradient[i]) / batch_size;
+        accumulated_gradient[i] = accumulated_gradient[i] * alpha + (learning_rate * batch_gradient[i]) / static_cast<Float64>(batch_size);
     }
     for (size_t i = 0; i < weights.size(); ++i)
     {
@@ -607,7 +609,7 @@ void Momentum::update(UInt64 batch_size, std::vector<Float64> & weights, Float64
 
     for (size_t i = 0; i < batch_gradient.size(); ++i)
     {
-        accumulated_gradient[i] = accumulated_gradient[i] * alpha + (learning_rate * batch_gradient[i]) / batch_size;
+        accumulated_gradient[i] = accumulated_gradient[i] * alpha + (learning_rate * batch_gradient[i]) / static_cast<Float64>(batch_size);
     }
     for (size_t i = 0; i < weights.size(); ++i)
     {
@@ -622,9 +624,9 @@ void StochasticGradientDescent::update(
     /// batch_size is already checked to be greater than  0
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        weights[i] += (learning_rate * batch_gradient[i]) / batch_size;
+        weights[i] += (learning_rate * batch_gradient[i]) / static_cast<Float64>(batch_size);
     }
-    bias += (learning_rate * batch_gradient[weights.size()]) / batch_size;
+    bias += (learning_rate * batch_gradient[weights.size()]) / static_cast<Float64>(batch_size);
 }
 
 void IWeightsUpdater::addToBatch(

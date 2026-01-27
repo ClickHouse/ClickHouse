@@ -634,14 +634,52 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     node_left.query(f"SYSTEM SYNC REPLICA {table}_group_by", timeout=timeout)
     node_left.query(f"SYSTEM SYNC REPLICA {table}_where", timeout=timeout)
 
-    assert node_left.query(f"SELECT id FROM {table}_delete ORDER BY id") == "2\n4\n"
-    assert node_right.query(f"SELECT id FROM {table}_delete ORDER BY id") == "2\n4\n"
+    # Use assert_eq_with_retry because merges with TTL may still be pending
+    # after OPTIMIZE TABLE FINAL due to concurrent merge limits.
+    assert_eq_with_retry(
+        node_left,
+        f"SELECT id FROM {table}_delete ORDER BY id",
+        "2\n4\n",
+        retry_count=timeout * 2,
+        sleep_time=0.5,
+    )
+    assert_eq_with_retry(
+        node_right,
+        f"SELECT id FROM {table}_delete ORDER BY id",
+        "2\n4\n",
+        retry_count=timeout * 2,
+        sleep_time=0.5,
+    )
 
-    assert node_left.query(f"SELECT val FROM {table}_group_by ORDER BY id") == "10\n"
-    assert node_right.query(f"SELECT val FROM {table}_group_by ORDER BY id") == "10\n"
+    assert_eq_with_retry(
+        node_left,
+        f"SELECT val FROM {table}_group_by ORDER BY id",
+        "10\n",
+        retry_count=timeout * 2,
+        sleep_time=0.5,
+    )
+    assert_eq_with_retry(
+        node_right,
+        f"SELECT val FROM {table}_group_by ORDER BY id",
+        "10\n",
+        retry_count=timeout * 2,
+        sleep_time=0.5,
+    )
 
-    assert node_left.query(f"SELECT id FROM {table}_where ORDER BY id") == "2\n4\n"
-    assert node_right.query(f"SELECT id FROM {table}_where ORDER BY id") == "2\n4\n"
+    assert_eq_with_retry(
+        node_left,
+        f"SELECT id FROM {table}_where ORDER BY id",
+        "2\n4\n",
+        retry_count=timeout * 2,
+        sleep_time=0.5,
+    )
+    assert_eq_with_retry(
+        node_right,
+        f"SELECT id FROM {table}_where ORDER BY id",
+        "2\n4\n",
+        retry_count=timeout * 2,
+        sleep_time=0.5,
+    )
 
     # Cleanup
     for node in [node_left, node_right]:

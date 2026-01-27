@@ -180,13 +180,13 @@ private:
         sum_xy += c_xy;
         sum_xx += c_xx;
 
-        Float64 cov_xy = sum_xy - sum_x * sum_y / n;
-        Float64 var_x = sum_xx - sum_x * sum_x / n;
+        Float64 cov_xy = sum_xy - sum_x * sum_y / static_cast<Float64>(n);
+        Float64 var_x = sum_xx - sum_x * sum_x / static_cast<Float64>(n);
 
         Float64 slope = cov_xy / var_x;
         if (is_predict)
         {
-            Float64 intercept = sum_y / n - slope * sum_x / n;
+            Float64 intercept = sum_y / static_cast<Float64>(n) - slope * sum_x / static_cast<Float64>(n);
             Float64 predicted_value = slope * predict_offset + intercept;
             result = static_cast<ValueType>(predicted_value);
         }

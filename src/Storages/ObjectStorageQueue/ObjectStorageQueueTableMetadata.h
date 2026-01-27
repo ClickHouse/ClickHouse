@@ -24,6 +24,7 @@ struct ObjectStorageQueueTableMetadata
     const String columns;
     const String mode;
     const String last_processed_path;
+    const String bucketing_mode;
     const String partitioning_mode;
     const String partition_regex;
     const String partition_component;
@@ -48,6 +49,7 @@ struct ObjectStorageQueueTableMetadata
         , columns(other.columns)
         , mode(other.mode)
         , last_processed_path(other.last_processed_path)
+        , bucketing_mode(other.bucketing_mode)
         , partitioning_mode(other.partitioning_mode)
         , partition_regex(other.partition_regex)
         , partition_component(other.partition_component)
@@ -80,6 +82,7 @@ struct ObjectStorageQueueTableMetadata
     String toString() const;
 
     ObjectStorageQueueMode getMode() const;
+    ObjectStorageQueueBucketingMode getBucketingMode() const;
     ObjectStorageQueuePartitioningMode getPartitioningMode() const;
 
     void adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk);
@@ -95,6 +98,7 @@ struct ObjectStorageQueueTableMetadata
             "mode",
             "buckets",
             "last_processed_path",
+            "bucketing_mode",
             "partitioning_mode",
             "partition_regex",
             "partition_component",

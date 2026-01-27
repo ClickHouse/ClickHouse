@@ -57,7 +57,7 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             stats.bytes,
             stats.sample_bytes,
             stats.compressed_bytes,
-            static_cast<double>(stats.sample_bytes) / stats.compressed_bytes,
+            static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes),
             stats.elapsed_microseconds);
     };
 
@@ -68,8 +68,8 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
         if (stats.compressed_bytes)
         {
             log_stats(stats, toString(static_cast<InputStatisticsType>(i)));
-            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / stats.compressed_bytes;
-            res.input_bytes += static_cast<size_t>(stats.bytes / compression_ratio);
+            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
+            res.input_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
         }
     }
     for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
@@ -78,8 +78,8 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
         if (stats.compressed_bytes)
         {
             log_stats(stats, toString(static_cast<OutputStatisticsType>(i)));
-            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / stats.compressed_bytes;
-            res.output_bytes += static_cast<size_t>(stats.bytes / compression_ratio);
+            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
+            res.output_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
         }
     }
 
@@ -245,10 +245,10 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
             if (!column_sizes.contains(column.name))
                 continue;
             const auto compressed_ratio = column_sizes.at(column.name).data_uncompressed
-                ? (column_sizes.at(column.name).data_compressed / static_cast<double>(column_sizes.at(column.name).data_uncompressed))
+                ? (static_cast<double>(column_sizes.at(column.name).data_compressed) / static_cast<double>(column_sizes.at(column.name).data_uncompressed))
                 : 1.0;
             statistics.sample_bytes += column.column->byteSize();
-            statistics.compressed_bytes += static_cast<size_t>(column.column->byteSize() * compressed_ratio);
+            statistics.compressed_bytes += static_cast<size_t>(static_cast<double>(column.column->byteSize()) * compressed_ratio);
         }
     }
     statistics.elapsed_microseconds += watch.elapsedMicroseconds();

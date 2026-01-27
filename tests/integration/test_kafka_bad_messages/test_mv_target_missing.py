@@ -182,6 +182,8 @@ missing_dependencies: [['test.mvother']]
         assert (
             instance.query_with_retry(
                 "SELECT count() FROM test.target2",
+                retry_count=500,
+                sleep_time=0.1,
                 check_callback=lambda x: int(x) == 2,
             ).strip()
             == "2"
@@ -189,6 +191,8 @@ missing_dependencies: [['test.mvother']]
         assert (
             instance.query_with_retry(
                 "SELECT count() FROM test.target1",
+                retry_count=500,
+                sleep_time=0.1,
                 check_callback=lambda x: int(x) == 2,
             ).strip()
             == "2"
@@ -293,6 +297,8 @@ missing_dependencies: []
         assert (
             instance.query_with_retry(
                 "SELECT count() FROM test.target2",
+                retry_count=500,
+                sleep_time=0.1,
                 check_callback=lambda x: int(x) == 2,
             ).strip()
             == "2"

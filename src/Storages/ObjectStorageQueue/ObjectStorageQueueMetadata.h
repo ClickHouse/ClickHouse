@@ -145,7 +145,12 @@ public:
     size_t getBucketsNum() const { return buckets_num; }
     /// Get bucket by file path in case of bucket-based processing.
     Bucket getBucketForPath(const std::string & path) const;
-    static Bucket getBucketForPath(const std::string & path, size_t buckets_num);
+    static Bucket getBucketForPath(
+        const std::string & path,
+        size_t buckets_num,
+        ObjectStorageQueueBucketingMode bucketing_mode,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser);
     /// Acquire (take unique ownership of) bucket for processing.
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket);
 
@@ -155,6 +160,7 @@ public:
     /// Set local ref count for metadata.
     void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
 
+    ObjectStorageQueueBucketingMode getBucketingMode() const { return bucketing_mode; }
     ObjectStorageQueuePartitioningMode getPartitioningMode() const { return partitioning_mode; }
     const ObjectStorageQueueFilenameParser * getFilenameParser() const { return filename_parser.get(); }
 
@@ -182,6 +188,7 @@ private:
     ObjectStorageQueueTableMetadata table_metadata;
     const ObjectStorageType storage_type;
     const ObjectStorageQueueMode mode;
+    const ObjectStorageQueueBucketingMode bucketing_mode;
     const ObjectStorageQueuePartitioningMode partitioning_mode;
     const fs::path zookeeper_path;
     const size_t keeper_multiread_batch_size;

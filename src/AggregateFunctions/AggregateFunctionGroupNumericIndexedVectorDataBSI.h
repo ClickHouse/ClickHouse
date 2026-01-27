@@ -295,7 +295,8 @@ public:
           * - When value is a Float32/Float64, fraction_bit_num indicates how many bits are used to represent the decimal, Because the
           *   maximum value of total_bit_num(integer_bit_num + fraction_bit_num) is 64, overflow may occur.
           */
-        Int64 scaled_value = Int64(value * (1ULL << fraction_bit_num));
+        using ScaledValueType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, UInt64>;
+        Int64 scaled_value = Int64(value * static_cast<ScaledValueType>(1ULL << fraction_bit_num));
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             if (scaled_value & (1ULL << i))
@@ -1022,7 +1023,7 @@ public:
                     buffer[bit_buffer[i]] |= bit_mask;
                 }
                 output[i] = static_cast<Float64>(static_cast<ValueType>(static_cast<Int64>(buffer[bit_buffer[i]])))
-                    / (1ULL << vector.fraction_bit_num);
+                    / static_cast<Float64>(1ULL << vector.fraction_bit_num);
             }
         }
         else
@@ -1032,7 +1033,7 @@ public:
                 if (bit_buffer[i] >= 65536)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "bit_buffer index out of bounds. bit_buffer[i]: {}", bit_buffer[i]);
                 output[i] = static_cast<Float64>(static_cast<ValueType>(static_cast<Int64>(buffer[bit_buffer[i]])))
-                    / (1ULL << vector.fraction_bit_num);
+                    / static_cast<Float64>(1ULL << vector.fraction_bit_num);
             }
         }
         return result_cnt;
@@ -1141,13 +1142,13 @@ public:
                 case multiply_op_code:
                     for (size_t i = 0; i < indexes_size; ++i)
                     {
-                        res_values[i] = lhs_values[i] * rhs;
+                        res_values[i] = lhs_values[i] * static_cast<Float64>(rhs);
                     }
                     break;
                 case divide_op_code:
                     for (size_t i = 0; i < indexes_size; ++i)
                     {
-                        res_values[i] = lhs_values[i] / rhs;
+                        res_values[i] = lhs_values[i] / static_cast<Float64>(rhs);
                     }
                     break;
                 /// If you want to add other operations such as subtraction, please pay attention to the handling of 0.
@@ -1271,7 +1272,9 @@ public:
         res_bm = lhs.getAllNonZeroIndex();
 
         UInt64 long_value = UInt64(std::floor(rhs));
-        UInt64 decimal_value = static_cast<UInt64>((rhs - long_value) * (1ULL << lhs.fraction_bit_num));
+        /// if ValueType is floating point, use ValueType for calculation, otherwise use UInt64
+        using CalculationType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, UInt64>;
+        UInt64 decimal_value = static_cast<UInt64>((rhs - static_cast<CalculationType>(long_value)) * static_cast<CalculationType>(1ULL << lhs.fraction_bit_num));
 
         size_t i = 0;
         for (; i < lhs.fraction_bit_num; ++i)
@@ -1651,7 +1654,7 @@ public:
                     integer_bit_num,
                     fraction_bit_num);
 
-            scaled_value = static_cast<Int64>(value * scaling);
+            scaled_value = static_cast<Int64>(value * static_cast<ValueType>(scaling));
         }
         else
         {
@@ -1697,7 +1700,7 @@ public:
                 scaled_value |= (1ULL << i);
             }
         }
-        return static_cast<ValueType>(scaled_value) / (1LL << fraction_bit_num);
+        return static_cast<ValueType>(scaled_value) / static_cast<ValueType>(1LL << fraction_bit_num);
     }
 
     /// sum(origin_vector(this))
@@ -1714,7 +1717,7 @@ public:
             for (size_t i = 0; i < total_bit_num; ++i)
             {
                 Float64 bit_contribution = std::pow(2.0, int(i) - int(fraction_bit_num));
-                value += getDataArrayAt(i)->size() * bit_contribution;
+                value += static_cast<Float64>(getDataArrayAt(i)->size()) * bit_contribution;
             }
         }
         else if (which.isInt() || which.isFloat())
@@ -1733,7 +1736,7 @@ public:
                 positive_indexes.rb_or(*getDataArrayAt(i));
 
                 positive_indexes.rb_andnot(negative_indexes);
-                value += positive_indexes.size() * bit_contribution;
+                value += static_cast<Float64>(positive_indexes.size()) * bit_contribution;
             }
 
             /// Handle negative indexes
@@ -1751,7 +1754,7 @@ public:
                 sum.rb_or(augend);
                 sum.rb_xor(cin);
 
-                value -= sum.size() * bit_contribution;
+                value -= static_cast<Float64>(sum.size()) * bit_contribution;
 
                 cin.rb_and(augend);
             }
@@ -1847,7 +1850,8 @@ public:
                 else
                 {
                     values_pod.emplace_back(
-                        static_cast<ValueType>(static_cast<Int64>(value) / static_cast<Float64>(1ULL << fraction_bit_num)));
+                        static_cast<ValueType>(
+                            static_cast<Float64>(static_cast<Int64>(value)) / static_cast<Float64>(1ULL << fraction_bit_num)));
                 }
             }
         }

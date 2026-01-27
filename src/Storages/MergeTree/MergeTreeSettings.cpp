@@ -200,6 +200,11 @@ namespace ErrorCodes
     If the file name for column is too long (more than 'max_file_name_length'
     bytes) replace it to SipHash128
     )", 0) \
+    DECLARE(Bool, escape_index_filenames, true, R"(
+    Prior to 26.1 we didn't escape special symbols in filenames created for secondary indices, which could lead to issues with some
+    characters in index names producing broken parts. This is added purely for compatibility reasons. It should not be changed unless you
+    are reading old parts with indices using non-ascii characters in their names.
+    )", 0) \
     DECLARE(UInt64, max_file_name_length, 127, R"(
     The maximal length of the file name to keep it as is without hashing.
     Takes effect only if setting `replace_long_file_name_to_hash` is enabled.
@@ -362,6 +367,14 @@ namespace ErrorCodes
 
     For example, if the table has a column with the JSON(max_dynamic_paths=1024) type and the setting merge_max_dynamic_subcolumns_in_wide_part is set to 128,
     after merge into the Wide data part number of dynamic paths will be decreased to 128 in this part and only 128 paths will be written as dynamic subcolumns.
+    )", 0) \
+    \
+    DECLARE(UInt64Auto, merge_max_dynamic_subcolumns_in_compact_part, Field("auto"), R"(
+    The maximum number of dynamic subcolumns that can be created in every column in the Compact data part after merge.
+    It allows to control the number of dynamic subcolumns in Compact part regardless of dynamic parameters specified in the data type.
+
+    For example, if the table has a column with the JSON(max_dynamic_paths=1024) type and the setting merge_max_dynamic_subcolumns_in_compact_part is set to 128,
+    after merge into the Compact data part number of dynamic paths will be decreased to 128 in this part and only 128 paths will be written as dynamic subcolumns.
     )", 0) \
     \
     /** Merge selector settings. */ \
@@ -2191,7 +2204,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }

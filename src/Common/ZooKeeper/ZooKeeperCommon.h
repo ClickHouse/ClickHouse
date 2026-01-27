@@ -296,7 +296,7 @@ struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
     ZooKeeperRemoveRequest() = default;
     explicit ZooKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
 
-    OpNum getOpNum() const override { return OpNum::Remove; }
+    OpNum getOpNum() const override { return try_remove ? OpNum::TryRemove : OpNum::Remove; }
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
@@ -310,7 +310,7 @@ struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
     void createLogElements(LogElements & elems) const override;
 };
 
-struct ZooKeeperRemoveResponse final : RemoveResponse, ZooKeeperResponse
+struct ZooKeeperRemoveResponse : RemoveResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer &) override {}
     void writeImpl(WriteBuffer &) const override {}
@@ -318,6 +318,12 @@ struct ZooKeeperRemoveResponse final : RemoveResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::Remove; }
 
     size_t bytesSize() const override { return RemoveResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+};
+
+struct ZooKeeperTryRemoveResponse final : ZooKeeperRemoveResponse
+{
+    OpNum getOpNum() const override { return OpNum::TryRemove; }
+    using ZooKeeperRemoveResponse::ZooKeeperRemoveResponse;
 };
 
 struct ZooKeeperRemoveRecursiveRequest final : RemoveRecursiveRequest, ZooKeeperRequest
