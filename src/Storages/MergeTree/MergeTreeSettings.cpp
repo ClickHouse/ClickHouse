@@ -200,6 +200,11 @@ namespace ErrorCodes
     If the file name for column is too long (more than 'max_file_name_length'
     bytes) replace it to SipHash128
     )", 0) \
+    DECLARE(Bool, escape_index_filenames, true, R"(
+    Prior to 26.1 we didn't escape special symbols in filenames created for secondary indices, which could lead to issues with some
+    characters in index names producing broken parts. This is added purely for compatibility reasons. It should not be changed unless you
+    are reading old parts with indices using non-ascii characters in their names.
+    )", 0) \
     DECLARE(UInt64, max_file_name_length, 127, R"(
     The maximal length of the file name to keep it as is without hashing.
     Takes effect only if setting `replace_long_file_name_to_hash` is enabled.
@@ -1772,6 +1777,9 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all string columns of the table.
     )", 0) \
+    DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
+    When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
+    )", 0) \
     DECLARE(String, auto_statistics_types, "", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: tdigest, countmin, minmax, uniq.
@@ -2646,6 +2654,7 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "enable_mixed_granularity_parts"
         || name == "add_minmax_index_for_numeric_columns"
         || name == "add_minmax_index_for_string_columns"
+        || name == "add_minmax_index_for_temporal_columns"
         || name == "table_disk"
     ;
 }

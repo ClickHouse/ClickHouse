@@ -1559,7 +1559,8 @@ def test_rename(start_cluster):
         with pytest.raises(QueryRuntimeException):
             node1.query("SELECT COUNT() FROM default.renaming_table")
 
-        node1.query("CREATE DATABASE IF NOT EXISTS test")
+        node1.query("DROP DATABASE IF EXISTS test")
+        node1.query("CREATE DATABASE test")
         node1.query("RENAME TABLE default.renaming_table1 TO test.renaming_table2")
         assert node1.query("SELECT COUNT() FROM test.renaming_table2") == "50\n"
 

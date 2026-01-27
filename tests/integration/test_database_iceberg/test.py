@@ -33,6 +33,8 @@ from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
 from helpers.test_tools import TSV, csv_compare
 from helpers.config_cluster import minio_secret_key
+from helpers.network import PartitionManager
+from helpers.client import QueryRuntimeException
 
 BASE_URL = "http://rest:8181/v1"
 BASE_URL_LOCAL = "http://localhost:8182/v1"
@@ -169,13 +171,20 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     )
 
 def drop_clickhouse_iceberg_table(
-    node, database_name, table_name
+    node, database_name, table_name, if_exists=False
 ):
-    node.query(
-        f"""
-DROP TABLE {CATALOG_NAME}.`{database_name}.{table_name}`
-    """
-    )
+    if if_exists:
+        node.query(
+            f"""
+    DROP TABLE IF EXISTS {CATALOG_NAME}.`{database_name}.{table_name}`
+        """
+        )
+    else:
+        node.query(
+            f"""
+    DROP TABLE {CATALOG_NAME}.`{database_name}.{table_name}`
+        """
+        )
 
 
 @pytest.fixture(scope="module")
@@ -580,6 +589,9 @@ def test_drop_table(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    assert len(catalog.list_tables(root_namespace)) == 1
+
+    drop_clickhouse_iceberg_table(node, root_namespace, table_name + "some_strange_non_exists_suffix", True)
     assert len(catalog.list_tables(root_namespace)) == 1
 
     drop_clickhouse_iceberg_table(node, root_namespace, table_name)
