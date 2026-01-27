@@ -132,7 +132,6 @@ private:
     std::optional<FileRemoteInfo> file_remote_info;
     bool copy_started = false;
     bool copy_completed = false;
-    bool remove_started = false;
     bool remove_completed = false;
 
 public:

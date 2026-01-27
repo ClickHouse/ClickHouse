@@ -388,9 +388,9 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
 
     copy_started = true;
     object_storage->copyObject(StoredObject(remote_source_path), StoredObject(remote_tmp_path), getReadSettings(), getWriteSettings());
+
     copy_completed = true;
 
-    remove_started = true;
     object_storage->removeObjectIfExists(StoredObject(remote_source_path));
     remove_completed = true;
 
@@ -404,7 +404,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
 
     chassert(file_remote_info.has_value());
 
-    if (copy_completed && remove_started)
+    if (copy_completed)
         object_storage->copyObject(StoredObject(remote_tmp_path), StoredObject(remote_source_path), getReadSettings(), getWriteSettings());
 
     object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
@@ -413,7 +413,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize()
 {
-    if (copy_created)
+    if (copy_started)
         object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
 }
 
