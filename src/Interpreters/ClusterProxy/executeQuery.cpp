@@ -71,6 +71,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool parallel_replicas_support_projection;
+    extern const SettingsBool optimize_aggregation_in_order;
 }
 
 namespace DistributedSetting
@@ -511,6 +512,30 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
 
         /// disable hedged connections -> parallel replicas uses own logic to choose replicas
         context_mutable->setSetting("use_hedged_requests", Field{false});
+    }
+
+    /// For the case (default) when parallel replicas execute local plan for initiator node, aggregation in order optimization
+    /// can be affected by filter pushdown optimization which is impletented differently for local execution and remote one,
+    /// which, in turn, can lead to different read modes (Default, InOrder, InReverseOrder) from the same table on local and remote replicas
+    /// i.e. LOGICAL_ERROR like 'Replica 1 decided to read in WithOrder mode, not in ReverseOrder'
+    /// So, we disable the optimization till remote execution will use query plan and optimization will applied in uniform way
+    /// for local and remote nodes
+    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::optimize_aggregation_in_order].value)
+    {
+        if (settings[Setting::optimize_aggregation_in_order].changed)
+        {
+            LOG_WARNING(
+                logger,
+                "Aggregation in order optimization is enabled explicitly but will not be applied with parallel replicas");
+        }
+        else
+        {
+            LOG_TRACE(
+                logger,
+                "Aggregation in order optimization is enabled but will not be applied with parallel replicas");
+        }
+
+        context_mutable->setSetting("optimize_aggregation_in_order", Field{false});
     }
 
     /// If parallel replicas executed over distributed table i.e. in scope of a shard,
