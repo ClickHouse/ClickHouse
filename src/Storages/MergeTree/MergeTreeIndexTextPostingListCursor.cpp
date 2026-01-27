@@ -4,21 +4,8 @@
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
-namespace ProfileEvents
-{
-    extern const Event TextIndexPostingsDecodeTotalMicroseconds;
-    extern const Event TextIndexPostingsApplyTotalMicroseconds;
-    extern const Event TextIndexPostingsDecodeIOTotalMicroseconds;
-    extern const Event TextIndexPostingsDecodeConstructContainerTotalMicroseconds;
-}
-
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int CORRUPTED_DATA;
-    extern const int LOGICAL_ERROR;
-}
 
 void PostingListCursor::addSegment(size_t s)
 {
@@ -418,13 +405,18 @@ void intersectTwo(UInt8 * out, PostingListCursorPtr c0, PostingListCursorPtr c1,
         if (v0 >= effective_end || v1 >= effective_end)
             return;
 
-        if (v0 == v1) {
+        if (v0 == v1)
+        {
             out[v0 - row_offset] = 1;
             c0->next();
             c1->next();
-        } else if (v0 < v1) {
+        }
+        else if (v0 < v1)
+        {
             c0->seek(v1);
-        } else {
+        }
+        else
+        {
             c1->seek(v0);
         }
     }
@@ -603,7 +595,7 @@ void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursorPtr> 
             max_val = 0;
             size_t heap_size = n;
 
-            for (size_t i = 0; i < heap_size; )
+            for (size_t i = 0; i < heap_size; ++i)
             {
                 uint32_t idx = heap[i].idx;
                 cursors[idx]->next();
@@ -617,7 +609,6 @@ void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursorPtr> 
 
                 heap[i].val = val;
                 max_val = std::max(max_val, val);
-                ++i;
             }
             std::make_heap(heap.begin(), heap.end(), std::greater<>{});
         }

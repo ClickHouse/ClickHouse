@@ -267,8 +267,8 @@ static uint8_t decodeU8(std::span<const std::byte> & in)
 
 static void encodeU32(uint32_t x, std::span<char> & out)
 {
-    out[0] = static_cast<char>( x        & 0xFF);
-    out[1] = static_cast<char>((x >>  8) & 0xFF);
+    out[0] = static_cast<char>(x & 0xFF);
+    out[1] = static_cast<char>((x >> 8) & 0xFF);
     out[2] = static_cast<char>((x >> 16) & 0xFF);
     out[3] = static_cast<char>((x >> 24) & 0xFF);
     out = out.subspan(4);
