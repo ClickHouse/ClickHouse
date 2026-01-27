@@ -69,7 +69,7 @@ ALTER TABLE tbl1 ADD COLUMN dt DateTime64(9, 'UTC');
 SELECT name, type, expr, data_compressed_bytes FROM system.data_skipping_indices WHERE table = 'tbl1' AND database = currentDatabase();
 
 SELECT 'Add another datetime column';
-ALTER TABLE tbl1 ADD COLUMN dt2 DateTime64(9, 'UTC');
+ALTER TABLE tbl1 ADD COLUMN dt2 DateTime;
 SELECT name, type, expr, data_compressed_bytes FROM system.data_skipping_indices WHERE table = 'tbl1' AND database = currentDatabase();
 
 SELECT 'Drop datetime column dt2';
@@ -78,6 +78,13 @@ SELECT name, type, expr, data_compressed_bytes FROM system.data_skipping_indices
 
 SELECT 'Rename column dt to dt2';
 ALTER TABLE tbl1 RENAME COLUMN dt to dt2;
+SELECT name, type, expr, data_compressed_bytes FROM system.data_skipping_indices WHERE table = 'tbl1' AND database = currentDatabase();
+
+SELECT 'Add date/time/time64 columns';
+ALTER TABLE tbl1 ADD COLUMN d Date;
+ALTER TABLE tbl1 ADD COLUMN d32 Date32;
+ALTER TABLE tbl1 ADD COLUMN time Time;
+ALTER TABLE tbl1 ADD COLUMN time64 Time64;
 SELECT name, type, expr, data_compressed_bytes FROM system.data_skipping_indices WHERE table = 'tbl1' AND database = currentDatabase();
 
 -- Check that users cannot create explicit minmax indices with the names of internal minmax indices
@@ -155,7 +162,7 @@ SETTINGS add_minmax_index_for_numeric_columns = FALSE,
          add_minmax_index_for_temporal_columns = FALSE;
 
 SELECT 'tbl6 with add_minmax_index_for_*_columns settings disabled';
-SELECT name,type,expr,data_compressed_bytes FROM system.data_skipping_indices WHERE table = 'tbl5' AND database = currentDatabase();
+SELECT name,type,expr,data_compressed_bytes FROM system.data_skipping_indices WHERE table = 'tbl6' AND database = currentDatabase();
 
 -- check that ATTACH of such tables will not throw "uses a reserved index name" error
 DETACH TABLE tbl1;

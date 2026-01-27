@@ -1037,7 +1037,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
-
+                {"add_minmax_index_for_temporal_columns", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {
@@ -1045,7 +1045,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"merge_max_dynamic_subcolumns_in_compact_part", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns in Compact part after merge regardless the parameters specified in the data type"},
             {"materialize_statistics_on_merge", true, true, "New setting"},
             {"escape_index_filenames", false, true, "Escape non-ascii characters in filenames created for indices"},
-            {"add_minmax_index_for_temporal_columns", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {
