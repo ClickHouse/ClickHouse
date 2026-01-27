@@ -84,7 +84,7 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
         if (ast_with_output->compression_level_index != INVALID_INDEX)
             indices_to_remove.push_back(ast_with_output->compression_level_index);
 
-        std::sort(indices_to_remove.begin(), indices_to_remove.end(), std::greater<UInt8>());
+        std::sort(indices_to_remove.begin(), indices_to_remove.end(), std::greater());
 
         for (UInt8 idx : indices_to_remove)
             ast_with_output->children.erase(ast_with_output->children.begin() + idx);
