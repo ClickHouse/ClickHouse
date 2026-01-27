@@ -712,9 +712,12 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
         if (jt != subcolumns.get<0>().end())
             return *jt;
 
-        /// Check for dynamic subcolumns.
-        if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name))
-            return dynamic_subcolumn;
+        if (options.with_dynamic_subcolumns)
+        {
+            /// Check for dynamic subcolumns.
+            if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name))
+                return dynamic_subcolumn;
+        }
     }
 
     return {};
