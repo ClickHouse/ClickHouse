@@ -6,48 +6,48 @@
 
 #if USE_PARQUET
 
-#    include <Columns/ColumnMap.h>
-#    include <Columns/ColumnNullable.h>
-#    include <Columns/ColumnString.h>
-#    include <Core/Settings.h>
-#    include <Formats/FormatFactory.h>
-#    include <Common/logger_useful.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
+#include <Common/logger_useful.h>
 
-#    include <IO/ReadBufferFromFileBase.h>
-#    include <IO/ReadBufferFromString.h>
-#    include <IO/ReadHelpers.h>
-#    include <Interpreters/Context.h>
-#    include <Interpreters/DeltaMetadataLog.h>
-#    include <Storages/ObjectStorage/DataLakes/Common/Common.h>
-#    include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#    include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#    include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DeltaMetadataLog.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
-#    include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#    include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
-#    include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
-#    include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 
-#    include <DataTypes/DataTypeArray.h>
-#    include <DataTypes/DataTypeDate.h>
-#    include <DataTypes/DataTypeDateTime64.h>
-#    include <DataTypes/DataTypeFactory.h>
-#    include <DataTypes/DataTypeFixedString.h>
-#    include <DataTypes/DataTypeMap.h>
-#    include <DataTypes/DataTypeNullable.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <DataTypes/DataTypeTuple.h>
-#    include <DataTypes/DataTypeUUID.h>
-#    include <DataTypes/DataTypesDecimal.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NestedUtils.h>
 
-#    include <boost/algorithm/string/case_conv.hpp>
-#    include <parquet/arrow/reader.h>
-#    include <parquet/file_reader.h>
-#    include <Poco/JSON/Array.h>
-#    include <Poco/JSON/Object.h>
-#    include <Poco/JSON/Parser.h>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <parquet/arrow/reader.h>
+#include <parquet/file_reader.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
 namespace fs = std::filesystem;
 
