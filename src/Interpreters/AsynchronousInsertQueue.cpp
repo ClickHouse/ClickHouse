@@ -14,7 +14,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromStrictString.h>
+#include <IO/WriteBufferFromStringWithMemoryTracking.h>
 #include <IO/copyData.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AsynchronousInsertLog.h>
@@ -403,9 +403,9 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     if (insert_query.table_id)
         query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
 
-    insert_query.columns = std::make_shared<ASTExpressionList>();
+    insert_query.columns = make_intrusive<ASTExpressionList>();
     for (const auto & column : sample_block)
-        insert_query.columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
+        insert_query.columns->children.push_back(make_intrusive<ASTIdentifier>(column.name));
 }
 
 AsynchronousInsertQueue::PushResult
@@ -424,7 +424,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
     }
     preprocessInsertQuery(query, query_context);
 
-    StrictString bytes;
+    StringWithMemoryTracking bytes;
     {
         /// Read at most 'async_insert_max_data_size' bytes of data.
         /// If limit is exceeded we will fallback to synchronous insert
@@ -449,7 +449,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         }
 
         {
-            WriteBufferFromStrictString write_buf(bytes);
+            WriteBufferFromStringWithMemoryTracking write_buf(bytes);
             copyData(limit_buf, write_buf);
         }
 

@@ -38,6 +38,10 @@ static const std::vector<FramePointers> empty_stack;
 using namespace DB;
 
 
+static std::atomic_bool is_crashed = false;
+bool isCrashed() { return is_crashed.load(std::memory_order_relaxed); }
+
+
 void call_default_signal_handler(int sig)
 {
     if (SIG_ERR == signal(sig, SIG_DFL))
@@ -96,6 +100,9 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
+    if (sig != SIGTSTP)
+        is_crashed.store(true, std::memory_order_relaxed);
 
     char buf[signal_pipe_buf_size];
     auto & signal_pipe = HandledSignals::instance().signal_pipe;

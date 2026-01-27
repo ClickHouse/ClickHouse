@@ -1,7 +1,9 @@
 import dataclasses
+import json
 import platform
 import sys
 import traceback
+from pathlib import Path
 from typing import Dict
 
 from . import Job, Workflow
@@ -24,12 +26,12 @@ assert Settings.CI_CONFIG_RUNS_ON
 
 
 # TODO: find the right place to not dublicate
-def _GH_Auth(workflow):
+def _GH_Auth(workflow, force=False):
     if not Settings.USE_CUSTOM_GH_AUTH:
         return
     from .gh_auth import GHAuth
 
-    if not Shell.check(f"gh auth status", verbose=True):
+    if force or not Shell.check(f"gh auth status", verbose=True):
         pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
         app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
         GHAuth.auth(app_id=app_id, app_key=pem)
@@ -302,9 +304,49 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
         env.dump()
 
+    try:
+        _GH_Auth(workflow, force=True)
+    except Exception as e:
+        print(f"WARNING: Failed to auth with GH: [{e}]")
+
+    # refresh PR data
+    if env.PR_NUMBER > 0:
+        title, body, labels = GH.get_pr_title_body_labels()
+        print(f"NOTE: PR title: {title}")
+        print(f"NOTE: PR labels: {labels}")
+        if title:
+            if title != env.PR_TITLE:
+                print("PR title has been changed")
+                env.PR_TITLE = title
+            if env.PR_BODY != body:
+                print("PR body has been changed")
+                env.PR_BODY = body
+            if env.PR_LABELS != labels:
+                print("PR labels have been changed")
+                env.PR_LABELS = labels
+            env.dump()
+
     if workflow.enable_report:
         print("Push pending CI report")
         HtmlRunnerHooks.push_pending_ci_report(workflow)
+
+        info = Info()
+        report_url_latest_sha = info.get_report_url(latest=True)
+        report_url_current_sha = info.get_report_url(latest=False)
+        body = f"Workflow [[{workflow.name}]({report_url_latest_sha})], commit [{env.SHA[:8]}]"
+        res2 = not bool(env.PR_NUMBER) or GH.post_updateable_comment(
+            comment_tags_and_bodies={"report": body, "summary": ""},
+        )
+        res1 = GH.post_commit_status(
+            name=workflow.name,
+            status=Result.Status.PENDING,
+            description="",
+            url=report_url_current_sha,
+        )
+        if not (res1 or res2):
+            Utils.raise_with_error(
+                "Failed to set both GH commit status and PR comment with Workflow Status, cannot proceed"
+            )
 
     _ = RunConfig(
         name=workflow.name,
@@ -509,21 +551,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
-    # refresh PR data
-    if env.PR_NUMBER > 0:
-        title, body, labels = GH.get_pr_title_body_labels()
-        if title:
-            if title != env.PR_TITLE:
-                print("PR title has been changed")
-                env.PR_TITLE = title
-            if env.PR_BODY != body:
-                print("PR body has been changed")
-                env.PR_BODY = body
-            if env.PR_LABELS != labels:
-                print("PR labels have been changed")
-                env.PR_LABELS = labels
-            env.dump()
-
     if workflow.enable_slack_feed:
         if env.PR_NUMBER:
             commit_authors = set()
@@ -657,6 +684,16 @@ def _finish_workflow(workflow, job_name):
     env = _Environment.get()
     stop_watch = Utils.Stopwatch()
 
+    workflow_job_data = {}
+    try:
+        if Path(Settings.WORKFLOW_STATUS_FILE).is_file():
+            with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
+                workflow_job_data = json.load(f)
+    except Exception as e:
+        print(
+            f"ERROR: failed to read workflow status file [{Settings.WORKFLOW_STATUS_FILE}]: {e}"
+        )
+
     print("Check Actions statuses")
     print(env.get_needs_statuses())
 
@@ -729,17 +766,29 @@ def _finish_workflow(workflow, job_name):
             )
             continue
         if not result.is_completed():
-            print(
-                f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
-            )
-            result.status = Result.Status.ERROR
-            # dump workflow result after update - to have an updated result in post
-            workflow_result.dump()
-            # add error into env - should appear in the report on the main page
-            env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
-            # add error info to job info as well
-            result.set_info(ResultInfo.NOT_FINALIZED)
-            update_final_report = True
+            normalized_name = Utils.normalize_string(result.name)
+            gh_job = workflow_job_data.get(normalized_name, {})
+            gh_job_result = (gh_job.get("result") or "").lower()
+            if gh_job_result in ("cancelled", "canceled"):
+                print(
+                    f"NOTE: not finished job [{result.name}] in the workflow but GitHub status is [{gh_job_result}] - set status to dropped"
+                )
+                result.status = Result.Status.DROPPED
+                workflow_result.dump()
+                workflow_result.ext["is_cancelled"] = True
+                update_final_report = True
+            else:
+                print(
+                    f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
+                )
+                result.status = Result.Status.ERROR
+                # dump workflow result after update - to have an updated result in post
+                workflow_result.dump()
+                # add error into env - should appear in the report on the main page
+                env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
+                # add error info to job info as well
+                result.set_info(ResultInfo.NOT_FINALIZED)
+                update_final_report = True
         job = workflow.get_job(result.name)
         if not job or not job.allow_merge_on_failure:
             print(

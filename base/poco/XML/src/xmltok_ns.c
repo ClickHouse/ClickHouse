@@ -98,13 +98,13 @@ NS(findEncoding)(const ENCODING *enc, const char *ptr, const char *end) {
   int i;
   XmlUtf8Convert(enc, &ptr, end, &p, p + ENCODING_MAX - 1);
   if (ptr != end)
-    return 0;
+    return NULL;
   *p = 0;
   if (streqci(buf, KW_UTF_16) && enc->minBytesPerChar == 2)
     return enc;
   i = getEncodingIndex(buf);
   if (i == UNKNOWN_ENC)
-    return 0;
+    return NULL;
   return NS(encodings)[i];
 }
 

@@ -771,7 +771,7 @@ void PostgreSQLHandler::processParseQuery()
         std::unique_ptr<PostgreSQLProtocol::Messaging::ParseQuery> query =
             message_transport->receive<PostgreSQLProtocol::Messaging::ParseQuery>();
 
-        auto statement = std::make_shared<ASTPreparedStatement>();
+        auto statement = make_intrusive<ASTPreparedStatement>();
         statement->function_name = query->function_name;
         statement->function_body = query->sql_query;
         prepared_statements_manager.addStatement(statement.get());

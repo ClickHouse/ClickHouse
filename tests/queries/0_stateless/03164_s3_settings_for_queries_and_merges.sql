@@ -14,10 +14,10 @@ SETTINGS index_granularity = 512, min_bytes_for_wide_part = '10G', storage_polic
 
 INSERT INTO t_compact_bytes_s3 SELECT number, number, number, number, number FROM numbers(512 * 32 * 40);
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 OPTIMIZE TABLE t_compact_bytes_s3 FINAL;
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SELECT count() FROM t_compact_bytes_s3 WHERE NOT ignore(c2, c4);
 SYSTEM FLUSH LOGS query_log;
 

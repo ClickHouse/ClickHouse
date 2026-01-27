@@ -163,6 +163,8 @@ class Info:
         return self.workflow.get_secret(name)
 
     def get_job_url(self):
+        if not self.env.WORKFLOW_JOB_DATA:
+            return ""
         return f"{self.env.RUN_URL}/job/{self.env.WORKFLOW_JOB_DATA['check_run_id']}"
 
     def get_job_report_url(self, latest=False):

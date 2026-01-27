@@ -1,7 +1,7 @@
 SET enable_analyzer = 1;
 
 SET query_plan_optimize_join_order_limit = 10;
-SET allow_statistics_optimize = 1;
+SET use_statistics = 1;
 
 SET correlated_subqueries_substitute_equivalent_expressions = 0;
 SET correlated_subqueries_use_in_memory_buffer = 1;
@@ -10,6 +10,7 @@ SET enable_parallel_replicas = 0;
 
 SET query_plan_optimize_join_order_algorithm = 'dpsize';
 SET query_plan_join_swap_table = 'auto';
+SET enable_join_runtime_filters = 0;
 
 CREATE TABLE lineitem (
     l_orderkey       Int32,
