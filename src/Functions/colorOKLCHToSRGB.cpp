@@ -27,7 +27,7 @@ public:
     String getName() const override { return name; }
 
     /// OKLCH -> sRGB conversion. Follows the step-by-step pipeline described in Ottosson's article. See ColorConversion.h
-    ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklch, Float64 gamma) const 
+    ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklch, Float64 gamma) const
     {
         /// OKLCH to OKLab (cylindrical to Cartesian)
         Float64 chroma = oklch[1];
