@@ -3,7 +3,6 @@
 #include <Core/Names.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/Statistics/Statistics.h>
-#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -31,20 +30,8 @@ private:
     /// Get or create a KeyCondition for the given columns, using cache to avoid recreating for each part.
     KeyCondition * getKeyConditionForEstimates(const NamesAndTypesList & columns_and_types);
 
-    struct ColumnNamesHash
-    {
-        size_t operator()(const Names & column_names) const
-        {
-            SipHash hash;
-            hash.update(column_names.size());
-            for (const auto & name : column_names)
-                hash.update(name);
-            return hash.get64();
-        }
-    };
-
     /// Cache key_condition by column names to avoid recreating them for each part.
-    std::unordered_map<Names, std::unique_ptr<KeyCondition>, ColumnNamesHash> key_condition_cache;
+    std::unordered_map<Names, std::unique_ptr<KeyCondition>, NamesHash> key_condition_cache;
 
     const ActionsDAGWithInversionPushDown filter_dag;
     const ContextPtr context;
