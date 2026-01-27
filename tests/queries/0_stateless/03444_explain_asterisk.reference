@@ -9,7 +9,7 @@ SELECT
     `isZeroOrNull(10)` AS `t3.isZeroOrNull(10)`,
     `_--t3.10` AS `t3.10`,
     `assumeNotNull(materialize(10))` AS `t3.assumeNotNull(materialize(10))`,
-    `isNotNull(10)` AS `t3.isNotNull(10)`,
+    `10 IS NOT NULL` AS `t3.10 IS NOT NULL`,
     x AS `t3.x`
 FROM
 (
@@ -33,7 +33,7 @@ CROSS JOIN
     SELECT
         x,
         `assumeNotNull(materialize(10))`,
-        `isNotNull(10)`,
+        `10 IS NOT NULL`,
         `isZeroOrNull(10)`,
         `toNullable(10)`,
         `10` AS `_--t3.10`,
@@ -50,7 +50,7 @@ CROSS JOIN
             10 AS `10_1`,
             10 AS `10_2`,
             assumeNotNull(materialize(10)),
-            isNotNull(10),
+            10 IS NOT NULL,
             a AS x
         FROM t3__fuzz_0
         WHERE toNullable(toUInt256(1)) + a = b
@@ -78,7 +78,7 @@ FROM t1, t2,
         *,
         *,
         assumeNotNull(materialize(10)),
-        isNotNull(10),
+        10 IS NOT NULL,
         a AS x
     FROM t3__fuzz_0
     WHERE toNullable(toUInt256(1)) + a = b

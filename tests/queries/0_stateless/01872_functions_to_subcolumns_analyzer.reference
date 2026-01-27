@@ -2,9 +2,9 @@
 0	1	0
 QUERY id: 0
   PROJECTION COLUMNS
-    isNull(id) UInt8
-    isNull(n) UInt8
-    isNotNull(n) UInt8
+    id IS NULL UInt8
+    n IS NULL UInt8
+    n IS NOT NULL UInt8
   PROJECTION
     LIST id: 1, nodes: 3
       CONSTANT id: 2, constant_value: UInt64_0, constant_value_type: UInt8
@@ -22,9 +22,9 @@ QUERY id: 0
     TABLE id: 6, alias: __table1, table_name: default.t_func_to_subcolumns
 
 SELECT
-    isNull(__table1.id) AS `isNull(id)`,
-    __table1.`n.null` AS `isNull(n)`,
-    not(__table1.`n.null`) AS `isNotNull(n)`
+    __table1.id IS NULL AS `id IS NULL`,
+    __table1.`n.null` AS `n IS NULL`,
+    NOT __table1.`n.null` AS `n IS NOT NULL`
 FROM default.t_func_to_subcolumns AS __table1
 3	0	1	0
 0	1	0	\N
@@ -93,7 +93,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.t_func_to_subcolumns
 
-SELECT sum(not(__table1.`n.null`)) AS `count(n)`
+SELECT sum(NOT __table1.`n.null`) AS `count(n)`
 FROM default.t_func_to_subcolumns AS __table1
 2
 QUERY id: 0
@@ -116,8 +116,8 @@ FROM default.t_func_to_subcolumns AS __table1
 QUERY id: 0
   PROJECTION COLUMNS
     id UInt64
-    isNull(n) UInt8
-    isNull(right.n) UInt8
+    n IS NULL UInt8
+    right.n IS NULL UInt8
   PROJECTION
     LIST id: 1, nodes: 3
       FUNCTION id: 2, alias: id, function_name: firstNonDefault, function_type: ordinary, result_type: UInt64
@@ -169,8 +169,8 @@ QUERY id: 0
 
 SELECT
     firstNonDefault(__table1.id, __table2.id) AS id,
-    isNull(__table1.n) AS `isNull(n)`,
-    isNull(__table2.n) AS `isNull(right.n)`
+    __table1.n IS NULL AS `n IS NULL`,
+    __table2.n IS NULL AS `right.n IS NULL`
 FROM default.t_func_to_subcolumns AS __table1
 ALL FULL OUTER JOIN
 (

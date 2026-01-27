@@ -168,7 +168,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE isNull(dictGetOrNull(\'dictionary_all\', \'name\', __table1.id))
+WHERE dictGetOrNull(\'dictionary_all\', \'name\', __table1.id) IS NULL
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC

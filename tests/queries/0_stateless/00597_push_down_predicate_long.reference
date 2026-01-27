@@ -16,7 +16,7 @@ FROM
 ARRAY JOIN
     a,
     b
-WHERE not(ignore(a + b))
+WHERE NOT (ignore(a + b))
 1
 SELECT
     a,

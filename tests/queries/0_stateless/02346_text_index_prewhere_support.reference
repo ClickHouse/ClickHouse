@@ -68,7 +68,7 @@ Name: inv_idx1
 SELECT count() FROM tab PREWHERE hasAnyTokens(text1, ['clickhouse', 'database']) AND NOT hasToken(text1, 'mysql')
 12
 12
-Prewhere filter column: __text_index_inv_idx1_hasAnyTokens_fe3e7ee6319ef68f4ce16598af2f74ad AND not(__text_index_inv_idx1_hasToken_a24a29bac317b105b99d581f5caf15af) (removed)
+Prewhere filter column: __text_index_inv_idx1_hasAnyTokens_fe3e7ee6319ef68f4ce16598af2f74ad AND NOT __text_index_inv_idx1_hasToken_a24a29bac317b105b99d581f5caf15af (removed)
 Name: inv_idx1
 SELECT count() FROM tab PREWHERE hasAllTokens(text1, ['column', 'store']) OR hasAnyTokens(text1, ['olap', 'analytics'])
 8
@@ -96,19 +96,19 @@ Name: inv_idx1
 SELECT count() FROM tab PREWHERE NOT hasToken(text1, 'debug') AND hasAnyTokens(text2, ['info', 'warn', 'error'])
 2
 2
-Prewhere filter column: not(__text_index_inv_idx1_hasToken_c217b9edabe6f681fa5d3549045a068e) AND __text_index_inv_idx2_hasAnyTokens_ca72c33af5131b335d7619f7e1597825 (removed)
+Prewhere filter column: NOT __text_index_inv_idx1_hasToken_c217b9edabe6f681fa5d3549045a068e AND __text_index_inv_idx2_hasAnyTokens_ca72c33af5131b335d7619f7e1597825 (removed)
 Name: inv_idx2
 Name: inv_idx1
 SELECT count() FROM tab PREWHERE NOT hasAllTokens(text1, ['internal', 'test']) AND a > 0 AND hasToken(text2, 'prod')
 2
 2
-Prewhere filter column: not(__text_index_inv_idx1_hasAllTokens_73b884ae6b94aafc2244b08a91da6a3a) AND a > 0_UInt8 AND __text_index_inv_idx2_hasToken_fad102e37c10b7e4124a83a019c495d8 (removed)
+Prewhere filter column: NOT __text_index_inv_idx1_hasAllTokens_73b884ae6b94aafc2244b08a91da6a3a AND a > 0_UInt8 AND __text_index_inv_idx2_hasToken_fad102e37c10b7e4124a83a019c495d8 (removed)
 Name: inv_idx2
 Name: inv_idx1
 SELECT count() FROM tab PREWHERE NOT (hasAnyTokens(text1, ['drop', 'truncate']) OR hasToken(text2, 'danger')) AND id IN (1, 2, 3, 4)
 4
 4
-Prewhere filter column: (not(__text_index_inv_idx1_hasAnyTokens_5fafbc93f0bb83e3a84167577b0daf96 OR __text_index_inv_idx2_hasToken_44f9476b70574758924ffa0c5cf5ee1e)) AND id IN __set_Int64_9176252633170876565_1307576728392119372 (removed)
+Prewhere filter column: (NOT (__text_index_inv_idx1_hasAnyTokens_5fafbc93f0bb83e3a84167577b0daf96 OR __text_index_inv_idx2_hasToken_44f9476b70574758924ffa0c5cf5ee1e)) AND id IN __set_Int64_9176252633170876565_1307576728392119372 (removed)
 Name: inv_idx2
 Name: inv_idx1
 SELECT count() FROM tab PREWHERE (a > 10 AND hasToken(text1, 'clickhouse')) OR (a <= 10 AND hasAnyTokens(text2, ['mysql', 'postgres']))
@@ -126,7 +126,7 @@ Name: inv_idx1
 SELECT count() FROM tab PREWHERE (NOT hasToken(text1, 'archived') AND a > 0) OR (hasAnyTokens(text2, ['active', 'online']) AND id % 5 = 0)
 128
 128
-Prewhere filter column: not(__text_index_inv_idx1_hasToken_09bfe6cf5d2e899c4076cb956592abb0) AND a > 0_UInt8 OR __text_index_inv_idx2_hasAnyTokens_dab1d10d7d24fdf67733fa0bf8b9da55 AND id % 5_UInt8 = 0_UInt8 (removed)
+Prewhere filter column: NOT __text_index_inv_idx1_hasToken_09bfe6cf5d2e899c4076cb956592abb0 AND a > 0_UInt8 OR __text_index_inv_idx2_hasAnyTokens_dab1d10d7d24fdf67733fa0bf8b9da55 AND id % 5_UInt8 = 0_UInt8 (removed)
 Name: inv_idx2
 Name: inv_idx1
 SELECT count() FROM tab PREWHERE hasToken(text1, 'clickhouse') WHERE a > 0

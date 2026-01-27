@@ -2,7 +2,7 @@
 2	Compact
 35
       Filter (WHERE)
-      Filter column: a AND b AND c AND not(ignore(fat_string)) (removed)
+      Filter column: a AND b AND c AND NOT ignore(fat_string) (removed)
         Prewhere info
           Prewhere filter
           Prewhere filter column: a AND b AND c (removed)
@@ -11,9 +11,9 @@
 35
 SELECT count()
 FROM t_move_to_prewhere
-WHERE a AND b AND c AND not(ignore(fat_string))
+WHERE a AND b AND c AND NOT ignore(fat_string)
       Filter (WHERE)
-      Filter column: a AND b AND c AND not(ignore(fat_string)) (removed)
+      Filter column: a AND b AND c AND NOT ignore(fat_string) (removed)
         Prewhere info
           Prewhere filter
           Prewhere filter column: a

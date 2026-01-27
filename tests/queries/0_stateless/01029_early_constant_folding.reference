@@ -18,4 +18,4 @@ WHERE 1 IN (
 ) AS subquery
 SELECT 1
 FROM system.one
-WHERE not(ignore())
+WHERE NOT ignore()

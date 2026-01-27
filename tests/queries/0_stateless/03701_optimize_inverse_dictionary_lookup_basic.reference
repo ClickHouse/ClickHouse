@@ -200,7 +200,7 @@ SELECT
     __table1.color_id AS color_id,
     __table1.payload AS payload
 FROM default.t AS __table1
-WHERE not(__table1.color_id IN (
+WHERE NOT (__table1.color_id IN (
     SELECT __table1.id AS id
     FROM dictionary(\'colors\') AS __table1
     WHERE __table1.name = \'red\'

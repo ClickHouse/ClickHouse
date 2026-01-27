@@ -8,4 +8,4 @@ WHERE 1 IN ((
     SELECT arrayJoin([1, 2, 3])
 ) AS subquery)
 SELECT 1
-WHERE not(ignore())
+WHERE NOT ignore()

@@ -12,7 +12,7 @@ FROM system.one
 Unary operators
 SELECT -5
 FROM system.one
-SELECT not(true)
+SELECT NOT true
 FROM system.one
 Comparison operators
 SELECT 1 = 1
@@ -54,19 +54,19 @@ Complex multi-operator expressions
 SELECT
     1 + 2 * 3,
     5 - 1,
-    not(true),
+    NOT true,
     -10
 FROM system.one
 SELECT 1 = 1 AND 2 < 3
 FROM system.one
-SELECT not(1 = 2)
+SELECT NOT (1 = 2)
 FROM system.one
 Nested unary operators
-SELECT not(not(true))
+SELECT NOT (NOT true)
 FROM system.one
-SELECT negate(-5)
+SELECT -(-5)
 FROM system.one
-SELECT not(not(not(false)))
+SELECT NOT (NOT (NOT false))
 FROM system.one
 LIKE operator
 SELECT like(\'test\', \'te%\')
@@ -79,9 +79,9 @@ FROM system.one
 SELECT 1 NOT IN (4, 5, 6)
 FROM system.one
 IS NULL operator
-SELECT isNull(_CAST(NULL, \'Nullable(Nothing)\'))
+SELECT _CAST(NULL, \'Nullable(Nothing)\') IS NULL
 FROM system.one
-SELECT isNotNull(1)
+SELECT 1 IS NOT NULL
 FROM system.one
 Array subscript operator
 SELECT arrayElement(_CAST([1, 2, 3], \'Array(UInt8)\'), 1)
@@ -103,7 +103,7 @@ SELECT
     7 / 8,
     9 % 2,
     -10,
-    not(true),
+    NOT true,
     11 = 11,
     12 != 13,
     14 < 15,

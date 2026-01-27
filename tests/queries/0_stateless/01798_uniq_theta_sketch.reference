@@ -45,7 +45,7 @@ FROM
         number % 3 AS y
     FROM numbers(10)
 )
-SELECT uniqTheta(negate(x))
+SELECT uniqTheta(-x)
 FROM
 (
     SELECT number % 2 AS x
@@ -57,13 +57,13 @@ FROM
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(bitNot(negate(x)))
+SELECT uniqTheta(bitNot(-x))
 FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(negate(bitNot(negate(x))))
+SELECT uniqTheta(-(bitNot(-x)))
 FROM
 (
     SELECT number % 2 AS x
@@ -83,7 +83,7 @@ FROM
         number % 3 AS y
     FROM numbers(10)
 )
-SELECT uniqTheta(negate(x))
+SELECT uniqTheta(-x)
 FROM
 (
     SELECT number % 2 AS x
@@ -95,13 +95,13 @@ FROM
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(bitNot(negate(x)))
+SELECT uniqTheta(bitNot(-x))
 FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(negate(bitNot(negate(x))))
+SELECT uniqTheta(-(bitNot(-x)))
 FROM
 (
     SELECT number % 2 AS x
