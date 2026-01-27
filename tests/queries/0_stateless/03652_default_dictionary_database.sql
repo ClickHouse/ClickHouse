@@ -30,18 +30,17 @@ SOURCE(CLICKHOUSE(QUERY 'SELECT number AS id, toString(number) AS value FROM num
 LAYOUT(FLAT())
 LIFETIME(0);
 
-SYSTEM RELOAD DICTIONARY test_dict_db.test_dictionary;
-
 SELECT 'Test 1: Without setting (should fail)';
 SELECT dictGet('test_dictionary', 'value', toUInt64(1)); -- { serverError 36 }
 
 SELECT 'Test 2: With explicit database';
 SELECT dictHas('test_dict_db.test_dictionary', toUInt64(1));
 
-SELECT 'Test 3: Local dictionary in current database';
+SET default_dictionary_database = 'test_dict_db';
+
+SELECT 'Test 3: Local dictionary in current database (fallback test)';
 SELECT dictHas('local_dictionary', toUInt64(1));
 
-SET default_dictionary_database = 'test_dict_db';
 
 SELECT 'Test 4: With default_dictionary_database setting';
 SELECT dictHas('test_dictionary', toUInt64(1));
