@@ -734,7 +734,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     {
         for (auto & table : tables)
         {
-            checkTableNameLengthUnlocked(new_name, table.first, isTemporary(), getContext());
+            checkTableNameLengthUnlocked(new_name, table.first, getContext());
 
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
         }

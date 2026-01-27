@@ -927,12 +927,12 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
 void DatabaseOnDisk::checkTableNameLength(const String & table_name) const
 {
     std::lock_guard lock(mutex);
-    checkTableNameLengthUnlocked(database_name, table_name, isTemporary(), getContext());
+    checkTableNameLengthUnlocked(database_name, table_name, getContext());
 }
 
-void DatabaseOnDisk::checkTableNameLengthUnlocked(const String & database_name_, const String & table_name, const bool is_temporary_, ContextPtr context_)
+void DatabaseOnDisk::checkTableNameLengthUnlocked(const String & database_name_, const String & table_name, ContextPtr context_)
 {
-    const size_t allowed_max_length = computeMaxTableNameLength(database_name_, is_temporary_, context_);
+    const size_t allowed_max_length = computeMaxTableNameLength(database_name_, context_);
     const size_t escaped_name_length = escapeForFileName(table_name).length();
     if (escaped_name_length > allowed_max_length)
     {

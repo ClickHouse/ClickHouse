@@ -358,6 +358,22 @@ def test_undrop_table(request):
     drop_db(session1, db1)
 
 
+def test_mergetree(request):
+    session1, db1 = get_session_id_with_db_name(request, 1)
+    query(session1, f"CREATE TEMPORARY DATABASE `{db1}`")
+    query(session1, f"CREATE TABLE `{db1}`.`table1` (x UInt64, v String) ENGINE=MergeTree() ORDER BY x "
+                    f"SETTINGS enable_block_number_column=1, enable_block_offset_column=1")
+
+    query(session1, f"INSERT INTO `{db1}`.`table1` VALUES (1, 'a'), (2, 'b')")
+    query(session1, f"UPDATE `{db1}`.`table1` SET v = 'c' WHERE x = 1")
+    assert query(session1, f"SELECT * FROM `{db1}`.`table1` ORDER BY x", False) == TSV([[1, 'c'], [2, 'b']])
+
+    query(session1, f"DELETE FROM `{db1}`.`table1` WHERE x = 1")
+    assert query(session1, f"SELECT * FROM `{db1}`.`table1` ORDER BY x", False) == TSV([[2, 'b']])
+
+    drop_db(session1, db1)
+
+
 @pytest.mark.parametrize("user2", ["default_same_session", "default", "default2"])
 def test_excluded_from_backups(request, user2: str):
     session1, db1 = get_session_id_with_db_name(request, 1)

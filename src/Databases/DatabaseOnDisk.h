@@ -91,7 +91,7 @@ public:
     void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const TSA_REQUIRES(mutex);
 
     void checkTableNameLength(const String & table_name) const override;
-    static void checkTableNameLengthUnlocked(const String & database_name_, const String & table_name, bool is_temporary, ContextPtr context_);
+    static void checkTableNameLengthUnlocked(const String & database_name_, const String & table_name, ContextPtr context_);
 
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
