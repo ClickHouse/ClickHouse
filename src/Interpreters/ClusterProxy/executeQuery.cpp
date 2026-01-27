@@ -531,7 +531,7 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
     {
         if (settings[Setting::optimize_aggregation_in_order].changed)
         {
-            LOG_WARNING(
+            LOG_INFO(
                 logger,
                 "Aggregation in order optimization is enabled explicitly but will not be applied with parallel replicas");
         }
