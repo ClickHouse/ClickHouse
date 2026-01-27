@@ -127,7 +127,7 @@ def test_repeated_fields(started_cluster):
     run_query(instance, f"insert into protobuf_data{uuid_table} format ProtobufConfluent", data, settings)
 
     stdout = run_query(instance, f"select * from protobuf_data{uuid_table}")
-    assert stdout == "[(42,'abc'),(43,'abc'),(44,'abc')]\n"
+    assert stdout == "[(42,'abc'),(43,'abc'),(44,'abc')]\n[(45,'abc'),(46,'abacaba')]\n"
 
 
 def test_select_auth(started_cluster):

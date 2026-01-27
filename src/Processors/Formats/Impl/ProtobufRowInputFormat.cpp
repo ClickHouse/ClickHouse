@@ -235,6 +235,9 @@ ProtobufConfluentRowInputFormat::ProtobufConfluentRowInputFormat(
     , format_settings(format_settings_)
     , readers(CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, 1024)
     , serializers(CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, 1024)
+    , descriptor(nullptr)
+    , with_length_delimiter(false)
+    , flatten_google_wrappers(format_settings_.protobuf.input_flatten_google_wrappers)
 {
 }
 
@@ -272,16 +275,6 @@ bool ProtobufConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadE
     {
         return false;
     }
-#if 0
-    while (true)
-    {
-        char var;
-        if (!in->read(var))
-            break;
-        std::cerr << static_cast<Int32>(var) << ' ';
-    }
-    std::cerr << '\n';
-#endif
     SchemaId schema_id = readConfluentSchemaId(*in, first_row);
     first_row = false;
     const google::protobuf::Descriptor * base_descriptor = schema_registry->getProtobufSchema(schema_id);
@@ -330,6 +323,7 @@ bool ProtobufConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadE
 
     serializers.get(schema_id)->setColumns(columns.data(), columns.size());
     serializers.get(schema_id)->readRow(row_num);
+    
     row_read_extension.read_columns.clear();
     row_read_extension.read_columns.resize(columns.size(), true);
     for (size_t column_idx : missing_column_indices)

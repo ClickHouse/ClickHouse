@@ -2627,9 +2627,9 @@ namespace
                 try
                 {
                     int field_tag;
-                    while (reader->readFieldNumber(field_tag))
+                    bool should_exit_while = false;
+                    while (reader->readFieldNumber(field_tag) && !should_exit_while)
                     {
-                        std::cerr << "field_tag " << field_tag << '\n';
                         auto field_index = findFieldIndexByFieldTag(field_tag);
                         if (!field_index.has_value())
                         {
@@ -2639,10 +2639,66 @@ namespace
                                 continue;
                         }
                         auto * field_serializer = field_infos[field_index.value()].field_serializer.get();
-                        field_serializer->readRow(row_num);
-                        field_infos[field_index.value()].field_read = true;
+                        auto * field_descriptor = field_infos[field_index.value()].field_descriptor;
+                        
+                        // For repeated fields, read all repetitions in a loop
+                        if (field_descriptor && field_descriptor->is_repeated())
+                        {
+                            // Read all repetitions of this field
+                            do
+                            {
+                                field_serializer->readRow(row_num);
+                                field_infos[field_index.value()].field_read = true;
+                                
+                                // Check if there's another field with the same tag
+                                // For Confluent format, save cursor position before reading next field_tag
+                                // so we can set current_message_end if the field_tag is not found
+                                Int64 cursor_before_read = use_confluent && !with_length_delimiter 
+                                    ? reader->getCursor() : 0;
+                                
+                                int next_field_tag;
+                                if (!reader->readFieldNumber(next_field_tag))
+                                    break; // End of message
+                                
+                                if (next_field_tag != field_tag)
+                                {
+                                    // Different field, check if it's valid
+                                    auto next_field_index = findFieldIndexByFieldTag(next_field_tag);
+                                    if (!next_field_index.has_value())
+                                    {
+                                        // Unknown field, probably start of next Confluent message
+                                        // In Confluent format, if we read an unknown field_tag, it might be
+                                        // the start of the next message (magic byte + schema id interpreted as varint)
+                                        if (use_confluent)
+                                        {
+                                            // For Confluent format, if field_tag is not found, it's likely
+                                            // the start of the next message, so we should exit
+                                            // Set current_message_end to cursor position before reading the unknown field_tag
+                                            if (!with_length_delimiter)
+                                                reader->setCurrentMessageEnd(cursor_before_read);
+                                            should_exit_while = true;
+                                            break; // Exit the do-while loop, exit the while loop
+                                        }
+                                        // For non-Confluent, continue to skip unknown fields
+                                        continue;
+                                    }
+                                    // Valid different field, process it in the next iteration
+                                    field_tag = next_field_tag;
+                                    break; // Exit the do-while loop, continue the while loop
+                                }
+                                // Same field tag, continue reading repetitions
+                            } while (true);
+                            
+                            if (should_exit_while)
+                                break; // Exit the while loop
+                        }
+                        else
+                        {
+                            // Non-repeated field, read it once
+                            field_serializer->readRow(row_num);
+                            field_infos[field_index.value()].field_read = true;
+                        }
                     }
-                    std::cerr << "end\n";
 
                     for (auto & info : field_infos)
                     {
@@ -2664,6 +2720,24 @@ namespace
                             }
                         }
                     }
+                    
+                    // End the message after reading all fields
+                    // For Confluent format without length delimiter, set current_message_end to current cursor
+                    // to avoid ignoreAll() skipping remaining data
+                    if (parent_field_descriptor || has_envelope_as_parent)
+                        reader->endNestedMessage();
+                    else
+                    {
+                        if (use_confluent && !with_length_delimiter)
+                        {
+                            // Get current cursor position before ending message
+                            // We need to set current_message_end to cursor to avoid ignoreAll()
+                            reader->setCurrentMessageEnd(reader->getCursor());
+                            reader->endMessage(false);
+                        }
+                        else
+                            reader->endMessage(false);
+                    }
                 }
                 catch (...)
                 {
@@ -2675,8 +2749,20 @@ namespace
                     throw;
                 }
             }
+            else
+            {
+                // No fields to read, but we still need to end the message
+                if (parent_field_descriptor || has_envelope_as_parent)
+                    reader->endNestedMessage();
+                else
+                {
+                    if (use_confluent && !with_length_delimiter)
+                        reader->endMessage(true);
+                    else
+                        reader->endMessage(false);
+                }
+            }
 
-            finalizeRead();
             addDefaultsToMissingColumns(row_num);
         }
 
@@ -2687,7 +2773,6 @@ namespace
 
         void finalizeRead() override
         {
-            std::cerr << "reader->getBuffer()->available() " << reader->getBuffer()->available() << '\n';
             if (reader->getBuffer()->available() == 0)
             {
                 if (parent_field_descriptor || has_envelope_as_parent)

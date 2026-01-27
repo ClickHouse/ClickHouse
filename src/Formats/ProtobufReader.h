@@ -23,6 +23,8 @@ public:
     void endMessage(bool ignore_errors);
     void startNestedMessage();
     void endNestedMessage();
+    Int64 getCursor() const { return cursor; }
+    void setCurrentMessageEnd(Int64 message_end);
 
     bool readFieldNumber(int & field_number);
     Int64 readInt();
