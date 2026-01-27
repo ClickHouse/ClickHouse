@@ -73,6 +73,8 @@ TypeIndex AvroForIcebergDeserializer::getTypeForPath(const std::string & path) c
 
 Field AvroForIcebergDeserializer::getValueFromRowByName(size_t row_num, const std::string & path, std::optional<TypeIndex> expected_type) const
 {
+    Stopwatch stopwatch;
+    stopwatch.start();
     ColumnPtr current_column;
     DataTypePtr current_data_type;
     auto it = extracted_subcolumns_with_types.find(path);
@@ -89,11 +91,21 @@ Field AvroForIcebergDeserializer::getValueFromRowByName(size_t row_num, const st
     }
 
     if (expected_type && WhichDataType(current_data_type).idx != *expected_type)
-        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                        "Got wrong data type for key {} in manifest file {}, expected {}, got {}",
-                        path, manifest_file_path, *expected_type, WhichDataType(current_data_type).idx);
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Got wrong data type for key {} in manifest file {}, expected {}, got {}",
+            path,
+            manifest_file_path,
+            *expected_type,
+            WhichDataType(current_data_type).idx);
     Field result;
     current_column->get(row_num, result);
+    stopwatch.stop();
+    auto it_time = path_stats.find(path);
+    if (it_time == path_stats.end())
+        path_stats[path] = {1, stopwatch.elapsedNanoseconds()};
+    else
+        it_time->second = {it_time->second.first + 1, it_time->second.second + stopwatch.elapsedNanoseconds()};
     return result;
 }
 

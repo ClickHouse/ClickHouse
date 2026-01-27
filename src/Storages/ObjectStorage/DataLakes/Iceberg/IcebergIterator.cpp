@@ -171,6 +171,7 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
                 data_snapshot->manifest_list_entries[manifest_file_index].manifest_file_path,
                 data_snapshot->manifest_list_entries[manifest_file_index].added_sequence_number,
                 data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
+            LOG_DEBUG(log, "Start to take position and equality deletes files in iceberg iterator");
             internal_data_index = 0;
             files = files_generator(current_manifest_file_content);
         }

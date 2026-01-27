@@ -165,6 +165,7 @@ ManifestFileContent::ManifestFileContent(
         std::nullopt,
         std::nullopt);
 
+    LOG_DEBUG(&Poco::Logger::get("Manifest File"), "Before manifest metadata analysis");
     for (const auto & column_name : {f_status, f_data_file})
     {
         if (!manifest_file_deserializer.hasPath(column_name))
@@ -177,6 +178,7 @@ ManifestFileContent::ManifestFileContent(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", f_sequence_number);
 
     Poco::JSON::Parser parser;
+
 
     auto partition_spec_json_string = manifest_file_deserializer.tryGetAvroMetadataValue("partition-spec");
     if (!partition_spec_json_string.has_value())
@@ -205,6 +207,7 @@ ManifestFileContent::ManifestFileContent(
 
     schema_processor.addIcebergTableSchema(schema_object);
 
+
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
@@ -231,8 +234,21 @@ ManifestFileContent::ManifestFileContent(
     if (!partition_columns_description.empty())
         this->partition_key_description.emplace(DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), context));
 
+
+    LOG_DEBUG(&Poco::Logger::get("Manifest File"), "Before reading manifest file");
+
+    size_t first_code_piece = 0;
+    size_t second_code_piece = 0;
+    size_t third_code_piece = 0;
+    size_t fourth_code_piece = 0;
+    size_t fifth_code_piece = 0;
+
+    Stopwatch stopwatch;
+
+
     for (size_t i = 0; i < manifest_file_deserializer.rows(); ++i)
     {
+        stopwatch.start();
         insertRowToLogTable(
             context,
             manifest_file_deserializer.getContent(i),
@@ -268,6 +284,9 @@ ManifestFileContent::ManifestFileContent(
         {
             snapshot_id = snapshot_id_value.safeGet<Int64>();
         }
+
+        first_code_piece += stopwatch.elapsedNanoseconds();
+        stopwatch.restart();
 
         const auto schema_id_opt = schema_processor.tryGetSchemaIdForSnapshot(snapshot_id);
         if (!schema_id_opt.has_value())
@@ -334,6 +353,9 @@ ManifestFileContent::ManifestFileContent(
             }
         }
 
+        second_code_piece += stopwatch.elapsedNanoseconds();
+        stopwatch.restart();
+
         std::unordered_map<Int32, std::pair<Field, Field>> value_for_bounds;
         for (const auto & path : {c_data_file_lower_bounds, c_data_file_upper_bounds})
         {
@@ -389,6 +411,9 @@ ManifestFileContent::ManifestFileContent(
             }
         }
 
+        third_code_piece += stopwatch.elapsedNanoseconds();
+        stopwatch.restart();
+
         Int64 added_sequence_number = 0;
 
         String file_format
@@ -426,6 +451,9 @@ ManifestFileContent::ManifestFileContent(
             else
                 sort_order_id = sort_order_id_value.safeGet<Int32>();
         }
+
+        fourth_code_piece += stopwatch.elapsedNanoseconds();
+        stopwatch.restart();
 
         switch (content_type)
         {
@@ -521,8 +549,33 @@ ManifestFileContent::ManifestFileContent(
                 break;
             }
         }
+
+        fifth_code_piece += stopwatch.elapsedNanoseconds();
+        stopwatch.restart();
+
+        if ((i + 1) % 500 == 0)
+            LOG_DEBUG(&Poco::Logger::get("Manifest File"), "Read {} rows from manifest file", i);
     }
+    LOG_DEBUG(
+        &Poco::Logger::get("Manifest File"),
+        "Spent time in first piece: {}, in second piece: {}, in third piece: {}, in forth piece: {}, in fifth piece: {}",
+        first_code_piece,
+        second_code_piece,
+        third_code_piece,
+        fourth_code_piece,
+        fifth_code_piece);
+    LOG_DEBUG(&Poco::Logger::get("Manifest File"), "Spent time in get value from row by name: {}", manifest_file_deserializer.nanos_in_get);
+    for (const auto & [path, stats] : manifest_file_deserializer.path_stats)
+        LOG_DEBUG(
+            &Poco::Logger::get("Manifest File"),
+            "Path {} spent {} nanoseconds, {} calls, average call time:{} nanoseconds",
+            path,
+            stats.second,
+            stats.first,
+            static_cast<double>(stats.second) / static_cast<double>(stats.first));
+    LOG_DEBUG(&Poco::Logger::get("Manifest File"), "Stopped parsing, Sorting manifest file entries by schema id");
     sortManifestEntriesBySchemaId(data_files_without_deleted);
+    LOG_DEBUG(&Poco::Logger::get("Manifest File"), "After sorting manifest file entries by schema id");
 }
 
 // We prefer files to be sorted by schema id, because it allows us to reuse ManifestFilePruner during partition and minmax pruning
