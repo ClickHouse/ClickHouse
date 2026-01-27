@@ -61,79 +61,17 @@ namespace ColorConversion
     constexpr Mat3x3 lms_to_linear_base = {4.0767416621, -3.3077115913,  0.2309699292,
                                            -1.2684380046,  2.6097574011, -0.3413193965,
                                            -0.0041960863, -0.7034186147,  1.7076147010};
-
-    /// Common helper: sRGB -> OKLab conversion (steps 1-3 of the conversion pipeline)
-    /// This is shared by both OKLAB and OKLCH conversions from sRGB
-    inline Color srgbToOklab(const Color & rgb, Float64 gamma)
-    {
-        /// Step 1: sRGB to Linear sRGB (gamma correction)
-        Color rgb_lin;
-        for (size_t i = 0; i < channels; ++i)
-            rgb_lin[i] = std::pow(rgb[i] / 255.0, gamma);
-
-        /// Step 2: Linear sRGB to LMS (cone response)
-        Color lms{};
-        for (size_t i = 0; i < channels; ++i)
-        {
-            for (size_t channel = 0; channel < channels; ++channel)
-                lms[i] = std::fma(rgb_lin[channel], linear_to_lms_base[(3 * i) + channel], lms[i]);
-            lms[i] = std::cbrt(lms[i]);
-        }
-
-        /// Step 3: LMS to OKLab
-        Color oklab{};
-        for (size_t i = 0; i < channels; ++i)
-        {
-            for (size_t channel = 0; channel < channels; ++channel)
-                oklab[i] = std::fma(lms[channel], lms_to_oklab_base[(3 * i) + channel], oklab[i]);
-        }
-
-        return oklab;
-    }
-
-    /// Common helper: OKLab -> sRGB conversion (steps 1-3 of the conversion pipeline)
-    /// This is shared by both OKLAB and OKLCH conversions to sRGB
-    inline Color oklabToSrgb(const Color & oklab, Float64 gamma)
-    {
-        /// Step 1: OKLab to LMS (cone response)
-        Color lms{};
-        for (size_t i = 0; i < channels; ++i)
-        {
-            for (size_t channel = 0; channel < channels; ++channel)
-                lms[i] = std::fma(oklab[channel], oklab_to_lms_base[(3 * i) + channel], lms[i]);
-            lms[i] = lms[i] * lms[i] * lms[i];
-        }
-
-        /// Step 2: LMS to Linear sRGB
-        Color rgb{};
-        for (size_t i = 0; i < channels; ++i)
-        {
-            for (size_t channel = 0; channel < channels; ++channel)
-                rgb[i] = std::fma(lms[channel], lms_to_linear_base[(3 * i) + channel], rgb[i]);
-        }
-
-        /// Step 3: Linear sRGB to sRGB (gamma correction)
-        if (gamma == 0)
-            gamma = gamma_fallback;
-
-        Float64 power = 1 / gamma;
-        for (size_t i = 0; i < channels; ++i)
-        {
-            rgb[i] = std::clamp(rgb[i], 0.0, 1.0);
-            rgb[i] = std::pow(rgb[i], power) * 255.0;
-        }
-
-        return rgb;
-    }
 }
 
-/** Common base class for all color conversion functions.
-  * Provides shared implementation of getReturnTypeImpl and common interface methods.
+/** Base class for functions that convert color from sRGB color space to perceptual color spaces.
+  * Returns a tuple of type Tuple(Float64, Float64, Float64).
   */
-class ColorConversionBase : public ITupleFunction
+template <typename Derived>
+class ColorConversionFromSRGBBase : public ITupleFunction
 {
 public:
-    explicit ColorConversionBase(ContextPtr context_) : ITupleFunction(context_) {}
+
+    explicit ColorConversionFromSRGBBase(ContextPtr context_) : ITupleFunction(context_) {}
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -183,15 +121,7 @@ public:
         auto float64_type = std::make_shared<DataTypeFloat64>();
         return std::make_shared<DataTypeTuple>(DataTypes(ColorConversion::channels, float64_type));
     }
-};
 
-/** Base class for functions that convert color from sRGB color space to perceptual color spaces.
-  * Returns a tuple of type Tuple(Float64, Float64, Float64).
-  */
-class ColorConversionFromSRGBBase : public ColorConversionBase
-{
-public:
-    explicit ColorConversionFromSRGBBase(ContextPtr context_) : ColorConversionBase(context_) {}
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -231,8 +161,7 @@ public:
             ColorConversion::Color rgb_data{red_data[row], green_data[row], blue_data[row]};
             Float64 gamma_cur = gamma_data ? (*gamma_data)[row] : ColorConversion::default_gamma;
 
-            /// Call derived class conversion function via virtual dispatch
-            ColorConversion::Color res = convertFromSrgb(rgb_data, gamma_cur);
+            ColorConversion::Color res = static_cast<const Derived *>(this)->convertFromSrgb(rgb_data, gamma_cur);
 
             channel0_data.push_back(res[0]);
             channel1_data.push_back(res[1]);
@@ -243,17 +172,93 @@ public:
     }
 
 protected:
-    /// Pure virtual function - derived classes MUST implement this
-    virtual ColorConversion::Color convertFromSrgb(const ColorConversion::Color & rgb, Float64 gamma) const = 0;
+    /// Common helper: sRGB -> OKLab conversion (steps 1-3 of the conversion pipeline)
+    /// This is shared by both OKLAB and OKLCH conversions from sRGB
+    ColorConversion::Color srgbToOklab(const ColorConversion::Color & rgb, Float64 gamma) const
+    {
+        /// Step 1: sRGB to Linear sRGB (gamma correction)
+        ColorConversion::Color rgb_lin;
+        for (size_t i = 0; i < ColorConversion::channels; ++i)
+            rgb_lin[i] = std::pow(rgb[i] / 255.0, gamma);
+
+        /// Step 2: Linear sRGB to LMS (cone response)
+        ColorConversion::Color lms{};
+        for (size_t i = 0; i < ColorConversion::channels; ++i)
+        {
+            for (size_t channel = 0; channel < ColorConversion::channels; ++channel)
+                lms[i] = std::fma(rgb_lin[channel], ColorConversion::linear_to_lms_base[(3 * i) + channel], lms[i]);
+            lms[i] = std::cbrt(lms[i]);
+        }
+
+        /// Step 3: LMS to OKLab
+        ColorConversion::Color oklab{};
+        for (size_t i = 0; i < ColorConversion::channels; ++i)
+        {
+            for (size_t channel = 0; channel < ColorConversion::channels; ++channel)
+                oklab[i] = std::fma(lms[channel], ColorConversion::lms_to_oklab_base[(3 * i) + channel], oklab[i]);
+        }
+
+        return oklab;
+    }
 };
 
 /** Base class for functions that convert color from perceptual color spaces to sRGB color space.
   * Returns a tuple of type Tuple(Float64, Float64, Float64).
   */
-class ColorConversionToSRGBBase : public ColorConversionBase
+template <typename Derived>
+class ColorConversionToSRGBBase : public ITupleFunction
 {
 public:
-    explicit ColorConversionToSRGBBase(ContextPtr context_) : ColorConversionBase(context_) {}
+    explicit ColorConversionToSRGBBase(ContextPtr context_) : ITupleFunction(context_) {}
+
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.empty() || arguments.size() > 2)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires 1 or 2 arguments, {} provided",
+                getName(), arguments.size());
+
+        const auto * first_arg = arguments[0].get();
+
+        if (!isTuple(first_arg))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be a tuple",
+                getName());
+
+        const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(first_arg);
+        const auto & tuple_inner_types  = tuple_type->getElements();
+
+        if (tuple_inner_types.size() != ColorConversion::channels)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument of function {} must be a tuple of size {}, a tuple of size {} was provided",
+                getName(), ColorConversion::channels, tuple_inner_types.size());
+
+        for (const auto & tuple_inner_type : tuple_inner_types)
+        {
+            if (!isNumber(tuple_inner_type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Tuple elements of first argument of function {} must be numbers",
+                    getName());
+        }
+
+        if (arguments.size() == 2 && !isNumber(arguments[1].get()))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument of function {} must be a number",
+                    getName());
+
+        auto float64_type = std::make_shared<DataTypeFloat64>();
+        return std::make_shared<DataTypeTuple>(DataTypes(ColorConversion::channels, float64_type));
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -293,8 +298,7 @@ public:
             ColorConversion::Color input_color{channel0_data[row], channel1_data[row], channel2_data[row]};
             Float64 gamma_cur = gamma_data ? (*gamma_data)[row] : ColorConversion::default_gamma;
 
-            /// Call derived class conversion function via virtual dispatch
-            ColorConversion::Color res = convertToSrgb(input_color, gamma_cur);
+            ColorConversion::Color res = static_cast<const Derived *>(this)->convertToSrgb(input_color, gamma_cur);
 
             red_data.push_back(res[0]);
             green_data.push_back(res[1]);
@@ -303,10 +307,42 @@ public:
 
         return ColumnTuple::create(Columns({std::move(col_red), std::move(col_green), std::move(col_blue)}));
     }
-
 protected:
-    /// Pure virtual function - derived classes MUST implement this
-    virtual ColorConversion::Color convertToSrgb(const ColorConversion::Color & color, Float64 gamma) const = 0;
+
+    /// Common helper: OKLab -> sRGB conversion
+    /// This is shared by both OKLAB and OKLCH conversions to sRGB
+    ColorConversion::Color oklabToSrgb(const ColorConversion::Color & oklab, Float64 gamma) const
+    {
+        /// Step 1: OKLab to LMS (cone response)
+        ColorConversion::Color lms{};
+        for (size_t i = 0; i < ColorConversion::channels; ++i)
+        {
+            for (size_t channel = 0; channel < ColorConversion::channels; ++channel)
+                lms[i] = std::fma(oklab[channel], ColorConversion::oklab_to_lms_base[(3 * i) + channel], lms[i]);
+            lms[i] = lms[i] * lms[i] * lms[i];
+        }
+
+        /// Step 2: LMS to Linear sRGB
+        ColorConversion::Color rgb{};
+        for (size_t i = 0; i < ColorConversion::channels; ++i)
+        {
+            for (size_t channel = 0; channel < ColorConversion::channels; ++channel)
+                rgb[i] = std::fma(lms[channel], ColorConversion::lms_to_linear_base[(3 * i) + channel], rgb[i]);
+        }
+
+        /// Step 3: Linear sRGB to sRGB (gamma correction)
+        if (gamma == 0)
+            gamma = ColorConversion::gamma_fallback;
+
+        Float64 power = 1 / gamma;
+        for (size_t i = 0; i < ColorConversion::channels; ++i)
+        {
+            rgb[i] = std::clamp(rgb[i], 0.0, 1.0);
+            rgb[i] = std::pow(rgb[i], power) * 255.0;
+        }
+
+        return rgb;
+    }
 };
 
 }

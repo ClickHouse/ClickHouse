@@ -14,7 +14,7 @@ namespace DB
   */
 namespace
 {
-class FunctionColorOKLABToSRGB : public ColorConversionToSRGBBase
+class FunctionColorOKLABToSRGB : public ColorConversionToSRGBBase<FunctionColorOKLABToSRGB>
 {
 public:
     static constexpr auto name = "colorOKLABToSRGB";
@@ -26,13 +26,10 @@ public:
 
     String getName() const override { return name; }
 
-protected:
     /// OKLAB -> sRGB conversion. Follows the step-by-step pipeline described in Ottosson's article. See ColorConversion.h
-    ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklab, Float64 gamma) const override
+    ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklab, Float64 gamma) const
     {
-        /// OKLAB is already in Cartesian form, so we can directly convert to sRGB
-        /// Steps 1-3: OKLab to sRGB (handled by ColorConversion namespace helper)
-        return ColorConversion::oklabToSrgb(oklab, gamma);
+        return oklabToSrgb(oklab, gamma);
     }
 };
 }
@@ -47,8 +44,8 @@ REGISTER_FUNCTION(FunctionColorOKLABToSRGB)
 
         OKLab uses three components:
         - L: perceptual lightness (typically in the range [0..1])
-        - a: green–red opponent axis
-        - b: blue–yellow opponent axis
+        - a: green-red opponent axis
+        - b: blue-yellow opponent axis
 
         The a and b components are not bounded. OKLab is designed to be perceptually uniform
         while remaining inexpensive to compute.
@@ -62,7 +59,7 @@ REGISTER_FUNCTION(FunctionColorOKLABToSRGB)
         sRGB to gamma-encoded RGB values. If not specified, a default gamma value is used
         for consistency with colorSRGBToOKLAB.
 
-        For more information about the OKLab color space and its relationship to sRGB, see https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/color_value/oklab:wq
+        For more information about the OKLab color space and its relationship to sRGB, see https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/color_value/oklab
         .
     )";
     FunctionDocumentation::Syntax syntax = "colorOKLABToSRGB(tuple [, gamma])";

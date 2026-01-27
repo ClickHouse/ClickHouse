@@ -14,7 +14,7 @@ namespace DB
   */
 namespace
 {
-class FunctionColorOKLCHToSRGB : public ColorConversionToSRGBBase
+class FunctionColorOKLCHToSRGB : public ColorConversionToSRGBBase<FunctionColorOKLCHToSRGB>
 {
 public:
     static constexpr auto name = "colorOKLCHToSRGB";
@@ -26,11 +26,10 @@ public:
 
     String getName() const override { return name; }
 
-protected:
     /// OKLCH -> sRGB conversion. Follows the step-by-step pipeline described in Ottosson's article. See ColorConversion.h
-    ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklch, Float64 gamma) const override
+    ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklch, Float64 gamma) const 
     {
-        /// Step 1: OKLCH to OKLab (cylindrical to Cartesian)
+        /// OKLCH to OKLab (cylindrical to Cartesian)
         Float64 chroma = oklch[1];
         Float64 hue_rad = oklch[2] * ColorConversion::deg2rad;
 
@@ -38,8 +37,7 @@ protected:
         oklab[1] = chroma * std::cos(hue_rad);
         oklab[2] = chroma * std::sin(hue_rad);
 
-        /// Steps 2-3: OKLab to sRGB (handled by ColorConversion namespace helper)
-        return ColorConversion::oklabToSrgb(oklab, gamma);
+        return oklabToSrgb(oklab, gamma);
     }
 };
 }
@@ -53,7 +51,7 @@ REGISTER_FUNCTION(FunctionColorOKLCHToSRGB)
 
         :::note
         **OKLCH** is a cylindrical version of the OKLab colour space.
-        It's three coordinates are `L` (the lightness in the range `[0...1]`), `C` (chroma `>= 0`) and `H` (hue in degrees  from `[0...360]`)**.
+        It's three coordinates are `L` (the lightness in the range `[0...1]`), `C` (chroma `>= 0`) and `H` (hue in degrees  from `[0...360]`).
         OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
         :::
 
