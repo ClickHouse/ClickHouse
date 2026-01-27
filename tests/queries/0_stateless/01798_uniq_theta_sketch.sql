@@ -1,5 +1,5 @@
-SET enable_analyzer = 1;
 -- Tags: no-fasttest
+SET enable_analyzer = 1;
 
 SET max_block_size = 65505;
 

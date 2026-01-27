@@ -1,5 +1,5 @@
-SET enable_analyzer = 1;
 -- Tags: no-random-merge-tree-settings
+SET enable_analyzer = 1;
 
 SET optimize_move_to_prewhere = 1;
 SET convert_query_to_cnf = 0;
