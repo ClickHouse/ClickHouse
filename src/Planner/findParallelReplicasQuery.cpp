@@ -2,6 +2,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Core/Settings.h>
@@ -20,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/buildQueryTreeForShard.h>
 
 namespace DB
@@ -29,6 +31,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
+    extern const SettingsBool parallel_replicas_allow_merge_tables;
 }
 
 namespace ErrorCodes
@@ -37,9 +40,10 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-static bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context [[maybe_unused]])
+/// Check if storage can be used for parallel replicas.
+/// Returns true for MergeTree, StorageDummy, Materialized Views (with MergeTree target), and Merge tables.
+static bool canUseStorageForParallelReplicas(StoragePtr storage, const ContextPtr & context)
 {
-    auto storage = table_node.getStorage();
     const auto * mv = typeid_cast<const StorageMaterializedView *>(storage.get());
     if (mv)
     {
@@ -53,10 +57,24 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
         storage = mv->getTargetTable();
     }
 
+    /// Handle Merge tables - they can use parallel replicas by distributing the query
+    /// to replicas, where each replica reads from underlying MergeTree tables.
+    const auto * merge = typeid_cast<const StorageMerge *>(storage.get());
+    if (merge)
+        return context->getSettingsRef()[Setting::parallel_replicas_allow_merge_tables];
+
     if (!storage->isMergeTree() && !typeid_cast<const StorageDummy *>(storage.get()))
         return false;
 
     if (!storage->supportsReplication() && !context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree])
+        return false;
+
+    return true;
+}
+
+static bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context)
+{
+    if (!canUseStorageForParallelReplicas(table_node.getStorage(), context))
         return false;
 
     /// Parallel replicas not supported with FINAL.
@@ -91,7 +109,21 @@ std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const IQuery
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
-                return {};
+                const auto & table_function_node = query_tree_node->as<TableFunctionNode &>();
+
+                /// Table function must be resolved to check its storage
+                if (!table_function_node.isResolved())
+                    return {};
+
+                const auto & storage = table_function_node.getStorage();
+                if (!canUseStorageForParallelReplicas(storage, context))
+                    return {};
+
+                /// Parallel replicas not supported with FINAL.
+                if (table_function_node.hasTableExpressionModifiers() && table_function_node.getTableExpressionModifiers()->hasFinal())
+                    return {};
+
+                return res;
             }
             case QueryTreeNodeType::QUERY:
             {

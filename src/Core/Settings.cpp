@@ -6980,6 +6980,15 @@ Replace table function engines with their -Cluster alternatives
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
 Allow usage of materialized views with parallel replicas
 )", 0) \
+    DECLARE(Bool, parallel_replicas_allow_merge_tables, false, R"(
+Allow usage of Merge tables and merge() table function with parallel replicas.
+When enabled, queries to Merge tables or merge() function that contain MergeTree
+tables will distribute the query across replicas.
+WARNING: Currently only supported for Merge tables/functions that map to a SINGLE
+underlying MergeTree table on each replica. If multiple tables are matched on a
+single replica, the query will fail with a LOGICAL_ERROR because multiple tables
+will try to participate in coordination using the same replica ID.
+)", 0) \
     DECLARE(Bool, distributed_index_analysis, false, R"(
 Index analysis will be distributed across replicas.
 Beneficial for shared storage and huge amount of data in cluster.

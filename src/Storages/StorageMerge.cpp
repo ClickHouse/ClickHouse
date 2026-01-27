@@ -674,6 +674,20 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         {
             auto modified_context = Context::createCopy(context);
 
+            /// When StorageMerge matches multiple child tables on a follower (replica), we must disable
+            /// parallel replicas for those children. Otherwise, each child table would try to participate
+            /// in coordination with the same replica_num, causing "Duplicate announcement" errors.
+            ///
+            /// For single-table case: Allow normal granule-level coordination - this gives proper
+            /// parallel replica performance on replicated clusters (the original use case).
+            ///
+            /// For multi-table case: Disable child coordination - the query was already distributed
+            /// at the Merge level, suitable for sharded clusters with different data per shard.
+            if (context->canUseParallelReplicasOnFollower() && tables_count > 1)
+            {
+                modified_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            }
+
             size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
             size_t current_streams = std::min(current_need_streams, remaining_streams);
             remaining_streams -= current_streams;
