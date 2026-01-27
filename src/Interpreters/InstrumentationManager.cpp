@@ -70,6 +70,7 @@ String entryTypeToString(EntryType entry_type)
         case EntryType::EXIT: return "Exit";
         case EntryType::ENTRY_AND_EXIT: return "EntryAndExit";
     }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong entry_type to convert to String: {}", entry_type);
 }
 
 }
@@ -92,9 +93,8 @@ String InstrumentationManager::InstrumentedPointInfo::toString() const
 
         if (i < parameters.size() - 1)
             parameters_str += ", ";
-        else
-            parameters_str += "]";
     }
+    parameters_str += "]";
 
     return fmt::format("id {}, function_id {}, function_name '{}', handler_name {}, entry_type {}, symbol {}{}",
         id, function_id, function_name, handler_name, entry_type_str, symbol, parameters_str);
@@ -137,7 +137,7 @@ void InstrumentationManager::patchFunctionIfNeeded(Int32 function_id)
     if (status != XRayPatchingStatus::SUCCESS && status != XRayPatchingStatus::ONGOING)
     {
         throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error patching the function {}: {}",
-            function_id, status == NOT_INITIALIZED ? "XRay not initialized" : "failed");
+            function_id, status == XRayPatchingStatus::NOT_INITIALIZED ? "XRay not initialized" : "failed");
     }
 }
 
@@ -153,7 +153,7 @@ void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
         if (status != XRayPatchingStatus::SUCCESS && status != XRayPatchingStatus::ONGOING)
         {
             throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error unpatching the function {}: {}",
-                function_id, status == NOT_INITIALIZED ? "XRay not initialized" : "failed");
+                function_id, status == XRayPatchingStatus::NOT_INITIALIZED ? "XRay not initialized" : "failed");
         }
     }
 }
@@ -257,7 +257,7 @@ void InstrumentationManager::unpatchFunction(std::variant<UInt64, Instrumentatio
 
             for (const auto & info : instrumented_points)
             {
-                if (info.function_name == std::get<String>(id))
+                if (info.function_name == name)
                     functions_to_unpatch.push_back(info);
             }
 
@@ -544,6 +544,12 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
         auto it = profile_elements.find(instrumented_point.function_id);
         if (it != profile_elements.end())
         {
+            if (it->second.empty())
+            {
+                profile_elements.erase(it);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Profile element for instrumented point {} not found", instrumented_point.toString());
+            }
+
             auto & top_entry = it->second.top();
             auto & element = top_entry.element;
             auto previous_time = top_entry.time;
