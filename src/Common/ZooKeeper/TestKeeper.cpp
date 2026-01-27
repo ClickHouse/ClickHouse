@@ -2,6 +2,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/TestKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils.h>
 #include <base/types.h>
@@ -169,9 +170,23 @@ struct TestKeeperListRequest : ListRequest, TestKeeperRequest
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
-struct TestKeeperFilteredListRequest final : TestKeeperListRequest
+struct TestKeeperFilteredListRequest : TestKeeperListRequest
 {
+    TestKeeperFilteredListRequest() = default;
+    explicit TestKeeperFilteredListRequest(const ZooKeeperFilteredListRequest & base)
+        : TestKeeperListRequest(base), list_request_type(base.list_request_type) {}
+
     ListRequestType list_request_type;
+};
+
+struct TestKeeperFilteredListWithStatsAndDataRequest final : TestKeeperFilteredListRequest
+{
+    TestKeeperFilteredListWithStatsAndDataRequest() = default;
+    explicit TestKeeperFilteredListWithStatsAndDataRequest(const ZooKeeperFilteredListWithStatsAndDataRequest & base)
+        : TestKeeperFilteredListRequest(base), with_stat(base.with_stat), with_data(base.with_data) {}
+
+    bool with_stat;
+    bool with_data;
 };
 
 struct TestKeeperCheckRequest final : CheckRequest, TestKeeperRequest
@@ -266,6 +281,11 @@ struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperReques
             {
                 validateOrSpecifyRequestType(/*is_read=*/true);
                 requests.push_back(std::make_shared<TestKeeperExistsRequest>(*concrete_request_exists));
+            }
+            else if (const auto * concrete_request_list_with_stat_and_data = dynamic_cast<const ZooKeeperFilteredListWithStatsAndDataRequest *>(generic_request.get()))
+            {
+                validateOrSpecifyRequestType(/*is_read=*/true);
+                requests.push_back(std::make_shared<TestKeeperFilteredListWithStatsAndDataRequest>(*concrete_request_list_with_stat_and_data));
             }
             else
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
@@ -555,13 +575,28 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
             if (parentPath(child_it->first) == path)
             {
                 ListRequestType list_request_type = ALL;
+                bool with_stat = false;
+                bool with_data = false;
+
                 if (const auto * filtered_list = dynamic_cast<const TestKeeperFilteredListRequest *>(this))
                     list_request_type = filtered_list->list_request_type;
+
+                if (const auto * filtered_list_with_stat_and_data = dynamic_cast<const TestKeeperFilteredListWithStatsAndDataRequest *>(this))
+                {
+                    with_stat = filtered_list_with_stat_and_data->with_stat;
+                    with_data = filtered_list_with_stat_and_data->with_data;
+                }
 
                 const auto is_ephemeral = child_it->second.stat.ephemeralOwner != 0;
                 if (list_request_type == ALL || (is_ephemeral && list_request_type == EPHEMERAL_ONLY)
                     || (!is_ephemeral && list_request_type == PERSISTENT_ONLY))
                     response.names.emplace_back(baseName(child_it->first));
+
+                if (with_data)
+                    response.data.emplace_back(child_it->second.data);
+
+                if (with_stat)
+                    response.stats.emplace_back(child_it->second.stat);
             }
         }
 
@@ -770,6 +805,7 @@ TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::REMOVE_RECURSIVE);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CHECK_STAT);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::TRY_REMOVE);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA);
 
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
 }
@@ -1062,11 +1098,15 @@ void TestKeeper::list(
     const String & path,
     ListRequestType list_request_type,
     ListCallback callback,
-    WatchCallbackPtrOrEventPtr watch)
+    WatchCallbackPtrOrEventPtr watch,
+    bool with_stat,
+    bool with_data)
 {
-    TestKeeperFilteredListRequest request;
+    TestKeeperFilteredListWithStatsAndDataRequest request;
     request.path = path;
     request.list_request_type = list_request_type;
+    request.with_stat = with_stat;
+    request.with_data = with_data;
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperListRequest>(std::move(request));

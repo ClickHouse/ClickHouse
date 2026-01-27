@@ -80,7 +80,7 @@ void * allocNoTrack(size_t size, size_t alignment)
             buf = __real_malloc(size);
 
         if (unlikely(nullptr == buf))
-            throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot malloc {}.", ReadableSize(size));
+            throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot malloc {}.", ReadableSize(static_cast<double>(size)));
     }
     else
     {

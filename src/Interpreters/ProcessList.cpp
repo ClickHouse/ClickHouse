@@ -22,6 +22,7 @@
 namespace CurrentMetrics
 {
     extern const Metric Query;
+    extern const Metric QueryNonInternal;
 }
 
 namespace DB
@@ -484,6 +485,9 @@ QueryStatus::QueryStatus(
     , num_queries_increment(CurrentMetrics::Query)
     , is_internal(is_internal_)
 {
+    if (!is_internal)
+        num_non_internal_queries_increment.emplace(CurrentMetrics::QueryNonInternal);
+
     /// We have to pass `query_settings_` to this constructor because we can't use `context_->getSettings().max_execution_time` here:
     /// a QueryStatus is created with `ProcessList::mutex` locked (see ProcessList::insert) and calling `context_->getSettings()`
     /// would lock the context's lock too, whereas holding two those locks simultaneously is not good.

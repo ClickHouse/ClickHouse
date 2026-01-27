@@ -690,7 +690,7 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
             applyFilter(current_filter);
         }
         /// Another guess, if it's worth filtering at PREWHERE
-        else if (must_apply_filter || (filter.countBytesInFilter() < 0.6 * filter.size()))
+        else if (must_apply_filter || (static_cast<double>(filter.countBytesInFilter()) < 0.6 * static_cast<double>(filter.size())))
         {
             applyFilter(filter);
         }
