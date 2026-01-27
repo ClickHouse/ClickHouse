@@ -1,6 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SymbolIndex.h>
 #include <Core/Settings.h>
@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 namespace DB
@@ -99,7 +98,7 @@ struct AggregateFunctionFlameGraphTree
         return node;
     }
 
-    static void append(PaddedPODArray<UInt64> & values, PaddedPODArray<UInt64> & offsets, std::vector<UInt64> & frame)
+    static void append(PaddedPODArray<UInt64> & values, PaddedPODArray<UInt64> & offsets, VectorWithMemoryTracking<UInt64> & frame)
     {
         UInt64 prev = offsets.empty() ? 0 : offsets.back();
         offsets.push_back(prev + frame.size());
@@ -109,7 +108,7 @@ struct AggregateFunctionFlameGraphTree
 
     struct Trace
     {
-        using Frames = std::vector<UInt64>;
+        using Frames = VectorWithMemoryTracking<UInt64>;
 
         Frames frames;
 
@@ -121,15 +120,15 @@ struct AggregateFunctionFlameGraphTree
         size_t allocated_self = 0;
     };
 
-    using Traces = std::vector<Trace>;
+    using Traces = VectorWithMemoryTracking<Trace>;
 
     Traces dump(size_t max_depth, size_t min_bytes) const
     {
         Traces traces;
         Trace::Frames frames;
-        std::vector<size_t> allocated_total;
-        std::vector<size_t> allocated_self;
-        std::vector<ListNode *> nodes;
+        VectorWithMemoryTracking<size_t> allocated_total;
+        VectorWithMemoryTracking<size_t> allocated_self;
+        VectorWithMemoryTracking<ListNode *> nodes;
 
         nodes.push_back(root.children);
         allocated_total.push_back(root.allocated);
@@ -221,7 +220,7 @@ static void dumpFlameGraphImpl(
 {
     WriteBufferFromOwnString out;
 
-    std::unordered_map<uintptr_t, size_t> mapping;
+    UnorderedMapWithMemoryTracking<uintptr_t, size_t> mapping;
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     const SymbolIndex & symbol_index = SymbolIndex::instance();
@@ -398,7 +397,7 @@ struct AggregateFunctionFlameGraphData
     void merge(const AggregateFunctionFlameGraphTree & other_tree, Arena * arena)
     {
         AggregateFunctionFlameGraphTree::Trace::Frames frames;
-        std::vector<AggregateFunctionFlameGraphTree::ListNode *> nodes;
+        VectorWithMemoryTracking<AggregateFunctionFlameGraphTree::ListNode *> nodes;
 
         nodes.push_back(other_tree.root.children);
 
