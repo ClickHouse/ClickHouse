@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 -- Tags: long
 
 -- https://github.com/ClickHouse/ClickHouse/issues/21557

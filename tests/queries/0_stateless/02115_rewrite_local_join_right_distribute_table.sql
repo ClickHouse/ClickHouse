@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 -- Tags: global, no-parallel
 CREATE DATABASE IF NOT EXISTS test_02115;
 USE test_02115;
