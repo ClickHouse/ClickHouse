@@ -7,6 +7,7 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/PrometheusQueryResultType.h>
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Interpreters/executeQuery.h>
@@ -30,7 +31,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_REQUEST_PARAMETER;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
 }
@@ -59,34 +59,37 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     PrometheusQueryToSQLConverter::TimeSeriesTableInfo table_info;
     auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, getContext())->getInMemoryMetadataPtr();
     table_info.storage_id = time_series_storage->getStorageID();
-    table_info.timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
+    auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
+    UInt32 timestamp_scale = (isDecimal(timestamp_data_type) || isDateTime64(timestamp_data_type)) ? getDecimalScale(*timestamp_data_type) : 0;
+    table_info.timestamp_data_type = timestamp_data_type;
     table_info.value_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
 
     Field start_time;
     Field end_time;
     Field step;
     Field evaluation_time;
-    Field lookback_delta;
+    Field lookback_delta = 300.0;
+    Field default_resolution = 15.0;
 
     if (params.type == Type::Instant)
     {
-        evaluation_time = parseTimestamp(params.time_param);
-        lookback_delta = Field(300.0);
-        step = Field(15.0);
+        if (params.time_param.empty())
+            evaluation_time = DecimalField<DateTime64>{DecimalUtils::getCurrentDateTime64(timestamp_scale), timestamp_scale}; /// Current time as default
+        else
+            evaluation_time = DecimalField<DateTime64>{parseTimeSeriesTimestamp(params.time_param, timestamp_scale), timestamp_scale};
     }
     else if (params.type == Type::Range)
     {
-        start_time = parseTimestamp(params.start_param);
-        end_time = parseTimestamp(params.end_param);
-        step = parseStep(params.step_param);
-        lookback_delta = Field(end_time.safeGet<Float64>() - start_time.safeGet<Float64>());
+        start_time = DecimalField<DateTime64>{parseTimeSeriesTimestamp(params.start_param, timestamp_scale), timestamp_scale};
+        end_time = DecimalField<DateTime64>{parseTimeSeriesTimestamp(params.end_param, timestamp_scale), timestamp_scale};
+        step = DecimalField<Decimal64>{parseTimeSeriesDuration(params.step_param, timestamp_scale), timestamp_scale};
     }
 
     PrometheusQueryToSQLConverter converter(
         *query_tree,
         table_info,
         lookback_delta,
-        step
+        default_resolution
     );
 
     if (params.type == Type::Instant)
@@ -164,58 +167,6 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
 {
     UNUSED(response);
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The label values endpoint is not implemented");
-}
-
-Field PrometheusHTTPProtocolAPI::parseTimestamp(const String & time_param)
-{
-    if (time_param.empty())
-        return Field(static_cast<Float64>(time(nullptr))); // Current time as default
-
-    // Try to parse as Unix timestamp
-    try
-    {
-        Float64 timestamp = std::stod(time_param);
-        return Field(timestamp);
-    }
-    catch (...)
-    {
-        throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Invalid timestamp format: {}", time_param);
-    }
-}
-
-Field PrometheusHTTPProtocolAPI::parseStep(const String & step_param)
-{
-    if (step_param.empty())
-        return Field(15.0); // Default 15 seconds
-
-    try
-    {
-        // Parse step parameter (e.g., "15s", "1m", "1h")
-        if (step_param.ends_with("s"))
-        {
-            String num_str = step_param.substr(0, step_param.length() - 1);
-            return Field(std::stod(num_str));
-        }
-        else if (step_param.ends_with("m"))
-        {
-            String num_str = step_param.substr(0, step_param.length() - 1);
-            return Field(std::stod(num_str) * 60);
-        }
-        else if (step_param.ends_with("h"))
-        {
-            String num_str = step_param.substr(0, step_param.length() - 1);
-            return Field(std::stod(num_str) * 3600);
-        }
-        else
-        {
-            // Assume seconds if no unit
-            return Field(std::stod(step_param));
-        }
-    }
-    catch (...)
-    {
-        throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Invalid step format: {}", step_param);
-    }
 }
 
 void DB::PrometheusHTTPProtocolAPI::writeInstantQueryHeader(WriteBuffer & response)

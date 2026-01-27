@@ -1,7 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL.h>
 
 #include <algorithm>
-#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -16,8 +15,10 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
 namespace DB
@@ -37,76 +38,6 @@ namespace ErrorCodes
 namespace
 {
     using ResultType = PrometheusQueryResultType;
-
-    /// Finds an interval data type corresponding to a specified timestamp data type.
-    /// We support only DateTime64, DateTime and UInt32 as types to specify time.
-    /// For them we use Decimal64 and Int32 to specify intervals.
-    DataTypePtr getIntervalDataType(const DataTypePtr & timestamp_data_type)
-    {
-        switch (WhichDataType{*timestamp_data_type}.idx)
-        {
-            case TypeIndex::UInt32: // nobreak
-            case TypeIndex::DateTime:
-                return std::make_shared<DataTypeInt32>();
-            case TypeIndex::DateTime64:
-                return std::make_shared<DataTypeDecimal64>(getDecimalPrecision(*timestamp_data_type), getDecimalScale(*timestamp_data_type));
-            default:
-                break;
-        }
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find an interval type for timestamp type {}", timestamp_data_type);
-    }
-
-    /// Casts field to the timestamp data type or to the interval data type.
-    template <is_decimal T>
-    T fieldToDecimal(const Field & field, UInt32 target_scale)
-    {
-        switch (field.getType())
-        {
-            case Field::Types::Int64:
-            {
-                return field.safeGet<Int64>() * DecimalUtils::scaleMultiplier<T>(target_scale);
-            }
-            case Field::Types::UInt64:
-            {
-                return field.safeGet<UInt64>() * DecimalUtils::scaleMultiplier<T>(target_scale);
-            }
-            case Field::Types::Float64:
-            {
-                return static_cast<typename T::NativeType>(
-                    field.safeGet<Float64>() * static_cast<Float64>(DecimalUtils::scaleMultiplier<T>(target_scale)));
-            }
-            case Field::Types::Decimal32:
-            {
-                auto x = field.safeGet<Decimal32>();
-                return DecimalUtils::convertTo<Decimal64>(target_scale, x.getValue(), x.getScale());
-            }
-            case Field::Types::Decimal64:
-            {
-                auto x = field.safeGet<Decimal64>();
-                return DecimalUtils::convertTo<Decimal64>(target_scale, x.getValue(), x.getScale());
-            }
-            default:
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot cast field of type {} to duration", field.getType());
-        }
-    }
-
-    /// Converts a timestamp or an interval to AST.
-    template <is_decimal T>
-    ASTPtr decimalToAST(T decimal, UInt32 scale, const DataTypePtr & data_type)
-    {
-        auto data_type_idx = WhichDataType{*data_type}.idx;
-        if (data_type_idx == TypeIndex::DateTime64)
-        {
-            String str = toString(decimal, scale);
-            if (str.find_first_of(".eE") == String::npos)
-                str += "."; /// toDateTime64() doesn't accept an integer as its first argument, so we convert it to float.
-            return makeASTFunction("toDateTime64", make_intrusive<ASTLiteral>(str), make_intrusive<ASTLiteral>(scale));
-        }
-        else if (data_type_idx == TypeIndex::Decimal64)
-            return makeASTFunction("toDecimal64", make_intrusive<ASTLiteral>(toString(decimal, scale)), make_intrusive<ASTLiteral>(scale));
-        else
-            return make_intrusive<ASTLiteral>(DecimalField<T>{decimal, scale});
-    }
 
     /// Increases a timestamp to make it divisible by `step`.
     DateTime64 alignUp(DateTime64 time, Decimal64 step)
@@ -138,7 +69,6 @@ public:
         : converter(converter_)
         , timestamp_data_type(getTimeSeriesTableInfo().timestamp_data_type)
         , timestamp_scale((isDecimal(timestamp_data_type) || isDateTime64(timestamp_data_type)) ? getDecimalScale(*timestamp_data_type) : 0)
-        , interval_data_type(getIntervalDataType(timestamp_data_type))
         , value_data_type(getTimeSeriesTableInfo().value_data_type)
         , lookback_delta(fieldToInterval(converter_.lookback_delta))
         , default_resolution(fieldToInterval(converter_.default_resolution))
@@ -169,7 +99,6 @@ private:
     const PrometheusQueryToSQLConverter & converter;
     DataTypePtr timestamp_data_type;
     UInt32 timestamp_scale;
-    DataTypePtr interval_data_type;
     DataTypePtr value_data_type;
     Decimal64 lookback_delta;
     Decimal64 default_resolution;
@@ -903,25 +832,25 @@ private:
     /// Converts a scalar or an interval value to a timestamp compatible with the data types used in the TimeSeries table.
     DateTime64 fieldToTimestamp(const Field & field) const
     {
-        return fieldToDecimal<DateTime64>(field, timestamp_scale);
+        return parseTimeSeriesTimestamp(field, timestamp_scale);
     }
 
     /// Converts a scalar or an interval value to an interval compatible with the data types used in the TimeSeries table.
     Decimal64 fieldToInterval(const Field & field) const
     {
-        return fieldToDecimal<Decimal64>(field, timestamp_scale);
+        return parseTimeSeriesDuration(field, timestamp_scale);
     }
 
     /// Converts a timestamp to AST.
     ASTPtr timestampToAST(DateTime64 timestamp) const
     {
-        return decimalToAST(timestamp, timestamp_scale, timestamp_data_type);
+        return timeSeriesTimestampToAST(timestamp, timestamp_data_type);
     }
 
     /// Converts a interval to AST.
     ASTPtr intervalToAST(Decimal64 interval) const
     {
-        return decimalToAST(interval, timestamp_scale, interval_data_type);
+        return timeSeriesDurationToAST(interval, timestamp_data_type);
     }
 };
 
