@@ -31,6 +31,11 @@ SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersio
 {
 }
 
+String SerializationObjectSharedData::getName() const
+{
+    return "ObjectSharedData(" + std::to_string(static_cast<int>(serialization_version.value)) + ", " + dynamic_type->getName() + ", " + std::to_string(buckets) + ")";
+}
+
 SerializationObjectSharedData::SerializationVersion::SerializationVersion(UInt64 version) : value(static_cast<Value>(version))
 {
     checkVersion(version);

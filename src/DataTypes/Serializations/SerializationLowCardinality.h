@@ -17,6 +17,8 @@ private:
 public:
     explicit SerializationLowCardinality(const DataTypePtr & dictionary_type);
 
+    String getName() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

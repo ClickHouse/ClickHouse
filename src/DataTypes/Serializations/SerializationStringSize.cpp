@@ -12,6 +12,11 @@ SerializationStringSize::SerializationStringSize(MergeTreeStringSerializationVer
 {
 }
 
+String SerializationStringSize::getName() const
+{
+    return "StringSize(" + std::to_string(static_cast<int>(version)) + ")";
+}
+
 void SerializationStringSize::enumerateStreams(
     EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {

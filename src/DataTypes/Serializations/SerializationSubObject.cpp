@@ -21,6 +21,11 @@ SerializationSubObject::SerializationSubObject(
 {
 }
 
+String SerializationSubObject::getName() const
+{
+    return "SubObject(" + paths_prefix + ", " + dynamic_type->getName() + ")";
+}
+
 struct DeserializeBinaryBulkStateSubObject : public ISerialization::DeserializeBinaryBulkState
 {
     std::unordered_map<String, ISerialization::DeserializeBinaryBulkStatePtr> typed_path_states;

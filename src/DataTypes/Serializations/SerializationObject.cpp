@@ -27,6 +27,11 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
+String SerializationObject::getName() const
+{
+    return "Object";
+}
+
 SerializationObject::SerializationObject(
     const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
     const std::unordered_set<String> & paths_to_skip_,

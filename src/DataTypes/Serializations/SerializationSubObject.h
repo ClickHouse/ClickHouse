@@ -20,6 +20,8 @@ class SerializationSubObject final : public SimpleTextSerialization
 public:
     SerializationSubObject(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type);
 
+    String getName() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

@@ -25,6 +25,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+String SerializationNullable::getName() const
+{
+    return "Nullable(" + nested->getName() + ", " + std::to_string(use_default_null_map) + ")";
+}
+
 void SerializationNullable::enumerateStreams(
     EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {

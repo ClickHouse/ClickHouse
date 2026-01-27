@@ -11,6 +11,8 @@ class SerializationDateTime64 final : public SerializationDecimalBase<DateTime64
 public:
     SerializationDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_);
 
+    String getName() const override;
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;
     bool tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;

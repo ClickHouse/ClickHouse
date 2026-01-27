@@ -16,6 +16,8 @@ public:
     {
     }
 
+    String getName() const override;
+
     struct SerializationVersion
     {
         enum Value
