@@ -25,7 +25,7 @@ public:
     {
         /// sRGB is already in Cartesian form, so we can directly convert to OKLab
         /// Steps 1-3: sRGB to OKLab (handled by ColorConversion namespace helper)
-        return srgbToOklab(rgb, gamma);
+        return ColorConversion::srgbToOklab(rgb, gamma);
     }
 };
 }
@@ -39,7 +39,7 @@ REGISTER_FUNCTION(ColorSRGBToOKLAB)
 
         :::note
         **OKLAB** is a perceptually uniform color space.
-        Its three coordinates are `L` (the lightness in the range `[0...1]`), `a (Green–Red axis)` and `b (Blue–Yellow axis)`.
+        Its three coordinates are `L` (the lightness in the range `[0...1]`), `a (Green-Red axis)` and `b (Blue-Yellow axis)`.
         OKLab is designed to be perceptually uniform while remaining cheap to compute.
         :::
 

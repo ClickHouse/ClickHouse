@@ -61,6 +61,68 @@ namespace ColorConversion
     constexpr Mat3x3 lms_to_linear_base = {4.0767416621, -3.3077115913,  0.2309699292,
                                            -1.2684380046,  2.6097574011, -0.3413193965,
                                            -0.0041960863, -0.7034186147,  1.7076147010};
+
+    inline Color srgbToOklab(const Color & rgb, Float64 gamma)
+    {
+        /// Step 1: sRGB to Linear sRGB (gamma correction)
+        Color rgb_lin;
+        for (size_t i = 0; i < channels; ++i)
+            rgb_lin[i] = std::pow(rgb[i] / 255.0, gamma);
+
+        /// Step 2: Linear sRGB to LMS (cone response)
+        Color lms{};
+        for (size_t i = 0; i < channels; ++i)
+        {
+            for (size_t channel = 0; channel < channels; ++channel)
+                lms[i] = std::fma(rgb_lin[channel], linear_to_lms_base[(3 * i) + channel], lms[i]);
+            lms[i] = std::cbrt(lms[i]);
+        }
+
+        /// Step 3: LMS to OKLab
+        Color oklab{};
+        for (size_t i = 0; i < channels; ++i)
+        {
+            for (size_t channel = 0; channel < channels; ++channel)
+                oklab[i] = std::fma(lms[channel], lms_to_oklab_base[(3 * i) + channel], oklab[i]);
+        }
+
+        return oklab;
+    }
+
+        /// Common helper: OKLab -> sRGB conversion
+    /// This is shared by both OKLAB and OKLCH conversions to sRGB
+    inline Color oklabToSrgb(const Color & oklab, Float64 gamma)
+    {
+        /// Step 1: OKLab to LMS (cone response)
+        Color lms{};
+        for (size_t i = 0; i < channels; ++i)
+        {
+            for (size_t channel = 0; channel < channels; ++channel)
+                lms[i] = std::fma(oklab[channel], oklab_to_lms_base[(3 * i) + channel], lms[i]);
+            lms[i] = lms[i] * lms[i] * lms[i];
+        }
+
+        /// Step 2: LMS to Linear sRGB
+        Color rgb{};
+        for (size_t i = 0; i < channels; ++i)
+        {
+            for (size_t channel = 0; channel < channels; ++channel)
+                rgb[i] = std::fma(lms[channel], lms_to_linear_base[(3 * i) + channel], rgb[i]);
+        }
+
+        /// Step 3: Linear sRGB to sRGB (gamma correction)
+        if (gamma == 0)
+            gamma = gamma_fallback;
+
+        Float64 power = 1 / gamma;
+        for (size_t i = 0; i < channels; ++i)
+        {
+            rgb[i] = std::clamp(rgb[i], 0.0, 1.0);
+            rgb[i] = std::pow(rgb[i], power) * 255.0;
+        }
+
+        return rgb;
+    }
 }
 
 /** Base class for functions that convert color from sRGB color space to perceptual color spaces.
@@ -170,36 +232,6 @@ public:
 
         return ColumnTuple::create(Columns({std::move(col_channel0), std::move(col_channel1), std::move(col_channel2)}));
     }
-
-protected:
-    /// Common helper: sRGB -> OKLab conversion (steps 1-3 of the conversion pipeline)
-    /// This is shared by both OKLAB and OKLCH conversions from sRGB
-    ColorConversion::Color srgbToOklab(const ColorConversion::Color & rgb, Float64 gamma) const
-    {
-        /// Step 1: sRGB to Linear sRGB (gamma correction)
-        ColorConversion::Color rgb_lin;
-        for (size_t i = 0; i < ColorConversion::channels; ++i)
-            rgb_lin[i] = std::pow(rgb[i] / 255.0, gamma);
-
-        /// Step 2: Linear sRGB to LMS (cone response)
-        ColorConversion::Color lms{};
-        for (size_t i = 0; i < ColorConversion::channels; ++i)
-        {
-            for (size_t channel = 0; channel < ColorConversion::channels; ++channel)
-                lms[i] = std::fma(rgb_lin[channel], ColorConversion::linear_to_lms_base[(3 * i) + channel], lms[i]);
-            lms[i] = std::cbrt(lms[i]);
-        }
-
-        /// Step 3: LMS to OKLab
-        ColorConversion::Color oklab{};
-        for (size_t i = 0; i < ColorConversion::channels; ++i)
-        {
-            for (size_t channel = 0; channel < ColorConversion::channels; ++channel)
-                oklab[i] = std::fma(lms[channel], ColorConversion::lms_to_oklab_base[(3 * i) + channel], oklab[i]);
-        }
-
-        return oklab;
-    }
 };
 
 /** Base class for functions that convert color from perceptual color spaces to sRGB color space.
@@ -306,42 +338,6 @@ public:
         }
 
         return ColumnTuple::create(Columns({std::move(col_red), std::move(col_green), std::move(col_blue)}));
-    }
-protected:
-
-    /// Common helper: OKLab -> sRGB conversion
-    /// This is shared by both OKLAB and OKLCH conversions to sRGB
-    ColorConversion::Color oklabToSrgb(const ColorConversion::Color & oklab, Float64 gamma) const
-    {
-        /// Step 1: OKLab to LMS (cone response)
-        ColorConversion::Color lms{};
-        for (size_t i = 0; i < ColorConversion::channels; ++i)
-        {
-            for (size_t channel = 0; channel < ColorConversion::channels; ++channel)
-                lms[i] = std::fma(oklab[channel], ColorConversion::oklab_to_lms_base[(3 * i) + channel], lms[i]);
-            lms[i] = lms[i] * lms[i] * lms[i];
-        }
-
-        /// Step 2: LMS to Linear sRGB
-        ColorConversion::Color rgb{};
-        for (size_t i = 0; i < ColorConversion::channels; ++i)
-        {
-            for (size_t channel = 0; channel < ColorConversion::channels; ++channel)
-                rgb[i] = std::fma(lms[channel], ColorConversion::lms_to_linear_base[(3 * i) + channel], rgb[i]);
-        }
-
-        /// Step 3: Linear sRGB to sRGB (gamma correction)
-        if (gamma == 0)
-            gamma = ColorConversion::gamma_fallback;
-
-        Float64 power = 1 / gamma;
-        for (size_t i = 0; i < ColorConversion::channels; ++i)
-        {
-            rgb[i] = std::clamp(rgb[i], 0.0, 1.0);
-            rgb[i] = std::pow(rgb[i], power) * 255.0;
-        }
-
-        return rgb;
     }
 };
 

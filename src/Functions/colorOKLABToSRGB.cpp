@@ -29,7 +29,7 @@ public:
     /// OKLAB -> sRGB conversion. Follows the step-by-step pipeline described in Ottosson's article. See ColorConversion.h
     ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklab, Float64 gamma) const
     {
-        return oklabToSrgb(oklab, gamma);
+        return ColorConversion::oklabToSrgb(oklab, gamma);
     }
 };
 }
@@ -47,7 +47,8 @@ REGISTER_FUNCTION(FunctionColorOKLABToSRGB)
         - a: green-red opponent axis
         - b: blue-yellow opponent axis
 
-        The a and b components are not bounded. OKLab is designed to be perceptually uniform
+        The a and b components are theoreticall unbounded, but in practice are inbetween -0.4 and 0.4. 
+        OKLab is designed to be perceptually uniform
         while remaining inexpensive to compute.
 
         The conversion is intended to be the inverse of colorSRGBToOKLAB and consists of

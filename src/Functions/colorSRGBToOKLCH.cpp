@@ -24,10 +24,10 @@ public:
     ColorConversion::Color convertFromSrgb(const ColorConversion::Color & rgb, Float64 gamma) const
     {
         /// Step 1-3: sRGB to OKLab (handled by ColorConversion namespace helper)
-        ColorConversion::Color oklab = srgbToOklab(rgb, gamma);
+        auto oklab = ColorConversion::srgbToOklab(rgb, gamma);
 
         /// Step 4: OKLab to OKLCH (Cartesian to cylindrical)
-        ColorConversion::Color oklch = oklab;
+        auto oklch = oklab;
 
         Float64 a = oklab[1];
         Float64 b = oklab[2];

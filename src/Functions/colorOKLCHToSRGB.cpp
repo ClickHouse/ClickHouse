@@ -33,11 +33,11 @@ public:
         Float64 chroma = oklch[1];
         Float64 hue_rad = oklch[2] * ColorConversion::deg2rad;
 
-        ColorConversion::Color oklab = oklch;
+        auto oklab = oklch;
         oklab[1] = chroma * std::cos(hue_rad);
         oklab[2] = chroma * std::sin(hue_rad);
 
-        return oklabToSrgb(oklab, gamma);
+        return ColorConversion::oklabToSrgb(oklab, gamma);
     }
 };
 }
