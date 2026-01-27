@@ -714,10 +714,10 @@ void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & 
 
 } // anonymous namespace
 
-/// Union (OR) of multiple posting lists.
-/// Simply iterates through all cursors and sets bits for matching row IDs.
-/// brute_force_apply and density_threshold are unused here since union
-/// always uses linear scan (no skip-list optimization needed for OR).
+/// Union (OR) of multiple posting lists for TextSearchMode::Any.
+/// Iterates through each cursor's posting list and sets output bits for all matching row IDs.
+/// Parameters brute_force_apply and density_threshold are unused - union always uses
+/// linear scan since skip-list optimization provides no benefit for OR operations.
 void lazyUnionPostingLists(IColumn & column, const PostingListCursorMap & postings, const std::vector<String> & search_tokens, size_t column_offset, size_t row_offset, size_t num_rows, bool /*brute_force_apply*/, float /*density_threshold*/)
 {
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
@@ -735,16 +735,17 @@ void lazyUnionPostingLists(IColumn & column, const PostingListCursorMap & postin
         cursor->linearOr(out, row_offset, num_rows);
 }
 
-/// Intersection (AND) of multiple posting lists with adaptive algorithm selection.
+/// Intersection (AND) of multiple posting lists for TextSearchMode::All.
 ///
-/// Algorithm selection strategy:
-///   1. Single list (n=1): direct linear scan
-///   2. High density or brute_force_apply: use brute-force bitmap counting
-///   3. Otherwise: use skip-list based leapfrog intersection
+/// Uses adaptive algorithm selection based on posting list density:
+///   1. Single list (n=1): direct linear scan (same as union)
+///   2. Dense lists (avg density >= threshold) or brute_force_apply=true:
+///      brute-force bitmap counting with sequential memory access
+///   3. Sparse lists: skip-list based leapfrog intersection with lazy block decoding
 ///
-/// The density-based switching is crucial for performance:
-///   - Sparse lists: skip-list is faster (fewer elements to process)
-///   - Dense lists: brute-force is faster (sequential memory access pattern)
+/// Performance characteristics:
+///   - Sparse lists benefit from skip-list (fewer elements to decode and process)
+///   - Dense lists benefit from brute-force (better cache locality, no branch misprediction)
 void lazyIntersectPostingLists(IColumn & column, const PostingListCursorMap & postings, const std::vector<String> & search_tokens, size_t column_offset, size_t row_offset, size_t num_rows, bool brute_force_apply, float density_threshold)
 {
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();

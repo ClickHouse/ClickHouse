@@ -295,12 +295,11 @@ size_t MergeTreeReaderTextIndex::readRows(
         /// If our reader is not first in the chain, canSkipMark is not called in RangeReader.
         /// TODO: adjust the code in RangeReader to call canSkipMark for all readers.
         if (!analyzed_granules.contains(static_cast<UInt32>(from_mark)))
-        {
             canSkipMark(from_mark, current_task_last_mark);
-        }
 
         if (!may_be_true_granules.contains(static_cast<UInt32>(from_mark)))
         {
+            /// Granule doesn't match any search condition - fill with zeros
             for (const auto & column : res_columns)
             {
                 auto & column_data = assert_cast<ColumnUInt8 &>(column->assumeMutableRef()).getData();
@@ -309,40 +308,22 @@ size_t MergeTreeReaderTextIndex::readRows(
         }
         else if (lazy_apply_posting_list)
         {
+            /// Lazy mode: use PostingListCursor for on-demand block decoding.
+            /// - readStreamPostingsIfNeeded registers required segments to cursors without decoding
+            /// - stream_posting_cursors (class member) persists across marks, enabling block-level
+            ///   binary search and lazy decompression during intersection/union operations
+            /// - Cursors decode blocks only when seek() or next() is called, reducing memory and CPU
             readStreamPostingsIfNeeded(from_mark);
-            for (size_t i = 0; i < res_columns.size(); ++i)
-            {
-                auto & column_mutable = res_columns[i]->assumeMutableRef();
-
-                if (is_always_true[i])
-                {
-                    auto & column_data = assert_cast<ColumnUInt8 &>(column_mutable).getData();
-                    column_data.resize_fill(column_mutable.size() + rows_to_read, 1);
-                }
-                else
-                {
-                    fillColumn(column_mutable, columns_to_read[i].name, stream_posting_cursors, from_row, rows_to_read);
-                }
-            }
+            fillColumnsWithPostings(res_columns, stream_posting_cursors, from_row, rows_to_read);
         }
         else
         {
+            /// Materialize mode: decode entire posting lists into roaring bitmaps upfront.
+            /// - readPostingsIfNeeded fully decodes all posting blocks for this mark
+            /// - Returns local PostingsMap that is discarded after processing this mark
+            /// - Simpler but uses more memory for large posting lists
             auto mark_postings = readPostingsIfNeeded(from_mark);
-
-            for (size_t i = 0; i < res_columns.size(); ++i)
-            {
-                auto & column_mutable = res_columns[i]->assumeMutableRef();
-
-                if (is_always_true[i])
-                {
-                    auto & column_data = assert_cast<ColumnUInt8 &>(column_mutable).getData();
-                    column_data.resize_fill(column_mutable.size() + rows_to_read, 1);
-                }
-                else
-                {
-                    fillColumn(column_mutable, columns_to_read[i].name, mark_postings, from_row, rows_to_read);
-                }
-            }
+            fillColumnsWithPostings(res_columns, mark_postings, from_row, rows_to_read);
         }
 
         ++from_mark;
@@ -633,6 +614,29 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
 }
+
+template <typename PostingsContainer>
+void MergeTreeReaderTextIndex::fillColumnsWithPostings(Columns & res_columns, PostingsContainer & postings, size_t from_row, size_t rows_to_read)
+{
+    for (size_t i = 0; i < res_columns.size(); ++i)
+    {
+        auto & column_mutable = res_columns[i]->assumeMutableRef();
+
+        if (is_always_true[i])
+        {
+            auto & column_data = assert_cast<ColumnUInt8 &>(column_mutable).getData();
+            column_data.resize_fill(column_mutable.size() + rows_to_read, 1);
+        }
+        else
+        {
+            fillColumn(column_mutable, columns_to_read[i].name, postings, from_row, rows_to_read);
+        }
+    }
+}
+
+/// Explicit template instantiations
+template void MergeTreeReaderTextIndex::fillColumnsWithPostings<PostingsMap>(Columns &, PostingsMap &, size_t, size_t);
+template void MergeTreeReaderTextIndex::fillColumnsWithPostings<PostingListCursorMap>(Columns &, PostingListCursorMap &, size_t, size_t);
 
 
 void MergeTreeReaderTextIndex::readStreamPostingsIfNeeded(size_t mark)

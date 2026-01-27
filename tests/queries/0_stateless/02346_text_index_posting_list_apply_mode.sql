@@ -146,8 +146,6 @@ OPTIMIZE TABLE tab_uncompressed FINAL;
 -- PART 3: hasToken Tests (Single Token Match)
 -- =============================================================================
 
-SELECT '=== hasToken Tests ===';
-
 -- Test: hasToken with high-frequency token
 -- apple appears in: 0,2,5,8 => 4000 rows
 SELECT 'hasToken(apple):';
@@ -194,8 +192,6 @@ SELECT
 -- =============================================================================
 -- PART 4: hasAllTokens Tests (AND / Intersection)
 -- =============================================================================
-
-SELECT '=== hasAllTokens Tests ===';
 
 -- Test: hasAllTokens with 2 tokens - common intersection
 -- apple AND banana: 0,8 => 2000 rows
@@ -270,8 +266,6 @@ SELECT
 -- PART 5: hasAnyToken Tests (OR / Union)
 -- =============================================================================
 
-SELECT '=== hasAnyToken Tests ===';
-
 -- Test: hasAnyToken with 2 tokens - overlapping sets
 -- apple OR cherry: 0,2,5,8 + 1,2,6,8 = 0,1,2,5,6,8 => 6000 rows
 SELECT 'hasAnyToken(apple cherry):';
@@ -336,8 +330,6 @@ SELECT
 -- PART 6: Combined Queries (AND + OR)
 -- =============================================================================
 
-SELECT '=== Combined Queries ===';
-
 -- Test: hasToken AND hasToken
 SELECT 'hasToken(apple) AND hasToken(banana):';
 SELECT
@@ -392,8 +384,6 @@ SELECT
 -- =============================================================================
 -- PART 7: Brute Force Settings Tests
 -- =============================================================================
-
-SELECT '=== Brute Force Settings ===';
 
 -- Test: text_index_brute_force_apply = true with hasAllTokens
 SELECT 'brute_force_apply=true hasAllTokens:';
@@ -453,8 +443,6 @@ SET text_index_brute_force_density_threshold = 0.2;
 -- PART 8: Edge Cases
 -- =============================================================================
 
-SELECT '=== Edge Cases ===';
-
 -- Test: Query with many tokens (5 tokens)
 SELECT 'hasAllTokens 5 tokens:';
 SELECT
@@ -507,8 +495,6 @@ SELECT
 -- =============================================================================
 -- PART 9: Stress Tests with Larger Data
 -- =============================================================================
-
-SELECT '=== Stress Tests ===';
 
 DROP TABLE IF EXISTS tab_stress;
 CREATE TABLE tab_stress

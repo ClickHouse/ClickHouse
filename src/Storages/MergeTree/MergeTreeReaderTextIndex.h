@@ -65,6 +65,10 @@ private:
     void fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows);
     void fillColumn(IColumn & column, const String & column_name, PostingListCursorMap & postings, size_t row_offset, size_t num_rows);
 
+    /// Template helper to fill all columns with postings from either PostingsMap or PostingListCursorMap.
+    template <typename PostingsContainer>
+    void fillColumnsWithPostings(Columns & res_columns, PostingsContainer & postings, size_t from_row, size_t rows_to_read);
+
     using TokenToPostingsInfosMap = MergeTreeIndexGranuleText::TokenToPostingsInfosMap;
 
     size_t getNumRowsInGranule(size_t index_mark) const;

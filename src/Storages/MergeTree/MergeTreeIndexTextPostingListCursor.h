@@ -123,33 +123,47 @@ using PostingListCursorMap = absl::flat_hash_map<std::string_view, PostingListCu
 
 /// Compute union (OR) of multiple posting lists using lazy decoding.
 ///
-/// For each posting list, iterates through row IDs and sets corresponding bits in column.
-/// Automatically switches to brute-force when density exceeds threshold.
+/// Used for TextSearchMode::Any - a row matches if it contains ANY of the search tokens.
+/// Iterates through each posting list and sets corresponding bits in the output column.
 ///
-/// @param column       Output column (UInt8), 1 = row matches
-/// @param postings     Posting list cursors to union
-/// @param column_offset Starting position in column to write results
-/// @param row_offset   First row ID in the range
-/// @param num_rows     Number of rows to process
-/// @param brute_force_apply  Force brute-force algorithm regardless of density
-/// @param density_threshold  Switch to brute-force if density >= this value
+/// Note: brute_force_apply and density_threshold parameters are unused in union operation
+/// since linear scan is always used (no optimization benefit from skip-list for OR).
+///
+/// @param column         Output column (UInt8), sets bit to 1 for rows matching any token
+/// @param postings       Map from token to its posting list cursor
+/// @param search_tokens  List of tokens to search (determines iteration order)
+/// @param column_offset  Starting position in output column to write results
+/// @param row_offset     First row ID in the processing range
+/// @param num_rows       Number of rows to process
+/// @param brute_force_apply  Unused (kept for API consistency with intersection)
+/// @param density_threshold  Unused (kept for API consistency with intersection)
 void lazyUnionPostingLists(IColumn & column, const PostingListCursorMap & postings, const std::vector<String> & search_tokens, size_t column_offset, size_t row_offset, size_t num_rows, bool brute_force_apply, float density_threshold);
 
 /// Compute intersection (AND) of multiple posting lists using lazy decoding.
 ///
-/// Uses adaptive algorithm selection:
-/// - 2 lists: two-pointer merge
-/// - 3 lists: three-way merge
-/// - 4+ lists: four-way merge with smallest lists
-/// - Brute-force: when any list has density >= threshold
+/// Used for TextSearchMode::All - a row matches only if it contains ALL search tokens.
+/// Employs adaptive algorithm selection based on posting list density:
 ///
-/// @param column       Output column (UInt8), 1 = row matches all tokens
-/// @param postings     Posting list cursors to intersect (sorted by size internally)
-/// @param column_offset Starting position in column to write results
-/// @param row_offset   First row ID in the range
-/// @param num_rows     Number of rows to process
+/// Algorithm selection:
+///   - Single list (n=1): direct linear scan, equivalent to union
+///   - Dense lists (density >= threshold) or brute_force_apply=true:
+///     Uses brute-force bitmap counting - each cursor marks its row IDs,
+///     then count rows where all cursors have set bits (sequential memory access)
+///   - Sparse lists: uses skip-list based leapfrog intersection -
+///     cursors advance together, only decode blocks as needed (fewer elements to process)
+///
+/// The density-based switching optimizes for different access patterns:
+///   - Sparse posting lists: skip-list is faster due to fewer elements
+///   - Dense posting lists: brute-force is faster due to sequential memory access
+///
+/// @param column         Output column (UInt8), sets bit to 1 for rows matching all tokens
+/// @param postings       Map from token to its posting list cursor
+/// @param search_tokens  List of tokens to search (determines which cursors to use)
+/// @param column_offset  Starting position in output column to write results
+/// @param row_offset     First row ID in the processing range
+/// @param num_rows       Number of rows to process
 /// @param brute_force_apply  Force brute-force algorithm regardless of density
-/// @param density_threshold  Switch to brute-force if density >= this value
+/// @param density_threshold  Switch to brute-force if average density >= this value
 void lazyIntersectPostingLists(IColumn & column, const PostingListCursorMap & postings, const std::vector<String> & search_tokens, size_t column_offset, size_t row_offset, size_t num_rows, bool brute_force_apply, float density_threshold);
 
 }

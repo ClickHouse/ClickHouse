@@ -1,4 +1,3 @@
-=== hasToken Tests ===
 hasToken(apple):
 4000	4000	4000	1
 hasToken(banana):
@@ -9,7 +8,6 @@ hasToken(nonexistent):
 0	0	0	1
 hasToken(empty):
 0	0	0	1
-=== hasAllTokens Tests ===
 hasAllTokens(apple banana):
 2000	2000	2000	1
 hasAllTokens(apple cherry):
@@ -26,7 +24,6 @@ hasAllTokens(apple) single:
 4000	4000	4000	1
 hasAllTokens(apple apple):
 4000	4000	4000	1
-=== hasAnyToken Tests ===
 hasAnyToken(apple cherry):
 6000	6000	6000	1
 hasAnyToken(apple elderberry):
@@ -41,7 +38,6 @@ hasAnyToken(apple nonexistent):
 4000	4000	4000	1
 hasAnyToken(apple) single:
 4000	4000	4000	1
-=== Combined Queries ===
 hasToken(apple) AND hasToken(banana):
 2000	2000	2000	1
 hasToken(apple) OR hasToken(elderberry):
@@ -54,7 +50,6 @@ hasAllTokens(apple banana) OR hasAllTokens(cherry date):
 3000	3000	3000	1
 NOT hasToken(apple):
 6000	6000	6000	1
-=== Brute Force Settings ===
 brute_force_apply=true hasAllTokens:
 1000	1000	1
 brute_force_apply=true hasAnyToken:
@@ -67,7 +62,6 @@ density_threshold=0.0 hasAllTokens:
 2000	2000	1
 density_threshold=1.0 hasAllTokens:
 2000	2000	1
-=== Edge Cases ===
 hasAllTokens 5 tokens:
 0	0	0	1
 hasAnyToken 5 tokens:
@@ -80,7 +74,6 @@ hasToken with LIMIT:
 100	100	100	1
 hasToken with ORDER BY:
 9998	9998	9998	1
-=== Stress Tests ===
 Stress hasToken(alpha):
 50000	1
 Stress hasAllTokens(alpha beta):
