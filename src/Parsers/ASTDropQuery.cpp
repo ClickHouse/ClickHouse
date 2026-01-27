@@ -37,6 +37,8 @@ ASTPtr ASTDropQuery::clone() const
 
 void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    auto db = getDatabaseAst();
+    auto tbl = getTableAst();
     if (kind == ASTDropQuery::Kind::Drop)
         ostr << "DROP ";
     else if (kind == ASTDropQuery::Kind::Detach)
@@ -53,7 +55,7 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
         ostr << "ALL ";
     if (has_tables)
         ostr << "TABLES FROM ";
-    else if (!getTableAst() && !database_and_tables && getDatabaseAst())
+    else if (!tbl && !database_and_tables && db)
         ostr << "DATABASE ";
     else if (is_dictionary)
         ostr << "DICTIONARY ";
@@ -68,8 +70,6 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     if (if_empty)
         ostr << "IF EMPTY ";
 
-    auto db = getDatabaseAst();
-    auto tbl = getTableAst();
     if (!tbl && !database_and_tables && db)
     {
         db->format(ostr, settings, state, frame);

@@ -97,6 +97,10 @@ public:
     /// Remove 'FORMAT <fmt> and INTO OUTFILE <file>' if exists
     static bool resetOutputASTIfExist(IAST & ast);
 
+    /// Remove output options (FORMAT, INTO OUTFILE, etc.) from this AST node.
+    /// Virtual to allow subclasses to adjust their own indices after children removal.
+    virtual void resetOutputAST();
+
     bool hasOutputOptions() const;
 
 protected:

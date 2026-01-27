@@ -65,6 +65,8 @@ public:
 
     void cloneTableOptions(ASTQueryWithTableAndOutput & cloned) const;
 
+    void resetOutputAST() override;
+
 protected:
     UInt8 database_index = INVALID_INDEX;
     UInt8 table_index = INVALID_INDEX;
