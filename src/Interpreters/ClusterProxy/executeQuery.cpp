@@ -514,12 +514,19 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
         context_mutable->setSetting("use_hedged_requests", Field{false});
     }
 
-    /// For the case (default) when parallel replicas execute local plan for initiator node, aggregation in order optimization
-    /// can be affected by filter pushdown optimization which is impletented differently for local execution and remote one,
-    /// which, in turn, can lead to different read modes (Default, InOrder, InReverseOrder) from the same table on local and remote replicas
-    /// i.e. LOGICAL_ERROR like 'Replica 1 decided to read in WithOrder mode, not in ReverseOrder'
-    /// So, we disable the optimization till remote execution will use query plan and optimization will applied in uniform way
-    /// for local and remote nodes
+    /// When parallel replicas use a local query plan on the initiator node,
+    /// the "aggregation in order" optimization can be affected by filter pushdown,
+    /// which is implemented differently for local and remote execution.
+    ///
+    /// This, in turn, may lead to different read modes (Default, InOrder, InReverseOrder)
+    /// being chosen for the same table on local and remote replicas,
+    /// resulting in a LOGICAL_ERROR such as:
+    /// "Replica 1 decided to read in WithOrder mode, not in ReverseOrder".
+    ///
+    /// Since the "aggregation in order" optimization is disabled by default,
+    /// we mitigate this issue by explicitly disabling it for parallel replicas
+    /// until remote execution also uses the query plan, so that filter pushdown
+    /// is applied uniformly on local and remote nodes.
     if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::optimize_aggregation_in_order].value)
     {
         if (settings[Setting::optimize_aggregation_in_order].changed)
