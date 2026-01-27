@@ -1,4 +1,5 @@
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnString.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -9,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
@@ -23,6 +25,12 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_FILE_NAME;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool enable_hybrid_storage;
+    extern const MergeTreeSettingsUInt64 hybrid_storage_max_row_size;
 }
 
 namespace
@@ -117,6 +125,45 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
         auto compression = getCodecDescOrDefault(column.name, default_codec);
         MergeTreeDataPartWriterWide::addStreams(column, compression);
     }
+
+    /// Initialize hybrid storage if enabled and not skipped
+    /// skip_hybrid_row_writing is set for column-only output streams (vertical merge)
+    /// where columns are written one at a time, so __row cannot be properly generated
+    hybrid_storage_enabled = (*storage_settings)[MergeTreeSetting::enable_hybrid_storage]
+        && !settings.skip_hybrid_row_writing;
+    if (hybrid_storage_enabled)
+    {
+        /// Determine non-key columns to serialize in row format
+        NameSet key_columns_set;
+        if (metadata_snapshot)
+        {
+            const auto & primary_key_columns = metadata_snapshot->getPrimaryKeyColumns();
+            key_columns_set.insert(primary_key_columns.begin(), primary_key_columns.end());
+        }
+
+        for (const auto & column : columns_list)
+        {
+            if (!key_columns_set.contains(column.name))
+                non_key_columns.push_back(column);
+        }
+
+        /// Initialize row data serializer
+        RowDataSerializer::Settings serializer_settings;
+        serializer_settings.max_row_size = (*storage_settings)[MergeTreeSetting::hybrid_storage_max_row_size];
+        serializer_settings.enable_checksum = true;
+
+        row_data_serializer = std::make_unique<RowDataSerializer>(serializer_settings);
+
+        /// Initialize serialization for __row column
+        row_column_serialization = RowDataColumn::type->getDefaultSerialization();
+
+        /// Add __row serialization to the serializations map so getSerialization works for it
+        serializations.emplace(RowDataColumn::name, row_column_serialization);
+
+        /// Add stream for __row column
+        NameAndTypePair row_column(RowDataColumn::name, RowDataColumn::type);
+        MergeTreeDataPartWriterWide::addStreams(row_column, RowDataColumn::codec);
+    }
 }
 
 ISerialization::EnumerateStreamsSettings MergeTreeDataPartWriterWide::getEnumerateSettings() const
@@ -202,7 +249,14 @@ void MergeTreeDataPartWriterWide::addStreams(
         stream_name_to_full_name.emplace(stream_name, full_stream_name);
     };
 
-    auto serialization = getSerialization(name_and_type.name);
+    /// For __row column (hybrid storage), use the pre-initialized serialization
+    /// since it's not in the regular serializations map
+    SerializationPtr serialization;
+    if (name_and_type.name == RowDataColumn::name && row_column_serialization)
+        serialization = row_column_serialization;
+    else
+        serialization = getSerialization(name_and_type.name);
+
     auto * sample_column = block_sample.findByName(name_and_type.name);
     auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(sample_column ? sample_column->column : nullptr);
     auto enumerate_settings = getEnumerateSettings();
@@ -362,6 +416,9 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
     calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
     calculateAndSerializeStatistics(block);
 
+    /// Write hybrid row data if enabled
+    writeHybridRowData(block_to_write, granules_to_write);
+
     shiftCurrentMark(granules_to_write);
 }
 
@@ -431,7 +488,9 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
     };
 
     auto serialization = getSerialization(name_and_type.name);
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
+    /// Use findByName since column may not be in block_sample (e.g., __row for hybrid storage)
+    auto * sample_column = block_sample.findByName(name_and_type.name);
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(sample_column ? sample_column->column : nullptr);
     auto enumerate_settings = getEnumerateSettings();
     serialization->enumerateStreams(enumerate_settings, callback, data);
     return result;
@@ -465,7 +524,9 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         column_streams.at(stream_name)->compressed_hashing.nextIfAtEnd();
     };
 
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
+    /// Use findByName since column may not be in block_sample (e.g., __row for hybrid storage)
+    auto * sample_column = block_sample.findByName(name_and_type.name);
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(sample_column ? sample_column->column : nullptr);
     auto enumerate_settings = getEnumerateSettings();
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
@@ -559,7 +620,9 @@ void MergeTreeDataPartWriterWide::writeColumn(
             offset_columns.insert(getStreamName(name_and_type, substream_path));
     };
 
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
+    /// Use findByName since column may not be in block_sample (e.g., __row for hybrid storage)
+    auto * sample_column = block_sample.findByName(name_and_type.name);
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(sample_column ? sample_column->column : nullptr);
     auto enumerate_settings = getEnumerateSettings();
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
@@ -734,6 +797,24 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
         }
     }
 
+    /// Handle __row column for hybrid storage
+    if (hybrid_storage_enabled && row_column_serialization)
+    {
+        NameAndTypePair row_column_type(RowDataColumn::name, RowDataColumn::type);
+
+        /// Write state suffix for __row if we have a serialization state
+        auto state_it = serialization_states.find(RowDataColumn::name);
+        if (state_it != serialization_states.end())
+        {
+            serialize_settings.getter = createStreamGetter(row_column_type, written_offset_columns ? *written_offset_columns : offset_columns);
+            row_column_serialization->serializeBinaryBulkStateSuffix(serialize_settings, state_it->second);
+        }
+
+        /// Write final mark for __row
+        if (write_final_mark)
+            writeFinalMark(row_column_type, offset_columns);
+    }
+
     for (auto & [stream_name, stream] : column_streams)
     {
         /// Remove checksums for old stream name if file was
@@ -829,7 +910,9 @@ void MergeTreeDataPartWriterWide::writeFinalMark(
     };
 
     auto serialization = getSerialization(name_and_type.name);
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
+    /// Use findByName since column may not be in block_sample (e.g., __row for hybrid storage)
+    auto * sample_column = block_sample.findByName(name_and_type.name);
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(sample_column ? sample_column->column : nullptr);
     auto enumerate_settings = getEnumerateSettings();
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
@@ -936,6 +1019,72 @@ void MergeTreeDataPartWriterWide::initColumnsSubstreamsIfNeeded(const Block & bl
         serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
         serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
         serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
+    }
+}
+
+void MergeTreeDataPartWriterWide::writeHybridRowData(const Block & block, const Granules & granules)
+{
+    if (!hybrid_storage_enabled || non_key_columns.empty() || !row_data_serializer || !row_column_serialization)
+        return;
+
+    if (granules.empty())
+        return;
+
+    /// Serialize all rows in the block to row format
+    auto row_data_column = row_data_serializer->serializeBlock(block, non_key_columns, serializations);
+
+    NameAndTypePair row_column_type(RowDataColumn::name, RowDataColumn::type);
+    const String & name = row_column_type.name;
+
+    /// Get or create serialization state for __row column
+    auto [it, inserted] = serialization_states.emplace(name, nullptr);
+
+    auto serialize_settings = getSerializationSettings();
+    WrittenOffsetColumns offset_columns;
+    serialize_settings.getter = createStreamGetter(row_column_type, offset_columns);
+
+    if (inserted)
+    {
+        row_column_serialization->serializeBinaryBulkStatePrefix(*row_data_column, serialize_settings, it->second);
+    }
+
+    serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
+    {
+        auto stream_name = getStreamName(row_column_type, substream_path);
+        auto & stream = column_streams.at(stream_name);
+        return {stream->plain_hashing.count(), stream->compressed_hashing.offset()};
+    };
+
+    for (const auto & granule : granules)
+    {
+        data_written = true;
+
+        if (granule.mark_on_start)
+        {
+            if (!last_non_written_marks.contains(name))
+            {
+                last_non_written_marks[name] = getCurrentMarksForColumn(row_column_type, offset_columns);
+            }
+        }
+
+        /// Write single granule of __row column
+        row_column_serialization->serializeBinaryBulkWithMultipleStreams(
+            *row_data_column,
+            granule.start_row,
+            granule.rows_to_write,
+            serialize_settings,
+            it->second);
+
+        if (granule.is_complete)
+        {
+            auto marks_it = last_non_written_marks.find(name);
+            if (marks_it != last_non_written_marks.end())
+            {
+                for (const auto & mark : marks_it->second)
+                    flushMarkToFile(mark, index_granularity->getMarkRows(granule.mark_number));
+                last_non_written_marks.erase(marks_it);
+            }
+        }
     }
 }
 

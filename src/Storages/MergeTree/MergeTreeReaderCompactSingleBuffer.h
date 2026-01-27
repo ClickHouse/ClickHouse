@@ -16,6 +16,7 @@ public:
         : MergeTreeReaderCompact{std::forward<Args>(args)...}
     {
         fillColumnPositions();
+        initHybridStorage();
     }
 
     /// Returns the number of rows has been read or zero if there is no columns to read.
@@ -27,6 +28,16 @@ public:
 private:
     MergeTreeReaderStream & getStream(const NameAndTypePair &) override { return *stream; }
     void init();
+
+    /// Read rows using hybrid row-based storage (from __row column in compact part).
+    size_t readRowsFromHybridStorage(
+        size_t from_mark,
+        size_t current_task_last_mark,
+        bool continue_reading,
+        size_t max_rows_to_read,
+        size_t rows_offset,
+        Columns & res_columns,
+        size_t row_column_position);
 
     bool initialized = false;
     std::unique_ptr<MergeTreeReaderStream> stream;
