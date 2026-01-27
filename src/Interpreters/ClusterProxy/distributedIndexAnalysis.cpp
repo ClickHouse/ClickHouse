@@ -231,7 +231,6 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     size_t replicas = std::min<size_t>(settings[Setting::max_parallel_replicas], shard.getAllNodeCount());
 
     chassert(replicas <= connection_pools.size());
-    connection_pools.resize(replicas);
 
     std::vector<std::vector<std::string_view>> replicas_parts;
     replicas_parts.resize(replicas);
