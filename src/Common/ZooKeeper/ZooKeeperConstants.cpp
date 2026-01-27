@@ -83,6 +83,7 @@ std::string_view opNumToString(OpNum op_num)
         case OpNum::SetWatch: return "SetWatch";
         case OpNum::SetWatch2: return "SetWatch2";
         case OpNum::TryRemove: return "TryRemove";
+        case OpNum::FilteredListWithStatsAndData: return "FilteredListWithStatsAndData";
     }
 }
 
@@ -132,7 +133,6 @@ const char * toOperationTypeMetricLabel(OpNum op_num)
         case OpNum::SessionID:
             return "session";
     }
-    UNREACHABLE();
 }
 
 }
