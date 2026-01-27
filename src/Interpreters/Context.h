@@ -1295,7 +1295,12 @@ public:
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
     void clearPrimaryIndexCache() const;
 
+    /// Untracked memory holder for SYSTEM ALLOCATE UNTRACKED MEMORY / SYSTEM FREE UNTRACKED MEMORY
     UntrackedMemoryHolderPtr getUntrackedMemoryHolder() const;
+
+    /// See users_to_ignore_early_memory_limit_check in ServerSettings
+    std::shared_ptr<std::unordered_set<std::string_view>> getUsersToIgnoreEarlyMemoryLimitCheck() const;
+    void setUsersToIgnoreEarlyMemoryLimitCheck(std::string users);
 
     void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);

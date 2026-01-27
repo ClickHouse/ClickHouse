@@ -630,6 +630,10 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::mutex dashboard_mutex;
     std::optional<Context::Dashboards> dashboards;
 
+    mutable std::shared_mutex users_to_ignore_early_memory_limit_check_mutex;
+    std::string users_to_ignore_early_memory_limit_check_source TSA_GUARDED_BY(users_to_ignore_early_memory_limit_check_mutex);
+    std::shared_ptr<std::unordered_set<std::string_view>> users_to_ignore_early_memory_limit_check TSA_GUARDED_BY(users_to_ignore_early_memory_limit_check_mutex);
+
     std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
     std::optional<AzureSettingsByEndpoint> storage_azure_settings TSA_GUARDED_BY(mutex);   /// Settings of AzureBlobStorage
     std::unordered_map<Context::WarningType, PreformattedMessage> warnings TSA_GUARDED_BY(mutex); /// Store warning messages about server.
@@ -3790,6 +3794,32 @@ UntrackedMemoryHolderPtr Context::getUntrackedMemoryHolder() const
     if (!shared->untracked_memory_holder)
         shared->untracked_memory_holder = std::make_shared<UntrackedMemoryHolder>();
     return shared->untracked_memory_holder;
+}
+
+void Context::setUsersToIgnoreEarlyMemoryLimitCheck(std::string users)
+{
+    std::shared_ptr<std::unordered_set<std::string_view>> map;
+    std::lock_guard lock(shared->users_to_ignore_early_memory_limit_check_mutex);
+
+    if (users == shared->users_to_ignore_early_memory_limit_check_source)
+        return;
+
+    LOG_DEBUG(shared->log, "Changing users_to_ignore_early_memory_limit_check to: {}", users);
+
+    if (!users.empty())
+    {
+        map = std::make_shared<std::unordered_set<std::string_view>>();
+        shared->users_to_ignore_early_memory_limit_check_source = std::move(users);
+        boost::split(*map, shared->users_to_ignore_early_memory_limit_check_source, boost::is_any_of(", "));
+    }
+
+    shared->users_to_ignore_early_memory_limit_check = std::move(map);
+}
+
+std::shared_ptr<std::unordered_set<std::string_view>> Context::getUsersToIgnoreEarlyMemoryLimitCheck() const
+{
+    SharedLockGuard lock(shared->users_to_ignore_early_memory_limit_check_mutex);
+    return shared->users_to_ignore_early_memory_limit_check;
 }
 
 void Context::clearPrimaryIndexCache() const
