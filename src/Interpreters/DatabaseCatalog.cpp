@@ -632,7 +632,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
                 removeUUIDMapping(db_uuid);
 
             all_databases.erase(it);
-            auto res = chooseDatabasesContainer(db).erase(database_name);
+            [[maybe_unused]] auto res = chooseDatabasesContainer(db).erase(database_name);
             assert(res == 1);
         }
         else
