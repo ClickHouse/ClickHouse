@@ -65,7 +65,7 @@ def _abort(job_name, results, stopwatch, status=None, info=None):
 def set_default_env():
     """Defaults for keeper stress (env and pytest)."""
     for k, v in {
-        "KEEPER_INCLUDE_IDS": "CHA-01",
+        "KEEPER_INCLUDE_IDS": "CHA-01,CHA-01-REPLAY",
         "KEEPER_DURATION": "1200",
         "KEEPER_FAULTS": "false",
         "KEEPER_MATRIX_BACKENDS": "default,rocks",
