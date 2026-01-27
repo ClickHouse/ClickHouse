@@ -438,8 +438,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
-    data_type_node->arguments = expr_list_args;
-    data_type_node->children.push_back(data_type_node->arguments);
+    data_type_node->children.push_back(expr_list_args);
 
     node = data_type_node;
     return true;

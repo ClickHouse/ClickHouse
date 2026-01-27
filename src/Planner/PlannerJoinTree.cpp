@@ -21,6 +21,7 @@
 #include <Access/ContextAccess.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
@@ -45,6 +46,8 @@
 
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -873,7 +876,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads
         if (max_streams > 1 && !is_sync_remote)
         {
-            if (auto streams_with_ratio = max_streams * settings[Setting::max_streams_to_max_threads_ratio];
+            if (auto streams_with_ratio = static_cast<double>(max_streams) * settings[Setting::max_streams_to_max_threads_ratio];
                 canConvertTo<size_t>(streams_with_ratio))
                 max_streams = static_cast<size_t>(streams_with_ratio);
             else
@@ -2659,6 +2662,35 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
       * Examples: Distributed, Merge storages.
       */
     auto left_table_expression = table_expressions_stack.front();
+
+    /** If the leftmost table uses IStorageCluster (e.g., s3Cluster, hdfsCluster)
+      * and there are multiple tables (indicating a JOIN), we must wrap it in a subquery.
+      * This prevents IStorageCluster from receiving the full JOIN query, which it cannot handle.
+      *
+      * IStorageCluster is a simple storage that just forwards queries to remote nodes.
+      * Unlike StorageDistributed, it cannot decompose and handle JOINs across multiple tables,
+      * because remote nodes don't have access to other tables in the JOIN.
+      *
+      * StorageDistributed has sophisticated query planning logic to handle JOINs and should
+      * NOT be wrapped (wrapping breaks tests like 03577_server_constant_folding).
+      */
+    bool should_wrap_left_table = false;
+    bool has_multiple_tables = table_expressions_stack.size() > 1;
+
+    if (has_multiple_tables)
+    {
+        // Get the actual storage to check its type
+        auto * table_node = left_table_expression->as<TableNode>();
+        auto * table_function_node = left_table_expression->as<TableFunctionNode>();
+
+        if (table_node || table_function_node)
+        {
+            const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+            // Only wrap if it's specifically IStorageCluster, not StorageDistributed or other remote storages
+            should_wrap_left_table = (dynamic_cast<const IStorageCluster *>(storage.get()) != nullptr);
+        }
+    }
+
     auto left_table_expression_query_plan = buildQueryPlanForTableExpression(
         left_table_expression,
         parent_join_tree,
@@ -2666,7 +2698,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         select_query_options,
         planner_context,
         is_single_table_expression,
-        false /*wrap_read_columns_in_subquery*/);
+        should_wrap_left_table /*wrap_read_columns_in_subquery*/);
     if (left_table_expression_query_plan.stage != QueryProcessingStage::FetchColumns)
         return left_table_expression_query_plan;
 

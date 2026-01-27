@@ -218,7 +218,7 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
 
         /// For now assume that aggregation columns are independent, so multiply their NDVs
         if (total_number_of_distinct_values)
-            *total_number_of_distinct_values *= key_number_of_distinct_values;
+            *total_number_of_distinct_values *= static_cast<Float64>(key_number_of_distinct_values);
     }
 
     if (total_number_of_distinct_values && input_stats.estimated_rows)

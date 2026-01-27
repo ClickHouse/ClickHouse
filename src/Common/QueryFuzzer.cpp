@@ -620,13 +620,13 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 
 void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
 {
-    if (column.type)
+    if (auto type = column.getType())
     {
-        auto data_type = fuzzDataType(DataTypeFactory::instance().get(column.type));
+        auto data_type = fuzzDataType(DataTypeFactory::instance().get(type));
 
         ParserDataType parser;
-        column.type = parseQuery(
-            parser, data_type->getName(), DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        column.setType(parseQuery(
+            parser, data_type->getName(), DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
     }
 }
 

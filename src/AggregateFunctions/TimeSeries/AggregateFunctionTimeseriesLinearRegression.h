@@ -132,7 +132,7 @@ private:
     }
 
     void fillResultValue(const TimestampType current_timestamp,
-        const std::deque<std::pair<TimestampType, ValueType>> & samples_in_window,
+        const DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> & samples_in_window,
         ValueType & result, UInt8 & null) const
     {
         size_t n = samples_in_window.size();
@@ -180,13 +180,13 @@ private:
         sum_xy += c_xy;
         sum_xx += c_xx;
 
-        Float64 cov_xy = sum_xy - sum_x * sum_y / n;
-        Float64 var_x = sum_xx - sum_x * sum_x / n;
+        Float64 cov_xy = sum_xy - sum_x * sum_y / static_cast<Float64>(n);
+        Float64 var_x = sum_xx - sum_x * sum_x / static_cast<Float64>(n);
 
         Float64 slope = cov_xy / var_x;
         if (is_predict)
         {
-            Float64 intercept = sum_y / n - slope * sum_x / n;
+            Float64 intercept = sum_y / static_cast<Float64>(n) - slope * sum_x / static_cast<Float64>(n);
             Float64 predicted_value = slope * predict_offset + intercept;
             result = static_cast<ValueType>(predicted_value);
         }
@@ -224,8 +224,8 @@ public:
 
         const auto & buckets = Base::data(place)->buckets;
 
-        std::deque<std::pair<TimestampType, ValueType>> samples_in_window;
-        std::vector<std::pair<TimestampType, ValueType>> timestamps_buffer;
+        DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> samples_in_window;
+        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> timestamps_buffer;
 
 
         /// Fill the data for missing buckets

@@ -53,7 +53,10 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
         KeeperFeatureFlag::CREATE_IF_NOT_EXISTS,
         KeeperFeatureFlag::REMOVE_RECURSIVE,
         KeeperFeatureFlag::MULTI_WATCHES,
+        KeeperFeatureFlag::CHECK_STAT,
         KeeperFeatureFlag::PERSISTENT_WATCHES,
+        KeeperFeatureFlag::TRY_REMOVE,
+        KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA,
     };
 
     for (const auto feature_flag : enabled_by_default_feature_flags)
@@ -627,6 +630,8 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
     {
         case Coordination::OpNum::FilteredList:
             return feature_flags.isEnabled(KeeperFeatureFlag::FILTERED_LIST);
+        case Coordination::OpNum::FilteredListWithStatsAndData:
+            return feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA);
         case Coordination::OpNum::MultiRead:
             return feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ);
         case Coordination::OpNum::CreateIfNotExists:

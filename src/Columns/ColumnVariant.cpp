@@ -1601,7 +1601,7 @@ ColumnPtr ColumnVariant::compress(bool force_compression) const
 double ColumnVariant::getRatioOfDefaultRows(double) const
 {
     UInt64 num_defaults = getNumberOfDefaultRows();
-    return static_cast<double>(num_defaults) / local_discriminators->size();
+    return static_cast<double>(num_defaults) / static_cast<double>(local_discriminators->size());
 }
 
 UInt64 ColumnVariant::getNumberOfDefaultRows() const
