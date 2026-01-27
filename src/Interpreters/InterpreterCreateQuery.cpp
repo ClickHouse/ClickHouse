@@ -1250,7 +1250,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.is_dictionary || create.is_ordinary_view || create.is_window_view)
         return;
 
-    if (create.temporary)
+    if (create.isTemporary())
     {
         /// Some part of storage definition is specified, but ENGINE is not: just set the one from default_temporary_table_engine setting.
 
@@ -1492,12 +1492,12 @@ bool isReplicated(const ASTStorage & storage)
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
     /// Temporary tables are created out of databases.
-    if (create.temporary && create.database)
+    if (create.isTemporary() && create.database)
         throw Exception(ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE,
                         "Temporary objects (tables/views) cannot be inside a database. "
                         "You should not specify a database for a temporary objects.");
 
-    if (create.temporary && !create.cluster.empty())
+    if (create.isTemporary() && !create.cluster.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY,
             "Temporary objects (tables/views) cannot be created ON CLUSTER."
             "You should not specify a cluster for a temporary objects.");
@@ -1622,7 +1622,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                          create.getTable(), create.getTable(), create.getTable());
     }
 
-    if (!create.temporary && !create.database)
+    if (!create.isTemporary() && !create.database)
         create.setDatabase(current_database);
 
     if (create.targets)
@@ -1656,7 +1656,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
     DatabasePtr database;
-    bool need_add_to_database = !create.temporary;
+    bool need_add_to_database = !create.isTemporary();
     // In case of an ON CLUSTER query, the database may not be present on the initiator node
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
@@ -1731,7 +1731,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database && !database)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 
-    if (create.temporary && create.replace_table)
+    if (create.isTemporary() && create.replace_table)
     {
         chassert(!ddl_guard);
         return doCreateOrReplaceTemporaryTable(create, properties, mode);
@@ -1812,7 +1812,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
                                            DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode)
 {
-    if (create.temporary)
+    if (create.isTemporary())
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
             return false;
@@ -2452,14 +2452,14 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     {
         if (create.replace_view)
             required_access.emplace_back(AccessType::DROP_VIEW | AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
-        else if (create.temporary)
+        else if (create.isTemporary())
             required_access.emplace_back(AccessType::CREATE_TEMPORARY_VIEW);
         else
             required_access.emplace_back(AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
     }
     else
     {
-        if (create.temporary)
+        if (create.isTemporary())
         {
             /// Currently default table engine for temporary tables is Memory. default_table_engine does not affect temporary tables.
             if (create.storage && create.storage->engine && create.storage->engine->name != "Memory")

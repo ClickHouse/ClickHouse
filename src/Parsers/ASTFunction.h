@@ -15,17 +15,25 @@ class ASTSelectWithUnionQuery;
   */
 class ASTFunction : public ASTWithAlias
 {
+    struct ASTFunctionFlags
+    {
+        using ParentFlags = ASTWithAlias::ASTWithAliasFlags;
+        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 12;
+
+        UInt32 _parent_reserved : ParentFlags::RESERVED_BITS;
+        UInt32 is_operator : 1;
+        UInt32 is_window_function : 1;
+        UInt32 compute_after_window_functions : 1;
+        UInt32 is_lambda_function : 1;
+        UInt32 prefer_subquery_to_function_formatting : 1;
+        UInt32 no_empty_args : 1;
+        UInt32 is_compound_name : 1;
+        UInt32 nulls_action : 2; /// 2 bits for NullsAction (3 values)
+        UInt32 kind : 3; /// 3 bits for Kind (8 values)
+        UInt32 unused : 19;
+    };
+
 public:
-    /// Default constructor initializes FLAGS = 0, which means:
-    /// - isOperator() = false
-    /// - isWindowFunction() = false
-    /// - computeAfterWindowFunctions() = false
-    /// - isLambdaFunction() = false
-    /// - preferSubqueryToFunctionFormatting() = false
-    /// - noEmptyArgs() = false
-    /// - isCompoundName() = false
-    /// - getNullsAction() = NullsAction::EMPTY
-    /// - getKind() = Kind::ORDINARY_FUNCTION
     ASTFunction() = default;
 
     String name;
@@ -34,22 +42,22 @@ public:
     ASTPtr parameters;
 
     /// Preserves the information that it was parsed as an operator. This is needed for better formatting the AST back to query.
-    bool isOperator() const { return FLAGS & IS_OPERATOR; }
-    void setIsOperator(bool value) { FLAGS = value ? (FLAGS | IS_OPERATOR) : (FLAGS & ~IS_OPERATOR); }
+    bool isOperator() const { return flags<ASTFunctionFlags>().is_operator; }
+    void setIsOperator(bool value) { flags<ASTFunctionFlags>().is_operator = value; }
 
-    bool isWindowFunction() const { return FLAGS & IS_WINDOW_FUNCTION; }
-    void setIsWindowFunction(bool value) { FLAGS = value ? (FLAGS | IS_WINDOW_FUNCTION) : (FLAGS & ~IS_WINDOW_FUNCTION); }
+    bool isWindowFunction() const { return flags<ASTFunctionFlags>().is_window_function; }
+    void setIsWindowFunction(bool value) { flags<ASTFunctionFlags>().is_window_function = value; }
 
-    bool computeAfterWindowFunctions() const { return FLAGS & COMPUTE_AFTER_WINDOW_FUNCTIONS; }
-    void setComputeAfterWindowFunctions(bool value) { FLAGS = value ? (FLAGS | COMPUTE_AFTER_WINDOW_FUNCTIONS) : (FLAGS & ~COMPUTE_AFTER_WINDOW_FUNCTIONS); }
+    bool computeAfterWindowFunctions() const { return flags<ASTFunctionFlags>().compute_after_window_functions; }
+    void setComputeAfterWindowFunctions(bool value) { flags<ASTFunctionFlags>().compute_after_window_functions = value; }
 
-    bool isLambdaFunction() const { return FLAGS & IS_LAMBDA_FUNCTION; }
-    void setIsLambdaFunction(bool value) { FLAGS = value ? (FLAGS | IS_LAMBDA_FUNCTION) : (FLAGS & ~IS_LAMBDA_FUNCTION); }
+    bool isLambdaFunction() const { return flags<ASTFunctionFlags>().is_lambda_function; }
+    void setIsLambdaFunction(bool value) { flags<ASTFunctionFlags>().is_lambda_function = value; }
 
     /// This field is updated in executeTableFunction if its a parameterized_view
     /// and used in ASTTablesInSelectQuery::FormatImpl for EXPLAIN SYNTAX of SELECT parameterized view
-    bool preferSubqueryToFunctionFormatting() const { return FLAGS & PREFER_SUBQUERY_TO_FUNCTION_FORMATTING; }
-    void setPreferSubqueryToFunctionFormatting(bool value) { FLAGS = value ? (FLAGS | PREFER_SUBQUERY_TO_FUNCTION_FORMATTING) : (FLAGS & ~PREFER_SUBQUERY_TO_FUNCTION_FORMATTING); }
+    bool preferSubqueryToFunctionFormatting() const { return flags<ASTFunctionFlags>().prefer_subquery_to_function_formatting; }
+    void setPreferSubqueryToFunctionFormatting(bool value) { flags<ASTFunctionFlags>().prefer_subquery_to_function_formatting = value; }
 
     // We have to make these fields ASTPtr because this is what the visitors
     // expect. Some of them take const ASTPtr & (makes no sense), and some
@@ -64,12 +72,12 @@ public:
     String window_name;
     ASTPtr window_definition;
 
-    NullsAction getNullsAction() const { return static_cast<NullsAction>((FLAGS & NULLS_ACTION_MASK) >> NULLS_ACTION_SHIFT); }
-    void setNullsAction(NullsAction value) { FLAGS = (FLAGS & ~NULLS_ACTION_MASK) | (static_cast<UInt32>(value) << NULLS_ACTION_SHIFT); }
+    NullsAction getNullsAction() const { return static_cast<NullsAction>(flags<ASTFunctionFlags>().nulls_action); }
+    void setNullsAction(NullsAction value) { flags<ASTFunctionFlags>().nulls_action = static_cast<UInt32>(value); }
 
     /// do not print empty parentheses if there are no args - compatibility with engine names.
-    bool noEmptyArgs() const { return FLAGS & NO_EMPTY_ARGS; }
-    void setNoEmptyArgs(bool value) { FLAGS = value ? (FLAGS | NO_EMPTY_ARGS) : (FLAGS & ~NO_EMPTY_ARGS); }
+    bool noEmptyArgs() const { return flags<ASTFunctionFlags>().no_empty_args; }
+    void setNoEmptyArgs(bool value) { flags<ASTFunctionFlags>().no_empty_args = value; }
 
     /// Specifies where this function-like expression is used.
     enum class Kind : UInt8
@@ -83,8 +91,8 @@ public:
         CODEC,
         STATISTICS,
     };
-    Kind getKind() const { return static_cast<Kind>((FLAGS & KIND_MASK) >> KIND_SHIFT); }
-    void setKind(Kind value) { FLAGS = (FLAGS & ~KIND_MASK) | (static_cast<UInt32>(value) << KIND_SHIFT); }
+    Kind getKind() const { return static_cast<Kind>(flags<ASTFunctionFlags>().kind); }
+    void setKind(Kind value) { flags<ASTFunctionFlags>().kind = static_cast<UInt32>(value); }
 
     /** Get text identifying the AST node. */
     String getID(char delim) const override;
@@ -98,27 +106,14 @@ public:
     ASTPtr toLiteral() const;  // Try to convert functions like Array or Tuple to a literal form.
 
     /// This is used for parameterized view, to identify if name is 'db.view'
-    bool isCompoundName() const { return FLAGS & IS_COMPOUND_NAME; }
-    void setIsCompoundName(bool value) { FLAGS = value ? (FLAGS | IS_COMPOUND_NAME) : (FLAGS & ~IS_COMPOUND_NAME); }
+    bool isCompoundName() const { return flags<ASTFunctionFlags>().is_compound_name; }
+    void setIsCompoundName(bool value) { flags<ASTFunctionFlags>().is_compound_name = value; }
 
     bool hasSecretParts() const override;
 
 protected:
     void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
-
-    /// Bit flags for ASTFunction (bits 1-12, bit 0 is used by ASTWithAlias::PREFER_ALIAS_TO_COLUMN_NAME)
-    static constexpr UInt32 IS_OPERATOR = 1u << 1;
-    static constexpr UInt32 IS_WINDOW_FUNCTION = 1u << 2;
-    static constexpr UInt32 COMPUTE_AFTER_WINDOW_FUNCTIONS = 1u << 3;
-    static constexpr UInt32 IS_LAMBDA_FUNCTION = 1u << 4;
-    static constexpr UInt32 PREFER_SUBQUERY_TO_FUNCTION_FORMATTING = 1u << 5;
-    static constexpr UInt32 NO_EMPTY_ARGS = 1u << 6;
-    static constexpr UInt32 IS_COMPOUND_NAME = 1u << 7;
-    static constexpr UInt32 NULLS_ACTION_SHIFT = 8;
-    static constexpr UInt32 NULLS_ACTION_MASK = 0b11u << NULLS_ACTION_SHIFT;  /// 2 bits for NullsAction (3 values)
-    static constexpr UInt32 KIND_SHIFT = 10;
-    static constexpr UInt32 KIND_MASK = 0b111u << KIND_SHIFT;  /// 3 bits for Kind (8 values)
 
 private:
     void finishFormatWithWindow(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;

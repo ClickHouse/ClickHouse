@@ -945,7 +945,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->replace_table = replace;
     query->create_or_replace = or_replace;
     query->if_not_exists = if_not_exists;
-    query->temporary = is_temporary;
+    query->setIsTemporary(is_temporary);
     query->is_time_series_table = is_time_series_table;
 
     query->database = table_id->getDatabase();
@@ -1632,7 +1632,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->is_populate = is_populate;
     query->is_create_empty = is_create_empty;
     query->replace_view = replace_view;
-    query->temporary = is_temporary;
+    query->setIsTemporary(is_temporary);
 
     auto * table_id = table->as<ASTTableIdentifier>();
     query->database = table_id->getDatabase();

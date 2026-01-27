@@ -14,12 +14,24 @@ namespace DB
   */
 class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 {
+    struct ASTQueryWithTableAndOutputFlags
+    {
+        using ParentFlags = ASTQueryWithOutput::ASTQueryWithOutputFlags;
+        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 1;
+
+        UInt32 _parent_reserved : ParentFlags::RESERVED_BITS;
+        UInt32 is_temporary : 1;
+    };
 public:
     ASTPtr database;
     ASTPtr table;
-
     UUID uuid = UUIDHelpers::Nil;
-    bool temporary{false};
+
+    /// Note that flags are initialized to zero (false) by default
+    ASTQueryWithTableAndOutput() = default;
+
+    bool isTemporary() const { return flags<ASTQueryWithTableAndOutputFlags>().is_temporary; }
+    void setIsTemporary(bool value) { flags<ASTQueryWithTableAndOutputFlags>().is_temporary = value; }
 
     String getDatabase() const;
     String getTable() const;
@@ -53,7 +65,7 @@ protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         ostr
-            << (temporary ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query)
+            << (isTemporary() ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query)
             << " ";
 
         if (database)

@@ -95,7 +95,10 @@ namespace ErrorCodes
 }
 
 IAST::IAST(const IAST & other)
-    : TypePromotion<IAST>(), children(other.children), ref_counter(0), FLAGS(other.FLAGS)
+    : TypePromotion<IAST>()
+    , children(other.children)
+    , ref_counter(0)
+    , flags_storage(other.flags_storage)
 {
 }
 
@@ -104,7 +107,7 @@ IAST & IAST::operator=(const IAST & other)
     if (this == &other)
         return *this;
     children = other.children;
-    FLAGS = other.FLAGS;
+    flags_storage = other.flags_storage;
     return *this;
 }
 

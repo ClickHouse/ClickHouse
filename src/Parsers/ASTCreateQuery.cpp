@@ -345,7 +345,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
         ostr << action;
         ostr << " ";
-        ostr << (temporary ? "TEMPORARY " : "")
+        ostr << (isTemporary() ? "TEMPORARY " : "")
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
            ;
