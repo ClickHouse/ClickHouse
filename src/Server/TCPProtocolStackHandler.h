@@ -2,7 +2,8 @@
 
 #include <thread>
 #include <chrono>
-
+#include <memory>
+#include <vector>
 #include <Server/TCPServerConnectionFactory.h>
 #include <Server/TCPServer.h>
 #include <Poco/Util/LayeredConfiguration.h>

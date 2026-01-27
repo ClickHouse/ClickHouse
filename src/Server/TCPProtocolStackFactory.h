@@ -7,6 +7,8 @@
 #include <Poco/Net/NetException.h>
 #include <Common/logger_useful.h>
 #include <Access/Common/AllowedClientHosts.h>
+#include <vector>
+#include <string>
 
 
 namespace DB
