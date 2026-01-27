@@ -71,7 +71,9 @@ Example:
 
 ```sql
 SELECT count()
-FROM url('https://dumps.wikimedia.org/other/pageviews/**/pageviews*.gz', 'TSV');
+FROM url('https://dumps.wikimedia.org/other/pageviews/2025/2025-01/pageviews*.gz', 'TSV')
+SETTINGS max_threads = 1; 
+--- set max_threads to limit concurrent HTTP requests and avoid server rejecting them with 503 responses
 ```
 
 ## Virtual Columns {#virtual-columns}

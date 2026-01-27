@@ -9,6 +9,7 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/Timestamp.h>
 
+#include <deque>
 #include <unordered_set>
 
 namespace DB
@@ -54,7 +55,7 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
     if (!normalized_path.empty() && !normalized_path.ends_with('/'))
         normalized_path += '/';
 
-    std::vector<std::string> pending_directories;
+    std::deque<std::string> pending_directories;
     pending_directories.push_back(normalized_path);
 
     std::unordered_set<std::string> visited_directories;
@@ -64,8 +65,8 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
         if (max_keys && children.size() >= max_keys)
             break;
 
-        auto current = std::move(pending_directories.back());
-        pending_directories.pop_back();
+        auto current = std::move(pending_directories.front());
+        pending_directories.pop_front();
 
         if (!visited_directories.emplace(current).second)
             continue;
