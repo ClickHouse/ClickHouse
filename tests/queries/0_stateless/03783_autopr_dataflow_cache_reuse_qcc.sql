@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS t;
 
+-- index_granularity: to be able to produce small blocks from reading
 CREATE TABLE t(key String, value UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=128;
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
