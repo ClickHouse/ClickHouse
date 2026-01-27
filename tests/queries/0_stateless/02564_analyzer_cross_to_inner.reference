@@ -269,8 +269,8 @@ SELECT
     __table5.a AS `t5.a`,
     __table5.b AS `t5.b`
 FROM default.t1 AS __table1
-ALL INNER JOIN default.t5 AS __table5 ON equals(__table1.b, __table5.b), default.t2 AS __table2
-ALL INNER JOIN default.t3 AS __table3 ON equals(__table2.a, __table3.a), default.t4 AS __table4
+ALL INNER JOIN default.t5 AS __table5 ON __table1.b = __table5.b, default.t2 AS __table2
+ALL INNER JOIN default.t3 AS __table3 ON __table2.a = __table3.a, default.t4 AS __table4
 EXPLAIN QUERY TREE dump_ast=1
 SELECT * FROM t1, t2, t3, t4, t5
 WHERE t2.a = t3.a AND t1.b = t5.b AND t4.a = t5.a;
@@ -347,9 +347,9 @@ SELECT
     __table5.a AS `t5.a`,
     __table5.b AS `t5.b`
 FROM default.t1 AS __table1
-ALL INNER JOIN default.t5 AS __table5 ON equals(__table1.b, __table5.b)
-ALL INNER JOIN default.t4 AS __table4 ON equals(__table4.a, __table5.a), default.t2 AS __table2
-ALL INNER JOIN default.t3 AS __table3 ON equals(__table2.a, __table3.a)
+ALL INNER JOIN default.t5 AS __table5 ON __table1.b = __table5.b
+ALL INNER JOIN default.t4 AS __table4 ON __table4.a = __table5.a, default.t2 AS __table2
+ALL INNER JOIN default.t3 AS __table3 ON __table2.a = __table3.a
 EXPLAIN QUERY TREE dump_ast=1
 SELECT * FROM t1, t2, t3, t4, t5
 WHERE t1.a = t3.a AND t3.b = t4.b AND t1.a = t4.a AND t2.a = t5.a;
@@ -434,9 +434,9 @@ SELECT
     __table5.a AS `t5.a`,
     __table5.b AS `t5.b`
 FROM default.t1 AS __table1
-ALL INNER JOIN default.t3 AS __table3 ON equals(__table1.a, __table3.a)
-ALL INNER JOIN default.t4 AS __table4 ON and(equals(__table1.a, __table4.a), equals(__table3.b, __table4.b)), default.t2 AS __table2
-ALL INNER JOIN default.t5 AS __table5 ON equals(__table2.a, __table5.a)
+ALL INNER JOIN default.t3 AS __table3 ON __table1.a = __table3.a
+ALL INNER JOIN default.t4 AS __table4 ON __table1.a = __table4.a AND __table3.b = __table4.b, default.t2 AS __table2
+ALL INNER JOIN default.t5 AS __table5 ON __table2.a = __table5.a
 EXPLAIN QUERY TREE dump_ast=1
 SELECT * FROM t1, t2, t3, t4, t5
 WHERE t1.a = t2.a AND t1.a = t3.a AND t1.a = t4.a AND t1.a = t5.a
@@ -561,7 +561,7 @@ SELECT
     __table5.a AS `t5.a`,
     __table5.b AS `t5.b`
 FROM default.t1 AS __table1
-ALL INNER JOIN default.t2 AS __table2 ON equals(__table1.a, __table2.a)
-ALL INNER JOIN default.t3 AS __table3 ON and(equals(__table1.a, __table3.a), equals(__table2.a, __table3.a))
-ALL INNER JOIN default.t4 AS __table4 ON and(equals(__table1.a, __table4.a), equals(__table2.a, __table4.a), equals(__table3.a, __table4.a))
-ALL INNER JOIN default.t5 AS __table5 ON and(equals(__table1.a, __table5.a), equals(__table2.a, __table5.a), equals(__table3.a, __table5.a), equals(__table4.a, __table5.a))
+ALL INNER JOIN default.t2 AS __table2 ON __table1.a = __table2.a
+ALL INNER JOIN default.t3 AS __table3 ON __table1.a = __table3.a AND __table2.a = __table3.a
+ALL INNER JOIN default.t4 AS __table4 ON __table1.a = __table4.a AND __table2.a = __table4.a AND __table3.a = __table4.a
+ALL INNER JOIN default.t5 AS __table5 ON __table1.a = __table5.a AND __table2.a = __table5.a AND __table3.a = __table5.a AND __table4.a = __table5.a

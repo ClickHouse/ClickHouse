@@ -61,7 +61,7 @@ WHERE notILike(__table1.col_string, \'%TeST\')
 -- Test multiple LIKE conditions - all eligible ones should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
-WHERE and(startsWith(__table1.col_string, \'app\'), startsWith(__table1.col_fixedstring, \'fruit\'))
+WHERE startsWith(__table1.col_string, \'app\') AND startsWith(__table1.col_fixedstring, \'fruit\')
 1
 1
 -- Test without perfect affix - should NOT be rewritten

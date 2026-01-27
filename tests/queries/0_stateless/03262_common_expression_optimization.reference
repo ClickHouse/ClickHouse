@@ -24,7 +24,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE or(and(__table1.A, __table1.B), and(__table1.A, __table1.C))
+WHERE __table1.A AND __table1.B OR __table1.A AND __table1.C
 SETTINGS optimize_extract_common_expressions = 0
 QUERY id: 0
   PROJECTION COLUMNS
@@ -48,7 +48,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(__table1.A, or(__table1.B, __table1.C))
+WHERE __table1.A AND (__table1.B OR __table1.C)
 SETTINGS optimize_extract_common_expressions = 1
 -9137658153367139416	1	1	1	0	0	0
 -9137309194079040284	1	1	1	0	0	0
@@ -88,7 +88,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(__table1.A, __table1.B, __table1.C)
+WHERE __table1.A AND __table1.B AND __table1.C
 -9114056182077943575	1	1	1	1	0	1
 -8941493636296671386	1	1	1	1	1	1
 -8816638533025328863	1	1	1	0	1	1
@@ -132,7 +132,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(__table1.A, or(__table1.E, __table1.F), __table1.B, __table1.C)
+WHERE __table1.A AND (__table1.E OR __table1.F) AND __table1.B AND __table1.C
 -9114056182077943575	1	1	1	1	0	1
 -8941493636296671386	1	1	1	1	1	1
 -8816638533025328863	1	1	1	0	1	1
@@ -176,7 +176,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(__table1.A, or(__table1.E, __table1.F), __table1.B, __table1.C)
+WHERE __table1.A AND (__table1.E OR __table1.F) AND __table1.B AND __table1.C
 -9137658153367139416	1	1	1	0	0	0
 -9137309194079040284	1	1	1	0	0	0
 -9121738304623869295	1	1	0	0	1	0
@@ -220,7 +220,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(__table1.A, or(__table1.C, __table1.D, __table1.E), __table1.B)
+WHERE __table1.A AND (__table1.C OR __table1.D OR __table1.E) AND __table1.B
 -9137658153367139416	1	1	1	0	0	0
 -9137309194079040284	1	1	1	0	0	0
 -9121738304623869295	1	1	0	0	1	0
@@ -264,7 +264,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(__table1.A, or(__table1.C, __table1.D, __table1.E), __table1.B)
+WHERE __table1.A AND (__table1.C OR __table1.D OR __table1.E) AND __table1.B
 -9217261049539683905	0	1	1	0	1	1
 -9137658153367139416	1	1	1	0	0	0
 -9137309194079040284	1	1	1	0	0	0
@@ -302,7 +302,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(__table1.B, __table1.C)
+WHERE __table1.B AND __table1.C
 -9217261049539683905	0	1	1	0	1	1
 -9128210600225023826	0	1	1	0	1	1
 -9114056182077943575	1	1	1	1	0	1
@@ -345,7 +345,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(__table1.B, __table1.C, or(__table1.E, __table1.F))
+WHERE __table1.B AND __table1.C AND (__table1.E OR __table1.F)
 -9217261049539683905	0	1	1	0	1	1
 -9128210600225023826	0	1	1	0	1	1
 -9114056182077943575	1	1	1	1	0	1
@@ -388,7 +388,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(__table1.B, __table1.C, or(__table1.E, __table1.F))
+WHERE __table1.B AND __table1.C AND (__table1.E OR __table1.F)
 -9217261049539683905	0	1	1	0	1	1
 -9137658153367139416	1	1	1	0	0	0
 -9137309194079040284	1	1	1	0	0	0
@@ -431,7 +431,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(__table1.B, or(__table1.C, __table1.D, __table1.E))
+WHERE __table1.B AND (__table1.C OR __table1.D OR __table1.E)
 -9217261049539683905	0	1	1	0	1	1
 -9137658153367139416	1	1	1	0	0	0
 -9137309194079040284	1	1	1	0	0	0
@@ -474,7 +474,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(__table1.B, or(__table1.C, __table1.D, __table1.E))
+WHERE __table1.B AND (__table1.C OR __table1.D OR __table1.E)
 -9220160771238933596	1	0	0	0	1	1
 -9154303869107404275	1	0	1	1	1	1
 -9154240572955605594	1	0	0	0	0	1
@@ -526,7 +526,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(equals(sipHash64(__table1.C), sipHash64(__table1.D)), or(__table1.A, __table1.B))
+WHERE sipHash64(__table1.C) = sipHash64(__table1.D) AND (__table1.A OR __table1.B)
 -9220160771238933596	1	0	0	0	1	1
 -9217261049539683905	0	1	1	0	1	1
 -9154303869107404275	1	0	1	1	1	1
@@ -580,7 +580,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE or(and(__table1.A, __table1.B), or(and(__table1.C, __table1.D), and(__table1.E, __table1.F)))
+WHERE __table1.A AND __table1.B OR __table1.C AND __table1.D OR __table1.E AND __table1.F
 -9220160771238933596	1	0	0	0	1	1
 -9217261049539683905	0	1	1	0	1	1
 -9154303869107404275	1	0	1	1	1	1
@@ -634,7 +634,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE or(and(__table1.A, __table1.B), or(and(__table1.B, __table1.D), and(__table1.E, __table1.F)))
+WHERE __table1.A AND __table1.B OR __table1.B AND __table1.D OR __table1.E AND __table1.F
 -9137658153367139416	1	1	1	0	0	0
 -9137309194079040284	1	1	1	0	0	0
 -9121738304623869295	1	1	0	0	1	0
@@ -686,7 +686,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(__table1.A, __table1.B, or(__table1.C, and(__table1.E, __table1.E), and(__table1.F, __table1.F)))
+WHERE __table1.A AND __table1.B AND (__table1.C OR __table1.E AND __table1.E OR __table1.F AND __table1.F)
 -9114056182077943575	1	1	1	1	0	1
 -8941493636296671386	1	1	1	1	1	1
 -8816638533025328863	1	1	1	0	1	1
@@ -734,7 +734,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(or(__table1.C, __table1.D), __table1.A, __table1.B, or(__table1.E, __table1.F))
+WHERE (__table1.C OR __table1.D) AND __table1.A AND __table1.B AND (__table1.E OR __table1.F)
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -756,7 +756,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE _CAST(and(__table1.B, __table1.C), \'Nullable(UInt8)\')
+WHERE _CAST(__table1.B AND __table1.C, \'Nullable(UInt8)\')
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -795,7 +795,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(__table1.B, toNullable(__table1.C))
+WHERE __table1.B AND toNullable(__table1.C)
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -829,7 +829,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE or(__table1.A, and(__table1.B, or(and(__table1.C, __table1.D), and(__table1.C, __table1.E))))
+WHERE __table1.A OR __table1.B AND (__table1.C AND __table1.D OR __table1.C AND __table1.E)
 -9222995085389227671	0	0	0	0	0	1	-9212191261079457524	0	0	1	0	1	0
 -9222995085389227671	0	0	0	0	0	1	-9210944775923669427	0	1	1	1	0	0
 -9222995085389227671	0	0	0	0	0	1	-9202601338732071287	0	1	1	1	1	1
@@ -887,7 +887,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-ALL INNER JOIN default.y AS __table2 ON and(equals(__table1.A, __table2.A), or(equals(__table1.B, 1), equals(__table2.C, 1)))
+ALL INNER JOIN default.y AS __table2 ON __table1.A = __table2.A AND (__table1.B = 1 OR __table2.C = 1)
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -949,7 +949,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-ALL INNER JOIN default.y AS __table2 ON or(equals(__table1.A, __table2.A), and(equals(__table1.B, __table2.B), or(and(equals(__table1.C, __table2.C), equals(__table1.D, __table2.D)), and(equals(__table1.C, __table2.C), equals(__table1.E, __table2.E)))))
+ALL INNER JOIN default.y AS __table2 ON __table1.A = __table2.A OR __table1.B = __table2.B AND (__table1.C = __table2.C AND __table1.D = __table2.D OR __table1.C = __table2.C AND __table1.E = __table2.E)
 -9217261049539683905	0	1	1	0	1	1
 -9194298748734675155	0	0	0	1	0	0
 -9154303869107404275	1	0	1	1	1	1
@@ -992,7 +992,7 @@ SELECT
     __table1.E AS E,
     __table1.F AS F
 FROM default.x AS __table1
-WHERE and(__table1.C, __table1.E)
+WHERE __table1.C AND __table1.E
 -9154303869107404275	1	0	1
 -9137658153367139416	1	1	1
 -9137309194079040284	1	1	1
@@ -1073,7 +1073,7 @@ SELECT
     max(__table1.C) AS mC
 FROM default.x AS __table1
 GROUP BY __table1.x
-HAVING or(and(max(__table1.A), max(__table1.B)), and(max(__table1.A), max(__table1.C)))
+HAVING max(__table1.A) AND max(__table1.B) OR max(__table1.A) AND max(__table1.C)
 -9220160771238933596	1	1	1
 -9154303869107404275	1	1	1
 -9137658153367139416	1	1	1
@@ -1209,8 +1209,8 @@ QUERY id: 0
 
 SELECT
     __table1.x AS x,
-    max(__table1.A) OVER (PARTITION BY modulo(__table1.x, 1000)) AS mA,
-    max(__table1.B) OVER (PARTITION BY modulo(__table1.x, 1000)) AS mB,
-    max(__table1.C) OVER (PARTITION BY modulo(__table1.x, 1000)) AS mC
+    max(__table1.A) OVER (PARTITION BY __table1.x % 1000) AS mA,
+    max(__table1.B) OVER (PARTITION BY __table1.x % 1000) AS mB,
+    max(__table1.C) OVER (PARTITION BY __table1.x % 1000) AS mC
 FROM default.x AS __table1
-QUALIFY or(and(max(__table1.A) OVER (PARTITION BY modulo(__table1.x, 1000)), max(__table1.B) OVER (PARTITION BY modulo(__table1.x, 1000))), and(max(__table1.A) OVER (PARTITION BY modulo(__table1.x, 1000)), max(__table1.C) OVER (PARTITION BY modulo(__table1.x, 1000))))
+QUALIFY max(__table1.A) OVER (PARTITION BY __table1.x % 1000) AND max(__table1.B) OVER (PARTITION BY __table1.x % 1000) OR max(__table1.A) OVER (PARTITION BY __table1.x % 1000) AND max(__table1.C) OVER (PARTITION BY __table1.x % 1000)

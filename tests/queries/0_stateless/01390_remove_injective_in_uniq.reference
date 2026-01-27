@@ -6,20 +6,20 @@ SELECT
     uniqCombined64(x)
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT
-    uniq(plus(x, y)),
-    uniqExact(plus(x, y)),
-    uniqHLL12(plus(x, y)),
-    uniqCombined(plus(x, y)),
-    uniqCombined64(plus(x, y))
+    uniq(x + y),
+    uniqExact(x + y),
+    uniqHLL12(x + y),
+    uniqCombined(x + y),
+    uniqCombined64(x + y)
 FROM
 (
     SELECT
-        modulo(number, 2) AS x,
-        modulo(number, 3) AS y
+        number % 2 AS x,
+        number % 3 AS y
     FROM numbers(10)
 )
 SELECT
@@ -30,7 +30,7 @@ SELECT
     uniqCombined64(negate(x))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT
@@ -41,7 +41,7 @@ SELECT
     uniqCombined64(bitNot(x))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT
@@ -52,7 +52,7 @@ SELECT
     uniqCombined64(bitNot(negate(x)))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT
@@ -63,13 +63,13 @@ SELECT
     uniqCombined64(negate(bitNot(negate(x))))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT countDistinct(negate(bitNot(negate(x))))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniq(concatAssumeInjective(\'x\', \'y\'))
@@ -82,20 +82,20 @@ SELECT
     uniqCombined64(x)
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT
-    uniq(plus(x, y)),
-    uniqExact(plus(x, y)),
-    uniqHLL12(plus(x, y)),
-    uniqCombined(plus(x, y)),
-    uniqCombined64(plus(x, y))
+    uniq(x + y),
+    uniqExact(x + y),
+    uniqHLL12(x + y),
+    uniqCombined(x + y),
+    uniqCombined64(x + y)
 FROM
 (
     SELECT
-        modulo(number, 2) AS x,
-        modulo(number, 3) AS y
+        number % 2 AS x,
+        number % 3 AS y
     FROM numbers(10)
 )
 SELECT
@@ -106,7 +106,7 @@ SELECT
     uniqCombined64(negate(x))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT
@@ -117,7 +117,7 @@ SELECT
     uniqCombined64(bitNot(x))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT
@@ -128,7 +128,7 @@ SELECT
     uniqCombined64(bitNot(negate(x)))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT
@@ -139,13 +139,13 @@ SELECT
     uniqCombined64(negate(bitNot(negate(x))))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT countDistinct(negate(bitNot(negate(x))))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniq(concatAssumeInjective(\'x\', \'y\'))

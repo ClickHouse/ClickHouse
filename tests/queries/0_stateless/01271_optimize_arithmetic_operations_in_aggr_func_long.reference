@@ -1,454 +1,454 @@
 SELECT
-    sum(plus(n, 1)),
-    sum(plus(1, n)),
-    sum(minus(n, 1)),
-    sum(minus(1, n))
+    sum(n + 1),
+    sum(1 + n),
+    sum(n - 1),
+    sum(1 - n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    sum(multiply(n, 2)),
-    sum(multiply(2, n)),
-    sum(divide(n, 2)),
-    sum(divide(1, n))
+    sum(n * 2),
+    sum(2 * n),
+    sum(n / 2),
+    sum(1 / n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    min(plus(n, 1)),
-    min(plus(1, n)),
-    min(minus(n, 1)),
-    min(minus(1, n))
+    min(n + 1),
+    min(1 + n),
+    min(n - 1),
+    min(1 - n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    min(multiply(n, 2)),
-    min(multiply(2, n)),
-    min(divide(n, 2)),
-    min(divide(1, n))
+    min(n * 2),
+    min(2 * n),
+    min(n / 2),
+    min(1 / n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    max(plus(n, 1)),
-    max(plus(1, n)),
-    max(minus(n, 1)),
-    max(minus(1, n))
+    max(n + 1),
+    max(1 + n),
+    max(n - 1),
+    max(1 - n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    max(multiply(n, 2)),
-    max(multiply(2, n)),
-    max(divide(n, 2)),
-    max(divide(1, n))
+    max(n * 2),
+    max(2 * n),
+    max(n / 2),
+    max(1 / n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    sum(plus(n, -1)),
-    sum(plus(-1, n)),
-    sum(minus(n, -1)),
-    sum(minus(-1, n))
+    sum(n + -1),
+    sum(-1 + n),
+    sum(n - -1),
+    sum(-1 - n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    sum(multiply(n, -2)),
-    sum(multiply(-2, n)),
-    sum(divide(n, -2)),
-    sum(divide(-1, n))
+    sum(n * -2),
+    sum(-2 * n),
+    sum(n / -2),
+    sum(-1 / n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    min(plus(n, -1)),
-    min(plus(-1, n)),
-    min(minus(n, -1)),
-    min(minus(-1, n))
+    min(n + -1),
+    min(-1 + n),
+    min(n - -1),
+    min(-1 - n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    min(multiply(n, -2)),
-    min(multiply(-2, n)),
-    min(divide(n, -2)),
-    min(divide(-1, n))
+    min(n * -2),
+    min(-2 * n),
+    min(n / -2),
+    min(-1 / n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    max(plus(n, -1)),
-    max(plus(-1, n)),
-    max(minus(n, -1)),
-    max(minus(-1, n))
+    max(n + -1),
+    max(-1 + n),
+    max(n - -1),
+    max(-1 - n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    max(multiply(n, -2)),
-    max(multiply(-2, n)),
-    max(divide(n, -2)),
-    max(divide(-1, n))
+    max(n * -2),
+    max(-2 * n),
+    max(n / -2),
+    max(-1 / n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    sum(plus(abs(2), 1)),
-    sum(plus(abs(2), n)),
-    sum(minus(n, abs(2))),
-    sum(minus(1, abs(2)))
+    sum(abs(2) + 1),
+    sum(abs(2) + n),
+    sum(n - abs(2)),
+    sum(1 - abs(2))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    sum(multiply(abs(2), 2)),
-    sum(multiply(abs(2), n)),
-    sum(divide(n, abs(2))),
-    sum(divide(1, abs(2)))
+    sum(abs(2) * 2),
+    sum(abs(2) * n),
+    sum(n / abs(2)),
+    sum(1 / abs(2))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    min(plus(abs(2), 1)),
-    min(plus(abs(2), n)),
-    min(minus(n, abs(2))),
-    min(minus(1, abs(2)))
+    min(abs(2) + 1),
+    min(abs(2) + n),
+    min(n - abs(2)),
+    min(1 - abs(2))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    min(multiply(abs(2), 2)),
-    min(multiply(abs(2), n)),
-    min(divide(n, abs(2))),
-    min(divide(1, abs(2)))
+    min(abs(2) * 2),
+    min(abs(2) * n),
+    min(n / abs(2)),
+    min(1 / abs(2))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    max(plus(abs(2), 1)),
-    max(plus(abs(2), n)),
-    max(minus(n, abs(2))),
-    max(minus(1, abs(2)))
+    max(abs(2) + 1),
+    max(abs(2) + n),
+    max(n - abs(2)),
+    max(1 - abs(2))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    max(multiply(abs(2), 2)),
-    max(multiply(abs(2), n)),
-    max(divide(n, abs(2))),
-    max(divide(1, abs(2)))
+    max(abs(2) * 2),
+    max(abs(2) * n),
+    max(n / abs(2)),
+    max(1 / abs(2))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    sum(plus(abs(n), 1)),
-    sum(plus(abs(n), n)),
-    sum(minus(n, abs(n))),
-    sum(minus(1, abs(n)))
+    sum(abs(n) + 1),
+    sum(abs(n) + n),
+    sum(n - abs(n)),
+    sum(1 - abs(n))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    sum(multiply(abs(n), 2)),
-    sum(multiply(abs(n), n)),
-    sum(divide(n, abs(n))),
-    sum(divide(1, abs(n)))
+    sum(abs(n) * 2),
+    sum(abs(n) * n),
+    sum(n / abs(n)),
+    sum(1 / abs(n))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    min(plus(abs(n), 1)),
-    min(plus(abs(n), n)),
-    min(minus(n, abs(n))),
-    min(minus(1, abs(n)))
+    min(abs(n) + 1),
+    min(abs(n) + n),
+    min(n - abs(n)),
+    min(1 - abs(n))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    min(multiply(abs(n), 2)),
-    min(multiply(abs(n), n)),
-    min(divide(n, abs(n))),
-    min(divide(1, abs(n)))
+    min(abs(n) * 2),
+    min(abs(n) * n),
+    min(n / abs(n)),
+    min(1 / abs(n))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    max(plus(abs(n), 1)),
-    max(plus(abs(n), n)),
-    max(minus(n, abs(n))),
-    max(minus(1, abs(n)))
+    max(abs(n) + 1),
+    max(abs(n) + n),
+    max(n - abs(n)),
+    max(1 - abs(n))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    max(multiply(abs(n), 2)),
-    max(multiply(abs(n), n)),
-    max(divide(n, abs(n))),
-    max(divide(1, abs(n)))
+    max(abs(n) * 2),
+    max(abs(n) * n),
+    max(n / abs(n)),
+    max(1 / abs(n))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    sum(plus(multiply(n, n), 1)),
-    sum(plus(1, multiply(n, n))),
-    sum(minus(multiply(n, n), 1)),
-    sum(minus(1, multiply(n, n)))
+    sum(n * n + 1),
+    sum(1 + n * n),
+    sum(n * n - 1),
+    sum(1 - n * n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    sum(multiply(multiply(n, n), 2)),
-    sum(multiply(multiply(2, n), n)),
-    sum(divide(multiply(n, n), 2)),
-    sum(multiply(divide(1, n), n))
+    sum(n * n * 2),
+    sum(2 * n * n),
+    sum(n * n / 2),
+    sum(1 / n * n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    min(plus(multiply(n, n), 1)),
-    min(plus(1, multiply(n, n))),
-    min(minus(multiply(n, n), 1)),
-    min(minus(1, multiply(n, n)))
+    min(n * n + 1),
+    min(1 + n * n),
+    min(n * n - 1),
+    min(1 - n * n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    min(multiply(multiply(n, n), 2)),
-    min(multiply(multiply(2, n), n)),
-    min(divide(multiply(n, n), 2)),
-    min(multiply(divide(1, n), n))
+    min(n * n * 2),
+    min(2 * n * n),
+    min(n * n / 2),
+    min(1 / n * n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    max(plus(multiply(n, n), 1)),
-    max(plus(1, multiply(n, n))),
-    max(minus(multiply(n, n), 1)),
-    max(minus(1, multiply(n, n)))
+    max(n * n + 1),
+    max(1 + n * n),
+    max(n * n - 1),
+    max(1 - n * n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    max(multiply(multiply(n, n), 2)),
-    max(multiply(multiply(2, n), n)),
-    max(divide(multiply(n, n), 2)),
-    max(multiply(divide(1, n), n))
+    max(n * n * 2),
+    max(2 * n * n),
+    max(n * n / 2),
+    max(1 / n * n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    sum(plus(plus(1, n), 1)),
-    sum(plus(plus(1, 1), n)),
-    sum(minus(plus(1, n), 1)),
-    sum(minus(plus(1, 1), n))
+    sum(1 + n + 1),
+    sum(1 + 1 + n),
+    sum(1 + n - 1),
+    sum(1 + 1 - n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    sum(plus(1, multiply(n, 2))),
-    sum(plus(1, multiply(2, n))),
-    sum(plus(1, divide(n, 2))),
-    sum(plus(1, divide(1, n)))
+    sum(1 + n * 2),
+    sum(1 + 2 * n),
+    sum(1 + n / 2),
+    sum(1 + 1 / n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    min(plus(plus(1, n), 1)),
-    min(plus(plus(1, 1), n)),
-    min(minus(plus(1, n), 1)),
-    min(minus(plus(1, 1), n))
+    min(1 + n + 1),
+    min(1 + 1 + n),
+    min(1 + n - 1),
+    min(1 + 1 - n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    min(plus(1, multiply(n, 2))),
-    min(plus(1, multiply(2, n))),
-    min(plus(1, divide(n, 2))),
-    min(plus(1, divide(1, n)))
+    min(1 + n * 2),
+    min(1 + 2 * n),
+    min(1 + n / 2),
+    min(1 + 1 / n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    max(plus(plus(1, n), 1)),
-    max(plus(plus(1, 1), n)),
-    max(minus(plus(1, n), 1)),
-    max(minus(plus(1, 1), n))
+    max(1 + n + 1),
+    max(1 + 1 + n),
+    max(1 + n - 1),
+    max(1 + 1 - n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    max(plus(1, multiply(n, 2))),
-    max(plus(1, multiply(2, n))),
-    max(plus(1, divide(n, 2))),
-    max(plus(1, divide(1, n)))
+    max(1 + n * 2),
+    max(1 + 2 * n),
+    max(1 + n / 2),
+    max(1 + 1 / n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    sum(plus(plus(n, -1), -1)),
-    sum(plus(plus(-1, n), -1)),
-    sum(plus(minus(n, -1), -1)),
-    sum(plus(minus(-1, n), -1))
+    sum(n + -1 + -1),
+    sum(-1 + n + -1),
+    sum(n - -1 + -1),
+    sum(-1 - n + -1)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    sum(multiply(multiply(n, -2), -1)),
-    sum(multiply(multiply(-2, n), -1)),
-    sum(divide(divide(n, -2), -1)),
-    sum(divide(divide(-1, n), -1))
+    sum(n * -2 * -1),
+    sum(-2 * n * -1),
+    sum(n / -2 / -1),
+    sum(-1 / n / -1)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    min(plus(plus(n, -1), -1)),
-    min(plus(plus(-1, n), -1)),
-    min(plus(minus(n, -1), -1)),
-    min(plus(minus(-1, n), -1))
+    min(n + -1 + -1),
+    min(-1 + n + -1),
+    min(n - -1 + -1),
+    min(-1 - n + -1)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    min(multiply(multiply(n, -2), -1)),
-    min(multiply(multiply(-2, n), -1)),
-    min(divide(divide(n, -2), -1)),
-    min(divide(divide(-1, n), -1))
+    min(n * -2 * -1),
+    min(-2 * n * -1),
+    min(n / -2 / -1),
+    min(-1 / n / -1)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    max(plus(plus(n, -1), -1)),
-    max(plus(plus(-1, n), -1)),
-    max(plus(minus(n, -1), -1)),
-    max(plus(minus(-1, n), -1))
+    max(n + -1 + -1),
+    max(-1 + n + -1),
+    max(n - -1 + -1),
+    max(-1 - n + -1)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    max(multiply(multiply(n, -2), -1)),
-    max(multiply(multiply(-2, n), -1)),
-    max(divide(divide(n, -2), -1)),
-    max(divide(divide(-1, n), -1))
+    max(n * -2 * -1),
+    max(-2 * n * -1),
+    max(n / -2 / -1),
+    max(-1 / n / -1)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT plus(plus(plus(sum(plus(n, 1)), sum(plus(1, n))), sum(minus(n, 1))), sum(minus(1, n)))
+SELECT sum(n + 1) + sum(1 + n) + sum(n - 1) + sum(1 - n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT plus(plus(plus(sum(multiply(n, 2)), sum(multiply(2, n))), sum(divide(n, 2))), sum(divide(1, n)))
+SELECT sum(n * 2) + sum(2 * n) + sum(n / 2) + sum(1 / n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT plus(plus(plus(min(plus(n, 1)), min(plus(1, n))), min(minus(n, 1))), min(minus(1, n)))
+SELECT min(n + 1) + min(1 + n) + min(n - 1) + min(1 - n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT plus(plus(plus(min(multiply(n, 2)), min(multiply(2, n))), min(divide(n, 2))), min(divide(1, n)))
+SELECT min(n * 2) + min(2 * n) + min(n / 2) + min(1 / n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT plus(plus(plus(max(plus(n, 1)), max(plus(1, n))), max(minus(n, 1))), max(minus(1, n)))
+SELECT max(n + 1) + max(1 + n) + max(n - 1) + max(1 - n)
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT plus(plus(plus(max(multiply(n, 2)), max(multiply(2, n))), max(divide(n, 2))), max(divide(1, n)))
+SELECT max(n * 2) + max(2 * n) + max(n / 2) + max(1 / n)
 FROM
 (
     SELECT number AS n

@@ -56,8 +56,8 @@ QUERY id: 0
 
 SELECT
     __table1.`arr.size0` AS `length(arr)`,
-    equals(__table1.`arr.size0`, 0) AS `empty(arr)`,
-    notEquals(__table1.`arr.size0`, 0) AS `notEmpty(arr)`,
+    __table1.`arr.size0` = 0 AS `empty(arr)`,
+    __table1.`arr.size0` != 0 AS `notEmpty(arr)`,
     empty(__table1.n) AS `empty(n)`
 FROM default.t_func_to_subcolumns AS __table1
 ['foo','bar']	[1,2]

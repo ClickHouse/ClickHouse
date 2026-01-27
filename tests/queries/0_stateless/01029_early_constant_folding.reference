@@ -1,21 +1,21 @@
 SELECT 1
 FROM system.one
-WHERE equals(1, 0)
+WHERE 1 = 0
 SELECT 1
 FROM system.one
-WHERE in(1, (0, 1, 2))
+WHERE 1 IN (0, 1, 2)
 SELECT 1
 FROM system.one
-WHERE and(in(1, (0, 2)), equals(2, (
+WHERE 1 IN (0, 2) AND 2 = (
     SELECT 2
     FROM system.one
-) AS subquery))
+) AS subquery
 SELECT 1
 FROM system.one
-WHERE in(1, (
+WHERE 1 IN (
     SELECT arrayJoin(_CAST([1, 2, 3], \'Array(UInt8)\'))
     FROM system.one
-) AS subquery)
+) AS subquery
 SELECT 1
 FROM system.one
 WHERE not(ignore())

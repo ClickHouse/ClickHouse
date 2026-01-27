@@ -1,6 +1,6 @@
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
-WHERE or(equals(a, \'x\'), equals(a, \'y\'))
+WHERE a = \'x\' OR a = \'y\'
 QUERY id: 0
   PROJECTION COLUMNS
     a LowCardinality(String)
@@ -22,7 +22,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
-WHERE or(equals(a, \'x\'), equals(\'y\', a))
+WHERE a = \'x\' OR \'y\' = a
 QUERY id: 0
   PROJECTION COLUMNS
     a LowCardinality(String)
@@ -44,7 +44,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
-WHERE and(notEquals(a, \'x\'), notEquals(a, \'y\'))
+WHERE a != \'x\' AND a != \'y\'
 QUERY id: 0
   PROJECTION COLUMNS
     a LowCardinality(String)
@@ -66,7 +66,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
-WHERE and(notEquals(a, \'x\'), notEquals(\'y\', a))
+WHERE a != \'x\' AND \'y\' != a
 QUERY id: 0
   PROJECTION COLUMNS
     a LowCardinality(String)
@@ -88,7 +88,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
-WHERE or(equals(b, 0), equals(b, 1))
+WHERE b = 0 OR b = 1
 QUERY id: 0
   PROJECTION COLUMNS
     a LowCardinality(String)
@@ -114,7 +114,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT a
 FROM t_logical_expressions_optimizer_low_cardinality
-WHERE and(notEquals(b, 0), notEquals(b, 1))
+WHERE b != 0 AND b != 1
 QUERY id: 0
   PROJECTION COLUMNS
     a LowCardinality(String)

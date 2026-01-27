@@ -4,13 +4,13 @@ SELECT
     __table1.k2 AS k2,
     __table1.payload AS payload
 FROM default.f AS __table1
-WHERE in(tuple(__table1.k1, __table1.k2), (
+WHERE tuple(__table1.k1, __table1.k2) IN (
     SELECT
         __table1.k1 AS k1,
         __table1.k2 AS k2
     FROM dictionary(\'dict_prices_ckh\') AS __table1
-    WHERE equals(__table1.tag, \'pro\')
-))
+    WHERE __table1.tag = \'pro\'
+)
 ORDER BY
     __table1.k1 ASC,
     __table1.k2 ASC,
@@ -23,13 +23,13 @@ SELECT
     __table1.k2 AS k2,
     __table1.payload AS payload
 FROM default.f AS __table1
-WHERE in(tuple(__table1.k1, __table1.k2), (
+WHERE tuple(__table1.k1, __table1.k2) IN (
     SELECT
         __table1.k1 AS k1,
         __table1.k2 AS k2
     FROM dictionary(\'dict_prices_ch_array\') AS __table1
-    WHERE equals(__table1.tag, \'pro\')
-))
+    WHERE __table1.tag = \'pro\'
+)
 ORDER BY
     __table1.k1 ASC,
     __table1.k2 ASC,
@@ -42,13 +42,13 @@ SELECT
     __table1.k2 AS k2,
     __table1.payload AS payload
 FROM default.f AS __table1
-WHERE in(tuple(__table1.k1, __table1.k2), (
+WHERE tuple(__table1.k1, __table1.k2) IN (
     SELECT
         __table1.k1 AS k1,
         __table1.k2 AS k2
     FROM dictionary(\'dict_prices_ck_sparse_hashed\') AS __table1
-    WHERE equals(__table1.tag, \'pro\')
-))
+    WHERE __table1.tag = \'pro\'
+)
 ORDER BY
     __table1.k1 ASC,
     __table1.k2 ASC,
@@ -60,11 +60,11 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.f AS __table1
-WHERE in(__table1.id, (
+WHERE __table1.id IN (
     SELECT __table1.id AS id
     FROM dictionary(\'dict_items_flat\') AS __table1
-    WHERE equals(__table1.name, \'alpha\')
-))
+    WHERE __table1.name = \'alpha\'
+)
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -77,11 +77,11 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.f AS __table1
-WHERE in(__table1.id, (
+WHERE __table1.id IN (
     SELECT __table1.id AS id
     FROM dictionary(\'dict_items_hashed\') AS __table1
-    WHERE equals(__table1.name, \'alpha\')
-))
+    WHERE __table1.name = \'alpha\'
+)
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -94,11 +94,11 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.f AS __table1
-WHERE in(__table1.id, (
+WHERE __table1.id IN (
     SELECT __table1.id AS id
     FROM dictionary(\'dict_items_hashed_array\') AS __table1
-    WHERE equals(__table1.name, \'alpha\')
-))
+    WHERE __table1.name = \'alpha\'
+)
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -111,11 +111,11 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.f AS __table1
-WHERE in(__table1.id, (
+WHERE __table1.id IN (
     SELECT __table1.id AS id
     FROM dictionary(\'dict_items_sparse_hashed\') AS __table1
-    WHERE equals(__table1.name, \'alpha\')
-))
+    WHERE __table1.name = \'alpha\'
+)
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC

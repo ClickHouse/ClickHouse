@@ -1,9 +1,9 @@
 --- CASE A: plan (enabled) ---
-Filter column: or(and(in(__table1.k, __set_Int32_UNIQ_ID), equals(__table2.x, 100_UInt8)), and(in(__table1.k, __set_Int32_UNIQ_ID), equals(__table2.x, 200_UInt8))) (removed)
-Filter column: or(in(__table1.k, __set_Int32_UNIQ_ID), in(__table1.k, __set_Int32_UNIQ_ID)) (removed)
-Filter column: or(equals(__table2.x, 100_UInt8), equals(__table2.x, 200_UInt8)) (removed)
+Filter column: __table1.k IN __set_Int32_UNIQ_ID AND __table2.x = 100_UInt8 OR __table1.k IN __set_Int32_UNIQ_ID AND __table2.x = 200_UInt8 (removed)
+Filter column: __table1.k IN __set_Int32_UNIQ_ID OR __table1.k IN __set_Int32_UNIQ_ID (removed)
+Filter column: __table2.x = 100_UInt8 OR __table2.x = 200_UInt8 (removed)
 --- CASE A: plan (disabled) ---
-Filter column: or(and(in(__table1.k, __set_Int32_UNIQ_ID), equals(__table2.x, 100_UInt8)), and(in(__table1.k, __set_Int32_UNIQ_ID), equals(__table2.x, 200_UInt8))) (removed)
+Filter column: __table1.k IN __set_Int32_UNIQ_ID AND __table2.x = 100_UInt8 OR __table1.k IN __set_Int32_UNIQ_ID AND __table2.x = 200_UInt8 (removed)
 --- CASE A: result (enabled) ---
 1	10	100
 2	20	100
@@ -15,9 +15,9 @@ Filter column: or(and(in(__table1.k, __set_Int32_UNIQ_ID), equals(__table2.x, 10
 3	30	200
 4	40	200
 --- CASE B: plan (enabled) ---
-Prewhere filter column: or(equals(__table2.x, 100_UInt8), equals(__table2.x, 200_UInt8)) (removed)
+Prewhere filter column: __table2.x = 100_UInt8 OR __table2.x = 200_UInt8 (removed)
 --- CASE B: plan (disabled) ---
-Prewhere filter column: or(equals(__table2.x, 100_UInt8), equals(__table2.x, 200_UInt8)) (removed)
+Prewhere filter column: __table2.x = 100_UInt8 OR __table2.x = 200_UInt8 (removed)
 --- CASE B: result (enabled) ---
 1	10	100
 2	20	100
@@ -29,11 +29,11 @@ Prewhere filter column: or(equals(__table2.x, 100_UInt8), equals(__table2.x, 200
 3	30	200
 4	40	200
 --- CASE C: plan (enabled) ---
-Prewhere filter column: or(in(__table1.k, __set_Int32_UNIQ_ID), in(__table1.k, __set_Int32_UNIQ_ID)) (removed)
-Prewhere filter column: or(in(__table2.k, __set_Int32_UNIQ_ID), in(__table2.k, __set_Int32_UNIQ_ID)) (removed)
+Prewhere filter column: __table1.k IN __set_Int32_UNIQ_ID OR __table1.k IN __set_Int32_UNIQ_ID (removed)
+Prewhere filter column: __table2.k IN __set_Int32_UNIQ_ID OR __table2.k IN __set_Int32_UNIQ_ID (removed)
 --- CASE C: plan (disabled) ---
-Prewhere filter column: or(in(__table1.k, __set_Int32_UNIQ_ID), in(__table1.k, __set_Int32_UNIQ_ID)) (removed)
-Prewhere filter column: or(in(__table2.k, __set_Int32_UNIQ_ID), in(__table2.k, __set_Int32_UNIQ_ID)) (removed)
+Prewhere filter column: __table1.k IN __set_Int32_UNIQ_ID OR __table1.k IN __set_Int32_UNIQ_ID (removed)
+Prewhere filter column: __table2.k IN __set_Int32_UNIQ_ID OR __table2.k IN __set_Int32_UNIQ_ID (removed)
 --- CASE C: result (enabled) ---
 1	10	100
 2	20	100
@@ -45,13 +45,13 @@ Prewhere filter column: or(in(__table2.k, __set_Int32_UNIQ_ID), in(__table2.k, _
 3	30	200
 4	40	200
 --- Case D: plan (enabled) ---
-Filter column: and(greater(__table1.a, 0_UInt8), greater(__table2.c, 0_UInt8), or(and(greater(__table1.a, 5_UInt8), less(__table2.c, 10_UInt8)), and(greater(__table1.a, 6_UInt8), less(__table2.c, 11_UInt8)))) (removed)
-Filter column: and(greater(__table1.a, 0_UInt8), or(greater(__table1.a, 5_UInt8), greater(__table1.a, 6_UInt8))) (removed)
-Filter column: and(greater(__table2.c, 0_UInt8), or(less(__table2.c, 10_UInt8), less(__table2.c, 11_UInt8))) (removed)
+Filter column: __table1.a > 0_UInt8 AND __table2.c > 0_UInt8 AND (__table1.a > 5_UInt8 AND __table2.c < 10_UInt8 OR __table1.a > 6_UInt8 AND __table2.c < 11_UInt8) (removed)
+Filter column: __table1.a > 0_UInt8 AND (__table1.a > 5_UInt8 OR __table1.a > 6_UInt8) (removed)
+Filter column: __table2.c > 0_UInt8 AND (__table2.c < 10_UInt8 OR __table2.c < 11_UInt8) (removed)
 --- Case D: plan (disabled) ---
-Filter column: and(greater(__table1.a, 0_UInt8), greater(__table2.c, 0_UInt8), or(and(greater(__table1.a, 5_UInt8), less(__table2.c, 10_UInt8)), and(greater(__table1.a, 6_UInt8), less(__table2.c, 11_UInt8)))) (removed)
-Filter column: greater(__table1.a, 0_UInt8) (removed)
-Filter column: greater(__table2.c, 0_UInt8) (removed)
+Filter column: __table1.a > 0_UInt8 AND __table2.c > 0_UInt8 AND (__table1.a > 5_UInt8 AND __table2.c < 10_UInt8 OR __table1.a > 6_UInt8 AND __table2.c < 11_UInt8) (removed)
+Filter column: __table1.a > 0_UInt8 (removed)
+Filter column: __table2.c > 0_UInt8 (removed)
 --- Case D: result (enabled) ---
 6	a6	6	b6
 7	a7	7	b7
@@ -79,8 +79,8 @@ Filter column: greater(__table2.c, 0_UInt8) (removed)
 5	4
 5	5
 --- Case F: plan (enabled) ---
-Filter column: or(and(equals(__table3.number, 1_UInt8), equals(plus(__table1.number, __table2.number), 3_UInt8)), and(equals(__table3.number, 2_UInt8), equals(plus(__table1.number, __table2.number), 2_UInt8))) (removed)
-Filter column: or(equals(plus(__table1.number, __table2.number), 3_UInt8), equals(plus(__table1.number, __table2.number), 2_UInt8)) (removed)
-Filter column: or(equals(__table3.number, 1_UInt8), equals(__table3.number, 2_UInt8)) (removed)
+Filter column: __table3.number = 1_UInt8 AND __table1.number + __table2.number = 3_UInt8 OR __table3.number = 2_UInt8 AND __table1.number + __table2.number = 2_UInt8 (removed)
+Filter column: __table1.number + __table2.number = 3_UInt8 OR __table1.number + __table2.number = 2_UInt8 (removed)
+Filter column: __table3.number = 1_UInt8 OR __table3.number = 2_UInt8 (removed)
 --- Case F: plan (disabled) ---
-Filter column: or(and(equals(__table3.number, 1_UInt8), equals(plus(__table1.number, __table2.number), 3_UInt8)), and(equals(__table3.number, 2_UInt8), equals(plus(__table1.number, __table2.number), 2_UInt8))) (removed)
+Filter column: __table3.number = 1_UInt8 AND __table1.number + __table2.number = 3_UInt8 OR __table3.number = 2_UInt8 AND __table1.number + __table2.number = 2_UInt8 (removed)

@@ -21,7 +21,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE or(__table1.A, __table1.B, and(__table1.B, __table1.C))
+WHERE __table1.A OR __table1.B OR __table1.B AND __table1.C
 SETTINGS optimize_extract_common_expressions = 0
 1476
 QUERY id: 0
@@ -42,7 +42,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE or(__table1.A, __table1.B)
+WHERE __table1.A OR __table1.B
 SETTINGS optimize_extract_common_expressions = 1
 1476
 QUERY id: 0
@@ -67,7 +67,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(__table1.B, or(__table1.A, __table1.C))
+WHERE __table1.B AND (__table1.A OR __table1.C)
 SETTINGS optimize_extract_common_expressions = 1
 752
 QUERY id: 0
@@ -102,7 +102,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE or(and(__table1.A, __table1.B), and(__table1.B, __table1.C), and(__table1.B, __table1.D, __table1.A))
+WHERE __table1.A AND __table1.B OR __table1.B AND __table1.C OR __table1.B AND __table1.D AND __table1.A
 SETTINGS optimize_extract_common_expressions = 0
 752
 QUERY id: 0
@@ -131,7 +131,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE or(and(__table1.A, __table1.B), and(__table1.D, __table1.E))
+WHERE __table1.A AND __table1.B OR __table1.D AND __table1.E
 SETTINGS optimize_extract_common_expressions = 1
 873
 QUERY id: 0
@@ -166,7 +166,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE or(and(__table1.A, __table1.B), and(__table1.A, __table1.B, __table1.C), and(__table1.D, __table1.E))
+WHERE __table1.A AND __table1.B OR __table1.A AND __table1.B AND __table1.C OR __table1.D AND __table1.E
 SETTINGS optimize_extract_common_expressions = 0
 873
 QUERY id: 0
@@ -191,7 +191,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE and(__table1.B, or(__table1.A, __table1.C))
+WHERE __table1.B AND (__table1.A OR __table1.C)
 SETTINGS optimize_extract_common_expressions = 1
 752
 QUERY id: 0
@@ -226,6 +226,6 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE or(and(__table1.A, __table1.B), and(__table1.A, __table1.B, __table1.C), and(__table1.B, __table1.C))
+WHERE __table1.A AND __table1.B OR __table1.A AND __table1.B AND __table1.C OR __table1.B AND __table1.C
 SETTINGS optimize_extract_common_expressions = 0
 752

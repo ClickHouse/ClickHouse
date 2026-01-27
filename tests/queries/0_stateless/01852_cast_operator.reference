@@ -14,7 +14,7 @@ FROM system.one
 SELECT CAST(\'1\', \'Int8\') AS c
 FROM system.one
 [1,2,3]
-SELECT CAST(array(1, plus(1, 1), plus(1, 2)), \'Array(UInt32)\') AS c
+SELECT CAST(array(1, 1 + 1, 1 + 2), \'Array(UInt32)\') AS c
 FROM system.one
 2010-10-10
 SELECT CAST(\'2010-10-10\', \'Date\') AS c
@@ -26,10 +26,10 @@ FROM system.one
 SELECT CAST(\'[\\\'2010-10-10\\\', \\\'2010-10-10\\\']\', \'Array(Date)\')
 FROM system.one
 3
-SELECT CAST(plus(1, 2), \'UInt32\') AS c
+SELECT CAST(1 + 2, \'UInt32\') AS c
 FROM system.one
 0.5
-SELECT CAST(multiply(CAST(\'0.1\', \'Decimal(4, 4)\'), 5), \'Float64\') AS c
+SELECT CAST(CAST(\'0.1\', \'Decimal(4, 4)\') * 5, \'Float64\') AS c
 FROM system.one
 0	UInt8
 SELECT
@@ -37,10 +37,10 @@ SELECT
     toTypeName(c)
 FROM numbers(1)
 1970-01-11
-SELECT CAST(plus(plus(plus(plus(0, 1), 2), 3), 4), \'Date\') AS c
+SELECT CAST(0 + 1 + 2 + 3 + 4, \'Date\') AS c
 FROM system.one
 0.6
-SELECT CAST(plus(plus(CAST(\'0.1\', \'Decimal(4, 4)\'), CAST(\'0.2\', \'Decimal(4, 4)\')), CAST(\'0.3\', \'Decimal(4, 4)\')), \'Decimal(4, 4)\') AS c
+SELECT CAST(CAST(\'0.1\', \'Decimal(4, 4)\') + CAST(\'0.2\', \'Decimal(4, 4)\') + CAST(\'0.3\', \'Decimal(4, 4)\'), \'Decimal(4, 4)\') AS c
 FROM system.one
 [1]
 [[1,2,3],[],[1]]

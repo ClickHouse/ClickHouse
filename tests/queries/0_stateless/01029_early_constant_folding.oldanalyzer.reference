@@ -2,10 +2,10 @@ SELECT 1
 WHERE 0
 SELECT 1
 SELECT 1
-WHERE and(in(1, tuple(0, 2)), equals(2, (__scalarSubqueryResult(_CAST(2, \'Nullable(UInt8)\')) AS subquery)))
+WHERE 1 IN tuple(0, 2) AND 2 = (__scalarSubqueryResult(_CAST(2, \'Nullable(UInt8)\')) AS subquery)
 SELECT 1
-WHERE in(1, ((
+WHERE 1 IN ((
     SELECT arrayJoin([1, 2, 3])
-) AS subquery))
+) AS subquery)
 SELECT 1
 WHERE not(ignore())

@@ -4,8 +4,8 @@ SELECT 1 != (NOT 1);
 SELECT 1 != NOT 1;
 1
 EXPLAIN SYNTAX SELECT 1 != (NOT 1);
-SELECT notEquals(1, not(1))
+SELECT 1 != not(1)
 FROM system.one
 EXPLAIN SYNTAX SELECT 1 != NOT 1;
-SELECT notEquals(1, not(1))
+SELECT 1 != not(1)
 FROM system.one

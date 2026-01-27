@@ -48,12 +48,12 @@ censor.net
 censor.net
 censor.net
 censor.net
-SELECT if(greater(number, 5), \'censor.net\', \'google\')
+SELECT if(number > 5, \'censor.net\', \'google\')
 FROM system.numbers
 LIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
-    if(greater(number, 5), \'censor.net\', \'google\') String
+    if(number > 5, \'censor.net\', \'google\') String
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
@@ -135,12 +135,12 @@ censor.net1
 censor.net1
 censor.net1
 censor.net1
-SELECT CONCAT(if(greater(number, 5), \'censor.net\', \'google\'), \'1\')
+SELECT CONCAT(if(number > 5, \'censor.net\', \'google\'), \'1\')
 FROM system.numbers
 LIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
-    CONCAT(if(greater(number, 5), \'censor.net\', \'google\'), \'1\') String
+    CONCAT(if(number > 5, \'censor.net\', \'google\'), \'1\') String
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: concat, function_type: ordinary, result_type: String
@@ -185,7 +185,7 @@ censor.net
 SELECT t1.value
 FROM
 (
-    SELECT if(greater(number, 5), \'censor.net\', \'google\') AS value
+    SELECT if(number > 5, \'censor.net\', \'google\') AS value
     FROM system.numbers
     LIMIT 10
 ) AS t1
@@ -288,7 +288,7 @@ censor.net	censor.net
 censor.net	censor.net
 censor.net	censor.net
 SELECT
-    if(greater(number, 5), \'censor.net\', \'google\') AS value,
+    if(number > 5, \'censor.net\', \'google\') AS value,
     value
 FROM system.numbers
 LIMIT 10
@@ -495,12 +495,12 @@ censor.net
 censor.net
 censor.net
 censor.net
-SELECT if(greater(number, 5), \'censor.net\', \'google\')
+SELECT if(number > 5, \'censor.net\', \'google\')
 FROM system.numbers
 LIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
-    if(greater(number, 5), \'censor.net\', \'google\') String
+    if(number > 5, \'censor.net\', \'google\') String
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: if, function_type: ordinary, result_type: String

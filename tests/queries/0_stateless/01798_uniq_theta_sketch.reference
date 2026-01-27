@@ -34,77 +34,77 @@ uniqTheta remove injective
 SELECT uniqTheta(x)
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(plus(x, y))
+SELECT uniqTheta(x + y)
 FROM
 (
     SELECT
-        modulo(number, 2) AS x,
-        modulo(number, 3) AS y
+        number % 2 AS x,
+        number % 3 AS y
     FROM numbers(10)
 )
 SELECT uniqTheta(negate(x))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(bitNot(x))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(bitNot(negate(x)))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(negate(bitNot(negate(x))))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(x)
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(plus(x, y))
+SELECT uniqTheta(x + y)
 FROM
 (
     SELECT
-        modulo(number, 2) AS x,
-        modulo(number, 3) AS y
+        number % 2 AS x,
+        number % 3 AS y
     FROM numbers(10)
 )
 SELECT uniqTheta(negate(x))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(bitNot(x))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(bitNot(negate(x)))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 SELECT uniqTheta(negate(bitNot(negate(x))))
 FROM
 (
-    SELECT modulo(number, 2) AS x
+    SELECT number % 2 AS x
     FROM numbers(10)
 )
 1000	1000

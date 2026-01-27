@@ -34,10 +34,10 @@
 0
 SELECT count()
 FROM constraint_test_constants
-WHERE or(greater(b, 100), greater(c, 100))
+WHERE b > 100 OR c > 100
 SELECT count()
 FROM constraint_test_constants
-WHERE greater(c, 100)
+WHERE c > 100
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -55,7 +55,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT count()
 FROM constraint_test_constants
-WHERE greater(c, 100)
+WHERE c > 100
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64

@@ -1,110 +1,110 @@
 Row 1:
 ──────
-equals(b, b):    1
-greater(b, b):   0
-less(b, b):      0
-equals(b, c):    0
-greater(b, c):   0
-less(b, c):      1
-equals(b, d):    0
-greater(b, d):   0
-less(b, d):      1
-equals(b, bf):   1
-greater(b, bf):  0
-less(b, bf):     0
-equals(b, cf):   0
-greater(b, cf):  0
-less(b, cf):     1
-equals(b, df):   0
-greater(b, df):  0
-less(b, df):     1
-equals(c, b):    0
-greater(c, b):   1
-less(c, b):      0
-equals(c, c):    1
-greater(c, c):   0
-less(c, c):      0
-equals(c, d):    0
-greater(c, d):   0
-less(c, d):      1
-equals(c, bf):   0
-greater(c, bf):  1
-less(c, bf):     0
-equals(c, cf):   1
-greater(c, cf):  0
-less(c, cf):     0
-equals(c, df):   0
-greater(c, df):  0
-less(c, df):     1
-equals(d, b):    0
-greater(d, b):   1
-less(d, b):      0
-equals(d, c):    0
-greater(d, c):   1
-less(d, c):      0
-equals(d, d):    1
-greater(d, d):   0
-less(d, d):      0
-equals(d, bf):   0
-greater(d, bf):  1
-less(d, bf):     0
-equals(d, cf):   0
-greater(d, cf):  1
-less(d, cf):     0
-equals(d, df):   1
-greater(d, df):  0
-less(d, df):     0
-equals(bf, b):   1
-greater(bf, b):  0
-less(bf, b):     0
-equals(bf, c):   0
-greater(bf, c):  0
-less(bf, c):     1
-equals(bf, d):   0
-greater(bf, d):  0
-less(bf, d):     1
-equals(bf, bf):  1
-greater(bf, bf): 0
-less(bf, bf):    0
-equals(bf, cf):  0
-greater(bf, cf): 0
-less(bf, cf):    1
-equals(bf, df):  0
-greater(bf, df): 0
-less(bf, df):    1
-equals(cf, b):   0
-greater(cf, b):  1
-less(cf, b):     0
-equals(cf, c):   1
-greater(cf, c):  0
-less(cf, c):     0
-equals(cf, d):   0
-greater(cf, d):  0
-less(cf, d):     1
-equals(cf, bf):  0
-greater(cf, bf): 1
-less(cf, bf):    0
-equals(cf, cf):  1
-greater(cf, cf): 0
-less(cf, cf):    0
-equals(cf, df):  0
-greater(cf, df): 0
-less(cf, df):    1
-equals(df, b):   0
-greater(df, b):  1
-less(df, b):     0
-equals(df, c):   0
-greater(df, c):  1
-less(df, c):     0
-equals(df, d):   1
-greater(df, d):  0
-less(df, d):     0
-equals(df, bf):  0
-greater(df, bf): 1
-less(df, bf):    0
-equals(df, cf):  0
-greater(df, cf): 1
-less(df, cf):    0
-equals(df, df):  1
-greater(df, df): 0
-less(df, df):    0
+b = b:    1
+b > b:   0
+b < b:      0
+b = c:    0
+b > c:   0
+b < c:      1
+b = d:    0
+b > d:   0
+b < d:      1
+b = bf:   1
+b > bf:  0
+b < bf:     0
+b = cf:   0
+b > cf:  0
+b < cf:     1
+b = df:   0
+b > df:  0
+b < df:     1
+c = b:    0
+c > b:   1
+c < b:      0
+c = c:    1
+c > c:   0
+c < c:      0
+c = d:    0
+c > d:   0
+c < d:      1
+c = bf:   0
+c > bf:  1
+c < bf:     0
+c = cf:   1
+c > cf:  0
+c < cf:     0
+c = df:   0
+c > df:  0
+c < df:     1
+d = b:    0
+d > b:   1
+d < b:      0
+d = c:    0
+d > c:   1
+d < c:      0
+d = d:    1
+d > d:   0
+d < d:      0
+d = bf:   0
+d > bf:  1
+d < bf:     0
+d = cf:   0
+d > cf:  1
+d < cf:     0
+d = df:   1
+d > df:  0
+d < df:     0
+bf = b:   1
+bf > b:  0
+bf < b:     0
+bf = c:   0
+bf > c:  0
+bf < c:     1
+bf = d:   0
+bf > d:  0
+bf < d:     1
+bf = bf:  1
+bf > bf: 0
+bf < bf:    0
+bf = cf:  0
+bf > cf: 0
+bf < cf:    1
+bf = df:  0
+bf > df: 0
+bf < df:    1
+cf = b:   0
+cf > b:  1
+cf < b:     0
+cf = c:   1
+cf > c:  0
+cf < c:     0
+cf = d:   0
+cf > d:  0
+cf < d:     1
+cf = bf:  0
+cf > bf: 1
+cf < bf:    0
+cf = cf:  1
+cf > cf: 0
+cf < cf:    0
+cf = df:  0
+cf > df: 0
+cf < df:    1
+df = b:   0
+df > b:  1
+df < b:     0
+df = c:   0
+df > c:  1
+df < c:     0
+df = d:   1
+df > d:  0
+df < d:     0
+df = bf:  0
+df > bf: 1
+df < bf:    0
+df = cf:  0
+df > cf: 1
+df < cf:    0
+df = df:  1
+df > df: 0
+df < df:    0

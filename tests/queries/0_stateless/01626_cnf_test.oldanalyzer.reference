@@ -1,18 +1,18 @@
 SELECT i
 FROM cnf_test
-WHERE and(lessOrEquals(i, 2), lessOrEquals(i, 1))
+WHERE i <= 2 AND i <= 1
 SELECT i
 FROM cnf_test
-WHERE or(lessOrEquals(i, 2), lessOrEquals(i, 1))
+WHERE i <= 2 OR i <= 1
 SELECT i
 FROM cnf_test
-WHERE and(and(and(and(and(and(and(or(or(greater(i, 4), greater(i, 6)), greater(i, 1)), or(or(greater(i, 4), greater(i, 6)), greater(i, 2))), or(or(greater(i, 4), greater(i, 1)), greater(i, 5))), or(or(greater(i, 4), greater(i, 2)), greater(i, 5))), or(or(greater(i, 6), greater(i, 1)), greater(i, 3))), or(or(greater(i, 6), greater(i, 2)), greater(i, 3))), or(or(greater(i, 1), greater(i, 3)), greater(i, 5))), or(or(greater(i, 2), greater(i, 3)), greater(i, 5)))
+WHERE (((((((i > 4 OR i > 6 OR i > 1) AND (i > 4 OR i > 6 OR i > 2)) AND (i > 4 OR i > 1 OR i > 5)) AND (i > 4 OR i > 2 OR i > 5)) AND (i > 6 OR i > 1 OR i > 3)) AND (i > 6 OR i > 2 OR i > 3)) AND (i > 1 OR i > 3 OR i > 5)) AND (i > 2 OR i > 3 OR i > 5)
 SELECT i
 FROM cnf_test
-WHERE and(and(and(and(and(and(and(or(or(lessOrEquals(i, 2), lessOrEquals(i, 6)), lessOrEquals(i, 4)), or(or(lessOrEquals(i, 2), lessOrEquals(i, 6)), lessOrEquals(i, 3))), or(or(lessOrEquals(i, 2), lessOrEquals(i, 4)), lessOrEquals(i, 5))), or(or(lessOrEquals(i, 2), lessOrEquals(i, 3)), lessOrEquals(i, 5))), or(or(lessOrEquals(i, 6), lessOrEquals(i, 1)), lessOrEquals(i, 4))), or(or(lessOrEquals(i, 6), lessOrEquals(i, 1)), lessOrEquals(i, 3))), or(or(lessOrEquals(i, 1), lessOrEquals(i, 4)), lessOrEquals(i, 5))), or(or(lessOrEquals(i, 1), lessOrEquals(i, 3)), lessOrEquals(i, 5)))
+WHERE (((((((i <= 2 OR i <= 6 OR i <= 4) AND (i <= 2 OR i <= 6 OR i <= 3)) AND (i <= 2 OR i <= 4 OR i <= 5)) AND (i <= 2 OR i <= 3 OR i <= 5)) AND (i <= 6 OR i <= 1 OR i <= 4)) AND (i <= 6 OR i <= 1 OR i <= 3)) AND (i <= 1 OR i <= 4 OR i <= 5)) AND (i <= 1 OR i <= 3 OR i <= 5)
 SELECT i
 FROM cnf_test
-WHERE and(and(and(and(and(and(and(and(and(and(and(and(and(and(and(and(and(or(or(greater(i, 8), greater(i, 6)), greater(i, 1)), or(or(greater(i, 8), greater(i, 6)), greater(i, 2))), or(or(greater(i, 8), greater(i, 6)), greater(i, 7))), or(or(greater(i, 8), greater(i, 1)), greater(i, 5))), or(or(greater(i, 8), greater(i, 2)), greater(i, 5))), or(or(greater(i, 8), greater(i, 7)), greater(i, 5))), or(or(greater(i, 4), greater(i, 6)), greater(i, 1))), or(or(greater(i, 4), greater(i, 6)), greater(i, 2))), or(or(greater(i, 4), greater(i, 6)), greater(i, 7))), or(or(greater(i, 4), greater(i, 1)), greater(i, 5))), or(or(greater(i, 4), greater(i, 2)), greater(i, 5))), or(or(greater(i, 4), greater(i, 7)), greater(i, 5))), or(or(greater(i, 6), greater(i, 1)), greater(i, 3))), or(or(greater(i, 6), greater(i, 2)), greater(i, 3))), or(or(greater(i, 6), greater(i, 7)), greater(i, 3))), or(or(greater(i, 1), greater(i, 3)), greater(i, 5))), or(or(greater(i, 2), greater(i, 3)), greater(i, 5))), or(or(greater(i, 7), greater(i, 3)), greater(i, 5)))
+WHERE (((((((((((((((((i > 8 OR i > 6 OR i > 1) AND (i > 8 OR i > 6 OR i > 2)) AND (i > 8 OR i > 6 OR i > 7)) AND (i > 8 OR i > 1 OR i > 5)) AND (i > 8 OR i > 2 OR i > 5)) AND (i > 8 OR i > 7 OR i > 5)) AND (i > 4 OR i > 6 OR i > 1)) AND (i > 4 OR i > 6 OR i > 2)) AND (i > 4 OR i > 6 OR i > 7)) AND (i > 4 OR i > 1 OR i > 5)) AND (i > 4 OR i > 2 OR i > 5)) AND (i > 4 OR i > 7 OR i > 5)) AND (i > 6 OR i > 1 OR i > 3)) AND (i > 6 OR i > 2 OR i > 3)) AND (i > 6 OR i > 7 OR i > 3)) AND (i > 1 OR i > 3 OR i > 5)) AND (i > 2 OR i > 3 OR i > 5)) AND (i > 7 OR i > 3 OR i > 5)
 SELECT i
 FROM cnf_test
-WHERE and(and(and(or(or(greater(i, 8), greater(i, 4)), greater(i, 3)), lessOrEquals(i, 6)), or(or(greater(i, 1), greater(i, 2)), greater(i, 7))), lessOrEquals(i, 5))
+WHERE (((i > 8 OR i > 4 OR i > 3) AND i <= 6) AND (i > 1 OR i > 2 OR i > 7)) AND i <= 5

@@ -1,6 +1,6 @@
 SELECT value1
 FROM date_t
-WHERE and(equals(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYear(date1) = 1993 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -42,7 +42,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(notEquals(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYear(date1) != 1993 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -84,7 +84,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(less(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYear(date1) < 1993 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -118,7 +118,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(greater(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYear(date1) > 1993 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -152,7 +152,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(lessOrEquals(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYear(date1) <= 1993 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -186,7 +186,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(greaterOrEquals(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYear(date1) >= 1993 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -220,7 +220,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(and(greaterOrEquals(toYear(date1), 1993), lessOrEquals(toYear(date1), 1997)), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYear(date1) >= 1993 AND toYear(date1) <= 1997 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -262,7 +262,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(or(equals(toYear(date1), 1993), equals(toYear(date1), 1994)), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE (toYear(date1) = 1993 OR toYear(date1) = 1994) AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -322,7 +322,7 @@ SELECT
     value1,
     toYear(date1) AS year1
 FROM date_t
-WHERE and(equals(year1, 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE year1 = 1993 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -369,7 +369,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(greater(1993, toYear(date1)), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE 1993 > toYear(date1) AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -403,8 +403,8 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-PREWHERE equals(toYear(date1), 1993)
-WHERE and(greaterOrEquals(id, 1), lessOrEquals(id, 3))
+PREWHERE toYear(date1) = 1993
+WHERE id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -444,8 +444,8 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(greaterOrEquals(id, 1), lessOrEquals(id, 3))
-HAVING equals(toYear(date1), 1993)
+WHERE id >= 1 AND id <= 3
+HAVING toYear(date1) = 1993
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -485,7 +485,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(equals(toYYYYMM(date1), 199300), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYYYYMM(date1) = 199300 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -522,7 +522,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(equals(toYYYYMM(date1), 199313), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYYYYMM(date1) = 199313 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -559,7 +559,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(equals(toYYYYMM(date1), 199312), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYYYYMM(date1) = 199312 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -601,7 +601,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(equals(toYYYYMM(date1), 199203), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYYYYMM(date1) = 199203 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -643,7 +643,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(notEquals(toYYYYMM(date1), 199203), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYYYYMM(date1) != 199203 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -685,7 +685,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(less(toYYYYMM(date1), 199203), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYYYYMM(date1) < 199203 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -719,7 +719,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(greater(toYYYYMM(date1), 199203), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYYYYMM(date1) > 199203 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -753,7 +753,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(lessOrEquals(toYYYYMM(date1), 199203), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYYYYMM(date1) <= 199203 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -787,7 +787,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(greaterOrEquals(toYYYYMM(date1), 199203), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYYYYMM(date1) >= 199203 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -821,7 +821,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
-WHERE and(or(greaterOrEquals(toYYYYMM(date1), 199203), equals(toYear(date1), 1993)), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE (toYYYYMM(date1) >= 199203 OR toYear(date1) = 1993) AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -871,7 +871,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM datetime_t
-WHERE and(equals(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYear(date1) = 1993 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -913,7 +913,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM datetime_t
-WHERE and(equals(toYYYYMM(date1), 199312), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYYYYMM(date1) = 199312 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -955,7 +955,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date32_t
-WHERE and(equals(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYear(date1) = 1993 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -997,7 +997,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM date32_t
-WHERE and(equals(toYYYYMM(date1), 199312), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYYYYMM(date1) = 199312 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -1039,7 +1039,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM datetime64_t
-WHERE and(equals(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYear(date1) = 1993 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -1081,7 +1081,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT value1
 FROM datetime64_t
-WHERE and(equals(toYYYYMM(date1), 199312), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+WHERE toYYYYMM(date1) = 199312 AND id >= 1 AND id <= 3
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String

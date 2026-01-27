@@ -13,16 +13,16 @@ Positions: 0 1
   Prewhere info
   Need filter: 1
     Prewhere filter
-    Prewhere filter column: equals(id, 5) (removed)
+    Prewhere filter column: id = 5 (removed)
     Actions: INPUT : 0 -> id UInt64 : 0
              COLUMN Const(UInt8) -> 5 UInt8 : 1
-             FUNCTION equals(id : 0, 5 :: 1) -> equals(id, 5) UInt8 : 2
+             FUNCTION id : 0 = 5 :: 1 -> id = 5 UInt8 : 2
     Positions: 2 0
     Row level filter
-    Row level filter column: greaterOrEquals(id, 5) (removed)
+    Row level filter column: id >= 5 (removed)
     Actions: INPUT : 0 -> id UInt64 : 0
              COLUMN Const(UInt8) -> 5 UInt8 : 1
-             FUNCTION greaterOrEquals(id : 0, 5 :: 1) -> greaterOrEquals(id, 5) UInt8 : 2
+             FUNCTION id : 0 >= 5 :: 1 -> id >= 5 UInt8 : 2
     Positions: 2 0
 Expression ((Project names + (Projection + Change column names to column identifiers)))
 Header: id UInt64
@@ -43,14 +43,14 @@ Positions: 1 2
   Prewhere info
   Need filter: 1
     Prewhere filter
-    Prewhere filter column: equals(id, 5_UInt8) (removed)
+    Prewhere filter column: id = 5_UInt8 (removed)
     Actions: INPUT : 0 -> id UInt64 : 0
              COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 1
-             FUNCTION equals(id : 0, 5_UInt8 :: 1) -> equals(id, 5_UInt8) UInt8 : 2
+             FUNCTION id : 0 = 5_UInt8 :: 1 -> id = 5_UInt8 UInt8 : 2
     Positions: 2 0
     Row level filter
-    Row level filter column: greaterOrEquals(id, 5_UInt8) (removed)
+    Row level filter column: id >= 5_UInt8 (removed)
     Actions: INPUT : 0 -> id UInt64 : 0
              COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 1
-             FUNCTION greaterOrEquals(id : 0, 5_UInt8 :: 1) -> greaterOrEquals(id, 5_UInt8) UInt8 : 2
+             FUNCTION id : 0 >= 5_UInt8 :: 1 -> id >= 5_UInt8 UInt8 : 2
     Positions: 2 0

@@ -4,7 +4,7 @@ set optimize_rewrite_aggregate_function_with_if = false;
 EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, number, 0)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(if(modulo(number, 2), number, 0)) UInt64
+    sum(if(number % 2, number, 0)) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: UInt64
@@ -28,7 +28,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, 0, number)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(if(modulo(number, 2), 0, number)) UInt64
+    sum(if(number % 2, 0, number)) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: UInt64
@@ -52,7 +52,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, number, null)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(if(modulo(number, 2), number, NULL)) Nullable(UInt64)
+    sum(if(number % 2, number, NULL)) Nullable(UInt64)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: Nullable(UInt64)
@@ -76,7 +76,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, null, number)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(if(modulo(number, 2), NULL, number)) Nullable(UInt64)
+    sum(if(number % 2, NULL, number)) Nullable(UInt64)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: Nullable(UInt64)
@@ -100,7 +100,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE run_passes = 1 select avg(if(number % 2, number, null)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    avg(if(modulo(number, 2), number, NULL)) Nullable(Float64)
+    avg(if(number % 2, number, NULL)) Nullable(Float64)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: avg, function_type: aggregate, result_type: Nullable(Float64)
@@ -124,7 +124,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE run_passes = 1 select avg(if(number % 2, null, number)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    avg(if(modulo(number, 2), NULL, number)) Nullable(Float64)
+    avg(if(number % 2, NULL, number)) Nullable(Float64)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: avg, function_type: aggregate, result_type: Nullable(Float64)
@@ -148,7 +148,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE run_passes = 1 select quantiles(0.5, 0.9, 0.99)(if(number % 2, number, null)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    quantiles(0.5, 0.9, 0.99)(if(modulo(number, 2), number, NULL)) Array(Float64)
+    quantiles(0.5, 0.9, 0.99)(if(number % 2, number, NULL)) Array(Float64)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)
@@ -177,7 +177,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE run_passes = 1 select quantiles(0.5, 0.9, 0.99)(if(number % 2, null, number)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    quantiles(0.5, 0.9, 0.99)(if(modulo(number, 2), NULL, number)) Array(Float64)
+    quantiles(0.5, 0.9, 0.99)(if(number % 2, NULL, number)) Array(Float64)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)
@@ -207,7 +207,7 @@ set optimize_rewrite_aggregate_function_with_if = true;
 EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, number, 0)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(if(modulo(number, 2), number, 0)) UInt64
+    sum(if(number % 2, number, 0)) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: sumIf, function_type: aggregate, result_type: UInt64
@@ -227,7 +227,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, 0, number)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(if(modulo(number, 2), 0, number)) UInt64
+    sum(if(number % 2, 0, number)) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: sumIf, function_type: aggregate, result_type: UInt64
@@ -250,7 +250,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, number, null)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(if(modulo(number, 2), number, NULL)) Nullable(UInt64)
+    sum(if(number % 2, number, NULL)) Nullable(UInt64)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: sumIf, function_type: aggregate, result_type: Nullable(UInt64)
@@ -274,7 +274,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, null, number)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(if(modulo(number, 2), NULL, number)) Nullable(UInt64)
+    sum(if(number % 2, NULL, number)) Nullable(UInt64)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: sumIf, function_type: aggregate, result_type: Nullable(UInt64)
@@ -301,7 +301,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE run_passes = 1 select avg(if(number % 2, number, null)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    avg(if(modulo(number, 2), number, NULL)) Nullable(Float64)
+    avg(if(number % 2, number, NULL)) Nullable(Float64)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: avgIf, function_type: aggregate, result_type: Nullable(Float64)
@@ -325,7 +325,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE run_passes = 1 select avg(if(number % 2, null, number)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    avg(if(modulo(number, 2), NULL, number)) Nullable(Float64)
+    avg(if(number % 2, NULL, number)) Nullable(Float64)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: avgIf, function_type: aggregate, result_type: Nullable(Float64)
@@ -352,7 +352,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE run_passes = 1 select quantiles(0.5, 0.9, 0.99)(if(number % 2, number, null)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    quantiles(0.5, 0.9, 0.99)(if(modulo(number, 2), number, NULL)) Array(Float64)
+    quantiles(0.5, 0.9, 0.99)(if(number % 2, number, NULL)) Array(Float64)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: quantilesIf, function_type: aggregate, result_type: Array(Float64)
@@ -381,7 +381,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE run_passes = 1 select quantiles(0.5, 0.9, 0.99)(if(number % 2, null, number)) from numbers(100);
 QUERY id: 0
   PROJECTION COLUMNS
-    quantiles(0.5, 0.9, 0.99)(if(modulo(number, 2), NULL, number)) Array(Float64)
+    quantiles(0.5, 0.9, 0.99)(if(number % 2, NULL, number)) Array(Float64)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: quantilesIf, function_type: aggregate, result_type: Array(Float64)

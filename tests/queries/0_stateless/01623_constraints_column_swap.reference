@@ -1,12 +1,12 @@
 SELECT
-    plus(cityHash64(a), 10),
-    plus(b, 3)
+    cityHash64(a) + 10,
+    b + 3
 FROM column_swap_test_test
-WHERE equals(cityHash64(a), 1)
+WHERE cityHash64(a) = 1
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(cityHash64(a), 10) UInt64
-    plus(b, 3) UInt64
+    cityHash64(a) + 10 UInt64
+    b + 3 UInt64
   PROJECTION
     LIST id: 1, nodes: 2
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
@@ -29,14 +29,14 @@ QUERY id: 0
           CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
 SELECT
-    plus(cityHash64(a), 10),
-    plus(b, 3)
+    cityHash64(a) + 10,
+    b + 3
 FROM column_swap_test_test
-PREWHERE equals(cityHash64(a), 1)
+PREWHERE cityHash64(a) = 1
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(cityHash64(a), 10) UInt64
-    plus(b, 3) UInt64
+    cityHash64(a) + 10 UInt64
+    b + 3 UInt64
   PROJECTION
     LIST id: 1, nodes: 2
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
@@ -59,14 +59,14 @@ QUERY id: 0
           CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
 SELECT
-    plus(cityHash64(a), 10),
-    plus(b, 3)
+    cityHash64(a) + 10,
+    b + 3
 FROM column_swap_test_test
-WHERE equals(cityHash64(a), 0)
+WHERE cityHash64(a) = 0
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(cityHash64(a), 10) UInt64
-    plus(b, 3) UInt64
+    cityHash64(a) + 10 UInt64
+    b + 3 UInt64
   PROJECTION
     LIST id: 1, nodes: 2
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
@@ -89,14 +89,14 @@ QUERY id: 0
           CONSTANT id: 14, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
 SELECT
-    plus(cityHash64(a), 10),
-    plus(b, 3)
+    cityHash64(a) + 10,
+    b + 3
 FROM column_swap_test_test
-WHERE equals(b, 0)
+WHERE b = 0
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(cityHash64(a), 10) UInt64
-    plus(b, 3) UInt64
+    cityHash64(a) + 10 UInt64
+    b + 3 UInt64
   PROJECTION
     LIST id: 1, nodes: 2
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
@@ -119,14 +119,14 @@ QUERY id: 0
           CONSTANT id: 14, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
 SELECT
-    plus(cityHash64(a), 10),
-    plus(b, 3)
+    cityHash64(a) + 10,
+    b + 3
 FROM column_swap_test_test
-WHERE equals(b, 1)
+WHERE b = 1
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(cityHash64(a), 10) UInt64
-    plus(b, 3) UInt64
+    cityHash64(a) + 10 UInt64
+    b + 3 UInt64
   PROJECTION
     LIST id: 1, nodes: 2
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
@@ -148,12 +148,12 @@ QUERY id: 0
           COLUMN id: 13, column_name: b, result_type: UInt64, source_id: 5
           CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT plus(cityHash64(a), 10)
+SELECT cityHash64(a) + 10
 FROM column_swap_test_test
-WHERE equals(cityHash64(a), 0)
+WHERE cityHash64(a) = 0
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(cityHash64(a), 10) UInt64
+    cityHash64(a) + 10 UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
@@ -171,13 +171,13 @@ QUERY id: 0
           CONSTANT id: 10, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
 SELECT
-    plus(cityHash64(a), 10),
+    cityHash64(a) + 10,
     a
 FROM column_swap_test_test
-WHERE equals(cityHash64(a), 0)
+WHERE cityHash64(a) = 0
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(cityHash64(a), 10) UInt64
+    cityHash64(a) + 10 UInt64
     a String
   PROJECTION
     LIST id: 1, nodes: 2
@@ -203,13 +203,13 @@ QUERY id: 0
           CONSTANT id: 15, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
 SELECT
-    plus(b, 10),
+    b + 10,
     a
 FROM column_swap_test_test
-WHERE equals(b, 0)
+WHERE b = 0
 QUERY id: 0
   PROJECTION COLUMNS
-    plus(b, 10) UInt64
+    b + 10 UInt64
     a String
   PROJECTION
     LIST id: 1, nodes: 2
@@ -238,7 +238,7 @@ SELECT
     substring(reverse(b), 1, 1),
     a
 FROM column_swap_test_test
-WHERE equals(a, \'c\')
+WHERE a = \'c\'
 QUERY id: 0
   PROJECTION COLUMNS
     substring(reverse(b), 1, 1) String
@@ -260,7 +260,7 @@ SELECT
     substring(reverse(b), 1, 1),
     a
 FROM column_swap_test_test
-WHERE equals(substring(reverse(b), 1, 1), \'c\')
+WHERE substring(reverse(b), 1, 1) = \'c\'
 QUERY id: 0
   PROJECTION COLUMNS
     substring(reverse(b), 1, 1) String
@@ -282,7 +282,7 @@ SELECT
     substring(reverse(b), 1, 1) AS t1,
     a AS t2
 FROM column_swap_test_test
-WHERE equals(substring(reverse(b), 1, 1), \'c\')
+WHERE substring(reverse(b), 1, 1) = \'c\'
 QUERY id: 0
   PROJECTION COLUMNS
     t1 String
@@ -302,7 +302,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT substring(reverse(b), 1, 1)
 FROM column_swap_test_test
-WHERE equals(substring(reverse(b), 1, 1), \'c\')
+WHERE substring(reverse(b), 1, 1) = \'c\'
 QUERY id: 0
   PROJECTION COLUMNS
     substring(reverse(b), 1, 1) String

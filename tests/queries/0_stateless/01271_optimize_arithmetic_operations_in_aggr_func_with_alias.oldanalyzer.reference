@@ -1,28 +1,28 @@
-SELECT plus(min(n AS a), (1 AS b)) AS c
+SELECT min(n AS a) + (1 AS b) AS c
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
-    WHERE and(greater(1, 0), greater((number AS n), 0))
+    WHERE 1 > 0 AND (number AS n) > 0
 )
-WHERE and(greater((n AS a), 0), greater((1 AS b), 0))
-HAVING greater((plus(min(n AS a), (1 AS b)) AS c), 0)
+WHERE (n AS a) > 0 AND (1 AS b) > 0
+HAVING (min(n AS a) + (1 AS b) AS c) > 0
 2
-SELECT plus(min(n), 1) AS c
+SELECT min(n) + 1 AS c
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
-    WHERE greater(plus((number AS n), 1), 0)
+    WHERE (number AS n) + 1 > 0
 )
-WHERE greater((plus(n, 1) AS a), 0)
-HAVING greater((plus(min(n), 1) AS c), 0)
+WHERE (n + 1 AS a) > 0
+HAVING (min(n) + 1 AS c) > 0
 1
-SELECT plus(min(n), 1) AS c
+SELECT min(n) + 1 AS c
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
-HAVING greater((plus(min(n), 1) AS c), 0)
+HAVING (min(n) + 1 AS c) > 0
 1

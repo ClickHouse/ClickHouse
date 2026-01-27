@@ -541,7 +541,7 @@ Expression (Project names)
 -- query
 SELECT
     number,
-    plus(number, 2)
+    number + 2
 FROM
 (
     SELECT *

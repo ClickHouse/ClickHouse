@@ -54,10 +54,10 @@ Positions: 4 0 1 2
           Prewhere info
           Need filter: 1
             Prewhere filter
-            Prewhere filter column: notEquals(__table1.id, 0_UInt8) (removed)
+            Prewhere filter column: __table1.id != 0_UInt8 (removed)
             Actions: INPUT : 0 -> id UInt64 : 0
                      COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
-                     FUNCTION notEquals(id : 0, 0_UInt8 :: 1) -> notEquals(__table1.id, 0_UInt8) UInt8 : 2
+                     FUNCTION id : 0 != 0_UInt8 :: 1 -> __table1.id != 0_UInt8 UInt8 : 2
             Positions: 0 2
       Expression (Right Pre Join Actions)
       Header: __table2.id UInt64
@@ -82,10 +82,10 @@ Positions: 4 0 1 2
           Prewhere info
           Need filter: 1
             Prewhere filter
-            Prewhere filter column: notEquals(__table2.id, 0_UInt8) (removed)
+            Prewhere filter column: __table2.id != 0_UInt8 (removed)
             Actions: INPUT : 0 -> id UInt64 : 0
                      COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
-                     FUNCTION notEquals(id : 0, 0_UInt8 :: 1) -> notEquals(__table2.id, 0_UInt8) UInt8 : 2
+                     FUNCTION id : 0 != 0_UInt8 :: 1 -> __table2.id != 0_UInt8 UInt8 : 2
             Positions: 0 2
 --
 2	Value_2	2	Value_2
@@ -146,10 +146,10 @@ Positions: 4 0 1 2
           Prewhere info
           Need filter: 1
             Prewhere filter
-            Prewhere filter column: notEquals(__table1.id, 0_UInt8) (removed)
+            Prewhere filter column: __table1.id != 0_UInt8 (removed)
             Actions: INPUT : 0 -> id UInt64 : 0
                      COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
-                     FUNCTION notEquals(id : 0, 0_UInt8 :: 1) -> notEquals(__table1.id, 0_UInt8) UInt8 : 2
+                     FUNCTION id : 0 != 0_UInt8 :: 1 -> __table1.id != 0_UInt8 UInt8 : 2
             Positions: 0 2
       Expression (Right Pre Join Actions)
       Header: __table2.id UInt64
@@ -174,10 +174,10 @@ Positions: 4 0 1 2
           Prewhere info
           Need filter: 1
             Prewhere filter
-            Prewhere filter column: notEquals(__table2.id, 0_UInt8) (removed)
+            Prewhere filter column: __table2.id != 0_UInt8 (removed)
             Actions: INPUT : 0 -> id UInt64 : 0
                      COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
-                     FUNCTION notEquals(id : 0, 0_UInt8 :: 1) -> notEquals(__table2.id, 0_UInt8) UInt8 : 2
+                     FUNCTION id : 0 != 0_UInt8 :: 1 -> __table2.id != 0_UInt8 UInt8 : 2
             Positions: 0 2
 --
 2	Value_2	2	Value_2
@@ -238,12 +238,12 @@ Positions: 4 0 1 2
           Prewhere info
           Need filter: 1
             Prewhere filter
-            Prewhere filter column: and(notEquals(__table1.id, 0_UInt8), notEquals(__table1.id, 0_UInt8)) (removed)
+            Prewhere filter column: __table1.id != 0_UInt8 AND __table1.id != 0_UInt8 (removed)
             Actions: INPUT : 0 -> id UInt64 : 0
                      COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
-                     FUNCTION notEquals(id : 0, 0_UInt8 : 1) -> notEquals(__table1.id, 0_UInt8) UInt8 : 2
-                     FUNCTION notEquals(id : 0, 0_UInt8 :: 1) -> notEquals(__table1.id, 0_UInt8) UInt8 : 3
-                     FUNCTION and(notEquals(__table1.id, 0_UInt8) :: 3, notEquals(__table1.id, 0_UInt8) :: 2) -> and(notEquals(__table1.id, 0_UInt8), notEquals(__table1.id, 0_UInt8)) UInt8 : 1
+                     FUNCTION id : 0 != 0_UInt8 : 1 -> __table1.id != 0_UInt8 UInt8 : 2
+                     FUNCTION id : 0 != 0_UInt8 :: 1 -> __table1.id != 0_UInt8 UInt8 : 3
+                     FUNCTION __table1.id != 0_UInt8 :: 3 AND __table1.id != 0_UInt8 :: 2 -> __table1.id != 0_UInt8 AND __table1.id != 0_UInt8 UInt8 : 1
             Positions: 0 1
       Expression (Right Pre Join Actions)
       Header: __table2.id UInt64
@@ -268,12 +268,12 @@ Positions: 4 0 1 2
           Prewhere info
           Need filter: 1
             Prewhere filter
-            Prewhere filter column: and(notEquals(__table2.id, 0_UInt8), notEquals(__table2.id, 0_UInt8)) (removed)
+            Prewhere filter column: __table2.id != 0_UInt8 AND __table2.id != 0_UInt8 (removed)
             Actions: INPUT : 0 -> id UInt64 : 0
                      COLUMN Const(UInt8) -> 0_UInt8 UInt8 : 1
-                     FUNCTION notEquals(id : 0, 0_UInt8 : 1) -> notEquals(__table2.id, 0_UInt8) UInt8 : 2
-                     FUNCTION notEquals(id : 0, 0_UInt8 :: 1) -> notEquals(__table2.id, 0_UInt8) UInt8 : 3
-                     FUNCTION and(notEquals(__table2.id, 0_UInt8) :: 3, notEquals(__table2.id, 0_UInt8) :: 2) -> and(notEquals(__table2.id, 0_UInt8), notEquals(__table2.id, 0_UInt8)) UInt8 : 1
+                     FUNCTION id : 0 != 0_UInt8 : 1 -> __table2.id != 0_UInt8 UInt8 : 2
+                     FUNCTION id : 0 != 0_UInt8 :: 1 -> __table2.id != 0_UInt8 UInt8 : 3
+                     FUNCTION __table2.id != 0_UInt8 :: 3 AND __table2.id != 0_UInt8 :: 2 -> __table2.id != 0_UInt8 AND __table2.id != 0_UInt8 UInt8 : 1
             Positions: 0 1
 --
 2	Value_2	2	Value_2

@@ -8,7 +8,7 @@ DESCRIBE (SELECT 1, 'Value');
 SELECT '--';
 --
 DESCRIBE (SELECT 1 + 1, concat('Value_1', 'Value_2'));
-plus(1, 1)	UInt16					
+1 + 1	UInt16					
 concat(\'Value_1\', \'Value_2\')	String					
 SELECT '--';
 --
@@ -68,9 +68,9 @@ e	String
 f	String					
 SELECT '--';
 --
-DESCRIBE (SELECT plus(1 AS a, a AS b), plus(b, b), plus(b, b) AS c, concat('Value' AS d, d) AS e, e);
-plus(a, b)	UInt16					
-plus(b, b)	UInt16					
+DESCRIBE (SELECT 1 AS a + a AS b, b + b, b + b AS c, concat('Value' AS d, d) AS e, e);
+a + b	UInt16					
+b + b	UInt16					
 c	UInt16					
 e	String					
 e	String					
@@ -128,11 +128,11 @@ c	UInt64
 c	UInt64					
 SELECT '--';
 --
-DESCRIBE (SELECT plus(test_table.id AS a, test_table.id), plus(id, id AS b), plus(b, b), plus(test_table.id, test_table.id) FROM test_table);
-plus(a, id)	UInt64					
-plus(id, b)	UInt64					
-plus(b, b)	UInt64					
-plus(id, id)	UInt64					
+DESCRIBE (SELECT test_table.id AS a + test_table.id, id + id AS b, b + b, test_table.id + test_table.id FROM test_table);
+a + id	UInt64					
+id + b	UInt64					
+b + b	UInt64					
+id + id	UInt64					
 SELECT '--';
 --
 DESCRIBE (SELECT test_table.* REPLACE id + (id AS id_alias) AS id, id_alias FROM test_table);
@@ -166,20 +166,20 @@ t1.value	String
 SELECT 'Lambda';
 Lambda
 DESCRIBE (SELECT arrayMap(x -> x + 1, [1,2,3]));
-arrayMap(lambda(tuple(x), plus(x, 1)), [1, 2, 3])	Array(UInt16)					
+arrayMap(lambda(tuple(x), x + 1), [1, 2, 3])	Array(UInt16)					
 SELECT '--';
 --
 DESCRIBE (SELECT 1 AS a, arrayMap(x -> x + a, [1,2,3]));
 a	UInt8					
-arrayMap(lambda(tuple(x), plus(x, a)), [1, 2, 3])	Array(UInt16)					
+arrayMap(lambda(tuple(x), x + a), [1, 2, 3])	Array(UInt16)					
 SELECT '--';
 --
 DESCRIBE (SELECT arrayMap(x -> x + test_table.id + test_table.id + id, [1,2,3]) FROM test_table);
-arrayMap(lambda(tuple(x), plus(plus(plus(x, id), id), id)), [1, 2, 3])	Array(UInt64)					
+arrayMap(lambda(tuple(x), x + id + id + id), [1, 2, 3])	Array(UInt64)					
 SELECT '--';
 --
 DESCRIBE (SELECT arrayMap(x -> x + (test_table.id AS first) + (test_table.id AS second) + id, [1,2,3]) FROM test_table);
-arrayMap(lambda(tuple(x), plus(plus(plus(x, first), second), id)), [1, 2, 3])	Array(UInt64)					
+arrayMap(lambda(tuple(x), x + first + second + id), [1, 2, 3])	Array(UInt64)					
 SELECT '--';
 --
 DESCRIBE (SELECT arrayMap(x -> test_table.* EXCEPT value, [1,2,3]) FROM test_table);
@@ -389,7 +389,7 @@ count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS BETWEEN 1 
 SELECT '--';
 --
 DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS BETWEEN 1 + 1 PRECEDING AND 2 + 2 FOLLOWING) FROM test_table);
-count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS BETWEEN plus(1, 1) PRECEDING AND plus(2, 2) FOLLOWING)	UInt64					
+count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS BETWEEN 1 + 1 PRECEDING AND 2 + 2 FOLLOWING)	UInt64					
 SELECT '--';
 --
 DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS BETWEEN ((1 + 1) AS frame_offset_begin) PRECEDING AND ((2 + 2) AS frame_offset_end) FOLLOWING)
@@ -410,7 +410,7 @@ count() OVER (ORDER BY id ASC WITH FILL FROM 1 TO 5 STEP 1)	UInt64
 SELECT '--';
 --
 DESCRIBE (SELECT count() OVER (ORDER BY id WITH FILL FROM 1 + 1 TO 6 STEP 1 + 1) FROM test_table);
-count() OVER (ORDER BY id ASC WITH FILL FROM plus(1, 1) TO 6 STEP plus(1, 1))	UInt64					
+count() OVER (ORDER BY id ASC WITH FILL FROM 1 + 1 TO 6 STEP 1 + 1)	UInt64					
 SELECT '--';
 --
 DESCRIBE (SELECT count() OVER (ORDER BY id WITH FILL FROM ((1 + 1) AS from) TO (6 AS to) STEP ((1 + 1) AS step)) FROM test_table);
@@ -430,23 +430,23 @@ count() OVER (window_name ORDER BY id ASC)	UInt64
 SELECT 'IN function';
 IN function
 DESCRIBE (SELECT id IN (SELECT 1) FROM test_table);
-in(id, _subquery_1)	UInt8					
+id IN _subquery_1	UInt8					
 SELECT '--';
 --
 DESCRIBE (SELECT id IN (SELECT id FROM test_table_in) FROM test_table);
-in(id, _subquery_1)	UInt8					
+id IN _subquery_1	UInt8					
 SELECT '--';
 --
 DESCRIBE (SELECT id IN test_table_in FROM test_table);
-in(id, test_table_in)	UInt8					
+id IN test_table_in	UInt8					
 SELECT '--';
 --
 DESCRIBE (WITH test_table_in_cte AS (SELECT id FROM test_table) SELECT id IN (SELECT id FROM test_table_in_cte) FROM test_table);
-in(id, _subquery_1)	UInt8					
+id IN _subquery_1	UInt8					
 SELECT '--';
 --
 DESCRIBE (WITH test_table_in_cte AS (SELECT id FROM test_table) SELECT id IN test_table_in_cte FROM test_table);
-in(id, test_table_in_cte)	UInt8					
+id IN test_table_in_cte	UInt8					
 SELECT '--';
 --
 DESCRIBE (WITH test_table_in_cte_1 AS (SELECT 1 AS c1), test_table_in_cte_2 AS (SELECT 1 AS c1) SELECT *

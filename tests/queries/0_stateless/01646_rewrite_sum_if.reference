@@ -24,7 +24,7 @@
 50
 QUERY id: 0
   PROJECTION COLUMNS
-    sumIf(123, equals(modulo(number, 2), 0)) UInt64
+    sumIf(123, number % 2 = 0) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: multiply, function_type: ordinary, result_type: UInt64
@@ -50,7 +50,7 @@ QUERY id: 0
           CONSTANT id: 16, constant_value: UInt64_100, constant_value_type: UInt8
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(if(equals(modulo(number, 2), 0), 123, 0)) UInt64
+    sum(if(number % 2 = 0, 123, 0)) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: multiply, function_type: ordinary, result_type: UInt64
@@ -76,7 +76,7 @@ QUERY id: 0
           CONSTANT id: 16, constant_value: UInt64_100, constant_value_type: UInt8
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(if(equals(modulo(number, 2), 0), 0, 123)) UInt64
+    sum(if(number % 2 = 0, 0, 123)) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: multiply, function_type: ordinary, result_type: UInt64

@@ -22,7 +22,7 @@
       Skip
         Name: xy_idx
         Description: minmax GRANULARITY 1
-        Condition: and((y in [2, 2]), (x in [1, 1]))
+        Condition: (y in [2, 2]) AND (x in [1, 1])
         Parts: 0/0
         Granules: 0/0
       Ranges: 0
@@ -66,7 +66,7 @@
       Skip
         Name: xy_idx
         Description: minmax GRANULARITY 1
-        Condition: and((y in [2, 2]), (x in [1, 1]))
+        Condition: (y in [2, 2]) AND (x in [1, 1])
         Parts: 0/0
         Granules: 0/0
       Ranges: 0

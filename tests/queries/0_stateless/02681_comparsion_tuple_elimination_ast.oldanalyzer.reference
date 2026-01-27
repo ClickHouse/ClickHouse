@@ -4,4 +4,4 @@ SELECT
     c,
     d
 FROM t1
-WHERE or(or(and(and(equals(a, 1), equals(b, 2)), and(and(equals(c, 3), equals(d, 4)), equals(a, 5))), and(and(equals(a, c), equals(b, 10)), equals(1000, d))), and(and(equals(a, c), equals(b, 10)), equals(1000, d)))
+WHERE a = 1 AND b = 2 AND c = 3 AND d = 4 AND a = 5 OR a = c AND b = 10 AND 1000 = d OR a = c AND b = 10 AND 1000 = d

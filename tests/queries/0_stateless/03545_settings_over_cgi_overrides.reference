@@ -7,6 +7,6 @@ wait_end_of_query=0 -- receive partial result and exception
 [1, 0]
 [2, 0]
 [3, 0]
-["Code: 395.  Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 3) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
+["Code: 395.  Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 3) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
 wait_end_of_query=0&http_wait_end_of_query=1 -- do not receive result, only exception. http_wait_end_of_query overrides wait_end_of_query
-["Code: 395.  Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 3) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
+["Code: 395.  Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 3) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]

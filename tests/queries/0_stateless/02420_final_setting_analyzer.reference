@@ -72,8 +72,8 @@ SELECT
     val_middle,
     val_right
 FROM left_table
-ALL INNER JOIN middle_table ON equals(left_table.id, middle_table.id)
-ALL INNER JOIN right_table ON equals(middle_table.id, right_table.id)
+ALL INNER JOIN middle_table ON left_table.id = middle_table.id
+ALL INNER JOIN right_table ON middle_table.id = right_table.id
 ORDER BY
     left_table.id ASC,
     val_left ASC,
@@ -103,7 +103,7 @@ FROM
             id,
             val_middle
         FROM middle_table
-    ) AS middle_table ON equals(id AS `_--left_table.id`, middle_table.id AS `_--middle_table.id`)
+    ) AS middle_table ON id AS `_--left_table.id` = middle_table.id AS `_--middle_table.id`
 ) AS `--.s`
 ALL INNER JOIN
 (
@@ -112,7 +112,7 @@ ALL INNER JOIN
         id AS `_--right_table.id`
     FROM right_table
     FINAL
-) AS `--.t` ON equals(`_--middle_table.id`, `_--right_table.id`)
+) AS `--.t` ON `_--middle_table.id` = `_--right_table.id`
 ORDER BY
     `_--left_table.id` ASC,
     val_left ASC,

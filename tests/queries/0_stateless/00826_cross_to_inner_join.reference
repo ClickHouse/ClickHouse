@@ -52,85 +52,85 @@
 SELECT *
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE equals(t1_00826.a, t2_00826.a)
+WHERE t1_00826.a = t2_00826.a
 ORDER BY ALL ASC
 --- cross nullable ---
 SELECT *
 FROM t1_00826, t2_00826
-WHERE equals(t1_00826.a, t2_00826.a)
+WHERE t1_00826.a = t2_00826.a
 ORDER BY ALL ASC
 --- cross nullable vs not nullable ---
 SELECT *
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE equals(t1_00826.a, t2_00826.b)
+WHERE t1_00826.a = t2_00826.b
 ORDER BY ALL ASC
 --- cross self ---
 SELECT *
 FROM t1_00826 AS x
 CROSS JOIN t1_00826 AS y
-WHERE and(equals(x.a, y.a), equals(x.b, y.b))
+WHERE x.a = y.a AND x.b = y.b
 ORDER BY ALL ASC
 --- cross one table expr ---
 SELECT *
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE equals(t1_00826.a, t1_00826.b)
+WHERE t1_00826.a = t1_00826.b
 ORDER BY ALL ASC
 --- cross multiple ands ---
 SELECT *
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE and(equals(t1_00826.a, t2_00826.a), equals(t1_00826.b, t2_00826.b))
+WHERE t1_00826.a = t2_00826.a AND t1_00826.b = t2_00826.b
 ORDER BY ALL ASC
 --- cross and inside and ---
 SELECT *
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE and(equals(t1_00826.a, t2_00826.a), and(equals(t1_00826.a, t2_00826.a), and(equals(t1_00826.a, t2_00826.a), equals(t1_00826.b, t2_00826.b))))
+WHERE t1_00826.a = t2_00826.a AND t1_00826.a = t2_00826.a AND t1_00826.a = t2_00826.a AND t1_00826.b = t2_00826.b
 ORDER BY ALL ASC
 --- cross split conjunction ---
 SELECT *
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE and(equals(t1_00826.a, t2_00826.a), equals(t1_00826.b, t2_00826.b), greaterOrEquals(t1_00826.a, 1), greater(t2_00826.b, 0))
+WHERE t1_00826.a = t2_00826.a AND t1_00826.b = t2_00826.b AND t1_00826.a >= 1 AND t2_00826.b > 0
 ORDER BY ALL ASC
 --- and or ---
 SELECT *
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE and(equals(t1_00826.a, t2_00826.a), equals(t1_00826.b, t2_00826.b), or(greaterOrEquals(t1_00826.a, 1), equals(t2_00826.b, 1)))
+WHERE t1_00826.a = t2_00826.a AND t1_00826.b = t2_00826.b AND (t1_00826.a >= 1 OR t2_00826.b = 1)
 ORDER BY ALL ASC
 --- arithmetic expr ---
 SELECT *
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE and(equals(plus(t1_00826.a, 1), plus(t2_00826.a, t2_00826.b)), greater(plus(plus(plus(t1_00826.a, t1_00826.b), t2_00826.a), t2_00826.b), 5))
+WHERE t1_00826.a + 1 = t2_00826.a + t2_00826.b AND t1_00826.a + t1_00826.b + t2_00826.a + t2_00826.b > 5
 ORDER BY ALL ASC
 --- is null or ---
 SELECT *
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE and(equals(t1_00826.b, t2_00826.a), or(isNull(t2_00826.b), greater(t2_00826.b, t2_00826.a)))
+WHERE t1_00826.b = t2_00826.a AND (isNull(t2_00826.b) OR t2_00826.b > t2_00826.a)
 ORDER BY ALL ASC
 --- do not rewrite alias ---
 SELECT a AS b
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE and(equals(t1_00826.b, t2_00826.a), greater(b, 0))
+WHERE t1_00826.b = t2_00826.a AND b > 0
 ORDER BY ALL ASC
 --- comma ---
 SELECT *
 FROM t1_00826, t2_00826
-WHERE equals(t1_00826.a, t2_00826.a)
+WHERE t1_00826.a = t2_00826.a
 ORDER BY ALL ASC
 --- comma nullable ---
 SELECT *
 FROM t1_00826, t2_00826
-WHERE equals(t1_00826.b, t2_00826.b)
+WHERE t1_00826.b = t2_00826.b
 ORDER BY ALL ASC
 --- comma and or ---
 SELECT *
 FROM t1_00826, t2_00826
-WHERE and(equals(t1_00826.a, t2_00826.a), or(isNull(t2_00826.b), less(t2_00826.b, 2)))
+WHERE t1_00826.a = t2_00826.a AND (isNull(t2_00826.b) OR t2_00826.b < 2)
 ORDER BY ALL ASC

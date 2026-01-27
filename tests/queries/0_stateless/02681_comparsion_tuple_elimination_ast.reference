@@ -1,3 +1,3 @@
 SELECT *
 FROM t1
-WHERE or(and(equals(tuple(a, b), _CAST((1, 2), \'Tuple(UInt8, UInt8)\')), equals(tuple(c, d, a), _CAST((3, 4, 5), \'Tuple(UInt8, UInt8, UInt8)\'))), equals(tuple(a, b, 1000), tuple(c, 10, d)), equals(tuple(tuple(a, b), 1000), tuple(tuple(c, 10), d)))
+WHERE tuple(a, b) = _CAST((1, 2), \'Tuple(UInt8, UInt8)\') AND tuple(c, d, a) = _CAST((3, 4, 5), \'Tuple(UInt8, UInt8, UInt8)\') OR tuple(a, b, 1000) = tuple(c, 10, d) OR tuple(tuple(a, b), 1000) = tuple(tuple(c, 10), d)

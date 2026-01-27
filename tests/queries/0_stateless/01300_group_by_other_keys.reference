@@ -22,37 +22,37 @@
 3465736.595947
 3465735.209653
 3465735.9028
-SELECT max(multiply(log(2), number)) AS k
+SELECT max(log(2) * number) AS k
 FROM numbers(10000000)
 GROUP BY
-    modulo(number, 2),
-    modulo(number, 3),
-    modulo(plus(modulo(number, 2), modulo(number, 3)), 2)
+    number % 2,
+    number % 3,
+    number % 2 + number % 3 % 2
 ORDER BY k ASC
-SELECT avg(multiply(log(2), number)) AS k
+SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
 GROUP BY
-    modulo(number, 5),
-    multiply(modulo(number, 5), modulo(number, 5))
+    number % 5,
+    number % 5 * number % 5
 ORDER BY k ASC
-SELECT avg(multiply(log(2), number)) AS k
+SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
 GROUP BY
-    multiply(modulo(number, 2), modulo(number, 3)),
-    modulo(number, 3)
+    number % 2 * number % 3,
+    number % 3
 ORDER BY k ASC
-SELECT avg(multiply(log(2), number)) AS k
+SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
 GROUP BY
-    multiply(modulo(number, 2), modulo(number, 3)),
-    modulo(number, 3),
-    modulo(number, 2)
+    number % 2 * number % 3,
+    number % 3,
+    number % 2
 ORDER BY k ASC
-SELECT avg(multiply(log(2), number)) AS k
+SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
 GROUP BY
-    modulo(modulo(number, 2), 3),
-    modulo(number, 2)
+    number % 2 % 3,
+    number % 2
 ORDER BY k ASC
 6931467.646716
 6931468.339864
@@ -78,35 +78,35 @@ ORDER BY k ASC
 3465736.595947
 3465735.209653
 3465735.9028
-SELECT max(multiply(log(2), number)) AS k
+SELECT max(log(2) * number) AS k
 FROM numbers(10000000)
 GROUP BY
-    modulo(number, 2),
-    modulo(number, 3),
-    modulo(plus(modulo(number, 2), modulo(number, 3)), 2)
+    number % 2,
+    number % 3,
+    number % 2 + number % 3 % 2
 ORDER BY k ASC
-SELECT avg(multiply(log(2), number)) AS k
+SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
 GROUP BY
-    modulo(number, 5),
-    multiply(modulo(number, 5), modulo(number, 5))
+    number % 5,
+    number % 5 * number % 5
 ORDER BY k ASC
-SELECT avg(multiply(log(2), number)) AS k
+SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
 GROUP BY
-    multiply(modulo(number, 2), modulo(number, 3)),
-    modulo(number, 3)
+    number % 2 * number % 3,
+    number % 3
 ORDER BY k ASC
-SELECT avg(multiply(log(2), number)) AS k
+SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
 GROUP BY
-    multiply(modulo(number, 2), modulo(number, 3)),
-    modulo(number, 3),
-    modulo(number, 2)
+    number % 2 * number % 3,
+    number % 3,
+    number % 2
 ORDER BY k ASC
-SELECT avg(multiply(log(2), number)) AS k
+SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
 GROUP BY
-    modulo(modulo(number, 2), 3),
-    modulo(number, 2)
+    number % 2 % 3,
+    number % 2
 ORDER BY k ASC

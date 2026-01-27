@@ -144,13 +144,13 @@ SELECT
     __table1.D_YEARMONTHNUM AS D_YEARMONTHNUM,
     __table3.S_CITY AS S_CITY,
     __table4.P_BRAND AS P_BRAND,
-    sum(minus(__table5.LO_REVENUE, __table5.LO_SUPPLYCOST)) AS profit
+    sum(__table5.LO_REVENUE - __table5.LO_SUPPLYCOST) AS profit
 FROM default.date AS __table1
-ALL INNER JOIN default.lineorder AS __table5 ON equals(__table5.LO_ORDERDATE, __table1.D_DATEKEY)
-ALL INNER JOIN default.customer AS __table2 ON equals(__table5.LO_CUSTKEY, __table2.C_CUSTKEY)
-ALL INNER JOIN default.supplier AS __table3 ON equals(__table5.LO_SUPPKEY, __table3.S_SUPPKEY)
-ALL INNER JOIN default.part AS __table4 ON equals(__table5.LO_PARTKEY, __table4.P_PARTKEY)
-WHERE and(greaterOrEquals(__table5.LO_QUANTITY, 34), lessOrEquals(__table5.LO_QUANTITY, 44), greaterOrEquals(__table5.LO_ORDERDATE, toDate(\'1996-01-01\')), lessOrEquals(__table5.LO_ORDERDATE, toDate(\'1996-12-31\')), lessOrEquals(__table1.D_DATEKEY, toDate(\'1996-12-31\')), greaterOrEquals(__table1.D_DATEKEY, toDate(\'1996-01-01\')), equals(__table3.S_NATION, \'UNITED KINGDOM\'), equals(__table4.P_CATEGORY, \'MFGR#21\'))
+ALL INNER JOIN default.lineorder AS __table5 ON __table5.LO_ORDERDATE = __table1.D_DATEKEY
+ALL INNER JOIN default.customer AS __table2 ON __table5.LO_CUSTKEY = __table2.C_CUSTKEY
+ALL INNER JOIN default.supplier AS __table3 ON __table5.LO_SUPPKEY = __table3.S_SUPPKEY
+ALL INNER JOIN default.part AS __table4 ON __table5.LO_PARTKEY = __table4.P_PARTKEY
+WHERE __table5.LO_QUANTITY >= 34 AND __table5.LO_QUANTITY <= 44 AND __table5.LO_ORDERDATE >= toDate(\'1996-01-01\') AND __table5.LO_ORDERDATE <= toDate(\'1996-12-31\') AND __table1.D_DATEKEY <= toDate(\'1996-12-31\') AND __table1.D_DATEKEY >= toDate(\'1996-01-01\') AND __table3.S_NATION = \'UNITED KINGDOM\' AND __table4.P_CATEGORY = \'MFGR#21\'
 GROUP BY
     __table1.D_YEARMONTHNUM,
     __table3.S_CITY,

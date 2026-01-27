@@ -11,13 +11,13 @@ Actions: INPUT : 0 -> __table1.uid Int16 : 0
          ALIAS __table2.name :: 4 -> u2.name String : 3
 Positions: 5 0 1 2 3
   Filter (WHERE)
-  Filter column: less(__table1.uid, __table2.age_sum) (removed)
+  Filter column: __table1.uid < __table2.age_sum (removed)
   Actions: INPUT : 0 -> __table1.uid Int16 : 0
            INPUT :: 1 -> __table1.name String : 1
            INPUT :: 2 -> __table1.age Int16 : 2
            INPUT : 3 -> __table2.age_sum Nullable(Int64) : 3
            INPUT :: 4 -> __table2.name String : 4
-           FUNCTION less(__table1.uid : 0, __table2.age_sum : 3) -> less(__table1.uid, __table2.age_sum) Nullable(UInt8) : 5
+           FUNCTION __table1.uid : 0 < __table2.age_sum : 3 -> __table1.uid < __table2.age_sum Nullable(UInt8) : 5
   Positions: 5 0 1 2 3 4
     JoinLogical
     Join: u1[3] ⋈ u2[3]
@@ -25,14 +25,14 @@ Positions: 5 0 1 2 3
     Type: INNER
     Strictness: ALL
     Locality: UNSPECIFIED
-    Expression: equals(__table1.name, __table2.name)
+    Expression: __table1.name = __table2.name
     Expression:
     Actions: INPUT :: 0 -> __table1.uid Int16 : 0
              INPUT : 1 -> __table1.name String : 1
              INPUT :: 2 -> __table1.age Int16 : 2
              INPUT :: 3 -> __table2.age_sum Nullable(Int64) : 3
              INPUT : 4 -> __table2.name String : 4
-             FUNCTION equals(__table1.name : 1, __table2.name : 4) -> equals(__table1.name, __table2.name) UInt8 : 5
+             FUNCTION __table1.name : 1 = __table2.name : 4 -> __table1.name = __table2.name UInt8 : 5
     Positions: 0 1 2 3 4
     Expression Sources:
     __table1.uid: {0}
@@ -86,13 +86,13 @@ Actions: INPUT : 0 -> __table1.uid Int16 : 0
          ALIAS __table2.name :: 4 -> u2.name String : 3
 Positions: 5 0 1 2 3
   Filter (WHERE)
-  Filter column: less(__table1.uid, __table2.age_sum) (removed)
+  Filter column: __table1.uid < __table2.age_sum (removed)
   Actions: INPUT : 0 -> __table1.uid Int16 : 0
            INPUT :: 1 -> __table1.name String : 1
            INPUT :: 2 -> __table1.age Int16 : 2
            INPUT : 3 -> __table2.age_sum Nullable(Int64) : 3
            INPUT :: 4 -> __table2.name String : 4
-           FUNCTION less(__table1.uid : 0, __table2.age_sum : 3) -> less(__table1.uid, __table2.age_sum) Nullable(UInt8) : 5
+           FUNCTION __table1.uid : 0 < __table2.age_sum : 3 -> __table1.uid < __table2.age_sum Nullable(UInt8) : 5
   Positions: 5 0 1 2 3 4
     JoinLogical
     Join: u1[3] ⟕ u2
@@ -100,14 +100,14 @@ Positions: 5 0 1 2 3
     Type: LEFT
     Strictness: ANY
     Locality: UNSPECIFIED
-    Expression: equals(__table1.name, __table2.name)
+    Expression: __table1.name = __table2.name
     Expression:
     Actions: INPUT :: 0 -> __table1.uid Int16 : 0
              INPUT : 1 -> __table1.name String : 1
              INPUT :: 2 -> __table1.age Int16 : 2
              INPUT :: 3 -> __table2.age_sum Nullable(Int64) : 3
              INPUT : 4 -> __table2.name String : 4
-             FUNCTION equals(__table1.name : 1, __table2.name : 4) -> equals(__table1.name, __table2.name) UInt8 : 5
+             FUNCTION __table1.name : 1 = __table2.name : 4 -> __table1.name = __table2.name UInt8 : 5
     Positions: 0 1 2 3 4
     Expression Sources:
     __table1.uid: {0}
@@ -163,13 +163,13 @@ Actions: INPUT : 0 -> __table1.uid Int16 : 0
          ALIAS __table2.name :: 4 -> u2.name String : 3
 Positions: 5 0 1 2 3
   Filter (WHERE)
-  Filter column: less(__table1.uid, __table2.age_sum) (removed)
+  Filter column: __table1.uid < __table2.age_sum (removed)
   Actions: INPUT : 0 -> __table1.uid Int16 : 0
            INPUT :: 1 -> __table1.name String : 1
            INPUT :: 2 -> __table1.age Int16 : 2
            INPUT : 3 -> __table2.age_sum Nullable(Int64) : 3
            INPUT :: 4 -> __table2.name String : 4
-           FUNCTION less(__table1.uid : 0, __table2.age_sum : 3) -> less(__table1.uid, __table2.age_sum) Nullable(UInt8) : 5
+           FUNCTION __table1.uid : 0 < __table2.age_sum : 3 -> __table1.uid < __table2.age_sum Nullable(UInt8) : 5
   Positions: 5 0 1 2 3 4
     JoinLogical
     Join: u1[3] ⟕ u2
@@ -177,14 +177,14 @@ Positions: 5 0 1 2 3
     Type: LEFT
     Strictness: ANY
     Locality: UNSPECIFIED
-    Expression: equals(__table1.name, __table2.name)
+    Expression: __table1.name = __table2.name
     Expression:
     Actions: INPUT :: 0 -> __table1.uid Int16 : 0
              INPUT : 1 -> __table1.name String : 1
              INPUT :: 2 -> __table1.age Int16 : 2
              INPUT :: 3 -> __table2.age_sum Nullable(Int64) : 3
              INPUT : 4 -> __table2.name String : 4
-             FUNCTION equals(__table1.name : 1, __table2.name : 4) -> equals(__table1.name, __table2.name) UInt8 : 5
+             FUNCTION __table1.name : 1 = __table2.name : 4 -> __table1.name = __table2.name UInt8 : 5
     Positions: 0 1 2 3 4
     Expression Sources:
     __table1.uid: {0}
@@ -240,13 +240,13 @@ Actions: INPUT : 0 -> __table1.uid Int16 : 0
          ALIAS __table2.name :: 4 -> u2.name String : 3
 Positions: 5 0 1 2 3
   Filter (WHERE)
-  Filter column: less(__table1.uid, __table2.age_sum) (removed)
+  Filter column: __table1.uid < __table2.age_sum (removed)
   Actions: INPUT : 0 -> __table1.uid Int16 : 0
            INPUT :: 1 -> __table1.name String : 1
            INPUT :: 2 -> __table1.age Int16 : 2
            INPUT : 3 -> __table2.age_sum Nullable(Int64) : 3
            INPUT :: 4 -> __table2.name String : 4
-           FUNCTION less(__table1.uid : 0, __table2.age_sum : 3) -> less(__table1.uid, __table2.age_sum) Nullable(UInt8) : 5
+           FUNCTION __table1.uid : 0 < __table2.age_sum : 3 -> __table1.uid < __table2.age_sum Nullable(UInt8) : 5
   Positions: 5 0 1 2 3 4
     JoinLogical
     Join: u1[3] ⟕ u2[3]
@@ -254,14 +254,14 @@ Positions: 5 0 1 2 3
     Type: LEFT
     Strictness: ANY
     Locality: UNSPECIFIED
-    Expression: equals(__table1.name, __table2.name)
+    Expression: __table1.name = __table2.name
     Expression:
     Actions: INPUT :: 0 -> __table1.uid Int16 : 0
              INPUT : 1 -> __table1.name String : 1
              INPUT :: 2 -> __table1.age Int16 : 2
              INPUT :: 3 -> __table2.age_sum Nullable(Int64) : 3
              INPUT : 4 -> __table2.name String : 4
-             FUNCTION equals(__table1.name : 1, __table2.name : 4) -> equals(__table1.name, __table2.name) UInt8 : 5
+             FUNCTION __table1.name : 1 = __table2.name : 4 -> __table1.name = __table2.name UInt8 : 5
     Positions: 0 1 2 3 4
     Expression Sources:
     __table1.uid: {0}

@@ -106,7 +106,7 @@ PrimaryKey
 Keys:
 a.b.c
 a.b.d
-Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
+Condition: (a.b.d in [\'str_0\', \'str_0\']) AND (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 1/8
 Search Algorithm: binary search
@@ -138,7 +138,7 @@ PrimaryKey
 Keys:
 a.b.c
 a.b.d
-Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
+Condition: (a.b.d in [\'str_0\', \'str_0\']) AND (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 1/8
 Search Algorithm: binary search
@@ -277,7 +277,7 @@ PrimaryKey
 Keys:
 a.b.c
 a.b.d
-Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
+Condition: (a.b.d in [\'str_0\', \'str_0\']) AND (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 1/8
 Search Algorithm: binary search
@@ -309,7 +309,7 @@ PrimaryKey
 Keys:
 a.b.c
 a.b.d
-Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
+Condition: (a.b.d in [\'str_0\', \'str_0\']) AND (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 1/8
 Search Algorithm: binary search
@@ -422,7 +422,7 @@ PrimaryKey
 Keys:
 a.b.c
 a.b.d
-Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
+Condition: (a.b.d in [\'str_0\', \'str_0\']) AND (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 1/8
 Search Algorithm: binary search
@@ -454,7 +454,7 @@ PrimaryKey
 Keys:
 a.b.c
 a.b.d
-Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
+Condition: (a.b.d in [\'str_0\', \'str_0\']) AND (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 1/8
 Search Algorithm: binary search
@@ -593,7 +593,7 @@ PrimaryKey
 Keys:
 a.b.c
 a.b.d
-Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
+Condition: (a.b.d in [\'str_0\', \'str_0\']) AND (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 1/8
 Search Algorithm: binary search
@@ -625,7 +625,7 @@ PrimaryKey
 Keys:
 a.b.c
 a.b.d
-Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
+Condition: (a.b.d in [\'str_0\', \'str_0\']) AND (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 1/8
 Search Algorithm: binary search
@@ -738,7 +738,7 @@ PrimaryKey
 Keys:
 a.b.c
 a.b.d
-Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
+Condition: (a.b.d in [\'str_0\', \'str_0\']) AND (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 1/8
 Search Algorithm: binary search
@@ -770,7 +770,7 @@ PrimaryKey
 Keys:
 a.b.c
 a.b.d
-Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
+Condition: (a.b.d in [\'str_0\', \'str_0\']) AND (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 1/8
 Search Algorithm: binary search
@@ -909,7 +909,7 @@ PrimaryKey
 Keys:
 a.b.c
 a.b.d
-Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
+Condition: (a.b.d in [\'str_0\', \'str_0\']) AND (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 1/8
 Search Algorithm: binary search
@@ -941,7 +941,7 @@ PrimaryKey
 Keys:
 a.b.c
 a.b.d
-Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
+Condition: (a.b.d in [\'str_0\', \'str_0\']) AND (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 1/8
 Search Algorithm: binary search

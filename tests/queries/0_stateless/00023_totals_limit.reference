@@ -6,7 +6,7 @@
 			"type": "UInt32"
 		},
 		{
-			"name": "uniqIf(UserID, and(notEquals(UserID, 0), equals(_uniq_Goals, 1)))",
+			"name": "uniqIf(UserID, UserID != 0 AND _uniq_Goals = 1)",
 			"type": "UInt64"
 		}
 	],

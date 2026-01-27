@@ -23,10 +23,10 @@ Union
       Prewhere info
       Need filter: 1
         Prewhere filter
-        Prewhere filter column: equals(__table1.x, 42_UInt8) (removed)
+        Prewhere filter column: __table1.x = 42_UInt8 (removed)
         Actions: INPUT : 0 -> x UInt32 : 0
                  COLUMN Const(UInt8) -> 42_UInt8 UInt8 : 1
-                 FUNCTION equals(x : 0, 42_UInt8 :: 1) -> equals(__table1.x, 42_UInt8) UInt8 : 2
+                 FUNCTION x : 0 = 42_UInt8 :: 1 -> __table1.x = 42_UInt8 UInt8 : 2
         Positions: 0 2
       Indexes:
         PrimaryKey
@@ -44,13 +44,13 @@ Union
            ALIAS __table1.y :: 1 -> y UInt32 : 0
   Positions: 2 0
     Filter (( + Change column names to column identifiers))
-    Filter column: equals(__table1.x, 42_UInt8) (removed)
+    Filter column: __table1.x = 42_UInt8 (removed)
     Actions: INPUT : 0 -> x UInt32 : 0
              INPUT : 1 -> y UInt32 : 1
              COLUMN Const(UInt8) -> 42_UInt8 UInt8 : 2
              ALIAS x : 0 -> __table1.x UInt32 : 3
              ALIAS y :: 1 -> __table1.y UInt32 : 4
-             FUNCTION equals(x :: 0, 42_UInt8 :: 2) -> equals(__table1.x, 42_UInt8) UInt8 : 1
+             FUNCTION x :: 0 = 42_UInt8 :: 2 -> __table1.x = 42_UInt8 UInt8 : 1
     Positions: 1 3 4
       ReadFromRemote (Read from remote replica)
         Expression ((Project names + Projection))
@@ -72,10 +72,10 @@ Union
             Prewhere info
             Need filter: 1
               Prewhere filter
-              Prewhere filter column: equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) (removed)
+              Prewhere filter column: __table1.x = _CAST(42_UInt8, \'UInt8\'_String) (removed)
               Actions: INPUT : 0 -> x UInt32 : 0
                        COLUMN Const(UInt8) -> _CAST(42_UInt8, \'UInt8\'_String) UInt8 : 1
-                       FUNCTION equals(x : 0, _CAST(42_UInt8, \'UInt8\'_String) :: 1) -> equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) UInt8 : 2
+                       FUNCTION x : 0 = _CAST(42_UInt8, \'UInt8\'_String) :: 1 -> __table1.x = _CAST(42_UInt8, \'UInt8\'_String) UInt8 : 2
               Positions: 0 2
             Indexes:
               PrimaryKey
@@ -121,10 +121,10 @@ Positions: 1
           Prewhere info
           Need filter: 1
             Prewhere filter
-            Prewhere filter column: equals(__table1.x, 42_UInt8) (removed)
+            Prewhere filter column: __table1.x = 42_UInt8 (removed)
             Actions: INPUT : 0 -> x UInt32 : 0
                      COLUMN Const(UInt8) -> 42_UInt8 UInt8 : 1
-                     FUNCTION equals(x : 0, 42_UInt8 :: 1) -> equals(__table1.x, 42_UInt8) UInt8 : 2
+                     FUNCTION x : 0 = 42_UInt8 :: 1 -> __table1.x = 42_UInt8 UInt8 : 2
             Positions: 0 2
           Indexes:
             PrimaryKey
@@ -139,12 +139,12 @@ Positions: 1
       Actions: INPUT :: 0 -> __table1.y UInt32 : 0
       Positions: 0
         Filter (( + Change column names to column identifiers))
-        Filter column: equals(__table1.x, 42_UInt8) (removed)
+        Filter column: __table1.x = 42_UInt8 (removed)
         Actions: INPUT : 0 -> x UInt32 : 0
                  INPUT : 1 -> y UInt32 : 1
                  COLUMN Const(UInt8) -> 42_UInt8 UInt8 : 2
                  ALIAS y :: 1 -> __table1.y UInt32 : 3
-                 FUNCTION equals(x :: 0, 42_UInt8 :: 2) -> equals(__table1.x, 42_UInt8) UInt8 : 1
+                 FUNCTION x :: 0 = 42_UInt8 :: 2 -> __table1.x = 42_UInt8 UInt8 : 1
         Positions: 1 3
           ReadFromRemote (Read from remote replica)
             Expression ((Project names + Projection))
@@ -166,10 +166,10 @@ Positions: 1
                 Prewhere info
                 Need filter: 1
                   Prewhere filter
-                  Prewhere filter column: equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) (removed)
+                  Prewhere filter column: __table1.x = _CAST(42_UInt8, \'UInt8\'_String) (removed)
                   Actions: INPUT : 0 -> x UInt32 : 0
                            COLUMN Const(UInt8) -> _CAST(42_UInt8, \'UInt8\'_String) UInt8 : 1
-                           FUNCTION equals(x : 0, _CAST(42_UInt8, \'UInt8\'_String) :: 1) -> equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) UInt8 : 2
+                           FUNCTION x : 0 = _CAST(42_UInt8, \'UInt8\'_String) :: 1 -> __table1.x = _CAST(42_UInt8, \'UInt8\'_String) UInt8 : 2
                   Positions: 0 2
                 Indexes:
                   PrimaryKey
@@ -223,10 +223,10 @@ Positions: 1 0
             Prewhere info
             Need filter: 1
               Prewhere filter
-              Prewhere filter column: equals(__table1.x, 42_UInt8) (removed)
+              Prewhere filter column: __table1.x = 42_UInt8 (removed)
               Actions: INPUT : 0 -> x UInt32 : 0
                        COLUMN Const(UInt8) -> 42_UInt8 UInt8 : 1
-                       FUNCTION equals(x : 0, 42_UInt8 :: 1) -> equals(__table1.x, 42_UInt8) UInt8 : 2
+                       FUNCTION x : 0 = 42_UInt8 :: 1 -> __table1.x = 42_UInt8 UInt8 : 2
               Positions: 0 2
             Indexes:
               PrimaryKey
@@ -238,13 +238,13 @@ Positions: 1 0
                 Search Algorithm: binary search
               Ranges: 1
       Filter (( + Change remote column names to local column names))
-      Filter column: equals(__table1.x, 42_UInt8) (removed)
+      Filter column: __table1.x = 42_UInt8 (removed)
       Actions: INPUT : 0 -> __table1.x UInt32 : 0
                INPUT : 1 -> sum(__table1.y) AggregateFunction(sum, UInt32) : 1
                COLUMN Const(UInt8) -> 42_UInt8 UInt8 : 2
                ALIAS __table1.x : 0 -> __table2.x UInt32 : 3
                ALIAS sum(__table1.y) :: 1 -> sum(__table2.y) AggregateFunction(sum, UInt32) : 4
-               FUNCTION equals(__table1.x :: 0, 42_UInt8 :: 2) -> equals(__table1.x, 42_UInt8) UInt8 : 1
+               FUNCTION __table1.x :: 0 = 42_UInt8 :: 2 -> __table1.x = 42_UInt8 UInt8 : 1
       Positions: 1 3 4
         ReadFromRemote (Read from remote replica)
           BlocksMarshalling
@@ -542,12 +542,12 @@ Union
            ALIAS __table1.n :: 0 -> n UInt64 : 1
   Positions: 1
     Filter ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))))))
-    Filter column: equals(__table1.n, 100_UInt8) (removed)
+    Filter column: __table1.n = 100_UInt8 (removed)
     Actions: INPUT : 0 -> n UInt64 : 0
              COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 1
              FUNCTION materialize(n :: 0) -> materialize(n) UInt64 : 2
              ALIAS materialize(n) : 2 -> n UInt64 : 0
-             FUNCTION equals(materialize(n) :: 2, 100_UInt8 :: 1) -> equals(__table1.n, 100_UInt8) UInt8 : 3
+             FUNCTION materialize(n) :: 2 = 100_UInt8 :: 1 -> __table1.n = 100_UInt8 UInt8 : 3
              ALIAS n :: 0 -> __table1.n UInt64 : 1
     Positions: 3 1
       ReadFromMergeTree (default.tab2)
@@ -568,12 +568,12 @@ Union
            ALIAS __table1.n :: 0 -> n UInt64 : 1
   Positions: 1
     Filter (( + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + Change column names to column identifiers)))))))
-    Filter column: equals(__table1.n, 100_UInt8) (removed)
+    Filter column: __table1.n = 100_UInt8 (removed)
     Actions: INPUT : 0 -> n UInt64 : 0
              COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 1
              FUNCTION materialize(n :: 0) -> materialize(n) UInt64 : 2
              ALIAS materialize(n) : 2 -> n UInt64 : 0
-             FUNCTION equals(materialize(n) :: 2, 100_UInt8 :: 1) -> equals(__table1.n, 100_UInt8) UInt8 : 3
+             FUNCTION materialize(n) :: 2 = 100_UInt8 :: 1 -> __table1.n = 100_UInt8 UInt8 : 3
              ALIAS n :: 0 -> __table1.n UInt64 : 1
     Positions: 3 1
       ReadFromRemote (Read from remote replica)
@@ -582,12 +582,12 @@ Union
                  ALIAS __table1.n :: 0 -> n UInt64 : 1
         Positions: 1
           Filter ((WHERE + Change column names to column identifiers))
-          Filter column: equals(materialize(__table1.n), _CAST(100_UInt8, \'UInt8\'_String)) (removed)
+          Filter column: materialize(__table1.n) = _CAST(100_UInt8, \'UInt8\'_String) (removed)
           Actions: INPUT : 0 -> n UInt64 : 0
                    COLUMN Const(UInt8) -> _CAST(100_UInt8, \'UInt8\'_String) UInt8 : 1
                    ALIAS n : 0 -> __table1.n UInt64 : 2
                    FUNCTION materialize(n :: 0) -> materialize(__table1.n) UInt64 : 3
-                   FUNCTION equals(materialize(__table1.n) :: 3, _CAST(100_UInt8, \'UInt8\'_String) :: 1) -> equals(materialize(__table1.n), _CAST(100_UInt8, \'UInt8\'_String)) UInt8 : 0
+                   FUNCTION materialize(__table1.n) :: 3 = _CAST(100_UInt8, \'UInt8\'_String) :: 1 -> materialize(__table1.n) = _CAST(100_UInt8, \'UInt8\'_String) UInt8 : 0
           Positions: 0 2
             ReadFromMergeTree (default.tab2)
             ReadType: Default
