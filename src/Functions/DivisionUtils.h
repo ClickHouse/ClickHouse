@@ -56,10 +56,10 @@ inline auto checkedDivision(A a, B b)
 {
     throwIfDivisionLeadsToFPE(a, b);
 
-    if constexpr (is_big_int_v<A> && is_floating_point<B>)
-        return static_cast<B>(a) / b;
-    else if constexpr (is_big_int_v<B> && is_floating_point<A>)
+    if constexpr (is_floating_point<A> && !is_floating_point<B>)
         return a / static_cast<A>(b);
+    else if constexpr (!is_floating_point<A> && is_floating_point<B>)
+        return static_cast<B>(a) / b;
     else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
         return static_cast<A>(a / b);
     else if constexpr (!is_big_int_v<A> && is_big_int_v<B>)

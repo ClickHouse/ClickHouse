@@ -927,6 +927,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
             LOG_TRACE(log, "Notifying failpoint {}", query.fail_point_name);
             FailPointInjection::notifyFailPoint(query.fail_point_name);
+            LOG_TRACE(log, "Notified failpoint {}", query.fail_point_name);
             break;
         }
 #else // USE_LIBFIU

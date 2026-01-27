@@ -2386,7 +2386,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 "section or in table settings in .sql file (don't forget to return setting back to default value)",
                 suspicious_broken_parts,
                 formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
-                formatReadableSizeWithBinarySuffix((*settings)[MergeTreeSetting::max_suspicious_broken_parts_bytes]));
+                formatReadableSizeWithBinarySuffix((*settings)[MergeTreeSetting::max_suspicious_broken_parts_bytes].value));
     }
 
     if (suspicious_broken_unexpected_parts != 0)
@@ -2977,7 +2977,7 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
 
     auto enough_space = [&](const auto & cache, double ratio_to_prewarm)
     {
-        return cache->sizeInBytes() < cache->maxSizeInBytes() * ratio_to_prewarm;
+        return static_cast<double>(cache->sizeInBytes()) < static_cast<double>(cache->maxSizeInBytes()) * ratio_to_prewarm;
     };
 
     for (const auto & part : data_parts)
@@ -3582,7 +3582,7 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
             size_t covered_parts_count = std::count_if(parts_in_range.begin(), parts_in_range.end(), smaller_parts_pred);
             size_t top_level_count = parts_in_range.size() - covered_parts_count;
             chassert(top_level_count);
-            Float32 parts_to_exclude_ratio = static_cast<Float32>(top_level_count) / parts_in_range.size();
+            Float32 parts_to_exclude_ratio = static_cast<Float32>(top_level_count) / static_cast<Float32>(parts_in_range.size());
             if ((*settings)[MergeTreeSetting::zero_copy_concurrent_part_removal_max_postpone_ratio] < parts_to_exclude_ratio)
             {
                 /// Most likely we have a long mutations chain here
@@ -5683,9 +5683,9 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         }
         else
         {
-            double delay_factor = static_cast<double>(parts_over_threshold) / allowed_parts_over_threshold;
+            double delay_factor = static_cast<double>(parts_over_threshold) / static_cast<double>(allowed_parts_over_threshold);
             const UInt64 min_delay_milliseconds = (*settings)[MergeTreeSetting::min_delay_to_insert_ms];
-            delay_milliseconds = std::max(min_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor));
+            delay_milliseconds = std::max(min_delay_milliseconds, static_cast<UInt64>(static_cast<double>(max_delay_milliseconds) * delay_factor));
         }
     }
 
@@ -5734,8 +5734,8 @@ void MergeTreeData::delayMutationOrThrowIfNeeded(Poco::Event * until, const Cont
         size_t mutations_over_threshold = num_unfinished_mutations - num_mutations_to_delay;
         size_t allowed_mutations_over_threshold = num_mutations_to_throw - num_mutations_to_delay;
 
-        double delay_factor = std::min(static_cast<double>(mutations_over_threshold) / allowed_mutations_over_threshold, 1.0);
-        size_t delay_milliseconds = static_cast<size_t>(interpolateLinear((*settings)[MergeTreeSetting::min_delay_to_mutate_ms], (*settings)[MergeTreeSetting::max_delay_to_mutate_ms], delay_factor));
+        double delay_factor = std::min(static_cast<double>(mutations_over_threshold) / static_cast<double>(allowed_mutations_over_threshold), 1.0);
+        size_t delay_milliseconds = static_cast<size_t>(interpolateLinear(static_cast<double>((*settings)[MergeTreeSetting::min_delay_to_mutate_ms]), static_cast<double>((*settings)[MergeTreeSetting::max_delay_to_mutate_ms]), delay_factor));
 
         ProfileEvents::increment(ProfileEvents::DelayedMutations);
         ProfileEvents::increment(ProfileEvents::DelayedMutationsMilliseconds, delay_milliseconds);
@@ -7954,7 +7954,7 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
 
     return getContext()->chooseCompressionCodec(
         part_size_compressed,
-        static_cast<double>(part_size_compressed) / getTotalActiveSizeInBytes());
+        static_cast<double>(part_size_compressed) / static_cast<double>(getTotalActiveSizeInBytes()));
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds) const

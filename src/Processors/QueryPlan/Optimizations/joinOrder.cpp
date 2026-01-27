@@ -159,7 +159,7 @@ double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
     UInt64 rhs_ndv = getColumnStats(rhs.getSourceRelations(), rhs.getColumnName());
     UInt64 max_ndv = std::max(lhs_ndv, rhs_ndv);
     if (max_ndv > 0)
-        selectivity = std::min(selectivity, 1.0 / max_ndv);
+        selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
     return selectivity;
 }
 
@@ -181,8 +181,8 @@ static std::optional<UInt64> estimateJoinCardinality(
     if (!left->estimated_rows || !right->estimated_rows)
         return {};
 
-    double lhs = left->estimated_rows.value();
-    double rhs = right->estimated_rows.value();
+    double lhs = static_cast<double>(left->estimated_rows.value());
+    double rhs = static_cast<double>(right->estimated_rows.value());
 
     double joined_rows = std::max(selectivity * lhs * rhs, 1.0);
 
@@ -193,7 +193,7 @@ static std::optional<UInt64> estimateJoinCardinality(
     if (join_kind == JoinKind::Full)
         joined_rows = std::max(joined_rows, lhs + rhs);
 
-    if (joined_rows > std::numeric_limits<UInt64>::max())
+    if (joined_rows > static_cast<double>(std::numeric_limits<UInt64>::max()))
         return std::numeric_limits<UInt64>::max();
     if (joined_rows < 1)
         return 1;
@@ -205,7 +205,7 @@ static double computeJoinCost(
     const std::shared_ptr<DPJoinEntry> & right,
     double selectivity)
 {
-    return left->cost + right->cost + selectivity * left->estimated_rows.value_or(1) * right->estimated_rows.value_or(1);
+    return left->cost + right->cost + selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
@@ -238,7 +238,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
             "Failed to find a valid join order, try adding 'greedy' algorithm as fallback to query_plan_optimize_join_order_algorithm setting.");
 
     LOG_TRACE(log, "Optimized join order in {:.2f} ms, best plan cost: {}, estimated cardinality: {}",
-        watch.elapsed() / 1000.0, best_plan->cost, best_plan->estimated_rows ? toString(*best_plan->estimated_rows) : "unknown");
+        static_cast<double>(watch.elapsed()) / 1000.0, best_plan->cost, best_plan->estimated_rows ? toString(*best_plan->estimated_rows) : "unknown");
     return best_plan;
 }
 
