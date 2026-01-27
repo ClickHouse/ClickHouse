@@ -111,7 +111,7 @@ def test_one_time_password(started_cluster):
         query_text, user="totuser", password=f"aa+bb+{old_password}"
     )
 
-    assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
+    assert "REQUIRED_SECOND_FACTOR" in node.query_and_get_error(
         query_text, user="totuser", password=f"aa+bb"
     )
 
