@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <type_traits>
+#include <memory>
 
 #include <Common/AllocationInterceptors.h>
 #include <Common/CurrentMemoryTracker.h>
@@ -73,3 +74,78 @@ constexpr bool operator!=(const AllocatorWithMemoryTracking <T> &, const Allocat
 {
     return false;
 }
+
+
+/// This allocator allows to track memory usage of containers of arbitrary types.
+/// The usage is simple: container.get_allocator().getBytesAllocated()
+template <typename T>
+struct BytesAwareAllocatorWithMemoryTracking
+{
+    using value_type = T;
+    using propagate_on_container_swap = std::true_type;
+    using propagate_on_container_copy_assignment = std::false_type;
+    using propagate_on_container_move_assignment = std::true_type;
+    using is_always_equal = std::false_type;
+
+    template <typename U>
+    struct rebind
+    {
+        using other = BytesAwareAllocatorWithMemoryTracking<U>;
+    };
+
+    BytesAwareAllocatorWithMemoryTracking() = default;
+    BytesAwareAllocatorWithMemoryTracking(const BytesAwareAllocatorWithMemoryTracking&) = default;
+    BytesAwareAllocatorWithMemoryTracking& operator=(const BytesAwareAllocatorWithMemoryTracking&) = default;
+
+    BytesAwareAllocatorWithMemoryTracking(BytesAwareAllocatorWithMemoryTracking && other) noexcept
+        : bytes_allocated(std::move(other.bytes_allocated))
+    {
+        other.bytes_allocated = std::make_shared<size_t>(0);
+    }
+
+    BytesAwareAllocatorWithMemoryTracking& operator=(BytesAwareAllocatorWithMemoryTracking && other) noexcept
+    {
+        bytes_allocated = other.bytes_allocated;
+        other.bytes_allocated = std::make_shared<size_t>(0);
+        return *this;
+    }
+
+    template <typename U>
+    BytesAwareAllocatorWithMemoryTracking(const BytesAwareAllocatorWithMemoryTracking<U>& other)
+        : bytes_allocated(other.bytes_allocated) {}
+
+    T* allocate(size_t n)
+    {
+        *bytes_allocated += n * sizeof(T);
+        return AllocatorWithMemoryTracking<T>().allocate(n);
+    }
+
+    void deallocate(T * p, size_t n)
+    {
+        *bytes_allocated -= n * sizeof(T);
+        AllocatorWithMemoryTracking<T>().deallocate(p, n);
+    }
+
+    /// NOLINTNEXTLINE
+    BytesAwareAllocatorWithMemoryTracking<T> select_on_container_copy_construction() const
+    {
+        /// During the container copy, the copied allocator should receive
+        /// the previously defined amount of bytes allocated and then live its own life.
+        BytesAwareAllocatorWithMemoryTracking<T> allocator;
+        allocator.bytes_allocated = bytes_allocated;
+        return allocator;
+    }
+
+    size_t getBytesAllocated() const
+    {
+        return *bytes_allocated;
+    }
+
+    template <typename U>
+    bool operator==(const BytesAwareAllocatorWithMemoryTracking<U>& other) const
+    {
+        return bytes_allocated == other.bytes_allocated;
+    }
+
+    std::shared_ptr<size_t> bytes_allocated = std::make_shared<size_t>(0);
+};

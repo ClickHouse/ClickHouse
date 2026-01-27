@@ -1402,16 +1402,17 @@ private:
     {
         size_t operator()(const NamesAndTypesList & list) const noexcept;
     };
-    struct ColumnsDescriptionCache
-    {
-        std::shared_ptr<const ColumnsDescription> original;
-        std::shared_ptr<const ColumnsDescription> with_collected_nested;
-        /// Column name to position mapping, derived from columns list
-        std::shared_ptr<const std::unordered_map<std::string, size_t>> column_name_to_position;
-    };
+
     mutable AggregatedMetrics::MetricHandle columns_descriptions_metric_handle;
     mutable std::mutex columns_descriptions_cache_mutex;
-    mutable std::unordered_map<NamesAndTypesList, ColumnsDescriptionCache, NamesAndTypesListHash> columns_descriptions_cache TSA_GUARDED_BY(columns_descriptions_cache_mutex);
+    mutable std::unordered_map<
+        NamesAndTypesList,
+        ColumnsDescriptionCache,
+        NamesAndTypesListHash,
+        std::equal_to<>,
+        BytesAwareAllocatorWithMemoryTracking<std::pair<const NamesAndTypesList, ColumnsDescriptionCache>>>
+        columns_descriptions_cache TSA_GUARDED_BY(columns_descriptions_cache_mutex);
+    mutable size_t columns_descriptions_cache_size_bytes TSA_GUARDED_BY(columns_descriptions_cache_mutex) = 0;
 
     struct SharedNamesAndTypesListHash
     {
@@ -1430,15 +1431,26 @@ private:
     };
 
     mutable std::mutex parts_metadata_cache_mutex;
-    mutable std::unordered_set<std::shared_ptr<const NamesAndTypesList>, SharedNamesAndTypesListHash, SharedNamesAndTypesListEqual> columns_list_cache TSA_GUARDED_BY(parts_metadata_cache_mutex);
+    mutable std::unordered_set<
+        std::shared_ptr<const NamesAndTypesList>,
+        SharedNamesAndTypesListHash,
+        SharedNamesAndTypesListEqual,
+        BytesAwareAllocatorWithMemoryTracking<std::shared_ptr<const NamesAndTypesList>>
+    > columns_list_cache TSA_GUARDED_BY(parts_metadata_cache_mutex);
+
+    /// The size of the cache above calculated incrementally.
+    mutable size_t columns_list_cache_size_bytes TSA_GUARDED_BY(parts_metadata_cache_mutex) = 0;
 
 public:
     ColumnsDescriptionCache getColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
     void decrefColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
     size_t getColumnsDescriptionsCacheSize() const;
+    size_t getColumnsDescriptionsCacheBytes() const;
 
-    std::shared_ptr<const NamesAndTypesList> registerNamesAndTypesListInSharedCache(NamesAndTypesList && columns) const;
+    std::shared_ptr<const NamesAndTypesList> getCachedNamesAndTypesList(NamesAndTypesList && columns) const;
     void decrefNamesAndTypesListInSharedCache(const std::shared_ptr<const NamesAndTypesList> & columns) const;
+    size_t getNamesAndTypesCacheSize() const;
+    size_t getNamesAndTypesCacheBytes() const;
 
 protected:
     /// Engine-specific methods

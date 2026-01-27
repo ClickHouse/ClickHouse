@@ -633,7 +633,7 @@ SerializationByName IMergeTreeDataPart::constructSerializations(
 void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version)
 {
     auto new_columns_copy = new_columns;
-    columns = storage.registerNamesAndTypesListInSharedCache(std::move(new_columns_copy));
+    columns = storage.getCachedNamesAndTypesList(std::move(new_columns_copy));
     serialization_infos = new_infos;
     metadata_version = new_metadata_version;
 

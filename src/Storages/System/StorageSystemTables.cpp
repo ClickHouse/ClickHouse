@@ -195,7 +195,10 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"active_on_fly_data_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active data mutations (UPDATEs and DELETEs) suitable for applying on the fly."},
         {"active_on_fly_alter_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active alter mutations (MODIFY COLUMNs) suitable for applying on the fly."},
         {"active_on_fly_metadata_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active metadata mutations (RENAMEs) suitable for applying on the fly."},
-        {"columns_descriptions_cache_size", std::make_shared<DataTypeUInt64>(), "Size of columns description cache for *MergeTree tables"},
+        {"columns_descriptions_cache_size", std::make_shared<DataTypeUInt64>(), "Size of a per-table cache of ColumnsDescription objects" },
+        {"columns_descriptions_cache_bytes", std::make_shared<DataTypeUInt64>(), "Size (in bytes) of a per-table cache of ColumnsDescription objects"},
+        {"names_and_types_cache_size", std::make_shared<DataTypeUInt64>(), "Size of a per-table cache of NamesAndTypesList objects"},
+        {"names_and_types_cache_bytes", std::make_shared<DataTypeUInt64>(), "Size (in bytes) of a per-table cache of NamesAndTypesList objects"},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows INSERTed since server start (only for Buffer tables)."
         },
@@ -753,11 +756,38 @@ protected:
                     }
                 }
 
-                // columns_descriptions_cache_size
+                /// columns_descriptions_cache_size
                 if (columns_mask[src_index++])
                 {
                     if (table_merge_tree)
                         res_columns[res_index++]->insert(table_merge_tree->getColumnsDescriptionsCacheSize());
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                /// columns_descriptions_cache_bytes
+                if (columns_mask[src_index++])
+                {
+                    if (table_merge_tree)
+                        res_columns[res_index++]->insert(table_merge_tree->getColumnsDescriptionsCacheBytes());
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                /// names_and_types_cache_size
+                if (columns_mask[src_index++])
+                {
+                    if (table_merge_tree)
+                        res_columns[res_index++]->insert(table_merge_tree->getNamesAndTypesCacheSize());
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                /// names_and_types_cache_bytes
+                if (columns_mask[src_index++])
+                {
+                    if (table_merge_tree)
+                        res_columns[res_index++]->insert(table_merge_tree->getNamesAndTypesCacheBytes());
                     else
                         res_columns[res_index++]->insertDefault();
                 }

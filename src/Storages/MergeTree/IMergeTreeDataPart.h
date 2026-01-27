@@ -19,6 +19,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
+#include <Storages/MergeTree/MergeTreeDataPartSharedInfo.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
@@ -82,7 +83,7 @@ public:
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
-    using NameToNumber = std::unordered_map<std::string, size_t>;
+    using NameToNumber = ColumnsDescriptionCache::NameToPositionMap;
 
     using Index = Columns;
     using IndexPtr = std::shared_ptr<const Index>;

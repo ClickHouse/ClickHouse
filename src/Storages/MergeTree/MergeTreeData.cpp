@@ -10472,14 +10472,14 @@ size_t MergeTreeData::NamesAndTypesListHash::operator()(const NamesAndTypesList 
     return hash;
 }
 
-MergeTreeData::ColumnsDescriptionCache MergeTreeData::getColumnsDescriptionForColumns(const NamesAndTypesList & columns) const
+ColumnsDescriptionCache MergeTreeData::getColumnsDescriptionForColumns(const NamesAndTypesList & columns) const
 {
     std::lock_guard lock(columns_descriptions_cache_mutex);
     if (auto it = columns_descriptions_cache.find(columns); it != columns_descriptions_cache.end())
         return it->second;
 
     /// Build column_name_to_position map
-    auto column_name_to_position = std::make_shared<std::unordered_map<std::string, size_t>>();
+    auto column_name_to_position = std::make_shared<ColumnsDescriptionCache::NameToPositionMap>();
     column_name_to_position->reserve(columns.size());
     size_t pos = 0;
     for (const auto & column : columns)
@@ -10491,10 +10491,23 @@ MergeTreeData::ColumnsDescriptionCache MergeTreeData::getColumnsDescriptionForCo
         .with_collected_nested = std::make_shared<ColumnsDescription>(Nested::collect(columns)),
         .column_name_to_position = std::move(column_name_to_position),
     };
+
+    size_t cache_bytes = 0;
+    cache_bytes += cache.original->getBytesAllocated();
+    cache_bytes += cache.with_collected_nested->getBytesAllocated();
+    cache_bytes += cache.column_name_to_position->get_allocator().getBytesAllocated();
+
     if (*cache.with_collected_nested == *cache.original)
         cache.with_collected_nested = cache.original;
+
     auto [_, inserted] = columns_descriptions_cache.emplace(columns, cache);
-    columns_descriptions_metric_handle.add(inserted);
+
+    if (inserted)
+    {
+        columns_descriptions_cache_size_bytes += cache_bytes;
+        columns_descriptions_metric_handle.add(cache_bytes);
+    }
+
     return cache;
 }
 
@@ -10513,16 +10526,25 @@ void MergeTreeData::decrefColumnsDescriptionForColumns(const NamesAndTypesList &
         /// except in the columns_descriptions_cache and local copy here in iterator.
         if (it->second.original.use_count() == 2)
         {
+            size_t bytes_size = 0;
+            bytes_size += it->second.original->getBytesAllocated();
+            bytes_size += it->second.with_collected_nested->getBytesAllocated();
+            bytes_size += it->second.column_name_to_position->get_allocator().getBytesAllocated();
+
+            columns_descriptions_cache_size_bytes -= bytes_size;
             columns_descriptions_cache.erase(it);
-            columns_descriptions_metric_handle.sub(1);
+            columns_descriptions_metric_handle.sub(bytes_size);
         }
     }
 }
 
-std::shared_ptr<const NamesAndTypesList> MergeTreeData::registerNamesAndTypesListInSharedCache(NamesAndTypesList && columns) const
+std::shared_ptr<const NamesAndTypesList> MergeTreeData::getCachedNamesAndTypesList(NamesAndTypesList && columns) const
 {
     std::lock_guard lock(parts_metadata_cache_mutex);
-    auto [it, _] = columns_list_cache.emplace(std::make_shared<const NamesAndTypesList>(std::move(columns)));
+    const auto bytes = columns.get_allocator().getBytesAllocated();
+    auto [it, inserted] = columns_list_cache.emplace(std::make_shared<const NamesAndTypesList>(std::move(columns)));
+    if (inserted)
+        columns_list_cache_size_bytes += bytes;
     return *it;
 }
 
@@ -10536,6 +10558,7 @@ void MergeTreeData::decrefNamesAndTypesListInSharedCache(const std::shared_ptr<c
         /// 1 in the container + 1 in the iterator + 1 original in the IMergeTreeDataPart
         if (it->use_count() == 3)
         {
+            columns_list_cache_size_bytes -= columns->get_allocator().getBytesAllocated();
             /// The destruction of an object won't happen here, but in the destructor of the IMergeTreeDataPart.
             columns_list_cache.erase(it);
         }
@@ -10546,6 +10569,26 @@ size_t MergeTreeData::getColumnsDescriptionsCacheSize() const
 {
     std::lock_guard lock(columns_descriptions_cache_mutex);
     return columns_descriptions_cache.size();
+}
+
+size_t MergeTreeData::getColumnsDescriptionsCacheBytes() const
+{
+    std::lock_guard lock(columns_descriptions_cache_mutex);
+    return columns_descriptions_cache_size_bytes + columns_descriptions_cache.get_allocator().getBytesAllocated();
+}
+
+size_t MergeTreeData::getNamesAndTypesCacheSize() const
+{
+    std::lock_guard lock(parts_metadata_cache_mutex);
+    return columns_list_cache.size();
+}
+
+size_t MergeTreeData::getNamesAndTypesCacheBytes() const
+{
+    std::lock_guard lock(parts_metadata_cache_mutex);
+    return columns_list_cache_size_bytes +
+        columns_list_cache.get_allocator().getBytesAllocated() +
+        columns_list_cache.size() * sizeof(NamesAndTypesList);
 }
 
 
