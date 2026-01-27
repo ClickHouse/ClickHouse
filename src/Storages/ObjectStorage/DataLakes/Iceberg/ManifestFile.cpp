@@ -239,6 +239,9 @@ ManifestFileContent::ManifestFileContent(
 
     size_t first_code_piece = 0;
     size_t second_code_piece = 0;
+    size_t second_code_piece_first_subpiece = 0;
+    size_t second_code_piece_second_subpiece = 0;
+    // size_t second_code_piece_third_subpiece = 0;
     size_t third_code_piece = 0;
     size_t fourth_code_piece = 0;
     size_t fifth_code_piece = 0;
@@ -288,6 +291,9 @@ ManifestFileContent::ManifestFileContent(
         first_code_piece += stopwatch.elapsedNanoseconds();
         stopwatch.restart();
 
+        Stopwatch second_code_piece_stopwatch;
+        second_code_piece_stopwatch.start();
+
         const auto schema_id_opt = schema_processor.tryGetSchemaIdForSnapshot(snapshot_id);
         if (!schema_id_opt.has_value())
         {
@@ -311,6 +317,9 @@ ManifestFileContent::ManifestFileContent(
         const auto file_path_key
             = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>();
         const auto file_path = getProperFilePathFromMetadataInfo(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>(), common_path, table_location);
+
+        second_code_piece_first_subpiece += second_code_piece_stopwatch.elapsedNanoseconds();
+        second_code_piece_stopwatch.restart();
 
         /// NOTE: This is weird, because in manifest file partition looks like this:
         /// {
@@ -352,6 +361,9 @@ ManifestFileContent::ManifestFileContent(
                 }
             }
         }
+
+        second_code_piece_second_subpiece += second_code_piece_stopwatch.elapsedNanoseconds();
+        second_code_piece_stopwatch.restart();
 
         second_code_piece += stopwatch.elapsedNanoseconds();
         stopwatch.restart();
@@ -558,9 +570,12 @@ ManifestFileContent::ManifestFileContent(
     }
     LOG_DEBUG(
         &Poco::Logger::get("Manifest File"),
-        "Spent time in first piece: {}, in second piece: {}, in third piece: {}, in forth piece: {}, in fifth piece: {}",
+        "Spent time in first piece: {}, in second piece: {} (first subpiece: {}, second subpiece: {}), in third piece: {}, in forth piece: "
+        "{}, in fifth piece: {}",
         first_code_piece,
         second_code_piece,
+        second_code_piece_first_subpiece,
+        second_code_piece_second_subpiece,
         third_code_piece,
         fourth_code_piece,
         fifth_code_piece);
