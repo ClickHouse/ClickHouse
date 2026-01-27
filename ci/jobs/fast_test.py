@@ -296,12 +296,12 @@ def main():
             attach_debug = True
         job_info = results[-1].info
 
-    #if attach_debug:
-    attach_files += [
-        clickhouse_bin_path,
-        f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
-        f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
-    ]
+    if attach_debug:
+        attach_files += [
+            clickhouse_bin_path,
+            f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
+            f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
+        ]
 
     CH.terminate()
 
