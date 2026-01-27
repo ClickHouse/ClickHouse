@@ -114,6 +114,7 @@ ColumnsDescription ZooKeeperLogElement::getColumnsDescription()
         {"stat_numChildren", std::make_shared<DataTypeInt32>(), "The number of children of this ZooKeeper node."},
 
         {"children", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of child ZooKeeper nodes (for responses to LIST request)."},
+        {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -169,6 +170,7 @@ void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
     for (const auto & c : children)
         children_array.emplace_back(c);
     columns[i++]->insert(children_array);
+    columns[i++]->insert(log_marker);
 }
 
 }
