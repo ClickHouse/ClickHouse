@@ -20,6 +20,7 @@ ASTPtr ASTDropIndexQuery::clone() const
     res->index_name = index_name->clone();
     res->children.push_back(res->index_name);
 
+    cloneOutputOptions(*res);
     cloneTableOptions(*res);
 
     return res;

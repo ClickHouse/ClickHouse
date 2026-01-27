@@ -661,6 +661,9 @@ ASTPtr ASTAlterQuery::clone() const
     if (command_list)
         res->set(res->command_list, command_list->clone());
 
+    cloneOutputOptions(*res);
+    cloneTableOptions(*res);
+
     return res;
 }
 

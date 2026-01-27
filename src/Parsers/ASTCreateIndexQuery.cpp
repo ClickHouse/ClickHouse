@@ -25,6 +25,7 @@ ASTPtr ASTCreateIndexQuery::clone() const
     res->index_decl = index_decl->clone();
     res->children.push_back(res->index_decl);
 
+    cloneOutputOptions(*res);
     cloneTableOptions(*res);
 
     return res;
