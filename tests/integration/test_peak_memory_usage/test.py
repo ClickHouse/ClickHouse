@@ -120,15 +120,19 @@ def test_clickhouse_client_max_peak_memory_usage_distributed(started_cluster):
     print(f"Searching shard2 logs for initial_query_id: {query_id}")
     required_query_id = None
     shard_2_logs = shard_2.grep_in_log(f"initial_query_id: {query_id}")
-    print(f"Found {len(shard_2_logs)} log lines with initial_query_id")
-    for log_line in shard_2_logs:
-        print(f"Processing log line: {log_line}")
-        # Extract query_id from curly braces {required_query_id}
-        query_id_match = re.search(r"\{([a-f0-9-]+)\}", log_line)
-        if query_id_match:
-            required_query_id = query_id_match.group(1)
-            print(f"required_query_id from shard2: {required_query_id}")
-            break
+    print(f"Shard2 logs result:\n{shard_2_logs}")
+    
+    if shard_2_logs:
+        log_lines = shard_2_logs.strip().split('\n')
+        print(f"Found {len(log_lines)} log lines with initial_query_id")
+        for log_line in log_lines:
+            print(f"Processing log line: {log_line}")
+            # Extract query_id from curly braces {required_query_id}
+            query_id_match = re.search(r"\{([a-f0-9-]+)\}", log_line)
+            if query_id_match:
+                required_query_id = query_id_match.group(1)
+                print(f"required_query_id from shard2: {required_query_id}")
+                break
     
     assert required_query_id, "Failed to extract required_query_id from shard2 logs"
     
