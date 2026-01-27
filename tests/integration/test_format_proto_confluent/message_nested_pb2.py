@@ -13,7 +13,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x14message_nested.proto\".\n\x01\x41\x1a)\n\x06Nested\x12\t\n\x01x\x18\x01 \x01(\x05\x1a\x14\n\x07Nested2\x12\t\n\x01y\x18\x01 \x01(\x05\"/\n\x01\x42\x12\t\n\x01s\x18\x01 \x01(\t\x1a\x1f\n\x07Nested3\x12\t\n\x01y\x18\x01 \x01(\x05\x12\t\n\x01z\x18\x02 \x01(\tb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x14message_nested.proto\"m\n\x01\x41\x12\x19\n\x06nested\x18\x01 \x01(\x0b\x32\t.A.Nested\x1aM\n\x06Nested\x12\t\n\x01x\x18\x01 \x01(\x05\x12\"\n\x07nested2\x18\x02 \x01(\x0b\x32\x11.A.Nested.Nested2\x1a\x14\n\x07Nested2\x12\t\n\x01y\x18\x01 \x01(\x05\"L\n\x01\x42\x12\t\n\x01s\x18\x01 \x01(\t\x12\x1b\n\x07nested3\x18\x02 \x01(\x0b\x32\n.B.Nested3\x1a\x1f\n\x07Nested3\x12\t\n\x01y\x18\x01 \x01(\x05\x12\t\n\x01z\x18\x02 \x01(\tb\x06proto3')
 
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'message_nested_pb2', globals())
@@ -21,13 +21,13 @@ if _descriptor._USE_C_DESCRIPTORS == False:
 
   DESCRIPTOR._options = None
   _A._serialized_start=24
-  _A._serialized_end=70
-  _A_NESTED._serialized_start=29
-  _A_NESTED._serialized_end=70
-  _A_NESTED_NESTED2._serialized_start=50
-  _A_NESTED_NESTED2._serialized_end=70
-  _B._serialized_start=72
-  _B._serialized_end=119
-  _B_NESTED3._serialized_start=88
-  _B_NESTED3._serialized_end=119
+  _A._serialized_end=133
+  _A_NESTED._serialized_start=56
+  _A_NESTED._serialized_end=133
+  _A_NESTED_NESTED2._serialized_start=113
+  _A_NESTED_NESTED2._serialized_end=133
+  _B._serialized_start=135
+  _B._serialized_end=211
+  _B_NESTED3._serialized_start=180
+  _B_NESTED3._serialized_end=211
 # @@protoc_insertion_point(module_scope)

@@ -176,73 +176,81 @@ def test_nested_fields(started_cluster, tmp_path):
     reg_url = f"http://localhost:{started_cluster.schema_registry_port}"
     schema_registry_client = SchemaRegistryClient({"url": reg_url})
 
-    ctx = SerializationContext(topic="test_subject_ab", field=MessageField.VALUE)
+    instance = started_cluster.instances["dummy"]
+    schema_registry_url = (
+        f"http://{started_cluster.schema_registry_host}:{started_cluster.schema_registry_port}"
+    )
+    settings = {"format_protobuf_schema_registry_url": schema_registry_url}
+
+    uuid_table = get_uuid_str()
+
+    ctx_a = SerializationContext(topic=f"test_subject_a_{uuid_table}", field=MessageField.VALUE)
+    ctx_b = SerializationContext(topic=f"test_subject_b_{uuid_table}", field=MessageField.VALUE)
 
     serializer_a = ProtobufSerializer(
-        A.Nested.Nested2,
+        A,
         schema_registry_client,
         {"use.deprecated.format": False},
     )
 
     buf_a = io.BytesIO()
     for y in range(10, 13):
-        rec = A.Nested.Nested2(y=y)
-        buf_a.write(serializer_a(rec, ctx))
+        rec = A(
+            nested=A.Nested(
+                x=0,
+                nested2=A.Nested.Nested2(y=y),
+            )
+        )
+        buf_a.write(serializer_a(rec, ctx_a))
+    data_a = buf_a.getvalue()
 
     serializer_b = ProtobufSerializer(
-        B.Nested3,
+        B,
         schema_registry_client,
         {"use.deprecated.format": False},
     )
 
     buf_b = io.BytesIO()
     for y in range(20, 23):
-        rec = B.Nested3(y=y, z="zzz")
-        buf_b.write(serializer_b(rec, ctx))
-
-    data_a = buf_a.getvalue()
+        rec = B(
+            s="",
+            nested3=B.Nested3(y=y, z="zzz"),
+        )
+        buf_b.write(serializer_b(rec, ctx_b))
     data_b = buf_b.getvalue()
-
-    instance = started_cluster.instances["dummy"]
-    schema_registry_url = f"http://{started_cluster.schema_registry_host}:{started_cluster.schema_registry_port}"
-    settings = {"format_protobuf_schema_registry_url": schema_registry_url}
-
-    uuid_table = get_uuid_str()
 
     run_query(
         instance,
         f"""
         create table t_a_{uuid_table}(
-            A Tuple(
-                Nested Tuple(
-                    Nested2 Tuple(
-                        y Int32
-                    )
+            nested Tuple(
+                x Int32,
+                nested2 Tuple(
+                    y Int32
                 )
             )
         ) engine = Memory()
-        """
+        """,
     )
 
     run_query(
         instance,
         f"""
         create table t_b_{uuid_table}(
-            B Tuple(
-                Nested3 Tuple(
-                    y Int32,
-                    z String
-                )
+            s String,
+            nested3 Tuple(
+                y Int32,
+                z String
             )
         ) engine = Memory()
-        """
+        """,
     )
 
     run_query(instance, f"insert into t_a_{uuid_table} format ProtobufConfluent", data_a, settings)
     run_query(instance, f"insert into t_b_{uuid_table} format ProtobufConfluent", data_b, settings)
 
     out_a = run_query(instance, f"select * from t_a_{uuid_table} order by all")
-    assert list(map(str.split, out_a.splitlines())) == [['(((10)))'], ['(((11)))'], ['(((12)))']]
+    assert list(map(str.split, out_a.splitlines())) == [["(0,(10))"], ["(0,(11))"], ["(0,(12))"]]
 
     out_b = run_query(instance, f"select * from t_b_{uuid_table} order by all")
-    assert list(map(str.split, out_b.splitlines())) == [["((20,'zzz'))"], ["((21,'zzz'))"], ["((22,'zzz'))"]]
+    assert list(map(str.split, out_b.splitlines())) == [["(20,'zzz')"], ["(21,'zzz')"], ["(22,'zzz')"]]
