@@ -3,21 +3,22 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/FieldToDataType.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Common/Arena.h>
-#include <Common/SipHash.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-#include <IO/WriteBufferFromVector.h>
+#include <DataTypes/FieldToDataType.h>
+#include <DataTypes/Serializations/SerializationString.h>
+#include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <Formats/FormatSettings.h>
+#include <IO/WriteBufferFromVector.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Common/Arena.h>
+#include <Common/ContainersWithMemoryTracking.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -1097,7 +1098,7 @@ DataTypePtr ColumnDynamic::getTypeAt(size_t row_num) const
     return assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants()[discr];
 }
 
-void ColumnDynamic::getAllTypeNamesInto(std::unordered_set<String> & names) const
+void ColumnDynamic::getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> & names) const
 {
     auto shared_variant_discr = getSharedVariantDiscriminator();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)

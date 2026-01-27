@@ -21,7 +21,7 @@ class Context;
 class IDataType;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
+using DataTypes = std::vector<DataTypePtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class ASTFunction;
 
@@ -95,7 +95,7 @@ private:
         AggregateFunctionProperties & out_properties,
         bool has_null_arguments) const;
 
-    using AggregateFunctions = std::unordered_map<String, Value>;
+    using AggregateFunctions = std::unordered_map<String, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     using ActionMap = std::unordered_map<String, String>;
 
     AggregateFunctions aggregate_functions;

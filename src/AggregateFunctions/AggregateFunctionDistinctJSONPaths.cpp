@@ -123,7 +123,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
 {
     static constexpr auto name = "distinctJSONPathsAndTypes";
 
-    UnorderedMapWithMemoryTracking<String, std::unordered_set<String>> data;
+    UnorderedMapWithMemoryTracking<String, UnorderedSetWithMemoryTracking<String>> data;
 
     void add(const ColumnObject & column, size_t row_num, const UnorderedMapWithMemoryTracking<String, String> & typed_paths_type_names)
     {
