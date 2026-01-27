@@ -98,7 +98,7 @@ void StorageWebConfiguration::check(ContextPtr context)
 ObjectStoragePtr StorageWebConfiguration::createObjectStorage(ContextPtr context, bool) /// NOLINT
 {
     assertInitialized();
-    return std::make_shared<WebObjectStorage>(base_url, context, headers_from_ast);
+    return std::make_shared<WebObjectStorage>(base_url, query_fragment, context, headers_from_ast);
 }
 
 void StorageWebConfiguration::addStructureAndFormatToArgsIfNeeded(
@@ -130,7 +130,16 @@ void StorageWebConfiguration::addStructureAndFormatToArgsIfNeeded(
     }
 
     for (auto & arg : args)
+    {
+        const auto * func = arg->as<ASTFunction>();
+        if (func && func->name == "headers")
+        {
+            // `headers(...)` is a URL-specific argument and is not a SQL function.
+            // It must be preserved for URL argument parsing instead of being evaluated.
+            continue;
+        }
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+    }
 
     size_t count = args.size();
     ASTPtr format_literal = ASTPtr(new ASTLiteral(format_));
@@ -204,10 +213,12 @@ void StorageWebConfiguration::setNamespaceFromURL()
     path.path = uri.getPath();
     if (path.path.starts_with('/'))
         path.path.erase(0, 1);
+
+    query_fragment.clear();
     if (!uri.getQuery().empty())
-        path.path += "?" + uri.getQuery();
+        query_fragment = "?" + uri.getQuery();
     if (!uri.getFragment().empty())
-        path.path += "#" + uri.getFragment();
+        query_fragment += "#" + uri.getFragment();
 }
 
 }

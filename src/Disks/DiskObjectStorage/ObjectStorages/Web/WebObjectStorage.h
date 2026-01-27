@@ -19,7 +19,7 @@ class WebObjectStorage : public IObjectStorage, public WithContext
     friend class MetadataStorageFromStaticFilesWebServerTransaction;
 
 public:
-    WebObjectStorage(const String & url_, ContextPtr context_, HTTPHeaderEntries headers_ = {});
+    WebObjectStorage(const String & url_, const String & query_fragment_, ContextPtr context_, HTTPHeaderEntries headers_ = {});
 
     std::string getName() const override { return "Web"; }
 
@@ -81,6 +81,7 @@ protected:
 
 private:
     const String url;
+    const String query_fragment;
     const HTTPHeaderEntries headers;
     LoggerPtr log;
 };
