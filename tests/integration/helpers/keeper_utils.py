@@ -368,6 +368,7 @@ def wait_until_connected(
             finally:
                 if zk_cli:
                     try:
+                        # stop() can raise if the connection is already broken
                         zk_cli.stop()
                     except Exception:
                         pass
