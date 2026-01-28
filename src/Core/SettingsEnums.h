@@ -562,4 +562,12 @@ enum class DeduplicateInsertSelectMode : uint8_t
 
 DECLARE_SETTING_ENUM(DeduplicateInsertSelectMode)
 
+enum class DeduplicationUnificationStage : uint8_t
+{
+    OLD_SEPARATE_HASHES = 0,
+    COMPATIBLE_DOUBLE_HASHES,
+    NEW_UNIFICATED_HASHES
+};
+
+DECLARE_SETTING_ENUM(DeduplicationUnificationStage)
 }

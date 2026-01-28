@@ -90,6 +90,7 @@ namespace MergeTreeSetting
 namespace ServerSetting
 {
     extern const ServerSettingsBool disable_insertion_and_mutation;
+    extern const ServerSettingsDeduplicationUnificationStage deduplication_unification_stage;
 }
 
 namespace ErrorCodes
@@ -484,6 +485,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
             insert_dependencies,
             insert_dependencies->getRootViewID(),
             context->getSettingsRef()[Setting::insert_deduplication_token].value,
+            context->getServerSettings()[ServerSetting::deduplication_unification_stage].value,
             in_header);
     });
 
@@ -774,6 +776,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
             insert_dependencies,
             insert_dependencies->getRootViewID(),
             settings[Setting::insert_deduplication_token].value,
+            context->getServerSettings()[ServerSetting::deduplication_unification_stage].value,
             chain.getInputSharedHeader()));
 
     auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context->getQuota());
