@@ -206,6 +206,11 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
                write_cache_per_user_directory)
     , check_cache_probability(settings[FileCacheSetting::check_cache_probability])
 {
+    if (boundary_alignment && boundary_alignment > max_file_segment_size.load())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Setting 'boundary_alignment' ({}) cannot be greater than 'max_file_segment_size' ({})",
+                        boundary_alignment, max_file_segment_size.load());
+
     switch (settings[FileCacheSetting::cache_policy].value)
     {
         case FileCachePolicy::LRU:
