@@ -12,6 +12,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/InstrumentationManager.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <base/EnumReflection.h>
 
@@ -19,7 +20,7 @@
 namespace DB
 {
 
-[[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
+[[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                                  Expected & expected, bool require_table, bool allow_string_literal)
 {
     /// Better form for user: SYSTEM <ACTION> table ON CLUSTER cluster
@@ -73,7 +74,7 @@ enum class SystemQueryTargetType : uint8_t
     Disk,
 };
 
-[[nodiscard]] static bool parseQueryWithOnClusterAndTarget(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, SystemQueryTargetType target_type)
+[[nodiscard]] static bool parseQueryWithOnClusterAndTarget(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, SystemQueryTargetType target_type)
 {
     /// Better form for user: SYSTEM <ACTION> target_name ON CLUSTER cluster
     /// Query rewritten form + form while executing on cluster: SYSTEM <ACTION> ON CLUSTER cluster target_name
@@ -138,7 +139,7 @@ enum class SystemQueryTargetType : uint8_t
     return true;
 }
 
-[[nodiscard]] static bool parseQueryWithOnCluster(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
+[[nodiscard]] static bool parseQueryWithOnCluster(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                     Expected & expected)
 {
     String cluster_str;
@@ -152,7 +153,7 @@ enum class SystemQueryTargetType : uint8_t
     return true;
 }
 
-[[nodiscard]] static bool parseDropReplica(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, bool database)
+[[nodiscard]] static bool parseDropReplica(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, bool database)
 {
     if (!parseQueryWithOnCluster(res, pos, expected))
         return false;
@@ -192,7 +193,9 @@ enum class SystemQueryTargetType : uint8_t
             String zk_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
             if (!zk_path.empty() && zk_path[zk_path.size() - 1] == '/')
                 zk_path.pop_back();
-            res->replica_zk_path = zk_path;
+            res->full_replica_zk_path = std::move(zk_path);
+            res->zk_name = zkutil::extractZooKeeperName(res->full_replica_zk_path);
+            res->replica_zk_path = zkutil::extractZooKeeperPath(res->full_replica_zk_path, /*check_starts_with_slash*/false);
         }
         else
             return false;
@@ -206,7 +209,7 @@ enum class SystemQueryTargetType : uint8_t
     return true;
 }
 
-[[nodiscard]] static bool parseDropCatalogReplica(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected)
+[[nodiscard]] static bool parseDropCatalogReplica(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr ast;
     if (!ParserStringLiteral{}.parse(pos, ast, expected))
@@ -222,7 +225,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
     using Type = ASTSystemQuery::Type;
 
-    auto res = std::make_shared<ASTSystemQuery>();
+    auto res = make_intrusive<ASTSystemQuery>();
 
     bool found = false;
 
@@ -920,7 +923,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 #endif
-
+        case Type::RESET_DDL_WORKER: {
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+            break;
+        }
         default:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))

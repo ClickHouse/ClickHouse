@@ -68,7 +68,7 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
     size_t column_size = column.size();
     if (column_size > 10)
     {
-        double current_avg_value_size = static_cast<double>(column.byteSize()) / column_size;
+        double current_avg_value_size = static_cast<double>(column.byteSize()) / static_cast<double>(column_size);
 
         /// Heuristic is chosen so that avg_value_size_hint increases rapidly but decreases slowly.
         if (current_avg_value_size > avg_value_size_hint)

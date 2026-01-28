@@ -71,7 +71,7 @@ void ASTSystemQuery::setDatabase(const String & name)
 
     if (!name.empty())
     {
-        database = std::make_shared<ASTIdentifier>(name);
+        database = make_intrusive<ASTIdentifier>(name);
         children.push_back(database);
     }
 }
@@ -86,7 +86,7 @@ void ASTSystemQuery::setTable(const String & name)
 
     if (!name.empty())
     {
-        table = std::make_shared<ASTIdentifier>(name);
+        table = make_intrusive<ASTIdentifier>(name);
         children.push_back(table);
     }
 }
@@ -144,9 +144,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_keyword(" FROM TABLE ");
             print_database_table();
         }
-        else if (!replica_zk_path.empty())
+        else if (!full_replica_zk_path.empty())
         {
-            print_keyword(" FROM ZKPATH ") << quoteString(replica_zk_path);
+            print_keyword(" FROM ZKPATH ") << quoteString(full_replica_zk_path);
         }
         else if (database)
         {
@@ -602,6 +602,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::STOP_REPLICATED_DDL_QUERIES:
         case Type::START_REPLICATED_DDL_QUERIES:
         case Type::RECONNECT_ZOOKEEPER:
+        case Type::RESET_DDL_WORKER:
             break;
         case Type::UNKNOWN:
         case Type::END:

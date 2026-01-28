@@ -131,6 +131,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool vertical_merge_optimize_lightweight_delete;
     extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_wide_part;
+    extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_compact_part;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
@@ -1119,10 +1120,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
             /// The same progress from merge_entry could be used for both algorithms (it should be more accurate)
             /// But now we are using inaccurate row-based estimation in Horizontal case for backward compatibility
             Float64 progress = (global_ctx->chosen_merge_algorithm == MergeAlgorithm::Horizontal)
-                ? std::min(1., 1. * global_ctx->rows_written / ctx->sum_input_rows_upper_bound)
+                ? std::min(1., 1. * static_cast<double>(global_ctx->rows_written) / static_cast<double>(ctx->sum_input_rows_upper_bound))
                 : std::min(1., global_ctx->merge_list_element_ptr->progress.load(std::memory_order_relaxed));
 
-            global_ctx->space_reservation->update(static_cast<size_t>((1. - progress) * ctx->initial_reservation));
+            global_ctx->space_reservation->update(static_cast<size_t>((1. - progress) * static_cast<double>(ctx->initial_reservation)));
         }
     } while (watch.elapsedMilliseconds() < step_time_ms);
 
@@ -1319,6 +1320,8 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
         if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_wide_part].valueOrNullopt();
+        else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
+            max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
         bool is_result_sparse = ISerialization::hasKind(global_ctx->new_data_part->getSerialization(column_name)->getKindStack(), ISerialization::Kind::SPARSE);
         auto merge_step = std::make_unique<ColumnGathererStep>(
@@ -1511,8 +1514,8 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->merging_columns.size(),
             global_ctx->gathering_columns.size(),
             elapsed_seconds,
-            global_ctx->merge_list_element_ptr->rows_read / elapsed_seconds,
-            ReadableSize(global_ctx->merge_list_element_ptr->bytes_read_uncompressed / elapsed_seconds));
+            static_cast<double>(global_ctx->merge_list_element_ptr->rows_read) / elapsed_seconds,
+            ReadableSize(static_cast<double>(global_ctx->merge_list_element_ptr->bytes_read_uncompressed) / elapsed_seconds));
     }
 
     if (global_ctx->merged_part_offsets && !global_ctx->merged_part_offsets->isFinalized())
@@ -2460,6 +2463,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
         if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_wide_part].valueOrNullopt();
+        else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
+            max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
         auto merge_step = std::make_unique<MergePartsStep>(
             merge_parts_query_plan.getCurrentHeader(),

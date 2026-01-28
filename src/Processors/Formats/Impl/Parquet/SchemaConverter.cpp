@@ -496,6 +496,7 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
         output.input_type = std::make_shared<DataTypeMap>(array.output_type);
         output.output_type = output.input_type;
         output.nested_columns = {array_idx};
+        output.rep = array.rep;
     }
 
     return true;

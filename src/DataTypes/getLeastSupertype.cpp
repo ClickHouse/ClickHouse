@@ -278,9 +278,21 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
     Strings element_names;
     size_t element_size = 0;
     std::vector<DataTypes> element_types;
+
+    bool have_nullable = false;
+
     for (const auto & type : types)
     {
-        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        const IDataType * unwrapped_type = type.get();
+
+        // Unwrap Nullable if present
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(unwrapped_type))
+        {
+            have_nullable = true;
+            unwrapped_type = nullable_type->getNestedType().get();
+        }
+
+        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(unwrapped_type))
         {
             const auto & current_elements = type_tuple->getElements();
             if (element_types.empty())
@@ -314,6 +326,8 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
                 }
             }
         }
+        else if (typeid_cast<const DataTypeNothing *>(unwrapped_type)) /// NULL value (i.e. Nullable(Nothing))
+            continue;
         else
             return throwOrReturn<on_error>(types, "because some of them are Tuple and some of them are not", ErrorCodes::NO_COMMON_TYPE);
     }
@@ -330,11 +344,16 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
         commont_element_types[i] = common_type;
     }
 
+    DataTypePtr result_type;
     if (element_names.empty())
-        return std::make_shared<DataTypeTuple>(commont_element_types);
+        result_type = std::make_shared<DataTypeTuple>(commont_element_types);
     else
-        return std::make_shared<DataTypeTuple>(commont_element_types, element_names);
+        result_type = std::make_shared<DataTypeTuple>(commont_element_types, element_names);
 
+    if (have_nullable && result_type->canBeInsideNullable())
+        result_type = std::make_shared<DataTypeNullable>(result_type);
+
+    return result_type;
 }
 
 template <LeastSupertypeOnError on_error>
@@ -432,9 +451,24 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     }
 
     /// For tuples
-    for (const auto & type : types)
     {
-        if (typeid_cast<const DataTypeTuple *>(type.get()))
+        bool have_tuple = false;
+        for (const auto & type : types)
+        {
+            const IDataType * unwrapped_type = type.get();
+
+            // Unwrap Nullable if present
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(unwrapped_type))
+                unwrapped_type = nullable_type->getNestedType().get();
+
+            if (typeid_cast<const DataTypeTuple *>(unwrapped_type))
+            {
+                have_tuple = true;
+                break;
+            }
+        }
+
+        if (have_tuple)
             return getLeastSuperTypeForTuple<on_error>(types);
     }
 

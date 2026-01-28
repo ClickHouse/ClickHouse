@@ -178,8 +178,8 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map);
 
 struct NullPresence
 {
-    bool has_nullable = false;
-    bool has_null_constant = false;
+    bool has_nullable = false; /// Nullable(T)
+    bool has_null_constant = false; /// Nullable(Nothing)
 };
 
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args);

@@ -168,6 +168,8 @@ private:
 protected:
     bool shouldSkipPath(const String & path) const;
 
+    void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const;
+
     std::unordered_map<String, DataTypePtr> typed_paths_types;
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     std::unordered_set<String> paths_to_skip;
