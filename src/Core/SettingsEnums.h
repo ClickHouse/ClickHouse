@@ -562,4 +562,13 @@ enum class DeduplicateInsertSelectMode : uint8_t
 
 DECLARE_SETTING_ENUM(DeduplicateInsertSelectMode)
 
+enum class DeduplicateInsertMode : uint8_t
+{
+    BACKWARD_COMPATIBLE_CHOICE = 0,
+    ENABLE,
+    DISABLE
+};
+
+DECLARE_SETTING_ENUM(DeduplicateInsertMode)
+
 }

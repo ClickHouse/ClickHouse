@@ -7,6 +7,7 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
+#include <Core/DeduplicateInsert.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
@@ -60,7 +61,6 @@ namespace Setting
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
-    extern const SettingsBool insert_deduplicate;
     extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
@@ -95,7 +95,6 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int DEDUPLICATION_IS_NOT_POSSIBLE;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
@@ -432,44 +431,12 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     if (select_streams != 1)
         pipeline.resize(1);
 
-    auto deduplicate_insert_select = [&] () -> bool
-    {
-        switch (context->getSettingsRef()[Setting::deduplicate_insert_select].value)
-        {
-            case DeduplicateInsertSelectMode::FORCE_ENABLE:
-                return true;
-            case DeduplicateInsertSelectMode::DISABLE:
-                return false;
-            case DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES:
-                return context->getSettingsRef()[Setting::insert_deduplicate];
-            case DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE:
-            {
-                if (!select_query_sorted && context->getSettingsRef()[Setting::insert_deduplicate])
-                    LOG_INFO(logger, "INSERT SELECT deduplication is disabled because SELECT is not stable");
+    auto deduplicate_insert_select = isDeduplicationEnabledForInsertSelect(select_query_sorted, context->getSettingsRef(), logger);
 
-                return select_query_sorted && context->getSettingsRef()[Setting::insert_deduplicate];
-            }
-        }
-    }();
-
-    if (!select_query_sorted && deduplicate_insert_select)
-    {
-        if (context->getSettingsRef()[Setting::deduplicate_insert_select] == DeduplicateInsertSelectMode::FORCE_ENABLE)
-            throw Exception(ErrorCodes::DEDUPLICATION_IS_NOT_POSSIBLE,
-                "Deduplication for INSERT SELECT with non-stable SELECT is not possible"
-                " (the SELECT part can return different results on each execution)."
-                " You can disable it by setting 'insert_deduplicate' or `async_insert_deduplicate` to 0."
-                " Or make SELECT query stable (for example, by adding ORDER BY all to the query).");
-
-        chassert(context->getSettingsRef()[Setting::deduplicate_insert_select] == DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES);
-        LOG_INFO(logger, "INSERT SELECT deduplication is enabled in compatibility mode, but SELECT is not stable. "
-            "The deduplication may not work as expected because the SELECT part can return different results on each execution.");
-    }
-
-    if (deduplicate_insert_select != bool(context->getSettingsRef()[Setting::insert_deduplicate]))
+    if (deduplicate_insert_select != isDeduplicationEnabledForInsert(false, context->getSettingsRef()))
     {
         auto tmp_context = Context::createCopy(context);
-        tmp_context->setSetting("insert_deduplicate", Field{deduplicate_insert_select});
+        overrideDeduplicationSetting(deduplicate_insert_select, tmp_context);
         context = tmp_context;
     }
 
