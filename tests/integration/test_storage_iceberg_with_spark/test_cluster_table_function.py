@@ -2,6 +2,7 @@ import pytest
 
 from helpers.iceberg_utils import (
     default_upload_directory,
+    default_download_directory,
     write_iceberg_from_df,
     generate_data,
     get_uuid_str,
@@ -12,6 +13,7 @@ from helpers.iceberg_utils import (
 import logging
 import time
 import uuid
+import pyarrow.parquet as pq
 from helpers.config_cluster import minio_secret_key
 
 
@@ -294,3 +296,55 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
     buffers_count_default = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_s3_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3}, cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
     if buffers_count_with_splitted_tasks != 0:
         assert buffers_count_with_splitted_tasks >= buffers_count_default
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_empty_parquet_file(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    format_version = '2'
+    TABLE_NAME = "test_empty_parquet_file_" + get_uuid_str()
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x String)", format_version)
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1);", settings={"allow_experimental_insert_into_iceberg":1})
+
+    table_function_expr_cluster = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        table_function=True,
+        run_on_cluster=True,
+    )
+
+    files = default_download_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    assert len(files) > 0
+
+    pq_file = ""
+    for file in files:
+        if file[-7:] == 'parquet':
+            pq_file = file
+            break
+
+    assert len(pq_file) > 0, files
+    pq_file = '/' + pq_file
+    schema = pq.read_schema(pq_file)
+    empty_table = schema.empty_table()
+    with pq.ParquetWriter(pq_file, schema) as writer:
+        pass
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    select_cluster = (
+        instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS cluster_table_function_split_granularity='bucket'")
+    )
+
+    assert select_cluster == ''
