@@ -108,6 +108,7 @@ void registerStorageSQLite(StorageFactory & factory);
 #endif
 
 void registerStorageKeeperMap(StorageFactory & factory);
+void registerStorageFilesystem(StorageFactory & factory);
 
 void registerStorageObjectStorage(StorageFactory & factory);
 
@@ -214,6 +215,7 @@ void registerStorages()
 
     registerStorageKeeperMap(factory);
 
+    registerStorageFilesystem(factory);
     registerStorageObjectStorage(factory);
 }
 
