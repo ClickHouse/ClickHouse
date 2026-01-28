@@ -101,7 +101,6 @@ This will sort in descending order using natural comparison rules.
 
 - Natural sort only works with string columns (`String`, `FixedString`, `LowCardinality(String)`, `Nullable(String)`)
 - Natural sort is not supported in compiled sort descriptions (JIT-compiled sorting). When `compile_sort_description` setting is enabled, natural sort will use the regular (non-compiled) sorting implementation
-- When NATURAL is used, any specified COLLATE clause is ignored, and string comparison is performed byte-wise.
 - Natural sort is case-sensitive for text parts
 
 Rows with identical values for a sort expressions are returned in an arbitrary and non-deterministic order.

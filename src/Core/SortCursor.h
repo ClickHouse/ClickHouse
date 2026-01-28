@@ -168,7 +168,13 @@ static inline int compareDigitSequences(const std::string_view a, const std::str
 ///  - if left not null and right is null -> return -nulls_direction
 ///
 /// Returns: -1 if left < right, 0 if equal, +1 if left > right (in usual compareAt convention).
-static inline int naturalCompareAt(size_t lhs_pos, size_t rhs_pos, const IColumn & lhs_col_in, const IColumn & rhs_col_in, int nulls_direction)
+static inline int naturalCompareAt(
+    size_t lhs_pos,
+    size_t rhs_pos,
+    const IColumn & lhs_col_in,
+    const IColumn & rhs_col_in,
+    int nulls_direction,
+    std::shared_ptr<Collator> collator = nullptr)
 {
     // Unwrap const wrappers
     const IColumn * lcol = &lhs_col_in;
@@ -257,19 +263,33 @@ static inline int naturalCompareAt(size_t lhs_pos, size_t rhs_pos, const IColumn
             while (ib < nb && !std::isdigit(static_cast<unsigned char>(b[ib]))) ++ib;
             size_t len_b = ib - start_b;
 
-            // Compare substrings
-            size_t minlen = std::min(len_a, len_b);
             int cmp = 0;
-            for (size_t k = 0; k < minlen; ++k)
+            if (collator)
             {
-                unsigned char ca = static_cast<unsigned char>(a[start_a + k]);
-                unsigned char cb = static_cast<unsigned char>(b[start_b + k]);
-                if (ca < cb) { cmp = -1; break; }
-                if (ca > cb) { cmp = 1; break; }
+                cmp = collator->compare(
+                    a.data() + start_a, len_a,
+                    b.data() + start_b, len_b);
             }
-            if (cmp != 0) return cmp;
-            if (len_a < len_b) return -1;
-            if (len_a > len_b) return 1;
+            else
+            {
+                // Compare substrings by bytes (legacy behavior).
+                size_t minlen = std::min(len_a, len_b);
+                for (size_t k = 0; k < minlen; ++k)
+                {
+                    unsigned char ca = static_cast<unsigned char>(a[start_a + k]);
+                    unsigned char cb = static_cast<unsigned char>(b[start_b + k]);
+                    if (ca < cb) { cmp = -1; break; }
+                    if (ca > cb) { cmp = 1; break; }
+                }
+                if (cmp == 0)
+                {
+                    if (len_a < len_b) cmp = -1;
+                    else if (len_a > len_b) cmp = 1;
+                }
+            }
+
+            if (cmp != 0)
+                return cmp;
             continue;
         }
 
@@ -463,16 +483,19 @@ struct SortCursor : SortCursorHelper<SortCursor>
             const auto & desc = impl->desc[i];
             int direction = desc.direction;
             int nulls_direction = desc.nulls_direction;
+            int res;
 
             if (desc.is_natural)
             {
                 if (!isStringLikeColumn(impl->sort_columns[i]) || !isStringLikeColumn(rhs.impl->sort_columns[i]))
                     throw std::runtime_error("NATURAL modifier for ORDER BY applicable only to string columns");
 
-                return direction * naturalCompareAt(lhs_pos, rhs_pos, *(impl->sort_columns[i]), *(rhs.impl->sort_columns[i]), nulls_direction) > 0;
+                res = direction * naturalCompareAt(lhs_pos, rhs_pos, *(impl->sort_columns[i]), *(rhs.impl->sort_columns[i]), nulls_direction);
             }
-
-            int res = direction * impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
+            else
+            {
+                res = direction * impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
+            }
 
             if (res > 0)
                 return true;
@@ -512,14 +535,17 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
             const auto & desc = impl->desc[0];
             int direction = desc.direction;
             int nulls_direction = desc.nulls_direction;
-            res = direction * impl->sort_columns[0]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[0]), nulls_direction);
 
             if (desc.is_natural)
             {
                 if (!isStringLikeColumn(impl->sort_columns[0]) || !isStringLikeColumn(rhs.impl->sort_columns[0]))
                     throw std::runtime_error("NATURAL modifier for ORDER BY applicable only to string columns");
 
-                return direction * naturalCompareAt(lhs_pos, rhs_pos, *(impl->sort_columns[0]), *(rhs.impl->sort_columns[0]), nulls_direction) > 0;
+                res = direction * naturalCompareAt(lhs_pos, rhs_pos, *(impl->sort_columns[0]), *(rhs.impl->sort_columns[0]), nulls_direction);
+            }
+            else
+            {
+                res = direction * impl->sort_columns[0]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[0]), nulls_direction);
             }
         }
 
@@ -551,15 +577,19 @@ struct SpecializedSingleColumnSortCursor : SortCursorHelper<SpecializedSingleCol
 
         const auto & desc = this->impl->desc[0];
 
-        int res = desc.direction * lhs_column.compareAt(lhs_pos, rhs_pos, rhs_column, desc.nulls_direction);
+        int res;
 
         if (desc.is_natural)
-            {
-                if (!isStringLikeColumn(&lhs_column) || !isStringLikeColumn(&rhs_column))
-                    throw std::runtime_error("NATURAL modifier for ORDER BY applicable only to string columns");
+        {
+            if (!isStringLikeColumn(&lhs_column) || !isStringLikeColumn(&rhs_column))
+                throw std::runtime_error("NATURAL modifier for ORDER BY applicable only to string columns");
 
-                return desc.direction * naturalCompareAt(lhs_pos, rhs_pos, lhs_column, rhs_column, desc.nulls_direction) > 0; // todo nulls direction
-            }
+            res = desc.direction * naturalCompareAt(lhs_pos, rhs_pos, lhs_column, rhs_column, desc.nulls_direction);
+        }
+        else
+        {
+            res = desc.direction * lhs_column.compareAt(lhs_pos, rhs_pos, rhs_column, desc.nulls_direction);
+        }
 
         if constexpr (consider_order)
             return res ? res > 0 : this_impl->order > rhs.impl->order;
@@ -632,18 +662,21 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
             int direction = desc.direction;
             int nulls_direction = desc.nulls_direction;
             int res;
-            if (impl->need_collation[i])
-                res = impl->sort_columns[i]->compareAtWithCollation(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction, *impl->desc[i].collator);
-            else
-                res = impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
-
-            res *= direction;
             if (desc.is_natural)
             {
                 if (!isStringLikeColumn(impl->sort_columns[i]) || !isStringLikeColumn(rhs.impl->sort_columns[i]))
                     throw std::runtime_error("NATURAL modifier for ORDER BY applicable only to string columns");
 
-                return direction * naturalCompareAt(lhs_pos, rhs_pos, *(impl->sort_columns[i]), *(rhs.impl->sort_columns[i]), nulls_direction) > 0;
+                res = direction * naturalCompareAt(lhs_pos, rhs_pos, *(impl->sort_columns[i]), *(rhs.impl->sort_columns[i]), nulls_direction, impl->desc[i].collator);
+            }
+            else
+            {
+                if (impl->need_collation[i])
+                    res = impl->sort_columns[i]->compareAtWithCollation(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction, *impl->desc[i].collator);
+                else
+                    res = impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
+
+                res *= direction;
             }
             if (res > 0)
                 return true;
@@ -1101,15 +1134,19 @@ bool less(const TLeftColumns & lhs, const TRightColumns & rhs, size_t i, size_t 
     for (const auto & elem : descr)
     {
         size_t ind = elem.column_number;
-        int res = elem.base.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.base.nulls_direction);
+        int res;
 
         if (elem.base.is_natural)
-            {
-                if (!isStringLikeColumn(lhs[ind]) || !isStringLikeColumn(rhs[ind]))
-                    throw std::runtime_error("NATURAL modifier for ORDER BY applicable only to string columns");
+        {
+            if (!isStringLikeColumn(lhs[ind]) || !isStringLikeColumn(rhs[ind]))
+                throw std::runtime_error("NATURAL modifier for ORDER BY applicable only to string columns");
 
-                return elem.base.direction * naturalCompareAt(i, j, *(lhs[ind]), *(rhs[ind]), elem.base.nulls_direction) < 0;
-            }
+            res = elem.base.direction * naturalCompareAt(i, j, *(lhs[ind]), *(rhs[ind]), elem.base.nulls_direction);
+        }
+        else
+        {
+            res = elem.base.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.base.nulls_direction);
+        }
 
         if (res < 0)
             return true;
