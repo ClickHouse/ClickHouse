@@ -17,7 +17,8 @@ class ParserSetQuery : public IParserBase
 public:
     using Parameter = std::pair<std::string, std::string>;
 
-    explicit ParserSetQuery(bool parse_only_internals_ = false, bool shorthand_syntax_ = true) : parse_only_internals(parse_only_internals_), shorthand_syntax(shorthand_syntax_) {}
+    explicit ParserSetQuery(bool parse_only_internals_ = false, bool shorthand_syntax_ = true, bool allow_expressions_ = false)
+        : parse_only_internals(parse_only_internals_), shorthand_syntax(shorthand_syntax_), allow_expressions(allow_expressions_) {}
 
     static bool parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected);
 
@@ -26,7 +27,9 @@ public:
                                                          Parameter & parameter,
                                                          IParser::Pos & pos,
                                                          Expected & expected,
-                                                         bool enable_shorthand_syntax);
+                                                         bool enable_shorthand_syntax,
+                                                         bool allow_expressions,
+                                                         ASTPtr & value_expression);
 
 protected:
     const char * getName() const override { return "SET query"; }
@@ -34,6 +37,7 @@ protected:
     /// Parse the list `name = value` pairs, without SET.
     bool parse_only_internals;
     bool shorthand_syntax;
+    bool allow_expressions;
 };
 
 }
