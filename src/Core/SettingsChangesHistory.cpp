@@ -41,7 +41,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.2",
         {
-
+            {"enable_named_columns_in_function_tuple", false, true, "Re-enable the setting since all known bugs are fixed"},
+            {"allow_named_tuple_conversion_with_extra_source_fields", true, true, "New setting"},
+            {"allow_named_tuple_conversion_with_extra_source_fields_on_insert", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {

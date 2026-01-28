@@ -80,6 +80,8 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool allow_named_tuple_conversion_with_extra_source_fields;
+    extern const SettingsBool allow_named_tuple_conversion_with_extra_source_fields_on_insert;
 }
 
 namespace MergeTreeSetting
@@ -120,6 +122,9 @@ InterpreterInsertQuery::InterpreterInsertQuery(
         quota->checkExceeded(QuotaType::WRITTEN_BYTES);
 
     const Settings & settings = getContext()->getSettingsRef();
+    if (!settings[Setting::allow_named_tuple_conversion_with_extra_source_fields_on_insert])
+        getContext()->setSetting("allow_named_tuple_conversion_with_extra_source_fields", false);
+
     max_threads = std::max<size_t>(1, settings[Setting::max_threads]);
     max_insert_threads = std::min(std::max<size_t>(1, settings[Setting::max_insert_threads]), max_threads);
 }

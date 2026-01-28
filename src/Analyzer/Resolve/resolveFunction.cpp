@@ -36,6 +36,8 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/grouping.h>
+#include <Functions/tuple.h>
+#include <Parsers/isUnquotedIdentifier.h>
 #include <Storages/StorageJoin.h>
 
 namespace DB
@@ -71,6 +73,7 @@ namespace Setting
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
+    extern const SettingsBool enable_named_columns_in_function_tuple;
 }
 
 namespace
@@ -295,6 +298,57 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 {
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
+
+    /// Rewrite tuple(x AS a, y AS b) to tuple('a', 'b')(x, y) if setting enabled and all arguments have aliases/identifiers
+    /// Don't rewrite if the tuple already has parameters (i.e., tuple(names...)(values...) syntax)
+    if (function_name == "tuple"
+        && scope.context->getSettingsRef()[Setting::enable_named_columns_in_function_tuple]
+        && function_node_ptr->getParameters().getNodes().empty())
+    {
+        const auto & arguments = function_node_ptr->getArguments().getNodes();
+        if (!arguments.empty())
+        {
+            Names names;
+            names.reserve(arguments.size());
+            NameSet name_set;
+
+            bool can_rewrite = true;
+            for (const auto & arg : arguments)
+            {
+                String name;
+                if (arg->hasAlias())
+                    name = arg->getAlias();
+                else if (auto * identifier_node = arg->as<IdentifierNode>())
+                    name = identifier_node->getIdentifier().getFullName();
+
+                if (name.empty() || !isUnquotedIdentifier(name) || !name_set.insert(name).second)
+                {
+                    can_rewrite = false;
+                    break;
+                }
+
+                names.push_back(std::move(name));
+            }
+
+            if (can_rewrite && names.size() == arguments.size())
+            {
+                /// Create tuple('name1', 'name2', ...)(value1, value2, ...) syntax
+                node = node->clone();
+                function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
+
+                /// Set parameters (names)
+                auto & parameters_nodes = function_node_ptr->getParameters().getNodes();
+                parameters_nodes.reserve(names.size());
+                for (const auto & name : names)
+                    parameters_nodes.push_back(std::make_shared<ConstantNode>(name));
+
+                /// Tuple operator with 'names' parameter is unsupported due to parser complexity.
+                function_node_ptr->markAsOperator(false);
+
+                /// Continue to resolve the new tuple function with parameters
+            }
+        }
+    }
 
     /// Resolve function parameters
 
@@ -1206,6 +1260,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         else
             function = FunctionFactory::instance().tryGet(function_name, scope.context);
 
+        /// Temporary workaround for tuple function with parameters to support named tuples.
+        /// Syntax: tuple(name1, name2, ...)(value1, value2, ...)
+        /// This is a minimal change approach - we recreate the function instance with parameters.
+        /// TODO: Extend FunctionFactory to support passing parameters to create methods,
+        /// which would require changing all function creator signatures.
+        if (function && function->getName() == "tuple" && !parameters.empty())
+        {
+            /// Create a new FunctionTuple instance with parameters
+            auto tuple_function = std::make_shared<FunctionTuple>(parameters);
+            function = std::make_shared<FunctionToOverloadResolverAdaptor>(tuple_function);
+        }
+
         is_executable_udf = false;
     }
 
@@ -1264,10 +1330,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /// Executable UDFs may have parameters. They are checked in UserDefinedExecutableFunctionFactory.
-    if (!parameters.empty() && !is_executable_udf)
-    {
+    /// `tuple` is a special case: it may carry parameters to name its arguments.
+    if (!parameters.empty() && !is_executable_udf && function_name != "tuple")
         throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function_name);
-    }
 
     /** For lambda arguments we need to initialize lambda argument types DataTypeFunction using `getLambdaArgumentTypes` function.
       * Then each lambda arguments are initialized with columns, where column source is lambda.

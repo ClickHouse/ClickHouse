@@ -1928,21 +1928,43 @@ class TupleLayer : public LayerWithSeparator<TokenType::Comma, TokenType::Closin
 public:
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
-        bool result = LayerWithSeparator::parse(pos, expected, action);
+        if (!LayerWithSeparator::parse(pos, expected, action))
+            return false;
+
+        /// Check if tuple has names
+        if (finished && !has_names && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+        {
+            names = std::move(elements);
+            finished = false;
+            action = Action::OPERAND;
+            has_names = true;
+            if (!LayerWithSeparator::parse(pos, expected, action))
+                return false;
+        }
 
         /// Check that after the tuple(...) function there is no lambdas operator
         if (finished && pos->type == TokenType::Arrow)
             return false;
 
-        return result;
+        return true;
     }
 
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        node = makeASTFunction("tuple", std::move(elements));
+        auto func = makeASTFunction("tuple", std::move(elements));
+        if (!names.empty())
+        {
+            func->parameters = make_intrusive<ASTExpressionList>();
+            func->parameters->children = std::move(names);
+            func->children.push_back(func->parameters);
+        }
+        node = func;
         return true;
     }
+
+    ASTs names;
+    bool has_names = false;
 };
 
 

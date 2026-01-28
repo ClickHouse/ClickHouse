@@ -13,6 +13,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/indexHint.h>
+#include <Functions/tuple.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -909,22 +910,27 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     auto current_context = data.getContext();
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context)) /// NOLINT(readability-static-accessed-through-instance)
+    auto get_parameters = [&]()
     {
-        Array parameters;
-        if (node.parameters)
-        {
-            auto & node_parameters = node.parameters->children;
-            size_t parameters_size = node_parameters.size();
-            parameters.resize(parameters_size);
+        Array result;
+        if (!node.parameters)
+            return result;
 
-            for (size_t i = 0; i < parameters_size; ++i)
-            {
-                ASTPtr literal = evaluateConstantExpressionAsLiteral(node_parameters[i], current_context);
-                parameters[i] = literal->as<ASTLiteral>()->value;
-            }
+        const auto & node_parameters = node.parameters->children;
+        result.resize(node_parameters.size());
+
+        for (size_t i = 0; i < node_parameters.size(); ++i)
+        {
+            ASTPtr literal = evaluateConstantExpressionAsLiteral(node_parameters[i], current_context);
+            result[i] = literal->as<ASTLiteral>()->value;
         }
 
+        return result;
+    };
+
+    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context)) /// NOLINT(readability-static-accessed-through-instance)
+    {
+        Array parameters = get_parameters();
         function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters); /// NOLINT(readability-static-accessed-through-instance)
     }
 
@@ -944,7 +950,23 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
         /// Normal functions are not parametric for now.
         if (node.parameters)
-            throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", node.name);
+        {
+            /// Temporary workaround for tuple function with parameters to support named tuples.
+            /// Syntax: tuple(name1, name2, ...)(value1, value2, ...)
+            /// This is a minimal change approach - we recreate the function instance with parameters.
+            /// TODO: Extend FunctionFactory to support passing parameters to create methods,
+            /// which would require changing all function creator signatures.
+            if (node.name == "tuple")
+            {
+                /// Create a new FunctionTuple instance with parameters
+                auto tuple_function = std::make_shared<FunctionTuple>(get_parameters());
+                function_builder = std::make_shared<FunctionToOverloadResolverAdaptor>(tuple_function);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", node.name);
+            }
+        }
     }
 
     checkFunctionHasEmptyNullsAction(node);
