@@ -1,3 +1,5 @@
+-- Tags: no-msan
+
 CREATE TABLE 03593_backup_with_broken_projection
 (
     `id` UInt64,

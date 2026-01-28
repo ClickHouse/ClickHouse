@@ -162,11 +162,11 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
         return false;
     };
 
-    auto make_new_column = [&](const String & column_name, ASTPtr type)
+    auto make_new_column = [&](const String & column_name, ASTPtr && type)
     {
         auto new_column = make_intrusive<ASTColumnDeclaration>();
         new_column->name = column_name;
-        new_column->type = type;
+        new_column->setType(std::move(type));
         columns.insert(columns.begin() + position, new_column);
         ++position;
     };
@@ -194,7 +194,7 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
         make_new_column(TimeSeriesColumnNames::Timestamp, get_datetime_type());
 
     auto timestamp_column = boost::static_pointer_cast<ASTColumnDeclaration>(columns[position - 1]);
-    auto timestamp_type = boost::static_pointer_cast<ASTDataType>(timestamp_column->type);
+    auto timestamp_type = boost::static_pointer_cast<ASTDataType>(timestamp_column->getType());
 
     if (!is_next_column_named(TimeSeriesColumnNames::Value))
         make_new_column(TimeSeriesColumnNames::Value, get_float_type());
@@ -278,10 +278,10 @@ void TimeSeriesDefinitionNormalizer::addMissingDefaultForIDColumn(ASTCreateQuery
     auto & column_declaration = typeid_cast<ASTColumnDeclaration &>(**it);
 
     /// We add a DEFAULT for the 'id' column only if it's not specified yet.
-    if (column_declaration.default_specifier.empty() && !column_declaration.default_expression)
+    if (column_declaration.default_specifier == ColumnDefaultSpecifier::Empty && !column_declaration.getDefaultExpression())
     {
-        column_declaration.default_specifier = "DEFAULT";
-        column_declaration.default_expression = chooseIDAlgorithm(column_declaration);
+        column_declaration.default_specifier = ColumnDefaultSpecifier::Default;
+        column_declaration.setDefaultExpression(chooseIDAlgorithm(column_declaration));
     }
 }
 
@@ -320,7 +320,7 @@ ASTPtr TimeSeriesDefinitionNormalizer::chooseIDAlgorithm(const ASTColumnDeclarat
     };
 
     /// The type of a hash function depends on the type of the 'id' column.
-    auto id_type = DataTypeFactory::instance().get(id_column.type);
+    auto id_type = DataTypeFactory::instance().get(id_column.getType());
     WhichDataType id_type_which(*id_type);
 
     if (id_type_which.isUInt64())

@@ -215,7 +215,7 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
             }
 
             if (type_name_upper == "SET")
-                data_type_node->arguments.reset();
+                data_type_node->resetArguments();
 
             /// Transforms MySQL ENUM's list of strings to ClickHouse string-integer pairs
             /// For example ENUM('a', 'b', 'c') -> ENUM('a'=1, 'b'=2, 'c'=3)
@@ -224,7 +224,7 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
             if (type_name_upper.contains("ENUM"))
             {
                 UInt16 i = 0;
-                for (ASTPtr & child : data_type_node->arguments->children)
+                for (ASTPtr & child : data_type_node->getArguments()->children)
                 {
                     auto new_child = make_intrusive<ASTFunction>();
                     new_child->name = "equals";
