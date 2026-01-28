@@ -36,6 +36,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsOverflowMode distinct_overflow_mode;
+    extern const SettingsUInt64 distinct_set_limit_for_enabling_bloom_filter;
+    extern const SettingsUInt64 distinct_bloom_filter_bytes;
+    extern const SettingsDouble distinct_pass_ratio_threshold_for_disabling_bloom_filter;
+    extern const SettingsDouble distinct_bloom_filter_max_ratio_of_set_bits;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsUInt64 limit;
     extern const SettingsUInt64 max_bytes_in_distinct;
@@ -359,7 +363,12 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
                 limits,
                 0,
                 result_header->getNames(),
-                false);
+                false,
+                settings[Setting::distinct_set_limit_for_enabling_bloom_filter],
+                settings[Setting::distinct_bloom_filter_bytes],
+                settings[Setting::distinct_pass_ratio_threshold_for_disabling_bloom_filter],
+                settings[Setting::distinct_bloom_filter_max_ratio_of_set_bits]
+            );
 
             query_plan.addStep(std::move(distinct_step));
         }
