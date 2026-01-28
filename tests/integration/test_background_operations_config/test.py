@@ -53,45 +53,42 @@ def prepare_data(instance):
 
   instance.query(f"INSERT INTO {table_name} VALUES (1), (2), (3), (4)")
 
-def mutate_blocking(instance, sleep_sec_per_row):
+def assert_mutate_blocking(instance, sleep_sec_per_row, expected_failure=False):
   query = f"""
     ALTER TABLE {get_table_name(instance)} UPDATE v1 = (v1 + 1)
     WHERE sleepEachRow({sleep_sec_per_row})==0
     SETTINGS mutations_sync=1
   """
-  instance.query(query)
 
-def validate_failure(query):
-  with pytest.raises(QueryRuntimeException):
-    query()
-
-def validate_success(query):
-  query()
+  if expected_failure:
+    instance.query_and_get_error(query)
+  else:
+    instance.query(query)
 
 
 def test_excpected_failure_with_default_profile(started_cluster):
   # this case is kinda redundant, it's destined to fire if the default for <function_sleep_max_microseconds_per_block> ever changes
   # and we'll have to adjust timeout expectations for this test
   prepare_data(instance=node1)
-  validate_failure(lambda: mutate_blocking(instance=node1, sleep_sec_per_row=1))
+  assert_mutate_blocking(instance=node1, sleep_sec_per_row=1, expected_failure=True)
   print(f"Check 1: background operation failed as expected with all defaults")
 
 def test_background_profile_configured_with_all_defaults(started_cluster):
   prepare_data(instance=node2)
-  validate_success(lambda: mutate_blocking(instance=node2, sleep_sec_per_row=1))
+  assert_mutate_blocking(instance=node2, sleep_sec_per_row=1)
   print(f"Check 2: background operation succeeds with 'background' profile minimally configured")
 
 def test_excpected_failure_with_tightened_default_profile(started_cluster):
   prepare_data(instance=node3)
-  validate_failure(lambda: mutate_blocking(instance=node3, sleep_sec_per_row=0.1))
+  assert_mutate_blocking(instance=node3, sleep_sec_per_row=0.1, expected_failure=True)
   print(f"Check 3: background operation failed as expected with a tighter query timeout")
 
 def test_background_profile_configured(started_cluster):
   prepare_data(instance=node4)
-  validate_success(lambda: mutate_blocking(instance=node4, sleep_sec_per_row=0.1))
+  assert_mutate_blocking(instance=node4, sleep_sec_per_row=0.1)
   print(f"Check 4: background operation succeeds with 'background' profile configured")
 
 def test_custom_background_profile_configured(started_cluster):
   prepare_data(instance=node5)
-  validate_success(lambda: mutate_blocking(instance=node5, sleep_sec_per_row=0.1))
+  assert_mutate_blocking(instance=node5, sleep_sec_per_row=0.1)
   print(f"Check 5: background operation succeeds with a custom background profile configured")

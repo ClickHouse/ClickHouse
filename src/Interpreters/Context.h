@@ -547,7 +547,7 @@ protected:
     bool is_background_operation = false;
 
     inline static ContextPtr global_context_instance;
-    inline static ContextPtr background_context_instance;   /// Background context is a global concept (kinda singletone for now), and this is a actual place to own it.
+    inline static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
 
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;

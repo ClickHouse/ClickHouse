@@ -1175,7 +1175,6 @@ ContextData::ContextData(const ContextData &o) :
     session_context(o.session_context),
     global_context(o.global_context),
     background_context(o.background_context),
-    // parent_context(o.parent_context),
     buffer_context(o.buffer_context),
     is_internal_query(o.is_internal_query),
     is_background_operation(o.is_background_operation),
