@@ -1,5 +1,4 @@
 #include <algorithm>
-// #include <cmath>
 #include <cstdio>
 #include <Interpreters/Cache/EvictionCandidates.h>
 #include <Interpreters/Cache/FileCache.h>
@@ -18,7 +17,7 @@ namespace
 {
 size_t getRatio(size_t total, double ratio)
 {
-    return std::lround(total * std::clamp(ratio, 0.0, 1.0));
+    return std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0));
 }
 }
 
