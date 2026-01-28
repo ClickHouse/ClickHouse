@@ -55,6 +55,15 @@ struct ComparePairFirst final
 
 constexpr size_t max_events = 32;
 
+/// Strategy for finding matching event sequences
+enum class MatchStrategy : uint8_t
+{
+    Longest,  /// Return the longest matching sequence (default behavior)
+    First,    /// Return the first matching sequence chronologically
+    Last,     /// Return the last matching sequence chronologically
+    All       /// Return all matching sequences
+};
+
 template <typename T>
 struct AggregateFunctionSequenceMatchData final
 {
@@ -563,6 +572,73 @@ protected:
         return best_matched_events;
     }
 
+    /// Find the first matching sequence chronologically
+    template <typename EventEntry>
+    VectorWithMemoryTracking<T> backtrackingMatchEventsFirst(EventEntry & events_it, const EventEntry events_end) const
+    {
+        VectorWithMemoryTracking<T> matched_events;
+
+        /// Find first match (backtrackingMatch returns first match found, partial or complete)
+        backtrackingMatch<EventEntry, true>(events_it, events_end, &matched_events);
+
+        return matched_events;
+    }
+
+    /// Find the last matching sequence chronologically
+    template <typename EventEntry>
+    VectorWithMemoryTracking<T> backtrackingMatchEventsLast(EventEntry & events_it, const EventEntry events_end) const
+    {
+        VectorWithMemoryTracking<T> last_matched_events;
+        auto events_it_copy = events_it;
+
+        /// Find all non-overlapping matches and keep the last one (including partial matches)
+        while (events_it_copy != events_end)
+        {
+            VectorWithMemoryTracking<T> current_match;
+            bool match_result = backtrackingMatch<EventEntry, true>(events_it_copy, events_end, &current_match);
+
+            if (!current_match.empty())
+            {
+                last_matched_events = current_match;
+            }
+
+            if (!match_result)
+            {
+                /// Partial match found, this is the last possible match
+                break;
+            }
+        }
+
+        return last_matched_events;
+    }
+
+    /// Find all non-overlapping matching sequences
+    template <typename EventEntry>
+    std::vector<VectorWithMemoryTracking<T>> backtrackingMatchEventsAll(EventEntry & events_it, const EventEntry events_end) const
+    {
+        std::vector<VectorWithMemoryTracking<T>> all_matches;
+
+        /// Find all non-overlapping matches (including partial matches, similar to sequenceCount)
+        while (events_it != events_end)
+        {
+            VectorWithMemoryTracking<T> current_match;
+            bool match_result = backtrackingMatch<EventEntry, true>(events_it, events_end, &current_match);
+
+            if (!current_match.empty())
+            {
+                all_matches.push_back(current_match);
+            }
+
+            if (!match_result)
+            {
+                /// Partial match found, no more matches possible
+                break;
+            }
+        }
+
+        return all_matches;
+    }
+
     /// Splits the pattern into deterministic parts separated by non-deterministic fragments
     /// (time constraints and Kleene stars), and tries to match the deterministic parts in their specified order,
     /// ignoring the non-deterministic fragments.
@@ -759,6 +835,158 @@ private:
 };
 
 template <typename T, typename Data>
+class AggregateFunctionSequenceMatchEventsFirst final : public AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsFirst<T, Data>>
+{
+public:
+    AggregateFunctionSequenceMatchEventsFirst(const DataTypes & arguments, const Array & params, const String & pattern_)
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsFirst<T, Data>>(arguments, params, pattern_, std::make_shared<DataTypeArray>(arguments[0])) {}
+
+    using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsFirst<T, Data>>::AggregateFunctionSequenceBase;
+
+    String getName() const override { return "sequenceMatchEventsFirst"; }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        this->data(place).sort();
+        auto result_vec = getEvents(place);
+        size_t size = result_vec.size();
+
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
+
+        offsets_to.push_back(offsets_to.back() + size);
+        if (size)
+        {
+            typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+
+            for (auto it : result_vec)
+            {
+                data_to.push_back(it);
+            }
+        }
+    }
+
+private:
+    VectorWithMemoryTracking<T> getEvents(ConstAggregateDataPtr __restrict place) const
+    {
+        VectorWithMemoryTracking<T> res;
+        const auto & data_ref = this->data(place);
+
+        const auto events_begin = std::begin(data_ref.events_list);
+        const auto events_end = std::end(data_ref.events_list);
+        auto events_it = events_begin;
+
+        res = this->backtrackingMatchEventsFirst(events_it, events_end);
+
+        return res;
+    }
+};
+
+template <typename T, typename Data>
+class AggregateFunctionSequenceMatchEventsLast final : public AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsLast<T, Data>>
+{
+public:
+    AggregateFunctionSequenceMatchEventsLast(const DataTypes & arguments, const Array & params, const String & pattern_)
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsLast<T, Data>>(arguments, params, pattern_, std::make_shared<DataTypeArray>(arguments[0])) {}
+
+    using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsLast<T, Data>>::AggregateFunctionSequenceBase;
+
+    String getName() const override { return "sequenceMatchEventsLast"; }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        this->data(place).sort();
+        auto result_vec = getEvents(place);
+        size_t size = result_vec.size();
+
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
+
+        offsets_to.push_back(offsets_to.back() + size);
+        if (size)
+        {
+            typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+
+            for (auto it : result_vec)
+            {
+                data_to.push_back(it);
+            }
+        }
+    }
+
+private:
+    VectorWithMemoryTracking<T> getEvents(ConstAggregateDataPtr __restrict place) const
+    {
+        VectorWithMemoryTracking<T> res;
+        const auto & data_ref = this->data(place);
+
+        const auto events_begin = std::begin(data_ref.events_list);
+        const auto events_end = std::end(data_ref.events_list);
+        auto events_it = events_begin;
+
+        res = this->backtrackingMatchEventsLast(events_it, events_end);
+
+        return res;
+    }
+};
+
+template <typename T, typename Data>
+class AggregateFunctionSequenceMatchEventsAll final : public AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsAll<T, Data>>
+{
+public:
+    AggregateFunctionSequenceMatchEventsAll(const DataTypes & arguments, const Array & params, const String & pattern_)
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsAll<T, Data>>(
+            arguments, params, pattern_,
+            std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(arguments[0]))) {}
+
+    using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsAll<T, Data>>::AggregateFunctionSequenceBase;
+
+    String getName() const override { return "sequenceMatchEventsAll"; }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        this->data(place).sort();
+        auto all_matches = getAllEvents(place);
+
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
+
+        ColumnArray & nested_arr = assert_cast<ColumnArray &>(arr_to.getData());
+        ColumnArray::Offsets & nested_offsets = nested_arr.getOffsets();
+        typename ColumnVector<T>::Container & nested_data = assert_cast<ColumnVector<T> &>(nested_arr.getData()).getData();
+
+        for (const auto & match : all_matches)
+        {
+            for (auto timestamp : match)
+            {
+                nested_data.push_back(timestamp);
+            }
+            nested_offsets.push_back(nested_offsets.back() + match.size());
+        }
+
+        offsets_to.push_back(offsets_to.back() + all_matches.size());
+    }
+
+private:
+    std::vector<VectorWithMemoryTracking<T>> getAllEvents(ConstAggregateDataPtr __restrict place) const
+    {
+        const auto & data_ref = this->data(place);
+
+        const auto events_begin = std::begin(data_ref.events_list);
+        const auto events_end = std::end(data_ref.events_list);
+        auto events_it = events_begin;
+
+        return this->backtrackingMatchEventsAll(events_it, events_end);
+    }
+};
+
+template <typename T, typename Data>
 class AggregateFunctionSequenceCount final : public AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>
 {
 public:
@@ -857,6 +1085,9 @@ void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory)
     factory.registerFunction("sequenceMatch", createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatch, AggregateFunctionSequenceMatchData>);
     factory.registerFunction("sequenceCount", createAggregateFunctionSequenceBase<AggregateFunctionSequenceCount, AggregateFunctionSequenceMatchData>);
     factory.registerFunction("sequenceMatchEvents", createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEvents, AggregateFunctionSequenceMatchData>);
+    factory.registerFunction("sequenceMatchEventsFirst", createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEventsFirst, AggregateFunctionSequenceMatchData>);
+    factory.registerFunction("sequenceMatchEventsLast", createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEventsLast, AggregateFunctionSequenceMatchData>);
+    factory.registerFunction("sequenceMatchEventsAll", createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEventsAll, AggregateFunctionSequenceMatchData>);
 }
 
 }
