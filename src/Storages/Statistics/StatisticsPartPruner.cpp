@@ -70,7 +70,20 @@ static std::optional<Range> createRangeFromEstimate(const Estimate & est, const 
     Float64 min_value = est.estimated_min.value();
     Float64 max_value = est.estimated_max.value();
 
+    auto make_whole_universe = [is_nullable]() -> Range
+    {
+        if (is_nullable)
+            return Range::createWholeUniverse();
+        return Range::createWholeUniverseWithoutNull();
+    };
+
     /// If min > max, the part has all NULL values.
+    /// We use POSITIVE_INFINITY to represent NULL, following the NULLS_LAST approach.
+    /// This is consistent with MergeTree's NULL handling:
+    /// - MergeTreeIndexMinMax.cpp (minmax_idx deserialization)
+    /// - IMergeTreeDataPart.cpp (partition minmax_idx loading)
+    /// - PartitionPruner.cpp (partition value handling)
+    /// The NULLS_LAST principle applies to ORDER BY and primary key sorting (see docs/en/engines/table-engines/mergetree-family/mergetree.md:203).
     if (min_value > max_value)
     {
         chassert(min_value == std::numeric_limits<Float64>::max());
@@ -78,44 +91,72 @@ static std::optional<Range> createRangeFromEstimate(const Estimate & est, const 
         return Range(POSITIVE_INFINITY);
     }
 
-    /// For Decimal, check if precision > 15.
-    bool decimal_exceeds_precision = getDecimalPrecisionOrZero(data_type) > MAX_FLOAT64_DECIMAL_PRECISION;
+    /// For Decimal, check if precision > 15 - skip statistics entirely.
+    if (getDecimalPrecisionOrZero(data_type) > MAX_FLOAT64_DECIMAL_PRECISION)
+        return make_whole_universe();
 
-    /// For Int, check if values exceed Float64's exact integer range.
-    bool min_exceeds_precision = std::abs(min_value) >= MAX_EXACT_FLOAT64_INTEGER;
-    bool max_exceeds_precision = std::abs(max_value) >= MAX_EXACT_FLOAT64_INTEGER;
+    /// For Int, handle values outside Float64's exact integer range [-2^53, 2^53].
+    /// When |value| > 2^53, Float64 cannot represent the exact integer, so we use
+    /// the boundary value 2^53 (or -2^53) as a safe conservative bound.
+    ///
+    /// Cases:
+    /// 1. max <= -2^53: all data in negative overflow region -> (-inf, -2^53]
+    /// 2. min >= 2^53: all data in positive overflow region -> [2^53, +inf)
+    /// 3. min <= -2^53: left bound unreliable -> (-inf
+    /// 4. max >= 2^53: right bound unreliable -> +inf)
+    bool min_in_negative_overflow = min_value <= -MAX_EXACT_FLOAT64_INTEGER;
+    bool max_in_negative_overflow = max_value <= -MAX_EXACT_FLOAT64_INTEGER;
+    bool min_in_positive_overflow = min_value >= MAX_EXACT_FLOAT64_INTEGER;
+    bool max_in_positive_overflow = max_value >= MAX_EXACT_FLOAT64_INTEGER;
 
-    std::optional<Field> min_field_opt;
-    std::optional<Field> max_field_opt;
+    /// Case 1: max <= -2^53, use (-inf, -2^53]
+    if (max_in_negative_overflow)
+    {
+        auto boundary = tryConvertFloat64(-MAX_EXACT_FLOAT64_INTEGER, data_type);
+        if (!boundary.has_value())
+            return make_whole_universe();
+        return Range::createRightBounded(boundary.value(), true, is_nullable);
+    }
 
-    if (!min_exceeds_precision && !decimal_exceeds_precision)
-        min_field_opt = tryConvertFloat64(min_value, data_type);
+    /// Case 2: min >= 2^53, use [2^53, +inf)
+    if (min_in_positive_overflow)
+    {
+        auto boundary = tryConvertFloat64(MAX_EXACT_FLOAT64_INTEGER, data_type);
+        if (!boundary.has_value())
+            return make_whole_universe();
+        return Range::createLeftBounded(boundary.value(), true, is_nullable);
+    }
 
-    if (!max_exceeds_precision && !decimal_exceeds_precision)
-        max_field_opt = tryConvertFloat64(max_value, data_type);
+    std::optional<Field> left_bound;
+    std::optional<Field> right_bound;
+
+    /// Case 3: min <= -2^53, left bound is -inf
+    if (!min_in_negative_overflow)
+        left_bound = tryConvertFloat64(min_value, data_type);
+
+    /// Case 4: max >= 2^53, right bound is +inf
+    if (!max_in_positive_overflow)
+        right_bound = tryConvertFloat64(max_value, data_type);
 
     /// Build the range based on which boundaries are valid.
-    if (!min_field_opt.has_value() && !max_field_opt.has_value())
+    if (!left_bound.has_value() && !right_bound.has_value())
     {
-        /// Both boundaries are invalid - use whole universe
-        if (is_nullable)
-            return Range::createWholeUniverse();
-        return Range::createWholeUniverseWithoutNull();
+        return make_whole_universe();
     }
-    else if (!min_field_opt.has_value())
+    else if (!left_bound.has_value())
     {
-        return Range::createRightBounded(max_field_opt.value(), true, is_nullable);
+        return Range::createRightBounded(right_bound.value(), true, is_nullable);
     }
-    else if (!max_field_opt.has_value())
+    else if (!right_bound.has_value())
     {
-        return Range::createLeftBounded(min_field_opt.value(), true, is_nullable);
+        return Range::createLeftBounded(left_bound.value(), true, is_nullable);
     }
     else
     {
         /// Both valid: range is [min, max] or [min, +inf] for nullable
         if (is_nullable)
-            return Range(min_field_opt.value(), true, POSITIVE_INFINITY, true);
-        return Range(min_field_opt.value(), true, max_field_opt.value(), true);
+            return Range(left_bound.value(), true, POSITIVE_INFINITY, true);
+        return Range(left_bound.value(), true, right_bound.value(), true);
     }
 }
 

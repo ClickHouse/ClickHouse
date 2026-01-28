@@ -31,6 +31,11 @@ WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT cou
 SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-01' AND val_uint64 = 9007199254740997) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-01' AND val_uint64 = 9007199254740997;
 
+SELECT '-- Case 1: UInt64 both >= 2^53, query value < 2^53, should prune part 1';
+WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-01' AND val_uint64 = 50) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
+SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-01' AND val_uint64 = 50) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-01' AND val_uint64 = 50;
+
 
 -- =============================================================================
 -- Case 2: Int64 with min in range, max >= 2^53
@@ -58,17 +63,17 @@ SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-02' AND val_int64 = 9
 -- Part 3: val_int64 [-2^53-4, -100]
 INSERT INTO test_stats_exceeds SELECT '2025-01-03', if(number < 5, toInt64(-9007199254740992) - 4 + number, toInt64(-109) + number), 0, toDecimal128(0, 0), toDecimal32(0, 0), toDecimal32(0, 9) FROM numbers(10);
 
-SELECT '-- Case 3: Int64 min <= -2^53, max in range, query > max, should prune part 4';
+SELECT '-- Case 3: Int64 min <= -2^53, max in range, query > max, should prune part 3';
 WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-03' AND val_int64 = -50) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
 SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-03' AND val_int64 = -50) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-03' AND val_int64 = -50;
 
-SELECT '-- Case 3: Int64 min <= -2^53, max in range, query = max, should NOT prune part 4';
+SELECT '-- Case 3: Int64 min <= -2^53, max in range, query = max, should NOT prune part 3';
 WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-03' AND val_int64 = -100) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
 SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-03' AND val_int64 = -100) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-03' AND val_int64 = -100;
 
-SELECT '-- Case 3: Int64 min <= -2^53, max in range, query < -2^53, should NOT prune part 4';
+SELECT '-- Case 3: Int64 min <= -2^53, max in range, query < -2^53, should NOT prune part 3';
 WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-03' AND val_int64 = -9007199254740995) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
 SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-03' AND val_int64 = -9007199254740995) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-03' AND val_int64 = -9007199254740995;
@@ -119,9 +124,27 @@ SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-06' AND val_decimal32
 -- Part 6.2: val_decimal32_9(9) [0.000000001, 0.999999999]
 INSERT INTO test_stats_exceeds SELECT '2025-01-07', 0, 0, toDecimal128(0, 0), toDecimal32(0, 0), if(number = 10, toDecimal32(1, 9) - toDecimal32(0.000000001, 9), toDecimal32(0.000000001, 9) + number * toDecimal32(0.09, 9)) FROM numbers(11);
 
-SELECT '-- Case 6.2: Decimal32(9) precision=9 <= 15 with extreme value, query at max limit 0.999999999, should NOT prune part 6.2';
+SELECT '-- Case 6.3: Decimal32(9) precision=9 <= 15 with extreme value, query at max limit 0.999999999, should NOT prune part 6';
 WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-07' AND val_decimal32_9 = toDecimal32(0.999999999, 9)) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
 SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-07' AND val_decimal32_9 = toDecimal32(0.999999999, 9)) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-07' AND val_decimal32_9 = toDecimal32(0.999999999, 9);
+
+-- =============================================================================
+-- Case 7: Int64 with max <= -2^53, both min and max in negative overflow region
+-- Statistics: min=-2^53-9, max=-2^53
+-- Expected: detects precision loss, uses (-inf, -2^53]
+-- =============================================================================
+-- Part 7: val_int64 [-2^53-9, -2^53]
+INSERT INTO test_stats_exceeds SELECT '2025-01-08', toInt64(-9007199254740992) - 9 + number, 0, toDecimal128(0, 0), toDecimal32(0, 0), toDecimal32(0, 9) FROM numbers(10);
+
+SELECT '-- Case 7: Int64 both <= -2^53, query value = -2^53-5, should NOT prune part 7';
+WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-08' AND val_int64 = -9007199254740997) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
+SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-08' AND val_int64 = -9007199254740997) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-08' AND val_int64 = -9007199254740997;
+
+SELECT '-- Case 7: Int64 both <= -2^53, query value > -2^53, should prune part 7';
+WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-08' AND val_int64 = -50) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
+SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-08' AND val_int64 = -50) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT count() FROM test_stats_exceeds WHERE dt = '2025-01-08' AND val_int64 = -50;
 
 DROP TABLE test_stats_exceeds;

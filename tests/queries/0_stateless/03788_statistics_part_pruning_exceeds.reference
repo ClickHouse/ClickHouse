@@ -19,6 +19,33 @@ Expression ((Project names + Projection))
             Granules: 1/1
           Ranges: 1
 1
+-- Case 1: UInt64 both >= 2^53, query value < 2^53, should prune part 1
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Keys:
+              dt
+            Condition: (dt in [20089, 20089])
+            Parts: 1/1
+            Granules: 1/1
+          Partition
+            Keys:
+              toYYYYMMDD(dt)
+            Condition: (toYYYYMMDD(dt) in [20250101, 20250101])
+            Parts: 1/1
+            Granules: 1/1
+          Statistics
+            Keys:
+              dt
+              val_uint64
+            Parts: 0/1
+            Granules: 0/1
+          Ranges: 0
+0
 -- Case 2: Int64 min in range, max >= 2^53, query < min, should prune part 2
 Expression ((Project names + Projection))
   Aggregating
@@ -67,7 +94,7 @@ Expression ((Project names + Projection))
             Granules: 1/1
           Ranges: 1
 1
--- Case 3: Int64 min <= -2^53, max in range, query > max, should prune part 4
+-- Case 3: Int64 min <= -2^53, max in range, query > max, should prune part 3
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -94,7 +121,7 @@ Expression ((Project names + Projection))
             Granules: 0/1
           Ranges: 0
 0
--- Case 3: Int64 min <= -2^53, max in range, query = max, should NOT prune part 4
+-- Case 3: Int64 min <= -2^53, max in range, query = max, should NOT prune part 3
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -115,7 +142,7 @@ Expression ((Project names + Projection))
             Granules: 1/1
           Ranges: 1
 1
--- Case 3: Int64 min <= -2^53, max in range, query < -2^53, should NOT prune part 4
+-- Case 3: Int64 min <= -2^53, max in range, query < -2^53, should NOT prune part 3
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -226,7 +253,7 @@ Expression ((Project names + Projection))
             Granules: 0/1
           Ranges: 0
 0
--- Case 6.2: Decimal32(9) precision=9 <= 15 with extreme value, query at max limit 0.999999999, should NOT prune part 6.2
+-- Case 6.3: Decimal32(9) precision=9 <= 15 with extreme value, query at max limit 0.999999999, should NOT prune part 6
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -247,3 +274,51 @@ Expression ((Project names + Projection))
             Granules: 1/1
           Ranges: 1
 1
+-- Case 7: Int64 both <= -2^53, query value = -2^53-5, should NOT prune part 7
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Keys:
+              dt
+            Condition: (dt in [20096, 20096])
+            Parts: 1/8
+            Granules: 1/8
+          Partition
+            Keys:
+              toYYYYMMDD(dt)
+            Condition: (toYYYYMMDD(dt) in [20250108, 20250108])
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+1
+-- Case 7: Int64 both <= -2^53, query value > -2^53, should prune part 7
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Keys:
+              dt
+            Condition: (dt in [20096, 20096])
+            Parts: 1/8
+            Granules: 1/8
+          Partition
+            Keys:
+              toYYYYMMDD(dt)
+            Condition: (toYYYYMMDD(dt) in [20250108, 20250108])
+            Parts: 1/1
+            Granules: 1/1
+          Statistics
+            Keys:
+              dt
+              val_int64
+            Parts: 0/1
+            Granules: 0/1
+          Ranges: 0
+0
