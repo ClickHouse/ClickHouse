@@ -528,6 +528,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_REWRITE_PARTS, database, table);
             break;
         }
+        case ASTAlterCommand::ADD_ENUM_VALUES: [[fallthrough]];
         case ASTAlterCommand::RESET_SETTING: [[fallthrough]];
         case ASTAlterCommand::MODIFY_SETTING:
         {

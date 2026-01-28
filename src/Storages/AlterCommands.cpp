@@ -32,6 +32,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -39,6 +40,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include "Parsers/ASTFunctionWithKeyValueArguments.h"
 
 #include <ranges>
 
@@ -91,21 +93,29 @@ AlterCommand::RemoveProperty removePropertyFromString(const String & property)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
 }
 
-std::optional<DataTypePtr> tryCreateAddToEnumType(const ASTPtr & type_ast)
+// std::optional<DataTypePtr> tryCreateAddToEnumType(const ASTPtr & type_ast)
+// {
+//     const auto * data_type_ast = type_ast ? type_ast->as<ASTDataType>() : nullptr;
+//     if (!data_type_ast)
+//         return {};
+
+//     const auto & name = data_type_ast->name;
+
+//     static const std::unordered_set<std::string> known_enum_types{"addToEnum", "addToEnum8", "addToEnum16"};
+//     if (known_enum_types.contains(name))
+//         return createAddToEnumType(name, data_type_ast->arguments);
+//     else
+//         return {};
+// }
+
+DataTypePtr tryCreateAddToEnumType(const ASTPtr & type_ast)
 {
-    const auto * data_type_ast = type_ast ? type_ast->as<ASTDataType>() : nullptr;
+    const auto * data_type_ast = type_ast ? type_ast->as<ASTFunction>() : nullptr;
     if (!data_type_ast)
         return {};
 
-    const auto & name = data_type_ast->name;
-
-    static const std::unordered_set<std::string> known_enum_types{"addToEnum", "addToEnum8", "addToEnum16"};
-    if (known_enum_types.contains(name))
-        return createAddToEnumType(name, data_type_ast->arguments);
-    else
-        return {};
+    return createAddToEnumType("addToEnum", data_type_ast->arguments);
 }
-
 }
 
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
@@ -122,11 +132,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         command.column_name = ast_col_decl.name;
         if (ast_col_decl.type)
-        {
-            if (tryCreateAddToEnumType(ast_col_decl.type))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "addToEnum can only be used in ALTER TABLE MODIFY COLUMN");
             command.data_type = data_type_factory.get(ast_col_decl.type);
-        }
         if (ast_col_decl.default_expression)
         {
             command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
@@ -182,9 +188,9 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         if (ast_col_decl.type)
         {
-            if (auto add_enum = tryCreateAddToEnumType(ast_col_decl.type))
-                command.data_type = *add_enum;
-            else
+            // if (auto add_enum = tryCreateAddToEnumType(ast_col_decl.type))
+            //     command.data_type = *add_enum;
+            // else
                 command.data_type = data_type_factory.get(ast_col_decl.type);
         }
 
@@ -224,6 +230,9 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
                 command.settings_resets.emplace(identifier.name());
             }
         }
+
+        if (command_ast->add_enum_values)
+            command.add_enum_values = tryCreateAddToEnumType(command_ast->add_enum_values);
 
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
@@ -643,6 +652,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     for (const auto & setting : settings_resets)
                         column.settings.removeSetting(setting);
                 }
+
+                if (!add_enum_values)
+                {
+                }
+
 
                 /// User specified default expression or changed
                 /// datatype. We have to replace default.
@@ -1400,7 +1414,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                     return {};
                 };
 
-                if (const auto * alter_enum_type = dynamic_cast<const IDataTypeEnum *>(command.data_type.get()))
+                if (const auto * alter_enum_type = dynamic_cast<const IDataTypeEnum *>(command.add_enum_values.get()))
                 {
                     EnumTypeInfo eti = get_enum_type(column_from_table.type.get());
                     const auto * column_enum_type = eti.enum_type;
@@ -1410,18 +1424,18 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                         {
                             if (const auto * base_enum8 = typeid_cast<const DataTypeEnum8 *>(column_enum_type))
                             {
-                                if (const auto * add_enum8 = typeid_cast<const DataTypeEnum8 *>(command.data_type.get()))
+                                if (const auto * add_enum8 = typeid_cast<const DataTypeEnum8 *>(alter_enum_type))
                                     command.data_type = mergeEnumTypes<Int8, Int8>(*base_enum8, *add_enum8);
-                                else if (typeid_cast<const DataTypeEnum16 *>(command.data_type.get()))
+                                else if (typeid_cast<const DataTypeEnum16 *>(alter_enum_type))
                                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add Enum16 values to Enum8 column");
                                 else
                                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");
                             }
                             else if (const auto * base_enum16 = typeid_cast<const DataTypeEnum16 *>(column_enum_type))
                             {
-                                if (const auto * add_enum8 = typeid_cast<const DataTypeEnum8 *>(command.data_type.get()))
+                                if (const auto * add_enum8 = typeid_cast<const DataTypeEnum8 *>(alter_enum_type))
                                     command.data_type = mergeEnumTypes<Int16, Int8>(*base_enum16, *add_enum8);
-                                else if (const auto * add_enum16 = typeid_cast<const DataTypeEnum16 *>(command.data_type.get()))
+                                else if (const auto * add_enum16 = typeid_cast<const DataTypeEnum16 *>(alter_enum_type))
                                     command.data_type = mergeEnumTypes<Int16, Int16>(*base_enum16, *add_enum16);
                                 else
                                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");

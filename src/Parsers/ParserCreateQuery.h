@@ -144,6 +144,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_ttl{Keyword::TTL};
     ParserKeyword s_remove{Keyword::REMOVE};
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
+    ParserKeyword s_add_enum_values(Keyword::ADD_ENUM_VALUES);
     ParserKeyword s_reset_setting(Keyword::RESET_SETTING);
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_type{Keyword::TYPE};
@@ -176,7 +177,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     /// and further parsing will fail. So we just check these keyword and in
     /// case of success return column declaration with name only.
     if (!require_type
-        && (s_remove.checkWithoutMoving(pos, expected) || s_modify_setting.checkWithoutMoving(pos, expected) || s_reset_setting.checkWithoutMoving(pos, expected)))
+        && (s_remove.checkWithoutMoving(pos, expected) || s_modify_setting.checkWithoutMoving(pos, expected) || s_reset_setting.checkWithoutMoving(pos, expected) || s_add_enum_values.checkWithoutMoving(pos, expected)))
     {
         if (!check_keywords_after_name)
             return false;

@@ -39,6 +39,7 @@ public:
         REWRITE_PARTS,
         MATERIALIZE_TTL,
         MODIFY_SETTING,
+        ADD_ENUM_VALUES,
         RESET_SETTING,
         MODIFY_QUERY,
         MODIFY_REFRESH,
@@ -176,8 +177,12 @@ public:
     /// Target column name
     IAST * rename_to = nullptr;
 
+    /// For MODIFY COLUMN ADD ENUM VALUES
+    ASTPtr add_enum_values = nullptr;
+
     /// For MODIFY REFRESH
     ASTPtr refresh;
+
 
     bool detach = false;        /// true for DETACH PARTITION
 

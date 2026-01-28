@@ -128,6 +128,11 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             ostr << " RESET SETTING ";
             settings_resets->format(ostr, settings, state, frame);
         }
+        else if (add_enum_values)
+        {
+            ostr << " ADD ENUM VALUES ";
+            add_enum_values->format(ostr, settings, state, frame);
+        }
         else
         {
             if (first)
@@ -494,6 +499,11 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << "RESET SETTING ";
         settings_resets->format(ostr, settings, state, frame);
     }
+    // else if (type == ASTAlterCommand::ADD_ENUM_VALUES)
+    // {
+    //     ostr << "ADD ENUM VALUES ";
+    //     settings_resets->format(ostr, settings, state, frame);
+    // }
     else if (type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
     {
         ostr << "MODIFY SETTING ";
@@ -594,7 +604,7 @@ bool ASTAlterQuery::isOneCommandTypeOnly(const ASTAlterCommand::Type & type) con
 
 bool ASTAlterQuery::isSettingsAlter() const
 {
-    return isOneCommandTypeOnly(ASTAlterCommand::MODIFY_SETTING) || isOneCommandTypeOnly(ASTAlterCommand::RESET_SETTING);
+    return isOneCommandTypeOnly(ASTAlterCommand::MODIFY_SETTING) || isOneCommandTypeOnly(ASTAlterCommand::RESET_SETTING) || isOneCommandTypeOnly(ASTAlterCommand::ADD_ENUM_VALUES);
 }
 
 bool ASTAlterQuery::isFreezeAlter() const
