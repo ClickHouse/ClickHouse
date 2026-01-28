@@ -85,7 +85,8 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
                 continue;
             }
 
-            children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry));
+            auto metadata = tryGetObjectMetadata(entry, /* with_tags */ false);
+            children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry, std::move(metadata)));
         }
     }
 }
@@ -163,7 +164,7 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::
         getContext()->getSettingsRef(),
         getContext()->getServerSettings());
 
-    auto response_buf = BuilderRWBufferFromHTTP(Poco::URI(buildURL(path)))
+    auto response_buf = BuilderRWBufferFromHTTP(Poco::URI(buildURL(path), false))
                             .withConnectionGroup(HTTPConnectionGroupType::DISK)
                             .withSettings(getContext()->getReadSettings())
                             .withTimeouts(timeouts)

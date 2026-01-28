@@ -119,6 +119,19 @@ bool urlWithGlobs(const String & uri)
     return (uri.contains('{') && uri.contains('}')) || uri.contains('|');
 }
 
+bool urlPathHasListableGlobs(const String & uri)
+{
+    const size_t scheme_pos = uri.find("://");
+    const size_t authority_start = (scheme_pos == String::npos) ? 0 : scheme_pos + 3;
+    const size_t path_start = uri.find('/', authority_start);
+    if (path_start == String::npos)
+        return false;
+
+    const size_t path_end = uri.find_first_of("?#", path_start);
+    const auto path = uri.substr(path_start, path_end - path_start);
+    return path.find('*') != String::npos;
+}
+
 String getSampleURI(String uri, ContextPtr context)
 {
     if (urlWithGlobs(uri))
@@ -1716,7 +1729,7 @@ void registerStorageURL(StorageFactory & factory)
 {
     factory.registerStorage(
         "URL",
-        [](const StorageFactory::Arguments & args)
+        [](const StorageFactory::Arguments & args) -> StoragePtr
         {
             ASTs & engine_args = args.engine_args;
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
@@ -1725,6 +1738,29 @@ void registerStorageURL(StorageFactory & factory)
             ASTPtr partition_by;
             if (args.storage_def->partition_by)
                 partition_by = args.storage_def->partition_by->clone();
+
+            auto config = StorageURL::getConfiguration(engine_args, context);
+            const bool use_object_storage
+                = config.http_method.empty()
+                && urlPathHasListableGlobs(config.url);
+
+            if (!use_object_storage)
+            {
+                return std::make_shared<StorageURL>(
+                    config.url,
+                    args.table_id,
+                    config.format,
+                    format_settings,
+                    args.columns,
+                    args.constraints,
+                    args.comment,
+                    context,
+                    config.compression_method,
+                    config.headers,
+                    config.http_method,
+                    partition_by,
+                    /* distributed_processing */ false);
+            }
 
             auto configuration = std::make_shared<StorageWebConfiguration>();
             StorageObjectStorageConfiguration::initialize(*configuration, engine_args, context, /* with_table_structure */ false);

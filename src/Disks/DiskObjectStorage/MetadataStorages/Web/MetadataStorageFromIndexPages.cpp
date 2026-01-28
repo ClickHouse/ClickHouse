@@ -162,7 +162,7 @@ std::string MetadataStorageFromIndexPages::readIndexPage(const std::string & url
         object_storage.getContext()->getSettingsRef(),
         object_storage.getContext()->getServerSettings());
 
-    auto buf = BuilderRWBufferFromHTTP(Poco::URI(url))
+    auto buf = BuilderRWBufferFromHTTP(Poco::URI(url, false))
                    .withConnectionGroup(HTTPConnectionGroupType::DISK)
                    .withSettings(object_storage.getContext()->getReadSettings())
                    .withTimeouts(timeouts)
@@ -201,7 +201,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
         Poco::URI candidate_uri;
         try
         {
-            candidate_uri = Poco::URI(url_candidate);
+            candidate_uri = Poco::URI(url_candidate, false);
         }
         catch (const Poco::Exception &)
         {
@@ -251,7 +251,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
             Poco::URI candidate_uri;
             try
             {
-                candidate_uri = Poco::URI(url_candidate);
+                candidate_uri = Poco::URI(url_candidate, false);
             }
             catch (const Poco::Exception &)
             {
