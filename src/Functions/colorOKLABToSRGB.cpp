@@ -47,7 +47,7 @@ REGISTER_FUNCTION(FunctionColorOKLABToSRGB)
         - a: green-red opponent axis
         - b: blue-yellow opponent axis
 
-        The a and b components are theoreticall unbounded, but in practice are inbetween -0.4 and 0.4.
+        The a and b components are theoretically unbounded, but in practice are between -0.4 and 0.4.
         OKLab is designed to be perceptually uniform
         while remaining inexpensive to compute.
 
