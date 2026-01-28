@@ -2,6 +2,7 @@ import argparse
 import ast
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -83,7 +84,7 @@ class Targeting:
                 fname_without_ext = os.path.splitext(fname)[0]
 
                 # Add '.' suffix to precisely match this test only
-                result.add(f"{fname_without_ext}.")
+                result.add(shlex.quote(f"{fname_without_ext}\."))
 
             elif fpath.startswith("tests/queries/"):
                 # Log any other changed file under tests/queries for future debugging
