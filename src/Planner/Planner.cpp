@@ -1,3 +1,4 @@
+#include <optional>
 #include <memory>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
@@ -15,6 +16,12 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Common/ErrorCodes.h>
+#include <DataTypes/DataTypeString.h>
+
+#include <Functions/FunctionFactory.h>
+#include <Functions/CastOverloadResolver.h>
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
@@ -547,10 +554,61 @@ ALWAYS_INLINE void addFilterStep(
     query_plan.addStep(std::move(where_step));
 }
 
+// Finds indexes of ORDER BY expressions in the GROUP BY expression list
+// if the first one is a subset of the second one.
+// Example: (GROUP BY a, b, c ORDER BY c, a) => {2, 0}.
+// Also finds sort directions and flags, is type signed or not
+std::optional<std::vector<ColumnsHashing::OptimizationDataOneExpression>> findOptimizationSublistIndexes(const QueryTreeNodes& group_by_nodes, const QueryTreeNodes& order_by_nodes)
+{
+    if (order_by_nodes.empty())
+        return std::nullopt;
+
+    if (group_by_nodes.size() != 1) // TODO allow more than one expression
+        return std::nullopt;
+
+    std::vector<ColumnsHashing::OptimizationDataOneExpression> result(order_by_nodes.size());
+    std::unordered_map<std::string, size_t> index_of_group_by_expression;
+    std::unordered_map<std::string, bool> expression_signed_or_not;
+    for (size_t i = 0; i < group_by_nodes.size(); ++i)
+    {
+        if (group_by_nodes[i]->getNodeType() != QueryTreeNodeType::COLUMN)
+            continue; // TODO allow another types of expressions
+        const auto& group_by_node_typed = group_by_nodes[i]->template as<ColumnNode &>();
+        index_of_group_by_expression[group_by_node_typed.getColumnName()] = i;
+        const DataTypePtr & column_type = group_by_node_typed.getColumnType();
+        if (column_type != nullptr)
+        {
+            if (column_type->getName().starts_with("LowCardinality")) // Optimization could not be applied for lowCardinality
+                return std::nullopt;
+            expression_signed_or_not[group_by_node_typed.getColumnName()] = column_type->getName() == "Int8" || column_type->getName() == "Int16" || column_type->getName() == "Int32" || column_type->getName() == "Int64" || column_type->getName() == "Int128" || column_type->getName() == "Int256";
+        }
+    }
+
+    for (size_t i = 0; i < order_by_nodes.size(); ++i)
+    {
+        const auto& order_by_node_typed = order_by_nodes[i]->template as<SortNode &>();
+        const auto& order_by_expression = order_by_node_typed.getExpression();
+        if (order_by_expression->getNodeType() != QueryTreeNodeType::COLUMN)
+            return std::nullopt; // TODO FUNCTION and maybe some others are also possible for optimization
+        const auto& order_by_expression_as_column = order_by_expression->template as<ColumnNode &>();
+        auto order_by_column_name = order_by_expression_as_column.getColumnName();
+        auto group_by_map_iter = index_of_group_by_expression.find(order_by_column_name);
+        if (group_by_map_iter == index_of_group_by_expression.end())
+            return std::nullopt;
+        result[i] = {
+            group_by_map_iter->second,
+            order_by_node_typed.getSortDirection(),
+            expression_signed_or_not[order_by_column_name]
+        };
+    }
+    return result;
+}
+
 Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const SelectQueryInfo & select_query_info,
+    const QueryNode & query_node,
     bool aggregate_descriptions_remove_arguments = false)
 {
     const auto & query_context = planner_context->getQueryContext();
@@ -569,9 +627,22 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             aggregate_description.argument_names.clear();
     }
 
+    std::optional<std::vector<ColumnsHashing::OptimizationDataOneExpression>> optimization_indexes;
+    if (!query_node.isGroupByWithTotals() && !query_node.hasHaving())
+    {
+        const auto& group_by_nodes = query_node.getGroupBy().getNodes();
+        const auto& order_by_nodes = query_node.getOrderBy().getNodes();
+        optimization_indexes = findOptimizationSublistIndexes(group_by_nodes, order_by_nodes);
+    }
+
+    size_t limit_plus_offset_length = std::numeric_limits<size_t>::max();
+    if (query_analysis_result.limit_length > 0 && query_analysis_result.limit_length+query_analysis_result.limit_offset > 1)
+        limit_plus_offset_length = query_analysis_result.limit_length+query_analysis_result.limit_offset;
+
     auto tmp_data_scope = query_context->getTempDataOnDisk();
     if (tmp_data_scope)
         tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
+
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
@@ -597,6 +668,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
+        limit_plus_offset_length,
+        optimization_indexes,
         settings[Setting::serialize_string_in_memory_with_zero_byte]);
 
     return aggregator_params;
@@ -617,10 +690,11 @@ void addAggregationStep(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
-    const SelectQueryInfo & select_query_info)
+    const SelectQueryInfo & select_query_info,
+    const QueryNode & query_node)
 {
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
-    auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result, select_query_info);
+    auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result, select_query_info, query_node);
 
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
@@ -793,6 +867,7 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
         aggregation_analysis_result,
         query_analysis_result,
         select_query_info,
+        query_node,
         true /*aggregate_descriptions_remove_arguments*/);
 
     if (query_node.isGroupByWithRollup())
@@ -1935,7 +2010,7 @@ void Planner::buildPlanForQueryNode()
                     "Before GROUP BY",
                     useful_sets);
 
-            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info);
+            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
         }
 
         /** If we have aggregation, we can't execute any later-stage

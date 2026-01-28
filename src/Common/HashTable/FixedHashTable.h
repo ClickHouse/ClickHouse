@@ -240,8 +240,8 @@ public:
         std::swap(buf, rhs.buf);
         this->setSize(rhs.size());
 
-        Allocator::operator=(std::move(rhs));
-        Cell::State::operator=(std::move(rhs));
+        Allocator::operator=(std::move(rhs)); ///NOLINT
+        Cell::State::operator=(std::move(rhs)); ///NOLINT
 
         return *this;
     }
