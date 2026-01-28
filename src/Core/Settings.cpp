@@ -1461,7 +1461,15 @@ DECLARE(Bool, merge_tree_use_prefixes_deserialization_thread_pool, true, R"(
 Enables usage of the thread pool for parallel prefixes reading in Wide parts in MergeTree. Size of that thread pool is controlled by server setting `max_prefixes_deserialization_thread_pool_size`.
 )", 0) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
-Merge parts only in one partition in select final
+Improve FINAL queries by avoiding merges across different partitions.
+
+When enabled, during SELECT FINAL queries, parts from different partitions will not be merged together. Instead, merging will only occur within each partition separately. This can significantly improve query performance when working with partitioned tables.
+
+If not explicitly set, ClickHouse will automatically enable this optimization when the partition key expression is deterministic and all columns used in the partition key expression are included in the primary key.
+
+This automatic derivation ensures that rows with the same primary key values will always belong to the same partition, making it safe to avoid cross-partition merges.
+
+**Default value:** `false` (but may be automatically enabled based on table structure if not set explicitly)
 )", 0) \
     DECLARE(Bool, split_parts_ranges_into_intersecting_and_non_intersecting_final, true, R"(
 Split parts ranges into intersecting and non intersecting during FINAL optimization
@@ -6878,6 +6886,7 @@ Enable automatic switching to execution with parallel replicas based on collecte
 )", EXPERIMENTAL) \
     DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 1_MiB, R"(
 Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
+The total number of bytes to read is estimated based on the collected statistics.
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.
@@ -6985,6 +6994,12 @@ Allow usage of materialized views with parallel replicas
 Index analysis will be distributed across replicas.
 Beneficial for shared storage and huge amount of data in cluster.
 Uses replicas from cluster_for_parallel_replicas.
+
+**See also**
+
+- [distributed_index_analysis_for_non_shared_merge_tree](#distributed_index_analysis_for_non_shared_merge_tree)
+- [distributed_index_analysis_min_parts_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_parts_to_activate)
+- [distributed_index_analysis_min_indexes_size_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_indexes_size_to_activate)
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_index_analysis_for_non_shared_merge_tree, false, R"(
 Enable distributed index analysis even for non SharedMergeTree (cloud only engine).
