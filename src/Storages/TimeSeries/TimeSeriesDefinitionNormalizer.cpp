@@ -267,7 +267,7 @@ void TimeSeriesDefinitionNormalizer::addMissingDefaultForIDColumn(ASTCreateQuery
         return;
 
     auto & columns = create.columns_list->columns->children;
-    auto it = std::find_if(columns.begin(), columns.end(), [](const ASTPtr & column)
+    auto * it = std::find_if(columns.begin(), columns.end(), [](const ASTPtr & column)
     {
         return typeid_cast<const ASTColumnDeclaration &>(*column).name == TimeSeriesColumnNames::ID;
     });
@@ -423,7 +423,7 @@ void TimeSeriesDefinitionNormalizer::setInnerEngineByDefault(ViewTarget::Kind in
             if (!inner_storage_def.order_by && !inner_storage_def.primary_key && inner_storage_def.engine->name.ends_with("MergeTree"))
             {
                 inner_storage_def.set(inner_storage_def.order_by,
-                                      makeASTOperator("tuple",
+                                      makeASTFunction("tuple",
                                                       std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::ID),
                                                       std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)));
             }

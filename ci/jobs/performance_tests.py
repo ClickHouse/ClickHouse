@@ -1,90 +1,23 @@
 import argparse
-import csv
 import os
 import re
 import subprocess
 import time
 import traceback
-from datetime import datetime
 from pathlib import Path
 
-from ci.jobs.scripts.cidb_cluster import CIDBCluster
-from ci.praktika.info import Info
-from ci.praktika.result import Result
-from ci.praktika.utils import MetaClasses, Shell, Utils
+from praktika.result import Result
+from praktika.utils import MetaClasses, Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp"
+from ci.jobs.scripts.clickhouse_version import CHVersion
+
+temp_dir = f"{Utils.cwd()}/ci/tmp/"
 perf_wd = f"{temp_dir}/perf_wd"
-db_path = f"{perf_wd}/db0"
-perf_right = f"{perf_wd}/right"
-perf_left = f"{perf_wd}/left"
+db_path = f"{perf_wd}/db0/"
+perf_right = f"{perf_wd}/right/"
+perf_left = f"{perf_wd}/left/"
 perf_right_config = f"{perf_right}/config"
 perf_left_config = f"{perf_left}/config"
-
-GET_HISTORICAL_TRESHOLDS_QUERY = """\
-select test, query_index,
-    quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
-    quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
-    query_display_name
-from query_metrics_v2
--- We use results at least one week in the past, so that the current
--- changes do not immediately influence the statistics, and we have
--- some time to notice that something is wrong.
--- TODO: switch 3 month to 1 month once we have data in the table
-where event_date between now() - interval 3 month - interval 1 week
-    and now() - interval 1 week
-    and metric = 'client_time'
-    and pr_number = 0
-group by test, query_index, query_display_name
-having count(*) > 100"""
-
-INSERT_HISTORICAL_DATA = """\
-INSERT INTO query_metrics_v2
-SELECT
-    '{EVENT_DATE}' AS event_date,
-    '{EVENT_DATE_TIME}' AS event_time,
-    {PR_NUMBER} AS pr_number,
-    '{REF_SHA}' AS old_sha,
-    '{CUR_SHA}' AS new_sha,
-    test,
-    query_index,
-    query_display_name,
-    metric_name AS metric,
-    old_value,
-    new_value,
-    diff,
-    stat_threshold
-FROM input(
-    'metric_name String,
-     old_value Float64,
-     new_value Float64,
-     diff Float64,
-     ratio_display_text String,
-     stat_threshold Float64,
-     test String,
-     query_index Int32,
-     query_display_name String'
-) FORMAT TSV"""
-
-# Precision is going to be 1.5 times worse for PRs, because we run the queries
-# less times. How do I know it? I ran this:
-# SELECT quantilesExact(0., 0.1, 0.5, 0.75, 0.95, 1.)(p / m)
-# FROM
-# (
-#     SELECT
-#         quantileIf(0.95)(stat_threshold, pr_number = 0) AS m,
-#         quantileIf(0.95)(stat_threshold, (pr_number != 0) AND (abs(diff) < stat_threshold)) AS p
-#     FROM query_metrics_v2
-#     WHERE (event_date > (today() - toIntervalMonth(1))) AND (metric = 'client_time')
-#     GROUP BY
-#         test,
-#         query_index,
-#         query_display_name
-#     HAVING count(*) > 100
-# )
-#
-# The file can be empty if the server is inaccessible, so we can't use
-# TSVWithNamesAndTypes.
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -93,7 +26,7 @@ class JobStages(metaclass=MetaClasses.WithIter):
     DOWNLOAD_DATASETS = "download"
     CONFIGURE = "configure"
     RESTART = "restart"
-    TEST = "queries"
+    TEST = "test"
     REPORT = "report"
     # TODO: stage implement code from the old script as is - refactor and remove
     CHECK_RESULTS = "check_results"
@@ -165,10 +98,11 @@ class CHServer:
         else:
             print(f"ClickHouse server NOT ready")
 
-        Shell.check(
-            f"clickhouse-client --port {self.port} --query 'create database IF NOT EXISTS test' && clickhouse-client --port {self.port} --query 'rename table datasets.hits_v1 to test.hits'",
+        res = res and Shell.check(
+            f"clickhouse-client --port {self.port} --query 'create database IF NOT EXISTS test'",
             verbose=True,
         )
+        # res = res and Shell.check(f"clickhouse-client --port {self.port} --query 'rename table datasets.hits_v1 to test.hits'", verbose=True)
         return res
 
     def start(self):
@@ -229,15 +163,15 @@ class CHServer:
             f"./tests/performance/scripts/perf.py --host localhost localhost \
                 --port {cls.LEFT_SERVER_PORT} {cls.RIGHT_SERVER_PORT} \
                 --runs {runs} --max-queries {max_queries} \
-                --profile-seconds 10 \
+                --profile-seconds 0 \
                 {test_file}",
             verbose=True,
-            strip=False,
         )
         duration = sw.duration
         if res != 0:
             with open(f"{results_path}/{test_name}-err.log", "w") as f:
                 f.write(err)
+            err = Shell.get_output(f"echo \"{err}\" | grep '{test_name}\t'")
         with open(f"{results_path}/{test_name}-raw.tsv", "w") as f:
             f.write(out)
         with open(f"{results_path}/wall-clock-times.tsv", "a") as f:
@@ -277,40 +211,19 @@ def parse_args():
     return parser.parse_args()
 
 
-def find_prev_build(info, build_type):
-    commits = info.get_kv_data("previous_commits_sha") or []
-    assert commits, "No commits found to fetch reference build"
-    for sha in commits:
-        link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
-        if Shell.check(f"curl -sfI {link} > /dev/null"):
-            return link
-
-    return None
-
-
-def find_base_release_build(info, build_type):
-    commits = info.get_kv_data("release_branch_base_sha_with_predecessors") or []
-    assert commits, "No commits found to fetch reference build"
-    for sha in commits:
-        link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
-        if Shell.check(f"curl -sfI {link} > /dev/null"):
-            return link
-    return None
-
-
 def main():
 
     args = parse_args()
-    test_options = [to.strip() for to in args.test_options.split(",")]
+    test_options = args.test_options.split(",")
     batch_num, total_batches = 1, 1
     compare_against_master = False
     compare_against_release = False
     for test_option in test_options:
         if "/" in test_option:
             batch_num, total_batches = map(int, test_option.split("/"))
-        if "master_head" in test_option:
+        if test_option == "head_master":
             compare_against_master = True
-        elif "release_base" in test_option:
+        elif test_option == "prev_release":
             compare_against_release = True
 
     batch_num -= 1
@@ -318,53 +231,26 @@ def main():
 
     assert (
         compare_against_master or compare_against_release
-    ), "test option: head_master or release_base must be selected"
+    ), "test option: head_master or prev_release must be selected"
 
-    # release_version = CHVersion.get_release_version_as_dict()
-    info = Info()
+    left_major, left_minor, left_sha = CHVersion.get_latest_release_major_minor_sha()
 
     if Utils.is_arm():
         if compare_against_master:
-            if info.git_branch == "master":
-                link_for_ref_ch = find_prev_build(info, "build_arm_release")
-                assert link_for_ref_ch, "previous clickhouse build has not been found"
-            else:
-                link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
+            link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
         elif compare_against_release:
-            link_for_ref_ch = find_base_release_build(info, "build_arm_release")
-            assert link_for_ref_ch, "reference clickhouse build has not been found"
+            link_for_ref_ch = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{left_major}.{left_minor-1}/{left_sha}/package_aarch64/clickhouse"
         else:
             assert False
     elif Utils.is_amd():
         if compare_against_master:
-            if info.git_branch == "master":
-                link_for_ref_ch = find_prev_build(info, "build_amd_release")
-                assert link_for_ref_ch, "previous clickhouse build has not been found"
-            else:
-                link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
+            link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
         elif compare_against_release:
-            link_for_ref_ch = find_base_release_build(info, "build_amd_release")
-            assert link_for_ref_ch, "reference clickhouse build has not been found"
+            link_for_ref_ch = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{left_major}.{left_minor-1}/{left_sha}/package_release/clickhouse"
         else:
             assert False
     else:
         Utils.raise_with_error(f"Unknown processor architecture")
-
-    if compare_against_release:
-        print("It's a comparison against latest release baseline")
-        print(
-            "Unshallow and Checkout on baseline sha to drop new queries that might be not supported by old version"
-        )
-        reference_sha = info.get_kv_data("release_branch_base_sha_with_predecessors")[0]
-        Shell.check(
-            f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin {info.git_branch} ||:",
-            verbose=True,
-        )
-        Shell.check(
-            f"rm -rf ./tests/performance && git checkout {reference_sha} ./tests/performance",
-            verbose=True,
-            strict=True,
-        )
 
     test_keyword = args.test
 
@@ -394,11 +280,16 @@ def main():
     res = True
     results = []
 
+    # Shell.check(f"rm -rf {perf_wd} && mkdir -p {perf_wd}")
+
     # add right CH location to PATH
     Utils.add_to_PATH(perf_right)
     # TODO:
     # Set python output encoding so that we can print queries with non-ASCII letters.
     # export PYTHONIOENCODING=utf-8
+    # script_path="tests/performance/scripts/"
+    # ulimit -c unlimited
+    # cat /proc/sys/kernel/core_pattern
 
     if res and JobStages.INSTALL_CLICKHOUSE in stages:
         print("Install ClickHouse")
@@ -407,10 +298,10 @@ def main():
             f"cp ./programs/server/config.xml {perf_right_config}",
             f"cp ./programs/server/users.xml {perf_right_config}",
             f"cp -r --dereference ./programs/server/config.d {perf_right_config}",
-            f"cp ./tests/performance/scripts/config/config.d/*xml {perf_right_config}/config.d/",
+            # f"cp ./tests/performance/scripts/config/config.d/*.xml {perf_right_config}/config.d/",
             f"cp -r ./tests/performance/scripts/config/users.d {perf_right_config}/users.d",
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
-            f"rm {perf_right_config}/config.d/storage_conf_local.xml",  # Avoid conflicts on the filesystem cache dirs
+            # f"cp -r ./tests/performance {perf_right}",
             f"chmod +x {ch_path}/clickhouse",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-server",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-local",
@@ -419,14 +310,20 @@ def main():
             "clickhouse-local --version",
         ]
         results.append(
-            Result.from_commands_run(name="Install ClickHouse", command=commands)
+            Result.from_commands_run(
+                name="Install ClickHouse", command=commands, with_log=True
+            )
         )
         res = results[-1].is_ok()
 
-    reference_sha = ""
     if res and JobStages.INSTALL_CLICKHOUSE_REFERENCE in stages:
         print("Install Reference")
         if not Path(f"{perf_left}/.done").is_file():
+            # TODO: use config from the same sha as reference CH binary
+            # git checkout left_sha
+            # rm -rf /tmp/praktika/left && mkdir -p /tmp/praktika/left
+            # cp -r ./tests/config /tmp/praktika/left/config
+            # git checkout -
             commands = [
                 f"mkdir -p {perf_left_config}",
                 f"wget -nv -P {perf_left}/ {link_for_ref_ch}",
@@ -439,49 +336,21 @@ def main():
             ]
             results.append(
                 Result.from_commands_run(
-                    name="Install Reference ClickHouse", command=commands
+                    name="Install Reference ClickHouse", command=commands, with_log=True
                 )
-            )
-            reference_sha = Shell.get_output(
-                f"{perf_left}/clickhouse -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
             )
             res = results[-1].is_ok()
             Shell.check(f"touch {perf_left}/.done")
 
-    if res and not info.is_local_run:
-
-        def prepare_historical_data():
-            cidb = CIDBCluster(
-                url="https://play.clickhouse.com?user=play", user="", pwd=""
-            )
-            assert cidb.is_ready()
-            result = cidb.do_select_query(
-                query=GET_HISTORICAL_TRESHOLDS_QUERY, timeout=10, retries=3
-            )
-            with open(
-                f"{perf_wd}/historical-thresholds.tsv", "w", encoding="utf-8"
-            ) as f:
-                f.write(result)
-
-        results.append(
-            Result.from_commands_run(
-                name="Select historical data", command=prepare_historical_data
-            )
-        )
-        res = results[-1].is_ok()
-    elif info.is_local_run:
-        print(
-            "Skip historical data check for local runs to avoid dependencies on CIDB and secrets"
-        )
-        Shell.check(f"touch {perf_wd}/historical-thresholds.tsv", verbose=True)
-
     if res and JobStages.DOWNLOAD_DATASETS in stages:
         print("Download datasets")
+
         if not Path(f"{db_path}/.done").is_file():
-            Shell.check(f"mkdir -p {db_path}/data/default/", verbose=True)
+            Shell.check(f"mkdir -p {db_path}", verbose=True)
+            datasets = ["hits1", "hits10", "hits100", "values"]
             dataset_paths = {
-                "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
-                "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
+                "hits10": "https://clickhouse-private-datasets.s3.amazonaws.com/hits_10m_single/partitions/hits_10m_single.tar",
+                "hits100": "https://clickhouse-private-datasets.s3.amazonaws.com/hits_100m_single/partitions/hits_100m_single.tar",
                 "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
                 "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
             }
@@ -518,11 +387,6 @@ def main():
             f'echo "ATTACH DATABASE datasets ENGINE=Ordinary" > {db_path}/metadata/datasets.sql',
             f"ls {db_path}/metadata",
             f"rm {perf_right_config}/config.d/text_log.xml ||:",
-            # May slow down the server
-            f"rm {perf_right_config}/config.d/memory_profiler.yaml ||:",
-            f"rm {perf_right_config}/config.d/serverwide_trace_collector.xml ||:",
-            f"rm {perf_right_config}/config.d/jemalloc_flush_profile.yaml ||:",
-            f"rm -vf {perf_right_config}/config.d/keeper_max_request_size.xml",
             # backups disk uses absolute path, and this overlaps between servers, that could lead to errors
             f"rm {perf_right_config}/config.d/backups.xml ||:",
             f"cp -rv {perf_right_config} {perf_left}/",
@@ -531,14 +395,20 @@ def main():
             # of copying to save space. Before that, remove preprocessed configs and
             # system tables, because sharing them between servers with hardlinks may
             # lead to weird effects
-            f"rm -rf {perf_left}/db {perf_right}/db",
-            f"rm -rf {db_path}/preprocessed_configs {db_path}/data/system {db_path}/metadata/system {db_path}/status",
-            f"cp -al {db_path} {perf_left}/db ||:",
-            f"cp -al {db_path} {perf_right}/db ||:",
+            f"rm -rf {perf_left}/db",
+            f"rm -rf {perf_right}/db",
+            f"rm -r {db_path}/preprocessed_configs",
+            f"rm -r {db_path}/data/system",
+            f"rm -r {db_path}/metadata/system",
+            f"rm -rf {db_path}/status",
+            f"cp -al {db_path} {perf_left}/db",
+            f"cp -al {db_path} {perf_right}/db",
             f"cp -R {temp_dir}/coordination0 {perf_left}/coordination",
             f"cp -R {temp_dir}/coordination0 {perf_right}/coordination",
         ]
-        results.append(Result.from_commands_run(name="Configure", command=commands))
+        results.append(
+            Result.from_commands_run(name="Configure", command=commands, with_log=True)
+        )
         res = results[-1].is_ok()
 
     leftCH = CHServer(is_left=True)
@@ -583,12 +453,10 @@ def main():
             results[-1].set_files(logs)
 
     if res and JobStages.TEST in stages:
-        print("Tests")
+        print("Run Tests")
         test_files = [
             file for file in os.listdir("./tests/performance/") if file.endswith(".xml")
         ]
-        # TODO: in PRs filter test files against changed files list if only tests has been changed
-        # changed_files = info.get_custom_data("changed_files")
         if test_keyword:
             test_files = [file for file in test_files if test_keyword in file]
         else:
@@ -598,7 +466,7 @@ def main():
         assert test_files
 
         def run_tests():
-            for test in test_files:
+            for test in test_files[batch_num::total_batches]:
                 CHServer.run_test(
                     "./tests/performance/" + test,
                     runs=7,
@@ -620,111 +488,39 @@ def main():
             "readlink -f ./ci/jobs/scripts/perf/compare.sh", strict=True
         )
 
+        left_major, left_minor, left_sha = (
+            CHVersion.get_latest_release_major_minor_sha()
+        )
         Shell.check(f"{perf_left}/clickhouse --version  > {perf_wd}/left-commit.txt")
         Shell.check(f"git log -1 HEAD > {perf_wd}/right-commit.txt")
-        os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX"] = (
-            Utils.normalize_string(info.job_name)
-        )
-        os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME"] = info.job_name
-        os.environ["CHPC_CHECK_START_TIMESTAMP"] = str(int(Utils.timestamp()))
 
         commands = [
-            f"PR_TO_TEST={info.pr_number} "
-            f"SHA_TO_TEST={info.sha} "
-            "stage=get_profiles "
-            f"{script_path}",
+            f"stage=get_profiles {script_path}",
         ]
-
         results.append(
             Result.from_commands_run(
                 name="Report",
                 command=commands,
+                with_log=True,
                 workdir=perf_wd,
             )
         )
-
-        if Path(f"{perf_wd}/ci-checks.tsv").is_file():
-            # insert test cases result generated by legacy script as tsv file into praktika Result object - so that they are written into DB later
-            test_results = []
-            with open(f"{perf_wd}/ci-checks.tsv", "r", encoding="utf-8") as f:
-                header = next(f).strip().split("\t")  # Read actual column headers
-                next(f)  # Skip type line (e.g. UInt32, String...)
-                reader = csv.DictReader(f, delimiter="\t", fieldnames=header)
-                for row in reader:
-                    if not row["test_name"]:
-                        continue
-                    test_results.append(
-                        Result(
-                            name=row["test_name"],
-                            status=row["test_status"],
-                            duration=float(row["test_duration_ms"]) / 1000,
-                        )
-                    )
-            # results[-2] is a previuos subtask
-            results[-2].results = test_results
-        else:
-            print("WARNING: compare.sh did not generate ci-checks.tsv file")
-
         res = results[-1].is_ok()
 
-    if res and not info.is_local_run and not compare_against_release:
-
-        def insert_historical_data():
-            cidb = CIDBCluster()
-            assert cidb.is_ready()
-
-            now = datetime.now()
-            date = now.date().isoformat()
-            date_time = now.isoformat(sep=" ").split(".")[0]
-
-            report_path = f"{perf_wd}/report/all-query-metrics.tsv"
-            with open(report_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                print(lines)
-                data = "".join(lines)
-            print(data)
-
-            query = INSERT_HISTORICAL_DATA.format(
-                EVENT_DATE=date,
-                EVENT_DATE_TIME=date_time,
-                PR_NUMBER=info.pr_number,
-                REF_SHA=reference_sha,
-                CUR_SHA=info.sha,
-            )
-
-            print(f"Do insert historical data query: >>>\n{query}\n<<<")
-            res = cidb.do_insert_query(
-                query=query,
-                data=data,
-                timeout=10,
-                retries=3,
-            )
-            if res:
-                print(f"Inserted [{len(lines)}] lines")
-            else:
-                print(f"Inserted [{len(lines)}] lines - failed")
-            return True
-
-        results.append(
-            Result.from_commands_run(
-                name="Insert historical data",
-                command=insert_historical_data,
-                with_info=True,
-            )
-        )
-
     # TODO: code to fetch status was taken from old script as is - status is to be correctly set in Test stage and this stage is to be removed!
-    message = ""
     if res and JobStages.CHECK_RESULTS in stages:
 
         def too_many_slow(msg):
             match = re.search(r"(|.* )(\d+) slower.*", msg)
+            # This threshold should be synchronized with the value in
+            # https://github.com/ClickHouse/ClickHouse/blob/master/docker/test/performance-comparison/report.py#L629
             threshold = 5
             return int(match.group(2).strip()) > threshold if match else False
 
         # Try to fetch status from the report.
         sw = Utils.Stopwatch()
         status = ""
+        message = ""
         try:
             with open(f"{perf_wd}/report.html", "r", encoding="utf-8") as report_fd:
                 report_text = report_fd.read()
@@ -756,6 +552,17 @@ def main():
             )
         )
 
+    # Shell.check("find /tmp/praktika -type f")
+
+    # Stop the servers to free memory. Normally they are restarted before getting
+    # the profile info, so they shouldn't use much, but if the comparison script
+    # fails in the middle, this might not be the case.
+    # for _ in {1..30}
+    # do
+    # pkill clickhouse || break
+    # sleep 1
+    # done
+
     # dmesg -T > dmesg.log
     #
     # ls -lath
@@ -777,19 +584,16 @@ def main():
             files_to_attach.append(report)
 
     # attach all logs with errors
-    Shell.check(f"rm -f {perf_wd}/logs.tar.zst")
+    Shell.check(f"rm -f {perf_wd}/logs.zip")
     Shell.check(
-        f'cd {perf_wd} && find . -type f \( -name "*.log" -o -name "*.tsv" -o -name "*.txt" -o -name "*.rep" -o -name "*.svg" \) ! -path "*/db/*" !  -path "*/db0/*" -print0 | tar --null -T - -cf - | zstd -o ./logs.tar.zst',
+        f'find {perf_wd} -type f \( -name "*err*.log" -o -name "*err*.tsv" \) -exec zip {perf_wd}/logs.zip {{}} +',
         verbose=True,
     )
-    if Path(f"{perf_wd}/logs.tar.zst").is_file():
-        files_to_attach.append(f"{perf_wd}/logs.tar.zst")
+    if Path(f"{perf_wd}/logs.zip").is_file():
+        files_to_attach.append(f"{perf_wd}/logs.zip")
 
     Result.create_from(
-        results=results,
-        stopwatch=stop_watch,
-        files=files_to_attach + [f"{perf_wd}/report/all-query-metrics.tsv"],
-        info=message,
+        results=results, stopwatch=stop_watch, files=files_to_attach
     ).complete_job()
 
 

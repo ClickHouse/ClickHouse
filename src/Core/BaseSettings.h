@@ -27,7 +27,6 @@ struct BaseSettingsHelpers
 {
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
     static void warningSettingNotFound(std::string_view name);
-    static void flushWarnings();
 
     static void writeString(std::string_view str, WriteBuffer & out);
     static String readString(ReadBuffer & in);
@@ -43,11 +42,6 @@ struct BaseSettingsHelpers
     static SettingsTierType getTier(UInt64 flags);
     static void writeFlags(Flags flags, WriteBuffer & out);
     static UInt64 readFlags(ReadBuffer & in);
-private:
-    /// For logging the summary of unknown settings instead of logging each one separately.
-    inline static thread_local Strings unknown_settings;
-    inline static thread_local bool unknown_settings_warning_logged = false;
-
 };
 
 /** Template class to define collections of settings.
@@ -81,11 +75,10 @@ private:
   * #include <Core/BaseSettings.h>
   * #include <Core/BaseSettingsFwdMacrosImpl.h>
   *
-  * #define APPLY_FOR_MYSETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
+  * #define APPLY_FOR_MYSETTINGS(DECLARE, ALIAS) \
   *     DECLARE(UInt64, a, 100, "Description of a", 0) \
   *     DECLARE(Float, f, 3.11, "Description of f", IMPORTANT) // IMPORTANT - means the setting can't be ignored by older versions) \
   *     DECLARE(String, s, "default", "Description of s", 0)
-  *     DECLARE_WITH_ALIAS(String, experimental, "default", "Description of s", 0, stable)
   *
   * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
   * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
@@ -98,7 +91,7 @@ private:
   *
   * namespace MySetting
   * {
-  * APPLY_FOR_MYSETTINGS(INITIALIZE_SETTING_EXTERN, SETTING_SKIP_TRAIT)
+  * APPLY_FOR_MYSETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
   * }
   * #undef INITIALIZE_SETTING_EXTERN
   *
@@ -107,13 +100,7 @@ private:
 template <class TTraits>
 class BaseSettings : public TTraits::Data
 {
-    struct StringHash
-    {
-        using is_transparent = void;
-        size_t operator()(std::string_view txt) const { return std::hash<std::string_view>{}(txt); }
-    };
-    using CustomSettingMap = std::unordered_map<String, SettingFieldCustom, StringHash, std::equal_to<>>;
-
+    using CustomSettingMap = std::unordered_map<std::string_view, std::pair<std::shared_ptr<const String>, SettingFieldCustom>>;
 public:
     BaseSettings() = default;
     BaseSettings(const BaseSettings &) = default;
@@ -188,7 +175,7 @@ public:
         BaseSettings * settings;
         const typename Traits::Accessor * accessor;
         size_t index;
-        std::conditional_t<Traits::allow_custom_settings, typename CustomSettingMap::iterator *, boost::blank> custom_setting;
+        std::conditional_t<Traits::allow_custom_settings, CustomSettingMap::mapped_type*, boost::blank> custom_setting;
     };
 
     enum SkipFlags
@@ -219,7 +206,7 @@ public:
         void setPointerToCustomSetting();
 
         SettingFieldRef field_ref;
-        std::conditional_t<Traits::allow_custom_settings, typename CustomSettingMap::iterator, boost::blank> custom_settings_iterator;
+        std::conditional_t<Traits::allow_custom_settings, CustomSettingMap::iterator, boost::blank> custom_settings_iterator;
         SkipFlags skip_flags;
     };
 
@@ -262,7 +249,6 @@ private:
     const SettingFieldCustom & getCustomSetting(std::string_view name) const;
     const SettingFieldCustom * tryGetCustomSetting(std::string_view name) const;
 
-protected:
     std::conditional_t<Traits::allow_custom_settings, CustomSettingMap, boost::blank> custom_settings_map;
 };
 
@@ -363,7 +349,7 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
     }
 
     if constexpr (Traits::allow_custom_settings)
-        custom_settings_map.erase(String{name});
+        custom_settings_map.erase(name);
 }
 
 template <typename TTraits>
@@ -486,7 +472,7 @@ void BaseSettings<TTraits>::write(WriteBuffer & out, SettingsWriteFormat format)
         if ((format >= SettingsWriteFormat::STRINGS_WITH_FLAGS) || is_custom)
         {
             using Flags = BaseSettingsHelpers::Flags;
-            Flags flags{};
+            Flags flags{0};
             if (is_custom)
                 flags = static_cast<Flags>(flags | Flags::CUSTOM);
             else if (is_important)
@@ -518,7 +504,7 @@ void BaseSettings<TTraits>::writeChangedBinary(WriteBuffer & out) const
     {
         BaseSettingsHelpers::writeString(field.getName(), out);
         using Flags = BaseSettingsHelpers::Flags;
-        Flags flags{};
+        Flags flags{0};
         BaseSettingsHelpers::writeFlags(flags, out);
         accessor.writeBinary(*this, field.index, out);
     }
@@ -558,7 +544,7 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
         size_t index = accessor.find(name);
 
         using Flags = BaseSettingsHelpers::Flags;
-        UInt64 flags{};
+        UInt64 flags{0};
         if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
             flags = BaseSettingsHelpers::readFlags(in);
         bool is_important = (flags & Flags::IMPORTANT);
@@ -591,7 +577,6 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
             BaseSettingsHelpers::readString(in);
         }
     }
-    BaseSettingsHelpers::flushWarnings();
 }
 
 template <typename TTraits>
@@ -635,8 +620,11 @@ SettingFieldCustom & BaseSettings<TTraits>::getCustomSetting(std::string_view na
     {
         auto it = custom_settings_map.find(name);
         if (it == custom_settings_map.end())
-            it = custom_settings_map.emplace(String{name}, SettingFieldCustom{}).first;
-        return it->second;
+        {
+            auto new_name = std::make_shared<String>(name);
+            it = custom_settings_map.emplace(*new_name, std::make_pair(new_name, SettingFieldCustom{})).first;
+        }
+        return it->second.second;
     }
     BaseSettingsHelpers::throwSettingNotFound(name);
 }
@@ -648,7 +636,7 @@ const SettingFieldCustom & BaseSettings<TTraits>::getCustomSetting(std::string_v
     {
         auto it = custom_settings_map.find(name);
         if (it != custom_settings_map.end())
-            return it->second;
+            return it->second.second;
     }
     BaseSettingsHelpers::throwSettingNotFound(name);
 }
@@ -660,7 +648,7 @@ const SettingFieldCustom * BaseSettings<TTraits>::tryGetCustomSetting(std::strin
     {
         auto it = custom_settings_map.find(name);
         if (it != custom_settings_map.end())
-            return &it->second;
+            return &it->second.second;
     }
     return nullptr;
 }
@@ -760,7 +748,7 @@ void BaseSettings<TTraits>::Iterator::setPointerToCustomSetting()
         const auto & settings = *field_ref.settings;
         const auto & index = field_ref.index;
         if ((index == accessor.size()) && (custom_settings_iterator != settings.custom_settings_map.end()))
-            field_ref.custom_setting = &custom_settings_iterator;
+            field_ref.custom_setting = &custom_settings_iterator->second;
         else
             field_ref.custom_setting = nullptr;
     }
@@ -783,7 +771,7 @@ const String & BaseSettings<TTraits>::SettingFieldRef::getName() const
     if constexpr (Traits::allow_custom_settings)
     {
         if (custom_setting)
-            return (*custom_setting)->first;
+            return *custom_setting->first;
     }
     return accessor->getName(index);
 }
@@ -794,7 +782,7 @@ Field BaseSettings<TTraits>::SettingFieldRef::getValue() const
     if constexpr (Traits::allow_custom_settings)
     {
         if (custom_setting)
-            return static_cast<Field>((*custom_setting)->second);
+            return static_cast<Field>(custom_setting->second);
     }
     return accessor->getValue(*settings, index);
 }
@@ -805,7 +793,7 @@ void BaseSettings<TTraits>::SettingFieldRef::setValue(const Field & value)
     if constexpr (Traits::allow_custom_settings)
     {
         if (custom_setting)
-            (*custom_setting)->second = value;
+            custom_setting->second = value;
     }
     else
         accessor->setValue(*settings, index, value);
@@ -817,7 +805,7 @@ String BaseSettings<TTraits>::SettingFieldRef::getValueString() const
     if constexpr (Traits::allow_custom_settings)
     {
         if (custom_setting)
-            return (*custom_setting)->second.toString();
+            return custom_setting->second.toString();
     }
     return accessor->getValueString(*settings, index);
 }
@@ -828,7 +816,7 @@ String BaseSettings<TTraits>::SettingFieldRef::getDefaultValueString() const
     if constexpr (Traits::allow_custom_settings)
     {
         if (custom_setting)
-            return (*custom_setting)->second.toString();
+            return custom_setting->second.toString();
     }
     return accessor->getDefaultValueString(index);
 }
@@ -902,7 +890,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
     { \
         struct Data \
         { \
-            LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_TRAITS_, DECLARE_SETTINGS_TRAITS_) \
+            LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_TRAITS_, SKIP_ALIAS) \
         }; \
         \
         class Accessor \
@@ -954,9 +942,9 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
         }; \
         static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
         \
-        static inline const AliasMap aliases_to_settings = { \
-            LIST_OF_SETTINGS_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_) \
-        }; \
+        static inline const AliasMap aliases_to_settings = \
+            DefineAliases() LIST_OF_SETTINGS_MACRO(ALIAS_TO, ALIAS_FROM); \
+        \
         using SettingsToAliasesMap = std::unordered_map<std::string_view, std::vector<std::string_view>>; \
         static inline const SettingsToAliasesMap & settingsToAliases() \
         { \
@@ -980,14 +968,36 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 
 
 /// NOLINTNEXTLINE
-#define SETTING_SKIP_TRAIT(...)
+#define SKIP_ALIAS(ALIAS_NAME)
+/// NOLINTNEXTLINE
+#define ALIAS_TO(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) .setName(#NAME)
+/// NOLINTNEXTLINE
+#define ALIAS_FROM(ALIAS) .addAlias(#ALIAS)
+
+struct DefineAliases
+{
+    std::string_view name;
+    AliasMap map;
+
+    DefineAliases & setName(std::string_view value)
+    {
+        name = value;
+        return *this;
+    }
+
+    DefineAliases & addAlias(std::string_view value)
+    {
+        map.emplace(value, name);
+        return *this;
+    }
+
+    /// NOLINTNEXTLINE(google-explicit-constructor)
+    operator AliasMap() { return std::move(map); }
+};
 
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+#define DECLARE_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     SettingField##TYPE NAME {DEFAULT};
-/// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_WITH_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS) \
-    { #ALIAS, #NAME },
 
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
@@ -998,8 +1008,8 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             Accessor res; \
             constexpr int IMPORTANT = 0x01; \
             UNUSED(IMPORTANT); \
-            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
-            for (size_t i = 0, size = res.field_infos.size(); i < size; ++i) \
+            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_, SKIP_ALIAS) \
+            for (size_t i = 0; i < res.field_infos.size(); i++) \
             { \
                 const auto & info = res.field_infos[i]; \
                 res.name_to_index_map.emplace(info.name, i); \
@@ -1022,7 +1032,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
     template class BaseSettings<SETTINGS_TRAITS_NAME>;
 
 /// NOLINTNEXTLINE
-#define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+#define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     res.field_infos.emplace_back( \
         FieldInfo{#NAME, #TYPE, DESCRIPTION, \
             static_cast<UInt64>(FLAGS), \

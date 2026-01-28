@@ -1,11 +1,11 @@
 #pragma once
 
 #include "config.h"
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionarySource.h>
+#include "DictionaryStructure.h"
+#include "IDictionarySource.h"
 
 #if USE_LIBPQXX
-#include <Dictionaries/ExternalQueryBuilder.h>
+#include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
 #include <Common/LocalDateTime.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
@@ -34,16 +34,16 @@ public:
         const DictionaryStructure & dict_struct_,
         const Configuration & configuration_,
         postgres::PoolWithFailoverPtr pool_,
-        SharedHeader sample_block_);
+        const Block & sample_block_);
 
     /// copy-constructor is provided in order to support cloneability
     PostgreSQLDictionarySource(const PostgreSQLDictionarySource & other);
     PostgreSQLDictionarySource & operator=(const PostgreSQLDictionarySource &) = delete;
 
-    BlockIO loadAll() override;
-    BlockIO loadUpdatedAll() override;
-    BlockIO loadIds(const std::vector<UInt64> & ids) override;
-    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadAll() override;
+    QueryPipeline loadUpdatedAll() override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override;
@@ -60,7 +60,7 @@ private:
     const DictionaryStructure dict_struct;
     const Configuration configuration;
     postgres::PoolWithFailoverPtr pool;
-    SharedHeader sample_block;
+    Block sample_block;
     LoggerPtr log;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;

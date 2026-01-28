@@ -8,7 +8,7 @@
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Common/logger_useful.h>
-#include <Poco/Timer.h>
+#include "Poco/Timer.h"
 #include <amqpcpp.h>
 
 namespace DB
@@ -235,7 +235,7 @@ ReadBufferPtr RabbitMQConsumer::consume()
     if (stopped || !received.tryPop(current))
         return nullptr;
 
-    return std::make_shared<ReadBufferFromMemory>(current.message);
+    return std::make_shared<ReadBufferFromMemory>(current.message.data(), current.message.size());
 }
 
 }

@@ -24,14 +24,6 @@ public:
         const Settings & settings_,
         const ClientInfo & client_info_);
 
-    void initialize();
-
-    Block initializeAndGetHeader()
-    {
-        initialize();
-        return header;
-    }
-
     void write(Block block);
     void onFinish();
 
@@ -44,13 +36,8 @@ public:
     UInt64 getServerRevision() const { return server_revision; }
 
 private:
-    const Settings & insert_settings;
-    const ClientInfo & client_info;
-    const ConnectionTimeouts & timeouts;
-
     Connection & connection;
     String query;
-
     Block header;
     bool finished = false;
     UInt64 server_revision;

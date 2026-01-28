@@ -1,8 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/castColumn.h>
-#include <Interpreters/Context.h>
 #include <Parsers/TokenIterator.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
@@ -18,6 +16,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/ObjectUtils.h>
+
 
 namespace DB
 {
@@ -40,7 +40,7 @@ namespace ErrorCodes
 
 ValuesBlockInputFormat::ValuesBlockInputFormat(
     ReadBuffer & in_,
-    SharedHeader header_,
+    const Block & header_,
     const RowInputFormatParams & params_,
     const FormatSettings & format_settings_)
     : ValuesBlockInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
@@ -49,14 +49,14 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
 
 ValuesBlockInputFormat::ValuesBlockInputFormat(
     std::unique_ptr<PeekableReadBuffer> buf_,
-    SharedHeader header_,
+    const Block & header_,
     const RowInputFormatParams & params_,
     const FormatSettings & format_settings_)
     : IInputFormat(header_, buf_.get()), buf(std::move(buf_)),
-        params(params_), format_settings(format_settings_), num_columns(header_->columns()),
+        params(params_), format_settings(format_settings_), num_columns(header_.columns()),
         parser_type_for_column(num_columns, ParserType::Streaming),
         attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
-        rows_parsed_using_template(num_columns), templates(num_columns), types(header_->getDataTypes()), serializations(header_->getSerializations())
+        rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes()), serializations(header_.getSerializations())
     , block_missing_values(getPort().getHeader().columns())
 {
 }
@@ -116,7 +116,7 @@ Chunk ValuesBlockInputFormat::read()
     size_t chunk_start = getDataOffsetMaybeCompressed(*buf);
 
     size_t rows_in_block = 0;
-    for (; rows_in_block < params.max_block_size_rows; ++rows_in_block)
+    for (; rows_in_block < params.max_block_size; ++rows_in_block)
     {
         try
         {
@@ -302,8 +302,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         {
             const auto & type = types[column_idx];
             const auto & serialization = serializations[column_idx];
-            /// Let Enum conversion functions handle the null value.
-            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type) && !isEnum(type))
+            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
                 read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization);
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
@@ -569,19 +568,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                         std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
     }
 
-    /// Insert value into the column.
-    /// For Dynamic type we cannot just insert Field as we lose information about the data type.
-    /// Instead try to create a column with single element and cast it to the destination type.
-    if (type.hasDynamicSubcolumns())
-    {
-        auto const_column = value_raw.second->createColumnConst(1, expression_value);
-        auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
-        column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
-    }
-    else
-    {
-        column.insert(value);
-    }
+    column.insert(value);
     return true;
 }
 
@@ -684,11 +671,6 @@ void ValuesBlockInputFormat::resetReadBuffer()
     IInputFormat::resetReadBuffer();
 }
 
-void ValuesBlockInputFormat::setContext(const ContextPtr & context_)
-{
-    context = Context::createCopy(context_);
-}
-
 void ValuesBlockInputFormat::setQueryParameters(const NameToNameMap & parameters)
 {
     if (parameters == context->getQueryParameters())
@@ -762,7 +744,7 @@ void registerInputFormatValues(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<ValuesBlockInputFormat>(buf, std::make_unique<const Block>(header), params, settings);
+        return std::make_shared<ValuesBlockInputFormat>(buf, header, params, settings);
     });
 }
 

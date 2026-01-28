@@ -8,6 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+config="${BASH_SOURCE[0]/.sh/.xml}"
+
 # Create a table on S3 disk with Array column and wide parts
 # Insert a row with empty Array-s so that arr.bin file is empty
 $CLICKHOUSE_CLIENT -m -q "
@@ -30,7 +32,7 @@ UUID=`$CLICKHOUSE_CLIENT -q "
     WHERE database = currentDatabase() AND table = 'test_empty_blobs'"`;
 
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS blob_storage_log, text_log;
+    SYSTEM FLUSH LOGS;
 
     -- Check that there were no empty blobs written to S3
     SELECT 'Empty blobs: ', local_path FROM system.blob_storage_log
@@ -79,7 +81,7 @@ $CLICKHOUSE_CLIENT -m -q "
     SELECT * FROM test_empty_blobs ORDER BY key;
 
     -- Check logs for skipping empty blob
-    SYSTEM FLUSH LOGS text_log;
+    SYSTEM FLUSH LOGS;
     SELECT 'Skipped empty blobs after 2 inserts and merge:',  count() FROM system.text_log WHERE 
         message LIKE 'Skipping writing empty blob for path %$UUID/%/arr.bin%' AND
         event_date >= yesterday() AND event_time > now() - interval 10 minute;

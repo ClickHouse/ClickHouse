@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
+#include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 
@@ -40,7 +41,6 @@ struct StorageID;
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
-    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 

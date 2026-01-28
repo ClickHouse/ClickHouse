@@ -23,7 +23,8 @@ namespace
 {
 
 /* Generate random string of specified length with fully random bytes (including zero). */
-class FunctionRandomString : public IFunction
+template <typename RandImpl>
+class FunctionRandomStringImpl : public IFunction
 {
 public:
     static constexpr auto name = "randomString";
@@ -81,44 +82,56 @@ public:
             if (length > (1 << 30))
                 throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
 
-            offset += length;
+            offset += length + 1;
             offsets_to[row_num] = offset;
         }
 
         /// Fill random bytes.
         data_to.resize(offsets_to.back());
         RandImpl::execute(reinterpret_cast<char *>(data_to.data()), data_to.size());
+
+        /// Put zero bytes in between.
+        auto * pos = data_to.data();
+        for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
+            pos[offsets_to[row_num] - 1] = 0;
+
         return col_to;
     }
+};
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandomString>(); }
+class FunctionRandomString : public FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>
+{
+public:
+    explicit FunctionRandomString(ContextPtr context) : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default,
+            FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>>();
+
+    #if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::AVX2,
+            FunctionRandomStringImpl<TargetSpecific::AVX2::RandImpl>>();
+    #endif
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+    }
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionRandomString>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
 };
 
 }
 
 REGISTER_FUNCTION(RandomString)
 {
-    FunctionDocumentation::Description description = R"(
-Generates a random string with the specified number of characters.
-The returned characters are not necessarily ASCII characters, i.e. they may not be printable.
-    )";
-    FunctionDocumentation::Syntax syntax = "randomString(length[, x])";
-    FunctionDocumentation::Arguments arguments = {
-        {"length", "Length of the string in bytes.", {"(U)Int*"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random bytes.", {"String"}};
-    FunctionDocumentation::Examples examples = {
-        {"Usage example", "SELECT randomString(5) AS str FROM numbers(2)", R"(
-���
-�v6B�
-        )"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionRandomString>(documentation);
+    factory.registerFunction<FunctionRandomString>();
 }
 
 }

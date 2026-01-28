@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Coordination/KeeperConstants.h>
-#include <Core/LogsLevel.h>
 
 #include <memory>
 
@@ -23,10 +22,6 @@ enum class KeeperFeatureFlag : size_t
     CHECK_NOT_EXISTS,
     CREATE_IF_NOT_EXISTS,
     REMOVE_RECURSIVE,
-    MULTI_WATCHES,
-    CHECK_STAT,
-    PERSISTENT_WATCHES,
-    CREATE_WITH_STATS,
 };
 
 class KeeperFeatureFlags
@@ -47,7 +42,7 @@ public:
     void enableFeatureFlag(KeeperFeatureFlag feature);
     void disableFeatureFlag(KeeperFeatureFlag feature);
 
-    void logFlags(LoggerPtr log, DB::LogsLevel log_level = DB::LogsLevel::information) const;
+    void logFlags(LoggerPtr log) const;
 private:
     std::string feature_flags;
 };

@@ -4,7 +4,6 @@ sidebar_label: 'Prerequisites'
 sidebar_position: 5
 slug: /development/developer-instruction
 title: 'Developer Prerequisites'
-doc_type: 'guide'
 ---
 
 # Prerequisites
@@ -31,7 +30,7 @@ sudo apt install git
 A Git cheatsheet can be found [here](https://education.github.com/git-cheat-sheet-education.pdf).
 A detailed Git manual is [here](https://git-scm.com/book/en/v2).
 
-## Clone the repository to your development machine {#clone-the-repository-to-your-development-machine}
+## Clone the Repository to Your Development Machine {#clone-the-repository-to-your-development-machine}
 
 First, download the source files to your working machine, i.e. clone the repository:
 
@@ -51,7 +50,7 @@ You can either
 
 - if `git clone` is run without `--recurse-submodules`, run `git submodule update --init --jobs <N>` to checkout all submodules explicitly. (`<N>` can be set for example to `12` to parallelize the download.)
 
-- if `git clone` is run without `--recurse-submodules` and you like to use [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) submodule checkout to omit history in submodules to save some space, run `./contrib/update-submodules.sh`. This alternative is used by CI but not recommended for local development as it makes working with submodules less convenient and slower.
+- if `git clone` is run without `--recurse-submodules` and you like to use [sparse](https://github.blog/2020-01-17-bring-your-monorepo-down-to-size-with-sparse-checkout/) and [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) submodule checkout to omit unneeded files and history in submodules to save space (ca. 5 GB instead of ca. 15 GB), run `./contrib/update-submodules.sh`. This alternative is used by CI but not recommended for local development as it makes working with submodules less convenient and slower.
 
 To check the status of the Git submodules, run `git submodule status`.
 
@@ -91,7 +90,7 @@ Please do not use verbatim `git push`, you may push to the wrong remote and/or t
 It is better to specify the remote and branch names explicitly, e.g. `git push origin my_branch_name`.
 :::
 
-## Writing code {#writing-code}
+## Writing Code {#writing-code}
 
 Below you can find some quick links which may be useful when writing code for ClickHouse:
 
@@ -113,7 +112,7 @@ Below you can find some quick links which may be useful when writing code for Cl
 
 Other IDEs you can use are [Sublime Text](https://www.sublimetext.com/), [Qt Creator](https://www.qt.io/product/development-tools), or [Kate](https://kate-editor.org/).
 
-## Create a pull request {#create-a-pull-request}
+## Create A Pull Request {#create-a-pull-request}
 
 Navigate to your fork repository in GitHub's UI.
 If you have been developing in a branch, you need to select that branch.
@@ -134,7 +133,7 @@ The system will prepare ClickHouse binary builds for your pull request individua
 To retrieve these builds click the "Details" link next to "Builds" entry in the list of checks.
 There you will find direct links to the built .deb packages of ClickHouse which you can deploy even on your production servers (if you have no fear).
 
-## Write documentation {#write-documentation}
+## Write Documentation {#write-documentation}
 
 Every pull request which adds a new feature must come with proper documentation.
 If you'd like to preview your documentation changes the instructions for how to build the documentation page locally are available in the README.md file [here](https://github.com/ClickHouse/clickhouse-docs).
@@ -182,7 +181,7 @@ Response:
 \```
 ```
 
-## Using test data {#using-test-data}
+## Using Test Data {#using-test-data}
 
 Developing ClickHouse often requires loading realistic datasets.
 This is particularly important for performance testing.

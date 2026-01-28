@@ -2,21 +2,21 @@
 #include <Storages/PartitionedSink.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 class StorageObjectStorageSink : public SinkToStorage
 {
 public:
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+
     StorageObjectStorageSink(
-        const std::string & path_,
         ObjectStoragePtr object_storage,
+        ConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings_,
-        SharedHeader sample_block_,
+        const Block & sample_block_,
         ContextPtr context,
-        const String & format,
-        const String & compression_method);
+        const std::string & blob_path = "");
 
     ~StorageObjectStorageSink() override;
 
@@ -26,16 +26,10 @@ public:
 
     void onFinish() override;
 
-    const String & getPath() const { return path; }
-
-    size_t getFileSize() const;
-
 private:
-    const String path;
-    SharedHeader sample_block;
+    const Block sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
-    std::optional<size_t> result_file_size;
 
     void finalizeBuffers();
     void releaseBuffers();
@@ -45,22 +39,28 @@ private:
 class PartitionedStorageObjectStorageSink : public PartitionedSink
 {
 public:
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+
     PartitionedStorageObjectStorageSink(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        ConfigurationPtr configuration_,
         std::optional<FormatSettings> format_settings_,
-        SharedHeader sample_block_,
-        ContextPtr context_);
+        const Block & sample_block_,
+        ContextPtr context_,
+        const ASTPtr & partition_by);
 
     SinkPtr createSinkForPartition(const String & partition_id) override;
 
 private:
-    ObjectStoragePtr object_storage;
-    StorageObjectStorageConfigurationPtr configuration;
+    void validateKey(const String & str);
+    void validateNamespace(const String & str);
 
-    const StorageObjectStorageQuerySettings query_settings;
+    ObjectStoragePtr object_storage;
+    ConfigurationPtr configuration;
+
+    const StorageObjectStorage::QuerySettings query_settings;
     const std::optional<FormatSettings> format_settings;
-    SharedHeader sample_block;
+    const Block sample_block;
     const ContextPtr context;
 };
 

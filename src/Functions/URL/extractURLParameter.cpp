@@ -2,7 +2,6 @@
 #include <Functions/FunctionsStringSearchToString.h>
 #include <base/find_symbols.h>
 
-
 namespace DB
 {
 
@@ -18,7 +17,7 @@ struct ExtractURLParameterImpl
         res_offsets.resize(input_rows_count);
 
         pattern += '=';
-        const char * param_str = pattern.data();
+        const char * param_str = pattern.c_str();
         size_t param_len = pattern.size();
 
         ColumnString::Offset prev_offset = 0;
@@ -50,8 +49,7 @@ struct ExtractURLParameterImpl
                     if (!param_begin)
                         break;
 
-                    char prev_char = param_begin[-1];
-                    if (prev_char != '?' && prev_char != '#' && prev_char != '&')
+                    if (param_begin[-1] != '?' && param_begin[-1] != '#' && param_begin[-1] != '&')
                     {
                         /// Parameter name is different but has the same suffix.
                         param_begin += param_len;
@@ -66,14 +64,25 @@ struct ExtractURLParameterImpl
             if (param_begin)
             {
                 const char * param_end = find_first_symbols<'&', '#'>(param_begin, end);
+                if (param_end == end)
+                    param_end = param_begin + strlen(param_begin);
+
                 size_t param_size = param_end - param_begin;
 
-                res_data.resize(res_offset + param_size);
+                res_data.resize(res_offset + param_size + 1);
                 memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], param_begin, param_size);
                 res_offset += param_size;
             }
+            else
+            {
+                /// No parameter found, put empty string in result.
+                res_data.resize(res_offset + 1);
+            }
 
+            res_data[res_offset] = 0;
+            ++res_offset;
             res_offsets[i] = res_offset;
+
             prev_offset = cur_offset;
         }
     }
@@ -84,36 +93,7 @@ using FunctionExtractURLParameter = FunctionsStringSearchToString<ExtractURLPara
 
 REGISTER_FUNCTION(ExtractURLParameter)
 {
-    /// extractURLParameter documentation
-    FunctionDocumentation::Description description_extractURLParameter = R"(
-Returns the value of the `name` parameter in the URL, if present, otherwise an empty string is returned.
-If there are multiple parameters with this name, the first occurrence is returned.
-The function assumes that the parameter in the `url` parameter is encoded in the same way as in the `name` argument.
-    )";
-    FunctionDocumentation::Syntax syntax_extractURLParameter = "extractURLParameter(url, name)";
-    FunctionDocumentation::Arguments arguments_extractURLParameter = {
-        {"url", "URL.", {"String"}},
-        {"name", "Parameter name.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_extractURLParameter = {"Returns the value of the URL parameter with the specified name.", {"String"}};
-    FunctionDocumentation::Examples examples_extractURLParameter = {
-    {
-        "Usage example",
-        R"(
-SELECT extractURLParameter('http://example.com/?param1=value1&param2=value2', 'param1');
-        )",
-        R"(
-┌─extractURLPa⋯, 'param1')─┐
-│ value1                   │
-└──────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_extractURLParameter = {1, 1};
-    FunctionDocumentation::Category category_extractURLParameter = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_extractURLParameter = {description_extractURLParameter, syntax_extractURLParameter, arguments_extractURLParameter, {}, returned_value_extractURLParameter, examples_extractURLParameter, introduced_in_extractURLParameter, category_extractURLParameter};
-
-    factory.registerFunction<FunctionExtractURLParameter>(documentation_extractURLParameter);
+    factory.registerFunction<FunctionExtractURLParameter>();
 }
 
 }

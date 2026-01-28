@@ -6,9 +6,10 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -35,8 +36,6 @@ namespace ErrorCodes
     extern const int TABLE_IS_BEING_RESTARTED;
 }
 
-const VirtualColumnsDescription IStorage::common_virtuals = IStorage::createCommonVirtuals();
-
 IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
     : storage_id(std::move(storage_id_))
     , virtuals(std::make_unique<VirtualColumnsDescription>())
@@ -50,16 +49,7 @@ IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadat
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
 {
     /// Virtual column maybe overridden by real column
-    return !metadata_snapshot->getColumns().has(column_name) && (virtuals.get()->has(column_name) || common_virtuals.has(column_name));
-}
-
-VirtualColumnsDescription IStorage::createCommonVirtuals()
-{
-    VirtualColumnsDescription desc;
-
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of table which the row comes from");
-
-    return desc;
+    return !metadata_snapshot->getColumns().has(column_name) && virtuals.get()->has(column_name);
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
@@ -111,6 +101,11 @@ std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const std::ch
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
 
     return lock;
+}
+
+void IStorage::updateExternalDynamicMetadata(ContextPtr)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateExternalDynamicMetadata is not supported by storage {}", getName());
 }
 
 IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
@@ -227,7 +222,9 @@ void IStorage::readFromPipe(
     }
 }
 
-std::optional<QueryPipeline> IStorage::distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/)
+std::optional<QueryPipeline> IStorage::distributedWrite(
+    const ASTInsertQuery & /*query*/,
+    ContextPtr /*context*/)
 {
     return {};
 }
@@ -243,7 +240,7 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLock
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -284,16 +281,6 @@ bool IStorage::optimize(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", getName());
 }
 
-std::expected<void, PreformattedMessage> IStorage::supportsLightweightUpdate() const
-{
-    return std::unexpected(PreformattedMessage::create("Table with engine {} doesn't support lightweight updates", getName()));
-}
-
-QueryPipeline IStorage::updateLightweight(const MutationCommands &, ContextPtr)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported by storage {}", getName());
-}
-
 void IStorage::mutate(const MutationCommands &, ContextPtr)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
@@ -325,9 +312,9 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimator(const RangesInDataParts &, ContextPtr) const
+ConditionSelectivityEstimator IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const
 {
-    return nullptr;
+    return {};
 }
 
 void IStorage::renameInMemory(const StorageID & new_table_id)
@@ -386,7 +373,7 @@ std::optional<CheckResult> IStorage::checkDataNext(DataValidationTasksPtr & /* c
     return {};
 }
 
-void IStorage::applyMetadataChangesToCreateQueryForBackup(const ASTPtr &) const
+void IStorage::adjustCreateQueryForBackup(ASTPtr &) const
 {
 }
 
@@ -407,6 +394,11 @@ std::string PrewhereInfo::dump() const
 {
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
+
+    if (row_level_filter)
+    {
+        ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
+    }
 
     {
         ss << "prewhere_actions " << prewhere_actions.dumpDAG() << "\n";

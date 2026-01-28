@@ -374,7 +374,7 @@ bool KQLOperators::convert(std::vector<String> & tokens, IParser::Pos & pos)
         else
             --pos;
 
-        if (!KQLOperator.contains(op))
+        if (KQLOperator.find(op) == KQLOperator.end())
         {
             pos = begin;
             return false;

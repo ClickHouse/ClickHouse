@@ -44,7 +44,7 @@ protected:
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-        ostr << "WATCH ";
+        ostr << (settings.hilite ? hilite_keyword : "") << "WATCH " << (settings.hilite ? hilite_none : "");
 
         if (database)
         {
@@ -57,12 +57,12 @@ protected:
 
         if (is_watch_events)
         {
-            ostr << " " << "EVENTS";
+            ostr << " " << (settings.hilite ? hilite_keyword : "") << "EVENTS" << (settings.hilite ? hilite_none : "");
         }
 
         if (limit_length)
         {
-            ostr << settings.nl_or_ws << indent_str << "LIMIT ";
+            ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << indent_str << "LIMIT " << (settings.hilite ? hilite_none : "");
             limit_length->format(ostr, settings, state, frame);
         }
     }

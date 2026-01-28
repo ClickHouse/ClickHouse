@@ -1,12 +1,10 @@
-#include <Access/Common/AccessRightsElement.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Databases/DDLRenamingVisitor.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Storages/StorageMaterializedView.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Common/setThreadName.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB::BackupUtils
@@ -128,24 +126,8 @@ bool isInnerTable(const QualifiedTableName & table_name)
 
 bool isInnerTable(const String & /* database_name */, const String & table_name)
 {
-    /// We skip inner tables of materialized views. They're backed up by StorageMaterializedView.
-    return table_name.starts_with(".inner.") || table_name.starts_with(".inner_id.") || table_name.starts_with(".tmp.inner.") || table_name.starts_with(".tmp.inner_id.");
+    /// We skip inner tables of materialized views.
+    return table_name.starts_with(".inner.") || table_name.starts_with(".inner_id.");
 }
 
-bool isTargetForReplaceRefreshableMaterializedView(const StorageID & storage_id, const ContextPtr & context)
-{
-    auto dependents = DatabaseCatalog::instance().getReferentialDependents(storage_id);
-
-    auto is_rmv_targeting_table = [&](const StorageID & mv_candidate, const StorageID & target_id) -> bool
-    {
-        auto table = DatabaseCatalog::instance().tryGetTable(mv_candidate, context);
-        if (!table || table->getName() != "MaterializedView")
-            return false;
-
-        const auto * mv = typeid_cast<const StorageMaterializedView *>(table.get());
-        return mv && mv->isRefreshable() && !mv->isAppendRefreshStrategy() && mv->getTargetTableId() == target_id;
-    };
-    return std::any_of(
-        dependents.begin(), dependents.end(), [&](const auto & dependent) { return is_rmv_targeting_table(dependent, storage_id); });
-}
 }

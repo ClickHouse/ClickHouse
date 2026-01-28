@@ -1,6 +1,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/56521
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SET enable_analyzer=1;
 

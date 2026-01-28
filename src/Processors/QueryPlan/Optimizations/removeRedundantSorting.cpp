@@ -4,8 +4,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/FractionalLimitStep.h>
-#include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
@@ -18,10 +16,8 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
-
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-
 
 namespace DB::QueryPlanOptimizations
 {
@@ -64,13 +60,10 @@ public:
 
         if (typeid_cast<LimitStep *>(current_step)
             || typeid_cast<LimitByStep *>(current_step) /// (1) if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<FractionalLimitStep *>(current_step) /// (2) FractionalLimit Steps on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<FractionalOffsetStep *>(current_step) /// (3) FractionalOffset Steps on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<OffsetStep *>(current_step) /// (4) OFFSET on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<FillingStep *>(current_step) /// (5) if ORDER BY is with FILL WITH, it is non-removable
-            || typeid_cast<SortingStep *>(current_step) /// (6) ORDER BY will change order of previous sorting
-            || typeid_cast<AggregatingStep *>(current_step) /// (7) aggregation change order
-            )
+            || typeid_cast<OffsetStep *>(current_step) /// (2) OFFSET on top of ORDER BY, the ORDER BY is non-removable
+            || typeid_cast<FillingStep *>(current_step) /// (3) if ORDER BY is with FILL WITH, it is non-removable
+            || typeid_cast<SortingStep *>(current_step) /// (4) ORDER BY will change order of previous sorting
+            || typeid_cast<AggregatingStep *>(current_step)) /// (5) aggregation change order
         {
             logStep("nodes_affect_order/push", current_node);
             nodes_affect_order.push_back(current_node);
@@ -107,7 +100,7 @@ private:
         }
 
         /// sorting removed, so need to update sorting traits for upstream steps
-        const SharedHeader * input_header = &parent_node->children.front()->step->getOutputHeader();
+        const Header * input_header = &parent_node->children.front()->step->getOutputHeader();
         chassert(parent_node == (stack.rbegin() + 1)->node); /// skip element on top of stack since it's sorting which was just removed
         for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
         {

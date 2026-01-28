@@ -9,7 +9,7 @@ dmesg --clear
 set -x
 
 # we mount tests folder from repo to /usr/share
-ln -s /repo/ci/jobs/scripts/stress/stress.py /usr/bin/stress
+ln -s /repo/tests/ci/stress.py /usr/bin/stress
 ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 ln -s /repo/tests/ci/download_release_packages.py /usr/bin/download_release_packages
 ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
@@ -22,16 +22,11 @@ source /repo/tests/docker_scripts/attach_gdb.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
+/repo/tests/docker_scripts/setup_minio.sh stateless # to have a proper environment
 
 echo "Get previous release tag"
-PACKAGES_DIR=/repo/ci/tmp
 # shellcheck disable=SC2016
-previous_release_tag=$(dpkg-deb --showformat='${Version}' --show $PACKAGES_DIR/clickhouse-client*.deb | get_previous_release_tag)
-if [ $? -ne 0 ]; then
-    echo "Failed to get previous release tag"
-    exit 1
-fi
+previous_release_tag=$(dpkg-deb --showformat='${Version}' --show package_folder/clickhouse-client*.deb | get_previous_release_tag)
 echo $previous_release_tag
 
 echo "Clone previous release repository"
@@ -89,21 +84,18 @@ function save_major_version()
 save_settings_clean 'old_settings.native'
 save_mergetree_settings_clean 'old_merge_tree_settings.native'
 save_major_version 'old_version.native'
-old_major_version=$(clickhouse-local -q "select a[1] || '.' || a[2] from (select splitByChar('.', version()) as a)")
 
 # Initial run without S3 to create system.*_log on local file system to make it
 # available for dump via clickhouse-local
 configure
 
-start_server || (echo "Failed to start server" && exit 1)
-stop_server || (echo "Failed to stop server" && exit 1)
+start
+stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
 
 # Start server from previous release
 # Let's enable S3 storage by default
 export USE_S3_STORAGE_FOR_MERGE_TREE=1
-export USE_ENCRYPTED_STORAGE=$((RANDOM % 2))
-
 # Previous version may not be ready for fault injections
 export ZOOKEEPER_FAULT_INJECTION=0
 configure
@@ -113,7 +105,7 @@ sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
-start_server || (echo "Failed to start server" && exit 1)
+start
 
 clickhouse-client --query="SELECT 'Server version: ', version()"
 
@@ -134,11 +126,11 @@ timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM syst
 )
 
 # Use bigger timeout for previous version and disable additional hang check
-stop_server 300 false || (echo "Failed to stop server" && exit 1)
+stop 300 false
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
 
 # Install and start new server
-install_packages $PACKAGES_DIR
+install_packages package_folder
 export ZOOKEEPER_FAULT_INJECTION=1
 configure
 
@@ -150,7 +142,7 @@ IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM 
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
   save_settings_clean 'new_settings.native'
-  save_mergetree_settings_clean 'new_merge_tree_settings.native'
+  save_merge_tree_settings_clean 'new_merge_tree_settings.native'
   clickhouse-local -nmq "
   CREATE TABLE old_settings AS file('old_settings.native');
   CREATE TABLE old_merge_tree_settings AS file('old_merge_tree_settings.native');
@@ -169,7 +161,7 @@ then
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
       (
-          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Session'
+          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Core'
       )
       WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
   ))
@@ -205,7 +197,7 @@ then
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
       (
-          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Session'
+          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes WHERE type = 'Core'
       )
       WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
   ))
@@ -267,18 +259,7 @@ fi
 sudo sed -i "s|>1<|>0<|g" /etc/clickhouse-server/config.d/lost_forever_check.xml \
 rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
-# Set compatibility setting to previous version, so we won't fail due to known backward incompatible changes.
-echo "<clickhouse>
-    <profiles>
-        <default>
-            <compatibility>$old_major_version</compatibility>
-        </default>
-    </profiles>
-</clickhouse>" > /etc/clickhouse-server/users.d/compatibility.xml
-
-cat /etc/clickhouse-server/users.d/compatibility.xml
-
-start_server || (echo "Failed to start server" && exit 1)
+start 500
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
     && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
@@ -292,7 +273,7 @@ clickhouse-client --query="SELECT 'Server version: ', version()"
 # Let the server run for a while before checking log.
 sleep 60
 
-stop_server || (echo "Failed to stop server" && exit 1)
+stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.upgrade.log
 
 # Error messages (we should ignore some errors)
@@ -382,5 +363,10 @@ rowNumberInAllBlocks()
 LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo -e "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
+# But OOMs in stress test are allowed
+if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
+then
+    sed -i 's/failure/success/' /test_output/check_status.tsv
+fi
 
 collect_core_dumps

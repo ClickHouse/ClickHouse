@@ -1,14 +1,15 @@
 #pragma once
 
 #include <Dictionaries/CassandraHelpers.h>
-#include <QueryPipeline/BlockIO.h>
 
 #if USE_CASSANDRA
 
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/ExternalQueryBuilder.h>
+#include "DictionaryStructure.h"
+#include "IDictionarySource.h"
+#include "ExternalQueryBuilder.h"
+#include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
+#include <Poco/Logger.h>
 #include <mutex>
 
 namespace DB
@@ -51,7 +52,7 @@ public:
             const String & config_prefix,
             Block & sample_block);
 
-    BlockIO loadAll() override;
+    QueryPipeline loadAll() override;
 
     bool supportsSelectiveLoad() const override { return true; }
 
@@ -61,14 +62,14 @@ public:
 
     DictionarySourcePtr clone() const override
     {
-        return std::make_shared<CassandraDictionarySource>(dict_struct, configuration, *sample_block);
+        return std::make_shared<CassandraDictionarySource>(dict_struct, configuration, sample_block);
     }
 
-    BlockIO loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
-    BlockIO loadUpdatedAll() override;
+    QueryPipeline loadUpdatedAll() override;
 
     String toString() const override;
 
@@ -79,7 +80,7 @@ private:
     LoggerPtr log;
     const DictionaryStructure dict_struct;
     const Configuration configuration;
-    SharedHeader sample_block;
+    Block sample_block;
     ExternalQueryBuilder query_builder;
 
     CassClusterPtr cluster;

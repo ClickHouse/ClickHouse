@@ -26,7 +26,8 @@ struct ASTExistsViewQueryIDAndQueryNames
 {
     static constexpr auto ID = "ExistsViewQuery";
     static constexpr auto Query = "EXISTS VIEW";
-    static constexpr auto QueryTemporary = "EXISTS TEMPORARY VIEW";
+    /// No temporary view are supported, just for parsing
+    static constexpr auto QueryTemporary = "";
 };
 
 
@@ -49,7 +50,8 @@ struct ASTShowCreateViewQueryIDAndQueryNames
 {
     static constexpr auto ID = "ShowCreateViewQuery";
     static constexpr auto Query = "SHOW CREATE VIEW";
-    static constexpr auto QueryTemporary = "SHOW CREATE TEMPORARY VIEW";
+    /// No temporary view are supported, just for parsing
+    static constexpr auto QueryTemporary = "";
 };
 
 struct ASTShowCreateDatabaseQueryIDAndQueryNames
@@ -95,8 +97,8 @@ public:
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        ostr << ASTExistsDatabaseQueryIDAndQueryNames::Query
-                    << " ";
+        ostr << (settings.hilite ? hilite_keyword : "") << ASTExistsDatabaseQueryIDAndQueryNames::Query
+                    << " " << (settings.hilite ? hilite_none : "");
         database->format(ostr, settings, state, frame);
     }
 
@@ -117,8 +119,8 @@ public:
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        ostr << ASTShowCreateDatabaseQueryIDAndQueryNames::Query
-                      << " ";
+        ostr << (settings.hilite ? hilite_keyword : "") << ASTShowCreateDatabaseQueryIDAndQueryNames::Query
+                      << " " << (settings.hilite ? hilite_none : "");
         database->format(ostr, settings, state, frame);
     }
 };
@@ -148,8 +150,8 @@ public:
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        ostr
-                      << "DESCRIBE TABLE";
+        ostr << (settings.hilite ? hilite_keyword : "")
+                      << "DESCRIBE TABLE" << (settings.hilite ? hilite_none : "");
         table_expression->format(ostr, settings, state, frame);
     }
 

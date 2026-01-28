@@ -4,11 +4,10 @@ description: 'This engine allows integrating ClickHouse with NATS to publish or 
 sidebar_label: 'NATS'
 sidebar_position: 140
 slug: /engines/table-engines/integrations/nats
-title: 'NATS table engine'
-doc_type: 'guide'
+title: 'NATS Engine'
 ---
 
-# NATS table engine {#redisstreams-engine}
+# NATS Engine {#redisstreams-engine}
 
 This engine allows integrating ClickHouse with [NATS](https://nats.io/).
 
@@ -17,9 +16,9 @@ This engine allows integrating ClickHouse with [NATS](https://nats.io/).
 - Publish or subscribe to message subjects.
 - Process new messages as they become available.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -57,9 +56,7 @@ Required parameters:
 Optional parameters:
 
 - `nats_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
-- `nats_stream` – The name of an existing stream in NATS JetStream.
-- `nats_consumer` – The name of an existing durable  pull consumer in NATS JetStream.
-- `nats_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient for NATS core only.
+- `nats_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
 - `nats_queue_group` – Name for queue group of NATS subscribers. Default is the table name.
 - `nats_max_reconnect` – Deprecated and has no effect, reconnect is performed permanently with nats_reconnect_wait timeout.
 - `nats_reconnect_wait` – Amount of time in milliseconds to sleep between each reconnect attempt. Default: `5000`.
@@ -87,7 +84,7 @@ However, if table reads from multiple subjects, we need to specify which subject
 That is why whenever inserting into table with multiple subjects, setting `stream_like_engine_insert_queue` is needed.
 You can select one of the subjects the table reads from and publish your data there. For example:
 
-```sql
+``` sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64
@@ -105,7 +102,7 @@ Also format settings can be added along with nats-related settings.
 
 Example:
 
-```sql
+``` sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64,
@@ -120,7 +117,7 @@ Example:
 The NATS server configuration can be added using the ClickHouse config file.
 More specifically you can add Redis password for NATS engine:
 
-```xml
+``` xml
 <nats>
     <user>click</user>
     <password>house</password>
@@ -141,7 +138,7 @@ One NATS table can have as many materialized views as you like, they do not read
 
 Example:
 
-```sql
+``` sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64
@@ -162,14 +159,14 @@ Example:
 
 To stop receiving streams data or to change the conversion logic, detach the materialized view:
 
-```sql
+``` sql
   DETACH TABLE consumer;
   ATTACH TABLE consumer;
 ```
 
 If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
 
-## Virtual columns {#virtual-columns}
+## Virtual Columns {#virtual-columns}
 
 - `_subject` - NATS message subject. Data type: `String`.
 
@@ -180,6 +177,7 @@ Additional virtual columns when `nats_handle_error_mode='stream'`:
 
 Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always `NULL` when message was parsed successfully.
 
+
 ## Data formats support {#data-formats-support}
 
 NATS engine supports all [formats](../../../interfaces/formats.md) supported in ClickHouse.
@@ -187,119 +185,3 @@ The number of rows in one NATS message depends on whether the format is row-base
 
 - For row-based formats the number of rows in one NATS message can be controlled by setting `nats_max_rows_per_message`.
 - For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](/operations/settings/settings#max_block_size).
-
-## Using JetStream {#using-jetstream}
-
-Before using NATS engine with NATS JetStream, you must create a NATS stream and a durable pull consumer. For this, you can use, for example, the nats utility from the [NATS CLI](https://github.com/nats-io/natscli) package:
-<details>
-<summary>creating stream</summary>
-
-```bash
-$ nats stream add
-? Stream Name stream_name
-? Subjects stream_subject
-? Storage file
-? Replication 1
-? Retention Policy Limits
-? Discard Policy Old
-? Stream Messages Limit -1
-? Per Subject Messages Limit -1
-? Total Stream Size -1
-? Message TTL -1
-? Max Message Size -1
-? Duplicate tracking time window 2m0s
-? Allow message Roll-ups No
-? Allow message deletion Yes
-? Allow purging subjects or the entire stream Yes
-Stream stream_name was created
-
-Information for Stream stream_name created 2025-10-03 14:12:51
-
-                Subjects: stream_subject
-                Replicas: 1
-                 Storage: File
-
-Options:
-
-               Retention: Limits
-         Acknowledgments: true
-          Discard Policy: Old
-        Duplicate Window: 2m0s
-              Direct Get: true
-       Allows Msg Delete: true
-            Allows Purge: true
-  Allows Per-Message TTL: false
-          Allows Rollups: false
-
-Limits:
-
-        Maximum Messages: unlimited
-     Maximum Per Subject: unlimited
-           Maximum Bytes: unlimited
-             Maximum Age: unlimited
-    Maximum Message Size: unlimited
-       Maximum Consumers: unlimited
-
-State:
-
-                Messages: 0
-                   Bytes: 0 B
-          First Sequence: 0
-           Last Sequence: 0
-        Active Consumers: 0
-```
-</details>
-
-<details>
-<summary>creating durable pull consumer</summary>
-
-```bash
-$ nats consumer add
-? Select a Stream stream_name
-? Consumer name consumer_name
-? Delivery target (empty for Pull Consumers) 
-? Start policy (all, new, last, subject, 1h, msg sequence) all
-? Acknowledgment policy explicit
-? Replay policy instant
-? Filter Stream by subjects (blank for all) 
-? Maximum Allowed Deliveries -1
-? Maximum Acknowledgments Pending 0
-? Deliver headers only without bodies No
-? Add a Retry Backoff Policy No
-Information for Consumer stream_name > consumer_name created 2025-10-03T14:13:51+03:00
-
-Configuration:
-
-                    Name: consumer_name
-               Pull Mode: true
-          Deliver Policy: All
-              Ack Policy: Explicit
-                Ack Wait: 30.00s
-           Replay Policy: Instant
-         Max Ack Pending: 1,000
-       Max Waiting Pulls: 512
-
-State:
-
-  Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
-    Acknowledgment Floor: Consumer sequence: 0 Stream sequence: 0
-        Outstanding Acks: 0 out of maximum 1,000
-    Redelivered Messages: 0
-    Unprocessed Messages: 0
-           Waiting Pulls: 0 of maximum 512
-```
-</details>
-
-After creating stream and durable pull consumer, we can create a table with NATS engine. To do this, you need to initialize: nats_stream, nats_consumer_name, and nats_subjects:
-
-```SQL
-CREATE TABLE nats_jet_stream (
-    key UInt64,
-    value UInt64
-  ) ENGINE NATS 
-    SETTINGS  nats_url = 'localhost:4222',
-              nats_stream = 'stream_name',
-              nats_consumer_name = 'consumer_name',
-              nats_subjects = 'stream_subject',
-              nats_format = 'JSONEachRow';
-```

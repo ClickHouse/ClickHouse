@@ -5,7 +5,6 @@
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -42,11 +41,6 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
 }
 
-namespace ErrorCodes
-{
-    extern const int ALL_CONNECTION_TRIES_FAILED;
-}
-
 IStorageCluster::IStorageCluster(
     const String & cluster_name_,
     const StorageID & table_id_,
@@ -69,7 +63,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        SharedHeader sample_block,
+        Block sample_block,
         std::shared_ptr<IStorageCluster> storage_,
         ASTPtr query_to_send_,
         QueryProcessingStage::Enum processed_stage_,
@@ -118,12 +112,7 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
     if (extension)
         return;
 
-    extension = storage->getTaskIteratorExtension(
-        predicate,
-        filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
-        context,
-        cluster,
-        getStorageSnapshot()->metadata);
+    extension = storage->getTaskIteratorExtension(predicate, context);
 }
 
 /// The code executes on initiator
@@ -137,8 +126,6 @@ void IStorageCluster::read(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    updateConfigurationIfNeeded(context);
-
     storage_snapshot->check(column_names);
 
     updateBeforeRead(context);
@@ -146,7 +133,7 @@ void IStorageCluster::read(
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
 
-    SharedHeader sample_block;
+    Block sample_block;
     ASTPtr query_to_send = query_info.query;
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -191,6 +178,8 @@ void IStorageCluster::read(
 
 void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    createExtension(nullptr);
+
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
@@ -199,12 +188,9 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
     const auto & current_settings = new_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
-    size_t replica_index = 0;
     auto max_replicas_to_use = static_cast<UInt64>(cluster->getShardsInfo().size());
     if (current_settings[Setting::max_parallel_replicas] > 1)
         max_replicas_to_use = std::min(max_replicas_to_use, current_settings[Setting::max_parallel_replicas].value);
-
-    createExtension(nullptr);
 
     for (const auto & shard_info : cluster->getShardsInfo())
     {
@@ -223,8 +209,6 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         if (try_results.empty())
             continue;
 
-        IConnections::ReplicaInfo replica_info{.number_of_current_replica = replica_index++};
-
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::vector<IConnectionPool::Entry>{try_results.front()},
             query_to_send->formatWithSecretsOneLine(),
@@ -234,23 +218,20 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             scalars,
             Tables(),
             processed_stage,
-            nullptr,
-            RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)});
+            extension);
 
         remote_query_executor->setLogger(log);
-        Pipe pipe{std::make_shared<RemoteSource>(
+        pipes.emplace_back(std::make_shared<RemoteSource>(
             remote_query_executor,
             add_agg_info,
             current_settings[Setting::async_socket_for_remote],
-            current_settings[Setting::async_query_sending_for_remote])};
-        pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
-        pipes.emplace_back(std::move(pipe));
+            current_settings[Setting::async_query_sending_for_remote]));
     }
 
-    if (pipes.empty())
-        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot connect to any replica for query execution");
-
     auto pipe = Pipe::unitePipes(std::move(pipes));
+    if (pipe.empty())
+        pipe = Pipe(std::make_shared<NullSource>(getOutputHeader()));
+
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
 

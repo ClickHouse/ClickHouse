@@ -1,4 +1,3 @@
-#include <Client/ClientBaseHelpers.h>
 #include <Client/ReplxxLineReader.h>
 #include <base/errnoToString.h>
 
@@ -391,10 +390,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     /// We don't want to allow opening EDITOR in the embedded mode.
     if (!options.embedded_mode)
-    {
-        rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(/*format_query=*/ false); return Replxx::ACTION_RESULT::CONTINUE; });
-        rx.bind_key(Replxx::KEY::meta('F'), [this](char32_t) { openEditor(/*format_query=*/ true); return Replxx::ACTION_RESULT::CONTINUE; });
-    }
+        rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
 
     /// readline insert-comment
     auto insert_comment_action = [this](char32_t code)
@@ -425,15 +421,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     };
     rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
 
-    char key_fuzzy = 'R';
-    char key_regular = 'T';
-    if (options.interactive_history_legacy_keymap)
-        std::swap(key_fuzzy, key_regular);
-
 #if USE_SKIM
     if (!options.embedded_mode)
     {
-        auto interactive_history_search = [this, key_regular](char32_t code)
+        auto interactive_history_search = [this](char32_t code)
         {
             std::vector<std::string> words;
             {
@@ -450,7 +441,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             }
             catch (const std::exception & e)
             {
-                rx.print("skim failed: %s (consider using Ctrl-%c for a regular non-fuzzy reverse search)\n", e.what(), key_regular);
+                rx.print("skim failed: %s (consider using Ctrl-T for a regular non-fuzzy reverse search)\n", e.what());
             }
 
             /// REPAINT before to avoid prompt overlap by the query
@@ -466,15 +457,15 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             return rx.invoke(Replxx::ACTION::REPAINT, code);
         };
 
-        rx.bind_key(Replxx::KEY::control(key_fuzzy), interactive_history_search);
+        rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
     }
 #endif
 
-    /// Rebind regular incremental search.
+    /// Rebind regular incremental search to C-T.
     ///
     /// NOTE: C-T by default this is a binding to swap adjustent chars
     /// (TRANSPOSE_CHARACTERS), but for SQL it sounds pretty useless.
-    rx.bind_key(Replxx::KEY::control(key_regular), [this](char32_t)
+    rx.bind_key(Replxx::KEY::control('T'), [this](char32_t)
     {
         /// Reverse search is detected by C-R.
         uint32_t reverse_search = Replxx::KEY::control('R');
@@ -497,10 +488,6 @@ ReplxxLineReader::~ReplxxLineReader()
 {
     if (history_file_fd >= 0 && close(history_file_fd))
         rx.print("Close of history file failed: %s\n", errnoToString().c_str());
-
-    /// Reset cursor blinking
-    if (overwrite_mode)
-        rx.print("%s", "\033[0 q");
 }
 
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
@@ -539,20 +526,12 @@ void ReplxxLineReader::addToHistory(const String & line)
         rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
 }
 
-void ReplxxLineReader::openEditor(bool format_query)
+void ReplxxLineReader::openEditor()
 {
-    /// We need to clear till the end of screen *before*, to avoid extra new-line in case of multi-line queries
-    rx.invoke(replxx::Replxx::ACTION::CLEAR_SELF, 0);
-
     try
     {
-        String query = rx.get_state().text();
-
-        if (format_query)
-            query = formatQuery(std::move(query));
-
         TemporaryFile editor_file("clickhouse_client_editor_XXXXXX.sql");
-        editor_file.write(query);
+        editor_file.write(rx.get_state().text());
         editor_file.close();
 
         char * const argv[] = {editor.data(), editor_file.getPath().data(), nullptr};
@@ -568,15 +547,11 @@ void ReplxxLineReader::openEditor(bool format_query)
             rx.print(fmt::format("Editor {} terminated unsuccessfully: {}\n", backQuoteIfNeed(editor), editor_exit_code).data());
         }
     }
-    catch (const std::exception & e)
+    catch (const std::runtime_error & e)
     {
-        rx.print("\n");
         rx.print(e.what());
         rx.print("\n");
     }
-
-    rx.invoke(replxx::Replxx::ACTION::CLEAR_SELF, 0);
-    rx.invoke(replxx::Replxx::ACTION::REPAINT, 0);
 
     if (bracketed_paste_enabled)
         enableBracketedPaste();
@@ -592,15 +567,6 @@ void ReplxxLineReader::disableBracketedPaste()
 {
     bracketed_paste_enabled = false;
     rx.disable_bracketed_paste();
-}
-
-void ReplxxLineReader::setInitialText(const String & text)
-{
-    // Preload the buffer with the initial text
-    if (!text.empty())
-    {
-        rx.set_preload_buffer(text);
-    }
 }
 
 }

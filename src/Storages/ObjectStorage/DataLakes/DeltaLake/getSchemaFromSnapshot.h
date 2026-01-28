@@ -5,34 +5,27 @@
 #if USE_DELTA_KERNEL_RS
 
 #include <Core/NamesAndTypes.h>
-#include <delta_kernel_ffi.hpp>
 
 namespace ffi
 {
 struct SharedSnapshot;
-struct SharedGlobalScanState;
+struct SharedExternEngine;
 }
 
 namespace DeltaLake
 {
 
-/// Get table schema and physical column map (logical name to physical name mapping).
+/// Get table schema.
 /// Represents table schema from DeltaLake metadata.
 /// Contains partition columns.
-std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot);
+DB::NamesAndTypesList getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot);
 
-/// Get read schema.
+/// Get read schema and partition columns.
 /// Represents read schema based on data files.
-DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan);
-
-DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context);
-
-/// Get list of partition columns.
 /// Read schema does not contain partition columns,
 /// therefore partition columns are passed separately.
-DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot);
-
-DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema);
+std::pair<DB::NamesAndTypesList, DB::Names>
+getReadSchemaAndPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine);
 
 }
 

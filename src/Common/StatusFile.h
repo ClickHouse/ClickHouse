@@ -16,9 +16,9 @@ class WriteBuffer;
 class StatusFile : private boost::noncopyable
 {
 public:
-    using FillFunction = std::function<void(WriteBuffer &)>;
+    using FillFunction = std::function<void(WriteBuffer&)>;
 
-    StatusFile(std::string path_, FillFunction fill);
+    StatusFile(std::string path_, FillFunction fill_);
     ~StatusFile();
 
     /// You can use one of these functions to fill the file or provide your own.
@@ -27,6 +27,7 @@ public:
 
 private:
     const std::string path;
+    FillFunction fill;
     int fd = -1;
 };
 

@@ -84,7 +84,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         {
             if (parseCurrentUserTag(pos, expected))
                 current_user = true;
-            else if (parseUserNames(pos, expected, names, /*allow_query_parameter=*/ false))
+            else if (parseUserNames(pos, expected, names))
             {
             }
             else if (plural)
@@ -149,37 +149,6 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
                 all = true;
             else
                 current_quota = true;
-            break;
-        }
-        case AccessEntityType::MASKING_POLICY:
-        {
-            String database;
-            String table_name;
-            bool wildcard = false;
-            bool default_database = false;
-            if (parseIdentifierOrStringLiteral(pos, expected, short_name)
-                && parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))
-            {
-                database_and_table_name.emplace(database, table_name);
-            }
-            else if (parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))
-            {
-                if (database.empty() && !default_database)
-                    all = true;
-                else
-                    database_and_table_name.emplace(database, table_name);
-            }
-            else if (!short_name.empty())
-            {
-                // Already parsed short_name in the first condition
-            }
-            else if (parseIdentifiersOrStringLiterals(pos, expected, names))
-            {
-            }
-            else if (plural)
-                all = true;
-            else
-                return false;
             break;
         }
         case AccessEntityType::MAX:

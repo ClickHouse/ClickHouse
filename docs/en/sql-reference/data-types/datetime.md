@@ -5,7 +5,6 @@ sidebar_label: 'DateTime'
 sidebar_position: 16
 slug: /sql-reference/data-types/datetime
 title: 'DateTime'
-doc_type: 'reference'
 ---
 
 # DateTime
@@ -14,7 +13,7 @@ Allows to store an instant in time, that can be expressed as a calendar date and
 
 Syntax:
 
-```sql
+``` sql
 DateTime([timezone])
 ```
 
@@ -24,9 +23,9 @@ Resolution: 1 second.
 
 ## Speed {#speed}
 
-The `Date` data type is faster than `DateTime` under _most_ conditions.
+The `Date` datatype is faster than `DateTime` under _most_ conditions.
 
-The `Date` type requires 2 bytes of storage, while `DateTime` requires 4. However, during compression, the size difference between Date and DateTime becomes more significant. This amplification is due to the minutes and seconds in `DateTime` being less compressible. Filtering and aggregating `Date` instead of `DateTime` is also faster.
+The `Date` type requires 2 bytes of storage, while `DateTime` requires 4. However, when the database compresses the database, this difference is amplified. This amplification is due to the minutes and seconds in `DateTime` being less compressible. Filtering and aggregating `Date` instead of `DateTime` is also faster.
 
 ## Usage Remarks {#usage-remarks}
 
@@ -40,7 +39,7 @@ You can explicitly set a time zone for `DateTime`-type columns when creating a t
 
 The [clickhouse-client](../../interfaces/cli.md) applies the server time zone by default if a time zone isn't explicitly set when initializing the data type. To use the client time zone, run `clickhouse-client` with the `--use_client_time_zone` parameter.
 
-ClickHouse outputs values depending on the value of the [date_time_output_format](../../operations/settings/settings-formats.md#date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionally, you can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatDateTime) function.
+ClickHouse outputs values depending on the value of the [date_time_output_format](../../operations/settings/settings-formats.md#date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionally, you can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) function.
 
 When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](../../operations/settings/settings-formats.md#date_time_input_format) setting.
 
@@ -48,7 +47,7 @@ When inserting data into ClickHouse, you can use different formats of date and t
 
 **1.** Creating a table with a `DateTime`-type column and inserting data into it:
 
-```sql
+``` sql
 CREATE TABLE dt
 (
     `timestamp` DateTime('Asia/Istanbul'),
@@ -57,19 +56,19 @@ CREATE TABLE dt
 ENGINE = TinyLog;
 ```
 
-```sql
+``` sql
 -- Parse DateTime
 -- - from string,
 -- - from integer interpreted as number of seconds since 1970-01-01.
-INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 2);
+INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 3);
 
 SELECT * FROM dt;
 ```
 
-```text
+``` text
 ┌───────────timestamp─┬─event_id─┐
-│ 2019-01-01 00:00:00 │        1 │
-│ 2019-01-01 03:00:00 │        2 │
+│ 2019-01-01 00:00:00 │        2 │
+│ 2019-01-01 03:00:00 │        1 │
 └─────────────────────┴──────────┘
 ```
 
@@ -78,11 +77,11 @@ SELECT * FROM dt;
 
 **2.** Filtering on `DateTime` values
 
-```sql
+``` sql
 SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Asia/Istanbul')
 ```
 
-```text
+``` text
 ┌───────────timestamp─┬─event_id─┐
 │ 2019-01-01 00:00:00 │        1 │
 └─────────────────────┴──────────┘
@@ -90,11 +89,11 @@ SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Asia/Istan
 
 `DateTime` column values can be filtered using a string value in `WHERE` predicate. It will be converted to `DateTime` automatically:
 
-```sql
+``` sql
 SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
 ```
 
-```text
+``` text
 ┌───────────timestamp─┬─event_id─┐
 │ 2019-01-01 00:00:00 │        1 │
 └─────────────────────┴──────────┘
@@ -102,11 +101,11 @@ SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
 
 **3.** Getting a time zone for a `DateTime`-type column:
 
-```sql
+``` sql
 SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
 ```
 
-```text
+``` text
 ┌──────────────column─┬─x─────────────────────────┐
 │ 2019-10-16 04:12:04 │ DateTime('Asia/Istanbul') │
 └─────────────────────┴───────────────────────────┘
@@ -114,14 +113,14 @@ SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
 
 **4.** Timezone conversion
 
-```sql
+``` sql
 SELECT
-toDateTime(timestamp, 'Europe/London') AS lon_time,
-toDateTime(timestamp, 'Asia/Istanbul') AS mos_time
+toDateTime(timestamp, 'Europe/London') as lon_time,
+toDateTime(timestamp, 'Asia/Istanbul') as mos_time
 FROM dt
 ```
 
-```text
+``` text
 ┌───────────lon_time──┬────────────mos_time─┐
 │ 2019-01-01 00:00:00 │ 2019-01-01 03:00:00 │
 │ 2018-12-31 21:00:00 │ 2019-01-01 00:00:00 │
@@ -129,6 +128,7 @@ FROM dt
 ```
 
 As timezone conversion only changes the metadata, the operation has no computation cost.
+
 
 ## Limitations on time zones support {#limitations-on-time-zones-support}
 
@@ -144,7 +144,7 @@ Similar issue exists for Casey Antarctic station in year 2010. They changed time
 
 Time shifts for multiple days. Some pacific islands changed their timezone offset from UTC+14 to UTC-12. That's alright but some inaccuracies may present if you do calculations with their timezone for historical time points at the days of conversion.
 
-## Handling daylight saving time (DST) {#handling-daylight-saving-time-dst}
+## Handling Daylight Saving Time (DST) {#handling-daylight-saving-time-dst}
 
 ClickHouse's DateTime type with time zones can exhibit unexpected behavior during Daylight Saving Time (DST) transitions, particularly when:
 

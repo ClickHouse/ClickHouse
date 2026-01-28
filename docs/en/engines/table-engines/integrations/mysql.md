@@ -3,17 +3,17 @@ description: 'Documentation for MySQL Table Engine'
 sidebar_label: 'MySQL'
 sidebar_position: 138
 slug: /engines/table-engines/integrations/mysql
-title: 'MySQL table engine'
-doc_type: 'reference'
+title: 'The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data
+  that is stored on a remote MySQL server.'
 ---
 
-# MySQL table engine
+# MySQL Table Engine
 
 The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -37,6 +37,10 @@ The table structure can differ from the original MySQL table structure:
 - Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
 - Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../engines/database-engines/mysql.md#data_types-support) values to the ClickHouse data types.
 - The [external_table_functions_use_nulls](/operations/settings/settings#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+
+:::note
+The MySQL Table Engine is currently not available on the ClickHouse builds for MacOS ([issue](https://github.com/ClickHouse/ClickHouse/issues/21191))
+:::
 
 **Engine Parameters**
 
@@ -62,11 +66,11 @@ Supports multiple replicas that must be listed by `|`. For example:
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-## Usage example {#usage-example}
+## Usage Example {#usage-example}
 
 Create table in MySQL:
 
-```text
+``` text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -89,7 +93,7 @@ mysql> select * from test;
 
 Create table in ClickHouse using plain arguments:
 
-```sql
+``` sql
 CREATE TABLE mysql_table
 (
     `float_nullable` Nullable(Float32),
@@ -117,11 +121,11 @@ ENGINE = MySQL(creds, table='test')
 
 Retrieving data from MySQL table:
 
-```sql
+``` sql
 SELECT * FROM mysql_table
 ```
 
-```text
+``` text
 ┌─float_nullable─┬─int_id─┐
 │           ᴺᵁᴸᴸ │      1 │
 └────────────────┴────────┘
@@ -131,7 +135,7 @@ SELECT * FROM mysql_table
 
 Default settings are not very efficient, since they do not even reuse connections. These settings allow you to increase the number of queries run by the server per second.
 
-### `connection_auto_close` {#connection-auto-close}
+### connection_auto_close {#connection-auto-close}
 
 Allows to automatically close the connection after query execution, i.e. disable connection reuse.
 
@@ -142,7 +146,7 @@ Possible values:
 
 Default value: `1`.
 
-### `connection_max_tries` {#connection-max-tries}
+### connection_max_tries {#connection-max-tries}
 
 Sets the number of retries for pool with failover.
 
@@ -153,7 +157,7 @@ Possible values:
 
 Default value: `3`.
 
-### `connection_pool_size` {#connection-pool-size}
+### connection_pool_size {#connection-pool-size}
 
 Size of connection pool (if all connections are in use, the query will wait until some connection will be freed).
 
@@ -163,7 +167,7 @@ Possible values:
 
 Default value: `16`.
 
-### `connection_wait_timeout` {#connection-wait-timeout}
+### connection_wait_timeout {#connection-wait-timeout}
 
 Timeout (in seconds) for waiting for free connection (in case of there is already connection_pool_size active connections), 0 - do not wait.
 
@@ -173,7 +177,7 @@ Possible values:
 
 Default value: `5`.
 
-### `connect_timeout` {#connect-timeout}
+### connect_timeout {#connect-timeout}
 
 Connect timeout (in seconds).
 
@@ -183,7 +187,7 @@ Possible values:
 
 Default value: `10`.
 
-### `read_write_timeout` {#read-write-timeout}
+### read_write_timeout {#read-write-timeout}
 
 Read/write timeout (in seconds).
 
@@ -193,7 +197,7 @@ Possible values:
 
 Default value: `300`.
 
-## See also {#see-also}
+## See Also {#see-also}
 
 - [The mysql table function](../../../sql-reference/table-functions/mysql.md)
 - [Using MySQL as a dictionary source](/sql-reference/dictionaries#mysql)

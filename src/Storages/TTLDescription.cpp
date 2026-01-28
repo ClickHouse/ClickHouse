@@ -17,9 +17,7 @@
 #include <Interpreters/Context.h>
 
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -32,6 +30,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
+    extern const SettingsBool enable_zstd_qat_codec;
+    extern const SettingsBool enable_deflate_qpl_codec;
 }
 
 namespace ErrorCodes
@@ -90,12 +90,10 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 
     const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
     if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
-        && !typeid_cast<const DataTypeDate *>(result_column.type.get())
-        && !typeid_cast<const DataTypeDateTime64 *>(result_column.type.get())
-        && !typeid_cast<const DataTypeDate32 *>(result_column.type.get()))
+        && !typeid_cast<const DataTypeDate *>(result_column.type.get()))
     {
         throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                        "TTL expression result column should have Date, Date32, DateTime or DateTime64 type, but has {}",
+                        "TTL expression result column should have DateTime or Date type, but has {}",
                         result_column.type->getName());
     }
 }
@@ -346,7 +344,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs]);
+                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs], context->getSettingsRef()[Setting::enable_deflate_qpl_codec], context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
         }
     }
 

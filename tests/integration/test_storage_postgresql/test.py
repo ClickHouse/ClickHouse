@@ -268,7 +268,7 @@ def test_postgres_array_ndim_error_messges(started_cluster):
         assert False
     except Exception as error:
         assert (
-            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces". Make sure no empty array values in the first row'
+            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces". Make sure no empty array values in the first row.'
             in str(error)
         )
 
@@ -890,22 +890,6 @@ def test_postgres_datetime(started_cluster):
 
     result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::Nullable(DateTime64)")
     assert result == "2025-01-02 03:04:05.678900\n"
-
-
-def test_postgres_reading_clone(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS test_clone")
-    cursor.execute("CREATE TABLE test_clone AS (SELECT number FROM generate_series(0, 99) AS number)")
-
-    node1.query("DROP TABLE IF EXISTS test_clone")
-    node1.query(
-        f"CREATE TABLE test_clone ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_clone', 'postgres', '{pg_pass}')"
-    )
-
-    result = node1.query(
-        "SELECT count() FROM (SELECT (SELECT tx.number) = 1 as x FROM test_clone AS tx) WHERE x SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0"
-    )
-    assert result.strip() == "1"
 
 
 if __name__ == "__main__":

@@ -25,8 +25,11 @@
 
 #include <city.h>
 
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 #include <Common/transformEndianness.h>
+
 #include <type_traits>
+#endif
 
 #define SIPROUND                                                  \
     do                                                            \
@@ -145,7 +148,6 @@ public:
 
         /// Pad the remainder, which is missing up to an 8-byte word.
         current_word = 0;
-        /// NOLINTBEGIN(clang-analyzer-security.ArrayBound)
         switch (end - data) /// NOLINT(bugprone-switch-missing-default-case)
         {
             case 7: current_bytes[CURRENT_BYTES_IDX(6)] = data[6]; [[fallthrough]];
@@ -157,26 +159,22 @@ public:
             case 1: current_bytes[CURRENT_BYTES_IDX(0)] = data[0]; [[fallthrough]];
             case 0: break;
         }
-        /// NOLINTEND(clang-analyzer-security.ArrayBound)
     }
 
     template <typename Transform = void, typename T>
     ALWAYS_INLINE void update(const T & x)
     {
-        if constexpr (std::endian::native == std::endian::big)
-        {
-            auto transformed_x = x;
-            if constexpr (!std::is_same_v<Transform, void>)
-                transformed_x = Transform()(x);
-            else
-                DB::transformEndianness<std::endian::little>(transformed_x);
-
-            update(reinterpret_cast<const char *>(&transformed_x), sizeof(transformed_x)); /// NOLINT
-        }
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        auto transformed_x = x;
+        if constexpr (!std::is_same_v<Transform, void>)
+            transformed_x = Transform()(x);
         else
-        {
-            update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
-        }
+            DB::transformEndianness<std::endian::little>(transformed_x);
+
+        update(reinterpret_cast<const char *>(&transformed_x), sizeof(transformed_x)); /// NOLINT
+#else
+        update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+#endif
     }
 
     ALWAYS_INLINE void update(const std::string & x) { update(x.data(), x.length()); }
@@ -222,23 +220,6 @@ inline CityHash_v1_0_2::uint128 getSipHash128AsPair(SipHash & sip_hash)
 {
     CityHash_v1_0_2::uint128 result;
     sip_hash.get128(result.low64, result.high64);
-    return result;
-}
-
-inline String getSipHash128AsHexString(SipHash & sip_hash)
-{
-    String result;
-
-    const auto hash_data = getSipHash128AsArray(sip_hash);
-    const auto hash_size = hash_data.size();
-    result.resize(hash_size * 2);
-    for (size_t i = 0; i < hash_size; ++i)
-    {
-        if constexpr (std::endian::native == std::endian::big)
-            writeHexByteLowercase(hash_data[hash_size - 1 - i], &result[2 * i]);
-        else
-            writeHexByteLowercase(hash_data[i], &result[2 * i]);
-    }
     return result;
 }
 

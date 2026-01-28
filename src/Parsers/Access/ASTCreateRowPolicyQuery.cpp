@@ -3,22 +3,26 @@
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <base/range.h>
 #include <boost/container/flat_set.hpp>
+#include <boost/range/algorithm/transform.hpp>
 
 
 namespace DB
 {
 namespace
 {
-    void formatRenameTo(const String & new_short_name, WriteBuffer & ostr, const IAST::FormatSettings &)
+    void formatRenameTo(const String & new_short_name, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << " RENAME TO " << backQuote(new_short_name);
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
+                      << backQuote(new_short_name);
     }
 
 
-    void formatAsRestrictiveOrPermissive(bool is_restrictive, WriteBuffer & ostr, const IAST::FormatSettings &)
+    void formatAsRestrictiveOrPermissive(bool is_restrictive, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << " AS " << (is_restrictive ? "restrictive" : "permissive");
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (settings.hilite ? IAST::hilite_none : "")
+                      << (is_restrictive ? "restrictive" : "permissive");
     }
 
 
@@ -28,26 +32,26 @@ namespace
         if (expr)
             expr->format(ostr, settings);
         else
-            ostr << "NONE";
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
     }
 
 
-    void formatForClause(const boost::container::flat_set<std::string_view> & commands, const String & filter, const String & check, bool alter, WriteBuffer & ostr, const IAST::FormatSettings &)
+    void formatForClause(const boost::container::flat_set<std::string_view> & commands, const String & filter, const String & check, bool alter, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << " FOR ";
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " FOR " << (settings.hilite ? IAST::hilite_none : "");
         bool need_comma = false;
         for (const auto & command : commands)
         {
             if (std::exchange(need_comma, true))
                 ostr << ", ";
-            ostr << command;
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << command << (settings.hilite ? IAST::hilite_none : "");
         }
 
         if (!filter.empty())
-            ostr << " USING" << filter;
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << " USING" << (settings.hilite ? IAST::hilite_none : "") << filter;
 
         if (!check.empty() && (alter || (check != filter)))
-            ostr << " WITH CHECK" << check;
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WITH CHECK" << (settings.hilite ? IAST::hilite_none : "") << check;
     }
 
 
@@ -105,7 +109,7 @@ namespace
 
     void formatToRoles(const ASTRolesOrUsersSet & roles, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << " TO ";
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
         roles.format(ostr, settings);
     }
 }
@@ -145,27 +149,27 @@ void ASTCreateRowPolicyQuery::formatImpl(WriteBuffer & ostr, const FormatSetting
 {
     if (attach)
     {
-        ostr << "ATTACH ROW POLICY";
+        ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH ROW POLICY";
     }
     else
     {
-        ostr << (alter ? "ALTER ROW POLICY" : "CREATE ROW POLICY")
-                     ;
+        ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER ROW POLICY" : "CREATE ROW POLICY")
+                      << (settings.hilite ? hilite_none : "");
     }
 
     if (if_exists)
-        ostr << " IF EXISTS";
+        ostr << (settings.hilite ? hilite_keyword : "") << " IF EXISTS" << (settings.hilite ? hilite_none : "");
     else if (if_not_exists)
-        ostr << " IF NOT EXISTS";
+        ostr << (settings.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (settings.hilite ? hilite_none : "");
     else if (or_replace)
-        ostr << " OR REPLACE";
+        ostr << (settings.hilite ? hilite_keyword : "") << " OR REPLACE" << (settings.hilite ? hilite_none : "");
 
     ostr << " ";
     names->format(ostr, settings);
 
     if (!storage_name.empty())
-        ostr
-                    << " IN "
+        ostr << (settings.hilite ? IAST::hilite_keyword : "")
+                    << " IN " << (settings.hilite ? IAST::hilite_none : "")
                     << backQuoteIfNeed(storage_name);
 
     formatOnCluster(ostr, settings);

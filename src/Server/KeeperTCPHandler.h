@@ -6,7 +6,7 @@
 
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/MultiVersion.h>
-#include <Server/IServer.h>
+#include "IServer.h"
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -24,7 +24,7 @@ namespace DB
 {
 
 struct SocketInterruptablePollWrapper;
-using SocketInterruptablePollWrapperPtr = std::shared_ptr<SocketInterruptablePollWrapper>;
+using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
 
 struct RequestWithResponse
 {
@@ -72,6 +72,7 @@ private:
     LoggerPtr log;
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
     KeeperContextPtr keeper_context;
+    Poco::Timespan operation_timeout;
     Poco::Timespan min_session_timeout;
     Poco::Timespan max_session_timeout;
     Poco::Timespan session_timeout;
@@ -92,8 +93,6 @@ private:
     std::optional<CompressedReadBuffer> compressed_in;
     std::optional<CompressedWriteBuffer> compressed_out;
 
-    size_t max_request_size = 0;
-
     std::atomic<bool> connected{false};
 
     void runImpl();
@@ -108,7 +107,7 @@ private:
     Poco::Timespan receiveHandshake(int32_t handshake_length, bool & use_compression);
 
     static bool isHandShake(int32_t handshake_length);
-    bool tryExecuteFourLetterWordCmd(int32_t command, ReadBuffer & in);
+    bool tryExecuteFourLetterWordCmd(int32_t command);
 
     std::pair<Coordination::OpNum, Coordination::XID> receiveRequest();
 

@@ -9,7 +9,6 @@ CREATE TABLE t_lightweight_mut_5 (id UInt64, s1 String, s2 String)
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
-    serialization_info_version = 'basic',
     storage_policy = 'default';
 
 SYSTEM STOP MERGES t_lightweight_mut_5;
@@ -26,7 +25,7 @@ SELECT s2 FROM t_lightweight_mut_5 ORDER BY id;
 SYSTEM DROP MARK CACHE;
 SELECT s1, s2 FROM t_lightweight_mut_5 ORDER BY id;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT query, ProfileEvents['FileOpen'] FROM system.query_log
 WHERE

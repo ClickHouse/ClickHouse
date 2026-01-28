@@ -26,19 +26,10 @@ SELECT (number % 5) * (number % 5) AS k FROM numbers(10000000) GROUP BY number %
 SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
 GROUP BY
-    (number % 2) * (number % 3),
     number % 3,
     number % 2
 HAVING avg(log(2) * number) > 3465735.3
 ORDER BY k ASC
-SELECT avg(log(2) * number) AS k
-FROM numbers(10000000)
-GROUP BY
-    number % 3,
-    number % 2
-HAVING avg(log(2) * number) > 3465735.3
-ORDER BY k ASC
-SETTINGS enable_analyzer = 0
 QUERY id: 0
   PROJECTION COLUMNS
     k Float64
@@ -111,17 +102,9 @@ QUERY id: 0
                       COLUMN id: 45, column_name: number, result_type: UInt64, source_id: 11
 SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
-GROUP BY
-    number % 5,
-    (number % 5) * (number % 5)
-HAVING ((number % 5) * (number % 5)) < 5
-ORDER BY k ASC
-SELECT avg(log(2) * number) AS k
-FROM numbers(10000000)
 WHERE ((number % 5) * (number % 5)) < 5
 GROUP BY number % 5
 ORDER BY k ASC
-SETTINGS enable_analyzer = 0
 QUERY id: 0
   PROJECTION COLUMNS
     k Float64
@@ -189,17 +172,9 @@ QUERY id: 0
                       COLUMN id: 42, column_name: number, result_type: UInt64, source_id: 11
 SELECT (number % 5) * (number % 5) AS k
 FROM numbers(10000000)
-GROUP BY
-    number % 5,
-    (number % 5) * (number % 5)
-HAVING ((number % 5) * (number % 5)) < 5
-ORDER BY k ASC
-SELECT (number % 5) * (number % 5) AS k
-FROM numbers(10000000)
 WHERE ((number % 5) * (number % 5)) < 5
 GROUP BY number % 5
 ORDER BY k ASC
-SETTINGS enable_analyzer = 0
 QUERY id: 0
   PROJECTION COLUMNS
     k UInt16
@@ -367,15 +342,15 @@ QUERY id: 0
                       COLUMN id: 55, column_name: number, result_type: UInt64, source_id: 11
 SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
+WHERE ((number % 5) * (number % 5)) < 5
 GROUP BY
     number % 5,
     (number % 5) * (number % 5)
-HAVING ((number % 5) * (number % 5)) < 5
 ORDER BY k ASC
 SELECT (number % 5) * (number % 5) AS k
 FROM numbers(10000000)
+WHERE ((number % 5) * (number % 5)) < 5
 GROUP BY
     number % 5,
     (number % 5) * (number % 5)
-HAVING ((number % 5) * (number % 5)) < 5
 ORDER BY k ASC

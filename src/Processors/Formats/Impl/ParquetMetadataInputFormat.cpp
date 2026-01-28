@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/ParquetMetadataInputFormat.h>
+#include "ParquetMetadataInputFormat.h"
 
 #if USE_PARQUET
 
@@ -20,7 +20,7 @@
 #include <arrow/status.h>
 #include <parquet/file_reader.h>
 #include <parquet/statistics.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include "ArrowBufferedStreams.h"
 #include <DataTypes/NestedUtils.h>
 
 
@@ -136,7 +136,7 @@ static std::shared_ptr<parquet::FileMetaData> getFileMetadata(
     return parquet::ReadMetaData(arrow_file);
 }
 
-ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_)
+ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), &in_), format_settings(format_settings_)
 {
     checkHeader(getPort().getHeader());
@@ -182,9 +182,8 @@ Chunk ParquetMetadataInputFormat::read()
         else if (name == names[3])
         {
             auto column = types[3]->createColumn();
-            /// Parquet file doesn't know its exact version, only whether it's 1.x or 2.x
-            /// (FileMetaData.version = 1 or 2).
-            String version = metadata->version() == parquet::ParquetVersion::PARQUET_1_0 ? "1" : "2";
+            /// Version can be only PARQUET_1_0 or PARQUET_2_LATEST (which is 2.6).
+            String version = metadata->version() == parquet::ParquetVersion::PARQUET_1_0 ? "1.0" : "2.6";
             assert_cast<ColumnString &>(*column).insertData(version.data(), version.size());
             res.addColumn(std::move(column));
         }
@@ -504,13 +503,15 @@ void registerInputFormatParquetMetadata(FormatFactory & factory)
     factory.registerRandomAccessInputFormat(
         "ParquetMetadata",
         [](ReadBuffer & buf,
-           const Block & sample,
-           const FormatSettings & settings,
-           const ReadSettings &,
-           bool /* is_remote_fs */,
-           FormatParserSharedResourcesPtr,
-           FormatFilterInfoPtr) -> InputFormatPtr
-        { return std::make_shared<ParquetMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
+            const Block & sample,
+            const FormatSettings & settings,
+            const ReadSettings &,
+            bool /* is_remote_fs */,
+            size_t /* max_download_threads */,
+            size_t /* max_parsing_threads */)
+        {
+            return std::make_shared<ParquetMetadataInputFormat>(buf, sample, settings);
+        });
     factory.markFormatSupportsSubsetOfColumns("ParquetMetadata");
 }
 

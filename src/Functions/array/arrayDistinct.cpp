@@ -200,7 +200,7 @@ bool FunctionArrayDistinct::executeString(
 
     ColumnString & res_data_column_string = typeid_cast<ColumnString &>(res_data_col);
 
-    using Set = ClearableHashSetWithStackMemory<std::string_view, StringViewHash,
+    using Set = ClearableHashSetWithStackMemory<StringRef, StringRefHash,
         INITIAL_SIZE_DEGREE>;
 
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
@@ -222,12 +222,12 @@ bool FunctionArrayDistinct::executeString(
             if (nullable_col && (*src_null_map)[j])
                 continue;
 
-            std::string_view str_ref = src_data_concrete->getDataAt(j);
+            StringRef str_ref = src_data_concrete->getDataAt(j);
 
             if (!set.find(str_ref))
             {
                 set.insert(str_ref);
-                res_data_column_string.insertData(str_ref.data(), str_ref.size());
+                res_data_column_string.insertData(str_ref.data, str_ref.size);
             }
         }
 
@@ -289,18 +289,7 @@ void FunctionArrayDistinct::executeHashed(
 
 REGISTER_FUNCTION(ArrayDistinct)
 {
-    FunctionDocumentation::Description description = "Returns an array containing only the distinct elements of an array.";
-    FunctionDocumentation::Syntax syntax = "arrayDistinct(arr)";
-    FunctionDocumentation::Arguments argument = {
-        {"arr", "Array for which to extract distinct elements.", {"Array(T)"}},
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array containing the distinct elements", {"Array(T)"}};
-    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayDistinct([1, 2, 2, 3, 1]);", "[1,2,3]"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, argument, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionArrayDistinct>(documentation);
+    factory.registerFunction<FunctionArrayDistinct>();
 }
 
 }

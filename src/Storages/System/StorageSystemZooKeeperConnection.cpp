@@ -1,5 +1,4 @@
 #include <Interpreters/Context.h>
-#include <Interpreters/ZooKeeperConnectionLog.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
@@ -40,16 +39,31 @@ ColumnsDescription StorageSystemZooKeeperConnection::getColumnsDescription()
             "Feature flags which are enabled. Only applicable to ClickHouse Keeper."
         },
         /* 11*/ {"availability_zone", std::make_shared<DataTypeString>(), "Availability zone"},
-        /* 12*/ {"session_timeout_ms", std::make_shared<DataTypeUInt64>(), "Session timeout (in milliseconds)"},
-        /* 13*/ {"last_zxid_seen", std::make_shared<DataTypeInt64>(), "Last zxid seen by the current session."},
     };
 }
 
 void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, ContextPtr context,
     const ActionsDAG::Node *, std::vector<UInt8>) const
 {
+    const auto add_enabled_feature_flags = [&](const auto & zookeeper)
+    {
+        Array enabled_feature_flags;
+        const auto * feature_flags = zookeeper->getKeeperFeatureFlags();
+        if (feature_flags)
+        {
+            for (const auto & feature_flag : magic_enum::enum_values<KeeperFeatureFlag>())
+            {
+                if (feature_flags->isEnabled(feature_flag))
+                {
+                    enabled_feature_flags.push_back(feature_flag);
+                }
+            }
+        }
+        res_columns[10]->insert(std::move(enabled_feature_flags));
+    };
+
     /// For read-only snapshot type functionality, it's acceptable even though 'getZooKeeper' may cause data inconsistency.
-    auto fill_data = [&](const std::string_view name, const zkutil::ZooKeeperPtr zookeeper, MutableColumns & columns)
+    auto fill_data = [&](const String & name, const zkutil::ZooKeeperPtr zookeeper, MutableColumns & columns)
     {
         auto index = zookeeper->getConnectedHostIdx();
         String host_port = zookeeper->getConnectedHostPort();
@@ -75,15 +89,13 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
             columns[7]->insert(0);
             columns[8]->insert(zookeeper->getClientID());
             columns[9]->insert(zookeeper->getConnectionXid());
-            columns[10]->insert(ZooKeeperConnectionLog::getEnabledFeatureFlags(*zookeeper));
+            add_enabled_feature_flags(zookeeper);
             columns[11]->insert(zookeeper->getConnectedHostAvailabilityZone());
-            columns[12]->insert(zookeeper->getSessionTimeoutMS());
-            columns[13]->insert(zookeeper->getLastZXIDSeen());
         }
     };
 
     /// default zookeeper.
-    fill_data(ZooKeeperConnectionLog::default_zookeeper_name, context->getZooKeeper(), res_columns);
+    fill_data("default", context->getZooKeeper(), res_columns);
 
     /// auxiliary zookeepers.
     for (const auto & elem : context->getAuxiliaryZooKeepers())

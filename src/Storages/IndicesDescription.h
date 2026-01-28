@@ -9,7 +9,6 @@
 #include <Common/NamePrompter.h>
 
 constexpr auto IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX = "auto_minmax_index_";
-constexpr auto TEXT_INDEX_NAME = "text";
 
 namespace DB
 {
@@ -50,11 +49,8 @@ struct IndexDescription
     /// Index granularity, make sense for skip indices
     size_t granularity;
 
-    /// True if index is created implicitly using settings add_minmax_index_for_numeric_columns or add_minmax_index_for_string_columns
-    bool is_implicitly_created;
-
     /// Parse index from definition AST
-    static IndexDescription getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, bool is_implicitly_created, ContextPtr context);
+    static IndexDescription getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context);
 
     IndexDescription() = default;
 
@@ -67,14 +63,7 @@ struct IndexDescription
     /// if something change in columns.
     void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context);
 
-    bool isImplicitlyCreated() const { return is_implicitly_created; }
-
-    void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
-
-    bool isSimpleSingleColumnIndex() const;
-
-private:
-    static FieldVector parsePositionalArgumentsFromAST(const ASTPtr & arguments);
+    bool isImplicitlyCreated() const { return name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX); }
 };
 
 /// All secondary indices in storage
@@ -84,14 +73,8 @@ struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
     bool has(const String & name) const;
     /// Index with type exists
     bool hasType(const String & type) const;
-
-    /// Convert description to string. Includes only explicitly created indices
-    String explicitToString() const;
-
-    /// Convert description to string. Includes all indices.
-    /// It should only used for compatibility or debugging. Otherwise prefer explicitToString()
-    String allToString() const;
-
+    /// Convert description to string
+    String toString() const;
     /// Parse description from string
     static IndicesDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context);
 
@@ -100,8 +83,5 @@ struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
 
     Names getAllRegisteredNames() const override;
 };
-
-ASTPtr createImplicitMinMaxIndexAST(const String & column_name);
-IndexDescription createImplicitMinMaxIndexDescription(const String & column_name, const ColumnsDescription & columns, ContextPtr context);
 
 }

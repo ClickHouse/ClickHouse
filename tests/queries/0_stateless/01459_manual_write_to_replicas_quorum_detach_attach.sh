@@ -13,15 +13,8 @@ NUM_REPLICAS=6
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT -q "
         DROP TABLE IF EXISTS r$i SYNC;
-        CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r', 'r$i') ORDER BY x
-            SETTINGS replicated_max_ratio_of_wrong_parts = 1;
+        CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r', 'r$i') ORDER BY x;
     "
-    # Note about `replicated_max_ratio_of_wrong_parts`:
-    # when there is "quorum for ... is already started" error, which happens in repeated concurrent inserts of the same data,
-    # the transaction is rolled back, but the data part from filesystem is deleted lazily (in the background thread),
-    # and if the table is restarted, it will see an unexpected part at startup, which is in the filesystem,
-    # but isn't present in Keeper. While this is a potential usability flaw and a source of questions,
-    # for the purpose of this test, we consider it normal.
 done
 
 valid_exceptions_to_retry='Quorum for previous write has not been satisfied yet|Another quorum insert has been already started|Unexpected logical error while adding block'
@@ -31,7 +24,7 @@ function thread {
         while true; do
             $CLICKHOUSE_CLIENT --query "DETACH TABLE r$1"
             $CLICKHOUSE_CLIENT --query "ATTACH TABLE r$1"
-            $CLICKHOUSE_CLIENT --insert_quorum 3 --insert_quorum_parallel 0 --query "INSERT INTO r$1 SELECT $x ORDER BY ALL" 2>&1 | grep -qE "$valid_exceptions_to_retry" || break
+            $CLICKHOUSE_CLIENT --insert_quorum 3 --insert_quorum_parallel 0 --query "INSERT INTO r$1 SELECT $x" 2>&1 | grep -qE "$valid_exceptions_to_retry" || break
         done
     done
 }

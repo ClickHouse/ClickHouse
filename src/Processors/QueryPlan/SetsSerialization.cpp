@@ -11,8 +11,6 @@
 #include <Columns/ColumnSet.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
 #include <Storages/StorageSet.h>
@@ -33,9 +31,6 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_bytes_to_transfer;
-    extern const SettingsUInt64 max_rows_to_transfer;
-    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 enum class SetSerializationKind : UInt8
@@ -112,8 +107,8 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
                         num_rows, columns[col]->size());
 
                 encodeDataType(types[col], out);
-                auto serialization = types[col]->getDefaultSerialization();
-                NativeWriter::writeData(*serialization, columns[col], out, {}, 0, 0, 0);
+                auto serialization = types[col]->getSerialization(ISerialization::Kind::DEFAULT);
+                serialization->serializeBinaryBulk(*columns[col], out, 0, num_rows);
             }
         }
         else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set.get()))
@@ -180,9 +175,9 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             for (size_t col = 0; col < num_columns; ++col)
             {
                 auto type = decodeDataType(in);
-                auto serialization = type->getDefaultSerialization();
-                ColumnPtr column = type->createColumn();
-                NativeReader::readData(*serialization, column, in, {}, num_rows, nullptr, nullptr);
+                auto serialization = type->getSerialization(ISerialization::Kind::DEFAULT);
+                auto column = type->createColumn();
+                serialization->deserializeBinaryBulk(*column, in, num_rows, 0);
 
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }
@@ -210,7 +205,7 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
     for (auto & set : sets)
     {
         Identifier identifier = parseTableIdentifier(set.storage_name, context);
-        auto table_node = resolveTable(identifier, context);
+        auto * table_node = resolveTable(identifier, context);
         const auto * storage_set = typeid_cast<const StorageSet *>(table_node->getStorage().get());
         if (!storage_set)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Table {} is not a StorageSet", set.storage_name);
@@ -263,14 +258,10 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
         subqueries.push_back(std::move(future_set));
     }
 
-    SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
-    auto prepared_sets_cache = context->getPreparedSetsCache();
-
     auto step = std::make_unique<DelayedCreatingSetsStep>(
         plan.getCurrentHeader(),
         std::move(subqueries),
-        network_transfer_limits,
-        prepared_sets_cache);
+        context);
 
     plan.addStep(std::move(step));
 }

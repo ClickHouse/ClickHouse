@@ -39,8 +39,8 @@ namespace DB
  *    Oversubscription is possible: total amount of allocated slots can exceed `setMaxConcurrency(limit)`
  *    because `min` amount of slots is allocated for each query unconditionally.
  *  - "fair_round_robin":
- *    Also uses round-robin, but `min` slot are NOT holding real CPU slots.
- *    This way all `min` slots do not count into overall number of allocated slots. This leads to more fair competition.
+ *    Also uses round-robin, but `min` slot are NOT granted unconditionally, instead they are not holding real CPU slot.
+ *    This way all `min` slots do not count into overall number of allocated slots. This lead to more fair competition.
  *    There is no oversubscription: total amount of allocated slots CANNOT exceed `setMaxConcurrency(limit)`.
  */
 
@@ -73,7 +73,7 @@ public:
     private:
         friend struct Allocation; // for ctor
 
-        Slot(SlotAllocationPtr && allocation_, size_t slot_id_);
+        explicit Slot(SlotAllocationPtr && allocation_);
 
         SlotAllocationPtr allocation;
         CurrentMetrics::Increment acquired_slot_increment;
@@ -87,8 +87,8 @@ public:
         // Take one already granted slot if available. Lock-free iff there is no granted slot.
         [[nodiscard]] AcquiredSlotPtr tryAcquire() override;
 
-        // This is the same as tryAcquire(), waiting is not supported, so caller should only use it for the first `min` slots
-        [[nodiscard]] AcquiredSlotPtr acquire() override;
+        SlotCount grantedCount() const override;
+        SlotCount allocatedCount() const override;
 
     private:
         friend struct Slot; // for release()
@@ -117,7 +117,6 @@ public:
         mutable std::mutex mutex; // the following values must be accessed under this mutex
         SlotCount allocated; // allocated total (including already `released`)
         SlotCount released = 0;
-        size_t last_slot_id = 0;
 
         std::atomic<SlotCount> granted; // allocated, but not yet acquired
 
@@ -164,7 +163,7 @@ public:
     private:
         friend struct Allocation; // for ctor
 
-        Slot(SlotAllocationPtr && allocation_, bool competing_, size_t slot_id_);
+        explicit Slot(SlotAllocationPtr && allocation_, bool competing_);
 
         SlotAllocationPtr allocation;
         bool competing; // true iff we count this slot in cur_conncurrency
@@ -179,8 +178,8 @@ public:
         // Take one already granted slot if available. Lock-free iff there is no granted slot.
         [[nodiscard]] AcquiredSlotPtr tryAcquire() override;
 
-        // This is the same as tryAcquire(), waiting is not supported, so caller should only use it for the first `min` slots
-        [[nodiscard]] AcquiredSlotPtr acquire() override;
+        SlotCount grantedCount() const override;
+        SlotCount allocatedCount() const override;
 
     private:
         friend struct Slot; // for release()
@@ -210,7 +209,6 @@ public:
         mutable std::mutex mutex; // the following values must be accessed under this mutex
         SlotCount allocated; // allocated total excluding non-competing (including already `released`)
         SlotCount released = 0;
-        size_t last_slot_id = 0;
 
         std::atomic<SlotCount> noncompeting; // allocated noncompeting slots, but not yet acquired
         std::atomic<SlotCount> granted; // allocated competing slots, but not yet acquired

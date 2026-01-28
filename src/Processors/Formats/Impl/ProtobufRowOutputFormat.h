@@ -29,12 +29,14 @@ class ProtobufRowOutputFormat final : public IRowOutputFormat
 public:
     ProtobufRowOutputFormat(
         WriteBuffer & out_,
-        SharedHeader header_,
+        const Block & header_,
         const ProtobufSchemaInfo & schema_info_,
         const FormatSettings & settings_,
         bool with_length_delimiter_);
 
     String getName() const override { return "ProtobufRowOutputFormat"; }
+
+    std::string getContentType() const override { return "application/octet-stream"; }
 
 private:
     void write(const Columns & columns, size_t row_num) override;

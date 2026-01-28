@@ -89,33 +89,14 @@ public:
         virtual void invalidate() = 0;
 
         virtual QueueEntryType getType() const = 0;
-
-        virtual const Iterator * getNestedOrThis() const { return this; }
-        virtual Iterator * getNestedOrThis() { return this; }
-
-        virtual void check(const CachePriorityGuard::Lock &) const {}
     };
     using IteratorPtr = std::shared_ptr<Iterator>;
 
     virtual ~IFileCachePriority() = default;
 
-    enum class Type
-    {
-        LRU,
-        SLRU,
-        LRU_OVERCOMMIT,
-        SLRU_OVERCOMMIT,
-    };
-
-    virtual Type getType() const = 0;
-
     size_t getElementsLimit(const CachePriorityGuard::Lock &) const { return max_elements; }
 
     size_t getSizeLimit(const CachePriorityGuard::Lock &) const { return max_size; }
-    size_t getSizeLimitApprox() const { return max_size.load(std::memory_order_relaxed); }
-    virtual double getSLRUSizeRatio() const { return 0; }
-
-    virtual bool isOvercommitEviction() const { return false; }
 
     virtual size_t getSize(const CachePriorityGuard::Lock &) const = 0;
 
@@ -128,16 +109,6 @@ public:
     virtual std::string getStateInfoForLog(const CachePriorityGuard::Lock &) const = 0;
 
     virtual void check(const CachePriorityGuard::Lock &) const;
-
-    enum class IterationResult : uint8_t
-    {
-        BREAK,
-        CONTINUE,
-        REMOVE_AND_CONTINUE,
-    };
-
-    using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
-    virtual void iterate(IterateFunc func, const CachePriorityGuard::Lock &) = 0;
 
     /// Throws exception if there is not enough size to fit it.
     virtual IteratorPtr add( /// NOLINT
@@ -176,11 +147,8 @@ public:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IteratorPtr reservee,
-        bool continue_from_last_eviction_pos,
         const UserID & user_id,
         const CachePriorityGuard::Lock &) = 0;
-
-    virtual void resetEvictionPos(const CachePriorityGuard::Lock & lock) = 0;
 
     /// Collect eviction candidates sufficient to have `desired_size`
     /// and `desired_elements_num` as current cache state.
@@ -205,13 +173,6 @@ public:
         size_t max_elements_,
         double size_ratio_,
         const CachePriorityGuard::Lock &) = 0;
-
-    struct UsageStat
-    {
-        size_t size;
-        size_t elements;
-    };
-    virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
 
     /// A space holder implementation, which allows to take hold of
     /// some space in cache given that this space was freed.
@@ -249,10 +210,6 @@ public:
         bool released = false;
     };
     using HoldSpacePtr = std::unique_ptr<HoldSpace>;
-
-    virtual size_t getHoldSize() = 0;
-
-    virtual size_t getHoldElements() = 0;
 
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);

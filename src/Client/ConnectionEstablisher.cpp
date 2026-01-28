@@ -2,7 +2,6 @@
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 
 namespace ProfileEvents
@@ -27,7 +26,6 @@ namespace ErrorCodes
     extern const int DNS_ERROR;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
-    extern const int CANNOT_READ_FROM_SOCKET;
 }
 
 namespace FailPoints
@@ -51,7 +49,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     {
         ProfileEvents::increment(ProfileEvents::DistributedConnectionTries);
         result.entry = pool->get(*timeouts, settings, force_connected);
-        AsyncCallbackSetter<Connection> async_setter(&*result.entry, std::move(async_callback));
+        AsyncCallbackSetter async_setter(&*result.entry, std::move(async_callback));
 
         UInt64 server_revision = 0;
         if (table_to_check)
@@ -59,9 +57,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 
         if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
-            if (!force_connected)
-                result.entry->forceConnected(*timeouts);
-
+            result.entry->forceConnected(*timeouts);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
             result.is_usable = true;
             result.is_up_to_date = true;
@@ -124,8 +120,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
         if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
-            && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR
-            && e.code() != ErrorCodes::CANNOT_READ_FROM_SOCKET)
+            && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR)
             throw;
 
         fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);

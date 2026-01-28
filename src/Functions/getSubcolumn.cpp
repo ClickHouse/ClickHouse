@@ -48,7 +48,7 @@ private:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "The second argument of function {} should be a constant string with the name of a subcolumn", name);
 
-        return column->getDataAt(0);
+        return column->getDataAt(0).toView();
     }
 };
 
@@ -63,7 +63,7 @@ Receives the expression or identifier and constant string with the name of subco
 Returns requested subcolumn extracted from the expression.
 )",
         .examples{{"getSubcolumn", "SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')", ""}},
-        .category = FunctionDocumentation::Category::Other
+        .category{"Other"}
     });
 }
 

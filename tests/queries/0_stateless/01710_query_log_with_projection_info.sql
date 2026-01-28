@@ -33,7 +33,6 @@ SETTINGS index_granularity = 8;
 
 insert into t SELECT number, -number, number FROM numbers(10000);
 
-set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
 SELECT * FROM t WHERE id2 = 3 FORMAT Null;
 SELECT sum(id3) FROM t GROUP BY id2 FORMAT Null;
 SELECT min(id) FROM t FORMAT Null;

@@ -22,9 +22,8 @@ node1 = cluster.add_instance(
     ],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/test_multiple_disks_jbod1:size=40M", "/test_multiple_disks_jbod2:size=40M", "/test_multiple_disks_external:size=200M"],
+    tmpfs=["/jbod1:size=40M", "/jbod2:size=40M", "/external:size=200M"],
     macros={"shard": 0, "replica": 1},
-    cpu_limit=10,
 )
 
 node2 = cluster.add_instance(
@@ -36,7 +35,7 @@ node2 = cluster.add_instance(
     ],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/test_multiple_disks_jbod1:size=40M", "/test_multiple_disks_jbod2:size=40M", "/test_multiple_disks_external:size=200M"],
+    tmpfs=["/jbod1:size=40M", "/jbod2:size=40M", "/external:size=200M"],
     macros={"shard": 0, "replica": 2},
 )
 
@@ -68,35 +67,24 @@ def test_system_tables(start_cluster):
         {
             "name": "default",
             "path": "/var/lib/clickhouse/",
-            "keep_free_space": 1024,
+            "keep_free_space": "1024",
         },
         {
             "name": "jbod1",
-            "path": "/test_multiple_disks_jbod1/",
-            "keep_free_space": 0,
+            "path": "/jbod1/",
+            "keep_free_space": "0",
         },
         {
             "name": "jbod2",
-            "path": "/test_multiple_disks_jbod2/",
-            "keep_free_space": 10485760,
+            "path": "/jbod2/",
+            "keep_free_space": "10485760",
         },
         {
             "name": "external",
-            "path": "/test_multiple_disks_external/",
-            "keep_free_space": 0,
+            "path": "/external/",
+            "keep_free_space": "0",
         },
     ]
-    if node1.with_remote_database_disk:
-        db_disk_path = node1.query(
-            "SELECT path FROM system.disks WHERE name='disk_db_remote'"
-        ).strip()
-        expected_disks_data.append(
-            {
-                "name": "disk_db_remote",
-                "path": f"{db_disk_path}",
-                "keep_free_space": 0,
-            }
-        )
 
     click_disk_data = json.loads(
         node1.query("SELECT name, path, keep_free_space FROM system.disks FORMAT JSON")
@@ -109,10 +97,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "small_jbod_with_external",
             "volume_name": "main",
-            "volume_priority": 1,
+            "volume_priority": "1",
             "disks": ["jbod1"],
             "volume_type": "JBOD",
-            "max_data_part_size": 0,
+            "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -121,10 +109,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "small_jbod_with_external",
             "volume_name": "external",
-            "volume_priority": 2,
+            "volume_priority": "2",
             "disks": ["external"],
             "volume_type": "JBOD",
-            "max_data_part_size": 0,
+            "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -133,10 +121,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "small_jbod_with_external_no_merges",
             "volume_name": "main",
-            "volume_priority": 1,
+            "volume_priority": "1",
             "disks": ["jbod1"],
             "volume_type": "JBOD",
-            "max_data_part_size": 0,
+            "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -145,10 +133,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "small_jbod_with_external_no_merges",
             "volume_name": "external",
-            "volume_priority": 2,
+            "volume_priority": "2",
             "disks": ["external"],
             "volume_type": "JBOD",
-            "max_data_part_size": 0,
+            "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 1,
             "perform_ttl_move_on_insert": 1,
@@ -157,10 +145,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "one_more_small_jbod_with_external",
             "volume_name": "m",
-            "volume_priority": 1,
+            "volume_priority": "1",
             "disks": ["jbod1"],
             "volume_type": "JBOD",
-            "max_data_part_size": 0,
+            "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -169,10 +157,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "one_more_small_jbod_with_external",
             "volume_name": "e",
-            "volume_priority": 2,
+            "volume_priority": "2",
             "disks": ["external"],
             "volume_type": "JBOD",
-            "max_data_part_size": 0,
+            "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -181,10 +169,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "jbods_with_external",
             "volume_name": "main",
-            "volume_priority": 1,
+            "volume_priority": "1",
             "disks": ["jbod1", "jbod2"],
             "volume_type": "JBOD",
-            "max_data_part_size": 10485760,
+            "max_data_part_size": "10485760",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -193,10 +181,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "jbods_with_external",
             "volume_name": "external",
-            "volume_priority": 2,
+            "volume_priority": "2",
             "disks": ["external"],
             "volume_type": "JBOD",
-            "max_data_part_size": 0,
+            "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -205,10 +193,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "moving_jbod_with_external",
             "volume_name": "main",
-            "volume_priority": 1,
+            "volume_priority": "1",
             "disks": ["jbod1"],
             "volume_type": "JBOD",
-            "max_data_part_size": 0,
+            "max_data_part_size": "0",
             "move_factor": 0.7,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -217,10 +205,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "moving_jbod_with_external",
             "volume_name": "external",
-            "volume_priority": 2,
+            "volume_priority": "2",
             "disks": ["external"],
             "volume_type": "JBOD",
-            "max_data_part_size": 0,
+            "max_data_part_size": "0",
             "move_factor": 0.7,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -229,10 +217,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "default_disk_with_external",
             "volume_name": "small",
-            "volume_priority": 1,
+            "volume_priority": "1",
             "disks": ["default"],
             "volume_type": "JBOD",
-            "max_data_part_size": 2097152,
+            "max_data_part_size": "2097152",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -241,10 +229,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "default_disk_with_external",
             "volume_name": "big",
-            "volume_priority": 2,
+            "volume_priority": "2",
             "disks": ["external"],
             "volume_type": "JBOD",
-            "max_data_part_size": 20971520,
+            "max_data_part_size": "20971520",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -253,10 +241,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "special_warning_policy",
             "volume_name": "special_warning_zero_volume",
-            "volume_priority": 1,
+            "volume_priority": "1",
             "disks": ["default"],
             "volume_type": "JBOD",
-            "max_data_part_size": 0,
+            "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -265,10 +253,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "special_warning_policy",
             "volume_name": "special_warning_default_volume",
-            "volume_priority": 2,
+            "volume_priority": "2",
             "disks": ["external"],
             "volume_type": "JBOD",
-            "max_data_part_size": 0,
+            "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -277,10 +265,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "special_warning_policy",
             "volume_name": "special_warning_small_volume",
-            "volume_priority": 3,
+            "volume_priority": "3",
             "disks": ["jbod1"],
             "volume_type": "JBOD",
-            "max_data_part_size": 1024,
+            "max_data_part_size": "1024",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -289,10 +277,10 @@ def test_system_tables(start_cluster):
         {
             "policy_name": "special_warning_policy",
             "volume_name": "special_warning_big_volume",
-            "volume_priority": 4,
+            "volume_priority": "4",
             "disks": ["jbod2"],
             "volume_type": "JBOD",
-            "max_data_part_size": 1024000000,
+            "max_data_part_size": "1024000000",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
             "perform_ttl_move_on_insert": 1,
@@ -765,7 +753,7 @@ def test_background_move(start_cluster, name, engine):
         )
 
         # first (oldest) part was moved to external
-        assert path.startswith("/test_multiple_disks_external")
+        assert path.startswith("/external")
 
         node1.query(f"SYSTEM START MERGES {name}")
 
@@ -929,7 +917,7 @@ def test_alter_move(start_cluster, name, engine):
         node1.query("INSERT INTO {} VALUES(toDate('2019-03-16'), 66)".format(name))
         node1.query("INSERT INTO {} VALUES(toDate('2019-04-10'), 42)".format(name))
         node1.query("INSERT INTO {} VALUES(toDate('2019-04-11'), 43)".format(name))
-        assert node1.query("CHECK TABLE " + name + " SETTINGS check_query_single_value_result = 1") == "1\n"
+        assert node1.query("CHECK TABLE " + name) == "1\n"
 
         used_disks = get_used_disks_for_table(node1, name)
         assert all(
@@ -948,7 +936,7 @@ def test_alter_move(start_cluster, name, engine):
                 name, first_part
             )
         )
-        assert node1.query("CHECK TABLE " + name + " SETTINGS check_query_single_value_result = 1") == "1\n"
+        assert node1.query("CHECK TABLE " + name) == "1\n"
         disk = node1.query(
             "SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}' and active = 1".format(
                 name, first_part
@@ -956,14 +944,14 @@ def test_alter_move(start_cluster, name, engine):
         ).strip()
         assert disk == "external"
         assert get_path_for_part_from_part_log(node1, name, first_part).startswith(
-            "/test_multiple_disks_external"
+            "/external"
         )
 
         time.sleep(1)
         node1.query(
             "ALTER TABLE {} MOVE PART '{}' TO DISK 'jbod1'".format(name, first_part)
         )
-        assert node1.query("CHECK TABLE " + name + " SETTINGS check_query_single_value_result = 1") == "1\n"
+        assert node1.query("CHECK TABLE " + name) == "1\n"
         disk = node1.query(
             "SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}' and active = 1".format(
                 name, first_part
@@ -971,14 +959,14 @@ def test_alter_move(start_cluster, name, engine):
         ).strip()
         assert disk == "jbod1"
         assert get_path_for_part_from_part_log(node1, name, first_part).startswith(
-            "/test_multiple_disks_jbod1"
+            "/jbod1"
         )
 
         time.sleep(1)
         node1.query(
             "ALTER TABLE {} MOVE PARTITION 201904 TO VOLUME 'external'".format(name)
         )
-        assert node1.query("CHECK TABLE " + name + " SETTINGS check_query_single_value_result = 1") == "1\n"
+        assert node1.query("CHECK TABLE " + name) == "1\n"
         disks = (
             node1.query(
                 "SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904' and active = 1".format(
@@ -991,13 +979,13 @@ def test_alter_move(start_cluster, name, engine):
         assert len(disks) == 2
         assert all(d == "external" for d in disks)
         assert all(
-            path.startswith("/test_multiple_disks_external")
+            path.startswith("/external")
             for path in get_paths_for_partition_from_part_log(node1, name, "201904")[:2]
         )
 
         time.sleep(1)
         node1.query("ALTER TABLE {} MOVE PARTITION 201904 TO DISK 'jbod2'".format(name))
-        assert node1.query("CHECK TABLE " + name + " SETTINGS check_query_single_value_result = 1") == "1\n"
+        assert node1.query("CHECK TABLE " + name) == "1\n"
         disks = (
             node1.query(
                 "SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904' and active = 1".format(
@@ -1010,7 +998,7 @@ def test_alter_move(start_cluster, name, engine):
         assert len(disks) == 2
         assert all(d == "jbod2" for d in disks)
         assert all(
-            path.startswith("/test_multiple_disks_jbod2")
+            path.startswith("/jbod2")
             for path in get_paths_for_partition_from_part_log(node1, name, "201904")[:2]
         )
 
@@ -1607,15 +1595,15 @@ def test_freeze(start_cluster):
         node1.query("ALTER TABLE freezing_table FREEZE PARTITION 201903")
         # check shadow files (backups) exists
         node1.exec_in_container(
-            ["bash", "-c", "find /test_multiple_disks_jbod1/shadow -name '*.mrk2' | grep '.*'"]
+            ["bash", "-c", "find /jbod1/shadow -name '*.mrk2' | grep '.*'"]
         )
         node1.exec_in_container(
-            ["bash", "-c", "find /test_multiple_disks_external/shadow -name '*.mrk2' | grep '.*'"]
+            ["bash", "-c", "find /external/shadow -name '*.mrk2' | grep '.*'"]
         )
 
     finally:
         node1.query("DROP TABLE IF EXISTS default.freezing_table SYNC")
-        node1.exec_in_container(["rm", "-rf", "/test_multiple_disks_jbod1/shadow", "/test_multiple_disks_external/shadow"])
+        node1.exec_in_container(["rm", "-rf", "/jbod1/shadow", "/external/shadow"])
 
 
 def test_kill_while_insert(start_cluster):
@@ -1660,10 +1648,7 @@ def test_kill_while_insert(start_cluster):
         )
         long_select.start()
 
-        sleep_start_time = time.time()
         time.sleep(0.5)
-        # long SELECT query might have finished if sleep was too long
-        assert time.time() - sleep_start_time < 1.5
 
         node1.query(
             "ALTER TABLE {name} MOVE PARTITION tuple() TO DISK 'external'".format(

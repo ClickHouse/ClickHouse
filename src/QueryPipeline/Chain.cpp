@@ -1,7 +1,6 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/Chain.h>
-#include <Core/Block.h>
 
 namespace DB
 {
@@ -101,29 +100,13 @@ void Chain::addSink(ProcessorPtr processor)
     processors.emplace_back(std::move(processor));
 }
 
-Chain & Chain::appendChain(Chain chain)
+void Chain::appendChain(Chain chain)
 {
     connect(getOutputPort(), chain.getInputPort());
     processors.splice(processors.end(), std::move(chain.processors));
     attachResources(chain.detachResources());
     num_threads += chain.num_threads;
-    return *this;
 }
-
-Chain Chain::concat(Chain lhs, Chain rhs)
-{
-    if (!lhs.processors.empty() && !rhs.processors.empty())
-    {
-        lhs.appendChain(std::move(rhs));
-        return lhs;
-    }
-
-    if (lhs.processors.empty())
-        return rhs;
-
-    return lhs;
-}
-
 
 IProcessor & Chain::getSource()
 {
@@ -154,19 +137,9 @@ const Block & Chain::getInputHeader() const
     return getInputPort().getHeader();
 }
 
-const SharedHeader & Chain::getInputSharedHeader() const
-{
-    return getInputPort().getSharedHeader();
-}
-
 const Block & Chain::getOutputHeader() const
 {
     return getOutputPort().getHeader();
-}
-
-const SharedHeader & Chain::getOutputSharedHeader() const
-{
-    return getOutputPort().getSharedHeader();
 }
 
 void Chain::reset()

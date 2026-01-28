@@ -4,7 +4,6 @@
 #include <shared_mutex>
 
 #include <Disks/IDisk.h>
-#include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/IStorage.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
@@ -47,16 +46,7 @@ public:
     ~StorageLog() override;
     String getName() const override { return engine_name; }
 
-    Pipe createReadingPipe(
-        const Names & column_names,
-        ContextPtr local_context,
-        const StorageSnapshotPtr & storage_snapshot,
-        size_t max_block_size,
-        size_t num_streams
-    );
-
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -79,8 +69,8 @@ public:
     bool supportsSubcolumns() const override { return true; }
     ColumnSizeByName getColumnSizes() const override;
 
-    std::optional<UInt64> totalRows(ContextPtr) const override;
-    std::optional<UInt64> totalBytes(ContextPtr) const override;
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -174,39 +164,6 @@ private:
     const size_t max_compress_block_size;
 
     mutable std::shared_timed_mutex rwlock;
-};
-
-class ReadFromStorageLogStep : public ISourceStep
-{
-public:
-    ReadFromStorageLogStep(
-        const Names & column_names_,
-        ContextPtr local_context_,
-        StorageLog & storage_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        size_t max_block_size_,
-        size_t num_streams_
-    );
-
-    ReadFromStorageLogStep(const ReadFromStorageLogStep &) = default;
-    ReadFromStorageLogStep(ReadFromStorageLogStep &&) = default;
-
-    String getName() const override { return "ReadFromStorageLog"; }
-
-    QueryPlanStepPtr clone() const override
-    {
-        return std::make_unique<ReadFromStorageLogStep>(*this);
-    }
-
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
-
-private:
-    const Names column_names;
-    ContextPtr local_context;
-    StorageLog & storage;
-    const StorageSnapshotPtr storage_snapshot;
-    const size_t max_block_size;
-    const size_t num_streams;
 };
 
 }

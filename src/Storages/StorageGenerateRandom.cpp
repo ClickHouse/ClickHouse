@@ -31,7 +31,6 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/SipHash.h>
 #include <Common/intExp10.h>
 #include <Common/randomSeed.h>
@@ -110,7 +109,7 @@ size_t estimateValueSize(
     {
         case TypeIndex::String:
         {
-            return max_string_length + sizeof(UInt64);
+            return max_string_length + sizeof(size_t) + 1;
         }
 
         /// The logic in this function should reflect the logic of fillColumnWithRandomData.
@@ -158,7 +157,7 @@ size_t estimateValueSize(
 }
 
 ColumnPtr fillColumnWithRandomData(
-    DataTypePtr type,
+    const DataTypePtr type,
     UInt64 limit,
     UInt64 max_array_length,
     UInt64 max_string_length,
@@ -183,7 +182,7 @@ ColumnPtr fillColumnWithRandomData(
             {
                 size_t length = rng() % (max_string_length + 1);    /// Slow
 
-                IColumn::Offset next_offset = offset + length;
+                IColumn::Offset next_offset = offset + length + 1;
                 data_to.resize(next_offset);
                 offsets_to[row_num] = next_offset;
 
@@ -206,7 +205,10 @@ ColumnPtr fillColumnWithRandomData(
                     data_to_ptr[pos + 3] = 32 + ((rand4 * 95) >> 16);
 
                     /// NOTE gcc failed to vectorize this code (aliasing of char?)
+                    /// TODO Implement SIMD optimizations from Danila Kutenin.
                 }
+
+                data_to[offset + length] = 0;
 
                 offset = next_offset;
             }
@@ -556,7 +558,7 @@ public:
         Block block_header_,
         ContextPtr context_,
         GenerateRandomStatePtr state_)
-        : ISource(std::make_shared<const Block>(Nested::flattenNested(prepareBlockToFill(block_header_))))
+        : ISource(Nested::flattenNested(prepareBlockToFill(block_header_)))
         , block_size(block_size_)
         , max_array_length(max_array_length_)
         , max_string_length(max_string_length_)
@@ -710,6 +712,7 @@ Pipe StorageGenerateRandom::read(
         size_t estimated_block_size_bytes = 0;
         if (common::mulOverflow(max_block_size, estimated_row_size_bytes, estimated_block_size_bytes))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large estimated block size in GenerateRandom table: its estimation leads to 64bit overflow");
+        chassert(estimated_block_size_bytes != 0);
 
         if (estimated_block_size_bytes > preferred_block_size_bytes)
         {

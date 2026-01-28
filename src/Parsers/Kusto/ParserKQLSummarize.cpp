@@ -3,13 +3,24 @@
 #include <vector>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParserBase.h>
+#include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLSummarize.h>
 #include <Parsers/Kusto/Utilities.h>
+#include <Parsers/ParserSampleRatio.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserTablesInSelectQuery.h>
+#include <Parsers/ParserWithElement.h>
 
 #include <fmt/format.h>
 
@@ -83,7 +94,7 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             {
                 String alias;
                 String aggregate_fun = String(begin_pos->begin, begin_pos->end);
-                if (!aggregate_functions.contains(aggregate_fun))
+                if (aggregate_functions.find(aggregate_fun) == aggregate_functions.end())
                 {
                     alias = fmt::format("Columns{}", new_column_index);
                     ++new_column_index;
