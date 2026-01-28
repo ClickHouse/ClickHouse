@@ -84,6 +84,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
+    extern const int LOGICAL_ERROR;
 }
 
 Connection::~Connection()
@@ -1329,7 +1330,7 @@ Packet Connection::receivePacket()
         /// If we already disconnected.
         if (!in)
         {
-            throw Exception(ErrorCodes::NETWORK_ERROR, "Connection to {} is terminated", getDescription());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection to {} is terminated", getDescription());
         }
 
         Packet res;
