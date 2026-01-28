@@ -343,7 +343,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot flush" \
            -e "Container already exists" \
            -e "doesn't have metadata version on disk" \
-    clickhouse-server.upgrade.log \
+    /var/log/clickhouse-server/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | zgrep -Fa "<Error>" > /test_output/upgrade_error_messages.txt \
     && echo -e "Error message in clickhouse-server.log (see upgrade_error_messages.txt)$FAIL$(head_escaped /test_output/upgrade_error_messages.txt)" \

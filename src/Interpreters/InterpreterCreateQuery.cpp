@@ -1931,8 +1931,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
         else
         {
+            std::vector<std::string> directory_contents;
+            for (const auto& entry : fs::recursive_directory_iterator(full_data_path))
+                directory_contents.push_back(entry.path().string());
             throw Exception(storage_already_exists_error_code,
-                "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
+                "Directory for {} data {} already exists. Content:\n{}", Poco::toLower(storage_name), String(data_path), fmt::join(directory_contents, "\n"));
         }
     }
 
