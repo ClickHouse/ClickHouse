@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-async-insert
+# no-async-insert: Test expects new part after connection drop
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -29,13 +32,28 @@ done
 
 PIPELINE_PID=$!
 
-sleep 1
+sleep 3
 
 kill -9 $PIPELINE_PID 2>/dev/null
 
 wait $PIPELINE_PID 2>/dev/null
 
-parts_count=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.parts WHERE table='${CLICKHOUSE_TABLE}' AND active AND database='${CLICKHOUSE_DATABASE}'")
+
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, part_log;"
+
+
+parts_count=$(${CLICKHOUSE_CLIENT} --query "
+SELECT count(*) 
+FROM system.part_log 
+WHERE table = '${CLICKHOUSE_TABLE}' 
+  AND event_type = 'NewPart'
+  AND query_id = (
+        SELECT argMax(query_id, event_time) 
+        FROM system.query_log 
+        WHERE query LIKE CONCAT('%INSERT INTO ', '${CLICKHOUSE_TABLE}', '%') 
+          AND current_database = currentDatabase()
+    )
+")
 
 echo "Number of parts created: ${parts_count}"
 
