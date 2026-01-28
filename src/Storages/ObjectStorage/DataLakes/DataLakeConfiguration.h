@@ -367,6 +367,11 @@ public:
         ready_object_storage = disk->getObjectStorage();
     }
 
+    virtual bool supportsPrewhere() const
+    {
+        return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
+    }
+
 private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
