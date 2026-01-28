@@ -22,26 +22,24 @@ String ASTQueryWithTableAndOutput::getTable() const
 
 void ASTQueryWithTableAndOutput::setDatabase(const String & name)
 {
-    if (getDatabaseIndex() != INVALID_INDEX)
+    if (!name.empty())
+        setDatabaseAst(make_intrusive<ASTIdentifier>(name));
+    else
     {
         /// Note: we don't remove from children for simplicity, just invalidate the index
         setDatabaseIndex(INVALID_INDEX);
     }
-
-    if (!name.empty())
-        setDatabaseAst(make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTQueryWithTableAndOutput::setTable(const String & name)
 {
-    if (getTableIndex() != INVALID_INDEX)
+    if (!name.empty())
+        setTableAst(make_intrusive<ASTIdentifier>(name));
+    else
     {
         /// Note: we don't remove from children for simplicity, just invalidate the index
         setTableIndex(INVALID_INDEX);
     }
-
-    if (!name.empty())
-        setTableAst(make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTQueryWithTableAndOutput::cloneTableOptions(ASTQueryWithTableAndOutput & cloned) const

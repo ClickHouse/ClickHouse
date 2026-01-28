@@ -122,11 +122,7 @@ protected:
     UInt8 compression_index = INVALID_INDEX;
     UInt8 compression_level_index = INVALID_INDEX;
 
-    UInt8 addChildAndGetIndex(ASTPtr node)
-    {
-        children.push_back(std::move(node));
-        return static_cast<UInt8>(children.size() - 1);
-    }
+    UInt8 addChildAndGetIndex(ASTPtr node);
 
     void resetOutputIndices()
     {

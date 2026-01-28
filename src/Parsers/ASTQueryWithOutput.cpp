@@ -6,6 +6,19 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
+UInt8 ASTQueryWithOutput::addChildAndGetIndex(ASTPtr node)
+{
+    children.push_back(std::move(node));
+    if (children.size() >= INVALID_INDEX)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many children in ASTQueryWithOutput");
+    return static_cast<UInt8>(children.size() - 1);
+}
+
 void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
 {
     /// Reset indices first since children was cleared
