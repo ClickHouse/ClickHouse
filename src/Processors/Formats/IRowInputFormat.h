@@ -27,7 +27,7 @@ struct RowInputFormatParams
     size_t max_block_size_bytes = 0;
     size_t min_block_size_rows = 0;
     size_t min_block_size_bytes = 0;
-
+    size_t max_block_wait_ms = 0;
     UInt64 allow_errors_num = 0;
     Float64 allow_errors_ratio = 0;
 
@@ -101,6 +101,7 @@ private:
 
     BlockMissingValues block_missing_values;
     size_t approx_bytes_read_for_chunk = 0;
+    bool got_connection_exception = false;
 };
 
 }
