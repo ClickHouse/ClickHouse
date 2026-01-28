@@ -234,7 +234,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
     if (type_name == f_double)
         return std::make_shared<DataTypeFloat64>();
     if (type_name == f_date)
-        return std::make_shared<DataTypeDate>();
+        return std::make_shared<DataTypeDate32>();
     if (type_name == f_time)
         return std::make_shared<DataTypeInt64>();
     if (type_name == f_timestamp)
