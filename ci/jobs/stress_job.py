@@ -202,7 +202,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     )
     logging.info("Going to run stress test: %s", run_command)
 
-    _ = Shell.run(run_command)
+    exit_code = Shell.run(run_command)
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
@@ -272,6 +272,11 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     if not r.is_ok() and is_oom:
         r.set_status(Result.Status.SUCCESS)
         r.set_info("OOM error (allowed in stress tests)")
+
+    if r.is_ok() and exit_code != 0:
+        r.set_failed().set_info(
+            f"Unknown error: Test script failed with exit code {exit_code}"
+        )
 
     if not r.is_ok():
         r.set_files(additional_logs)

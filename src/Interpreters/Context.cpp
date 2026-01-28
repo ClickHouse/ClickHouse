@@ -6851,13 +6851,6 @@ void Context::setBlockMarshallingCallback(BlockMarshallingCallback && callback)
     block_marshalling_callback = std::move(callback);
 }
 
-RuntimeDataflowStatisticsCacheUpdaterPtr Context::getRuntimeDataflowStatisticsCacheUpdater() const
-{
-    if (!dataflow_cache_updater)
-        dataflow_cache_updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>();
-    return dataflow_cache_updater;
-}
-
 void Context::setParallelReplicasGroupUUID(UUID uuid)
 {
     parallel_replicas_group_uuid = uuid;

@@ -692,7 +692,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             /// Create a table.
             query_for_logging = "(create target table)";
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-            std::unique_ptr<CurrentThread::QueryScope> query_scope;
+            CurrentThread::QueryScope query_scope;
             std::tie(refresh_query, query_scope) = view->prepareRefresh(append, refresh_context, table_to_drop);
             new_table_id = refresh_query->table_id;
 
