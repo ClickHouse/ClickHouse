@@ -489,7 +489,18 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 nested_need_parens.allow_moving_operators_before_parens = false;
                 arguments->children[0]->format(ostr, settings, state, nested_need_parens);
                 ostr << '[';
-                arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
+                const auto * slice_tuple = arguments->children[1]->as<ASTFunction>();
+                if (slice_tuple && slice_tuple->name == "tuple" && slice_tuple->is_operator
+                    && slice_tuple->arguments && slice_tuple->arguments->children.size() == 2)
+                {
+                    slice_tuple->arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
+                    ostr << ':';
+                    slice_tuple->arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
+                }
+                else
+                {
+                    arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
+                }
                 ostr << ']';
                 written = true;
 
