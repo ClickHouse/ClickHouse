@@ -124,11 +124,12 @@ void InstrumentationManager::ensureInitialization()
     {
         __xray_init();
         parseInstrumentationMap();
-        chassert(__xray_set_handler(&InstrumentationManager::dispatchHandler) != 0);
+        if (__xray_set_handler(&InstrumentationManager::dispatchHandler) == 0)
+            throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error setting handler");
     });
 }
 
-void handleXRayPatchingStatus(XRayPatchingStatus status, Int32 function_id, const String & method)
+static void handleXRayPatchingStatus(XRayPatchingStatus status, Int32 function_id, const String & method)
 {
     switch (status)
     {
@@ -136,8 +137,11 @@ void handleXRayPatchingStatus(XRayPatchingStatus status, Int32 function_id, cons
             throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error {} the function {}: XRay failed", method, function_id);
         case XRayPatchingStatus::NOT_INITIALIZED:
             throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error {} the function {}: XRay not initialized", method, function_id);
+
+        /// In case of SUCCESS or ONGOING, there's nothing else to warn about. Everything's sound.
         case XRayPatchingStatus::SUCCESS: [[fallthrough]];
         case XRayPatchingStatus::ONGOING:
+            return;
     }
 }
 
