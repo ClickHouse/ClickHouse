@@ -1,6 +1,8 @@
 #include <string_view>
 #include <unordered_map>
 
+#include <base/scope_guard.h>
+
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
 
@@ -2421,23 +2423,17 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// Set up map to capture literal token positions for regex highlighting.
     /// Only needed when highlighting is enabled and no map is already set.
-    std::optional<LiteralTokenMap> local_token_map;
+    LiteralTokenMap local_token_map;
+    SCOPE_EXIT({ expected.literal_token_map = nullptr; });
     if (expected.enable_highlighting && !expected.literal_token_map)
-    {
-        local_token_map.emplace();
-        expected.literal_token_map = &*local_token_map;
-    }
+        expected.literal_token_map = &local_token_map;
 
     auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
     if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
     {
         highlightRegexps(node, expected, 0);
-        if (local_token_map)
-            expected.literal_token_map = nullptr;
         return true;
     }
-    if (local_token_map)
-        expected.literal_token_map = nullptr;
     return false;
 }
 
