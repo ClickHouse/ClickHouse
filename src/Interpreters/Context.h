@@ -188,6 +188,7 @@ class AsyncLoader;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
 struct ICgroupsReader;
+class OpenPolicyAgentAccess;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
@@ -349,6 +350,8 @@ protected:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
+    mutable bool opa_enabled = true;
+    mutable std::shared_ptr<const OpenPolicyAgentAccess> open_policy_agent;
     String current_database;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
@@ -818,6 +821,7 @@ public:
     void checkAccess(const AccessRightsElements & elements) const;
 
     std::shared_ptr<const ContextAccessWrapper> getAccess() const;
+    std::shared_ptr<const OpenPolicyAgentAccess> getOpenPolicyAgent() const;
 
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
