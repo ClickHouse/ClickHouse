@@ -869,7 +869,10 @@ BlockIO InterpreterSystemQuery::execute()
 
             std::vector<StorageID> tables;
             for (const auto & [database, table]: query.tables)
+            {
                 tables.push_back(getContext()->resolveStorageID({database, table}, Context::ResolveOrdinary));
+                getContext()->getQueryContext()->addQueryAccessInfo(tables.back(), {});
+            }
 
             queue->flush(tables);
             break;
@@ -1329,9 +1332,9 @@ void InterpreterSystemQuery::dropStorageReplicasFromDatabase(const String & quer
 }
 
 DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
-    const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
+    const String & zookeeper_name, const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
 {
-    auto zookeeper = getContext()->getZooKeeper();
+    auto zookeeper = getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
 
     String metadata_path = zookeeper_path + "/metadata";
     if (!zookeeper->exists(metadata_path))
@@ -1578,7 +1581,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
+            DatabaseReplicated::dropReplica(
+                replicated, replicated->getZooKeeperName(), replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated, cannot drop replica", query.getDatabase());
@@ -1605,7 +1609,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
+            DatabaseReplicated::dropReplica(
+                replicated, replicated->getZooKeeperName(), replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
             LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
     }
@@ -1638,6 +1643,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
                 executeQuery(drop_query, drop_ctx);
             });
             auto database = restoreDatabaseFromKeeperPath(
+                /*zookeeper_name=*/query.zk_name,
                 /*zookeeper_path=*/query.replica_zk_path,
                 /*full_replica_name=*/full_replica_name,
                 /*restoring_database_name=*/restoring_database_name);
@@ -1648,8 +1654,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             }
         }
 
-        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
-        LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.replica_zk_path);
+        DatabaseReplicated::dropReplica(nullptr, query.zk_name, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
+        LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.full_replica_zk_path);
     }
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
