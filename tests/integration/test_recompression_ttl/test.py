@@ -165,7 +165,7 @@ def test_recompression_replicated(started_cluster):
         node.query(
             "CREATE TABLE recompression_replicated (d DateTime, key UInt64, data String) \
         ENGINE ReplicatedMergeTree('/test/rr', '{}') ORDER BY tuple() \
-        TTL d + INTERVAL 10 SECOND RECOMPRESS CODEC(ZSTD(13)) SETTINGS merge_with_recompression_ttl_timeout = 0".format(
+        TTL d + INTERVAL 10 SECOND RECOMPRESS CODEC(ZSTD(13)) SETTINGS merge_with_recompression_ttl_timeout = 0, max_postpone_time_for_waiting_ms = 0".format(
                 i + 1
             )
         )
