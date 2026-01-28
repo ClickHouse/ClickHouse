@@ -50,8 +50,12 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
             visitChildren(describe_query->table_expression);
         else if (auto * create_user_query = dynamic_cast<ASTCreateUserQuery *>(ast.get()))
         {
-            ASTPtr names = create_user_query->names;
-            visitChildren(names);
+            if (create_user_query->names)
+            {
+                ASTPtr names = create_user_query->names;
+                visitChildren(names);
+            }
+            visitChildren(ast);
         }
         else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get());
                  create_query && create_query->targets && create_query->targets->hasTableASTWithQueryParams(ViewTarget::To))
