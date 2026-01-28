@@ -82,6 +82,12 @@ def parse_args():
         type=int,
     )
     parser.add_argument(
+        "--session_timeout",
+        help="Optional. Session timeout in seconds",
+        default=None,
+        type=int,
+    )
+    parser.add_argument(
         "--param",
         help=(
             "Optional. Comma-separated KEY=VALUE pairs to inject as environment "
@@ -386,6 +392,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
     failed_tests_files = []
 
     has_error = False
+    if args.session_timeout:
+        session_timeout = args.session_timeout
     if not is_targeted_check:
         session_timeout = 5400
     else:
