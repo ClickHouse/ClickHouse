@@ -271,11 +271,11 @@ void HTTPHandler::processQuery(
 
         if (has_external_data)
         {
-            /// For external data we have unspecified parameters which literally are {'<temp_table_name>_format', '<temp_table_name>_types', '<temp_table_name>_structure'}.
+            /// For external data we have unspecified parameters which literally are {'<temp_table_name>_format', '<temp_table_name>_types', '<temp_table_name>_structure', '<temp_table_name>_decompress', '<temp_table_name>_disable_checksum'}.
             /// That parameters are not supposed to be used in the query as a settings. They have to be skipped.
             /// But we could not just skip all parameters with suffixes '_format', '_types', '_structure',
             /// because some of them are used in the query as a settings, like 'date_time_input_format',
-            static const Names reserved_param_suffixes = {"_format", "_types", "_structure"};
+            static const Names reserved_param_suffixes = {"_format", "_types", "_structure", "_decompress", "_disable_checksum"};
             for (const String & suffix : reserved_param_suffixes)
             {
                 if (endsWith(name, suffix))
