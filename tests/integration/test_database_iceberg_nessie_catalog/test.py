@@ -502,3 +502,52 @@ def test_drop_table(started_cluster):
 
     result = node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
     assert test_table_name not in result
+
+
+def test_three_part_identifiers(started_cluster):
+    """Test 3-part identifiers (catalog.namespace.table) for DataLakeCatalog databases
+    
+    verifies that queries like SELECT FROM catalog.namespace.table work without
+    needing to quote the table name as `namespace.table`
+    """
+    node = started_cluster.instances["node1"]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_3part_{uuid.uuid4().hex[:8]}"
+    test_namespace = f"{test_ref}_ns"
+
+    catalog.create_namespace((test_namespace,))
+
+    test_table_name = f"{test_ref}_tbl"
+    test_table_identifier = (test_namespace, test_table_name)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=DoubleType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+
+    table = catalog.create_table(
+        test_table_identifier,
+        schema=schema,
+        properties={"write.metadata.compression-codec": "none"},
+    )
+
+    data = [{"id": float(i), "data": f"row_{i}"} for i in range(5)]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    result = node.query(f"SELECT id, data FROM {CATALOG_NAME}.{test_namespace}.{test_table_name} ORDER BY id")
+    expected = "\n".join([f"{i}\trow_{i}" for i in range(5)])
+    assert result.strip() == expected, f"SELECT failed: got {result}, expected {expected}"
+
+    result = node.query(f"EXISTS TABLE {CATALOG_NAME}.{test_namespace}.{test_table_name}")
+    assert result.strip() == "1", f"EXISTS TABLE failed: got {result}"
+
+    result = node.query(f"DESCRIBE TABLE {CATALOG_NAME}.{test_namespace}.{test_table_name}")
+    assert "id" in result and "data" in result, f"DESCRIBE failed: got {result}"
+
+    result = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.{test_namespace}.{test_table_name}")
+    assert f"`{test_namespace}.{test_table_name}`" in result, f"SHOW CREATE TABLE failed: got {result}"

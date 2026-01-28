@@ -161,10 +161,10 @@ void IStorageCluster::read(
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
-    data.remote_table.database = context->getCurrentDatabase();
+    data.remote_table.database = context->getCurrentDatabase().database;
     data.remote_table.table = getName();
     RestoreQualifiedNamesVisitor(data).visit(query_to_send);
-    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase(),
+    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase().database,
                                       /* only_replace_current_database_function_= */false,
                                       /* only_replace_in_join_= */true);
     visitor.visit(query_to_send);

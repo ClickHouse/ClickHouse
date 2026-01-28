@@ -34,7 +34,7 @@ BlockIO InterpreterShowAccessEntitiesQuery::execute()
 String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
 {
     auto & query = query_ptr->as<ASTShowAccessEntitiesQuery &>();
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabase().database);
 
     String origin;
     String expr = "*";

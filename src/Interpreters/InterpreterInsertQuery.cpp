@@ -202,7 +202,7 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     /// Form the block based on the column names from the query
-    const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase(), table, metadata_snapshot, query.columns);
+    const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase().database, table, metadata_snapshot, query.columns);
     Names names;
     names.reserve(columns_ast->children.size());
     for (const auto & identifier : columns_ast->children)
@@ -1016,7 +1016,7 @@ void InterpreterInsertQuery::setInsertContextValues(StoragePtr table)
     std::optional<Names> insert_columns;
     if (insert_query.columns)
     {
-        const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(), insert_query.columns);
+        const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase().database, table, table->getInMemoryMetadataPtr(), insert_query.columns);
         Names names;
         names.reserve(columns_ast->children.size());
         for (const auto & identifier : columns_ast->children)

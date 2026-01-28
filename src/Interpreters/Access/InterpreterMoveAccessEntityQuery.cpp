@@ -26,7 +26,7 @@ BlockIO InterpreterMoveAccessEntityQuery::execute()
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, getContext());
 
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabase().database);
 
     std::vector<UUID> ids;
     if (query.type == AccessEntityType::ROW_POLICY)

@@ -1,5 +1,6 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 
@@ -31,6 +32,19 @@ bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String &
 
         tryGetIdentifierNameInto(database, database_str);
         tryGetIdentifierNameInto(table, table_str);
+
+        /// Support db.namespace1.namespace2...table for DataLakeCatalog databases
+        /// Join all additional parts into the table name
+        while (s_dot.ignore(pos))
+        {
+            ASTPtr next_part;
+            if (!table_parser.parse(pos, next_part, expected))
+                return false;
+
+            String next_part_name;
+            tryGetIdentifierNameInto(next_part, next_part_name);
+            table_str += "." + next_part_name;
+        }
     }
     else
     {
@@ -54,6 +68,21 @@ bool parseDatabaseAndTableAsAST(IParser::Pos & pos, Expected & expected, ASTPtr 
         database = table;
         if (!table_parser.parse(pos, table, expected))
             return false;
+
+        /// Support db.namespace1.namespace2...table for DataLakeCatalog databases
+        /// Join all additional parts into the table name
+        while (s_dot.ignore(pos, expected))
+        {
+            ASTPtr next_part;
+            if (!table_parser.parse(pos, next_part, expected))
+                return false;
+
+            String current_table_name;
+            String next_part_name;
+            tryGetIdentifierNameInto(table, current_table_name);
+            tryGetIdentifierNameInto(next_part, next_part_name);
+            table = make_intrusive<ASTIdentifier>(current_table_name + "." + next_part_name);
+        }
     }
 
     return true;
@@ -112,9 +141,25 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
                 }
                 if (identifier_parser.parse(pos, ast, expected))
                 {
-                    /// db.table
+                    /// db.table (or db.namespace1.namespace2...table)
                     database = std::move(first_identifier);
                     table = getIdentifierName(ast);
+
+                    /// Support db.namespace1.namespace2...table for DataLakeCatalog databases
+                    /// Join all additional parts into the table name
+                    while (ParserToken{TokenType::Dot}.ignore(pos, expected))
+                    {
+                        if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                        {
+                            /// db.namespace.*
+                            wildcard = true;
+                            return true;
+                        }
+                        if (!identifier_parser.parse(pos, ast, expected))
+                            return false;
+                        table += "." + getIdentifierName(ast);
+                    }
+
                     if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                         wildcard = true;
 
