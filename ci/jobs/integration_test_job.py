@@ -155,8 +155,10 @@ def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
         if result.stderr:
             print(result.stderr, flush=True)
 
+
 FLAKY_CHECK_TEST_REPEAT_COUNT = 3
 FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
+
 
 def get_parallel_sequential_tests_to_run(
     batch_num: int,
