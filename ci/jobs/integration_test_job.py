@@ -82,7 +82,7 @@ def parse_args():
         type=int,
     )
     parser.add_argument(
-        "--session_timeout",
+        "--session-timeout",
         help="Optional. Session timeout in seconds",
         default=None,
         type=int,
