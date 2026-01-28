@@ -172,12 +172,16 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 
     auto current_db_info = context->getCurrentDatabase();
     const String & current_database = current_db_info.database;
-
-    StorageID storage_id = context->tryResolveStorageID(StorageID(database_name, table_name));
+    bool is_current_db_datalake = DatabaseCatalog::instance().isDatalakeCatalog(current_database);
 
     StoragePtr storage;
     TableLockHolder storage_lock;
     bool is_temporary_table = false;
+
+    /// for datalake context, we might need fallback resolution in case we have namespaces
+    StorageID storage_id = is_current_db_datalake
+        ? context->tryResolveStorageID(StorageID(database_name, table_name))
+        : context->resolveStorageID(StorageID(database_name, table_name));
 
     if (storage_id)
     {
@@ -205,7 +209,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     }
 
     /// for DataLakeCatalog databases, try fallback resolution (like "namespace.table" as table name)
-    if (!storage && DatabaseCatalog::instance().isDatalakeCatalog(current_database))
+    if (!storage && is_current_db_datalake)
         storage = tryResolveDatalakeTable(table_identifier, context, current_db_info);
 
     if (!storage)
@@ -227,7 +231,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 StoragePtr IdentifierResolver::tryResolveDatalakeTable(
     const Identifier & table_identifier,
     const ContextPtr & context,
-    const Context::CurrentDatabaseInfo & current_db_info)
+    const CurrentDatabaseInfo & current_db_info)
 {
     const String & current_database = current_db_info.database;
     const String & table_prefix = current_db_info.table_prefix;

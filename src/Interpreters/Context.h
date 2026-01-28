@@ -983,14 +983,6 @@ public:
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
 
-    /// Current database info including optional table prefix for DataLakeCatalog databases
-    /// The table_prefix is set by USE db.namespace command and used to resolve unqualified table names
-    struct CurrentDatabaseInfo
-    {
-        String database;
-        String table_prefix;
-    };
-
     CurrentDatabaseInfo getCurrentDatabase() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
 

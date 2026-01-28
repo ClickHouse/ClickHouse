@@ -5,7 +5,8 @@
 
 #include <Core/Joins.h>
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
@@ -74,7 +75,7 @@ public:
     static StoragePtr tryResolveDatalakeTable(
         const Identifier & table_identifier,
         const ContextPtr & context,
-        const Context::CurrentDatabaseInfo & current_db_info);
+        const CurrentDatabaseInfo & current_db_info);
 
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,

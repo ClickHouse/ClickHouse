@@ -20,6 +20,12 @@ using Scalars = std::map<String, Block>;
 
 class Context;
 
+struct CurrentDatabaseInfo
+{
+    String database;
+    String table_prefix;
+};
+
 /// Most used types have shorter names
 using ContextPtr = std::shared_ptr<const Context>;
 using ContextMutablePtr = std::shared_ptr<Context>;

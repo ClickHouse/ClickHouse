@@ -18,7 +18,8 @@ DB::DataTypePtr getType(const String & type_name, bool nullable, const String & 
 /// A.B.C.D.E -> A.B.C.D and E, where
 /// `A.B.C.D` is a table "namespace".
 /// `E` is a table name.
-std::pair<std::string, std::string> parseTableName(const std::string & name, bool throw_on_error = true);
+std::pair<std::string, std::string> parseTableName(const std::string & name);
+
 std::optional<std::pair<std::string, std::string>> tryParseTableName(const std::string & name);
 
 }

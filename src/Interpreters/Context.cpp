@@ -3069,7 +3069,7 @@ std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsCons
     return getSettingsConstraintsAndCurrentProfilesWithLock();
 }
 
-Context::CurrentDatabaseInfo Context::getCurrentDatabase() const
+CurrentDatabaseInfo Context::getCurrentDatabase() const
 {
     SharedLockGuard lock(mutex);
     return {current_database, current_table_prefix};
