@@ -7322,9 +7322,6 @@ instead of glob listing. 0 means disabled.
     DECLARE(Bool, ignore_on_cluster_for_replicated_database, false, R"(
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, enable_qbit_type, true, R"(
-Allows creation of [QBit](../../sql-reference/data-types/qbit.md) data type.
-)", BETA, allow_experimental_qbit_type) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     \
@@ -7594,6 +7591,8 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_r
     MAKE_OBSOLETE(M, Bool, allow_experimental_inverted_index, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_vector_similarity_index, true) \
     MAKE_OBSOLETE(M, Bool, enable_vector_similarity_index, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_qbit_type, true) \
+    MAKE_OBSOLETE(M, Bool, enable_qbit_type, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \

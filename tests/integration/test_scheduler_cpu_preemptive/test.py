@@ -444,7 +444,7 @@ class DynamicQueryPool:
     indirect=True,
 )
 def test_downscaling(with_custom_config):
-    if node.is_built_with_address_sanitizer() or node.is_built_with_thread_sanitizer():
+    if node.is_built_with_address_sanitizer() or node.is_built_with_thread_sanitizer() or node.is_built_with_llvm_coverage():
         pytest.skip("doesn't fit in timeouts due to heavy workload")
 
     node.query(
