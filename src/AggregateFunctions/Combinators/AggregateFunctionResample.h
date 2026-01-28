@@ -83,6 +83,30 @@ public:
         return nested_function->getName() + "Resample";
     }
 
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (rhs.getName() != getName())
+            return false;
+
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        const size_t rhs_align_of_data = rhs_nested->alignOfData();
+        const size_t rhs_size_of_data = (rhs_nested->sizeOfData() + rhs_align_of_data - 1) / rhs_align_of_data * rhs_align_of_data;
+
+        for (size_t i = 0; i < total; ++i)
+            nested_function->mergeStateFromDifferentVariant(place + i * size_of_data, *rhs_nested, rhs_place + i * rhs_size_of_data, arena);
+    }
+
     bool isState() const override
     {
         return nested_function->isState();
