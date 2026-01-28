@@ -3381,7 +3381,7 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
         case ReadFromMergeTree::IndexType::None:
             return "None";
         case ReadFromMergeTree::IndexType::MinMax:
-            return "MinMax";
+            return "Partition Min-Max";
         case ReadFromMergeTree::IndexType::Partition:
             return "Partition";
         case ReadFromMergeTree::IndexType::Statistics:

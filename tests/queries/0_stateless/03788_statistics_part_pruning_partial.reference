@@ -5,7 +5,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_pruning_partial)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 4/4
             Granules: 4/4
@@ -31,7 +31,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_pruning_partial)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 4/4
             Granules: 4/4

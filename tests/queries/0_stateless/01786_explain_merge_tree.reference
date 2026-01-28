@@ -1,6 +1,6 @@
     ReadFromMergeTree (default.test_index)
     Indexes:
-      MinMax
+      Partition Min-Max
         Keys:
           y
         Parts: 4/5
@@ -35,7 +35,7 @@
               "Description": "default.test_index",
               "Indexes": [
                 {
-                  "Type": "MinMax",
+                  "Type": "Partition Min-Max",
                   "Keys": ["y"],
                   "Initial Parts": 5,
                   "Selected Parts": 4,
@@ -114,7 +114,7 @@
       Ranges: 1
     ReadFromMergeTree (default.test_index)
     Indexes:
-      MinMax
+      Partition Min-Max
         Keys:
           y
         Parts: 4/5
@@ -149,7 +149,7 @@
               "Description": "default.test_index",
               "Indexes": [
                 {
-                  "Type": "MinMax",
+                  "Type": "Partition Min-Max",
                   "Keys": ["y"],
                   "Initial Parts": 5,
                   "Selected Parts": 4,
