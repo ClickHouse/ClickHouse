@@ -250,6 +250,14 @@ void fillDataWithSettings(MutableColumns & res_columns, const ContextPtr & conte
         res_columns[1]->insert(SETTING_CONTEXT);
         res_columns[2]->insertDefault();
     }
+
+    const auto & setting_aliases = settings.getAllAliases();
+    for(const auto & alias_name : setting_aliases)
+    {
+        res_columns[0]->insert(alias_name);
+        res_columns[1]->insert(SETTING_CONTEXT);
+        res_columns[2]->insertDefault();
+    }
 }
 
 void fillDataWithKeywords(MutableColumns & res_columns)
