@@ -46,10 +46,10 @@ String ASTCreateMaskingPolicyQuery::getID(char) const
 
 ASTPtr ASTCreateMaskingPolicyQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateMaskingPolicyQuery>(*this);
+    auto res = make_intrusive<ASTCreateMaskingPolicyQuery>(*this);
 
     if (roles)
-        res->roles = std::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
+        res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
 
     if (update_assignments)
         res->update_assignments = update_assignments->clone();

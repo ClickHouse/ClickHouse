@@ -101,6 +101,8 @@
     M(IcebergIteratorInitializationMicroseconds, "Total time spent on synchronous initialization of iceberg data iterators.", ValueType::Microseconds) \
     M(IcebergMetadataUpdateMicroseconds, "Total time spent on synchronous initialization of iceberg data iterators.", ValueType::Microseconds) \
     M(IcebergMetadataReturnedObjectInfos, "Total number of returned object infos from iceberg iterator.", ValueType::Number) \
+    M(IcebergMinMaxNonPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
+    M(IcebergMinMaxPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
     M(VectorSimilarityIndexCacheHits, "Number of times an index granule has been found in the vector index cache.", ValueType::Number) \
     M(VectorSimilarityIndexCacheMisses, "Number of times an index granule has not been found in the vector index cache and had to be read from disk.", ValueType::Number) \
     M(VectorSimilarityIndexCacheWeightLost, "Approximate number of bytes evicted from the vector index cache.", ValueType::Number) \
@@ -267,6 +269,10 @@
     M(ReplicatedPartChecksFailed, "Number of times the advanced search for a data part on replicas did not give result or when unexpected part has been found and moved away.", ValueType::Number) \
     M(ReplicatedDataLoss, "Number of times a data part that we wanted doesn't exist on any replica (even on replicas that are offline right now). That data parts are definitely lost. This is normal due to asynchronous replication (if quorum inserts were not enabled), when the replica on which the data part was written was failed and when it became online after fail it doesn't contain that data part.", ValueType::Number) \
     M(ReplicatedCoveredPartsInZooKeeperOnStart, "For debugging purposes. Number of parts in ZooKeeper that have a covering part, but doesn't exist on disk. Checked on server start.", ValueType::Number) \
+    \
+    M(QuorumParts, "Number of data parts written with quorum. It counts as one part for sync insert and maybe up to async inserts count for insert which flushes async inserts.", ValueType::Number) \
+    M(QuorumWaitMicroseconds, "Total time spent waiting for quorum during inserts.", ValueType::Microseconds) \
+    M(QuorumFailedInserts, "Number of inserts failed due to quorum not reaching.", ValueType::Number) \
     \
     M(InsertedRows, "Number of rows INSERTed to all tables.", ValueType::Number) \
     M(InsertedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) INSERTed to all tables.", ValueType::Bytes) \
@@ -765,6 +771,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheBackgroundDownloadQueuePush, "Number of file segments sent for background download in filesystem cache", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being in unreleasable state", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedEvictingFileSegments, "Number of file segments skipped for eviction because of being in evicting state", ValueType::Number) \
+    M(FilesystemCacheEvictionSkippedMovingFileSegments, "Number of file segments skipped for eviction because of being in moving state", ValueType::Number) \
     M(FilesystemCacheEvictionTries, "Number of filesystem cache eviction attempts", ValueType::Number) \
     M(FilesystemCacheEvictionReusedIterator, "Number of filesystem cache iterator reusing", ValueType::Number) \
     M(FilesystemCacheLockKeyMicroseconds, "Lock cache key time", ValueType::Microseconds) \
@@ -1251,6 +1258,8 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetPrefetcherReadRandomRead, "The total number of reads with ReadMode::RandomRead by DB::Parquet::Prefetcher", ValueType::Number) \
     M(ParquetPrefetcherReadSeekAndRead, "The total number of reads with ReadMode::SeekAndRead by DB::Parquet::Prefetcher", ValueType::Number) \
     M(ParquetPrefetcherReadEntireFile, "The total number of read with ReadMode::EntireFileIsInMemory by DB::Parquet::Prefetcher", ValueType::Number) \
+    M(ParquetRowsFilterExpression, "The total number of rows that were passed through filter", ValueType::Number) \
+    M(ParquetColumnsFilterExpression, "The total number of columns that were passed through filter", ValueType::Number) \
     M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
     M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
     \
@@ -1521,7 +1530,7 @@ double Counters::getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset)
     if (os_cpu_virtual_time_microseconds <= os_cpu_busy_time_threshold || os_cpu_wait_microseconds <= 0)
         return 0;
 
-    return static_cast<double>(os_cpu_wait_microseconds) / os_cpu_virtual_time_microseconds;
+    return static_cast<double>(os_cpu_wait_microseconds) / static_cast<double>(os_cpu_virtual_time_microseconds);
 }
 
 void Counters::increment(Event event, Count amount)

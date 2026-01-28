@@ -45,6 +45,37 @@ See `tests/clickhouse-test --help` for all options of `clickhouse-test`.
 You can run all tests or run subset of tests by providing a filter for test names: `./clickhouse-test substring`.
 There are also options to run tests in parallel or in random order.
 
+### Running all tests {#running-all-tests}
+
+You may need a decently powerful machine to run all tests. The following works on `t3.2xlarge` AWS amd64 Ubuntu instance with 100 GB storage.
+
+1. Install prerequisites and re-login.
+```sh
+sudo apt-get update
+sudo apt-get install docker.io
+sudo usermod -aG docker ubuntu
+```
+
+2. Get the source code.
+
+```sh
+git clone --single-branch https://github.com/ClickHouse/ClickHouse
+cd ClickHouse
+```
+
+3. Build code and run a subset of tests (named "Fast test").
+
+```sh
+python3 -m ci.praktika run "Fast test"
+```
+
+4. You should get
+```sh
+Failed: 0, Passed: 7394, Skipped: 1795
+```
+
+If you leave the run unattended, you may use `nohup` or `disown` to keep it running after the `ssh` connection is lost.
+
 ### Adding a new test {#adding-a-new-test}
 
 To add new test, first create a `.sql` or `.sh` file in `queries/0_stateless` directory.

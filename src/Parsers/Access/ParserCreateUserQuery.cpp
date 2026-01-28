@@ -67,7 +67,7 @@ namespace
     bool parseAuthenticationData(
         IParserBase::Pos & pos,
         Expected & expected,
-        std::shared_ptr<ASTAuthenticationData> & auth_data,
+        boost::intrusive_ptr<ASTAuthenticationData> & auth_data,
         bool is_type_specifier_mandatory,
         bool is_type_specifier_allowed,
         bool should_parse_no_password)
@@ -230,7 +230,7 @@ namespace
                 }
             }
 
-            auth_data = std::make_shared<ASTAuthenticationData>();
+            auth_data = make_intrusive<ASTAuthenticationData>();
 
             auth_data->type = type;
             auth_data->contains_password = expect_password;
@@ -264,7 +264,7 @@ namespace
     bool parseIdentifiedWith(
         IParserBase::Pos & pos,
         Expected & expected,
-        std::vector<std::shared_ptr<ASTAuthenticationData>> & authentication_methods,
+        std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & authentication_methods,
         bool should_parse_no_password)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -276,7 +276,7 @@ namespace
             {
                 bool is_type_specifier_mandatory = ParserKeyword{Keyword::WITH}.ignore(pos, expected);
 
-                std::shared_ptr<ASTAuthenticationData> ast_authentication_data;
+                boost::intrusive_ptr<ASTAuthenticationData> ast_authentication_data;
 
                 if (!parseAuthenticationData(pos, expected, ast_authentication_data, is_type_specifier_mandatory, is_type_specifier_mandatory, should_parse_no_password))
                 {
@@ -292,7 +292,7 @@ namespace
             IParserBase::Pos aux_pos = pos;
             while (ParserToken{TokenType::Comma}.ignore(aux_pos, expected))
             {
-                std::shared_ptr<ASTAuthenticationData> ast_authentication_data;
+                boost::intrusive_ptr<ASTAuthenticationData> ast_authentication_data;
 
                 if (!parseAuthenticationData(aux_pos, expected, ast_authentication_data, false, true, should_parse_no_password))
                 {
@@ -307,13 +307,13 @@ namespace
         });
     }
 
-    bool parseIdentifiedOrNotIdentified(IParserBase::Pos & pos, Expected & expected, std::vector<std::shared_ptr<ASTAuthenticationData>> & authentication_methods)
+    bool parseIdentifiedOrNotIdentified(IParserBase::Pos & pos, Expected & expected, std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & authentication_methods)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (ParserKeyword{Keyword::NOT_IDENTIFIED}.ignore(pos, expected))
             {
-                authentication_methods.emplace_back(std::make_shared<ASTAuthenticationData>());
+                authentication_methods.emplace_back(make_intrusive<ASTAuthenticationData>());
                 authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
 
                 parseValidUntil(pos, expected, authentication_methods.back()->valid_until);
@@ -425,7 +425,7 @@ namespace
     }
 
 
-    bool parseDefaultRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & default_roles)
+    bool parseDefaultRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & default_roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -438,14 +438,14 @@ namespace
             if (!default_roles_p.parse(pos, ast, expected))
                 return false;
 
-            default_roles = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
+            default_roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
             default_roles->allow_users = false;
             return true;
         });
     }
 
 
-    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTSettingsProfileElements> & settings)
+    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTSettingsProfileElements> & settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -455,12 +455,12 @@ namespace
             if (!elements_p.parse(pos, ast, expected))
                 return false;
 
-            settings = typeid_cast<std::shared_ptr<ASTSettingsProfileElements>>(ast);
+            settings = boost::static_pointer_cast<ASTSettingsProfileElements>(ast);
             return true;
         });
     }
 
-    bool parseAlterSettings(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTAlterSettingsProfileElements> & alter_settings)
+    bool parseAlterSettings(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTAlterSettingsProfileElements> & alter_settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -469,12 +469,12 @@ namespace
             if (!elements_p.parse(pos, ast, expected))
                 return false;
 
-            alter_settings = typeid_cast<std::shared_ptr<ASTAlterSettingsProfileElements>>(ast);
+            alter_settings = boost::static_pointer_cast<ASTAlterSettingsProfileElements>(ast);
             return true;
         });
     }
 
-    bool parseGrantees(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & grantees)
+    bool parseGrantees(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & grantees)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -487,7 +487,7 @@ namespace
             if (!grantees_p.parse(pos, ast, expected))
                 return false;
 
-            grantees = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
+            grantees = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
             return true;
         });
     }
@@ -500,7 +500,7 @@ namespace
         });
     }
 
-    bool parseDefaultDatabase(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTDatabaseOrNone> & default_database)
+    bool parseDefaultDatabase(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTDatabaseOrNone> & default_database)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -512,12 +512,12 @@ namespace
             if (!database_p.parse(pos, ast, expected))
                 return false;
 
-            default_database = typeid_cast<std::shared_ptr<ASTDatabaseOrNone>>(ast);
+            default_database = boost::static_pointer_cast<ASTDatabaseOrNone>(ast);
             return true;
         });
     }
 
-    bool parseAddIdentifiedWith(IParserBase::Pos & pos, Expected & expected, std::vector<std::shared_ptr<ASTAuthenticationData>> & auth_data)
+    bool parseAddIdentifiedWith(IParserBase::Pos & pos, Expected & expected, std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -575,7 +575,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ASTPtr names_ast;
     if (!ParserUserNamesWithHost(/*allow_query_parameter=*/true).parse(pos, names_ast, expected))
         return false;
-    auto names = typeid_cast<std::shared_ptr<ASTUserNamesWithHost>>(names_ast);
+    auto names = boost::static_pointer_cast<ASTUserNamesWithHost>(names_ast);
 
     auto pos_after_parsing_names = pos;
 
@@ -583,12 +583,12 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
-    std::vector<std::shared_ptr<ASTAuthenticationData>> auth_data;
-    std::shared_ptr<ASTRolesOrUsersSet> default_roles;
-    std::shared_ptr<ASTSettingsProfileElements> settings;
-    std::shared_ptr<ASTAlterSettingsProfileElements> alter_settings;
-    std::shared_ptr<ASTRolesOrUsersSet> grantees;
-    std::shared_ptr<ASTDatabaseOrNone> default_database;
+    std::vector<boost::intrusive_ptr<ASTAuthenticationData>> auth_data;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> default_roles;
+    boost::intrusive_ptr<ASTSettingsProfileElements> settings;
+    boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> grantees;
+    boost::intrusive_ptr<ASTDatabaseOrNone> default_database;
     ASTPtr global_valid_until;
     String cluster;
     String storage_name;
@@ -637,22 +637,22 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (alter)
         {
-            std::shared_ptr<ASTAlterSettingsProfileElements> new_alter_settings;
+            boost::intrusive_ptr<ASTAlterSettingsProfileElements> new_alter_settings;
             if (parseAlterSettings(pos, expected, new_alter_settings))
             {
                 if (!alter_settings)
-                    alter_settings = std::make_shared<ASTAlterSettingsProfileElements>();
+                    alter_settings = make_intrusive<ASTAlterSettingsProfileElements>();
                 alter_settings->add(std::move(*new_alter_settings));
                 continue;
             }
         }
         else
         {
-            std::shared_ptr<ASTSettingsProfileElements> new_settings;
+            boost::intrusive_ptr<ASTSettingsProfileElements> new_settings;
             if (parseSettings(pos, expected, attach_mode, new_settings))
             {
                 if (!settings)
-                    settings = std::make_shared<ASTSettingsProfileElements>();
+                    settings = make_intrusive<ASTSettingsProfileElements>();
                 settings->add(std::move(*new_settings));
                 continue;
             }
@@ -720,7 +720,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         return false;
     }
 
-    auto query = std::make_shared<ASTCreateUserQuery>();
+    auto query = make_intrusive<ASTCreateUserQuery>();
     node = query;
 
     query->alter = alter;

@@ -74,7 +74,7 @@ private:
 #endif
     std::vector<String> loadWarningMessages();
 
-    std::optional<CurrentThread::QueryScope> query_scope;
+    CurrentThread::QueryScope query_scope;
 
 #if USE_JWT_CPP && USE_SSL
     std::shared_ptr<JWTProvider> jwt_provider;
