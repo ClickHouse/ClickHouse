@@ -161,6 +161,9 @@ def test_recompression_multiple_ttls(started_cluster):
 
 
 def test_recompression_replicated(started_cluster):
+    for node in [node1, node2]:
+        node.query("DROP TABLE IF EXISTS recompression_replicated SYNC")
+
     for i, node in enumerate([node1, node2]):
         node.query(
             "CREATE TABLE recompression_replicated (d DateTime, key UInt64, data String) \
@@ -200,3 +203,6 @@ def test_recompression_replicated(started_cluster):
 
     assert codec1 == "ZSTD(13)"
     assert codec2 == "ZSTD(13)"
+
+    for node in [node1, node2]:
+        node.query("DROP TABLE IF EXISTS recompression_replicated SYNC")
