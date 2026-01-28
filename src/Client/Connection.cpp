@@ -160,6 +160,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         {
             have_more_addresses_to_connect = it != std::prev(addresses.end());
 
+            LOG_TRACE(log_wrapper.get(), "Connecting to {}:{}, address: {}, have_more_addresses_to_connect: {}", host, port, it->toString(), have_more_addresses_to_connect);
+
             if (isConnected())
                 disconnect();
 
@@ -203,9 +205,14 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             {
                 if (async_callback)
                 {
+                    address_connect_timeout_expired = false;
                     socket->connectNB(*it);
                     while (!socket->poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
+                    {
                         async_callback(socket->impl()->sockfd(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncTaskExecutor::READ | AsyncTaskExecutor::WRITE | AsyncTaskExecutor::ERROR);
+                        if (address_connect_timeout_expired)
+                            throw Poco::TimeoutException("Connection timeout expired for address: " + it->toString());
+                    }
 
                     if (auto err = socket->impl()->socketError())
                         socket->impl()->error(err); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
@@ -218,22 +225,26 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 }
 
                 current_resolved_address = *it;
+                have_more_addresses_to_connect = false;
                 break;
             }
-            catch (DB::NetException &)
+            catch (DB::NetException & e)
             {
+                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
                     throw;
                 continue;
             }
-            catch (Poco::Net::NetException &)
+            catch (Poco::Net::NetException & e)
             {
+                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
                     throw;
                 continue;
             }
-            catch (Poco::TimeoutException &)
+            catch (Poco::TimeoutException & e)
             {
+                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
                     throw;
                 continue;
