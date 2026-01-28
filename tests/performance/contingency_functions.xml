@@ -1,0 +1,61 @@
+<test>
+    <query>
+        SELECT cramersV(number, number) FROM numbers(5_000) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT cramersV(number, number) OVER (ORDER BY number) FROM numbers(5_000) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT cramersVBiasCorrected(number, number) FROM numbers(5_000) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT cramersVBiasCorrected(number, number) OVER (ORDER BY number) FROM numbers(5_000) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT theilsU(number, number) FROM numbers(5_000) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT theilsU(number, number) OVER (ORDER BY number) FROM numbers(5_000) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT contingency(number, number) FROM numbers(5_000) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT contingency(number, number) OVER (ORDER BY number) FROM numbers(5_000) FORMAT NULL;
+    </query>
+
+    <query>
+        -- Worst-case performance test for `CrossTabWindowPhiSquaredData` inherited aggregate functions
+        SELECT
+            cramersV(a, b) OVER (ORDER BY number) AS v
+        FROM
+        (
+            SELECT
+                number,
+                toUInt32(number % 1000) AS a,
+                toUInt32(intDiv(number, 1000) % 1000) AS b
+            FROM numbers(10_000)
+        ) FORMAT NULL;
+    </query>
+
+    <query>
+        -- theilsU has optimized window variant that does not use `CrossTabWindowPhiSquaredData` so it is much faster than cramersV for the same data
+        SELECT
+            theilsU(a, b) OVER (ORDER BY number) AS v
+        FROM
+        (
+            SELECT
+                number,
+                toUInt32(number % 1000) AS a,
+                toUInt32(intDiv(number, 1000) % 1000) AS b
+            FROM numbers(10_000)
+        ) FORMAT NULL;
+    </query>
+</test>

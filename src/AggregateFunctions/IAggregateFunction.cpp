@@ -86,6 +86,11 @@ bool IAggregateFunction::haveSameStateRepresentation(const IAggregateFunction & 
 {
     const auto & lhs_base = getBaseAggregateFunctionWithSameStateRepresentation();
     const auto & rhs_base = rhs.getBaseAggregateFunctionWithSameStateRepresentation();
+
+    /// Consider Window vs Aggregation variants as different state representations.
+    if (lhs_base.getStateVariant() != rhs_base.getStateVariant())
+        return false;
+
     return lhs_base.haveSameStateRepresentationImpl(rhs_base);
 }
 
@@ -99,6 +104,19 @@ void IAggregateFunction::parallelizeMergePrepare(
 {
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", getName());
+}
+
+void IAggregateFunction::mergeStateFromDifferentVariant(
+    AggregateDataPtr __restrict /*place*/, const IAggregateFunction & rhs, ConstAggregateDataPtr /*rhs_place*/, Arena * /*arena*/) const
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "mergeStateFromDifferentVariant() is not implemented for aggregate function '{}' ({} state variant). "
+        "Cannot merge state produced by '{}' ({} state variant)",
+        getName(),
+        toString(getStateVariant()),
+        rhs.getName(),
+        toString(rhs.getStateVariant()));
 }
 
 void IAggregateFunction::merge(

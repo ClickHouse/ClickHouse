@@ -50,6 +50,29 @@ public:
             return nested_function->getName() + "OrDefault";
     }
 
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (rhs.getName() != getName())
+            return false;
+
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        nested_function->mergeStateFromDifferentVariant(place, *rhs_nested, rhs_place, arena);
+
+        const size_t rhs_size_of_data = rhs_nested->sizeOfData();
+        place[size_of_data] |= rhs_place[rhs_size_of_data];
+    }
+
     bool isVersioned() const override
     {
         return nested_function->isVersioned();

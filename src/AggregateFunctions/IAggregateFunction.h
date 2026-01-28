@@ -45,6 +45,30 @@ using DataTypes = std::vector<DataTypePtr>;
 
 struct AggregateFunctionProperties;
 
+/// Some aggregate functions may have multiple implementations/state layouts (for example, a special
+/// implementation for window functions). If the value differs, the state is not interchangeable,
+/// even if the function name/arguments match and the serialization format is compatible. See
+/// CrossTab.h for an example. Aggregate functions with variant can implement canMergeStateFromDifferentVariant()
+/// and mergeStateFromDifferentVariant() methods to allow merging states from different variants.
+enum class AggregateFunctionStateVariant : UInt8
+{
+    Aggregation,
+    Window,
+};
+
+inline const char * toString(AggregateFunctionStateVariant variant)
+{
+    switch (variant)
+    {
+        case AggregateFunctionStateVariant::Aggregation:
+            return "Aggregation";
+        case AggregateFunctionStateVariant::Window:
+            return "Window";
+    }
+
+    UNREACHABLE();
+}
+
 /** Aggregate functions interface.
   * Instances of classes with this interface do not contain the data itself for aggregation,
   *  but contain only metadata (description) of the aggregate function,
@@ -70,6 +94,28 @@ public:
 
     /// Same as the above but normalize state types so that variants with the same binary representation will use the same type.
     virtual DataTypePtr getNormalizedStateType() const;
+
+    /// Identifies the state representation variant used by this function.
+    /// The default is Aggregation (normal GROUP BY implementation).
+    virtual AggregateFunctionStateVariant getStateVariant() const
+    {
+        /// Most combinators don't change the internal state layout, just wrap the nested function.
+        /// Propagate the variant through combinators by default so that haveSameStateRepresentation()
+        /// correctly detects Aggregation vs Window state mismatches
+        if (auto nested = getNestedFunction())
+            return nested->getStateVariant();
+
+        return AggregateFunctionStateVariant::Aggregation;
+    }
+
+    /// Optional hook used when haveSameStateRepresentation() is false but states still need to be merged
+    /// (for example, aggregation vs window variants of the same function).
+    virtual bool canMergeStateFromDifferentVariant(const IAggregateFunction & /*rhs*/) const { return false; }
+
+    /// Similar to merge() but allows merging between different variants (Aggregate/Window).
+    /// Must be called only if canMergeStateFromDifferentVariant(rhs) returns true.
+    /// See CrossTab.h for an example implementation.
+    virtual void mergeStateFromDifferentVariant(AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const;
 
     /// Returns true if two aggregate functions have the same state representation in memory and the same serialization,
     /// so state of one aggregate function can be safely used with another.
