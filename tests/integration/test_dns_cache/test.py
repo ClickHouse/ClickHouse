@@ -64,6 +64,8 @@ node8 = cluster.add_instance(
         "configs/remote_servers_with_disable_dns_setting.xml",
         "configs/listen_host.xml"
     ],
+    # Disable `with_remote_database_disk` as the `test_reload_cluster_config_if_host_address_change` may simulate DNS service outage, causing it to fail to start.
+    with_remote_database_disk=False,
     stay_alive=True,
     ipv6_address="2001:3984:3989::1:1118",
 )
@@ -476,3 +478,63 @@ def test_setting_disable_internal_dns_cache(cluster_ready, disable_internal_dns_
         assert node.query("SELECT count(*) from system.dns_cache;") == "0\n"
     else:
         assert node.query("SELECT count(*) from system.dns_cache;") != "0\n"
+
+    # Reset the node8 state
+    node.replace_in_config(
+        "/etc/clickhouse-server/config.d/remote_servers_with_disable_dns_setting.xml",
+        "<disable_internal_dns_cache>[10]</disable_internal_dns_cache>",
+        "<disable_internal_dns_cache>0</disable_internal_dns_cache>"
+    )
+
+
+def test_reload_cluster_config_if_host_address_change(cluster_ready):
+    # `disable_internal_dns_cache` should be false for updating cache,
+    # so that we can reload cluster config if host address changes.
+    node = node8
+    # Back up DNS configuration (resolv.conf and hosts)
+    resolv_conf_bak = node.exec_in_container(["bash", "-c", "cat /etc/resolv.conf"])
+    hosts_bak = node.exec_in_container(["bash", "-c", "cat /etc/hosts"])
+    # Clear DNS configuration to simulate DNS service outage
+    node.exec_in_container(["bash", "-c", "echo '' > /etc/resolv.conf",], privileged=True, user="root")
+    node.exec_in_container(["bash", "-c", "echo '' > /etc/hosts"], privileged=True, user="root")
+
+    node.restart_clickhouse()
+
+    # Failed to resolve DNS at cluster initialization
+    assert node.wait_for_log_line(
+        regexp="Cluster: Code: 198. DB::NetException: Not found address of host: node8.",
+        filename="/var/log/clickhouse-server/clickhouse-server.err.log",
+        timeout=3
+    )
+    # `is_local` is set to false by default as failure in DNS resolution
+    assert node.query("SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'") == "0\n"
+
+    # Restore the original DNS configuration to simulate DNS service recovery
+    node.exec_in_container(["bash", "-c", f"echo '{resolv_conf_bak}' > /etc/resolv.conf"], privileged=True, user="root")
+    node.exec_in_container(["bash", "-c", f"echo '{hosts_bak}' > /etc/hosts"], privileged=True, user="root")
+    # Wait a bit until dns cache will be updated
+    assert_eq_with_retry(node, "SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'", "1")
+
+    # Change the resolved IPs of node8
+    node.exec_in_container(["bash", "-c", f"echo -e '127.0.0.1 node8\n192.168.1.1 node8\n192.168.1.2 node8' > /etc/hosts"], privileged=True, user="root")
+    # During this update period, the cluster config was reloaded
+    assert node.wait_for_log_line(
+        regexp="DNSCacheUpdater: IPs of host name node8 have been changed",
+        look_behind_lines=10,
+    )
+    assert node.query("SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'") == "1\n"
+    assert node.query("SELECT ip_address FROM system.dns_cache WHERE hostname='node8'") == "127.0.0.1\n192.168.1.1\n192.168.1.2\n"
+
+    # Change the resolved IPs' order of node8
+    node.exec_in_container(["bash", "-c", f"echo -e '192.168.1.2 node8\n192.168.1.1 node8\n127.0.0.1 node8' > /etc/hosts"], privileged=True, user="root")
+    # During this update period, the cluster config was not reloaded yet
+    assert node.wait_for_log_line(
+        regexp="DNSResolver: Updated DNS cache",
+        look_behind_lines=10,
+    )
+    assert node.count_in_log("DNSCacheUpdater: IPs of host name node8 have been changed") == "2\n"
+    assert node.query("SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'") == "1\n"
+    assert node.query("SELECT ip_address FROM system.dns_cache WHERE hostname='node8'") == "127.0.0.1\n192.168.1.2\n192.168.1.1\n"
+
+    # Reset the node8 state
+    node.exec_in_container(["bash", "-c", f"echo '{hosts_bak}' > /etc/hosts"], privileged=True, user="root")
