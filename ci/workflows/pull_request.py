@@ -80,8 +80,6 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_jobs_non_required
         ],
-
-        *JobConfigs.integration_test_llvm_coverage,
         
         *JobConfigs.unittest_jobs,
         JobConfigs.docker_server.set_dependency(
@@ -118,7 +116,6 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
-        JobConfigs.llvm_coverage_merge_job
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
@@ -128,8 +125,6 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
-        *ArtifactConfigs.llvm_profdata_file,
-        ArtifactConfigs.llvm_coverage_html_report,
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,

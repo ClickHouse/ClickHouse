@@ -12,6 +12,7 @@ workflow = Workflow.Config(
     jobs=[
         *JobConfigs.tidy_build_arm_jobs,
         *JobConfigs.build_jobs,
+        *JobConfigs.build_llvm_coverage_job,
         *JobConfigs.release_build_jobs,
         *[
             job.set_dependency(
@@ -20,15 +21,17 @@ workflow = Workflow.Config(
             for job in JobConfigs.special_build_jobs
         ],
         *JobConfigs.unittest_jobs,
+        *JobConfigs.unittest_llvm_coverage_job,
         JobConfigs.docker_server,
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_master_jobs,
         *JobConfigs.compatibility_test_jobs,
         *JobConfigs.functional_tests_jobs,
+        *JobConfigs.functional_test_llvm_coverage_jobs,
         *JobConfigs.functional_tests_jobs_azure_master_only,
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
-        *JobConfigs.integration_test_llvm_coverage,
+        *JobConfigs.integration_test_llvm_coverage_jobs,
         *JobConfigs.stress_test_jobs,
         *JobConfigs.stress_test_azure_jobs,
         *JobConfigs.ast_fuzzer_jobs,
