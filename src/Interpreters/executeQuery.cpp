@@ -1235,32 +1235,41 @@ static BlockIO executeQueryImpl(
 
                 if (formatted1 != formatted2)
                 {
-                    /// Try to find the problematic part of the AST (it's not guaranteed to find it correctly though)
-                    auto bad_ast = out_ast;
-                    while (bad_ast)
+                    using ASTDifference = std::optional<std::pair<ASTPtr, ASTPtr>>;
+                    const auto search_difference_in_asts = [&](this const auto & self, ASTPtr lhs, ASTPtr rhs) -> ASTDifference
                     {
-                        for (const auto & child : bad_ast->children)
+                        if (lhs->getID() != rhs->getID())
+                            return std::make_optional(std::make_pair(lhs, rhs));
+
+                        size_t size_children = std::min(lhs->children.size(), rhs->children.size());
+                        for (size_t i = 0; i < size_children; ++i)
                         {
-                            auto formatted_child = format_ast(child);
-                            if (formatted1.find(formatted_child) == std::string::npos)
-                            {
-                                /// This shouldn't happen
-                                LOG_FATAL(getLogger("executeQuery"), "Cannot find formatted child in the formatted query: {}", formatted_child);
-                                break;
-                            }
-                            if (formatted2.find(formatted_child) == std::string::npos)
-                            {
-                                /// We didn't find it - so it was formatted in a different way
-                                LOG_FATAL(getLogger("executeQuery"), "Suspicious part of the AST: {}: {}", child->getID(), formatted_child);
-                                bad_ast = child;
-                                break;
-                            }
+                            const auto & child_lhs = lhs->children[i];
+                            const auto & child_rhs = rhs->children[i];
+                            if (auto difference = self(child_lhs, child_rhs))
+                                return difference;
                         }
+
+                        return std::nullopt;
+                    };
+
+                    /// Try to find the problematic part of the AST (it's not guaranteed to find it correctly though)
+                    if (auto difference = search_difference_in_asts(out_ast, ast2))
+                    {
+                        auto [lhs, rhs] = difference.value();
+
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                        "Inconsistent AST formatting between '{}' and '{}' in the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}\nExpected AST:\n{}\nParsed and Formatted AST:\n{}",
+                                        lhs->getID(), rhs->getID(), original_query, formatted1, formatted2, lhs->dumpTree(), rhs->dumpTree());
+                    }
+                    else
+                    {
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                        "Inconsistent AST formatting in the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
+                                        original_query, formatted1, formatted2);
+
                     }
 
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting in {}: the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}\nExpected AST:\n{}\n, but got\n{}",
-                        bad_ast->getID(), original_query, formatted1, formatted2, out_ast->dumpTree(), ast2->dumpTree());
                 }
             }
             catch (const Exception & e)
