@@ -208,7 +208,7 @@ private:
 
     IdentifierResolveResult tryResolveIdentifier(const IdentifierLookup & identifier_lookup,
         IdentifierResolveScope & scope,
-        IdentifierResolveContext identifier_resolve_settings = {});
+        IdentifierResolveContext identifier_resolve_context = {});
 
     /// Resolve query tree nodes functions
 
@@ -263,7 +263,7 @@ private:
 
     void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
 
-    NamesAndTypes resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope);
+    NamesAndTypes resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, const NameSet & interpolate_list = {});
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 

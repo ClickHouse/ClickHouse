@@ -1,0 +1,31 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    plus(a, a) UInt16
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt16
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: a, result_type: UInt8, source_id: 5
+            COLUMN id: 4, column_name: a, result_type: UInt8, source_id: 5
+  JOIN TREE
+    CROSS JOIN id: 6
+      TABLE EXPRESSION
+        QUERY id: 5, alias: __table1, is_subquery: 1, is_cte: 1, cte_name: a
+          PROJECTION COLUMNS
+            a UInt8
+          PROJECTION
+            LIST id: 7, nodes: 1
+              CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
+          JOIN TREE
+            TABLE id: 9, alias: __table2, table_name: system.one
+      TABLE EXPRESSION
+        QUERY id: 10, alias: __table3, is_subquery: 1, is_cte: 1, cte_name: a
+          PROJECTION COLUMNS
+            a UInt8
+          PROJECTION
+            LIST id: 11, nodes: 1
+              CONSTANT id: 12, constant_value: UInt64_1, constant_value_type: UInt8
+          JOIN TREE
+            TABLE id: 13, alias: __table4, table_name: system.one
+2

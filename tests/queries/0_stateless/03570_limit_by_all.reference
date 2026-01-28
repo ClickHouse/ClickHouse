@@ -57,21 +57,21 @@ QUERY id: 0
   ORDER BY
     LIST id: 6, nodes: 3
       SORT id: 7, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION id
-          COLUMN id: 8, column_name: id, result_type: Int32, source_id: 3
+        EXPRESSION
+          COLUMN id: 2, column_name: id, result_type: Int32, source_id: 3
+      SORT id: 8, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 4, column_name: category, result_type: String, source_id: 3
       SORT id: 9, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION category
-          COLUMN id: 10, column_name: category, result_type: String, source_id: 3
-      SORT id: 11, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION value
-          COLUMN id: 12, column_name: value, result_type: Int32, source_id: 3
+        EXPRESSION
+          COLUMN id: 5, column_name: value, result_type: Int32, source_id: 3
   LIMIT BY LIMIT
-    CONSTANT id: 13, constant_value: UInt64_1, constant_value_type: UInt64
+    CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt64
   LIMIT BY
-    LIST id: 14, nodes: 3
-      COLUMN id: 15, column_name: id, result_type: Int32, source_id: 3
-      COLUMN id: 16, column_name: category, result_type: String, source_id: 3
-      COLUMN id: 17, column_name: value, result_type: Int32, source_id: 3
+    LIST id: 11, nodes: 3
+      COLUMN id: 12, column_name: id, result_type: Int32, source_id: 3
+      COLUMN id: 13, column_name: category, result_type: String, source_id: 3
+      COLUMN id: 14, column_name: value, result_type: Int32, source_id: 3
 1	A	100	1
 1	A	200	2
 1	B	300	1
