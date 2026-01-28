@@ -1,5 +1,8 @@
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeString.h>
 
+#include <atomic>
+#include <tuple>
 #include <utility>
 
 #include <Backups/IRestoreCoordination.h>
@@ -98,6 +101,7 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int SYNTAX_ERROR;
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -115,6 +119,21 @@ static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, 
 {
     UInt16 port = secure ? global_context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : global_context->getTCPPort();
     return Cluster::Address::toString(getFQDNOrHostName(), port) + ':' + toString(db_uuid);
+}
+
+// Return <address, port, uuid>
+static inline std::tuple<String, UInt16, UUID> parseHostID(const String & content)
+{
+    auto pos = content.find_last_of(':');
+    if (pos == std::string::npos || pos + 1 >= content.size())
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid host ID '{}'", content);
+
+    auto [address, port] = Cluster::Address::fromString(content.substr(0, pos));
+    UUID db_uuid;
+    if (!tryParse(db_uuid, content.substr(pos + 1)))
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid host ID '{}'", content);
+
+    return {address, port, db_uuid};
 }
 
 static inline UInt64 getMetadataHash(const String & table_name, const String & metadata)
@@ -491,10 +510,39 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
 
             if (replica_host_id != host_id && replica_host_id != host_id_default)
             {
-                throw Exception(
-                    ErrorCodes::REPLICA_ALREADY_EXISTS,
-                    "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
-                    replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
+                UUID uuid_in_keeper = UUIDHelpers::Nil;
+                try
+                {
+                    uuid_in_keeper = std::get<2>(parseHostID(replica_host_id));
+                }
+                catch (const Exception & e)
+                {
+                    LOG_WARNING(log, "Failed to parse host_id {} in zookeeper, error {}", replica_host_id, e.what());
+                }
+
+                if (uuid_in_keeper != db_uuid)
+                    throw Exception(
+                        ErrorCodes::REPLICA_ALREADY_EXISTS,
+                        "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
+                        replica_name,
+                        shard_name,
+                        zookeeper_path,
+                        replica_host_id,
+                        host_id);
+
+                // After restarting, InterserverIOAddress might change (e.g: config updated, `getFQDNOrHostName` returns a different one)
+                // If the UUID in the keeper is the same as the current server UUID, we will update the host_id in keeper
+                LOG_INFO(
+                    log,
+                    "Replicated database replica: {}, shard {}, zk_path: {} already exists with the same UUID, replica host ID: '{}', "
+                    "current host ID: '{}', will set the host_id to the current host ID",
+                    replica_name,
+                    shard_name,
+                    zookeeper_path,
+                    replica_host_id,
+                    host_id);
+                current_zookeeper->set(replica_path, host_id, -1);
+                createEmptyLogEntry(current_zookeeper);
             }
 
             /// Before 24.6 we always created host_id with insecure port, even if cluster_auth_info.cluster_secure_connection was true.
