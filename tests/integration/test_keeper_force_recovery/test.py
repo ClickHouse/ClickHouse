@@ -64,11 +64,35 @@ def close_zk(zk):
 def test_cluster_recovery(started_cluster):
     node_zks = []
     try:
-        # initial cluster of `cluster_size` nodes
-        for node in nodes[CLUSTER_SIZE:]:
+        # Reset cluster state for repeated test runs (flaky test checker runs this 10 times)
+        # Stop all nodes first
+        for node in nodes:
             node.stop_clickhouse()
 
-        keeper_utils.wait_nodes(cluster, nodes[:CLUSTER_SIZE])
+        # Clear Keeper data and restore original configs
+        for i in range(CLUSTER_SIZE):
+            nodes[i].exec_in_container(
+                ["bash", "-c", "rm -rf /var/lib/clickhouse/coordination/*"]
+            )
+            nodes[i].copy_file_to_container(
+                os.path.join(CONFIG_DIR, f"enable_keeper{i+1}.xml"),
+                f"/etc/clickhouse-server/config.d/enable_keeper{i+1}.xml",
+            )
+        for i in range(CLUSTER_SIZE, len(nodes)):
+            nodes[i].exec_in_container(
+                ["bash", "-c", "rm -rf /var/lib/clickhouse/coordination/*"]
+            )
+            nodes[i].exec_in_container(
+                ["bash", "-c", f"rm -f /etc/clickhouse-server/config.d/enable_keeper{i+1}.xml"]
+            )
+
+        # Start nodes 1-5 (the initial Keeper cluster)
+        for node in nodes[:CLUSTER_SIZE]:
+            node.start_clickhouse()
+
+        # Use longer timeout for ASAN/TSAN builds where startup is slower
+        for node in nodes[:CLUSTER_SIZE]:
+            keeper_utils.wait_until_connected(cluster, node, timeout=120.0)
 
         node_zks = [get_fake_zk(node.name) for node in nodes[:CLUSTER_SIZE]]
 
@@ -150,10 +174,10 @@ def test_cluster_recovery(started_cluster):
         )
 
         nodes[CLUSTER_SIZE].start_clickhouse()
-        keeper_utils.wait_until_connected(cluster, nodes[CLUSTER_SIZE])
+        keeper_utils.wait_until_connected(cluster, nodes[CLUSTER_SIZE], timeout=120.0)
 
         # node1 should have quorum now and accept requests
-        keeper_utils.wait_until_connected(cluster, nodes[0])
+        keeper_utils.wait_until_connected(cluster, nodes[0], timeout=120.0)
 
         node_zks.append(get_fake_zk(nodes[CLUSTER_SIZE].name))
 
