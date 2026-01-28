@@ -75,6 +75,8 @@ namespace
         PrometheusRequestHandlerConfig res;
         res.type = PrometheusRequestHandlerConfig::Type::RemoteWrite;
         res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
+        if (config.has(config_prefix + ".enable_table_name_url_routing"))
+            res.enable_table_name_url_routing = config.getBool(config_prefix + ".enable_table_name_url_routing");
         parseCommonConfig(config, res);
         return res;
     }
