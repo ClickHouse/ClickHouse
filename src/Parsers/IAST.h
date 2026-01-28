@@ -110,15 +110,6 @@ public:
             child->collectIdentifierNames(set);
     }
 
-    ASTPtr getChild(const IAST & child) const
-    {
-        for (const auto & node : children)
-            if (node.get() == &child)
-                return node;
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
-    }
-
     template <typename T>
     void set(T * & field, const ASTPtr & child)
     {

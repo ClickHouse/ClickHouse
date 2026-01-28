@@ -139,7 +139,7 @@ StorageMaterializedView::StorageMaterializedView(
                         "either ENGINE or an existing table in a TO clause");
 
     if (to_table_engine && to_table_engine->primary_key)
-        storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->getChild(*to_table_engine->primary_key),
+        storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->primary_key->ptr(),
                                                                      storage_metadata.columns,
                                                                      local_context->getGlobalContext());
 
@@ -290,18 +290,18 @@ StorageMaterializedView::StorageMaterializedView(
         if (storage_features.supports_skipping_indices)
         {
             if (query.columns_list->indices)
-                new_columns_list->set(new_columns_list->indices, query.columns_list->getChild(*query.columns_list->indices));
+                new_columns_list->set(new_columns_list->indices, query.columns_list->indices->ptr());
             if (query.columns_list->constraints)
-                new_columns_list->set(new_columns_list->constraints, query.columns_list->getChild(*query.columns_list->constraints));
+                new_columns_list->set(new_columns_list->constraints, query.columns_list->constraints->ptr());
             if (query.columns_list->primary_key)
-                new_columns_list->set(new_columns_list->primary_key, query.columns_list->getChild(*query.columns_list->primary_key));
+                new_columns_list->set(new_columns_list->primary_key, query.columns_list->primary_key->ptr());
             if (query.columns_list->primary_key_from_columns)
-                new_columns_list->set(new_columns_list->primary_key_from_columns, query.columns_list->getChild(*query.columns_list->primary_key_from_columns));
+                new_columns_list->set(new_columns_list->primary_key_from_columns, query.columns_list->primary_key_from_columns->ptr());
         }
         if (storage_features.supports_projections)
         {
             if (query.columns_list->projections)
-                new_columns_list->set(new_columns_list->projections, query.columns_list->getChild(*query.columns_list->projections));
+                new_columns_list->set(new_columns_list->projections, query.columns_list->projections->ptr());
         }
 
         manual_create_query->set(manual_create_query->columns_list, new_columns_list);
