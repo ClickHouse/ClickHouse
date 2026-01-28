@@ -186,6 +186,7 @@ private:
     const bool support_transaction;
 
     void loadMutations();
+    void dropMutationsOnDisk(const DiskPtr & disk) const override;
 
     /// Load and initialize deduplication logs. Even if deduplication setting
     /// equals zero creates object with deduplication window equals zero.
