@@ -355,7 +355,9 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
         insert_it = range.second;
     }
 
-    if (add_subcolumns)
+    /// Aliases don't have real subcolumns, they should be extracted
+    /// using getSubcolumn after expression evaluation.
+    if (add_subcolumns && column.default_desc.kind != ColumnDefaultKind::Alias)
         addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
 }

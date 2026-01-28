@@ -366,6 +366,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     /// Check if it's a subcolumn
     if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(identifier_full_name))
     {
+        /// Don't read subcolumn of aliases directly, only using getSubcolumn,
+        /// because aliases don't have real subcolumns, they should be extracted
+        /// after alias expression evaluation.
         if (scope.table_expression_data_for_alias_resolution->supports_subcolumns && !subcolumn_info->column_node->hasExpression())
             return std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
 
@@ -507,6 +510,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     {
         if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(identifier_full_name))
         {
+            /// Don't read subcolumn of aliases directly, only using getSubcolumn,
+            /// because aliases don't have real subcolumns, they should be extracted
+            /// after alias expression evaluation.
             if (table_expression_data.supports_subcolumns && !subcolumn_info->column_node->hasExpression())
                 result_expression = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
             else
