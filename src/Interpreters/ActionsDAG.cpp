@@ -889,7 +889,7 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         case ActionsDAG::ActionType::COLUMN:
         {
             auto column = node->column;
-            if (input_rows_count < column->size())
+            if (input_rows_count != column->size())
                 column = column->cloneResized(input_rows_count);
 
             res_column.column = column;
