@@ -1259,8 +1259,14 @@ static BlockIO executeQueryImpl(
                         auto [lhs, rhs] = difference.value();
 
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                        "Inconsistent AST formatting between '{}' and '{}' in the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}\nExpected AST:\n{}\nParsed and Formatted AST:\n{}",
-                                        lhs->getID(), rhs->getID(), original_query, formatted1, formatted2, lhs->dumpTree(), rhs->dumpTree());
+                                        "Inconsistent AST formatting between '{}' and '{}' in the query:\n{}\n"
+                                        "Formatted as:\n{}\nParsed and formatted back as:\n{}\n"
+                                        "Difference formatted as:\n{}\n{}\nDifference parsed and formatted back as:\n{}\n{}",
+                                        lhs->getID(), rhs->getID(),
+                                        original_query,
+                                        formatted1, formatted2,
+                                        format_ast(lhs), lhs->dumpTree(),
+                                        format_ast(rhs), rhs->dumpTree());
                     }
                     else
                     {
