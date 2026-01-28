@@ -315,7 +315,7 @@ Block SortedBlocksBuffer::exchange(Block && block)
 
         /// Not saved. Return buffered.
         out_blocks.swap(buffer);
-        buffer.reserve(static_cast<size_t>(out_blocks.size() * reserve_coefficient));
+        buffer.reserve(static_cast<size_t>(static_cast<double>(out_blocks.size()) * reserve_coefficient));
         current_bytes = 0;
     }
 

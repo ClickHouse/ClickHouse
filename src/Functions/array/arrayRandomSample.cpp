@@ -30,7 +30,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -50,7 +50,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+        ColumnPtr col = arguments[0].column->convertToFullColumnIfConst();
+        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(col.get());
         if (!col_array)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be an array", getName());
 

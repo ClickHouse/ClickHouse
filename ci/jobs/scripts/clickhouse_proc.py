@@ -93,7 +93,7 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         nproc = int(Utils.cpu_count() / 2)
-        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --memory-limit {5*2**30} --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{self.test_output_file}\""
+        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{self.test_output_file}\""
         self.minio_proc = None
         self.azurite_proc = None
         self.debug_artifacts = []
@@ -1099,9 +1099,16 @@ quit
                     f"Failed to dump system table: {table}\nError: {stderr}"
                 )
             else:
-                lines_count = int(Shell.get_output_or_raise(f"cd {self.run_path0} && wc -l < {temp_dir}/system_tables/{table}.tsv", verbose=True).strip())
+                lines_count = int(
+                    Shell.get_output_or_raise(
+                        f"cd {self.run_path0} && wc -l < {temp_dir}/system_tables/{table}.tsv",
+                        verbose=True,
+                    ).strip()
+                )
                 if lines_count > ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT:
-                    scraping_system_table.set_info(f"System table {table} has too many rows {lines_count} > {ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT}")
+                    scraping_system_table.set_info(
+                        f"System table {table} has too many rows {lines_count} > {ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT}"
+                    )
 
             if "minio" in table:
                 # minio tables are not replicated
@@ -1121,9 +1128,16 @@ quit
                     )
                     res = False
                 else:
-                    lines_count = int(Shell.get_output_or_raise(f"cd {self.run_path1} && wc -l < {temp_dir}/system_tables/{table}.1.tsv", verbose=True).strip())
+                    lines_count = int(
+                        Shell.get_output_or_raise(
+                            f"cd {self.run_path1} && wc -l < {temp_dir}/system_tables/{table}.1.tsv",
+                            verbose=True,
+                        ).strip()
+                    )
                     if lines_count > ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT:
-                        scraping_system_table.set_info(f"System table {table} on replica 1 has too many rows {lines_count} > {ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT}")
+                        scraping_system_table.set_info(
+                            f"System table {table} on replica 1 has too many rows {lines_count} > {ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT}"
+                        )
 
             if self.is_db_replicated:
                 path_arg = f" --path {self.run_path2}"
@@ -1140,9 +1154,16 @@ quit
                     )
                     res = False
                 else:
-                    lines_count = int(Shell.get_output_or_raise(f"cd {self.run_path2} && wc -l < {temp_dir}/system_tables/{table}.2.tsv", verbose=True).strip())
+                    lines_count = int(
+                        Shell.get_output_or_raise(
+                            f"cd {self.run_path2} && wc -l < {temp_dir}/system_tables/{table}.2.tsv",
+                            verbose=True,
+                        ).strip()
+                    )
                     if lines_count > ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT:
-                        scraping_system_table.set_info(f"System table {table} on replica 2 has too many rows {lines_count} > {ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT}")
+                        scraping_system_table.set_info(
+                            f"System table {table} on replica 2 has too many rows {lines_count} > {ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT}"
+                        )
 
         if scraping_system_table.info:
             scraping_system_table.set_status(Result.StatusExtended.FAIL)

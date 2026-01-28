@@ -588,8 +588,10 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     {
         size_t tables_count = selected_tables.size();
         Float64 num_streams_multiplier = std::min(
-            tables_count, std::max(1UL, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
-        size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
+            static_cast<Float64>(tables_count),
+            static_cast<Float64>(
+                std::max(1UL, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables]))));
+        size_t num_streams = static_cast<size_t>(static_cast<double>(requested_num_streams) * num_streams_multiplier);
 
         pipeline.narrow(num_streams);
     }
@@ -629,9 +631,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     std::vector<ChildPlan> res;
 
     size_t tables_count = selected_tables.size();
-    Float64 num_streams_multiplier
-        = std::min(tables_count, std::max(1UL, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
-    size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
+    Float64 num_streams_multiplier = std::min(
+        static_cast<Float64>(tables_count),
+        std::max(1.0, static_cast<double>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
+    size_t num_streams = static_cast<size_t>(static_cast<double>(requested_num_streams) * num_streams_multiplier);
     size_t remaining_streams = num_streams;
 
     if (order_info)
