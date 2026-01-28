@@ -2,7 +2,7 @@ import csv
 import logging
 import os
 import shutil
-import time
+import uuid
 from email.errors import HeaderParseError
 
 import pytest
@@ -11,6 +11,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import TSV
+from helpers.utility import random_string
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
@@ -509,3 +510,147 @@ def test_cluster_default_expression(started_cluster):
     )
 
     assert result == expected_result
+
+
+@pytest.mark.parametrize("allow_experimental_analyzer", [0, 1])
+@pytest.mark.parametrize("use_partition_strategy", [False, True])
+def test_hive_partitioning(started_cluster, allow_experimental_analyzer, use_partition_strategy):
+    node = started_cluster.instances["s0_0_0"]
+
+    data_path = f"root/data/hive_{allow_experimental_analyzer}/{random_string(6)}"
+
+    if use_partition_strategy:
+        node.query(
+            f"""
+            INSERT
+                INTO FUNCTION s3(
+                        'http://minio1:9001/{data_path}',
+                        'minio',
+                        '{minio_secret_key}',
+                        format='Parquet',
+                        partition_strategy='hive',
+                        structure='key Int32, value Int32')
+                    PARTITION BY key
+                SELECT number+1 as key, number+1 as value
+                FROM system.numbers
+                LIMIT 4
+            """
+        )
+    else:
+        for i in range(1, 5):
+            node.query(
+                f"""
+                INSERT
+                    INTO FUNCTION s3('http://minio1:9001/{data_path}/key={i}/data.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+                    SELECT {i}, {i}
+                """
+            )
+
+    # With use_hive_partitioning=1 and use_hive_partitioning=0 we have no 'key' column
+    if not use_partition_strategy:
+        query_id_full = str(uuid.uuid4())
+        result = node.query(
+            f"""
+            SELECT count()
+                FROM s3('http://minio1:9001/{data_path}/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+                WHERE key <= 2
+                FORMAT TSV
+                SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 0, allow_experimental_analyzer={allow_experimental_analyzer}
+            """,
+            query_id=query_id_full,
+        )
+        result = int(result)
+        assert result == 2
+
+    query_id_optimized = str(uuid.uuid4())
+    result = node.query(
+        f"""
+        SELECT count()
+            FROM s3('http://minio1:9001/{data_path}/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+            WHERE key <= 2
+            FORMAT TSV
+            SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 1, allow_experimental_analyzer={allow_experimental_analyzer}
+        """,
+        query_id=query_id_optimized,
+    )
+    result = int(result)
+    assert result == 2
+
+    if not use_partition_strategy:
+        query_id_cluster_full = str(uuid.uuid4())
+        result = node.query(
+            f"""
+            SELECT count()
+                FROM s3Cluster(cluster_simple, 'http://minio1:9001/{data_path}/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+                WHERE key <= 2
+                FORMAT TSV
+                SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 0, allow_experimental_analyzer={allow_experimental_analyzer}
+            """,
+            query_id=query_id_cluster_full,
+        )
+        result = int(result)
+        assert result == 2
+
+    query_id_cluster_optimized = str(uuid.uuid4())
+    result = node.query(
+        f"""
+        SELECT count()
+            FROM s3Cluster(cluster_simple, 'http://minio1:9001/{data_path}/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+            WHERE key <= 2
+            FORMAT TSV
+            SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 1, allow_experimental_analyzer={allow_experimental_analyzer}
+        """,
+        query_id=query_id_cluster_optimized,
+    )
+    result = int(result)
+    assert result == 2
+
+    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster_simple'")
+
+    event = "EngineFileLikeReadFiles"
+
+    if not use_partition_strategy:
+        full_traffic = node.query(
+            f"""
+            SELECT sum(ProfileEvents['{event}'])
+                FROM clusterAllReplicas(cluster_simple, system.query_log)
+                WHERE type='QueryFinish' AND initial_query_id='{query_id_full}'
+                FORMAT TSV
+            """
+        )
+        full_traffic = int(full_traffic)
+        assert full_traffic == 4
+
+    optimized_traffic = node.query(
+        f"""
+        SELECT sum(ProfileEvents['{event}'])
+            FROM clusterAllReplicas(cluster_simple, system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_optimized}'
+            FORMAT TSV
+        """
+    )
+    optimized_traffic = int(optimized_traffic)
+    assert optimized_traffic == 2
+
+    if not use_partition_strategy:
+        cluster_full_traffic = node.query(
+            f"""
+            SELECT sum(ProfileEvents['{event}'])
+                FROM clusterAllReplicas(cluster_simple, system.query_log)
+                WHERE type='QueryFinish' AND initial_query_id='{query_id_cluster_full}'
+                FORMAT TSV
+            """
+        )
+        cluster_full_traffic = int(cluster_full_traffic)
+        assert cluster_full_traffic == full_traffic
+
+    cluster_optimized_traffic = node.query(
+        f"""
+        SELECT sum(ProfileEvents['{event}'])
+            FROM clusterAllReplicas(cluster_simple, system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_cluster_optimized}'
+            FORMAT TSV
+        """
+    )
+    cluster_optimized_traffic = int(cluster_optimized_traffic)
+    assert cluster_optimized_traffic == optimized_traffic
