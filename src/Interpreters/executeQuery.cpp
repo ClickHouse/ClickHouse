@@ -1235,11 +1235,23 @@ static BlockIO executeQueryImpl(
 
                 if (formatted1 != formatted2)
                 {
-                    using ASTDifference = std::optional<std::pair<ASTPtr, ASTPtr>>;
-                    const auto search_difference_in_asts = [&](this const auto & self, ASTPtr lhs, ASTPtr rhs) -> ASTDifference
+                    struct ASTDifference
+                    {
+                        enum class Type : uint8_t
+                        {
+                            ID,
+                            FORMAT
+                        };
+
+                        ASTPtr lhs;
+                        ASTPtr rhs;
+                        Type type;
+                    };
+
+                    const auto search_difference_in_asts = [&](this const auto & self, ASTPtr lhs, ASTPtr rhs) -> std::optional<ASTDifference>
                     {
                         if (lhs->getID() != rhs->getID())
-                            return std::make_optional(std::make_pair(lhs, rhs));
+                            return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::ID});
 
                         size_t size_children = std::min(lhs->children.size(), rhs->children.size());
                         for (size_t i = 0; i < size_children; ++i)
@@ -1247,8 +1259,17 @@ static BlockIO executeQueryImpl(
                             const auto & child_lhs = lhs->children[i];
                             const auto & child_rhs = rhs->children[i];
                             if (auto difference = self(child_lhs, child_rhs))
+                            {
+                                /// In case the format strings are different, use parent nodes for a better debug output.
+                                if (difference->type == ASTDifference::Type::FORMAT)
+                                    return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::ID});
+
                                 return difference;
+                            }
                         }
+
+                        if (format_ast(lhs) != format_ast(rhs))
+                            return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::FORMAT});
 
                         return std::nullopt;
                     };
@@ -1256,7 +1277,7 @@ static BlockIO executeQueryImpl(
                     /// Try to find the problematic part of the AST (it's not guaranteed to find it correctly though)
                     if (auto difference = search_difference_in_asts(out_ast, ast2))
                     {
-                        auto [lhs, rhs] = difference.value();
+                        auto [lhs, rhs, _] = difference.value();
 
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                                         "Inconsistent AST formatting between '{}' and '{}' in the query:\n{}\n"
