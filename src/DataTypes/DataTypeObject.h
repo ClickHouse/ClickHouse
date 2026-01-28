@@ -58,7 +58,7 @@ public:
     bool hasDynamicSubcolumnsData() const override { return true; }
     std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     const SchemaFormat & getSchemaFormat() const { return schema_format; }
     const std::unordered_map<String, DataTypePtr> & getTypedPaths() const { return typed_paths; }

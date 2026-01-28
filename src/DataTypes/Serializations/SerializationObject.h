@@ -65,9 +65,11 @@ public:
 
     SerializationObject(
         const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
+        const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
-        const DataTypePtr & dynamic_type_);
+        const DataTypePtr & dynamic_type_,
+        const SerializationPtr & dynamic_serialization_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -113,6 +115,9 @@ public:
     virtual void deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const = 0;
 
     static void restoreColumnObject(ColumnObject & column_object, size_t prev_size);
+
+    const SerializationPtr & getDynamicPathSerialization() const { return dynamic_serialization; }
+    const std::unordered_map<String, SerializationPtr> & getTypedPathsSerializations() const { return typed_paths_serializations; }
 
 private:
     friend SerializationObjectDynamicPath;
@@ -166,7 +171,7 @@ protected:
     void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const;
 
     std::unordered_map<String, DataTypePtr> typed_paths_types;
-    std::unordered_map<std::string_view, SerializationPtr> typed_paths_serializations;
+    std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     std::unordered_set<String> paths_to_skip;
     std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;

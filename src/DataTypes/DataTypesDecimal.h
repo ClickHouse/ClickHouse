@@ -51,7 +51,7 @@ public:
 
     bool equals(const IDataType & rhs) const override;
     T parseFromString(const String & str) const;
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
 };
 
 using DataTypeDecimal32 = DataTypeDecimal<Decimal32>;

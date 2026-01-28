@@ -345,6 +345,9 @@ namespace ErrorCodes
     - `v2`
     - `v3`
     )", 0) \
+    DECLARE(Bool, propagate_types_serialization_versions_to_nested_types, true, R"(
+    If true, serialization versions like string_serialization_version will be propagated inside nested types like Array/Map/Nullable/JSON/etc. If disabled, the serialization version will take affect only to top-level columns of this type and Tuple el
+    )", 0)\
     DECLARE(Bool, write_marks_for_substreams_in_compact_parts, true, R"(
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.

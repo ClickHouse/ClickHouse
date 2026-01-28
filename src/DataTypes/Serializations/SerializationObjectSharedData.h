@@ -71,7 +71,11 @@ public:
     };
 
 
-    SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_);
+    SerializationObjectSharedData(
+        SerializationVersion serialization_version_,
+        const DataTypePtr & dynamic_type_,
+        const SerializationPtr & dynamic_serialization_,
+        size_t buckets_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

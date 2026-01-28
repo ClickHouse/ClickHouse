@@ -55,7 +55,7 @@ public:
     void forEachChild(const ChildCallback & callback) const override;
 
 private:
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     DataTypePtr nested_data_type;
 };
@@ -64,6 +64,7 @@ private:
 DataTypePtr makeNullable(const DataTypePtr & type);
 DataTypePtr makeNullableSafe(const DataTypePtr & type);
 DataTypePtr removeNullable(const DataTypePtr & type);
+SerializationPtr removeNullable(const SerializationPtr & serialization);
 DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type);
 DataTypePtr makeNullableOrLowCardinalityNullableSafe(const DataTypePtr & type);
 /// Nullable(T) -> T, LowCardinality(Nullable(T)) -> T

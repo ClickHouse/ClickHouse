@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
 
 #include <Parsers/IAST.h>
 
@@ -54,9 +55,12 @@ void DataTypeArray::updateHashImpl(SipHash & hash) const
     nested->updateHash(hash);
 }
 
-SerializationPtr DataTypeArray::doGetDefaultSerialization() const
+SerializationPtr DataTypeArray::doGetSerialization(const SerializationInfoSettings & settings) const
 {
+    if (settings.propagate_types_serialization_versions_to_nested_types)
+        return std::make_shared<SerializationArray>(nested->getSerialization(settings));
     return std::make_shared<SerializationArray>(nested->getDefaultSerialization());
+
 }
 
 size_t DataTypeArray::getNumberOfDimensions() const
@@ -83,7 +87,8 @@ void DataTypeArray::forEachChild(const ChildCallback & callback) const
 std::unique_ptr<ISerialization::SubstreamData> DataTypeArray::getDynamicSubcolumnData(std::string_view subcolumn_name, const DB::IDataType::SubstreamData & data, bool throw_if_null) const
 {
     auto nested_type = assert_cast<const DataTypeArray &>(*data.type).nested;
-    auto nested_data = std::make_unique<ISerialization::SubstreamData>(nested_type->getDefaultSerialization());
+    const auto & array_serialization = assert_cast<const SerializationArray &>(*data.serialization);
+    auto nested_data = std::make_unique<ISerialization::SubstreamData>(array_serialization.getNestedSerialization());
     nested_data->type = nested_type;
     nested_data->column = data.column ? assert_cast<const ColumnArray &>(*data.column).getDataPtr() : nullptr;
 
