@@ -6,7 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Core/QueryPlanSerializationSettings.h>
 
 #include <fmt/ranges.h>
 #include <Interpreters/JoinExpressionActions.h>

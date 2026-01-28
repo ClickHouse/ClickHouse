@@ -9,9 +9,7 @@ namespace DB
 
 struct QueryPlanSerializationSettingsImpl;
 
-/// List of available types supported in QueryPlanSerializationSettings object.
-/// Extend cautiously: types must have stable SettingField implementations and
-/// well-defined binary serialization. Adding a type enables operator[] overloads.
+/// Subset of setting types supported for QueryPlan serialization.
 #define QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, Float) \

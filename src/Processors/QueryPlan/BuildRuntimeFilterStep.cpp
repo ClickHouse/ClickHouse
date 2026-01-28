@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
-#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Core/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
