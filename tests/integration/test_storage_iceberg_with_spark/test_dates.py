@@ -13,8 +13,8 @@ def test_date_reads(started_cluster_iceberg_with_spark):
     spark = started_cluster_iceberg_with_spark.spark_session
     storage_type = 's3'
     expected_rows=2
-    expected_date_1='2026-01-13\n'
-    expected_date_2='1965-01-13\n'
+    expected_date_1='2299-12-31\n'
+    expected_date_2='1900-01-13\n'
     
 
     TABLE_NAME = (
@@ -34,10 +34,10 @@ def test_date_reads(started_cluster_iceberg_with_spark):
 	"""
     )
     spark.sql(
-      	  f""" INSERT INTO {TABLE_NAME} VALUES(1,DATE '2026-01-13') """
+      	  f""" INSERT INTO {TABLE_NAME} VALUES(1,DATE '2299-12-31') """
     ) 
     spark.sql(
-      	  f""" INSERT INTO {TABLE_NAME} VALUES(2,DATE '1965-01-13') """
+      	  f""" INSERT INTO {TABLE_NAME} VALUES(2,DATE '1900-01-13') """
     ) 
    
     files = default_upload_directory(
