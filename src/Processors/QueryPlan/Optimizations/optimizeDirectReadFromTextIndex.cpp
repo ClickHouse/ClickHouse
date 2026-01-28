@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -18,7 +19,6 @@ namespace
 {
 
 using IndexConditionsMap = absl::flat_hash_map<String, const MergeTreeIndexWithCondition *>;
-using NodesReplacementMap = absl::flat_hash_map<const ActionsDAG::Node *, const ActionsDAG::Node *>;
 
 String getNameWithoutAliases(const ActionsDAG::Node * node)
 {
@@ -41,35 +41,6 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
     }
 
     return node->result_name;
-}
-
-const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node * node, const NodesReplacementMap & replacements)
-{
-    if (auto it = replacements.find(node); it != replacements.end())
-    {
-        return it->second;
-    }
-    else if (node->type == ActionsDAG::ActionType::ALIAS)
-    {
-        const auto * old_child = node->children[0];
-        const auto * new_child = replaceNodes(dag, old_child, replacements);
-
-        if (old_child != new_child)
-            return &dag.addAlias(*new_child, node->result_name);
-    }
-    else if (node->type == ActionsDAG::ActionType::FUNCTION)
-    {
-        auto old_children = node->children;
-        std::vector<const ActionsDAG::Node *> new_children;
-
-        for (const auto & child : old_children)
-            new_children.push_back(replaceNodes(dag, child, replacements));
-
-        if (new_children != old_children)
-            return &dag.addFunction(node->function_base, new_children, "");
-    }
-
-    return node;
 }
 
 String optimizationInfoToString(const IndexReadColumns & added_columns, const Names & removed_columns)
@@ -179,7 +150,7 @@ public:
     ResultReplacement replace(const ContextPtr & context, const String & filter_column_name)
     {
         ResultReplacement result;
-        NodesReplacementMap replacements;
+        NodeReplacementMap replacements;
         Names original_inputs = actions_dag.getRequiredColumnsNames();
         const auto * filter_node = &actions_dag.findInOutputs(filter_column_name);
         /// Cache for added input nodes for each virtual column.

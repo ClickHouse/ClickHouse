@@ -2579,6 +2579,18 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
     updateSortDescription();
 }
 
+void ReadFromMergeTree::addColumnsToRead(const NameSet & columns)
+{
+    for (const auto & column_name : columns)
+    {
+            auto it = std::ranges::find(all_column_names, column_name);
+            if (it != all_column_names.end())
+                continue;
+
+            all_column_names.push_back(column_name);
+    }
+}
+
 void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column)
 {
     if (isVectorColumnReplaced())
