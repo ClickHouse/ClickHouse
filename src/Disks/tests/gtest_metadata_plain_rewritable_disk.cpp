@@ -1065,30 +1065,6 @@ TEST_F(MetadataPlainRewritableDiskTest, LookupBlobs)
         tx->createDirectoryRecursive("A/B/C");
         tx->commit();
     }
-
-    {
-        auto tx = metadata->createTransaction();
-        EXPECT_EQ(tx->tryGetBlobsFromTransactionIfExists("non-existing"), std::nullopt);
-        tx->commit();
-    }
-
-    {
-        auto tx = metadata->createTransaction();
-        EXPECT_EQ(tx->tryGetBlobsFromTransactionIfExists("non-existing/A"), std::nullopt);
-        tx->commit();
-    }
-
-    {
-        auto tx = metadata->createTransaction();
-        EXPECT_EQ(tx->tryGetBlobsFromTransactionIfExists("A/B"), std::nullopt);
-        tx->commit();
-    }
-
-    {
-        auto tx = metadata->createTransaction();
-        EXPECT_EQ(tx->tryGetBlobsFromTransactionIfExists("A/X"), std::nullopt);
-        tx->commit();
-    }
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, OperationsNonExisting)

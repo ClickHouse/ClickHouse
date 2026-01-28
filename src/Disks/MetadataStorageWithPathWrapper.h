@@ -137,11 +137,6 @@ public:
         return delegate->truncateFile(wrappedPath(src_path), size);
     }
 
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override
-    {
-        return delegate->tryGetBlobsFromTransactionIfExists(path);
-    }
-
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) override { return delegate->generateObjectKeyForPath(path); }
 };
 
