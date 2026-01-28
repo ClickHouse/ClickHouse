@@ -94,6 +94,7 @@ Field FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_
 
         int direction = getDirection(column_ind);
         bool overflowed = less(next_value, shifted_value, direction);
+        logDebug("doLongJump: shifted_value: {}, next_value: {}, to: {}, step_no: {}, step_len: {}", shifted_value, next_value, to, step_no, step_len);
         if (overflowed || less(to, next_value, direction))
         {
             step_len /= 2;
@@ -105,7 +106,7 @@ Field FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_
         }
     }
 
-    logDebug("jumped to next value: {} (step_no: {}, step_len: {})", shifted_value, step_no, step_len);
+    logDebug("doLongJump: {} (step_no: {}, step_len: {})", shifted_value, step_no, step_len);
     return shifted_value;
 }
 
