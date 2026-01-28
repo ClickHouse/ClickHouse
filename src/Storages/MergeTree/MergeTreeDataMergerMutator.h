@@ -8,6 +8,8 @@
 
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MutateTask.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutatorUtils.h>
+
 
 #include <expected>
 
