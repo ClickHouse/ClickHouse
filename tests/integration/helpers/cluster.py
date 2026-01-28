@@ -650,6 +650,7 @@ class ClickHouseCluster:
         self.with_coredns = False
         self.with_ytsaurus = False
         self.with_letsencrypt_pebble = False
+        self.with_hashicorp_vault = False
 
         # available when with_minio == True
         self.with_minio = False
@@ -766,6 +767,14 @@ class ClickHouseCluster:
         # available when with_redis == True
         self.redis_host = "redis1"
         self._redis_port = 0
+
+        # available when with_hashicorp_vault == True
+        self.hashicorp_vault_host = "hashicorpvault"
+        self.hashicorp_vault_ip = None
+        self.hashicorp_vault_cert_dir = p.abspath(p.join(self.instances_dir, "certs"))
+        self.hashicorp_vault_logs_dir = p.abspath(p.join(self.instances_dir, "logs"))
+        self.hashicorp_vault_docker_id = self.get_instance_docker_id(self.hashicorp_vault_host)
+        self.pre_hashicorp_vault_startup_command = None
 
         # available when with_postgres == True
         self.postgres_host = "postgres1"
@@ -1847,6 +1856,22 @@ class ClickHouseCluster:
         )
         return self.base_letsencrypt_pebble_cmd
 
+    def setup_hashicorp_vault(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_hashicorp_vault = True
+        env_variables["HASHICORP_VAULT_CERT_DIR"] = self.hashicorp_vault_cert_dir
+        env_variables["HASHICORP_VAULT_LOGS_DIR"] = self.hashicorp_vault_logs_dir
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_hashicorp_vault.yml")]
+        )
+        self.base_vault_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_hashicorp_vault.yml"),
+        )
+        return self.base_vault_cmd
+
     def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir):
         if "writer" in self.prometheus_servers:
             prefix = f"PROMETHEUS_WRITER"
@@ -1948,6 +1973,7 @@ class ClickHouseCluster:
         with_hms_catalog=False,
         with_ytsaurus=False,
         with_letsencrypt_pebble=False,
+        with_hashicorp_vault=False,
         handle_prometheus_remote_write=None,
         handle_prometheus_remote_read=None,
         use_old_analyzer=None,
@@ -2083,6 +2109,7 @@ class ClickHouseCluster:
             with_iceberg_catalog=with_iceberg_catalog,
             with_glue_catalog=with_glue_catalog,
             with_hms_catalog=with_hms_catalog,
+            with_hashicorp_vault=with_hashicorp_vault,
             use_old_analyzer=use_old_analyzer,
             use_distributed_plan=use_distributed_plan,
             server_bin_path=self.server_bin_path,
@@ -2360,6 +2387,11 @@ class ClickHouseCluster:
         if with_letsencrypt_pebble:
             cmds.append(
                 self.setup_letsencrypt_pebble(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_hashicorp_vault:
+            cmds.append(
+                self.setup_hashicorp_vault(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_prometheus_writer:
@@ -2801,6 +2833,12 @@ class ClickHouseCluster:
     def wait_letsencrypt_pebble_to_start(self):
         self.wait_for_url(
             url=f"https://10.5.11.2:{self.letsencrypt_pebble_api_port}/dir", timeout=30
+        )
+
+    def wait_vault_to_start(self):
+        self.hashicorp_vault_ip = self.get_instance_ip(self.hashicorp_vault_host)
+        self.wait_for_url(
+            url=f"http://{self.hashicorp_vault_ip}:8200/v1/sys/health", timeout=300
         )
 
     def wait_postgres_to_start(self, timeout=260):
@@ -3349,6 +3387,18 @@ class ClickHouseCluster:
             logging.warning("Cleanup failed:{e}")
 
         try:
+            if self.with_hashicorp_vault and self.base_vault_cmd:
+                logging.debug("Generating certificates for HashiCorp Vault")
+                env = os.environ.copy()
+                env["HASHICORP_VAULT_CERT_DIR"] = self.hashicorp_vault_cert_dir
+                os.mkdir(self.hashicorp_vault_cert_dir)
+                run_and_check(
+                    p.join(self.base_dir, "hashi_corp_vault_certs.sh"),
+                    env=env,
+                    detach=False,
+                    nothrow=False,
+                )
+
             for instance in list(self.instances.values()):
                 logging.debug(f"Setup directory for instance: {instance.name}")
                 instance.create_dir()
@@ -3820,6 +3870,19 @@ class ClickHouseCluster:
                 run_and_check(letsencrypt_pebble_start_cmd)
                 self.wait_letsencrypt_pebble_to_start()
 
+            if self.with_hashicorp_vault and self.base_vault_cmd:
+                logging.debug("Setup HashiCorp Vaule")
+                env = os.environ.copy()
+                env["HASHICORP_VAULT_CERT_DIR"] = self.hashicorp_vault_cert_dir
+                env["HASHICORP_VAULT_LOGS_DIR"] = self.hashicorp_vault_logs_dir
+                os.makedirs(self.hashicorp_vault_logs_dir, exist_ok=True)
+                os.chmod(self.hashicorp_vault_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                vault_start_cmd = self.base_vault_cmd + common_opts
+                run_and_check(vault_start_cmd)
+                self.wait_vault_to_start()
+                if self.pre_hashicorp_vault_startup_command:
+                    self.pre_hashicorp_vault_startup_command(self)
+
             if self.with_arrowflight and self.base_arrowflight_cmd:
                 arrowflight_start_cmd = self.base_arrowflight_cmd + common_opts
 
@@ -4124,6 +4187,9 @@ class ClickHouseCluster:
     def add_zookeeper_startup_command(self, command):
         self.pre_zookeeper_commands.append(command)
 
+    def set_hashicorp_vault_startup_command(self, command):
+        self.pre_hashicorp_vault_startup_command = command
+
     def stop_zookeeper_nodes(self, zk_nodes):
         for n in zk_nodes:
             logging.info("Stopping zookeeper node: %s", n)
@@ -4260,6 +4326,7 @@ class ClickHouseInstance:
         with_iceberg_catalog,
         with_glue_catalog,
         with_hms_catalog,
+        with_hashicorp_vault,
         use_old_analyzer,
         use_distributed_plan,
         server_bin_path,
@@ -4385,6 +4452,7 @@ class ClickHouseInstance:
         self.with_hive = with_hive
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
+        self.with_hashicorp_vault = with_hashicorp_vault
         self.use_old_analyzer = use_old_analyzer
         self.use_distributed_plan = use_distributed_plan
         self.randomize_settings = randomize_settings
@@ -5642,6 +5710,13 @@ class ClickHouseInstance:
         if self.with_coredns:
             shutil.copytree(
                 self.coredns_config_dir, p.abspath(p.join(self.path, "coredns_config"))
+            )
+
+        if self.with_hashicorp_vault:
+            shutil.copytree(
+                self.cluster.hashicorp_vault_cert_dir,
+                self.config_d_dir,
+                dirs_exist_ok=True,
             )
 
         metrika_xml = ""

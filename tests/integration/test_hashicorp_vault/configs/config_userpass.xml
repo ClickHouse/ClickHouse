@@ -1,0 +1,9 @@
+<clickhouse>
+    <hashicorp_vault>
+      <url>http://hashicorpvault:8200</url>
+      <userpass>
+        <username>user1</username>
+        <password>test</password>
+      </userpass>
+    </hashicorp_vault>
+</clickhouse>

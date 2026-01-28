@@ -3,9 +3,10 @@
 #include <Compression/ICompressionCodec.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/XMLConfiguration.h>
-#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/EventNotifier.h>
+#include <Common/HashiCorpVault.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
 
@@ -69,9 +70,9 @@ int main(int argc, char ** argv)
         std::string codec_name = argv[3];
         std::string value = argv[4];
 
-        DB::ConfigProcessor processor(argv[1], false, true);
+        DB::ConfigProcessor config_processor(argv[1], false, true);
         bool has_zk_includes;
-        DB::XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
+        DB::XMLDocumentPtr config_xml = config_processor.processConfig(&has_zk_includes);
         if (has_zk_includes)
         {
             DB::EventNotifier::init(); // Event notifier is needed for correct ZK work
@@ -88,9 +89,16 @@ int main(int argc, char ** argv)
             auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(args));
 
             zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
-            config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);
+            config_xml = config_processor.processConfig(&has_zk_includes, &zk_node_cache);
         }
         DB::ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
+
+        if (config_processor.hasNodeWithNameAndChildNodeWithAttribute(config_xml, "encryption_codecs", "from_hashicorp_vault"))
+        {
+            DB::HashiCorpVault::instance().load(*configuration, "hashicorp_vault");
+            config_xml = config_processor.processConfig(&has_zk_includes);
+            configuration = new Poco::Util::XMLConfiguration(config_xml);
+        }
 
         DB::CompressionCodecEncrypted::Configuration::instance().load(*configuration, "encryption_codecs");
 
