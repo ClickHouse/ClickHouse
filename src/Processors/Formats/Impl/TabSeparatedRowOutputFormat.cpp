@@ -36,6 +36,9 @@ void TabSeparatedRowOutputFormat::writeLine(const std::vector<String> & values)
 
 void TabSeparatedRowOutputFormat::writePrefix()
 {
+    if (format_settings.tsv.write_bom)
+        out.write("\xEF\xBB\xBF", 3);
+
     const auto & header = getPort(PortKind::Main).getHeader();
 
     if (with_names)

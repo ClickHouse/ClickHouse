@@ -48,6 +48,9 @@ If it set to true, then separate columns written in CSV format can be deserializ
     DECLARE(Bool, output_format_csv_crlf_end_of_line, false, R"(
 If it is set true, end of line in CSV format will be \\r\\n instead of \\n.
 )", 0) \
+    DECLARE(Bool, output_format_csv_write_bom, false, R"(
+If enabled, write UTF-8 BOM (Byte Order Mark) at the beginning of CSV output. This helps Excel correctly identify the file encoding.
+)", 0) \
     DECLARE(Bool, input_format_csv_allow_cr_end_of_line, false, R"(
 If it is set true, \\r will be allowed at end of line not followed by \\n
 )", 0) \
@@ -1222,6 +1225,9 @@ Max rows in a file (if permitted by storage)
 )", 0) \
     DECLARE(Bool, output_format_tsv_crlf_end_of_line, false, R"(
 If it is set true, end of line in TSV format will be \\r\\n instead of \\n.
+)", 0) \
+    DECLARE(Bool, output_format_tsv_write_bom, false, R"(
+If enabled, write UTF-8 BOM (Byte Order Mark) at the beginning of TSV output. This helps Excel correctly identify the file encoding.
 )", 0) \
     DECLARE(String, format_csv_null_representation, "\\N", R"(
 Custom NULL representation in CSV format

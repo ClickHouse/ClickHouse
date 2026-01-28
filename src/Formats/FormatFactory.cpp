@@ -111,6 +111,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.csv.serialize_tuple_into_separate_columns = settings[Setting::output_format_csv_serialize_tuple_into_separate_columns];
     format_settings.csv.deserialize_separate_columns_into_tuple = settings[Setting::input_format_csv_deserialize_separate_columns_into_tuple];
     format_settings.csv.crlf_end_of_line = settings[Setting::output_format_csv_crlf_end_of_line];
+    format_settings.csv.write_bom = settings[Setting::output_format_csv_write_bom];
     format_settings.csv.allow_cr_end_of_line = settings[Setting::input_format_csv_allow_cr_end_of_line];
     format_settings.csv.delimiter = settings[Setting::format_csv_delimiter];
     format_settings.csv.tuple_delimiter = settings[Setting::format_csv_delimiter];
@@ -281,6 +282,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.template_settings.row_format_template = settings[Setting::format_template_row_format];
     format_settings.template_settings.resultset_format_template = settings[Setting::format_template_resultset_format];
     format_settings.tsv.crlf_end_of_line = settings[Setting::output_format_tsv_crlf_end_of_line];
+    format_settings.tsv.write_bom = settings[Setting::output_format_tsv_write_bom];
     format_settings.tsv.empty_as_default = settings[Setting::input_format_tsv_empty_as_default];
     format_settings.tsv.enum_as_number = settings[Setting::input_format_tsv_enum_as_number];
     format_settings.tsv.null_representation = settings[Setting::format_tsv_null_representation];
