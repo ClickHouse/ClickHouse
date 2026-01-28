@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
+#include "config.h"
 #include <string>
 #include <string_view>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
@@ -11,9 +13,20 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+
+namespace DB
+{
+struct ObjectInfo;
+using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
+
+/// These functions are always available; they return fallback values when USE_AVRO is not defined
+ObjectStoragePtr getResolvedStorageFromObjectInfo([[maybe_unused]] const ObjectInfoPtr & object_info, const ObjectStoragePtr & default_storage);
+std::optional<String> getAbsolutePathFromObjectInfo([[maybe_unused]] const ObjectInfoPtr & object_info);
+}
+
 #if USE_AVRO
 
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
 #include <Storages/ColumnsDescription.h>
@@ -47,8 +60,6 @@ bool writeMetadataFileAndVersionHint(
     DB::CompressionMethod compression_method,
     bool try_write_version_hint
 );
-
-std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location);
 
 struct TransformAndArgument
 {

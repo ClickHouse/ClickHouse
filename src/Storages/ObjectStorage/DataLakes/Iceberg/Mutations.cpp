@@ -218,13 +218,16 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                     Field cur_value;
                     col_data_filename.column->get(i, cur_value);
 
-                    String path_without_namespace;
-                    if (cur_value.safeGet<String>().starts_with(blob_storage_namespace_name))
-                        path_without_namespace = cur_value.safeGet<String>().substr(blob_storage_namespace_name.size());
+                    String original_path = cur_value.safeGet<String>();
+                    String file_path_key = original_path;
 
-                    if (!path_without_namespace.starts_with('/'))
-                        path_without_namespace = "/" + path_without_namespace;
-                    col_data_filename_without_namespaces->insert(path_without_namespace);
+                    if (original_path.starts_with(blob_storage_namespace_name))
+                        file_path_key = original_path.substr(blob_storage_namespace_name.size());
+
+                    if (!file_path_key.empty() && !file_path_key.starts_with('/'))
+                        file_path_key = "/" + file_path_key;
+
+                    col_data_filename_without_namespaces->insert(file_path_key);
                 }
                 col_data_filename.column = std::move(col_data_filename_without_namespaces);
                 Columns chunk_pos_delete;

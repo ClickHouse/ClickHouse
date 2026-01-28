@@ -1,4 +1,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/SipHash.h>
 #include <consistent_hashing.h>
 #include <optional>
@@ -81,7 +83,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t
         auto next_file = files.back();
         files.pop_back();
 
-        auto file_identifier = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : next_file->getIdentifier();
+        auto file_identifier = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : getAbsolutePathFromObjectInfo(next_file).value_or(next_file->getIdentifier());
         auto it = unprocessed_files.find(file_identifier);
         if (it == unprocessed_files.end())
             continue;
@@ -135,7 +137,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         }
         else
         {
-            file_identifier = object_info->getIdentifier();
+            file_identifier = getAbsolutePathFromObjectInfo(object_info).value_or(object_info->getIdentifier());
         }
 
         size_t file_replica_idx = getReplicaForFile(file_identifier);
@@ -159,7 +161,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         // Queue file for its assigned replica
         {
             std::lock_guard lock(mutex);
-            unprocessed_files.emplace(file_identifier, object_info);
+            unprocessed_files.emplace(object_info->getIdentifier(), object_info);
             connection_to_files[file_replica_idx].push_back(object_info);
         }
     }
@@ -177,7 +179,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
         auto next_file = it->second;
         unprocessed_files.erase(it);
 
-        auto file_path = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : next_file->getPath();
+        auto file_path = send_over_whole_archive ? next_file->getPathOrPathToArchiveIfArchive() : getAbsolutePathFromObjectInfo(next_file).value_or(next_file->getPath());
         LOG_TRACE(
             log,
             "Iterator exhausted. Assigning unprocessed file {} to replica {}",

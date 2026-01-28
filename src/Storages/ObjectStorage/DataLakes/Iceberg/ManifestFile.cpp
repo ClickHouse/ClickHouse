@@ -13,6 +13,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -246,7 +247,6 @@ ManifestFileContent::ManifestFileContent(
             content_type = FileContentType(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
         const auto status = ManifestEntryStatus(manifest_file_deserializer.getValueFromRowByName(i, f_status, TypeIndex::Int32).safeGet<UInt64>());
 
-
         if (status == ManifestEntryStatus::DELETED)
             continue;
 
@@ -289,9 +289,8 @@ ManifestFileContent::ManifestFileContent(
         }
         const auto schema_id = schema_id_opt.has_value() ? schema_id_opt.value() : manifest_schema_id;
 
-        const auto file_path_key
-            = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>();
-        const auto file_path = getProperFilePathFromMetadataInfo(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>(), common_path, table_location);
+        const auto file_path_from_metadata = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>();
+        const auto file_path = makeAbsolutePath(table_location, file_path_from_metadata);
 
         /// NOTE: This is weird, because in manifest file partition looks like this:
         /// {
@@ -430,23 +429,22 @@ ManifestFileContent::ManifestFileContent(
         switch (content_type)
         {
             case FileContentType::DATA:
-                this->data_files_without_deleted.emplace_back(
-                    std::make_shared<ManifestFileEntry>(
-                        file_path_key,
-                        file_path,
-                        i,
-                        status,
-                        added_sequence_number,
-                        snapshot_id,
-                        schema_id,
-                        partition_key_value,
-                        common_partition_specification,
-                        columns_infos,
-                        file_format,
-                        /*lower_reference_data_file_path_ = */ std::nullopt,
-                        /*upper_reference_data_file_path_ = */ std::nullopt,
-                        /*equality_ids*/ std::nullopt,
-                        sort_order_id));
+                this->data_files_without_deleted.emplace_back(std::make_shared<ManifestFileEntry>(
+                    file_path_from_metadata,
+                    file_path,
+                    i,
+                    status,
+                    added_sequence_number,
+                    snapshot_id,
+                    schema_id,
+                    partition_key_value,
+                    common_partition_specification,
+                    columns_infos,
+                    file_format,
+                    /*lower_reference_data_file_path_ = */ std::nullopt,
+                    /*upper_reference_data_file_path_ = */ std::nullopt,
+                    /*equality_ids*/ std::nullopt,
+                    sort_order_id));
                 break;
             case FileContentType::POSITION_DELETE:
             {
@@ -471,7 +469,7 @@ ManifestFileContent::ManifestFileContent(
                 }
                 this->position_deletes_files_without_deleted.emplace_back(
                     std::make_shared<ManifestFileEntry>(
-                        file_path_key,
+                        file_path_from_metadata,
                         file_path,
                         i,
                         status,
@@ -503,7 +501,7 @@ ManifestFileContent::ManifestFileContent(
                             "Couldn't find field {} in equality delete file entry", c_data_file_equality_ids);
                 this->equality_deletes_files.emplace_back(
                     std::make_shared<ManifestFileEntry>(
-                        file_path_key,
+                        file_path_from_metadata,
                         file_path,
                         i,
                         status,
