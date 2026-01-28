@@ -369,7 +369,11 @@ public:
 
     virtual bool supportsPrewhere() const
     {
+#if USE_AVRO
         return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
+#else
+        return false;
+#endif
     }
 
 private:
