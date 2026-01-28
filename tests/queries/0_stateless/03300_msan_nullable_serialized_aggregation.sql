@@ -19,7 +19,17 @@ GROUP BY
     isZeroOrNull(assumeNotNull(materialize(NULL))),
     tuple(1, NULL),
     (NULL, NULL) GLOBAL IN CAST(tuple(NULL, NULL), 'Nullable(Tuple(Nullable(UInt32), Nullable(UInt32)))')
-SETTINGS transform_null_in = 0;
+SETTINGS transform_null_in = 0, enable_analyzer = 1;
+
+SELECT
+    tuple(tuple(materialize(NULL)), 42, CAST(tuple(NULL, NULL), 'Nullable(Tuple(Nullable(UInt32), Nullable(UInt32)))'), toNullable(NULL)),
+    (NULL, NULL) IN CAST(tuple(NULL, 1), 'Nullable(Tuple(Nullable(UInt32), Nullable(UInt32)))')
+GROUP BY
+    1,
+    isZeroOrNull(assumeNotNull(materialize(NULL))),
+    tuple(1, NULL),
+    (NULL, NULL) GLOBAL IN CAST(tuple(NULL, NULL), 'Nullable(Tuple(Nullable(UInt32), Nullable(UInt32)))')
+SETTINGS transform_null_in = 0, enable_analyzer = 0; -- { serverError ILLEGAL_COLUMN }
 
 -- Multiple nullable tuples in GROUP BY
 SELECT count()
