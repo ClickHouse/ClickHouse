@@ -76,9 +76,9 @@ TEST(DDSketch, MergeDifferentGammasWithoutSegfault)
     ASSERT_DOUBLE_EQ(rhs.getGamma(), 1.4142135623730951);
 
     lhs.merge(rhs);
-    std::vector<UInt8> merge_buffer;
+    VectorWithMemoryTracking<UInt8> merge_buffer;
 
-    WriteBufferFromVector<std::vector<UInt8>> writer{merge_buffer};
+    WriteBufferFromVector<VectorWithMemoryTracking<UInt8>> writer{merge_buffer};
     lhs.serialize(writer);
 
     ReadBufferFromMemory reader{merge_buffer.data(), merge_buffer.size()};

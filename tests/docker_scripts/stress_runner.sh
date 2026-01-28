@@ -314,26 +314,4 @@ collect_query_and_trace_logs
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
 
-# Write check result into check_status.tsv
-# Try to choose most specific error for the whole check status
-clickhouse-local --structure "test String, res String, time Nullable(Float32), desc String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by
-(test like '%Sanitizer%') DESC,
-(test like '%Killed by signal%') DESC,
-(test like '%gdb.log%') DESC,
-(test ilike '%possible deadlock%') DESC,
-(test like '%start%') DESC,
-(test like '%dmesg%') DESC,
-(test like '%OOM%') DESC,
-(test like '%Signal 9%') DESC,
-(test like '%Fatal message%') DESC,
-rowNumberInAllBlocks()
-LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo -e "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
-[ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
-
-# But OOMs in stress test are allowed
-if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
-then
-    sed -i 's/failure/success/' /test_output/check_status.tsv
-fi
-
 collect_core_dumps
