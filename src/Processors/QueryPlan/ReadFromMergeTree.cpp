@@ -208,6 +208,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_concurrent_queries;
     extern const MergeTreeSettingsInt64 max_partitions_to_read;
     extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
+    extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_parts_to_activate;
+    extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_indexes_size_to_activate;
 }
 
 namespace ErrorCodes
@@ -727,25 +729,29 @@ Pipe ReadFromMergeTree::readInOrder(
             const auto & primary_key = storage_snapshot->metadata->primary_key;
             size_t mark_range_begin = part_with_ranges.ranges.front().begin;
 
-            ColumnsWithTypeAndName pk_columns;
             /// The index may have fewer columns than the primary key if suffix columns were
             /// removed by optimizeIndexColumns (controlled by primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns).
-            size_t num_columns = std::min(virtual_row_conversion->getRequiredColumnsWithTypes().size(), index->size());
-            pk_columns.reserve(num_columns);
-
-            for (size_t j = 0; j < num_columns; ++j)
+            /// In that case, we cannot apply virtual row optimization because we don't have all required columns.
+            size_t num_pk_columns_required = virtual_row_conversion->getRequiredColumnsWithTypes().size();
+            if (index->size() >= num_pk_columns_required)
             {
-                auto column = primary_key.data_types[j]->createColumn()->cloneEmpty();
-                column->insert((*(*index)[j])[mark_range_begin]);
-                pk_columns.push_back({std::move(column), primary_key.data_types[j], primary_key.column_names[j]});
+                ColumnsWithTypeAndName pk_columns;
+                pk_columns.reserve(num_pk_columns_required);
+
+                for (size_t j = 0; j < num_pk_columns_required; ++j)
+                {
+                    auto column = primary_key.data_types[j]->createColumn()->cloneEmpty();
+                    column->insert((*(*index)[j])[mark_range_begin]);
+                    pk_columns.push_back({std::move(column), primary_key.data_types[j], primary_key.column_names[j]});
+                }
+
+                Block pk_block(std::move(pk_columns));
+
+                pipe.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<VirtualRowTransform>(header, pk_block, virtual_row_conversion);
+                });
             }
-
-            Block pk_block(std::move(pk_columns));
-
-            pipe.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<VirtualRowTransform>(header, pk_block, virtual_row_conversion);
-            });
         }
 
         pipes.emplace_back(std::move(pipe));
@@ -2237,11 +2243,24 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     {
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
-        bool final_second_pass = indexes->use_skip_indexes_if_final_exact_mode;
+        auto get_indexes_size = [&](const MergeTreeData & data_) -> size_t
+        {
+            size_t res = 0;
+            for (const auto & [_, size] : data_.getSecondaryIndexSizes())
+                res += size.data_uncompressed;
+            res += data_.getPrimaryIndexSize().data_uncompressed;
+            return res;
+        };
+
         /// Note, use_skip_indexes_if_final_exact_mode requires complete PK, so we cannot apply distributed_index_analysis with it
-        bool distributed_index_analysis_enabled = settings[Setting::distributed_index_analysis]
+        bool final_second_pass = indexes->use_skip_indexes_if_final_exact_mode;
+        UInt64 distributed_index_analysis_min_parts_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_parts_to_activate];
+        UInt64 distributed_index_analysis_min_indexes_size_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_indexes_size_to_activate];
+        bool distributed_index_analysis_enabled = !final_second_pass
+            && settings[Setting::distributed_index_analysis]
             && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
-            && !final_second_pass;
+            && (total_parts >= distributed_index_analysis_min_parts_to_activate)
+            && (!distributed_index_analysis_min_indexes_size_to_activate || get_indexes_size(data) >= distributed_index_analysis_min_indexes_size_to_activate);
 
         if (!distributed_index_analysis_enabled)
         {

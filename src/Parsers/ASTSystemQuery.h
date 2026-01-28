@@ -18,7 +18,6 @@ namespace DB
 class ASTSystemQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-
     enum class Type : UInt64
     {
         UNKNOWN,
@@ -135,6 +134,7 @@ public:
         RECONNECT_ZOOKEEPER,
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
+        RESET_DDL_WORKER,
         END
     };
 
@@ -157,6 +157,8 @@ public:
     String target_function;
     String replica;
     String shard;
+    String zk_name;
+    String full_replica_zk_path;
     String replica_zk_path;
     bool is_drop_whole_replica{};
     bool with_tables{false};

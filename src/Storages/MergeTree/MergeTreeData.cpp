@@ -2386,7 +2386,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 "section or in table settings in .sql file (don't forget to return setting back to default value)",
                 suspicious_broken_parts,
                 formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
-                formatReadableSizeWithBinarySuffix((*settings)[MergeTreeSetting::max_suspicious_broken_parts_bytes]));
+                formatReadableSizeWithBinarySuffix((*settings)[MergeTreeSetting::max_suspicious_broken_parts_bytes].value));
     }
 
     if (suspicious_broken_unexpected_parts != 0)
@@ -2977,7 +2977,7 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
 
     auto enough_space = [&](const auto & cache, double ratio_to_prewarm)
     {
-        return cache->sizeInBytes() < cache->maxSizeInBytes() * ratio_to_prewarm;
+        return static_cast<double>(cache->sizeInBytes()) < static_cast<double>(cache->maxSizeInBytes()) * ratio_to_prewarm;
     };
 
     for (const auto & part : data_parts)
@@ -3582,7 +3582,7 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
             size_t covered_parts_count = std::count_if(parts_in_range.begin(), parts_in_range.end(), smaller_parts_pred);
             size_t top_level_count = parts_in_range.size() - covered_parts_count;
             chassert(top_level_count);
-            Float32 parts_to_exclude_ratio = static_cast<Float32>(top_level_count) / parts_in_range.size();
+            Float32 parts_to_exclude_ratio = static_cast<Float32>(top_level_count) / static_cast<Float32>(parts_in_range.size());
             if ((*settings)[MergeTreeSetting::zero_copy_concurrent_part_removal_max_postpone_ratio] < parts_to_exclude_ratio)
             {
                 /// Most likely we have a long mutations chain here
@@ -5683,9 +5683,9 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         }
         else
         {
-            double delay_factor = static_cast<double>(parts_over_threshold) / allowed_parts_over_threshold;
+            double delay_factor = static_cast<double>(parts_over_threshold) / static_cast<double>(allowed_parts_over_threshold);
             const UInt64 min_delay_milliseconds = (*settings)[MergeTreeSetting::min_delay_to_insert_ms];
-            delay_milliseconds = std::max(min_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor));
+            delay_milliseconds = std::max(min_delay_milliseconds, static_cast<UInt64>(static_cast<double>(max_delay_milliseconds) * delay_factor));
         }
     }
 
@@ -5734,8 +5734,8 @@ void MergeTreeData::delayMutationOrThrowIfNeeded(Poco::Event * until, const Cont
         size_t mutations_over_threshold = num_unfinished_mutations - num_mutations_to_delay;
         size_t allowed_mutations_over_threshold = num_mutations_to_throw - num_mutations_to_delay;
 
-        double delay_factor = std::min(static_cast<double>(mutations_over_threshold) / allowed_mutations_over_threshold, 1.0);
-        size_t delay_milliseconds = static_cast<size_t>(interpolateLinear((*settings)[MergeTreeSetting::min_delay_to_mutate_ms], (*settings)[MergeTreeSetting::max_delay_to_mutate_ms], delay_factor));
+        double delay_factor = std::min(static_cast<double>(mutations_over_threshold) / static_cast<double>(allowed_mutations_over_threshold), 1.0);
+        size_t delay_milliseconds = static_cast<size_t>(interpolateLinear(static_cast<double>((*settings)[MergeTreeSetting::min_delay_to_mutate_ms]), static_cast<double>((*settings)[MergeTreeSetting::max_delay_to_mutate_ms]), delay_factor));
 
         ProfileEvents::increment(ProfileEvents::DelayedMutations);
         ProfileEvents::increment(ProfileEvents::DelayedMutationsMilliseconds, delay_milliseconds);
@@ -5998,7 +5998,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & /*
     are_columns_and_secondary_indices_sizes_calculated = true;
 }
 
-void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedLock & /*parts_lock*/, std::unique_lock<std::mutex> & /*sizes_lock*/) const
+void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedLock & parts_lock, std::unique_lock<std::mutex> & /*sizes_lock*/) const
 {
     if (are_columns_and_secondary_indices_sizes_calculated)
         return;
@@ -6012,9 +6012,14 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
     /// can read a column sample from each part, it can be slow and we don't want to
     /// do it under parts lock, so we create a copy of the data parts and release parts lock
     /// before calculation.
+    ///
+    /// Note, the result will be still correct, since it is guarded by the
+    /// columns_and_secondary_indices_sizes_mutex.
     if (hasColumnsWithDynamicSubcolumns(getInMemoryMetadataPtr()->getSampleBlock()))
     {
         DataParts data_parts(committed_parts_range.begin(), committed_parts_range.end());
+        parts_lock.unlock();
+
         for (const auto & part : data_parts)
             addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
     }
@@ -6024,7 +6029,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
             addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
     }
 
-    are_columns_and_secondary_indices_sizes_calculated= true;
+    are_columns_and_secondary_indices_sizes_calculated = true;
 }
 
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
@@ -6054,6 +6059,8 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
         IndexSize part_index_size = part->getSecondaryIndexSize(index.name);
         total_secondary_index_size.add(part_index_size);
     }
+
+    primary_index_size.add(part->getIndexSizeFromFile());
 }
 
 void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
@@ -7954,7 +7961,7 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
 
     return getContext()->chooseCompressionCodec(
         part_size_compressed,
-        static_cast<double>(part_size_compressed) / getTotalActiveSizeInBytes());
+        static_cast<double>(part_size_compressed) / static_cast<double>(getTotalActiveSizeInBytes()));
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds) const
@@ -10297,7 +10304,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         /// The path has to be unique, all tmp directories are deleted at startup in case of stale files from previous runs.
         /// New part have to capture its name, therefore there is no concurrentcy in directory creation
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "New empty part is about to matirialize but the directory already exist"
+                        "New empty part is about to materialize but the directory already exist"
                         ", new part {}"
                         ", directory {}",
                         new_part_name, new_data_part_storage->getFullPath());
