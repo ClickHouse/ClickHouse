@@ -519,7 +519,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSortList(const ASTPtr & order_by_express
             sort_direction,
             nulls_sort_direction,
             std::move(collator),
-            order_by_element.with_fill);
+            order_by_element.with_fill,
+            order_by_element.is_natural);
 
         if (order_by_element.getFillFrom())
             sort_node->getFillFrom() = buildExpression(order_by_element.getFillFrom(), context);

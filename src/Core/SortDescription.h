@@ -52,6 +52,7 @@ struct SortColumnDescription
     std::shared_ptr<Collator> collator; /// Collator for locale-specific comparison of strings
     bool with_fill;
     FillColumnDescription fill_description;
+    bool is_natural;
 
     SortColumnDescription() = default;
 
@@ -62,7 +63,8 @@ struct SortColumnDescription
         int nulls_direction_ = 1,
         const std::shared_ptr<Collator> & collator_ = nullptr,
         bool with_fill_ = false,
-        const FillColumnDescription & fill_description_ = {})
+        const FillColumnDescription & fill_description_ = {},
+        bool is_natural_ = false)
         : alias(std::move(alias_))
         , column_name(std::move(column_name_))
         , direction(direction_)
@@ -70,6 +72,7 @@ struct SortColumnDescription
         , collator(collator_)
         , with_fill(with_fill_)
         , fill_description(fill_description_)
+        , is_natural(is_natural_)
     {
     }
 
@@ -79,13 +82,15 @@ struct SortColumnDescription
         int nulls_direction_ = 1,
         const std::shared_ptr<Collator> & collator_ = nullptr,
         bool with_fill_ = false,
-        const FillColumnDescription & fill_description_ = {})
+        const FillColumnDescription & fill_description_ = {},
+        bool is_natural_ = false)
         : column_name(std::move(column_name_))
         , direction(direction_)
         , nulls_direction(nulls_direction_)
         , collator(collator_)
         , with_fill(with_fill_)
         , fill_description(fill_description_)
+        , is_natural(is_natural_)
     {
     }
 
@@ -100,7 +105,7 @@ struct SortColumnDescription
     bool operator==(const SortColumnDescription & other) const
     {
         return column_name == other.column_name && direction == other.direction && nulls_direction == other.nulls_direction
-            && compareCollators(collator, other.collator);
+            && is_natural == other.is_natural && compareCollators(collator, other.collator);
     }
 
     bool operator != (const SortColumnDescription & other) const

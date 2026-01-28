@@ -22,6 +22,88 @@ Unless an explicit sort order is specified, `ASC` is used by default.
 The sorting direction applies to a single expression, not to the entire list, e.g. `ORDER BY Visits DESC, SearchPhrase`.
 Also, sorting is performed case-sensitively.
 
+## Natural Sort {#natural-sort}
+
+The `NATURAL` modifier can be used with `ORDER BY` to perform natural (human-readable) sorting of string values. Natural sort treats numeric sequences within strings as numbers rather than strings, providing more intuitive ordering.
+
+Natural sort is only applicable to string columns. When applied to non-string columns, an error will be raised.
+
+### How Natural Sort Works {#how-natural-sort-works}
+
+Natural sort compares strings by:
+1. Splitting each string into alternating sequences of text and digits
+2. Comparing text parts lexicographically (case-sensitive)
+3. Comparing digit sequences numerically (leading zeros are ignored for numeric comparison, but shorter sequences come before longer ones when numeric values are equal)
+4. Text parts are considered less than digit parts
+
+### Examples {#natural-sort-examples}
+
+Consider the following table:
+
+```text
+┌─s────────────┐
+│ hello4world5 │
+│ hello4world10│
+│ hello30      │
+│ hello123     │
+│ a2           │
+│ a10          │
+│ a02          │
+│ a            │
+└──────────────┘
+```
+
+With regular sorting (`ORDER BY s ASC`):
+
+```text
+┌─s────────────┐
+│ a            │
+│ a02          │
+│ a10          │
+│ a2           │
+│ hello123     │
+│ hello30      │
+│ hello4world10│
+│ hello4world5 │
+└──────────────┘
+```
+
+With natural sort (`ORDER BY s ASC NATURAL`):
+
+```text
+┌─s────────────┐
+│ a            │
+│ a2           │
+│ a02          │
+│ a10          │
+│ hello4world5 │
+│ hello4world10│
+│ hello30      │
+│ hello123     │
+└──────────────┘
+```
+
+Notice how:
+- `a2` comes before `a02` (both represent the number 2, but shorter digit sequence comes first)
+- `a02` comes before `a10` (2 < 10 numerically)
+- `hello4world5` comes before `hello4world10` (5 < 10 numerically)
+- `hello30` comes before `hello123` (30 < 123 numerically)
+
+Natural sort can be combined with `DESC`:
+
+```sql
+SELECT s FROM table ORDER BY s DESC NATURAL;
+```
+
+This will sort in descending order using natural comparison rules.
+
+### Limitations {#natural-sort-limitations}
+
+- Natural sort only works with string columns (`String`, `FixedString`, `LowCardinality(String)`, `Nullable(String)`)
+- Natural sort is not supported in compiled sort descriptions (JIT-compiled sorting). When `compile_sort_description` setting is enabled, natural sort will use the regular (non-compiled) sorting implementation
+- When NATURAL is used, any specified COLLATE clause is ignored, and string comparison is performed byte-wise.
+- Natural sort is case-sensitive for text parts
+
 Rows with identical values for a sort expressions are returned in an arbitrary and non-deterministic order.
 If the `ORDER BY` clause is omitted in a `SELECT` statement, the row order is also arbitrary and non-deterministic.
 

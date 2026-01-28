@@ -30,4 +30,4 @@ $CLICKHOUSE_CLIENT "${opts[@]}" -q "EXPLAIN json = 1, actions = 1, description =
 echo "--------"
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "EXPLAIN json = 1, actions = 1, description = 0
                        SELECT number + 1 from numbers(10) order by number desc, number + 1 limit 3 FORMAT TSVRaw
-                      " | grep "Sort Description" -A 12
+                      " | grep "Sort Description" -A 14

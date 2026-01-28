@@ -31,7 +31,8 @@ public:
         SortDirection sort_direction_ = SortDirection::ASCENDING,
         std::optional<SortDirection> nulls_sort_direction_ = {},
         std::shared_ptr<Collator> collator_ = nullptr,
-        bool with_fill = false);
+        bool with_fill = false,
+        bool is_natural = false);
 
     /// Get sort expression
     const QueryTreeNodePtr & getExpression() const
@@ -49,6 +50,12 @@ public:
     bool withFill() const
     {
         return with_fill;
+    }
+
+    /// Returns true is sort node has natural sort order, false otherwise
+    bool isNatural() const
+    {
+        return is_natural;
     }
 
     /// Returns true if sort node has fill from, false otherwise
@@ -172,6 +179,7 @@ private:
     std::optional<SortDirection> nulls_sort_direction;
     std::shared_ptr<Collator> collator;
     bool with_fill = false;
+    bool is_natural = false;
 };
 
 }
