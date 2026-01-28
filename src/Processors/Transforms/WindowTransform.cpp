@@ -2544,9 +2544,44 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
         else
         {
             // Offset is inside the frame.
-            to.insertFrom(*transform->blockAt(target_row).input_columns[
-                    workspace.argument_column_indices[0]],
-                target_row.row);
+            const IColumn & src_column = *transform->blockAt(target_row).input_columns[
+                    workspace.argument_column_indices[0]];
+
+            // Handle nullable/non-nullable column compatibility for ROLLUP with group_by_use_nulls
+            if (auto * nullable_to = typeid_cast<ColumnNullable *>(&to))
+            {
+                // Target is nullable - check if source is also nullable
+                if (typeid_cast<const ColumnNullable *>(&src_column))
+                {
+                    // Both nullable - use normal insertFrom
+                    to.insertFrom(src_column, target_row.row);
+                }
+                else
+                {
+                    // Source is not nullable, target is nullable - use insertFromNotNullable
+                    nullable_to->insertFromNotNullable(src_column, target_row.row);
+                }
+            }
+            else if (const auto * nullable_src = typeid_cast<const ColumnNullable *>(&src_column))
+            {
+                // Source is nullable, target is not nullable
+                // Extract value from nullable column if not null
+                if (nullable_src->isNullAt(target_row.row))
+                {
+                    // Source value is null, insert default
+                    to.insertDefault();
+                }
+                else
+                {
+                    // Source value is not null, insert the nested value
+                    to.insertFrom(nullable_src->getNestedColumn(), target_row.row);
+                }
+            }
+            else
+            {
+                // Neither is nullable - use normal insertFrom
+                to.insertFrom(src_column, target_row.row);
+            }
         }
     }
 };
