@@ -21,13 +21,45 @@ namespace ErrorCodes
 
 /// A codec for a postings list stored in a compact block-compressed format.
 ///
-/// Values are first delta-compressed then bigpacked, each within fixed-size blocks (physical chunks, controlled by BLOCK_SIZE).
-/// Each compressed block is stored as: [1 byte: bits-width][payload].
+/// Values are first delta-compressed then bitpacked, each within fixed-size blocks
+/// (physical chunks, controlled by POSTING_LIST_UNIT_SIZE).
+/// Each compressed block is stored as: [1 byte: bits-width][4 bytes: row_begin][payload].
 ///
-/// Posting lists are additionally split into "segments" (logical chunks, controlled by postings_list_block_size)
-/// to simplify metadata and to support multiple ranges per token (min/max row id per segment).
+/// Posting lists are additionally split into "segments" (logical chunks, controlled by
+/// postings_list_block_size) to simplify metadata and to support multiple ranges per
+/// token (min/max row id per segment).
 ///
 /// Assumes that input row ids are strictly increasing.
+///
+/// Storage Layout
+/// ==============
+///
+/// Hierarchy:
+///   Posting List
+///   └── Segments (logical chunks, size controlled by posting_list_block_size, default 1M)
+///       └── Blocks (physical chunks, fixed size POSTING_LIST_UNIT_SIZE = 128)
+///
+/// Segment Layout:
+/// ┌─────────────────────────────────────────────────────────────────────┐
+/// │ Header (VarUInt)  │ Block Skip Index (optional) │ Compressed Blocks │
+/// └─────────────────────────────────────────────────────────────────────┘
+///
+/// Header fields (VarUInt encoded):
+///   - codec_type (uint8): encoding type (Bitpacking=1)
+///   - payload_bytes (uint64): compressed data size
+///   - cardinality (uint32): number of row IDs in segment
+///   - first_row_id (uint32): base value for delta decoding
+///   - has_block_skip_index (uint8): whether block index exists
+///
+/// Block Skip Index (only when posting_list_apply_mode=lazy):
+///   - block_row_ends[]: max row ID of each block (for binary search)
+///   - block_offsets[]: byte offset of each block in payload
+///
+/// Block Layout:
+/// ┌──────────────────────────────────────────────────────────────┐
+/// │ max_bits (1B) │ row_begin (4B) │ bitpacked deltas (variable) │
+/// └──────────────────────────────────────────────────────────────┘
+///
 class PostingListCodecBitpackingImpl
 {
     friend class PostingListCursor;
@@ -218,15 +250,7 @@ private:
 };
 
 /// Codec for serializing/deserializing a postings list to/from a binary stream.
-/// A codec for a postings list stored in a compact block-compressed format.
-///
-/// Values are first delta-compressed then bigpacked, each within fixed-size blocks (physical chunks, controlled by BLOCK_SIZE).
-/// Each compressed block is stored as: [1 byte: bits-width][payload].
-///
-/// Posting lists are additionally split into "segments" (logical chunks, controlled by postings_list_block_size)
-/// to simplify metadata and to support multiple ranges per token (min/max row id per segment).
-///
-/// Assumes that input row ids are strictly increasing.
+/// See PostingListCodecBitpackingImpl for storage layout details.
 class PostingListCodecBitpacking : public  IPostingListCodec
 {
 public:
