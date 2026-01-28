@@ -431,7 +431,7 @@ class Result(MetaClasses.Serializable):
                 name = f"pytest_{command}"
 
             #REMOVEME
-            print(f"DEBUG: full_command: {full_command}")
+            print(f"DEBUG: full_command: {full_command} DEBUG END")
 
             # Run pytest
             _res = Shell.check(full_command, verbose=True)
