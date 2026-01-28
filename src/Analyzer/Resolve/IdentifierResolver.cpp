@@ -1053,7 +1053,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     std::optional<JoinTableSide> resolved_side;
     QueryTreeNodePtr resolved_identifier;
 
-    auto convert_resolved_result_type_if_needed = [](
+    auto convert_resolved_result_type_if_needed = [&table_expression_node](
         const QueryTreeNodePtr & resolved_identifier_candidate,
         const std::unordered_map<std::string, ColumnNodePtr> & using_column_name_to_column_node,
         QueryTreeNodePtr & resolve_result,
@@ -1063,6 +1063,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         auto & resolved_column = resolved_identifier_candidate->as<ColumnNode &>();
         auto using_column_node_it = using_column_name_to_column_node.find(resolved_column.getColumnName());
         if (using_column_node_it == using_column_name_to_column_node.end())
+            return;
+
+        /// convert type if the column source is the current JOIN node (if it's an inner USING column)
+        auto column_source = resolved_column.getColumnSourceOrNull();
+        if (column_source && column_source.get() != table_expression_node.get())
             return;
 
         auto current_type = resolved_column.getColumnType();
@@ -1077,7 +1082,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         {
             auto resolved_column_clone = std::static_pointer_cast<ColumnNode>(resolved_column.clone());
 
-            resolved_column_clone->setColumnType(result_type);
+            resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
 
             auto projection_name_it = projection_name_mapping.find(resolved_identifier_candidate);
             if (projection_name_it != projection_name_mapping.end())
