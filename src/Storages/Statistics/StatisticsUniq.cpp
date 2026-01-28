@@ -15,7 +15,8 @@ StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & description, 
 {
     arena = std::make_unique<Arena>();
     AggregateFunctionProperties properties;
-    collector = AggregateFunctionFactory::instance().get("uniq", NullsAction::IGNORE_NULLS, {data_type}, Array(), properties);
+    String function = description.type == StatisticsType::Uniq ? "uniq" : "uniqHLL12";
+    collector = AggregateFunctionFactory::instance().get(function, NullsAction::IGNORE_NULLS, {data_type}, Array(), properties);
     data = arena->alignedAlloc(collector->sizeOfData(), collector->alignOfData());
     collector->create(data);
 }
