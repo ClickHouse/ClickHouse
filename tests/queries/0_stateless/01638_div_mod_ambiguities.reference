@@ -2,7 +2,7 @@ MOD
 1
 MOD
 1
-modulo(DIV, 1)
+DIV % 1
 0
 DIV
 1
@@ -10,7 +10,7 @@ mod
 1
 MOD
 1
-modulo(DIV, 1)
+DIV % 1
 0
 div
 1

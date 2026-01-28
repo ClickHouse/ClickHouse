@@ -257,7 +257,7 @@ select * from table_1 prewhere x != 3 where x != 1 settings additional_result_fi
 select * from table_1 limit 3 settings additional_result_filter='x != 2';
 1	a
 3	ccc
-select x + 1 from table_1 settings additional_result_filter='`plus(x, 1)` != 2';
+select x + 1 from table_1 settings additional_result_filter='`x + 1` != 2';
 3
 4
 5

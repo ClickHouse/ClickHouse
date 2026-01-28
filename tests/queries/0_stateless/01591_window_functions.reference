@@ -1214,8 +1214,8 @@ select count() over (order by toInt64(number) range between unbounded preceding 
 -- a test with aggregate function that allocates memory in arena
 select sum(a[length(a)])
 from (
-    select groupArray(number) over (partition by modulo(number, 11)
-            order by modulo(number, 1111), number) a
+    select groupArray(number) over (partition by number % 11
+            order by number % 1111, number) a
     from numbers_mt(10000)
 ) settings max_block_size = 7;
 49995000

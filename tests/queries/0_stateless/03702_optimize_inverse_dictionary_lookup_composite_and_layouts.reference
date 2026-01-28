@@ -4,7 +4,7 @@ SELECT
     __table1.k2 AS k2,
     __table1.payload AS payload
 FROM default.f AS __table1
-WHERE (__table1.k1, __table1.k2) IN (
+WHERE tuple(__table1.k1, __table1.k2) IN (
     SELECT
         __table1.k1 AS k1,
         __table1.k2 AS k2
@@ -23,7 +23,7 @@ SELECT
     __table1.k2 AS k2,
     __table1.payload AS payload
 FROM default.f AS __table1
-WHERE (__table1.k1, __table1.k2) IN (
+WHERE tuple(__table1.k1, __table1.k2) IN (
     SELECT
         __table1.k1 AS k1,
         __table1.k2 AS k2
@@ -42,7 +42,7 @@ SELECT
     __table1.k2 AS k2,
     __table1.payload AS payload
 FROM default.f AS __table1
-WHERE (__table1.k1, __table1.k2) IN (
+WHERE tuple(__table1.k1, __table1.k2) IN (
     SELECT
         __table1.k1 AS k1,
         __table1.k2 AS k2

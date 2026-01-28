@@ -22,10 +22,10 @@ JSON
 
 	"rows": 0,
 
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONEachRow
-{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
+{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
 JSONCompact
 {
 	"meta":
@@ -47,13 +47,13 @@ JSONCompact
 
 	"rows": 0,
 
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONCompactEachRow
-["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
+["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
 JSONObjectEachRow
 {
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 XML
 <?xml version='1.0' encoding='UTF-8' ?>
@@ -73,7 +73,7 @@ XML
 	<data>
 	</data>
 	<rows>0</rows>
-	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
+	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
 </result>
 Parallel formatting: 1
 JSON
@@ -97,10 +97,10 @@ JSON
 
 	"rows": 0,
 
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONEachRow
-{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
+{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
 JSONCompact
 {
 	"meta":
@@ -122,13 +122,13 @@ JSONCompact
 
 	"rows": 0,
 
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONCompactEachRow
-["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
+["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
 JSONObjectEachRow
 {
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 XML
 <?xml version='1.0' encoding='UTF-8' ?>
@@ -148,7 +148,7 @@ XML
 	<data>
 	</data>
 	<rows>0</rows>
-	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
+	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
 </result>
 Several blocks
 Without parallel formatting
@@ -188,14 +188,14 @@ JSON
 
 	"rows": 4,
 
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONEachRow
 {"number":0,"res":0}
 {"number":1,"res":0}
 {"number":2,"res":0}
 {"number":3,"res":0}
-{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
+{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
 JSONCompact
 {
 	"meta":
@@ -220,21 +220,21 @@ JSONCompact
 
 	"rows": 4,
 
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONCompactEachRow
 [0, 0]
 [1, 0]
 [2, 0]
 [3, 0]
-["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
+["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
 JSONObjectEachRow
 {
 	"row_1": {"number":0,"res":0},
 	"row_2": {"number":1,"res":0},
 	"row_3": {"number":2,"res":0},
 	"row_4": {"number":3,"res":0},
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 XML
 <?xml version='1.0' encoding='UTF-8' ?>
@@ -270,7 +270,7 @@ XML
 		</row>
 	</data>
 	<rows>4</rows>
-	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
+	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
 </result>
 With parallel formatting
 JSON
@@ -455,10 +455,10 @@ JSON
 
 	"rows": 0,
 
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONEachRow
-{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
+{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
 JSONCompact
 {
 	"meta":
@@ -480,13 +480,13 @@ JSONCompact
 
 	"rows": 0,
 
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONCompactEachRow
-["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
+["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
 JSONObjectEachRow
 {
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 XML
 <?xml version='1.0' encoding='UTF-8' ?>
@@ -506,7 +506,7 @@ XML
 	<data>
 	</data>
 	<rows>0</rows>
-	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
+	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
 </result>
 Parallel formatting: 1
 JSON
@@ -530,10 +530,10 @@ JSON
 
 	"rows": 0,
 
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONEachRow
-{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
+{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
 JSONCompact
 {
 	"meta":
@@ -555,13 +555,13 @@ JSONCompact
 
 	"rows": 0,
 
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONCompactEachRow
-["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
+["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
 JSONObjectEachRow
 {
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 XML
 <?xml version='1.0' encoding='UTF-8' ?>
@@ -581,7 +581,7 @@ XML
 	<data>
 	</data>
 	<rows>0</rows>
-	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
+	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
 </result>
 Several blocks
 Without parallel formatting
@@ -606,10 +606,10 @@ JSON
 
 	"rows": 0,
 
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONEachRow
-{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
+{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
 JSONCompact
 {
 	"meta":
@@ -631,13 +631,13 @@ JSONCompact
 
 	"rows": 0,
 
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONCompactEachRow
-["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
+["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
 JSONObjectEachRow
 {
-	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 XML
 <?xml version='1.0' encoding='UTF-8' ?>
@@ -657,7 +657,7 @@ XML
 	<data>
 	</data>
 	<rows>0</rows>
-	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
+	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(number > 3 :: 2) -> throwIf(number > 3) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
 </result>
 With parallel formatting
 JSON

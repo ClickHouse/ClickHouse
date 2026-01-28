@@ -464,7 +464,10 @@ bool explainQueryTree(
         IAST::FormatSettings format_settings(settings.ast_one_line);
         format_settings.show_secrets = query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
 
-        query_tree->toAST()->format(buf, format_settings);
+        ConvertToASTOptions ast_options;
+        ast_options.use_source_expression_for_constants = true;
+
+        query_tree->toAST(ast_options)->format(buf, format_settings);
     }
 
     return true;
@@ -539,7 +542,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             ExplainAnalyzedSyntaxVisitor::Data data(query_context);
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
-            ast.getExplainedQuery()->format(buf, IAST::FormatSettings(settings.oneline));
+            IAST::FormatSettings format_settings(settings.oneline);
+            IAST::FormatState format_state;
+            IAST::FormatStateStacked format_frame;
+            format_frame.allow_operators = false;
+            ast.getExplainedQuery()->format(buf, format_settings, format_state, format_frame);
             break;
         }
         case ASTExplainQuery::QueryTree:

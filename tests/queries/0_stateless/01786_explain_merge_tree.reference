@@ -106,7 +106,7 @@
       PrimaryKey
         Keys:
           x
-          plus(x, y)
+          x + y
         Condition: or((x in 2-element set), (plus(plus(x, y), 1) in (-Inf, 2]))
         Parts: 1/1
         Granules: 1/1

@@ -44,7 +44,7 @@ QUERY id: 0
               LIST id: 24, nodes: 1
                 COLUMN id: 25, column_name: p_partkey, result_type: Int32, source_id: 7
             PROJECTION COLUMNS
-              multiply(0.2, avg(l_quantity)) Float64
+              0.2 * avg(l_quantity) Float64
             PROJECTION
               LIST id: 26, nodes: 1
                 FUNCTION id: 27, function_name: multiply, function_type: ordinary, result_type: Float64

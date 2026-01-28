@@ -53,7 +53,7 @@ FROM system.numbers
 LIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
-    if(greater(number, 5), \'censor.net\', \'google\') String
+    if(number > 5, \'censor.net\', \'google\') String
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
@@ -140,7 +140,7 @@ FROM system.numbers
 LIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
-    CONCAT(if(greater(number, 5), \'censor.net\', \'google\'), \'1\') String
+    CONCAT(if(number > 5, \'censor.net\', \'google\'), \'1\') String
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: concat, function_type: ordinary, result_type: String
@@ -500,7 +500,7 @@ FROM system.numbers
 LIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
-    if(greater(number, 5), \'censor.net\', \'google\') String
+    if(number > 5, \'censor.net\', \'google\') String
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: if, function_type: ordinary, result_type: String

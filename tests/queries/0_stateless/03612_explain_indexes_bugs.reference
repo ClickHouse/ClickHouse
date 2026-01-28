@@ -18,7 +18,7 @@ Expression ((Project names + Projection))
       PrimaryKey
         Keys:
           x
-        Condition: (plus(minus(x, 1), 10) in (-Inf, 9])
+        Condition: (x - 1 + 10 in (-Inf, 9])
         Parts: 0/1
         Granules: 0/1
         Search Algorithm: generic exclusion search
@@ -31,7 +31,7 @@ Expression ((Project names + Projection))
         Keys:
           x
           y
-        Condition: ((plus(minus(x, 1), 10), minus(plus(y, 2), 20)) in 1-element set)
+        Condition: ((x - 1 + 10, y + 2 - 20) in 1-element set)
         Parts: 0/1
         Granules: 0/1
         Search Algorithm: generic exclusion search
@@ -43,7 +43,7 @@ Expression ((Project names + Projection))
       PrimaryKey
         Keys:
           x
-        Condition: (plus(minus(x, 1), 10) in 1-element set)
+        Condition: (x - 1 + 10 in 1-element set)
         Parts: 0/1
         Granules: 0/1
         Search Algorithm: generic exclusion search

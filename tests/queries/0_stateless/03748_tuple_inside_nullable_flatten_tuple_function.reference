@@ -6,32 +6,32 @@ SELECT
         CAST((1, ('x', 7)) AS Nullable(Tuple(a Int32, b Tuple(String, Int32))))
     ) AS res,
     toTypeName(res),
-    isNull(res);
+    res IS NULL;
 (1,'x',7)	Nullable(Tuple(a Int32, `b.1` String, `b.2` Int32))	0
 SELECT
     flattenTuple(
         CAST(NULL AS Nullable(Tuple()))
     ) AS res,
     toTypeName(res),
-    isNull(res); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+    res IS NULL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT
     flattenTuple(
         CAST(NULL AS Nullable(Tuple(a Nullable(Int32))))
     ) AS res,
     toTypeName(res),
-    isNull(res);
+    res IS NULL;
 (NULL)	Nullable(Tuple(a Nullable(Int32)))	0
 SELECT
     flattenTuple(
         CAST(NULL AS Nullable(Tuple(a Int32, b Array(Int32))))
     ) AS res,
     toTypeName(res),
-    isNull(res);
+    res IS NULL;
 (0,[])	Nullable(Tuple(a Int32, b Array(Int32)))	0
 SELECT
     flattenTuple(
         CAST((1, ('x', NULL)) AS Nullable(Tuple(a Int32, b Nullable(Tuple(String, Nullable(Tuple(Int32, Nullable(Int32))))))))
     ) AS res,
     toTypeName(res),
-    isNull(res);
+    res IS NULL;
 (1,'x',0,NULL)	Nullable(Tuple(a Int32, `b.1` String, `b.2.1` Int32, `b.2.2` Nullable(Int32)))	0

@@ -4,7 +4,7 @@
 (5,NULL)
 QUERY id: 0
   PROJECTION COLUMNS
-    (sumIf(toNullable(1), equals(modulo(number, 2), 0)), NULL) Tuple(Nullable(UInt64), Nullable(Nothing))
+    (sumIf(toNullable(1), number % 2 = 0), NULL) Tuple(Nullable(UInt64), Nullable(Nothing))
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: tuple, function_type: ordinary, result_type: Tuple(Nullable(UInt64), Nullable(Nothing))
@@ -37,7 +37,7 @@ QUERY id: 0
 (5,NULL)
 QUERY id: 0
   PROJECTION COLUMNS
-    (sum(if(equals(modulo(number, 2), 0), toNullable(1), 0)), NULL) Tuple(Nullable(UInt64), Nullable(Nothing))
+    (sum(if(number % 2 = 0, toNullable(1), 0)), NULL) Tuple(Nullable(UInt64), Nullable(Nothing))
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: tuple, function_type: ordinary, result_type: Tuple(Nullable(UInt64), Nullable(Nothing))
@@ -74,7 +74,7 @@ QUERY id: 0
 ((6150),3)
 QUERY id: 0
   PROJECTION COLUMNS
-    ((sum(if(equals(modulo(number, 2), 0), toNullable(0), 123))), toUInt8(3)) Tuple(Tuple(Nullable(UInt64)), UInt8)
+    ((sum(if(number % 2 = 0, toNullable(0), 123))), toUInt8(3)) Tuple(Tuple(Nullable(UInt64)), UInt8)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: tuple, function_type: ordinary, result_type: Tuple(Tuple(Nullable(UInt64)), UInt8)

@@ -6,13 +6,13 @@ SELECT
 FROM
 (
     SELECT
-        t.1 AS k,
-        t.2 AS v,
+        tupleElement(t, 1) AS k,
+        tupleElement(t, 2) AS v,
         runningDifference(v) AS d,
-        runningDifference(cityHash64(t.1)) AS i
+        runningDifference(cityHash64(tupleElement(t, 1))) AS i
     FROM
     (
-        SELECT arrayJoin([_CAST((\'a\', 1), \'Tuple(String, UInt8)\'), _CAST((\'a\', 2), \'Tuple(String, UInt8)\'), _CAST((\'a\', 3), \'Tuple(String, UInt8)\'), _CAST((\'b\', 11), \'Tuple(String, UInt8)\'), _CAST((\'b\', 13), \'Tuple(String, UInt8)\'), _CAST((\'b\', 15), \'Tuple(String, UInt8)\')]) AS t
+        SELECT arrayJoin(array(_CAST((\'a\', 1), \'Tuple(String, UInt8)\'), _CAST((\'a\', 2), \'Tuple(String, UInt8)\'), _CAST((\'a\', 3), \'Tuple(String, UInt8)\'), _CAST((\'b\', 11), \'Tuple(String, UInt8)\'), _CAST((\'b\', 13), \'Tuple(String, UInt8)\'), _CAST((\'b\', 15), \'Tuple(String, UInt8)\'))) AS t
         FROM system.one
     )
 )
@@ -48,7 +48,7 @@ FROM
         co3
         WITH CUBE
 )
-WHERE (co != 0) AND (co2 != 2)
+WHERE co != 0 AND co2 != 2
 1	0	3	1
 1	0	0	1
 SELECT name
@@ -137,7 +137,7 @@ FROM
     SELECT *
     FROM system.one
 )
-WHERE arrayMap(x -> (x + 1), [dummy]) = _CAST([1], \'Array(UInt8)\')
+WHERE arrayMap(x -> x + 1, array(dummy)) = _CAST([1], \'Array(UInt8)\')
 0
 SELECT *
 FROM
@@ -154,8 +154,8 @@ ALL INNER JOIN
         3 AS value_1
     FROM system.one
 ) USING (id)
-WHERE arrayMap(x -> ((x + value) + value_1), _CAST([1], \'Array(UInt8)\')) = _CAST([6], \'Array(UInt8)\')
+WHERE arrayMap(x -> x + value + value_1, _CAST([1], \'Array(UInt8)\')) = _CAST([6], \'Array(UInt8)\')
 1	2	3
 SELECT *
 FROM system.one
-HAVING (dummy > 0) AND (dummy < 0)
+HAVING dummy > 0 AND dummy < 0

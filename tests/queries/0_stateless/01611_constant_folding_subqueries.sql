@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 -- { echo }
 SELECT * FROM (SELECT (SELECT * FROM system.numbers LIMIT 1 OFFSET 1) AS n, toUInt64(10 / n)) FORMAT CSV;
 SELECT (SELECT * FROM system.numbers LIMIT 1 OFFSET 1) AS n, toUInt64(10 / n) FORMAT CSV;

@@ -56,17 +56,17 @@ FROM
     FROM numbers(10)
 )
 SELECT
-    uniq(-bitNot(-x)),
-    uniqExact(-bitNot(-x)),
-    uniqHLL12(-bitNot(-x)),
-    uniqCombined(-bitNot(-x)),
-    uniqCombined64(-bitNot(-x))
+    uniq(-(bitNot(-x))),
+    uniqExact(-(bitNot(-x))),
+    uniqHLL12(-(bitNot(-x))),
+    uniqCombined(-(bitNot(-x))),
+    uniqCombined64(-(bitNot(-x)))
 FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT countDistinct(-bitNot(-x))
+SELECT countDistinct(-(bitNot(-x)))
 FROM
 (
     SELECT number % 2 AS x
@@ -132,17 +132,17 @@ FROM
     FROM numbers(10)
 )
 SELECT
-    uniq(-bitNot(-x)),
-    uniqExact(-bitNot(-x)),
-    uniqHLL12(-bitNot(-x)),
-    uniqCombined(-bitNot(-x)),
-    uniqCombined64(-bitNot(-x))
+    uniq(-(bitNot(-x))),
+    uniqExact(-(bitNot(-x))),
+    uniqHLL12(-(bitNot(-x))),
+    uniqCombined(-(bitNot(-x))),
+    uniqCombined64(-(bitNot(-x)))
 FROM
 (
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT countDistinct(-bitNot(-x))
+SELECT countDistinct(-(bitNot(-x)))
 FROM
 (
     SELECT number % 2 AS x

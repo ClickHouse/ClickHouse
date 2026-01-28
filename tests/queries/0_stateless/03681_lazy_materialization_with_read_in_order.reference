@@ -44,7 +44,7 @@ Lazily read columns: b, c, d
 4	8
 === Test 5: ORDER BY a, a+1 ===
 Prefix sort description: __table1.a ASC
-Result sort description: __table1.a ASC, plus(__table1.a, 1_UInt8) ASC
+Result sort description: __table1.a ASC, __table1.a + 1_UInt8 ASC
 ReadType: InOrder
 LazilyReadFromMergeTree
 Lazily read columns: b, c, d, e

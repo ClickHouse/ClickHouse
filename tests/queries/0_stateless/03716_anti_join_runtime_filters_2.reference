@@ -21,18 +21,18 @@ Positions: 0
                  COLUMN Const(UInt8) -> __join_result_dummy UInt8 : 1
         Positions: 0 1
           Filter
-          AND column: equals(__table1.c_nationkey, __table4.n_nationkey)
+          AND column: __table1.c_nationkey = __table4.n_nationkey
           Actions: INPUT : 0 -> n_nationkey Int32 : 0
-                   FUNCTION equals(n_nationkey : 0, n_nationkey : 0) -> equals(__table1.c_nationkey, __table4.n_nationkey) UInt8 : 1
+                   FUNCTION n_nationkey : 0 = n_nationkey : 0 -> __table1.c_nationkey = __table4.n_nationkey UInt8 : 1
           Positions: 1 0 1
-          Filter column: and(equals(__table1.c_nationkey, __table4.n_nationkey), __applyFilter(_runtime_filter_UNIQ_ID_0, exists(__table2).__table1.c_nationkey)) (removed)
+          Filter column: __table1.c_nationkey = __table4.n_nationkey AND __applyFilter(_runtime_filter_UNIQ_ID_0, exists(__table2).__table1.c_nationkey) (removed)
           Actions: INPUT : 1 -> n_nationkey Int32 : 0
                    COLUMN Const(String) -> _runtime_filter_UNIQ_ID_0 String : 1
-                   INPUT : 0 -> equals(__table1.c_nationkey, __table4.n_nationkey) UInt8 : 2
+                   INPUT : 0 -> __table1.c_nationkey = __table4.n_nationkey UInt8 : 2
                    ALIAS n_nationkey : 0 -> __table4.n_nationkey Int32 : 3
                    FUNCTION __applyFilter(_runtime_filter_UNIQ_ID_0 :: 1, n_nationkey :: 0) -> __applyFilter(_runtime_filter_UNIQ_ID_0, exists(__table2).__table1.c_nationkey) UInt8 : 4
                    ALIAS __table4.n_nationkey :: 3 -> __table1.c_nationkey Int32 : 0
-                   FUNCTION and(equals(__table1.c_nationkey, __table4.n_nationkey) :: 2, __applyFilter(_runtime_filter_UNIQ_ID_0, exists(__table2).__table1.c_nationkey) :: 4) -> and(equals(__table1.c_nationkey, __table4.n_nationkey), __applyFilter(_runtime_filter_UNIQ_ID... UInt8 : 3
+                   FUNCTION __table1.c_nationkey = __table4.n_nationkey :: 2 AND __applyFilter(_runtime_filter_UNIQ_ID_0, exists(__table2).__table1.c_nationkey) :: 4 -> and(equals(__table1.c_nationkey, __table4.n_nationkey), __applyFilter(_runtime_filter_UNIQ_ID... UInt8 : 3
                    ALIAS __table1.c_nationkey :: 0 -> exists(__table2).__table1.c_nationkey Int32 : 4
           Positions: 3 4
             ReadFromMergeTree (default.nation)

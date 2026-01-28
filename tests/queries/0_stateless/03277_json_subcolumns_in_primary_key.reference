@@ -106,7 +106,7 @@ PrimaryKey
 Keys:
 json.a
 CAST(json.b, \'String\')
-Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
+Condition: (CAST(json.b, \'String\') in [\'str_0\', \'str_0\']) AND (json.a in [0, 0])
 Parts: 1/2
 Granules: 1/8
 Search Algorithm: binary search
@@ -366,7 +366,7 @@ PrimaryKey
 Keys:
 json.a
 CAST(json.b, \'String\')
-Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
+Condition: (CAST(json.b, \'String\') in [\'str_0\', \'str_0\']) AND (json.a in [0, 0])
 Parts: 1/2
 Granules: 1/8
 Search Algorithm: binary search
@@ -626,7 +626,7 @@ PrimaryKey
 Keys:
 json.a
 CAST(json.b, \'String\')
-Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
+Condition: (CAST(json.b, \'String\') in [\'str_0\', \'str_0\']) AND (json.a in [0, 0])
 Parts: 1/2
 Granules: 1/8
 Search Algorithm: binary search

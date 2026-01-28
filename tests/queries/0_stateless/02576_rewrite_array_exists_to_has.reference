@@ -1,6 +1,6 @@
 QUERY id: 0
   PROJECTION COLUMNS
-    arrayExists(lambda(tuple(x), equals(x, 5)), materialize(range(10))) UInt8
+    arrayExists(lambda(tuple(x), x = 5), materialize(range(10))) UInt8
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: arrayExists, function_type: ordinary, result_type: UInt8
@@ -32,7 +32,7 @@ QUERY id: 0
           CONSTANT id: 18, constant_value: UInt64_10, constant_value_type: UInt8
 QUERY id: 0
   PROJECTION COLUMNS
-    arrayExists(lambda(tuple(x), equals(5, x)), materialize(range(10))) UInt8
+    arrayExists(lambda(tuple(x), 5 = x), materialize(range(10))) UInt8
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: arrayExists, function_type: ordinary, result_type: UInt8
@@ -64,7 +64,7 @@ QUERY id: 0
           CONSTANT id: 18, constant_value: UInt64_10, constant_value_type: UInt8
 QUERY id: 0
   PROJECTION COLUMNS
-    arrayExists(lambda(tuple(x), equals(x, 5)), materialize(range(10))) UInt8
+    arrayExists(lambda(tuple(x), x = 5), materialize(range(10))) UInt8
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: has, function_type: ordinary, result_type: UInt8
@@ -87,7 +87,7 @@ QUERY id: 0
           CONSTANT id: 13, constant_value: UInt64_10, constant_value_type: UInt8
 QUERY id: 0
   PROJECTION COLUMNS
-    arrayExists(lambda(tuple(x), equals(5, x)), materialize(range(10))) UInt8
+    arrayExists(lambda(tuple(x), 5 = x), materialize(range(10))) UInt8
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: has, function_type: ordinary, result_type: UInt8
@@ -108,9 +108,9 @@ QUERY id: 0
       ARGUMENTS
         LIST id: 12, nodes: 1
           CONSTANT id: 13, constant_value: UInt64_10, constant_value_type: UInt8
-SELECT arrayExists(x -> (x = 5), materialize(range(10)))
+SELECT arrayExists(lambda(tuple(x), x = 5), materialize(range(10)))
 FROM numbers(10)
-SELECT arrayExists(x -> (5 = x), materialize(range(10)))
+SELECT arrayExists(lambda(tuple(x), 5 = x), materialize(range(10)))
 FROM numbers(10)
 SELECT has(materialize(range(10)), 5)
 FROM numbers(10)
