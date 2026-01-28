@@ -87,7 +87,7 @@ template <typename Method>
 size_t DistinctSortedStreamTransform::buildFilterForRange(
     Method & method, IColumnFilter & filter, const size_t range_begin, const size_t range_end)
 {
-    typename Method::State state(other_columns, other_columns_sizes, nullptr);
+    typename Method::State state(other_columns, other_columns_sizes, nullptr, false);
 
     size_t count = 0;
     for (size_t i = range_begin; i < range_end; ++i)

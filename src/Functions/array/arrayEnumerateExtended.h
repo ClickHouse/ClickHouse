@@ -215,7 +215,7 @@ void FunctionArrayEnumerateExtended<Derived>::executeMethodImpl(
         ColumnUInt32::Container & res_values) const
 {
     typename Method::Set indices;
-    typename Method::Method method(columns, key_sizes, nullptr);
+    typename Method::Method method(columns, key_sizes, nullptr, false);
     Arena pool; /// Won't use it;
 
     ColumnArray::Offset prev_off = 0;

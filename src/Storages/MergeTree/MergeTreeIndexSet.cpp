@@ -301,7 +301,7 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
     ClearableSetVariants & variants) const
 {
     /// Like DistinctSortedTransform.
-    typename Method::State state(column_ptrs, key_sizes, nullptr);
+    typename Method::State state(column_ptrs, key_sizes, nullptr, false);
 
     bool has_new_data = false;
     for (size_t i = 0; i < limit; ++i)
