@@ -13,4 +13,6 @@
   <query tag='RIGHT_1e7_1e7'>SELECT * FROM numbers_mt(10000000) AS l RIGHT JOIN numbers_mt(10000000) AS r USING (number)</query>
   <query tag='FULL_1e7_1e7'>SELECT * FROM numbers_mt(10000000) AS l FULL JOIN numbers_mt(10000000) AS r USING (number)</query>
 
+  <query tag='FULL_hits_2_level_map'>SELECT count() FROM hits_10m_single AS t1 FULL JOIN hits_10m_single AS t2 ON t1.URL = t2.Referer AND t1.UserID = t2.UserID AND t1.URL != '' AND t2.Referer != ''</query>
+
 </test>
