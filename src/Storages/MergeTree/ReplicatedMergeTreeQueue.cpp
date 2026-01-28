@@ -19,7 +19,6 @@
 #include <base/defines.h>
 #include <base/sort.h>
 #include <cassert>
-#include <limits>
 #include <ranges>
 #include <Poco/Timestamp.h>
 
@@ -1647,8 +1646,14 @@ UInt64 ReplicatedMergeTreeQueue::getWaitBackoffTimeMsForEntry(const LogEntry & e
 
     /// Exponential backoff: min_value * 2^num_postponed ms, capped at max_backoff_ms
     /// With default min=1000ms: 1000, 2000, 4000, 8000, 10000 (capped at max)
-    UInt64 multiplier = 1ULL << std::min(entry.num_postponed, static_cast<size_t>(std::numeric_limits<UInt64>::digits - 1));
-    UInt64 backoff_ms = std::min(min_backoff_ms * multiplier, max_backoff_ms);
+    if (min_backoff_ms == 0)
+        min_backoff_ms = 1;  /// Fallback to 1ms if min is 0
+
+    /// Limit shift to avoid overflow: max safe shift is ~63 - log2(min_backoff_ms)
+    /// For simplicity, cap at 30 shifts (2^30 = ~1 billion) which is more than enough
+    constexpr size_t max_safe_shift = 30;
+    size_t actual_shift = std::min(entry.num_postponed, max_safe_shift);
+    UInt64 backoff_ms = std::min(min_backoff_ms << actual_shift, max_backoff_ms);
 
     auto current_time_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000ULL;
     auto last_postpone_time_ms = static_cast<UInt64>(entry.last_postpone_time) * 1000ULL;
