@@ -2067,6 +2067,12 @@ namespace ErrorCodes
     DECLARE(Seconds, refresh_statistics_interval, 0, R"(
     The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
     )", 0) \
+    DECLARE(UInt64, distributed_index_analysis_min_parts_to_activate, 10, R"(
+    Minimal number of parts to activated distributed index analysis
+    )", 0) \
+    DECLARE(UInt64, distributed_index_analysis_min_indexes_size_to_activate, 1_GiB, R"(
+    Minimal index sizes (data skipping and primary key) on disk (but uncompressed) to activated distributed index analysis
+    )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)
