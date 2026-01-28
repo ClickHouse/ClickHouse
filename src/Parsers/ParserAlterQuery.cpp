@@ -40,10 +40,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserKeyword s_modify_order_by(Keyword::MODIFY_ORDER_BY);
     ParserKeyword s_modify_sample_by(Keyword::MODIFY_SAMPLE_BY);
-    ParserKeyword s_materialize(Keyword::MATERIALIZE);
     ParserKeyword s_modify_ttl(Keyword::MODIFY_TTL);
     ParserKeyword s_materialize_ttl(Keyword::MATERIALIZE_TTL);
-    ParserKeyword s_rewrite_parts(Keyword::REWRITE_PARTS);
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
     ParserKeyword s_reset_setting(Keyword::RESET_SETTING);
     ParserKeyword s_modify_query(Keyword::MODIFY_QUERY);
@@ -126,7 +124,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_remove_sample_by(Keyword::REMOVE_SAMPLE_BY);
     ParserKeyword s_apply_deleted_mask(Keyword::APPLY_DELETED_MASK);
     ParserKeyword s_apply_patches(Keyword::APPLY_PATCHES);
-    ParserKeyword s_all(Keyword::ALL);
 
     ParserToken parser_opening_round_bracket(TokenType::OpeningRoundBracket);
     ParserToken parser_closing_round_bracket(TokenType::ClosingRoundBracket);
@@ -205,6 +202,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 return false;
             break;
         }
+        default:
+            break;
         case ASTAlterQuery::AlterObjectType::TABLE:
         {
             if (s_add_column.ignore(pos, expected))
@@ -414,42 +413,37 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_clear_statistics.ignore(pos, expected))
             {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
+                    return false;
+
                 command->type = ASTAlterCommand::DROP_STATISTICS;
                 command->clear_statistics = true;
                 command->detach = false;
 
-                if (!s_all.ignore(pos, expected))
+                if (s_in_partition.ignore(pos, expected))
                 {
-                    if (s_if_exists.ignore(pos, expected))
-                        command->if_exists = true;
-
-                    if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
-
-                    if (s_in_partition.ignore(pos, expected))
-                    {
-                        if (!parser_partition.parse(pos, command_partition, expected))
-                            return false;
-                    }
                 }
             }
             else if (s_materialize_statistics.ignore(pos, expected))
             {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
+                    return false;
+
                 command->type = ASTAlterCommand::MATERIALIZE_STATISTICS;
                 command->detach = false;
-                if (!ParserKeyword(Keyword::ALL).ignore(pos, expected))
+
+                if (s_in_partition.ignore(pos, expected))
                 {
-                    if (s_if_exists.ignore(pos, expected))
-                        command->if_exists = true;
-
-                    if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
+                    if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
-
-                    if (s_in_partition.ignore(pos, expected))
-                    {
-                        if (!parser_partition.parse(pos, command_partition, expected))
-                            return false;
-                    }
                 }
             }
             else if (s_add_projection.ignore(pos, expected))
@@ -858,18 +852,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parser_exp_elem.parse(pos, command_predicate, expected))
                     return false;
 
-                /// ParserExpression, in contrast to ParserExpressionWithOptionalAlias,
-                /// does not expect an alias after the expression. However, in certain cases,
-                /// it uses ParserExpressionWithOptionalAlias recursively, and use its result.
-                /// This is the case when it parses a single expression in parentheses, e.g.,
-                /// it does not allow
-                /// 1 AS x
-                /// but it can parse
-                /// (1 AS x)
-                /// which we should not allow as well.
-                if (!command_predicate->tryGetAlias().empty())
-                    return false;
-
                 command->type = ASTAlterCommand::DELETE;
             }
             else if (s_update.ignore(pos, expected))
@@ -889,18 +871,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parser_exp_elem.parse(pos, command_predicate, expected))
                     return false;
 
-                /// ParserExpression, in contrast to ParserExpressionWithOptionalAlias,
-                /// does not expect an alias after the expression. However, in certain cases,
-                /// it uses ParserExpressionWithOptionalAlias recursively, and use its result.
-                /// This is the case when it parses a single expression in parentheses, e.g.,
-                /// it does not allow
-                /// 1 AS x
-                /// but it can parse
-                /// (1 AS x)
-                /// which we should not allow as well.
-                if (!command_predicate->tryGetAlias().empty())
-                    return false;
-
                 command->type = ASTAlterCommand::UPDATE;
             }
             else if (s_comment_column.ignore(pos, expected))
@@ -918,16 +888,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_modify_ttl.ignore(pos, expected))
             {
-                /// MODIFY TTL MATERIALIZE|REMOVE|MODIFY is illegal
-                /// because MATERIALIZE|REMOVE|MODIFY TTL is used instead.
-                if (s_materialize.checkWithoutMoving(pos, expected) ||
-                    s_remove.checkWithoutMoving(pos, expected) ||
-                    s_modify.checkWithoutMoving(pos, expected))
-                    return false;
-
                 if (!parser_ttl_list.parse(pos, command_ttl, expected))
                     return false;
-
                 command->type = ASTAlterCommand::MODIFY_TTL;
             }
             else if (s_remove_ttl.ignore(pos, expected))
@@ -937,16 +899,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_materialize_ttl.ignore(pos, expected))
             {
                 command->type = ASTAlterCommand::MATERIALIZE_TTL;
-
-                if (s_in_partition.ignore(pos, expected))
-                {
-                    if (!parser_partition.parse(pos, command_partition, expected))
-                        return false;
-                }
-            }
-            else if (s_rewrite_parts.ignore(pos, expected))
-            {
-                command->type = ASTAlterCommand::REWRITE_PARTS;
 
                 if (s_in_partition.ignore(pos, expected))
                 {
@@ -1021,10 +973,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else
                 return false;
-            break;
         }
-        default:
-            break;
     }
 
     if (with_round_bracket)

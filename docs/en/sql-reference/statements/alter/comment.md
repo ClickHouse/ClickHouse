@@ -6,7 +6,6 @@ sidebar_position: 51
 slug: /sql-reference/statements/alter/comment
 title: 'ALTER TABLE ... MODIFY COMMENT'
 keywords: ['ALTER TABLE', 'MODIFY COMMENT']
-doc_type: 'reference'
 ---
 
 # ALTER TABLE ... MODIFY COMMENT

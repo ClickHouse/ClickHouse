@@ -59,13 +59,11 @@ int main(int, char **)
     size_t sum_size_written = sum_parts_size;
     size_t num_merges = 1;
     size_t age_passed = 0;
-    const size_t max_bytes = 100ULL * 1024 * 1024 * 1024;
-    const size_t max_rows = std::numeric_limits<size_t>::max();
-    std::vector<MergeConstraint> constraints{{max_bytes, max_rows}};
+    const std::vector<size_t> max_merge_sizes = {100ULL * 1024 * 1024 * 1024};
 
     while (parts.size() > 1)
     {
-        PartsRanges selected_ranges = selector.select(ranges, constraints, nullptr);
+        PartsRanges selected_ranges = selector.select(ranges, max_merge_sizes, nullptr);
 
         if (selected_ranges.empty())
         {

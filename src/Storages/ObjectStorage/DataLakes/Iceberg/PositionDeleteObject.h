@@ -1,6 +1,8 @@
 #pragma once
 #include "config.h"
 
+#if USE_AVRO
+
 #include <optional>
 #include <base/types.h>
 
@@ -14,3 +16,5 @@ struct PositionDeleteObject
 };
 }
 
+
+#endif

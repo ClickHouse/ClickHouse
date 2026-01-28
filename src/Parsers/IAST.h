@@ -163,7 +163,7 @@ public:
         if (field == nullptr)
             return;
 
-        auto child = children.begin();
+        auto * child = children.begin();
         while (child != children.end())
         {
             if (child->get() == field)
@@ -248,11 +248,9 @@ public:
         bool surround_each_list_element_with_parens = false;
         bool ignore_printed_asts_with_alias = false; /// Ignore FormatState::printed_asts_with_alias
         bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
-        bool allow_moving_operators_before_parens = true; /// Allow moving operators like "-" before parents: (-...) -> -(...)
         size_t list_element_index = 0;
         std::string create_engine_name;
         const IAST * current_select = nullptr;
-        const IAST * current_function = nullptr;  /// Pointer to the function whose arguments are being formatted
     };
 
     void format(WriteBuffer & ostr, const FormatSettings & settings) const

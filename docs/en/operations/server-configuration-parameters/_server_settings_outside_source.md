@@ -43,92 +43,31 @@ This setting should be used with extra caution since forwarded addresses can be 
 
 ## backups {#backups}
 
-Settings for backups, used when executing the [`BACKUP` and `RESTORE`](/operations/backup/overview) statements.
+Settings for backups, used when writing `BACKUP TO File()`.
 
 The following settings can be configured by sub-tags:
 
-<!-- SQL
-WITH settings AS (
-  SELECT arrayJoin([
-    ('allow_concurrent_backups', 'Bool','Determines whether multiple backup operations can run concurrently on the same host.', 'true'),
-    ('allow_concurrent_restores', 'Bool', 'Determines whether multiple restore operations can run concurrently on the same host.', 'true'),
-    ('allowed_disk', 'String', 'Disk to backup to when using `File()`. This setting must be set in order to use `File`.', ''),
-    ('allowed_path', 'String', 'Path to backup to when using `File()`. This setting must be set in order to use `File`.', ''),
-    ('attempts_to_collect_metadata_before_sleep', 'UInt', 'Number of attempts to collect metadata before sleeping in case of inconsistency after comparing collected metadata.', '2'),
-    ('collect_metadata_timeout', 'UInt64', 'Timeout in milliseconds for collecting metadata during backup.', '600000'),
-    ('compare_collected_metadata', 'Bool', 'If true, compares the collected metadata with the existing metadata to ensure they are not changed during backup .', 'true'),
-    ('create_table_timeout', 'UInt64', 'Timeout in milliseconds for creating tables during restore.', '300000'),
-    ('max_attempts_after_bad_version', 'UInt64', 'Maximum number of attempts to retry after encountering a bad version error during coordinated backup/restore.', '3'),
-    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Maximum sleep time in milliseconds before the next attempt to collect metadata.', '100'),
-    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Minimum sleep time in milliseconds before the next attempt to collect metadata.', '5000'),
-    ('remove_backup_files_after_failure', 'Bool', 'If the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are.', 'true'),
-    ('sync_period_ms', 'UInt64', 'Synchronization period in milliseconds for coordinated backup/restore.', '5000'),
-    ('test_inject_sleep', 'Bool', 'Testing related sleep', 'false'),
-    ('test_randomize_order', 'Bool', 'If true, randomizes the order of certain operations for testing purposes.', 'false'),
-    ('zookeeper_path', 'String', 'Path in ZooKeeper where backup and restore metadata is stored when using `ON CLUSTER` clause.', '/clickhouse/backups')
-  ]) AS t )
-SELECT concat('`', t.1, '`') AS Setting, t.2 AS Type, t.3 AS Description, concat('`', t.4, '`') AS Default FROM settings FORMAT Markdown
--->
-| Setting | Type | Description | Default |
-|:-|:-|:-|:-|
-| `allow_concurrent_backups` | Bool | Determines whether multiple backup operations can run concurrently on the same host. | `true` |
-| `allow_concurrent_restores` | Bool | Determines whether multiple restore operations can run concurrently on the same host. | `true` |
-| `allowed_disk` | String | Disk to backup to when using `File()`. This setting must be set in order to use `File`. | `` |
-| `allowed_path` | String | Path to backup to when using `File()`. This setting must be set in order to use `File`. | `` |
-| `attempts_to_collect_metadata_before_sleep` | UInt | Number of attempts to collect metadata before sleeping in case of inconsistency after comparing collected metadata. | `2` |
-| `collect_metadata_timeout` | UInt64 | Timeout in milliseconds for collecting metadata during backup. | `600000` |
-| `compare_collected_metadata` | Bool | If true, compares the collected metadata with the existing metadata to ensure they are not changed during backup . | `true` |
-| `create_table_timeout` | UInt64 | Timeout in milliseconds for creating tables during restore. | `300000` |
-| `max_attempts_after_bad_version` | UInt64 | Maximum number of attempts to retry after encountering a bad version error during coordinated backup/restore. | `3` |
-| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Maximum sleep time in milliseconds before the next attempt to collect metadata. | `100` |
-| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Minimum sleep time in milliseconds before the next attempt to collect metadata. | `5000` |
-| `remove_backup_files_after_failure` | Bool | If the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are. | `true` |
-| `sync_period_ms` | UInt64 | Synchronization period in milliseconds for coordinated backup/restore. | `5000` |
-| `test_inject_sleep` | Bool | Testing related sleep | `false` |
-| `test_randomize_order` | Bool | If true, randomizes the order of certain operations for testing purposes. | `false` |
-| `zookeeper_path` | String | Path in ZooKeeper where backup and restore metadata is stored when using `ON CLUSTER` clause. | `/clickhouse/backups` |
+| Setting                             | Description                                                                                                                                                                    | Default |
+|-------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| `allowed_path`                      | Path to backup to when using `File()`. This setting must be set in order to use `File`. The path can be relative to the instance directory or it can be absolute.              | `true`  |
+| `remove_backup_files_after_failure` | If the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are. | `true`  |
 
 This setting is configured by default as:
 
 ```xml
 <backups>
-    ....
+    <allowed_path>backups</allowed_path>
+    <remove_backup_files_after_failure>true</remove_backup_files_after_failure>
 </backups>
-```
-
-## background_schedule_pool_log {#background_schedule_pool_log}
-
-Contains information about all background tasks that are executed via various background pools.
-
-```xml
-<background_schedule_pool_log>
-    <database>system</database>
-    <table>background_schedule_pool_log</table>
-    <partition_by>toYYYYMM(event_date)</partition_by>
-    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    <max_size_rows>1048576</max_size_rows>
-    <reserved_size_rows>8192</reserved_size_rows>
-    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-    <flush_on_crash>false</flush_on_crash>
-    <!-- Only tasks longer than duration_threshold_milliseconds will be logged. Zero means log everything -->
-    <duration_threshold_milliseconds>0</duration_threshold_milliseconds>
-</background_schedule_pool_log>
 ```
 
 ## bcrypt_workfactor {#bcrypt_workfactor}
 
-Work factor for the `bcrypt_password` authentication type which uses the [Bcrypt algorithm](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
-The work factor defines the amount of computations and time needed to compute the hash and verify the password.
+Work factor for the bcrypt_password authentication type which uses the [Bcrypt algorithm](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
 ```
-
-:::warning
-For applications with high-frequency authentication,
-consider alternative authentication methods due to
-bcrypt's computational overhead at higher work factors.
-:::
 
 ## table_engines_require_grant {#table_engines_require_grant}
 
@@ -399,7 +338,7 @@ See also:
 
 ## format_schema_path {#format_schema_path}
 
-The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](/interfaces/formats/CapnProto) format.
+The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
 
 **Example**
 
@@ -879,18 +818,15 @@ The location and format of log messages.
 | `log`                  | The path to the log file.                                                                                                                                          |
 | `errorlog`             | The path to the error log file.                                                                                                                                    |
 | `size`                 | Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created. |
-| `rotation`             | Rotation policy: Controls when log files are rotated. Rotation can be based on size, time, or a combination of both. Examples: 100M, daily, 100M,daily. Once the log file exceeds the specified size or when the specified time interval is reached, it is renamed and archived, and a new log file is created. |
-| `count`                | Rotation policy: How many historical log files ClickHouse are kept at most.                                                                                        |
+| `count`                | Rotation policy: How many historical log files Clickhouse are kept at most.                                                                                        |
 | `stream_compress`      | Compress log messages using LZ4. Set to `1` or `true` to enable.                                                                                                   |
-| `console`              | Enable logging to the console. Set to `1` or `true` to enable. Default is `1` if ClickHouse does not run in daemon mode, `0` otherwise.                            |
+| `console`              | Enable logging to the console. Set to `1` or `true` to enable. Default is `1` if Clickhouse does not run in daemon mode, `0` otherwise.                            |
 | `console_log_level`    | Log level for console output. Defaults to `level`.                                                                                                                 |
-| `formatting.type`      | Log format for console output. Currently, only `json` is supported                                                                                                 |
+| `formatting`           | Log format for console output. Currently, only `json` is supported                                                                                                 |
 | `use_syslog`           | Also forward log output to syslog.                                                                                                                                 |
 | `syslog_level`         | Log level for logging to syslog.                                                                                                                                   |
 | `async`                | When `true` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG           |
 | `async_queue_max_size` | When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped                       |
-| `startup_level`        | Startup level is used to set the root logger level at server startup. After startup log level is reverted to the `level` setting                                   |
-| `shutdown_level`       | Shutdown level is used to set the root logger level at server Shutdown.                                                                                            |
 
 **Log format specifiers**
 
@@ -1713,25 +1649,9 @@ Settings for the [asynchronous_insert_log](/operations/system-tables/asynchronou
 
 ## crash_log {#crash_log}
 
-Settings for the [crash_log](../../operations/system-tables/crash_log.md) system table operation.
+Settings for the [crash_log](../../operations/system-tables/crash-log.md) system table operation.
 
-The following settings can be configured by sub-tags:
-
-| Setting                            | Description                                                                                                                                             | Default             | Note                                                                                                               |
-|------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|--------------------------------------------------------------------------------------------------------------------|
-| `database`                         | Name of the database.                                                                                                                                   |                     |                                                                                                                    |
-| `table`                            | Name of the system table.                                                                                                                               |                     |                                                                                                                    |
-| `engine`                           | [MergeTree Engine Definition](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) for a system table. |                     | Cannot be used if `partition_by` or `order_by` defined. If not specified `MergeTree` is selected by default        |
-| `partition_by`                     | [Custom partitioning key](/engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table.                               |                     | If `engine` is specified for system table, `partition_by` parameter should be specified directly inside 'engine'   |
-| `ttl`                              | Specifies the table [TTL](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).                                              |                     | If `engine` is specified for system table, `ttl` parameter should be specified directly inside 'engine'            |
-| `order_by`                         | [Custom sorting key](/engines/table-engines/mergetree-family/mergetree#order_by) for a system table. Can't be used if `engine` defined.      |                     | If `engine` is specified for system table, `order_by` parameter should be specified directly inside 'engine'       |
-| `storage_policy`                   | Name of the storage policy to use for the table (optional).                                                                                             |                     | If `engine` is specified for system table, `storage_policy` parameter should be specified directly inside 'engine' |
-| `settings`                         | [Additional parameters](/engines/table-engines/mergetree-family/mergetree/#settings) that control the behavior of the MergeTree (optional).   |                     | If `engine` is specified for system table, `settings` parameter should be specified directly inside 'engine'       |
-| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                      | `7500`              |                                                                                                                    |
-| `max_size_rows`                    | Maximal size in lines for the logs. When the amount of non-flushed logs reaches the max_size, logs are dumped to the disk.                              | `1024`           |                                                                                                                    |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                        | `1024`              |                                                                                                                    |
-| `buffer_size_rows_flush_threshold` | Threshold for amount of lines. If the threshold is reached, flushing logs to the disk is launched in background.                                        | `max_size_rows / 2` |                                                                                                                    |
-| `flush_on_crash`                   | Sets whether logs should be dumped to the disk in case of a crash.                                                                                      | `false`             |                                                                                                                    |
+<SystemLogParameters/>
 
 The default server configuration file `config.xml` contains the following settings section:
 
@@ -2286,7 +2206,7 @@ Accepted values are:
 Section of the configuration file that contains settings:
 - Path to configuration file with predefined users.
 - Path to folder where users created by SQL commands are stored.
-- ZooKeeper node path where users created by SQL commands are stored and replicated.
+- ZooKeeper node path where users created by SQL commands are stored and replicated (experimental).
 
 If this section is specified, the path from [users_config](/operations/server-configuration-parameters/settings#users_config) and [access_control_path](../../operations/server-configuration-parameters/settings.md#access_control_path) won't be used.
 
@@ -2352,7 +2272,7 @@ For example:
 ```
 
 See also:
-- function [`cutToFirstSignificantSubdomainCustom`](../../sql-reference/functions/url-functions.md/#cutToFirstSignificantSubdomainCustom) and variations thereof,
+- function [`cutToFirstSignificantSubdomainCustom`](../../sql-reference/functions/url-functions.md/#cuttofirstsignificantsubdomaincustom) and variations thereof,
   which accepts a custom TLD list name, returning the part of the domain that includes top-level subdomains up to the first significant subdomain.
 
 ## proxy {#proxy}
@@ -2553,24 +2473,3 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 **See Also**
 - [Workload Hierarchy](/operations/workload-scheduling.md#workloads)
 - [workload_path](#workload_path)
-
-## zookeeper_log {#zookeeper_log}
-
-Settings for the [`zookeeper_log`](/operations/system-tables/zookeeper_log) system table.
-
-The following settings can be configured by sub-tags:
-
-<SystemLogParameters/>
-
-**Example**
-
-```xml
-<clickhouse>
-    <zookeeper_log>
-        <database>system</database>
-        <table>zookeeper_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <ttl>event_date + INTERVAL 1 WEEK DELETE</ttl>
-    </zookeeper_log>
-</clickhouse>
-```

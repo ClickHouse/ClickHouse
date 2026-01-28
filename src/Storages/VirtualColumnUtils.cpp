@@ -13,7 +13,6 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/misc.h>
 
 #include <Parsers/ASTIdentifier.h>
@@ -24,7 +23,6 @@
 #include <Parsers/ASTSubquery.h>
 
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
@@ -32,7 +30,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDateTime.h>
 
@@ -63,15 +60,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool use_hive_partitioning;
-}
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 namespace VirtualColumnUtils
 {
@@ -153,15 +141,13 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 
 static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
 {
-    return {
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
-        {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
-        {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_tags", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
-        {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())},
-        {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())},
+    return {{"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+            {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+            {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
+            {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
+            {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+            {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())},
+            {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())}
     };
 }
 
@@ -170,81 +156,29 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
-std::string_view findHivePartitioningInPath(const String & path)
-{
-    auto key_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
-
-    if (key_values.empty())
-        return std::string_view();
-
-    // All keys and values are string_view over 'path', so starts and ends must be inside 'path'
-    auto kv = key_values.begin();
-    const auto * start = kv->first.data();
-    const auto * end = kv->second.data() + kv->second.size();
-    ++kv;
-    while (kv != key_values.end())
-    {
-        start = std::min(kv->first.data(), start);
-        end = std::max(kv->second.data() + kv->second.size(), end);
-        ++kv;
-    }
-
-    if (start < path.data() || start > path.data() + path.size()
-            || end < path.data() || end > path.data() + path.size()
-            || end < start)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "String views are not inside initial string");
-    }
-
-    return std::string_view(start, end - start);
-}
-
-VirtualColumnsDescription getVirtualsForFileLikeStorage(
-    ColumnsDescription & storage_columns,
-    ContextPtr context,
-    const std::optional<FormatSettings> & format_settings,
-    std::optional<PartitionStrategyFactory::StrategyType> partition_strategy,
-    const std::string & path)
+VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns)
 {
     VirtualColumnsDescription desc;
 
     auto add_virtual = [&](const NameAndTypePair & pair)
     {
         const auto & name = pair.getNameInStorage();
-        if (storage_columns.has(name))
-            return;
-
         const auto & type = pair.getTypeInStorage();
+        if (storage_columns.has(name))
+        {
+            return;
+        }
+
         desc.addEphemeral(name, type, "");
     };
 
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
         add_virtual(item);
 
-    if (!path.empty())
-    {
-        if (!partition_strategy.has_value())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected partition strategy to be specified");
-
-        /// If partition_stategy == none, we add hive columns, if present, to virtual columns.
-        if (context->getSettingsRef()[Setting::use_hive_partitioning]
-            && partition_strategy == PartitionStrategyFactory::StrategyType::NONE)
-        {
-            auto hive_columns = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, path, format_settings, context);
-            for (const auto & column : hive_columns)
-                add_virtual(column);
-        }
-    }
-
     return desc;
 }
 
-static void addPathAndFileToVirtualColumns(
-    Block & block,
-    const String & path,
-    size_t idx,
-    const FormatSettings & format_settings,
-    bool parse_hive_columns)
+static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx, const FormatSettings & format_settings, bool parse_hive_columns)
 {
     if (block.has("_path"))
         block.getByName("_path").column->assumeMutableRef().insert(path);
@@ -277,11 +211,7 @@ static void addPathAndFileToVirtualColumns(
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-std::optional<ActionsDAG> createPathAndFileFilterDAG(
-    const ActionsDAG::Node * predicate,
-    const NamesAndTypesList & virtual_columns,
-    const ContextPtr & context,
-    const NamesAndTypesList & hive_columns)
+std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns)
 {
     if (!predicate || virtual_columns.empty())
         return {};
@@ -300,15 +230,10 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
     }
 
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-    return splitFilterDagForAllowedInputs(predicate, &block, context);
+    return splitFilterDagForAllowedInputs(predicate, &block);
 }
 
-ColumnPtr getFilterByPathAndFileIndexes(
-    const std::vector<String> & paths,
-    const ExpressionActionsPtr & actions,
-    const NamesAndTypesList & virtual_columns,
-    const NamesAndTypesList & hive_columns,
-    const ContextPtr & context)
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
 {
     Block block;
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
@@ -326,14 +251,7 @@ ColumnPtr getFilterByPathAndFileIndexes(
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
-    {
-        addPathAndFileToVirtualColumns(
-            block,
-            paths[i],
-            /* idx */i,
-            getFormatSettings(context),
-            /* parse_hive_columns */context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty());
-    }
+        addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), /* parse_hive_columns */ !hive_columns.empty());
 
     filterBlockWithExpression(actions, block);
 
@@ -341,15 +259,9 @@ ColumnPtr getFilterByPathAndFileIndexes(
 }
 
 void addRequestedFileLikeStorageVirtualsToChunk(
-    Chunk & chunk,
-    const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values,
-    ContextPtr context)
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
+    VirtualsForFileLikeStorage virtual_values, ContextPtr)
 {
-    HivePartitioningUtils::HivePartitioningKeysAndValues hive_map;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
-
     for (const auto & virtual_column : requested_virtual_columns)
     {
         if (virtual_column.name == "_path")
@@ -390,21 +302,6 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
-        else if (virtual_column.name == "_tags")
-        {
-            if (virtual_values.tags)
-            {
-                Map map_value;
-                for (const auto & [key, value] : *virtual_values.tags)
-                    map_value.push_back(Field(Tuple{Field(key), Field(value)}));
-
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), map_value)->convertToFullColumnIfConst());
-            }
-            else
-            {
-                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
-            }
-        }
         else if (virtual_column.name == "_data_lake_snapshot_version")
         {
             if (virtual_values.data_lake_snapshot_version)
@@ -415,30 +312,18 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         else if (virtual_column.name == "_row_number")
         {
 #if USE_PARQUET
-            auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
+            auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumOffset>();
             if (chunk_info)
             {
                 size_t row_num_offset = chunk_info->row_num_offset;
-                const auto & applied_filter = chunk_info->applied_filter;
-                size_t num_indices = applied_filter.has_value() ? applied_filter->size() : chunk.getNumRows();
                 auto column = ColumnInt64::create();
-                for (size_t i = 0; i < num_indices; ++i)
-                    if (!applied_filter.has_value() || applied_filter.value()[i])
-                        column->insertValue(i + row_num_offset);
-                auto null_map = ColumnUInt8::create(chunk.getNumRows(), 0);
-                chunk.addColumn(ColumnNullable::create(std::move(column), std::move(null_map)));
+                for (size_t i = 0; i < chunk.getNumRows(); ++i)
+                    column->insertValue(i + row_num_offset);
+                chunk.addColumn(std::move(column));
                 return;
             }
 #endif
-            /// Row numbers not known, _row_number = NULL.
-            chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
-        }
-        else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
-        {
-            chunk.addColumn(
-                virtual_column.type->createColumnConst(
-                    chunk.getNumRows(),
-                    convertFieldToType(Field(it->second), *virtual_column.type))->convertToFullColumnIfConst());
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), -1)->convertToFullColumnIfConst());
         }
     }
 }
@@ -473,8 +358,17 @@ bool isDeterministic(const ActionsDAG::Node * node)
             return false;
     }
 
+    /// Special case: `in subquery or table` is non-deterministic
     if (node->type == ActionsDAG::ActionType::COLUMN)
-        return node->isDeterministic();
+    {
+        if (const auto * column = typeid_cast<const ColumnSet *>(node->column.get()))
+        {
+            if (!column->getData()->isDeterministic())
+            {
+                return false;
+            }
+        }
+    }
 
     if (node->type != ActionsDAG::ActionType::FUNCTION)
         return true;
@@ -503,7 +397,7 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
 }
 
 static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
-    const ActionsDAG::Node * node, const Block * allowed_inputs, ActionsDAG::Nodes & additional_nodes, const ContextPtr & context, bool allow_partial_result)
+    const ActionsDAG::Node * node, const Block * allowed_inputs, ActionsDAG::Nodes & additional_nodes, bool allow_partial_result)
 {
     if (node->type == ActionsDAG::ActionType::FUNCTION)
     {
@@ -513,7 +407,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
             node_copy.children.clear();
             for (const auto * child : node->children)
                 if (const auto * child_copy
-                    = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, context, allow_partial_result))
+                    = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, allow_partial_result))
                     node_copy.children.push_back(child_copy);
                 /// Expression like (now_allowed AND allowed) is not allowed if allow_partial_result = true. This is important for
                 /// trivial count optimization, otherwise we can get incorrect results. For example, if the query is
@@ -533,7 +427,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 if (!res->result_type->equals(*node->result_type))
                 {
                     ActionsDAG tmp_dag;
-                    res = &tmp_dag.addCast(*res, node->result_type, {}, context);
+                    res = &tmp_dag.addCast(*res, node->result_type, {});
                     additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
                 }
 
@@ -546,7 +440,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
         {
             auto & node_copy = additional_nodes.emplace_back(*node);
             for (auto & child : node_copy.children)
-                if (child = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, context, allow_partial_result); !child)
+                if (child = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, allow_partial_result); !child)
                     return nullptr;
 
             return &node_copy;
@@ -561,7 +455,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     ActionsDAG::NodeRawConstPtrs atoms;
                     for (const auto & output : index_hint_dag.getOutputs())
                         if (const auto * child_copy
-                            = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, context, allow_partial_result))
+                            = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, allow_partial_result))
                             atoms.push_back(child_copy);
 
                     if (!atoms.empty())
@@ -576,7 +470,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                         }
 
                         if (!res->result_type->equals(*node->result_type))
-                            res = &index_hint_dag.addCast(*res, node->result_type, {}, context);
+                            res = &index_hint_dag.addCast(*res, node->result_type, {});
 
                         additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(index_hint_dag)));
                         return res;
@@ -597,13 +491,13 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
 }
 
 std::optional<ActionsDAG>
-splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, const ContextPtr & context, bool allow_partial_result)
+splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, bool allow_partial_result)
 {
     if (!predicate)
         return {};
 
     ActionsDAG::Nodes additional_nodes;
-    const auto * res = splitFilterNodeForAllowedInputs(predicate, allowed_inputs, additional_nodes, context, allow_partial_result);
+    const auto * res = splitFilterNodeForAllowedInputs(predicate, allowed_inputs, additional_nodes, allow_partial_result);
     if (!res)
         return {};
 
@@ -613,52 +507,9 @@ splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block *
 void filterBlockWithPredicate(
     const ActionsDAG::Node * predicate, Block & block, ContextPtr context, bool allow_filtering_with_partial_predicate)
 {
-    auto dag = splitFilterDagForAllowedInputs(predicate, &block, context, /*allow_partial_result=*/allow_filtering_with_partial_predicate);
+    auto dag = splitFilterDagForAllowedInputs(predicate, &block, /*allow_partial_result=*/allow_filtering_with_partial_predicate);
     if (dag)
         filterBlockWithExpression(buildFilterExpression(std::move(*dag), context), block);
-}
-
-std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit)
-{
-    if (!filter_dag)
-        return {};
-    if (filter_dag->getOutputs().size() != 1)
-        return {};
-
-    const ActionsDAG::Node * path_node = nullptr;
-    for (const auto * input : filter_dag->getInputs())
-    {
-        if (input->result_name == "_path")
-        {
-            path_node = input;
-            break;
-        }
-    }
-    if (!path_node)
-        return {};
-
-    auto variants = evaluateExpressionOverConstantCondition(filter_dag->getOutputs().at(0), {path_node}, context, limit);
-
-    if (!variants)
-        return {};
-
-    Strings result;
-    for (const auto & block : variants.value())
-    {
-        // Check for unexpected number of columns in block, or absent column
-        if (block.size() != 1 || !block.at(0).column)
-            return {};
-
-        // Check for unexpected column data type
-        if (!recursiveRemoveLowCardinality(block.at(0).type)->equals(DataTypeString()))
-            return {};
-
-        const auto & column = block.at(0).column;
-        for (size_t i = 0; i < column->size(); ++i)
-            result.push_back((*column)[i].safeGet<String>());
-    }
-
-    return result;
 }
 
 }

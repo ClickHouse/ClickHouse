@@ -40,6 +40,8 @@ RUN apt-get update \
 COPY requirements.txt /
 RUN pip3 --no-cache-dir install -r requirements.txt
 
+COPY run.sh /
+
 COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
@@ -47,3 +49,7 @@ ENV PATH="/opt/gdb/bin:${PATH}"
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
     && unzip -q awscliv2.zip && ./aws/install \
     && rm -rf /awscliv2.zip /aws
+
+CMD ["bash", "/run.sh"]
+
+# docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/performance-comparison

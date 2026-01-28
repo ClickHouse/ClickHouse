@@ -11,14 +11,13 @@ def main():
     results = []
     stop_watch = Utils.Stopwatch()
     ch = ClickHouseProc()
-    info = Info()
 
     if res:
         print("Install ClickHouse")
 
         def install():
             res = ch.install_clickbench_config()
-            if info.is_local_run:
+            if Info().is_local_run:
                 return res
             return res and ch.create_log_export_config()
 
@@ -32,7 +31,7 @@ def main():
 
         def start():
             res = ch.start_light()
-            if info.is_local_run:
+            if Info().is_local_run:
                 return res
             return res and ch.start_log_exports(check_start_time=stop_watch.start_time)
 
@@ -97,9 +96,7 @@ def main():
     )
 
     Result.create_from(
-        results=results,
-        stopwatch=stop_watch,
-        files=ch.prepare_logs(all=False, info=info),
+        results=results, stopwatch=stop_watch, files=ch.prepare_logs(all=False)
     ).complete_job()
 
 

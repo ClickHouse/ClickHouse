@@ -1,7 +1,6 @@
 #include <exception>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Common/ThreadStatus.h>
-#include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <base/scope_guard.h>
 
@@ -95,7 +94,7 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
 
 static std::exception_ptr runStep(std::function<void()> step, ThreadGroupPtr & thread_group)
 {
-    ThreadGroupSwitcher switcher(thread_group, ThreadName::RUNTIME_DATA, /*allow_existing_group*/ true);
+    ThreadGroupSwitcher switcher(thread_group, "RuntimeData", /*allow_existing_group*/ true);
 
     std::exception_ptr res;
 
@@ -140,7 +139,7 @@ void ExceptionKeepingTransform::work()
                 onException(data.exception);
                 cancel();
             }
-            else if (canGenerate())
+            else
                 stage = Stage::Generate;
         }
 
@@ -170,25 +169,11 @@ void ExceptionKeepingTransform::work()
     }
     else if (stage == Stage::Finish)
     {
-        GenerateResult res;
-        if (auto exception = runStep([this, &res] { res = getRemaining(); }, thread_group))
+        if (auto exception = runStep([this] { onFinish(); }, thread_group))
         {
             stage = Stage::Exception;
             ready_output = true;
             data.exception = exception;
-            onException(data.exception);
-            cancel();
-        }
-        else if (res.chunk)
-        {
-            data.chunk = std::move(res.chunk);
-            ready_output = true;
-        }
-        else if (auto finish_exception = runStep([this] { onFinish(); }, thread_group))
-        {
-            stage = Stage::Exception;
-            ready_output = true;
-            data.exception = finish_exception;
             onException(data.exception);
             cancel();
         }

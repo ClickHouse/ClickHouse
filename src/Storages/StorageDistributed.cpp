@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <Disks/IVolume.h>
@@ -36,7 +37,6 @@
 #include <Common/randomSeed.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
-#include <Common/setThreadName.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
@@ -745,9 +745,57 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     return QueryProcessingStage::Complete;
 }
 
-StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
+static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr query)
 {
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
+    if (!hasDynamicSubcolumnsDeprecated(all_columns))
+        return false;
+
+    if (!query)
+        return true;
+
+    RequiredSourceColumnsVisitor::Data columns_context;
+    RequiredSourceColumnsVisitor(columns_context).visit(query);
+
+    auto required_columns = columns_context.requiredColumns();
+    for (const auto & required_column : required_columns)
+    {
+        auto name_in_storage = Nested::splitName(required_column).first;
+        auto column_in_storage = all_columns.tryGetPhysical(name_in_storage);
+
+        if (column_in_storage && column_in_storage->type->hasDynamicSubcolumnsDeprecated())
+            return true;
+    }
+
+    return false;
+}
+
+StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+{
+    return getStorageSnapshotForQuery(metadata_snapshot, nullptr, query_context);
+}
+
+StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
+    const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr /*query_context*/) const
+{
+    /// If query doesn't use columns of type Object, don't deduce
+    /// concrete types for them, because it required extra round trip.
+    auto snapshot_data = std::make_unique<SnapshotData>();
+    if (!requiresObjectColumns(metadata_snapshot->getColumns(), query))
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
+
+    snapshot_data->objects_by_shard = getExtendedObjectsOfRemoteTables(
+        *getCluster(),
+        StorageID{remote_database, remote_table},
+        metadata_snapshot->getColumns(),
+        getContext());
+
+    auto object_columns = DB::getConcreteObjectColumns(
+        snapshot_data->objects_by_shard.begin(),
+        snapshot_data->objects_by_shard.end(),
+        metadata_snapshot->getColumns(),
+        [](const auto & shard_num_and_columns) -> const auto & { return shard_num_and_columns.second; });
+
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns), std::move(snapshot_data));
 }
 
 namespace
@@ -889,7 +937,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         /// Subquery in table function `view` may reference tables that don't exist on the initiator.
         if (table_function_node->getTableFunctionName() == "view")
         {
-            auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals();
+            auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
             auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
 
             StorageID fake_storage_id = StorageID::createEmpty();
@@ -913,7 +961,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     }
     else
     {
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals();
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
 
         auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
 
@@ -1010,9 +1058,11 @@ void StorageDistributed::read(
         }
     }
 
+    const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
     ClusterProxy::SelectStreamFactory select_stream_factory =
         ClusterProxy::SelectStreamFactory(
             header,
+            snapshot_data.objects_by_shard,
             storage_snapshot,
             processed_stage);
 
@@ -1253,8 +1303,7 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
 }
 
 
-std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(
-    const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
+std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
 
@@ -1293,7 +1342,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
     /// Select query is needed for pruining on virtual columns
     auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.get(), local_context, cluster, src_storage_cluster.getInMemoryMetadataPtr());
+        predicate, filter.get(), local_context, cluster);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
@@ -1420,7 +1469,7 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
     checkAlterIsPossible(params, local_context);
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, local_context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -1433,11 +1482,11 @@ void StorageDistributed::initializeFromDisk()
 
     /// Make initialization for large number of disks parallel.
     ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, disks.size());
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DISTRIBUTED_INIT);
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, "DistInit");
 
     for (const DiskPtr & disk : disks)
     {
-        runner.enqueueAndKeepTrack([this, disk_to_init = disk]
+        runner([this, disk_to_init = disk]
         {
             initializeDirectoryQueuesForDisk(disk_to_init);
         });
@@ -1448,7 +1497,7 @@ void StorageDistributed::initializeFromDisk()
     std::vector<UInt64> last_increment(paths.size());
     for (size_t i = 0; i < paths.size(); ++i)
     {
-        runner.enqueueAndKeepTrack([&paths, &last_increment, i]
+        runner([&paths, &last_increment, i]
         {
             last_increment[i] = getMaximumFileNumber(paths[i]);
         });
@@ -1575,7 +1624,7 @@ void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
 }
 
 
-std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDirectoryQueue(const DiskPtr & disk, const std::string & name)
+DistributedAsyncInsertDirectoryQueue & StorageDistributed::getDirectoryQueue(const DiskPtr & disk, const std::string & name)
 {
     const std::string & disk_path = disk->getPath();
     const std::string key(disk_path + name);
@@ -1589,13 +1638,13 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
         node_data.addresses = parseAddresses(name);
         node_data.clusters_version = getContext()->getClustersVersion();
         node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
-        node_data.directory_queue = std::make_shared<DistributedAsyncInsertDirectoryQueue>(
+        node_data.directory_queue = std::make_unique<DistributedAsyncInsertDirectoryQueue>(
             *this, disk, relative_data_path + name,
             node_data.connection_pool,
             async_insert_blocker,
             getContext()->getDistributedSchedulePool());
     }
-    return node_data.directory_queue;
+    return *node_data.directory_queue;
 }
 
 std::vector<DistributedAsyncInsertDirectoryQueue::Status> StorageDistributed::getDirectoryQueueStatuses() const
@@ -1641,11 +1690,9 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
                 continue;
             }
 
-            if (address.replica_index == 0 || address.replica_index > replicas)
+            if (address.replica_index > replicas)
             {
-                LOG_ERROR(log, "Invalid replica_index={} for directory '{}' (cluster has {} replicas for shard {}). "
-                               "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
-                                address.replica_index, dirname, replicas, address.shard_index);
+                LOG_ERROR(log, "No shard with replica_index={} ({})", address.replica_index, name);
                 continue;
             }
 
@@ -1808,7 +1855,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
             return nullptr;
 
         if (select_without_join.prewhere() && select_without_join.where())
-            condition_ast = makeASTOperator("and", select_without_join.prewhere()->clone(), select_without_join.where()->clone());
+            condition_ast = makeASTFunction("and", select_without_join.prewhere()->clone(), select_without_join.where()->clone());
         else
             condition_ast = select_without_join.prewhere() ? select_without_join.prewhere()->clone() : select_without_join.where()->clone();
     }
@@ -1899,11 +1946,11 @@ void StorageDistributed::flushClusterNodesAllDataImpl(ContextPtr local_context, 
 
         Stopwatch watch;
         ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, directory_queues.size());
-        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DISTRIBUTED_FLUSH);
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, "DistFlush");
 
         for (const auto & node : directory_queues)
         {
-            runner.enqueueAndKeepTrack([node_to_flush = node, &settings_changes]
+            runner([node_to_flush = node, &settings_changes]
             {
                 node_to_flush->flushAllData(settings_changes);
             });

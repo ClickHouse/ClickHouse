@@ -45,7 +45,6 @@ public:
         bool with_length_delimiter,
         bool with_envelope,
         bool flatten_google_wrappers,
-        bool oneof_presence,
         ProtobufReader & reader);
 
     static std::unique_ptr<ProtobufSerializer> create(
@@ -58,7 +57,7 @@ public:
         ProtobufWriter & writer);
 };
 
-NamesAndTypesList
-protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields, bool oneof_presence);
+NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields);
+
 }
 #endif

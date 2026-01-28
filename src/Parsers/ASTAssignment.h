@@ -2,7 +2,6 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTWithAlias.h>
-#include <IO/Operators.h>
 
 namespace DB
 {

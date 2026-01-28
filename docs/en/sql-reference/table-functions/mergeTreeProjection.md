@@ -5,7 +5,6 @@ sidebar_label: 'mergeTreeProjection'
 sidebar_position: 77
 slug: /sql-reference/table-functions/mergeTreeProjection
 title: 'mergeTreeProjection'
-doc_type: 'reference'
 ---
 
 # mergeTreeProjection Table Function

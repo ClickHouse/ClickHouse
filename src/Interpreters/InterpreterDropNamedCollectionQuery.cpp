@@ -27,7 +27,6 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
     }
 
     NamedCollectionFactory::instance().removeFromSQL(query);
-
     return {};
 }
 

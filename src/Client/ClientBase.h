@@ -58,12 +58,6 @@ enum MultiQueryProcessingStage
     PARSING_FAILED,
 };
 
-// On illumos, <curses.h> defines ERR as a macro (error return value).
-// Undef it to allow use of ERR as an enum value below.
-#ifdef ERR
-#  undef ERR
-#endif
-
 enum ProgressOption
 {
     DEFAULT,
@@ -132,7 +126,7 @@ protected:
 
     virtual bool buzzHouse()
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse was compiled without BuzzHouse enabled");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
     }
 
     virtual void connect() = 0;
@@ -215,7 +209,6 @@ protected:
     /// Used to check certain things that are considered unsafe for the embedded client
     virtual bool isEmbeeddedClient() const = 0;
 
-    static fs::path getHistoryFilePath();
 private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
@@ -355,10 +348,7 @@ protected:
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
-    std::optional<size_t> insert_format_max_block_size_rows_from_config; /// Max block size in rows when reading INSERT data.
-    std::optional<size_t> insert_format_max_block_size_bytes_from_config; /// Max block size in bytes when reading INSERT data.
-    std::optional<size_t> insert_format_min_block_size_rows_from_config; /// Min block size in rows when reading INSERT data.
-    std::optional<size_t> insert_format_min_block_size_bytes_from_config; /// Min block size in bytes when reading INSERT data.
+    std::optional<size_t> insert_format_max_block_size_from_config; /// Max block size when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
@@ -394,8 +384,8 @@ protected:
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
     std::mutex tty_mutex;
 
-    fs::path home_path;
-    fs::path history_file; /// Path to a file containing command history.
+    String home_path;
+    String history_file; /// Path to a file containing command history.
     UInt32 history_max_entries; /// Maximum number of entries in the history file.
 
     UInt64 server_revision = 0;
@@ -414,10 +404,7 @@ protected:
     std::atomic_bool progress_table_toggle_on = false;
     bool need_render_profile_events = true;
     bool written_first_block = false;
-    /// How many rows have been read or written. `processed_rows_from_blocks` does not increment when data does not flow through client,
-    /// like with `INSERT ... SELECT`. We can use progress reports by server in that case to track processed rows.
-    size_t processed_rows_from_blocks = 0;
-    size_t processed_rows_from_progress = 0;
+    size_t processed_rows = 0; /// How many rows have been read or written.
 
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
