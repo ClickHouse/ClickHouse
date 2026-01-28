@@ -46,8 +46,10 @@ private:
     {
         MatchingMarks matching_marks;
         SharedMutex mutex; /// (*)
+        /// Memory used by Key (strings are heap-allocated)
+        size_t key_size_in_bytes = 0;
 
-        explicit Entry(size_t mark_count); /// (**)
+        Entry(size_t mark_count, size_t key_size_in_bytes_); /// (**)
 
         /// (*) You might wonder why Entry has its own mutex considering that CacheBase locks internally already. The reason is that
         ///     ClickHouse scans ranges within the same part in parallel. The first scan creates and inserts a new Key + Entry into the cache,
