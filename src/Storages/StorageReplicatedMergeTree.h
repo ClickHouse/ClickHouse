@@ -1,19 +1,5 @@
 #pragma once
 
-#include <atomic>
-#include <expected>
-
-#include <base/UUID.h>
-#include <base/defines.h>
-#include <pcg_random.hpp>
-
-#include <Common/EventNotifier.h>
-#include <Common/ProfileEventsScope.h>
-#include <Common/Throttler.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
-#include <Common/randomSeed.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
@@ -45,6 +31,19 @@
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
 #include <Storages/RenamingRestrictions.h>
 #include <Storages/TableZnodeInfo.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Common/EventNotifier.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/Throttler.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/randomSeed.h>
+#include <base/UUID.h>
+#include <base/defines.h>
+
+#include <atomic>
+#include <expected>
+#include <pcg_random.hpp>
 
 
 namespace DB
@@ -840,6 +839,7 @@ private:
         const String & zookeeper_path_prefix = "",
         const std::optional<String> & znode_data = std::nullopt) const;
 
+    using WatchEventByPath = std::unordered_map<std::string, Coordination::EventPtr>;
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica.
       *
@@ -850,18 +850,20 @@ private:
       * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
       */
     void waitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
-                                             Int64 wait_for_inactive_timeout, const String & error_context = {});
+                                             Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events,
+                                             const String & error_context = {});
     Strings tryWaitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
-                                                   Int64 wait_for_inactive_timeout);
+                                                   Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events);
 
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
       */
     bool tryWaitForReplicaToProcessLogEntry(const String & table_zookeeper_path, const String & replica_name,
-                                            const ReplicatedMergeTreeLogEntryData & entry, Int64 wait_for_inactive_timeout = 0);
+                                            const ReplicatedMergeTreeLogEntryData & entry, Int64 wait_for_inactive_timeout,
+                                            Coordination::EventPtr & watch_event);
 
     /// Depending on settings, do nothing or wait for this replica or all replicas process log entry.
-    void waitForLogEntryToBeProcessedIfNecessary(const ReplicatedMergeTreeLogEntryData & entry, ContextPtr query_context, const String & error_context = {});
+    void waitForLogEntryToBeProcessedIfNecessary(const ReplicatedMergeTreeLogEntryData & entry, ContextPtr query_context, WatchEventByPath & watch_events, const String & error_context = {});
 
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;
@@ -1011,8 +1013,8 @@ private:
 
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {
-        explicit DataValidationTasks(DataPartsVector && parts_, std::unique_lock<std::mutex> && parts_check_lock_)
-            : parts_check_lock(std::move(parts_check_lock_)), parts(std::move(parts_)), it(parts.begin())
+        explicit DataValidationTasks(DataPartsVector && parts_, BackgroundSchedulePoolPausableTask::PauseHolderPtr && pause_)
+            : pause(std::move(pause_)), parts(std::move(parts_)), it(parts.begin())
         {}
 
         DataPartPtr next()
@@ -1029,7 +1031,9 @@ private:
             return std::distance(it, parts.end());
         }
 
-        std::unique_lock<std::mutex> parts_check_lock;
+        /// Pauses the part check thread while this object exists.
+        /// Safe to destroy from any thread (unlike unique_lock which has thread affinity).
+        BackgroundSchedulePoolPausableTask::PauseHolderPtr pause;
 
         mutable std::mutex mutex;
         DataPartsVector parts;

@@ -312,7 +312,7 @@ class S3:
             env = _Environment.get()
             s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
             if s3_subprefix:
-                s3_subprefix.removeprefix("/").removesuffix("/")
+                s3_subprefix = s3_subprefix.removeprefix("/").removesuffix("/")
                 s3_path += f"/{s3_subprefix}"
             if text and Settings.COMPRESS_THRESHOLD_MB > 0:
                 file_size_mb = os.path.getsize(local_file_path) / (1024 * 1024)

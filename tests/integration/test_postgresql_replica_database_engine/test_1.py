@@ -307,7 +307,7 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
     time.sleep(2)
 
 
-    with started_cluster.pause_container("postgres1"):
+    with started_cluster.pause_container_using_signal("postgres1"):
         # for i in range(NUM_TABLES):
         #     result = instance.query(f"SELECT count() FROM test_database.postgresql_replica_{i}")
         #     print(result) # Just debug

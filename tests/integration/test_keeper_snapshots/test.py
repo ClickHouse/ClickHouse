@@ -38,7 +38,7 @@ def started_cluster():
         yield cluster
 
     finally:
-        cluster.shutdown()
+        cluster.shutdown(ignore_fatal=True)
 
 
 def get_connection_zk(nodename, timeout=30.0):

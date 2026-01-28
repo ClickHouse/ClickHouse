@@ -31,7 +31,7 @@ def bootstrap():
         engine=ReplicatedMergeTree()
         order by (k1, k2, k3, k4)
         partition by (p)
-        settings index_granularity=1, primary_key_lazy_load=0
+        settings index_granularity=1, primary_key_lazy_load=0, distributed_index_analysis_min_parts_to_activate=0, distributed_index_analysis_min_indexes_size_to_activate=0
         """)
 
     for node in cluster.instances.values():
@@ -88,6 +88,7 @@ def test_primary_key():
     # Note, correctness (and ProfileEvents) checked in stateless tests
     master.query("select * from test.pk_test where k2 = repeat('a', 100)", settings={
         "distributed_index_analysis": 1,
+        "distributed_index_analysis_for_non_shared_merge_tree": 1,
         "use_query_condition_cache": 0,
         "cluster_for_parallel_replicas": "default",
     })

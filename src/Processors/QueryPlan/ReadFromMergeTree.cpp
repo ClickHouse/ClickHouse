@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
+#include <Analyzer/QueryNode.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
@@ -175,6 +176,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool distributed_index_analysis;
+    extern const SettingsBool distributed_index_analysis_for_non_shared_merge_tree;
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
     extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
@@ -206,6 +208,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_concurrent_queries;
     extern const MergeTreeSettingsInt64 max_partitions_to_read;
     extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
+    extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_parts_to_activate;
+    extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_indexes_size_to_activate;
 }
 
 namespace ErrorCodes
@@ -725,25 +729,29 @@ Pipe ReadFromMergeTree::readInOrder(
             const auto & primary_key = storage_snapshot->metadata->primary_key;
             size_t mark_range_begin = part_with_ranges.ranges.front().begin;
 
-            ColumnsWithTypeAndName pk_columns;
             /// The index may have fewer columns than the primary key if suffix columns were
             /// removed by optimizeIndexColumns (controlled by primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns).
-            size_t num_columns = std::min(virtual_row_conversion->getRequiredColumnsWithTypes().size(), index->size());
-            pk_columns.reserve(num_columns);
-
-            for (size_t j = 0; j < num_columns; ++j)
+            /// In that case, we cannot apply virtual row optimization because we don't have all required columns.
+            size_t num_pk_columns_required = virtual_row_conversion->getRequiredColumnsWithTypes().size();
+            if (index->size() >= num_pk_columns_required)
             {
-                auto column = primary_key.data_types[j]->createColumn()->cloneEmpty();
-                column->insert((*(*index)[j])[mark_range_begin]);
-                pk_columns.push_back({std::move(column), primary_key.data_types[j], primary_key.column_names[j]});
+                ColumnsWithTypeAndName pk_columns;
+                pk_columns.reserve(num_pk_columns_required);
+
+                for (size_t j = 0; j < num_pk_columns_required; ++j)
+                {
+                    auto column = primary_key.data_types[j]->createColumn()->cloneEmpty();
+                    column->insert((*(*index)[j])[mark_range_begin]);
+                    pk_columns.push_back({std::move(column), primary_key.data_types[j], primary_key.column_names[j]});
+                }
+
+                Block pk_block(std::move(pk_columns));
+
+                pipe.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<VirtualRowTransform>(header, pk_block, virtual_row_conversion);
+                });
             }
-
-            Block pk_block(std::move(pk_columns));
-
-            pipe.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<VirtualRowTransform>(header, pk_block, virtual_row_conversion);
-            });
         }
 
         pipes.emplace_back(std::move(pipe));
@@ -1492,8 +1500,8 @@ static void addMergingFinal(
 
 static std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionForPositiveSign(const String & sign_column_name, const Block & header, const ContextPtr & context)
 {
-    ASTPtr sign_indentifier = std::make_shared<ASTIdentifier>(sign_column_name);
-    ASTPtr sign_filter = makeASTOperator("equals", sign_indentifier, std::make_shared<ASTLiteral>(Field(static_cast<Int8>(1))));
+    ASTPtr sign_indentifier = make_intrusive<ASTIdentifier>(sign_column_name);
+    ASTPtr sign_filter = makeASTOperator("equals", sign_indentifier, make_intrusive<ASTLiteral>(Field(static_cast<Int8>(1))));
     const auto & sign_column = header.getByName(sign_column_name);
 
     auto syntax_result = TreeRewriter(context).analyze(sign_filter, {{sign_column.name, sign_column.type}});
@@ -1503,8 +1511,8 @@ static std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionFor
 
 static std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionForIsDeleted(const String & is_deleted_column_name, const Block & header, const ContextPtr & context)
 {
-    ASTPtr is_deleted_identifier = std::make_shared<ASTIdentifier>(is_deleted_column_name);
-    ASTPtr is_deleted_filter = makeASTFunction("equals", is_deleted_identifier, std::make_shared<ASTLiteral>(Field(static_cast<Int8>(0))));
+    ASTPtr is_deleted_identifier = make_intrusive<ASTIdentifier>(is_deleted_column_name);
+    ASTPtr is_deleted_filter = makeASTFunction("equals", is_deleted_identifier, make_intrusive<ASTLiteral>(Field(static_cast<Int8>(0))));
 
     const auto & is_deleted_column = header.getByName(is_deleted_column_name);
 
@@ -1813,7 +1821,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         indexes,
         find_exact_ranges,
         is_parallel_reading_from_replicas,
-        allow_query_condition_cache);
+        allow_query_condition_cache,
+        supportsSkipIndexesOnDataRead());
 
     return analyzed_result_ptr;
 }
@@ -1955,6 +1964,12 @@ void ReadFromMergeTree::buildIndexes(
     indexes->use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
                                                     && skip_indexes.useful_indices.size() > 1
                                                     && !indexes->key_condition_rpn_template->hasOnlyConjunctions();
+
+    indexes->use_skip_indexes_if_final_exact_mode = indexes->use_skip_indexes && !skip_indexes.empty()
+                                                        && query_info_.isFinal()
+                                                        && settings[Setting::use_skip_indexes_if_final_exact_mode]
+                                                        && !areSkipIndexColumnsInPrimaryKey(primary_key_column_names, skip_indexes,
+                                                                indexes->key_condition_rpn_template->hasOnlyConjunctions());
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
@@ -2092,7 +2107,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     std::optional<Indexes> & indexes,
     bool find_exact_ranges,
     bool is_parallel_reading_from_replicas_,
-    bool allow_query_condition_cache_)
+    bool allow_query_condition_cache_,
+    bool supports_skip_indexes_on_data_read)
 {
     AnalysisResult result;
     RangesInDataParts res_parts;
@@ -2125,6 +2141,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             query_info_,
             metadata_snapshot);
 
+    indexes->use_skip_indexes_on_data_read = supports_skip_indexes_on_data_read;
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
 
@@ -2226,9 +2243,24 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     {
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
-        bool final_second_pass = indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode];
+        auto get_indexes_size = [&](const MergeTreeData & data_) -> size_t
+        {
+            size_t res = 0;
+            for (const auto & [_, size] : data_.getSecondaryIndexSizes())
+                res += size.data_uncompressed;
+            res += data_.getPrimaryIndexSize().data_uncompressed;
+            return res;
+        };
+
         /// Note, use_skip_indexes_if_final_exact_mode requires complete PK, so we cannot apply distributed_index_analysis with it
-        bool distributed_index_analysis_enabled = settings[Setting::distributed_index_analysis] && !final_second_pass;
+        bool final_second_pass = indexes->use_skip_indexes_if_final_exact_mode;
+        UInt64 distributed_index_analysis_min_parts_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_parts_to_activate];
+        UInt64 distributed_index_analysis_min_indexes_size_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_indexes_size_to_activate];
+        bool distributed_index_analysis_enabled = !final_second_pass
+            && settings[Setting::distributed_index_analysis]
+            && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
+            && (total_parts >= distributed_index_analysis_min_parts_to_activate)
+            && (!distributed_index_analysis_min_indexes_size_to_activate || get_indexes_size(data) >= distributed_index_analysis_min_indexes_size_to_activate);
 
         if (!distributed_index_analysis_enabled)
         {
@@ -2920,16 +2952,25 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (!settings[Setting::use_skip_indexes_on_data_read])
         return false;
 
-    if (query_info.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
-        return false;
+    /// Remove this after statistics based cardinality estimation is enabled.
+    if (query_info.query_tree)
+    {
+        const QueryTreeNodePtr & join_tree_node = query_info.query_tree->as<QueryNode &>().getJoinTree();
 
-    if (is_parallel_reading_from_replicas)
+        if (join_tree_node && (join_tree_node->getNodeType() == QueryTreeNodeType::JOIN || join_tree_node->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
+            return false;
+    }
+
+    if (query_info.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
         return false;
 
     /// Settings `read_overflow_mode = 'throw'` and `max_rows_to_read` are evaluated early during execution,
     /// during initialization of the pipeline based on estimated row counts. Estimation doesn't work properly
     /// if the skip index is evaluated during data read (scan).
     if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+        return false;
+
+    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
         return false;
 
     return true;
@@ -3845,6 +3886,25 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
             return true;
     }
     return false;
+}
+
+/// Check if any/all columns with the given skip indexes are also part of the primary key
+bool ReadFromMergeTree::areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes, bool any_one)
+{
+    NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
+
+    for (const auto & skip_index : skip_indexes.useful_indices)
+    {
+        for (const auto & column : skip_index.index->index.column_names)
+        {
+            if (primary_key_columns_set.contains(column) && any_one)
+                return true;
+            else if (!primary_key_columns_set.contains(column) && !any_one)
+                return false;
+        }
+    }
+
+    return !any_one;
 }
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const

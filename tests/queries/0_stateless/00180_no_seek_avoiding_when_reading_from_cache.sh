@@ -13,7 +13,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE hits_s3_sampled AS test.hits_s3"
 $CLICKHOUSE_CLIENT -q "INSERT INTO hits_s3_sampled SELECT * FROM test.hits_s3 SAMPLE 0.01"
 $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE hits_s3_sampled FINAL"
 
-$CLICKHOUSE_CLIENT -q "SYSTEM DROP FILESYSTEM CACHE"
+$CLICKHOUSE_CLIENT -q "SYSTEM CLEAR FILESYSTEM CACHE"
 
 # Warm up the cache
 $CLICKHOUSE_CLIENT -q "SELECT * FROM hits_s3_sampled WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 FORMAT Null SETTINGS filesystem_cache_reserve_space_wait_lock_timeout_milliseconds=2000"

@@ -31,7 +31,7 @@ function test
 {
     QUERY_ID=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM DROP MARK CACHE"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM CLEAR MARK CACHE"
     ${CLICKHOUSE_CLIENT} --query_id "${QUERY_ID}" -q "SELECT * FROM test SETTINGS load_marks_asynchronously=$1 FORMAT Null"
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 

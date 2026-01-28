@@ -31,7 +31,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTOptimizeQuery>(*this);
+        auto res = make_intrusive<ASTOptimizeQuery>(*this);
         res->children.clear();
 
         if (partition)

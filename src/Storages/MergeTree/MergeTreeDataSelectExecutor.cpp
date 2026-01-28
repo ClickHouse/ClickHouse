@@ -84,8 +84,6 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsOverflowMode read_overflow_mode;
-    extern const SettingsBool use_skip_indexes_if_final_exact_mode;
-    extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
@@ -390,8 +388,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         {
             /// Let's add the conditions to cut off something else when the index is scanned again and when the request is processed.
 
-            std::shared_ptr<ASTFunction> lower_function;
-            std::shared_ptr<ASTFunction> upper_function;
+            boost::intrusive_ptr<ASTFunction> lower_function;
+            boost::intrusive_ptr<ASTFunction> upper_function;
 
             chassert(metadata_snapshot->getSamplingKeyAST() != nullptr);
             ASTPtr sampling_key_ast = metadata_snapshot->getSamplingKeyAST()->clone();
@@ -403,11 +401,11 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
                         Range::createLeftBounded(lower, true, isNullableOrLowCardinalityNullable(sampling_key.data_types[0]))))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
 
-                ASTPtr args = std::make_shared<ASTExpressionList>();
+                ASTPtr args = make_intrusive<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);
-                args->children.push_back(std::make_shared<ASTLiteral>(lower));
+                args->children.push_back(make_intrusive<ASTLiteral>(lower));
 
-                lower_function = std::make_shared<ASTFunction>();
+                lower_function = make_intrusive<ASTFunction>();
                 lower_function->name = "greaterOrEquals";
                 lower_function->arguments = args;
                 lower_function->children.push_back(lower_function->arguments);
@@ -422,11 +420,11 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
                         Range::createRightBounded(upper, false, isNullableOrLowCardinalityNullable(sampling_key.data_types[0]))))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
 
-                ASTPtr args = std::make_shared<ASTExpressionList>();
+                ASTPtr args = make_intrusive<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);
-                args->children.push_back(std::make_shared<ASTLiteral>(upper));
+                args->children.push_back(make_intrusive<ASTLiteral>(upper));
 
-                upper_function = std::make_shared<ASTFunction>();
+                upper_function = make_intrusive<ASTFunction>();
                 upper_function->name = "less";
                 upper_function->arguments = args;
                 upper_function->children.push_back(upper_function->arguments);
@@ -436,11 +434,11 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
             if (has_lower_limit && has_upper_limit)
             {
-                ASTPtr args = std::make_shared<ASTExpressionList>();
+                ASTPtr args = make_intrusive<ASTExpressionList>();
                 args->children.push_back(lower_function);
                 args->children.push_back(upper_function);
 
-                sampling.filter_function = std::make_shared<ASTFunction>();
+                sampling.filter_function = make_intrusive<ASTFunction>();
                 sampling.filter_function->name = "and";
                 sampling.filter_function->arguments = args;
                 sampling.filter_function->children.push_back(sampling.filter_function->arguments);
@@ -685,9 +683,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     size_t num_streams = filter_context.num_streams;
     bool use_skip_indexes = filter_context.indexes.use_skip_indexes;
     bool use_skip_indexes_for_disjunctions_ = filter_context.indexes.use_skip_indexes_for_disjunctions;
+    bool use_skip_indexes_on_data_read_ = filter_context.indexes.use_skip_indexes_on_data_read;
+    bool use_skip_indexes_if_final_exact_mode_ = filter_context.indexes.use_skip_indexes_if_final_exact_mode;
     bool find_exact_ranges = filter_context.find_exact_ranges;
     bool is_final_query = filter_context.query_info.isFinal();
-    bool is_parallel_reading_from_replicas = filter_context.is_parallel_reading_from_replicas;
     bool has_projections = filter_context.has_projections;
     auto & result = filter_context.result;
 
@@ -759,7 +758,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     bool use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
-                                && !settings[Setting::use_skip_indexes_on_data_read] &&
+                                && !use_skip_indexes_on_data_read_ &&
                                 key_condition.getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
 
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
@@ -768,19 +767,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         if (index->isVectorSimilarityIndex())
             return false;
 
-        if (is_parallel_reading_from_replicas && !index->supportsReadingOnParallelReplicas())
-            return false;
-
-        if (is_final_query && settings[Setting::use_skip_indexes_if_final_exact_mode])
-            return false;
-
-        /// Settings `read_overflow_mode = 'throw'` and `max_rows_to_read` are evaluated early during execution,
-        /// during initialization of the pipeline based on estimated row counts. Estimation doesn't work properly
-        /// if the skip index is evaluated during data read (scan).
-        if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
-            return false;
-
-        return settings[Setting::use_skip_indexes_on_data_read];
+        return use_skip_indexes_on_data_read_;
     };
 
     /// Let's find what range to read from each part.
@@ -959,9 +946,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     }
 
                     size_t total_granules = ranges.ranges.getNumberOfMarks();
-                    bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
 
-                    if (use_skip_indexes_on_data_read)
+                    if (!use_skip_indexes_on_data_read_)
                     {
                         ranges.ranges = filterMarksUsingMergedIndex(
                             indices_and_condition.indices,
@@ -1220,7 +1206,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         [&](const auto & part)
         {
             size_t index = &part - parts_with_ranges.data();
-            if (is_final_query && settings[Setting::use_skip_indexes_if_final_exact_mode] && skip_index_used_in_part[index])
+            if (is_final_query && use_skip_indexes_if_final_exact_mode_ && skip_index_used_in_part[index])
             {
                 /// retain this part even if empty due to FINAL
                 return false;
@@ -1433,7 +1419,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         indexes,
         /*find_exact_ranges*/false,
         /*is_parallel_reading_from_replicas*/false,
-        /*use_query_condition_cache*/true);
+        /*use_query_condition_cache*/true,
+        /*supports_skip_indexes_on_data_read*/false);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
