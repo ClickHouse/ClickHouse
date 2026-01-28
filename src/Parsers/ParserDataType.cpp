@@ -333,10 +333,9 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         auto saved_pos = pos;
         ++pos;
 
-        auto tuple_node = std::make_shared<ASTTupleDataType>();
+        auto tuple_node = make_intrusive<ASTTupleDataType>();
         tuple_node->name = type_name;
         auto arguments = make_intrusive<ASTExpressionList>();
-        tuple_node->arguments = arguments;
         tuple_node->children.push_back(arguments);
 
         bool has_named_elements = false;
