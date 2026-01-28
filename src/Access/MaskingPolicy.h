@@ -4,13 +4,12 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Common/quoteString.h>
 #include <Core/Types.h>
+#include <Parsers/IAST_fwd.h>
 #include <memory>
 
 
 namespace DB
 {
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 /// Represents the full name of a masking policy, e.g. "mask_email ON mydb.mytable".
 struct MaskingPolicyName

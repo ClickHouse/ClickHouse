@@ -964,7 +964,7 @@ void dumpStats(std::string_view type, const RequestFromLogStats::Stats & stats_f
         type,
         stats_for_type.total.load(),
         stats_for_type.unexpected_results.load(),
-        stats_for_type.total != 0 ? static_cast<double>(stats_for_type.unexpected_results) / stats_for_type.total * 100 : 0.0)
+        stats_for_type.total != 0 ? static_cast<double>(stats_for_type.unexpected_results) / static_cast<double>(stats_for_type.total) * 100 : 0.0)
               << std::endl;
 };
 
@@ -1319,7 +1319,7 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
         children = response.names;
         promise->set_value();
     };
-    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, {});
+    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, {}, false, false);
     future.get();
 
     std::span children_span(children);

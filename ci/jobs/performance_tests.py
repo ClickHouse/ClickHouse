@@ -600,10 +600,7 @@ def main():
 
         def run_tests():
             # Run 10 random queries per test by default, but all queries for benchmarks
-            benchmarks = {
-                "clickbench.xml",
-                "tpch.xml"
-            }
+            benchmarks = {"clickbench.xml", "tpch.xml"}
             for test in test_files:
                 max_queries = 0 if test in benchmarks else 10
                 CHServer.run_test(

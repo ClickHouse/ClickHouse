@@ -2309,7 +2309,7 @@ void StorageFile::truncate(
 void StorageFile::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     if (checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context), "format") == "auto")
-        args[0] = std::make_shared<ASTLiteral>(format_name);
+        args[0] = make_intrusive<ASTLiteral>(format_name);
 }
 
 void registerStorageFile(StorageFactory & factory)

@@ -2,7 +2,7 @@ Using disk: s3_disk
 DROP TABLE IF EXISTS test_02241
 CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS disk=disk(type='cache', path='02241_filesystem_cache_on_write_operations_s3_disk', disk='s3_disk', max_size=10_000_000_000, cache_on_write_operations=1), min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization = 1, write_marks_for_substreams_in_compact_parts=1, serialization_info_version='basic'
 SYSTEM STOP MERGES test_02241
-SYSTEM DROP FILESYSTEM CACHE
+SYSTEM CLEAR FILESYSTEM CACHE
 SELECT file_segment_range_begin, file_segment_range_end, size, state
     FROM
     (
@@ -58,7 +58,7 @@ SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0 AND cache_name 
 2
 SELECT count(), sum(size) size FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
 9	1217
-SYSTEM DROP FILESYSTEM CACHE
+SYSTEM CLEAR FILESYSTEM CACHE
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100, 200)
 SELECT file_segment_range_begin, file_segment_range_end, size, state
     FROM
@@ -113,7 +113,7 @@ Using disk: local_disk
 DROP TABLE IF EXISTS test_02241
 CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS disk=disk(type='cache', path='02241_filesystem_cache_on_write_operations_local_disk', disk='local_disk', max_size=10_000_000_000, cache_on_write_operations=1), min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization = 1, write_marks_for_substreams_in_compact_parts=1, serialization_info_version='basic'
 SYSTEM STOP MERGES test_02241
-SYSTEM DROP FILESYSTEM CACHE
+SYSTEM CLEAR FILESYSTEM CACHE
 SELECT file_segment_range_begin, file_segment_range_end, size, state
     FROM
     (
@@ -169,7 +169,7 @@ SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0 AND cache_name 
 2
 SELECT count(), sum(size) size FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
 9	1217
-SYSTEM DROP FILESYSTEM CACHE
+SYSTEM CLEAR FILESYSTEM CACHE
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100, 200)
 SELECT file_segment_range_begin, file_segment_range_end, size, state
     FROM
@@ -224,7 +224,7 @@ Using disk: azure
 DROP TABLE IF EXISTS test_02241
 CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS disk=disk(type='cache', path='02241_filesystem_cache_on_write_operations_azure', disk='azure', max_size=10_000_000_000, cache_on_write_operations=1), min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization = 1, write_marks_for_substreams_in_compact_parts=1, serialization_info_version='basic'
 SYSTEM STOP MERGES test_02241
-SYSTEM DROP FILESYSTEM CACHE
+SYSTEM CLEAR FILESYSTEM CACHE
 SELECT file_segment_range_begin, file_segment_range_end, size, state
     FROM
     (
@@ -280,7 +280,7 @@ SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0 AND cache_name 
 2
 SELECT count(), sum(size) size FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
 9	1217
-SYSTEM DROP FILESYSTEM CACHE
+SYSTEM CLEAR FILESYSTEM CACHE
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100, 200)
 SELECT file_segment_range_begin, file_segment_range_end, size, state
     FROM

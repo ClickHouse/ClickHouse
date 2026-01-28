@@ -282,7 +282,7 @@ void ParquetMetadataInputFormat::fillColumnsMetadata(const std::shared_ptr<parqu
             assert_cast<ColumnUInt64 &>(tuple_column.getColumn(8)).insertValue(total_compressed_size);
 
             /// space_saved
-            String space_saved = fmt::format("{:.4}%", (1 - double(total_compressed_size) / total_uncompressed_size) * 100);
+            String space_saved = fmt::format("{:.4}%", (1 - static_cast<double>(total_compressed_size) / static_cast<double>(total_uncompressed_size)) * 100);
             assert_cast<ColumnString &>(tuple_column.getColumn(9)).insertData(space_saved.data(), space_saved.size());
 
             /// encodings

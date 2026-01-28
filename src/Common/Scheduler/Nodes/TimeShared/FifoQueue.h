@@ -7,6 +7,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <mutex>
+#include <vector>
 
 
 namespace DB
@@ -130,16 +131,25 @@ public:
 
     void purgeQueue() override
     {
-        std::lock_guard lock(mutex);
-        is_not_usable = true;
-        while (!requests.empty())
+        // Collect requests to fail while holding the lock, but call failed() outside the lock
+        // to avoid potential deadlock with CPULeaseAllocation::mutex (lock order inversion)
+        std::vector<ResourceRequest *> requests_to_fail;
         {
-            ResourceRequest * request = &requests.front();
-            requests.pop_front();
-            request->failed(std::make_exception_ptr(
-                Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue with resource request is about to be destructed")));
+            std::lock_guard lock(mutex);
+            is_not_usable = true;
+            while (!requests.empty())
+            {
+                ResourceRequest * request = &requests.front();
+                requests.pop_front();
+                requests_to_fail.push_back(request);
+            }
+            cancelActivation();
         }
-        cancelActivation();
+        // Now notify all collected requests about the failure without holding the mutex
+        auto exception = std::make_exception_ptr(
+            Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue with resource request is about to be destructed"));
+        for (ResourceRequest * request : requests_to_fail)
+            request->failed(exception);
     }
 
     void updateQueueLimit(Int64 value)

@@ -148,7 +148,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
         sync = true;
 
-    auto query = std::make_shared<ASTDropQuery>();
+    auto query = make_intrusive<ASTDropQuery>();
     node = query;
 
     query->kind = kind;

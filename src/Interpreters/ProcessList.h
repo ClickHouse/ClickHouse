@@ -194,6 +194,9 @@ protected:
     /// increments/decrements metric in constructor/destructor.
     CurrentMetrics::Increment num_queries_increment;
 
+    /// Same as above, but only for non-internal queries
+    std::optional<CurrentMetrics::Increment> num_non_internal_queries_increment;
+
     bool is_internal;
 public:
     QueryStatus(
@@ -239,6 +242,11 @@ public:
     MemoryReservation * getMemoryReservation() const
     {
         return memory_reservation.get();
+    }
+
+    bool hasThreadGroup() const
+    {
+        return bool(thread_group);
     }
 
     bool updateProgressIn(const Progress & value)

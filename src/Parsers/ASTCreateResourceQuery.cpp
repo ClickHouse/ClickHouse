@@ -9,7 +9,7 @@ namespace DB
 
 ASTPtr ASTCreateResourceQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateResourceQuery>(*this);
+    auto res = make_intrusive<ASTCreateResourceQuery>(*this);
     res->children.clear();
 
     res->resource_name = resource_name->clone();
