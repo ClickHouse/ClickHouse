@@ -174,7 +174,7 @@ namespace
             return true;
         }
 
-        bool parseTimeRange(const antlr4::tree::TerminalNode * ctx, ScalarOrInterval & res_range, size_t & res_start_pos, size_t & res_length)
+        bool parseSelectorRange(const antlr4::tree::TerminalNode * ctx, ScalarOrInterval & res_range, size_t & res_start_pos, size_t & res_length)
         {
             std::string_view sv = getText(ctx);
 
@@ -272,7 +272,7 @@ namespace
         }
 
         /// Makes a node for a scalar or an interval literal after parsing it.
-        Node * makeNodeForScalarOrInterval(antlr4::tree::TerminalNode * ctx, bool negate = false)
+        Node * makeNodeForScalarOrInterval(antlr4::tree::TerminalNode * ctx, int sign = 1)
         {
             PrometheusQueryParsingUtil::ScalarOrInterval scalar_or_interval;
             if (!parseScalarOrLiteral(ctx, scalar_or_interval))
@@ -280,28 +280,32 @@ namespace
                 chassert(error_listener.hasError());
                 return nullptr;
             }
-            if (negate)
-                scalar_or_interval.negate();
-            return makeNodeForScalarOrInterval(scalar_or_interval, getStartPos(ctx), getLength(ctx));
+            return makeNodeForScalarOrInterval(scalar_or_interval, getStartPos(ctx), getLength(ctx), sign);
         }
 
-        Node * makeNodeForScalarOrInterval(const ScalarOrInterval & scalar_or_interval, size_t start_pos, size_t length)
+        Node * makeNodeForScalarOrInterval(const ScalarOrInterval & scalar_or_interval, size_t start_pos, size_t length, int sign = 1)
         {
             chassert(!scalar_or_interval.empty());
             if (scalar_or_interval.scalar)
             {
+                auto scalar = *scalar_or_interval.scalar;
+                if (sign < 0)
+                    scalar = -scalar;
                 auto new_node = std::make_unique<ScalarLiteral>();
                 new_node->start_pos = start_pos;
                 new_node->length = length;
-                new_node->scalar = *scalar_or_interval.scalar;
+                new_node->scalar = scalar;
                 return addNode(std::move(new_node));
             }
             else
             {
+                auto interval = *scalar_or_interval.interval;
+                if (sign < 0)
+                    interval = IntervalType{-interval.getValue(), interval.getScale()};
                 auto new_node = std::make_unique<IntervalLiteral>();
                 new_node->start_pos = start_pos;
                 new_node->length = length;
-                new_node->interval = *scalar_or_interval.interval;
+                new_node->interval = interval;
                 return addNode(std::move(new_node));
             }
         }
@@ -398,22 +402,22 @@ namespace
         }
 
         /// Makes a node for a range selector.
-        Node * makeRangeSelector(antlr4_grammars::PromQLParser::MatrixSelectorContext * ctx)
+        Node * makeRangeSelector(antlr4_grammars::PromQLParser::RangeSelectorContext * ctx)
         {
             auto new_node = std::make_unique<RangeSelector>();
             new_node->start_pos = getStartPos(ctx);
             new_node->length = getLength(ctx);
             auto * instant_selector_ctx = ctx->instantSelector();
-            auto * time_range_ctx = ctx->TIME_RANGE();
-            if (!instant_selector_ctx || !time_range_ctx)
-                throwInconsistentSchema("MatrixSelector", ctx->getText());
+            auto * selector_range_ctx = ctx->SELECTOR_RANGE();
+            if (!instant_selector_ctx || !selector_range_ctx)
+                throwInconsistentSchema("RangeSelector", ctx->getText());
 
             auto * instant_selector = makeInstantSelector(instant_selector_ctx);
 
             ScalarOrInterval range;
             size_t range_start_pos;
             size_t range_length;
-            if (!instant_selector || !parseTimeRange(time_range_ctx, range, range_start_pos, range_length))
+            if (!instant_selector || !parseSelectorRange(selector_range_ctx, range, range_start_pos, range_length))
             {
                 chassert(error_listener.hasError());
                 return nullptr;
@@ -479,37 +483,27 @@ namespace
             new_node->length = expression->length + getLength(ctx);
             new_node->result_type = expression->result_type;
 
-            auto * at_ctx = ctx->AT();
-            auto * offset_ctx = ctx->OFFSET();
-            bool negative_offset = ctx->SUB();
-
+            bool ok = true;
             Node * at_node = nullptr;
             Node * offset_node = nullptr;
 
-            bool ok = false;
+            if (auto * timestamp_ctx = ctx->timestamp())
+            {
+                auto * number_ctx = timestamp_ctx->NUMBER();
+                if (!number_ctx)
+                    throwInconsistentSchema("OffsetOp", ctx->getText());
+                at_node = makeNodeForScalarOrInterval(number_ctx);
+                ok &= (at_node != nullptr);
+            }
 
-            if (at_ctx && offset_ctx)
+            if (auto * offset_value_ctx = ctx->offsetValue())
             {
-                size_t at_index = 0;
-                size_t offset_index = 1;
-                if (getStartPos(offset_ctx) < getStartPos(at_ctx))
-                    std::swap(at_index, offset_index);
-                at_node = makeNodeForScalarOrInterval(ctx->NUMBER(at_index));
-                if (at_node)
-                    offset_node = makeNodeForScalarOrInterval(ctx->NUMBER(offset_index), negative_offset);
-                ok = at_node && offset_node;
-            }
-            else if (at_ctx)
-            {
-                size_t at_index = 0;
-                at_node = makeNodeForScalarOrInterval(ctx->NUMBER(at_index));
-                ok = (at_node != nullptr);
-            }
-            else if (offset_ctx)
-            {
-                size_t offset_index = 0;
-                offset_node = makeNodeForScalarOrInterval(ctx->NUMBER(offset_index), negative_offset);
-                ok = (offset_node != nullptr);
+                auto * number_ctx = offset_value_ctx->NUMBER();
+                if (!number_ctx)
+                    throwInconsistentSchema("OffsetOp", ctx->getText());
+                int sign = offset_value_ctx->SUB() ? -1 : 1;
+                offset_node = makeNodeForScalarOrInterval(number_ctx, sign);
+                ok &= (offset_node != nullptr);
             }
 
             if (!ok)
@@ -721,7 +715,7 @@ namespace
         /// Returns the result type of a function.
         ResultType getFunctionResultType(std::string_view function_name)
         {
-            if (function_name == "scalar")
+            if (function_name == "scalar" || function_name == "time" || function_name == "pi")
                 return ResultType::SCALAR;
             else
                 return ResultType::INSTANT_VECTOR;
@@ -788,18 +782,18 @@ namespace
             return makeInstantSelector(ctx);
         }
 
-        std::any visitMatrixSelector(antlr4_grammars::PromQLParser::MatrixSelectorContext * ctx) override
+        std::any visitRangeSelector(antlr4_grammars::PromQLParser::RangeSelectorContext * ctx) override
         {
             return makeRangeSelector(ctx);
         }
 
-        std::any visitOffset(antlr4_grammars::PromQLParser::OffsetContext * ctx) override
+        std::any visitSelectorWithOffset(antlr4_grammars::PromQLParser::SelectorWithOffsetContext * ctx) override
         {
             Node * res_node = nullptr;
             if (auto * instant_selector_ctx = ctx->instantSelector())
                 res_node = makeInstantSelector(instant_selector_ctx);
-            else if (auto * matrix_selector_ctx = ctx->matrixSelector())
-                res_node = makeRangeSelector(matrix_selector_ctx);
+            else if (auto * range_selector_ctx = ctx->rangeSelector())
+                res_node = makeRangeSelector(range_selector_ctx);
             else
                 throwInconsistentSchema("Offset", ctx->getText());
 
@@ -968,7 +962,7 @@ namespace
             Node * node = anyToNodePtr(aggregate);
             Node * next_node = anyToNodePtr(next_result);
             if (node && next_node)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't aggregate\n{}and\n{}", node->dumpTree(1), next_node->dumpTree(1));
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't aggregate\n{}and\n{}", node->dumpNode(1), next_node->dumpNode(1));
             if (node)
                 return node;
             else

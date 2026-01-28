@@ -45,9 +45,9 @@ void checkMemory(auto allocation_callback, auto deallocation_callback)
         after_global = total_memory_tracker.get();
         /// No double accounting
         bool thread_ok = (after_thread - before_thread) >= allocation_size &&
-                         (after_thread - before_thread) <= allocation_size * 1.1;
+                         static_cast<double>(after_thread - before_thread) <= static_cast<double>(allocation_size) * 1.1;
         bool global_ok = (after_global - before_global) >= allocation_size &&
-                         (after_global - before_global) <= allocation_size * 1.1;
+                         static_cast<double>(after_global - before_global) <= static_cast<double>(allocation_size) * 1.1;
         allocation_ok |= thread_ok & global_ok;
     }
 
@@ -60,10 +60,11 @@ void checkMemory(auto allocation_callback, auto deallocation_callback)
     {
         /// We might have allocated something else on our way. But this amount should be negligible.
         /// Also, no double accounting.
-        bool thread_ok = (after_thread - CurrentThread::get().memory_tracker.get()) >= allocation_size * 0.95 &&
-                         (after_thread - CurrentThread::get().memory_tracker.get()) <= allocation_size * 1.1;
-        bool global_ok = (after_global - total_memory_tracker.get()) >= allocation_size * 0.95 &&
-                         (after_global - total_memory_tracker.get()) <= allocation_size * 1.1;
+        bool thread_ok
+            = static_cast<double>(after_thread - CurrentThread::get().memory_tracker.get()) >= static_cast<double>(allocation_size) * 0.95
+            && static_cast<double>(after_thread - CurrentThread::get().memory_tracker.get()) <= static_cast<double>(allocation_size) * 1.1;
+        bool global_ok = static_cast<double>(after_global - total_memory_tracker.get()) >= static_cast<double>(allocation_size) * 0.95
+            && static_cast<double>(after_global - total_memory_tracker.get()) <= static_cast<double>(allocation_size) * 1.1;
         deallocation_ok |= thread_ok & global_ok;
     }
     ASSERT_TRUE(deallocation_ok);

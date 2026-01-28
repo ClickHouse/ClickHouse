@@ -1588,7 +1588,7 @@ int main(int argc, char ** argv)
         std::cerr
             << "Vector. Size: " << n
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl << std::endl;
     }
 
@@ -1616,7 +1616,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -1638,13 +1638,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
@@ -1671,7 +1671,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
         << "Aggregated in " << time_aggregated
-        << " (" << n / time_aggregated << " elem/sec.)"
+        << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
         << std::endl;
 
         size_t size_before_merge = 0;
@@ -1694,13 +1694,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
         << "Merged in " << time_merged
-        << " (" << size_before_merge / time_merged << " elem/sec.)"
+        << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
         << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
         << "Total in \033[1m" << time_total << "\033[0m"
-        << " (" << n / time_total << " elem/sec.)"
+        << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
         << std::endl;
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
@@ -1810,7 +1810,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -1833,13 +1833,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
 
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
@@ -1864,7 +1864,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
         << "Aggregated in " << time_aggregated
-        << " (" << n / time_aggregated << " elem/sec.)"
+        << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
         << std::endl;
 
         size_t size_before_merge = 0;
@@ -1887,13 +1887,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
         << "Merged in " << time_merged
-        << " (" << size_before_merge / time_merged << " elem/sec.)"
+        << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
         << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
         << "Total in \033[1m" << time_total << "\033[0m"
-        << " (" << n / time_total << " elem/sec.)"
+        << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
         << std::endl;
 
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
@@ -1932,7 +1932,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -1958,13 +1958,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
 
         std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
@@ -1999,7 +1999,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
         << "Aggregated in " << time_aggregated
-        << " (" << n / time_aggregated << " elem/sec.)"
+        << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
         << std::endl;
 
         size_t size_before_merge = 0;
@@ -2025,13 +2025,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
         << "Merged in " << time_merged
-        << " (" << size_before_merge / time_merged << " elem/sec.)"
+        << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
         << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
         << "Total in \033[1m" << time_total << "\033[0m"
-        << " (" << n / time_total << " elem/sec.)"
+        << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
         << std::endl;
 
         std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
@@ -2069,7 +2069,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2097,13 +2097,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
 
         std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
@@ -2132,7 +2132,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2154,13 +2154,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
@@ -2188,7 +2188,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2210,13 +2210,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
@@ -2244,7 +2244,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2267,13 +2267,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
 
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
@@ -2302,7 +2302,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2325,13 +2325,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
 
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
@@ -2360,7 +2360,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2383,13 +2383,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
 
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
@@ -2418,7 +2418,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2441,13 +2441,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
 
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
@@ -2485,7 +2485,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2509,13 +2509,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
 
         std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
@@ -2546,7 +2546,7 @@ int main(int argc, char ** argv)
         double time_total = watch.elapsedSeconds();
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
 
         std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
@@ -2578,7 +2578,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2602,13 +2602,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
 
         std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
@@ -2637,7 +2637,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2659,13 +2659,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
@@ -2693,7 +2693,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2715,13 +2715,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
@@ -2749,7 +2749,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2771,13 +2771,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
@@ -2805,7 +2805,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2827,13 +2827,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
@@ -2861,7 +2861,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2884,13 +2884,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
@@ -2918,7 +2918,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2941,13 +2941,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
@@ -2975,7 +2975,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -2998,13 +2998,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
@@ -3032,7 +3032,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -3055,13 +3055,13 @@ int main(int argc, char ** argv)
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
@@ -3096,7 +3096,7 @@ int main(int argc, char ** argv)
         double time_partitioned = watch.elapsedSeconds();
         std::cerr
             << "Partitioned in " << time_partitioned
-            << " (" << n / time_partitioned << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_partitioned << " elem/sec.)"
             << std::endl;
 
         std::cerr << "Partition sizes: ";
@@ -3122,7 +3122,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         /// No merge needed - each key goes to exactly one partition
@@ -3133,7 +3133,7 @@ int main(int argc, char ** argv)
         double time_total = time_partitioned + time_aggregated;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
@@ -3179,7 +3179,7 @@ int main(int argc, char ** argv)
         double time_partitioned = watch.elapsedSeconds();
         std::cerr
             << "Partitioned in " << time_partitioned
-            << " (" << n / time_partitioned << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_partitioned << " elem/sec.)"
             << std::endl;
 
         /// Now aggregate: each thread processes all keys destined for its partition
@@ -3204,7 +3204,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t total_size = 0;
@@ -3214,7 +3214,7 @@ int main(int argc, char ** argv)
         double time_total = time_partitioned + time_aggregated;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
@@ -3256,7 +3256,7 @@ int main(int argc, char ** argv)
         double time_partitioned = watch.elapsedSeconds();
         std::cerr
             << "Partitioned in " << time_partitioned
-            << " (" << n / time_partitioned << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_partitioned << " elem/sec.)"
             << std::endl;
 
         std::vector<Map> maps(num_threads);
@@ -3300,7 +3300,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t total_size = 0;
@@ -3310,7 +3310,7 @@ int main(int argc, char ** argv)
         double time_total = time_partitioned + time_aggregated;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
@@ -3382,7 +3382,7 @@ int main(int argc, char ** argv)
         double time_partitioned = time_histogram + watch.elapsedSeconds();
         std::cerr
             << "Partitioned in " << time_partitioned
-            << " (" << n / time_partitioned << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_partitioned << " elem/sec.)"
             << std::endl;
 
         /// Phase 3: Parallel aggregation
@@ -3406,7 +3406,7 @@ int main(int argc, char ** argv)
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << n / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t total_size = 0;
@@ -3416,7 +3416,7 @@ int main(int argc, char ** argv)
         double time_total = time_partitioned + time_aggregated;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
@@ -3539,7 +3539,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "Phase 1 (local + defer) in " << time_phase1
-            << " (" << n / time_phase1 << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_phase1 << " elem/sec.)"
             << " local_keys=" << total_local << " deferred_keys=" << total_deferred
             << std::endl;
 
@@ -3565,7 +3565,7 @@ int main(int argc, char ** argv)
         double time_phase2 = watch.elapsedSeconds();
         std::cerr
             << "Phase 2 (aggregate deferred) in " << time_phase2
-            << " (" << total_deferred / time_phase2 << " elem/sec.)"
+            << " (" << static_cast<double>(total_deferred) / time_phase2 << " elem/sec.)"
             << std::endl;
 
         /// Phase 3: Merge local maps into partitioned results
@@ -3596,7 +3596,7 @@ int main(int argc, char ** argv)
         double time_phase3 = watch.elapsedSeconds();
         std::cerr
             << "Phase 3 (merge local to partitioned) in " << time_phase3
-            << " (" << total_local / time_phase3 << " elem/sec.)"
+            << " (" << static_cast<double>(total_local) / time_phase3 << " elem/sec.)"
             << std::endl;
 
         size_t total_size = 0;
@@ -3606,7 +3606,7 @@ int main(int argc, char ** argv)
         double time_total = time_phase1 + time_phase2 + time_phase3;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
@@ -3710,7 +3710,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "Phase 1 (local + defer) in " << time_phase1
-            << " (" << n / time_phase1 << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_phase1 << " elem/sec.)"
             << " local_keys=" << total_local << " deferred_keys=" << total_deferred
             << std::endl;
 
@@ -3735,7 +3735,7 @@ int main(int argc, char ** argv)
         double time_phase2 = watch.elapsedSeconds();
         std::cerr
             << "Phase 2 (aggregate deferred) in " << time_phase2
-            << " (" << total_deferred / time_phase2 << " elem/sec.)"
+            << " (" << static_cast<double>(total_deferred) / time_phase2 << " elem/sec.)"
             << std::endl;
 
         /// Phase 3: Sequential merge of local maps
@@ -3765,7 +3765,7 @@ int main(int argc, char ** argv)
         double time_phase3 = watch.elapsedSeconds();
         std::cerr
             << "Phase 3 (merge local to partitioned) in " << time_phase3
-            << " (" << total_local / time_phase3 << " elem/sec.)"
+            << " (" << static_cast<double>(total_local) / time_phase3 << " elem/sec.)"
             << std::endl;
 
         size_t total_size = 0;
@@ -3775,7 +3775,7 @@ int main(int argc, char ** argv)
         double time_total = time_phase1 + time_phase2 + time_phase3;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
@@ -3896,7 +3896,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "Phase 1 (local + defer + partition) in " << time_phase1
-            << " (" << n / time_phase1 << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_phase1 << " elem/sec.)"
             << " local_keys=" << total_local << " deferred_keys=" << total_deferred
             << std::endl;
 
@@ -3930,7 +3930,7 @@ int main(int argc, char ** argv)
         double time_phase2 = watch.elapsedSeconds();
         std::cerr
             << "Phase 2+3 (aggregate all) in " << time_phase2
-            << " (" << (total_deferred + total_local) / time_phase2 << " elem/sec.)"
+            << " (" << static_cast<double>(total_deferred + total_local) / time_phase2 << " elem/sec.)"
             << std::endl;
 
         size_t total_size = 0;
@@ -3940,7 +3940,7 @@ int main(int argc, char ** argv)
         double time_total = time_phase1 + time_phase2;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
@@ -4060,7 +4060,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "Phase 1 (local + defer + partition) in " << time_phase1
-            << " (" << n / time_phase1 << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_phase1 << " elem/sec.)"
             << " local_keys=" << total_local << " deferred_keys=" << total_deferred
             << std::endl;
 
@@ -4091,7 +4091,7 @@ int main(int argc, char ** argv)
         double time_phase2 = watch.elapsedSeconds();
         std::cerr
             << "Phase 2+3 (aggregate all) in " << time_phase2
-            << " (" << (total_deferred + total_local) / time_phase2 << " elem/sec.)"
+            << " (" << static_cast<double>(total_deferred + total_local) / time_phase2 << " elem/sec.)"
             << std::endl;
 
         size_t total_size = 0;
@@ -4101,7 +4101,7 @@ int main(int argc, char ** argv)
         double time_total = time_phase1 + time_phase2;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
@@ -4235,7 +4235,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "Processed " << total_blocks << " blocks in " << time_blocks
-            << " (" << n / time_blocks << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_blocks << " elem/sec.)"
             << std::endl;
 
         /// Count local map entries
@@ -4288,7 +4288,7 @@ int main(int argc, char ** argv)
         double time_merge = watch.elapsedSeconds();
         std::cerr
             << "Final merge in " << time_merge
-            << " (" << total_local / time_merge << " elem/sec.)"
+            << " (" << static_cast<double>(total_local) / time_merge << " elem/sec.)"
             << std::endl;
 
         size_t total_size = 0;
@@ -4298,7 +4298,7 @@ int main(int argc, char ** argv)
         double time_total = time_blocks + time_merge;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
@@ -4430,7 +4430,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "Processed " << num_blocks << " blocks in " << time_blocks
-            << " (" << n / time_blocks << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_blocks << " elem/sec.)"
             << std::endl;
 
         size_t total_local = 0;
@@ -4480,7 +4480,7 @@ int main(int argc, char ** argv)
         double time_merge = watch.elapsedSeconds();
         std::cerr
             << "Final merge in " << time_merge
-            << " (" << total_local / time_merge << " elem/sec.)"
+            << " (" << static_cast<double>(total_local) / time_merge << " elem/sec.)"
             << std::endl;
 
         size_t total_size = 0;
@@ -4490,7 +4490,7 @@ int main(int argc, char ** argv)
         double time_total = time_blocks + time_merge;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
@@ -4609,7 +4609,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "Main phase in " << time_main
-            << " (" << n / time_main << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_main << " elem/sec.)"
             << std::endl;
 
         size_t total_local = 0;
@@ -4659,7 +4659,7 @@ int main(int argc, char ** argv)
         double time_merge = watch.elapsedSeconds();
         std::cerr
             << "Final merge in " << time_merge
-            << " (" << total_local / time_merge << " elem/sec.)"
+            << " (" << static_cast<double>(total_local) / time_merge << " elem/sec.)"
             << std::endl;
 
         size_t total_size = 0;
@@ -4669,7 +4669,7 @@ int main(int argc, char ** argv)
         double time_total = time_main + time_merge;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
@@ -4782,7 +4782,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "Main phase in " << time_main
-            << " (" << n / time_main << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_main << " elem/sec.)"
             << std::endl;
 
         size_t total_local = 0;
@@ -4831,7 +4831,7 @@ int main(int argc, char ** argv)
         double time_merge = watch.elapsedSeconds();
         std::cerr
             << "Final merge in " << time_merge
-            << " (" << total_local / time_merge << " elem/sec.)"
+            << " (" << static_cast<double>(total_local) / time_merge << " elem/sec.)"
             << std::endl;
 
         size_t total_size = 0;
@@ -4841,7 +4841,7 @@ int main(int argc, char ** argv)
         double time_total = time_main + time_merge;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
@@ -4977,7 +4977,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "Production phase in " << time_produce
-            << " (" << n / time_produce << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_produce << " elem/sec.)"
             << std::endl;
 
         watch.restart();
@@ -5018,7 +5018,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "Consume phase in " << time_consume
-            << " (" << n / time_consume << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_consume << " elem/sec.)"
             << std::endl;
 
         size_t total_local = 0;
@@ -5068,7 +5068,7 @@ int main(int argc, char ** argv)
         double time_merge = watch.elapsedSeconds();
         std::cerr
             << "Final merge in " << time_merge
-            << " (" << total_local / time_merge << " elem/sec.)"
+            << " (" << static_cast<double>(total_local) / time_merge << " elem/sec.)"
             << std::endl;
 
         size_t total_size = 0;
@@ -5078,7 +5078,7 @@ int main(int argc, char ** argv)
         double time_total = time_produce + time_consume + time_merge;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
@@ -5253,7 +5253,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "Main phase in " << time_main
-            << " (" << n / time_main << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_main << " elem/sec.)"
             << std::endl;
 
         size_t total_local = 0;
@@ -5303,7 +5303,7 @@ int main(int argc, char ** argv)
         double time_merge = watch.elapsedSeconds();
         std::cerr
             << "Final merge in " << time_merge
-            << " (" << total_local / time_merge << " elem/sec.)"
+            << " (" << static_cast<double>(total_local) / time_merge << " elem/sec.)"
             << std::endl;
 
         size_t total_size = 0;
@@ -5313,7 +5313,7 @@ int main(int argc, char ** argv)
         double time_total = time_main + time_merge;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
@@ -5439,7 +5439,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "Production phase in " << time_produce
-            << " (" << n / time_produce << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_produce << " elem/sec.)"
             << std::endl;
 
         watch.restart();
@@ -5486,7 +5486,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "Consume phase in " << time_consume
-            << " (" << n / time_consume << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_consume << " elem/sec.)"
             << std::endl;
 
         size_t total_local = 0;
@@ -5536,7 +5536,7 @@ int main(int argc, char ** argv)
         double time_merge = watch.elapsedSeconds();
         std::cerr
             << "Final merge in " << time_merge
-            << " (" << total_local / time_merge << " elem/sec.)"
+            << " (" << static_cast<double>(total_local) / time_merge << " elem/sec.)"
             << std::endl;
 
         size_t total_size = 0;
@@ -5546,7 +5546,7 @@ int main(int argc, char ** argv)
         double time_total = time_produce + time_consume + time_merge;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
@@ -5716,7 +5716,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "Main phase in " << time_main
-            << " (" << n / time_main << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_main << " elem/sec.)"
             << std::endl;
 
         size_t total_local = 0;
@@ -5766,7 +5766,7 @@ int main(int argc, char ** argv)
         double time_merge = watch.elapsedSeconds();
         std::cerr
             << "Final merge in " << time_merge
-            << " (" << total_local / time_merge << " elem/sec.)"
+            << " (" << static_cast<double>(total_local) / time_merge << " elem/sec.)"
             << std::endl;
 
         size_t total_size = 0;
@@ -5776,7 +5776,7 @@ int main(int argc, char ** argv)
         double time_total = time_main + time_merge;
         std::cerr
             << "Total in \033[1m" << time_total << "\033[0m"
-            << " (" << n / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(n) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }

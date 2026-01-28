@@ -798,7 +798,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
 
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());

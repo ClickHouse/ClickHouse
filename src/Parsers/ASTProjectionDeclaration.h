@@ -22,12 +22,12 @@ public:
 
     ASTPtr clone() const override;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&query));
-        f(reinterpret_cast<void **>(&index));
-        f(reinterpret_cast<void **>(&type));
-        f(reinterpret_cast<void **>(&with_settings));
+        f(&query, nullptr);
+        f(&index, nullptr);
+        f(reinterpret_cast<IAST **>(&type), nullptr);
+        f(reinterpret_cast<IAST **>(&with_settings), nullptr);
     }
 
 protected:

@@ -127,7 +127,7 @@ QueryTreeNodePtr SortNode::cloneImpl() const
 
 ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto result = std::make_shared<ASTOrderByElement>();
+    auto result = make_intrusive<ASTOrderByElement>();
     result->direction = sort_direction == SortDirection::ASCENDING ? 1 : -1;
     result->nulls_direction = result->direction;
     if (nulls_sort_direction)
@@ -138,7 +138,7 @@ ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
     result->children.push_back(getExpression()->toAST(options));
 
     if (collator)
-        result->setCollation(std::make_shared<ASTLiteral>(Field(collator->getLocale())));
+        result->setCollation(make_intrusive<ASTLiteral>(Field(collator->getLocale())));
 
     result->with_fill = with_fill;
     if (hasFillFrom())

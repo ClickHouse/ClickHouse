@@ -121,7 +121,7 @@ class FunctionWidthBucket : public IFunction
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "The calculation resulted in NaN or Inf which is unexpected in function {}.", getName());
         }
-        return static_cast<TResultType>(count * relative_bucket + 1);
+        return static_cast<TResultType>(static_cast<Float64>(count) * relative_bucket + 1);
     }
 
     template <is_any_of<UInt8, UInt16, UInt32, UInt64> TCountType>

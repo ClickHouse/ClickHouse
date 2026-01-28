@@ -442,7 +442,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
                 return false;
             case DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES:
                 return context->getSettingsRef()[Setting::insert_deduplicate];
-            case DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE:
+            case DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE:
             {
                 if (!select_query_sorted && context->getSettingsRef()[Setting::insert_deduplicate])
                     LOG_INFO(logger, "INSERT SELECT deduplication is disabled because SELECT is not stable");

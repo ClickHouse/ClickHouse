@@ -1,11 +1,9 @@
 import dataclasses
 import json
-import os
 from pathlib import Path
 from typing import List
 
 from ._environment import _Environment
-from .gh import GH
 from .info import Info
 from .parser import WorkflowConfigParser
 from .result import Result, ResultInfo, _ResultS3
@@ -13,7 +11,7 @@ from .runtime import RunConfig
 from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
-from .utils import Shell, Utils
+from .utils import Utils
 
 
 @dataclasses.dataclass
@@ -140,9 +138,8 @@ class HtmlRunnerHooks:
         summary_result.start_time = Utils.timestamp()
         summary_result.links.append(env.CHANGE_URL)
         summary_result.links.append(env.RUN_URL)
-        report_url_latest_sha = Info().get_report_url(latest=True)
-        report_url_current_sha = Info().get_report_url(latest=False)
         info = Info()
+        report_url_current_sha = info.get_report_url(latest=False)
         summary_result.add_ext_key_value("pr_title", info.pr_title).add_ext_key_value(
             "git_branch", info.git_branch
         ).add_ext_key_value("report_url", report_url_current_sha).add_ext_key_value(
@@ -167,27 +164,6 @@ class HtmlRunnerHooks:
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
         print(f"CI Status page url [{report_url_current_sha}]")
 
-        if Settings.USE_CUSTOM_GH_AUTH:
-            from .gh_auth import GHAuth
-
-            pem = _workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-            app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-            GHAuth.auth(app_id=app_id, app_key=pem)
-
-        body = f"Workflow [[{_workflow.name}]({report_url_latest_sha})], commit [{_Environment.get().SHA[:8]}]"
-        res2 = not bool(env.PR_NUMBER) or GH.post_updateable_comment(
-            comment_tags_and_bodies={"report": body, "summary": ""},
-        )
-        res1 = GH.post_commit_status(
-            name=_workflow.name,
-            status=Result.Status.PENDING,
-            description="",
-            url=report_url_current_sha,
-        )
-        if not (res1 or res2):
-            Utils.raise_with_error(
-                "Failed to set both GH commit status and PR comment with Workflow Status, cannot proceed"
-            )
         GitCommit.update_s3_data()
 
     @classmethod

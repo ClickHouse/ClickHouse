@@ -37,7 +37,7 @@ void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
     ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsPassed, rows_passed);
 
     /// Skip next 30 blocks if too few rows got filtered out
-    if (rows_passed > pass_ratio_threshold_for_disabling * rows_checked)
+    if (static_cast<double>(rows_passed) > pass_ratio_threshold_for_disabling * static_cast<double>(rows_checked))
         rows_to_skip = rows_checked * blocks_to_skip_before_reenabling;
 }
 
@@ -322,7 +322,7 @@ void ApproximateRuntimeFilter::checkBloomFilterWorthiness()
     for (auto word : raw_filter_words)
         set_bits += std::popcount(word);
     /// If too many bits are set then it is likely that the filter will not filter out much
-    if (set_bits > max_ratio_of_set_bits_in_bloom_filter * total_bits)
+    if (static_cast<double>(set_bits) > max_ratio_of_set_bits_in_bloom_filter * static_cast<double>(total_bits))
         setFullyDisabled();
 }
 

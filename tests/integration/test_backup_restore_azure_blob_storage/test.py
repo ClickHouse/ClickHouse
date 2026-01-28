@@ -1,22 +1,13 @@
 #!/usr/bin/env python3
 
-import gzip
 import io
-import json
-import logging
 import os
-import random
-import threading
 import time
 
 import pytest
 from azure.storage.blob import BlobServiceClient
 
-import helpers.client
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.mock_servers import start_mock_servers
-from helpers.network import PartitionManager
-from helpers.test_tools import exec_query_with_retry
+from helpers.cluster import ClickHouseCluster
 
 
 def generate_cluster_def(port):
@@ -307,6 +298,98 @@ def test_backup_restore_with_named_collection_azure_conf2(cluster):
         azure_query(node, f"SELECT * from test_write_connection_string_restored_2")
         == "1\ta\n"
     )
+
+
+def test_backup_restore_with_sql_named_collection_azure(cluster):
+    """Test backup using a named collection created via SQL (not XML config)."""
+    node = cluster.instances["node"]
+    port = cluster.env_variables["AZURITE_PORT"]
+
+    # Create a named collection via SQL
+    azure_query(
+        node,
+        f"""
+        CREATE NAMED COLLECTION IF NOT EXISTS sql_azure_backup_collection AS
+            connection_string = '{cluster.env_variables['AZURITE_CONNECTION_STRING']}',
+            container = 'cont'
+        """,
+    )
+
+    try:
+        azure_query(node, "DROP TABLE IF EXISTS test_sql_nc_backup")
+        azure_query(
+            node,
+            f"CREATE TABLE test_sql_nc_backup (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_sql_nc_backup.csv', 'CSV')",
+        )
+        azure_query(
+            node,
+            "INSERT INTO test_sql_nc_backup SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
+        )
+
+        backup_name = new_backup_name()
+        backup_destination = f"AzureBlobStorage(sql_azure_backup_collection, '{backup_name}')"
+        azure_query(
+            node,
+            f"BACKUP TABLE test_sql_nc_backup TO {backup_destination}",
+        )
+        print(get_azure_file_content(f"{backup_name}/.backup", port))
+        azure_query(node, "DROP TABLE IF EXISTS test_sql_nc_backup_restored")
+        azure_query(
+            node,
+            f"RESTORE TABLE test_sql_nc_backup AS test_sql_nc_backup_restored FROM {backup_destination};",
+        )
+        assert (
+            azure_query(node, "SELECT * from test_sql_nc_backup_restored") == "1\ta\n"
+        )
+    finally:
+        azure_query(node, "DROP NAMED COLLECTION IF EXISTS sql_azure_backup_collection")
+
+
+def test_backup_restore_with_sql_named_collection_azure_with_overrides(cluster):
+    """Test backup using a SQL named collection with key-value overrides."""
+    node = cluster.instances["node"]
+    port = cluster.env_variables["AZURITE_PORT"]
+
+    # Create a named collection via SQL with placeholder blob_path
+    azure_query(
+        node,
+        f"""
+        CREATE NAMED COLLECTION IF NOT EXISTS sql_azure_backup_override AS
+            connection_string = '{cluster.env_variables['AZURITE_CONNECTION_STRING']}',
+            container = 'cont',
+            blob_path = 'placeholder'
+        """,
+    )
+
+    try:
+        azure_query(node, "DROP TABLE IF EXISTS test_sql_nc_override_backup")
+        azure_query(
+            node,
+            f"CREATE TABLE test_sql_nc_override_backup (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_sql_nc_override.csv', 'CSV')",
+        )
+        azure_query(
+            node,
+            "INSERT INTO test_sql_nc_override_backup SETTINGS azure_truncate_on_insert = 1 VALUES (2, 'b')",
+        )
+
+        backup_name = new_backup_name()
+        # Override the blob_path via key-value argument
+        backup_destination = f"AzureBlobStorage(sql_azure_backup_override, blob_path='{backup_name}')"
+        azure_query(
+            node,
+            f"BACKUP TABLE test_sql_nc_override_backup TO {backup_destination}",
+        )
+        print(get_azure_file_content(f"{backup_name}/.backup", port))
+        azure_query(node, "DROP TABLE IF EXISTS test_sql_nc_override_restored")
+        azure_query(
+            node,
+            f"RESTORE TABLE test_sql_nc_override_backup AS test_sql_nc_override_restored FROM {backup_destination};",
+        )
+        assert (
+            azure_query(node, "SELECT * from test_sql_nc_override_restored") == "2\tb\n"
+        )
+    finally:
+        azure_query(node, "DROP NAMED COLLECTION IF EXISTS sql_azure_backup_override")
 
 
 def test_backup_restore_on_merge_tree(cluster):

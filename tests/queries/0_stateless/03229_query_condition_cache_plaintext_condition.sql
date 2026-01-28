@@ -13,7 +13,7 @@ INSERT INTO tab SELECT number, number FROM numbers(1_000_000); -- 1 mio rows sou
 SELECT '--- with move to PREWHERE';
 SET optimize_move_to_prewhere = true;
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'Run two queries, with and without query_condition_cache_store_conditions_as_plaintext enabled';
 SELECT count(*) FROM tab WHERE b = 10_000 SETTINGS use_query_condition_cache = true, query_condition_cache_store_conditions_as_plaintext = false FORMAT Null;
@@ -23,13 +23,13 @@ SELECT part_name, condition FROM system.query_condition_cache ORDER BY condition
 SELECT '--- without move to PREWHERE';
 SET optimize_move_to_prewhere = false;
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'Run two queries, with and without query_condition_cache_store_conditions_as_plaintext enabled';
 SELECT count(*) FROM tab WHERE b = 10_000 SETTINGS use_query_condition_cache = true, query_condition_cache_store_conditions_as_plaintext = false FORMAT Null;
 SELECT count(*) FROM tab WHERE b = 90_000 SETTINGS use_query_condition_cache = true, query_condition_cache_store_conditions_as_plaintext = true FORMAT Null;
 SELECT part_name, condition FROM system.query_condition_cache ORDER BY condition;
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 DROP TABLE tab;

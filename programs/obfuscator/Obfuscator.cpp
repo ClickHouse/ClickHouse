@@ -602,7 +602,7 @@ private:
 
         CodePoint sample(UInt64 random, double end_multiplier) const
         {
-            UInt64 range = total + static_cast<UInt64>(count_end * end_multiplier);
+            UInt64 range = total + static_cast<UInt64>(static_cast<double>(count_end) * end_multiplier);
             if (range == 0)
                 return END;
 
@@ -843,12 +843,12 @@ public:
                 if (!histogram.total)
                     continue;
 
-                double average = static_cast<double>(histogram.total) / histogram.buckets.size();
+                double average = static_cast<double>(histogram.total) / static_cast<double>(histogram.buckets.size());
 
                 UInt64 new_total = 0;
                 for (auto & bucket : histogram.buckets)
                 {
-                    bucket.second = static_cast<UInt64>(bucket.second * (1.0 - params.frequency_desaturate) + average * params.frequency_desaturate);
+                    bucket.second = static_cast<UInt64>(static_cast<double>(bucket.second) * (1.0 - params.frequency_desaturate) + average * params.frequency_desaturate);
                     new_total += bucket.second;
                 }
 

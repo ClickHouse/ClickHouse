@@ -13,6 +13,7 @@
 #include <Storages/IStorage.h>
 
 #include <memory>
+#include <ranges>
 
 namespace DB
 {

@@ -626,6 +626,11 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         if (row_group_idx != i)
             return false;
         const RowGroup & row_group = reader.row_groups[row_group_idx];
+        /// Must check stage first to ensure `next_subgroup_for_step` is fully initialized.
+        /// It's assigned during `OffsetIndex` processing, before stage advances to `ColumnData`.
+        /// Using acquire ordering to synchronize with the release (seq_cst) store in `finishRowGroupStage`.
+        if (row_group.stage.load(std::memory_order_acquire) < ReadStage::ColumnData)
+            return false;
         if (row_group.next_subgroup_for_step.empty())
             return false;
         return row_group.next_subgroup_for_step[0].load() == row_group.delivery_ptr.load();
@@ -781,7 +786,7 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                 }
 
                 double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(column, row_group, reader.primitive_columns.at(task.column_idx));
-                size_t column_memory = size_t(bytes_per_row * row_subgroup.filter.rows_pass);
+                size_t column_memory = static_cast<size_t>(bytes_per_row * static_cast<double>(row_subgroup.filter.rows_pass));
                 subchunk.column_and_offsets_memory = MemoryUsageToken(column_memory, &diff);
                 break;
             }

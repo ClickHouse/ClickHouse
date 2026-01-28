@@ -134,7 +134,7 @@ String ASTFunction::getID(char delim) const
 
 ASTPtr ASTFunction::clone() const
 {
-    auto res = std::make_shared<ASTFunction>(*this);
+    auto res = make_intrusive<ASTFunction>(*this);
     res->children.clear();
 
     if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
@@ -189,7 +189,7 @@ static ASTPtr createLiteral(const ASTs & arguments)
             return {};
     }
 
-    return std::make_shared<ASTLiteral>(container);
+    return make_intrusive<ASTLiteral>(container);
 }
 
 ASTPtr ASTFunction::toLiteral() const

@@ -91,7 +91,7 @@ void StorageSystemAsyncLoader::fillData(MutableColumns & res_columns, ContextPtr
         TimePoint finished = state.job->finishTime();
         TimePoint last = finished != TimePoint{} ? finished : now;
         TimeDuration elapsed = started != TimePoint{} ? last - started : TimeDuration{0};
-        double elapsed_sec = std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count() * 1e-9;
+        double elapsed_sec = static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count()) * 1e-9;
 
         Field ready_seqno;
         if (state.ready_seqno)

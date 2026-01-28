@@ -39,10 +39,10 @@ public:
     Strings names;
     String new_name;
 
-    std::shared_ptr<ASTSettingsProfileElements> settings;
-    std::shared_ptr<ASTAlterSettingsProfileElements> alter_settings;
+    boost::intrusive_ptr<ASTSettingsProfileElements> settings;
+    boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;
 
-    std::shared_ptr<ASTRolesOrUsersSet> to_roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> to_roles;
 
     String getID(char) const override;
     ASTPtr clone() const override;

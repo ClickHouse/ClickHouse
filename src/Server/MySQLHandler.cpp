@@ -532,7 +532,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);
         socket().setSendTimeout(settings[Setting::send_timeout]);
 
-        CurrentThread::QueryScope query_scope{query_context};
+        CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();

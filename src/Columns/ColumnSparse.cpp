@@ -840,7 +840,7 @@ void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t
 
 double ColumnSparse::getRatioOfDefaultRows(double) const
 {
-    return static_cast<double>(getNumberOfDefaultRows()) / _size;
+    return static_cast<double>(getNumberOfDefaultRows()) / static_cast<double>(_size);
 }
 
 UInt64 ColumnSparse::getNumberOfDefaultRows() const

@@ -47,6 +47,7 @@ CREATE TABLE tab
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
+                                [, posting_list_codec = 'none' | 'bitpacking' ]
                             )
 )
 ENGINE = MergeTree
@@ -116,6 +117,24 @@ Examples:
 Also, the preprocessor expression must only reference the column on top of which the text index is defined.
 Using non-deterministic functions is not allowed.
 
+The preprocessor can also be used with [Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md) columns.
+In this case, the preprocessor expression transforms the array elements individually.
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    col Array(String),
+    INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))
+
+    -- This is not legal:
+    INDEX idx_illegal col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arraySort(col))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) use the preprocessor to first transform the search term before tokenizing it.
 
 For example,
@@ -147,7 +166,6 @@ ORDER BY tuple();
 
 SELECT count() FROM tab WHERE hasToken(str, lower('Foo'));
 ```
-
 **Other arguments (optional)**. Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
 However, unlike other skipping indexes, text indexes have an infinite granularity, i.e. the text index is created for the entire part and explicitly specified index granularity is ignored.
 This value has been chosen empirically and it provides a good trade-off between speed and index size for most use cases.
@@ -165,6 +183,10 @@ Optional parameter `dictionary_block_size` (default: 512) specifies the size of 
 Optional parameter `dictionary_block_frontcoding_compression` (default: 1) specifies if the dictionary blocks use front coding as compression.
 
 Optional parameter `posting_list_block_size` (default: 1048576) specifies the size of posting list blocks in rows.
+
+Optional parameter `posting_list_codec` (default: `none`) specifies the codec for posting list:
+- `none` - the posting lists are stored without additional compression.
+- `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size).
 
 </details>
 
@@ -625,6 +647,13 @@ Please refer the following server settings to configure the caches.
 | [text_index_postings_cache_size](/operations/server-configuration-parameters/settings#text_index_postings_cache_size)                 | Maximum cache size in bytes.                                                                            |
 | [text_index_postings_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_postings_cache_max_entries)   | Maximum number of deserialized postings in cache.                                                       |
 | [text_index_postings_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_postings_cache_size_ratio)     | The size of the protected queue in the text index postings cache relative to the cache\'s total size.   |
+
+## Limitations {#limitations}
+
+The text index currently has the following limitations:
+- The materialization of text indexes with a high number of tokens (e.g. 10 billion tokens) can consume significant amounts of memory. Text
+  index materialization can happen directly (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) or indirectly in part merges.
+- It is not possible to materialize text indexes on parts with more than 4.294.967.296 (= 2^32 = ca. 4.2 billion) rows. Without a materialized text index, queries fall back to slow brute-force search within the part. As a worst case estimation, assume a part contains a single column of type String and MergeTree setting `max_bytes_to_merge_at_max_space_in_pool` (default: 150 GB) was not changed. In this case, the situation happens if the column contains less than 29.5 characters per row on average. In practice, tables also contain other columns and the threshold is multiples times smaller than that (depending on the number, type and size of the other columns).
 
 ## Implementation Details {#implementation}
 

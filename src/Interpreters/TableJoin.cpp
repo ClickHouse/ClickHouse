@@ -376,7 +376,7 @@ NamesWithAliases TableJoin::getNamesWithAliases(const NameSet & required_columns
 
 ASTPtr TableJoin::leftKeysList() const
 {
-    ASTPtr keys_list = std::make_shared<ASTExpressionList>();
+    ASTPtr keys_list = make_intrusive<ASTExpressionList>();
     keys_list->children = key_asts_left;
 
     for (const auto & clause : clauses)
@@ -389,7 +389,7 @@ ASTPtr TableJoin::leftKeysList() const
 
 ASTPtr TableJoin::rightKeysList() const
 {
-    ASTPtr keys_list = std::make_shared<ASTExpressionList>();
+    ASTPtr keys_list = make_intrusive<ASTExpressionList>();
 
     if (hasOn())
         keys_list->children = key_asts_right;

@@ -57,9 +57,10 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     // Create TimeSeriesTableInfo structure
     PrometheusQueryToSQLConverter::TimeSeriesTableInfo table_info;
+    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, getContext())->getInMemoryMetadataPtr();
     table_info.storage_id = time_series_storage->getStorageID();
-    table_info.timestamp_data_type = std::make_shared<DataTypeDateTime64>(0);
-    table_info.value_data_type = std::make_shared<DataTypeFloat64>();
+    table_info.timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
+    table_info.value_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
 
     Field start_time;
     Field end_time;
@@ -311,7 +312,7 @@ void DB::PrometheusHTTPProtocolAPI::writeVectorResult(WriteBuffer & response, co
             }
             else
             {
-                writeFloatText(std::round(time(nullptr) * 100.0) / 100.0, response);
+                writeFloatText(std::round(static_cast<double>(time(nullptr)) * 100.0) / 100.0, response);
             }
 
             writeString(",", response);

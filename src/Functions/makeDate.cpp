@@ -701,7 +701,7 @@ public:
             const auto yyyymmdd = yyyymmddhhmmss / 1'000'000;
             const auto hhmmss = yyyymmddhhmmss % 1'000'000;
 
-            const auto decimal = float_date - yyyymmddhhmmss;
+            const auto decimal = float_date - static_cast<double>(yyyymmddhhmmss);
 
             const auto year = yyyymmdd / 10'000;
             const auto month = yyyymmdd / 100 % 100;

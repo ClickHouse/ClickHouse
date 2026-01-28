@@ -364,7 +364,7 @@ UInt8 getDataBytesSize(const IDataType * column_type)
 CompressionCodecGorilla::CompressionCodecGorilla(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
-    setCodecDescription("Gorilla", {std::make_shared<ASTLiteral>(static_cast<UInt64>(data_bytes_size))});
+    setCodecDescription("Gorilla", {make_intrusive<ASTLiteral>(static_cast<UInt64>(data_bytes_size))});
 }
 
 uint8_t CompressionCodecGorilla::getMethodByte() const

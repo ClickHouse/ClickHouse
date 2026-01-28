@@ -391,6 +391,14 @@ enum class ObjectStorageQueuePartitioningMode : uint8_t
 
 DECLARE_SETTING_ENUM(ObjectStorageQueuePartitioningMode)
 
+enum class ObjectStorageQueueBucketingMode : uint8_t
+{
+    PATH,       /// Hash full file path for bucketing (default, existing behavior)
+    PARTITION,  /// Hash partition key for bucketing (requires partitioning_mode != NONE)
+};
+
+DECLARE_SETTING_ENUM(ObjectStorageQueueBucketingMode)
+
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
 DECLARE_SETTING_ENUM(SchemaInferenceMode)
@@ -548,7 +556,7 @@ enum class DeduplicateInsertSelectMode : uint8_t
 {
     DISABLE = 0,
     FORCE_ENABLE,
-    ENABLE_WHEN_PROSSIBLE,
+    ENABLE_WHEN_POSSIBLE,
     ENABLE_EVEN_FOR_BAD_QUERIES
 };
 

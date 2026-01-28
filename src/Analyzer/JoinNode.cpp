@@ -88,7 +88,7 @@ static ASTPtr tryMakeUsingColumnASTWithAlias(const QueryTreeNodePtr & node)
     if (lhs_column_node->getColumnName() == rhs_column_node->getColumnName())
         return nullptr;
 
-    auto node_ast = std::make_shared<ASTIdentifier>(lhs_column_node->getColumnName());
+    auto node_ast = make_intrusive<ASTIdentifier>(lhs_column_node->getColumnName());
     node_ast->setAlias(rhs_column_node->getColumnName());
     return node_ast;
 }
@@ -97,7 +97,7 @@ static ASTPtr makeUsingAST(const QueryTreeNodePtr & node)
 {
     const auto & list_node = node->as<ListNode &>();
 
-    auto expr_list = std::make_shared<ASTExpressionList>();
+    auto expr_list = make_intrusive<ASTExpressionList>();
     expr_list->children.reserve(list_node.getNodes().size());
 
     for (const auto & child : list_node.getNodes())
@@ -115,7 +115,7 @@ static ASTPtr makeUsingAST(const QueryTreeNodePtr & node)
 
 ASTPtr JoinNode::toASTTableJoin() const
 {
-    auto join_ast = std::make_shared<ASTTableJoin>();
+    auto join_ast = make_intrusive<ASTTableJoin>();
     join_ast->locality = locality;
     join_ast->strictness = strictness;
     join_ast->kind = kind;
@@ -186,7 +186,7 @@ QueryTreeNodePtr JoinNode::cloneImpl() const
 
 ASTPtr JoinNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
+    ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
 
     addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, children[left_table_expression_child_index], options);
 
@@ -284,7 +284,7 @@ QueryTreeNodePtr CrossJoinNode::cloneImpl() const
 
 ASTPtr CrossJoinNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
+    ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
 
     for (size_t i = 0; i < children.size(); ++i)
     {
@@ -294,7 +294,7 @@ ASTPtr CrossJoinNode::toASTImpl(const ConvertToASTOptions & options) const
 
         if (i > 0)
         {
-            auto join_ast = std::make_shared<ASTTableJoin>();
+            auto join_ast = make_intrusive<ASTTableJoin>();
             join_ast->locality = join_types[i - 1].locality;
             join_ast->strictness = JoinStrictness::Unspecified;
             join_ast->kind = join_types[i - 1].is_comma ? JoinKind::Comma : JoinKind::Cross;

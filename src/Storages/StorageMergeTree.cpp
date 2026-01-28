@@ -37,6 +37,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
@@ -66,6 +67,9 @@ namespace DB
 namespace FailPoints
 {
     extern const char storage_merge_tree_background_clear_old_parts_pause[];
+    extern const char mt_merge_selecting_task_pause_when_scheduled[];
+    extern const char mt_select_parts_to_mutate_no_free_threads[];
+    extern const char mt_select_parts_to_mutate_max_part_size[];
     extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
 }
 
@@ -1032,6 +1036,25 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 parts_in_progress_names.push_back(part->name);
         }
 
+        std::map<String, String> parts_postpone_reasons_map;
+        if (!parts_to_do_names.empty())
+        {
+            for (const auto &[part_name, postpone_reason] : current_parts_postpone_reasons)
+            {
+                if (part_name == PostponeReasons::ALL_PARTS_KEY)
+                {
+                    parts_postpone_reasons_map[part_name] = postpone_reason;
+                    chassert(current_parts_postpone_reasons.size() == 1);
+                }
+                else
+                {
+                    auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+                    if (part_info.getDataVersion() < mutation_version)
+                        parts_postpone_reasons_map[part_name] = postpone_reason;
+                }
+            }
+        }
+
         for (const MutationCommand & command : *entry.commands)
         {
             result.push_back(MergeTreeMutationStatus
@@ -1042,6 +1065,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 block_numbers_map,
                 parts_in_progress_names,
                 parts_to_do_names,
+                parts_postpone_reasons_map,
                 /* is_done = */parts_to_do_names.empty(),
                 entry.latest_failed_part,
                 entry.latest_fail_time,
@@ -1408,16 +1432,20 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & /* disable_reason */, TableLockHolder & /* table_lock_holder */,
     std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/)
 {
+    current_parts_postpone_reasons.clear();
+
     if (current_mutations_by_version.empty())
         return {};
 
     size_t max_source_part_size = CompactionStatistics::getMaxSourcePartBytesForMutation(*this);
+    fiu_do_on(FailPoints::mt_select_parts_to_mutate_no_free_threads, { max_source_part_size = 0; });
     if (max_source_part_size == 0)
     {
         LOG_DEBUG(
             log,
             "Not enough idle threads to apply mutations at the moment. See settings 'number_of_free_entries_in_pool_to_execute_mutation' "
             "and 'background_pool_size'");
+        current_parts_postpone_reasons[PostponeReasons::ALL_PARTS_KEY] = PostponeReasons::NO_FREE_THREADS;
         return {};
     }
 
@@ -1439,6 +1467,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         if (mutations_begin_it == mutations_end_it)
             continue;
 
+        fiu_do_on(FailPoints::mt_select_parts_to_mutate_max_part_size, { max_source_part_size = 1; });
         if (max_source_part_size < part->getBytesOnDisk())
         {
             LOG_DEBUG(
@@ -1447,6 +1476,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                 max_source_part_size,
                 part->getBytesOnDisk(),
                 part->name);
+            current_parts_postpone_reasons[part->name] = PostponeReasons::EXCEED_MAX_PART_SIZE;
             continue;
         }
 
@@ -1456,6 +1486,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         if (!mutation_backoff_policy.partCanBeMutated(part->name))
         {
             LOG_DEBUG(log, "According to exponential backoff policy, do not perform mutations for the part {} yet. Put it aside.", part->name);
+            current_parts_postpone_reasons[part->name] = PostponeReasons::HIT_MUTATION_BACKOFF;
             continue;
         }
 
@@ -1469,13 +1500,32 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             /// It's possible that both mutation and transaction are already finished,
             /// because that part should not be mutated because it was not visible for that transaction.
             if (!part->version.isVisible(first_mutation_tid.start_csn, first_mutation_tid))
+            {
+                current_parts_postpone_reasons[part->name] = PostponeReasons::VERSION_NOT_VISIBLE;
                 continue;
+            }
 
             txn = tryGetTransactionForMutation(mutations_begin_it->second, log.load());
             if (!txn)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find transaction {} that has started mutation {} "
-                                "that is going to be applied to part {}",
-                                first_mutation_tid, mutations_begin_it->second.file_name, part->name);
+            {
+                CSN mutation_csn = mutations_begin_it->second.csn;
+                if (mutation_csn == Tx::RolledBackCSN)
+                {
+                    /// Transaction was rolled back, mutation should be removed soon, skip it for now
+                    LOG_DEBUG(log, "Mutation {} was started by transaction {} that was rolled back, skipping part {}",
+                              mutations_begin_it->second.file_name, first_mutation_tid, part->name);
+                    continue;
+                }
+                if (mutation_csn == Tx::UnknownCSN)
+                {
+                    /// Transaction is not running but hasn't committed yet - this shouldn't happen
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find transaction {} that has started mutation {} "
+                                    "that is going to be applied to part {}, and mutation CSN is still unknown",
+                                    first_mutation_tid, mutations_begin_it->second.file_name, part->name);
+                }
+                /// Transaction has committed, mutation can proceed without the transaction pointer
+                /// (txn is already null, which is fine for MergeMutateSelectedEntry)
+            }
         }
         else
         {
@@ -1487,6 +1537,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                 LOG_DEBUG(log, "Cannot mutate part {} because it's not visible (outdated, being created or removed "
                           "in an active transaction) to mutation {}.",
                           part->name, mutations_begin_it->second.file_name);
+                current_parts_postpone_reasons[part->name] = PostponeReasons::VERSION_NOT_VISIBLE;
                 continue;
             }
         }
@@ -1613,6 +1664,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     assert(!isStaticStorage());
 
+    FailPointInjection::pauseFailPoint(FailPoints::mt_merge_selecting_task_pause_when_scheduled);
+
     auto metadata_snapshot = getInMemoryMetadataPtr();
     MergeMutateSelectedEntryPtr merge_entry;
     MergeMutateSelectedEntryPtr mutate_entry;
@@ -1631,6 +1684,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     bool has_mutations = false;
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
+
         if (merger_mutator.merges_blocker.isCancelled())
             return false;
 
@@ -1702,7 +1756,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     bool scheduled = false;
     if (auto lock = time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
-            (*getSettings())[MergeTreeSetting::merge_tree_clear_old_temporary_directories_interval_seconds]))
+            static_cast<double>((*getSettings())[MergeTreeSetting::merge_tree_clear_old_temporary_directories_interval_seconds])))
     {
         assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
             [this, shared_lock] ()
@@ -1713,7 +1767,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     }
 
     if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
-            (*getSettings())[MergeTreeSetting::merge_tree_clear_old_parts_interval_seconds]))
+            static_cast<double>((*getSettings())[MergeTreeSetting::merge_tree_clear_old_parts_interval_seconds])))
     {
         assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
             [this, shared_lock] ()

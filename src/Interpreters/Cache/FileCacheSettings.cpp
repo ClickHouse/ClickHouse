@@ -117,7 +117,7 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
         desc.name = setting.getName();
         desc.type = [&]() -> DataTypePtr
         {
-            const std::string type_name = setting.getTypeName();
+            const auto type_name = setting.getTypeName();
             if (type_name == "UInt64")
                 return std::make_shared<DataTypeUInt64>();
             else if (type_name == "String")
@@ -257,7 +257,7 @@ void FileCacheSettings::validate()
         struct statvfs stat = getStatVFS(settings[FileCacheSetting::path]);
         const auto total_space = stat.f_blocks * stat.f_frsize;
         settings[FileCacheSetting::max_size] =
-            static_cast<UInt64>(std::floor(settings[FileCacheSetting::max_size_ratio_to_total_space].value * total_space));
+            static_cast<UInt64>(std::floor(settings[FileCacheSetting::max_size_ratio_to_total_space].value * static_cast<double>(total_space)));
 
         LOG_INFO(
             getLogger("FileCacheSettings"),

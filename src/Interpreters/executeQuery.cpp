@@ -181,6 +181,7 @@ namespace Setting
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsUInt64Auto insert_quorum;
+    extern const SettingsBool insert_quorum_parallel;
 }
 
 namespace ServerSetting
@@ -204,6 +205,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int ABORTED;
+    extern const int UNSUPPORTED_PARAMETER;
 }
 
 namespace FailPoints
@@ -681,6 +683,7 @@ void logQueryFinishImpl(
         {
             double elapsed_seconds = static_cast<double>(info.elapsed_microseconds) / 1000000.0;
             double rows_per_second = static_cast<double>(elem.read_rows) / elapsed_seconds;
+            double bytes_per_second = static_cast<double>(elem.read_bytes) / elapsed_seconds;
             LOG_DEBUG(
                 getLogger("executeQuery"),
                 "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
@@ -688,7 +691,7 @@ void logQueryFinishImpl(
                 ReadableSize(elem.read_bytes),
                 elapsed_seconds,
                 rows_per_second,
-                ReadableSize(elem.read_bytes / elapsed_seconds));
+                ReadableSize(bytes_per_second));
         }
 
         context->getRuntimeFilterLookup()->logStats();
@@ -1034,7 +1037,7 @@ class ImplicitTransactionControlExecutor
 public:
     void begin(const ContextMutablePtr & query_context)
     {
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(ASTTransactionControl::BEGIN);
+        ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::BEGIN);
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
         auto txn = query_context->getCurrentTransaction();
@@ -1053,7 +1056,7 @@ public:
 
         SCOPE_EXIT({ transaction_running = false; });
 
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(ASTTransactionControl::COMMIT);
+        ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::COMMIT);
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
     }
@@ -1068,7 +1071,7 @@ public:
 
         SCOPE_EXIT({ transaction_running = false; });
 
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(ASTTransactionControl::ROLLBACK);
+        ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::ROLLBACK);
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
     }
@@ -1221,9 +1224,13 @@ static BlockIO executeQueryImpl(
                 catch (const Exception & e)
                 {
                     if (e.code() == ErrorCodes::SYNTAX_ERROR)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
-                            formatted1, original_query);
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}.\nExpected AST:\n{}\n, but got\n{}",
+                            formatted1,
+                            original_query,
+                            out_ast->dumpTree(),
+                            ast2->dumpTree());
                     else
                         throw;
                 }
@@ -1514,10 +1521,11 @@ static BlockIO executeQueryImpl(
             if (settings[Setting::implicit_transaction] && settings[Setting::throw_on_unsupported_query_inside_transaction])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
 
-            if (settings[Setting::insert_quorum].valueOr(0) > 0)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Insert quorum cannot be used together with async inserts. " \
-                    "Please disable either `insert_quorum` or `async_insert` setting.");
+            auto quorum_is_enabled = settings[Setting::insert_quorum].valueOr(0) > 1 || settings[Setting::insert_quorum].is_auto;
+            if (quorum_is_enabled && !settings[Setting::insert_quorum_parallel])
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_PARAMETER,
+                    "Async inserts with quorum only make sense with enabled insert_quorum_parallel setting, either disable quorum or set insert_quorum_parallel=1 or do not use async inserts");
 
             quota = context->getQuota();
             if (quota)

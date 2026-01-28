@@ -1406,7 +1406,7 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
         long double t = res;
         res *= static_cast<long double>(std::numeric_limits<base_type>::max());
         res += t;
-        res += tmp.items[_impl::big(i)];
+        res += static_cast<long double>(tmp.items[_impl::big(i)]);
     }
 
     if (_impl::is_negative(*this))

@@ -406,7 +406,7 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
             part_stat.prefetch_step_marks = std::max<size_t>(
                 1,
                 static_cast<size_t>(
-                    std::round(static_cast<double>(settings[Setting::filesystem_prefetch_step_bytes]) / part_stat.approx_size_of_mark)));
+                    std::round(static_cast<double>(settings[Setting::filesystem_prefetch_step_bytes]) / static_cast<double>(part_stat.approx_size_of_mark))));
         }
 
         part_stat.prefetch_step_marks = std::max(part_stat.prefetch_step_marks, per_part_infos[i]->min_marks_per_task);

@@ -356,17 +356,6 @@ void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, size_t 
         result.columns_for_patches);
 }
 
-struct NamesHash
-{
-    size_t operator()(const Names & column_names) const
-    {
-        SipHash hash;
-        for (const auto & column_name : column_names)
-            hash.update(column_name);
-        return hash.get64();
-    }
-};
-
 void MergeTreeReadersChain::applyPatches(
     const Block & result_header,
     Columns & result_columns,

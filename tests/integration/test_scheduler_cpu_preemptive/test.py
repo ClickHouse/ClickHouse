@@ -36,6 +36,9 @@ def start_cluster():
 def clear_workloads_and_resources():
     node.query(
         f"""
+        drop workload if exists production2;
+        drop workload if exists development2;
+        drop workload if exists staging;
         drop workload if exists production;
         drop workload if exists development;
         drop workload if exists admin;
@@ -201,10 +204,12 @@ def test_independent_pools(with_custom_config):
 
 # For debugging purposes
 LOG = []
+LOG_LOCK = threading.Lock()
 def mylog(message: str, *args) -> None:
     # Format a human-readable timestamp and append a tuple to LOG
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    LOG.append((timestamp, message, args))
+    with LOG_LOCK:
+        LOG.append((timestamp, message, args))
 
 
 class QueryPool:
@@ -214,9 +219,12 @@ class QueryPool:
         self.stop_event: threading.Event = threading.Event()
         self.threads: list[threading.Thread] = []
         self.stopped: bool = True
+        self.errors: int = 0
+        self._errors_lock: threading.Lock = threading.Lock()
 
     def start_random(self, max_billions: int, max_threads: int) -> None:
         assert self.stopped, "Pool is already running"
+        self.stopped = False
 
         def query_thread() -> None:
             while not self.stop_event.is_set():
@@ -233,6 +241,7 @@ class QueryPool:
 
     def start_fixed(self, billions: int, max_threads: int) -> None:
         assert self.stopped, "Pool is already running"
+        self.stopped = False
 
         def query_thread() -> None:
             while not self.stop_event.is_set():
@@ -246,6 +255,41 @@ class QueryPool:
             self.threads.append(threading.Thread(target=query_thread, args=()))
         for thread in self.threads:
             thread.start()
+
+    def start_fixed_stop_on_error(self, billions: int, max_threads: int) -> None:
+        assert self.stopped, "Pool is already running"
+        self.stopped = False
+
+        def query_thread() -> None:
+            while not self.stop_event.is_set():
+                mylog(f"Running query in workload {self.workload}")
+                try:
+                    node.query(
+                        f"with (select {billions * 1000000000})::UInt64 as n select count(*) from numbers_mt(n) settings "
+                        f"workload='{self.workload}', max_threads={max_threads}"
+                    )
+                except QueryRuntimeException as e:
+                    mylog(f"Query in workload {self.workload} failed with exception: {e}")
+                    with self._errors_lock:
+                        self.errors += 1
+
+        for _ in range(self.num_queries):
+            self.threads.append(threading.Thread(target=query_thread, args=()))
+        for thread in self.threads:
+            thread.start()
+
+    def get_errors(self) -> int:
+        with self._errors_lock:
+            return self.errors
+
+    def wait_for_all_errors(self) -> None:
+        """Wait until all threads have failed with errors, then stop the pool."""
+        while True:
+            with self._errors_lock:
+                if self.errors >= self.num_queries:
+                    break
+            time.sleep(0.01)
+        self.stop()
 
     def stop(self) -> None:
         mylog(f"Stopping workload {self.workload}")
@@ -429,3 +473,63 @@ def test_downscaling(with_custom_config):
     finally:
         for tid in active_ids:
             development.stop(tid)
+
+
+def test_create_workload_under_load():
+    """Test that creating a WORKLOAD while queries are running does not cause crashes or deadlocks."""
+    node.query(
+        f"""
+        create resource cpu (master thread, worker thread);
+        create workload all settings max_concurrent_threads=3;
+        create workload production in all settings weight=1;
+        create workload development in all settings weight=1, max_cpus=1;
+    """
+    )
+
+    production = QueryPool(2, "production")
+    production.start_fixed_stop_on_error(1, 2)
+    development = QueryPool(2, "development")
+    development.start_fixed_stop_on_error(1, 2)
+    time.sleep(1)
+
+    assert production.get_errors() == 0, "Errors occurred in production workload"
+    assert development.get_errors() == 0, "Errors occurred in development workload"
+
+    # Try to create a new workload while the queries are running
+    # This is sibling workload, so it should not affect existing queries
+    node.query(
+        f"create workload staging in all settings weight=2, max_cpus=1;"
+    )
+    time.sleep(1)
+    assert production.get_errors() == 0, "Errors occurred in production workload"
+    assert development.get_errors() == 0, "Errors occurred in development workload"
+
+    # This make production non-usable, as it will be not a leaf workload anymore
+    node.query(
+        f"create workload production2 in production;"
+    )
+    time.sleep(1)
+    production.wait_for_all_errors()
+    assert development.get_errors() == 0, "Errors occurred in development workload"
+
+    # Restart load inside new workload
+    production2 = QueryPool(2, "production2")
+    production2.start_fixed_stop_on_error(1, 2)
+
+    # This make development non-usable, as it will be not a leaf workload anymore
+    node.query(
+        f"create workload development2 in development;"
+    )
+    time.sleep(1)
+    development.wait_for_all_errors()
+    assert production2.get_errors() == 0, "Errors occurred in production2 workload"
+
+    # Restart load inside new workload
+    development2 = QueryPool(2, "development2")
+    development2.start_fixed_stop_on_error(1, 2)
+
+    # Cleanup
+    production2.stop()
+    development2.stop()
+    assert development2.get_errors() == 0, "Errors occurred in development2 workload"
+    assert production2.get_errors() == 0, "Errors occurred in production2 workload"

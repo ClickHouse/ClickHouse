@@ -773,7 +773,7 @@ CompressionCodecT64::CompressionCodecT64(std::optional<TypeIndex> type_idx_, Var
     if (variant == Variant::Byte)
         setCodecDescription("T64");
     else
-        setCodecDescription("T64", {std::make_shared<ASTLiteral>("bit")});
+        setCodecDescription("T64", {make_intrusive<ASTLiteral>("bit")});
 }
 
 void CompressionCodecT64::updateHash(SipHash & hash) const

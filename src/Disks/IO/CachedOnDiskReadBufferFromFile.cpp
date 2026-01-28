@@ -105,6 +105,14 @@ std::optional<size_t> CachedOnDiskReadBufferFromFile::tryGetFileSize()
     return file_size;
 }
 
+size_t CachedOnDiskReadBufferFromFile::getFileSize()
+{
+    const auto object_size = tryGetFileSize();
+    if (!object_size.has_value())
+        throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot get file size for object {}", source_file_path);
+    return object_size.value();
+}
+
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
     const FileSegment & file_segment, CachedOnDiskReadBufferFromFile::ReadType type)
 {
@@ -160,13 +168,11 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
     }
     else
     {
-        const auto object_size = tryGetFileSize();
-        if (!object_size.has_value())
-            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot get file size for object {}", source_file_path);
-
+        const auto object_size = getFileSize();
         CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
+
         file_segments = cache->getOrSet(
-            cache_key, file_offset_of_buffer_end, size, object_size.value(),
+            cache_key, file_offset_of_buffer_end, size, object_size,
             create_settings, settings.filesystem_cache_segments_batch_size, user, settings.filesystem_cache_boundary_alignment);
     }
 
@@ -482,7 +488,12 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
     /// (same different threads of the same query), it will allow read buffer to be reused,
     /// reducing number of s3 requests. This does apply however only to case when
     /// those different threads hold the file segment at the same time, making its ref count > 2.
-    read_buffer_for_file_segment->setReadUntilPosition(range.right + 1); /// [..., range.right]
+    ///
+    /// We add min with getFileSize here, because only in case of DistributedCache
+    /// we do not resize file segment when write-through cache buffer is destructed,
+    /// because we do not know at that moment if all data was fully sent or we just disconnected (this is in TODO to fix).
+    /// So here we can have file segment size bigger than actual object size.
+    read_buffer_for_file_segment->setReadUntilPosition(std::min(range.right + 1, getFileSize())); /// [..., range.right]
 
     switch (read_type)
     {

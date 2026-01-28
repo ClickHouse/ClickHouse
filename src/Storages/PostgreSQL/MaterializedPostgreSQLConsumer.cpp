@@ -136,7 +136,7 @@ MaterializedPostgreSQLConsumer::StorageData::Buffer::Buffer(
     columns = sample_block.cloneEmptyColumns();
 
     for (const auto & name : sample_block.getNames())
-        columns_ast.children.emplace_back(std::make_shared<ASTIdentifier>(name));
+        columns_ast.children.emplace_back(make_intrusive<ASTIdentifier>(name));
 }
 
 MaterializedPostgreSQLConsumer::StorageData::Buffer & MaterializedPostgreSQLConsumer::StorageData::getLastBuffer()
@@ -696,9 +696,9 @@ void MaterializedPostgreSQLConsumer::syncTables()
                     insert_context->makeQueryContext();
                     insert_context->setInternalQuery(true);
 
-                    auto insert = std::make_shared<ASTInsertQuery>();
+                    auto insert = make_intrusive<ASTInsertQuery>();
                     insert->table_id = storage->getStorageID();
-                    insert->columns = std::make_shared<ASTExpressionList>(buffer->columns_ast);
+                    insert->columns = make_intrusive<ASTExpressionList>(buffer->columns_ast);
 
                     InterpreterInsertQuery interpreter(
                         insert,

@@ -64,6 +64,11 @@ ReservationPtr DiskBackup::reserve(UInt64)
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support reserve method");
 }
 
+ReservationPtr DiskBackup::reserve(UInt64, const ReservationConstraints &)
+{
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support reserve method");
+}
+
 std::optional<UInt64> DiskBackup::getTotalSpace() const
 {
     return backup->getTotalSize();
@@ -262,10 +267,6 @@ DataSourceDescription DiskBackup::getDataSourceDescription() const
     description.description = "DiskBackup";
 
     return description;
-}
-
-void DiskBackup::shutdown()
-{
 }
 
 String DiskBackup::replacePathPrefix(const String & path) const

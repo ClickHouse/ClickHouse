@@ -374,10 +374,10 @@ struct ByteJaroSimilarityImpl
         /// Shortcuts:
 
         if (haystack_size == 0)
-            return needle_size;
+            return static_cast<ResultType>(needle_size);
 
         if (needle_size == 0)
-            return haystack_size;
+            return static_cast<ResultType>(haystack_size);
 
         if (haystack_size == needle_size && memcmp(haystack, needle, haystack_size) == 0)
             return 1.0;

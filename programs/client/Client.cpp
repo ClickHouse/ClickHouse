@@ -386,7 +386,6 @@ try
         if ((e.code() != ErrorCodes::AUTHENTICATION_FAILED && e.code() != ErrorCodes::REQUIRED_PASSWORD) ||
             config().has("password") ||
             config().getBool("ask-password", false) ||
-            config().has("ssh-key-file") ||
             !is_interactive)
             throw;
 
@@ -965,7 +964,7 @@ void Client::processOptions(
 
     initClientContext(Context::createCopy(global_context));
     /// Initialize query context for the current thread to avoid sharing global context (i.e. for obtaining session_timezone)
-    query_scope.emplace(client_context);
+    query_scope = CurrentThread::QueryScope::create(client_context);
 
 
     /// Allow to pass-through unknown settings to the server.

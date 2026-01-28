@@ -1080,7 +1080,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         for (size_t i = 0; i < primitive_columns.size(); ++i)
             bytes_per_row += estimateColumnMemoryBytesPerRow(row_group.columns.at(i), row_group, primitive_columns.at(i));
 
-        size_t n = size_t(options.format.parquet.prefer_block_bytes / std::max(bytes_per_row, 1.));
+        size_t n = size_t(static_cast<double>(options.format.parquet.prefer_block_bytes) / std::max(bytes_per_row, 1.));
         n = std::max(n, size_t(128)); // avoid super tiny blocks if something is wrong with stats
         rows_per_subgroup = std::min(rows_per_subgroup, n);
     }
@@ -1239,7 +1239,7 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
     {
         /// The writer of the parquet file has helpfully put the total length of the
         /// strings into file metadata. Thanks writer!
-        column_chunk_bytes = column.meta->meta_data.size_statistics.unencoded_byte_array_data_bytes;
+        column_chunk_bytes = static_cast<double>(column.meta->meta_data.size_statistics.unencoded_byte_array_data_bytes);
     }
     else if (column.meta->meta_data.__isset.dictionary_page_offset)
     {
@@ -1256,15 +1256,15 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
             /// We have no idea how long the strings are. Use some made up number (not chosen carefully).
             avg_string_length = 20;
         }
-        column_chunk_bytes = avg_string_length * column.meta->meta_data.num_values;
+        column_chunk_bytes = avg_string_length * static_cast<double>(column.meta->meta_data.num_values);
     }
     else
     {
         /// Non-dictionary-encoded strings.
-        column_chunk_bytes = column.meta->meta_data.total_uncompressed_size;
+        column_chunk_bytes = static_cast<double>(column.meta->meta_data.total_uncompressed_size);
     }
 
-    return column_chunk_bytes / row_group.meta->num_rows;
+    return column_chunk_bytes / static_cast<double>(row_group.meta->num_rows);
 }
 
 double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const
@@ -1272,7 +1272,8 @@ double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const
     double res;
     if (column_info.output_type->haveMaximumSizeOfValue())
         /// Fixed-size values, e.g. numbers or FixedString.
-        res = 1. * column_info.output_type->getMaximumSizeOfValueInMemory() * column.meta->meta_data.num_values / row_group.meta->num_rows;
+        res = 1. * static_cast<double>(column_info.output_type->getMaximumSizeOfValueInMemory())
+            * static_cast<double>(column.meta->meta_data.num_values) / static_cast<double>(row_group.meta->num_rows);
     else
         res = estimateAverageStringLengthPerRow(column, row_group);
 
@@ -1283,7 +1284,7 @@ double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const
     /// Nested array offsets (assume the worst case where the outer arrays are long and inner arrays
     /// are short, so inner arrays have ~num_values total elements rather than ~num_rows).
     if (column_info.levels.back().rep > 1)
-        res += (column_info.levels.back().rep - 1) * 8. * column.meta->meta_data.num_values / row_group.meta->num_rows;
+        res += (column_info.levels.back().rep - 1) * 8. * static_cast<double>(column.meta->meta_data.num_values) / static_cast<double>(row_group.meta->num_rows);
 
     return res;
 }
@@ -1300,7 +1301,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     else
         /// There are arrays, so we can't know exactly how many primitive values there are in
         /// rows that pass the filter. Make a guess using average array length.
-        output_num_values_estimate = size_t(1.2 * row_subgroup.filter.rows_pass / row_group.meta->num_rows * column.meta->meta_data.num_values);
+        output_num_values_estimate = size_t(1.2 * static_cast<double>(row_subgroup.filter.rows_pass) / static_cast<double>(row_group.meta->num_rows) * static_cast<double>(column.meta->meta_data.num_values));
 
     subchunk.arrays_offsets.resize(column_info.levels.back().rep);
     for (size_t i = 0; i < subchunk.arrays_offsets.size(); ++i)
@@ -1320,7 +1321,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (auto * string_column = typeid_cast<ColumnString *>(subchunk.column.get()))
     {
         double avg_len = estimateAverageStringLengthPerRow(column, row_group);
-        size_t bytes_to_reserve = size_t(1.2 * avg_len * row_subgroup.filter.rows_pass);
+        size_t bytes_to_reserve = size_t(1.2 * avg_len * static_cast<double>(row_subgroup.filter.rows_pass));
         string_column->getChars().reserve(bytes_to_reserve);
     }
 

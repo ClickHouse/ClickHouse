@@ -821,6 +821,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     - `round_robin` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads` CPU slots. One slot per thread. On contention CPU slot are granted to queries using round-robin. Note that the first slot is granted unconditionally, which could lead to unfairness and increased latency of queries having high `max_threads` in presence of high number of queries with `max_threads` = 1.
     - `fair_round_robin` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads - 1` CPU slots. Variation of `round_robin` that does not require a CPU slot for the first thread of every query. This way queries having `max_threads` = 1 do not require any slot and could not unfairly allocate all slots. There are no slots granted unconditionally.
+    - `max_min_fair` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads - 1` CPU slots. Similar to `fair_round_robin`, but released slots are always granted to the query with the minimum number of currently allocated slots. This provides better fairness under high oversubscription, where many queries compete for limited CPU slots. Short-running queries are not penalized by long-running queries that have accumulated more slots over time.
     )", 0) \
     DECLARE(UInt64, background_pool_size, 16, R"(
     Sets the number of threads performing background merges and mutations for tables with MergeTree engines.
@@ -1041,11 +1042,11 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     **See Also**
     - [Workload Scheduling](/operations/workload-scheduling.md)
     )", 0) \
-    DECLARE(Bool, cpu_slot_preemption, false, R"(
+    DECLARE(Bool, cpu_slot_preemption, true, R"(
     Defines how workload scheduling for CPU resources (MASTER THREAD and WORKER THREAD) is done.
 
-    - If `true` (recommended), accounting is done based on actual CPU time consumed. A fair number of CPU time would be allocated to competing workloads. Slots are allocated for a limited amount of time and re-requested after expiry. Slot requesting may block thread execution in case of CPU resource overload, i.e., preemption may happen. This ensures CPU-time fairness.
-    - If `false` (default), accounting is based on the number of CPU slots allocated. A fair number of CPU slots would be allocated to competing workloads. A slot is allocated when a thread starts, held continuously, and released when the thread ends execution. The number of threads allocated for query execution may only increase from 1 to `max_threads` and never decrease. This is more favorable to long-running queries and may lead to CPU starvation of short queries.
+    - If `true` (default), accounting is done based on actual CPU time consumed. A fair number of CPU time would be allocated to competing workloads. Slots are allocated for a limited amount of time and re-requested after expiry. Slot requesting may block thread execution in case of CPU resource overload, i.e., preemption may happen. This ensures CPU-time fairness.
+    - If `false`, accounting is based on the number of CPU slots allocated. A fair number of CPU slots would be allocated to competing workloads. A slot is allocated when a thread starts, held continuously, and released when the thread ends execution. The number of threads allocated for query execution may only increase from 1 to `max_threads` and never decrease. This is more favorable to long-running queries and may lead to CPU starvation of short queries.
 
     **Example**
 
@@ -1093,7 +1094,13 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Tick period of background memory worker which corrects memory tracker memory usages and cleans up unused pages during higher memory usage. If set to 0, default value will be used depending on the memory usage source
     )", 0) \
     DECLARE(Double, memory_worker_purge_dirty_pages_threshold_ratio, 0.2, R"(
-    The threshold ratio for jemalloc dirty pages relative to the memory available to ClickHouse server. When dirty pages size exceeds this ratio, the background memory worker forces purging of dirty pages. If set to 0, forced purging is disabled.
+    The threshold ratio for jemalloc dirty pages relative to the memory available to ClickHouse server. When dirty pages size exceeds this ratio, the background memory worker forces purging of dirty pages. If set to 0, forced purging based on dirty pages ratio is disabled.
+    )", 0) \
+    DECLARE(Double, memory_worker_purge_total_memory_threshold_ratio, 0.9, R"(
+    The threshold ratio for purging jemalloc relative to the memory available to ClickHouse server. When total memory usage exceeds this ratio, the background memory worker forces purging of dirty pages. If set to 0, forced purging based on total memory is disabled.
+    )", 0) \
+    DECLARE(UInt64, memory_worker_decay_adjustment_period_ms, 5000, R"(
+    Duration in milliseconds that memory pressure must persist before dynamically adjusting jemalloc's `dirty_decay_ms`. When memory usage remains above the purge threshold for this period, automatic dirty page decay is disabled (`dirty_decay_ms=0`) to aggressively reclaim memory. When usage stays below the threshold for this period, the default decay behavior is restored. Set to 0 to disable dynamic adjustment and use jemalloc's default decay settings.
     )", 0) \
     DECLARE(Bool, memory_worker_correct_memory_tracker, 0, R"(
     Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups
@@ -1117,13 +1124,13 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(String, license_file, "", "License file contents for ClickHouse Enterprise Edition", 0) \
     DECLARE(String, license_public_key_for_testing, "", "Licensing demo key, for CI use only", 0) \
     DECLARE(NonZeroUInt64, prefetch_threadpool_pool_size, 100, R"(Size of background pool for prefetches for remote object storages)", 0) \
-    DECLARE(UInt64, prefetch_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
+    DECLARE(UInt64, prefetch_threadpool_queue_size, 10000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
     DECLARE(UInt64, load_marks_threadpool_pool_size, 50, R"(Size of background pool for marks loading)", 0) \
-    DECLARE(UInt64, load_marks_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
+    DECLARE(UInt64, load_marks_threadpool_queue_size, 10000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
     DECLARE(NonZeroUInt64, threadpool_writer_pool_size, 100, R"(Size of background pool for write requests to object storages)", 0) \
-    DECLARE(UInt64, threadpool_writer_queue_size, 1000000, R"(Number of tasks which is possible to push into background pool for write requests to object storages)", 0) \
+    DECLARE(UInt64, threadpool_writer_queue_size, 10000, R"(Number of tasks which is possible to push into background pool for write requests to object storages)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_pool_size, 50, R"(Size of background pool for iceberg catalog)", 0) \
-    DECLARE(UInt64, iceberg_catalog_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into iceberg catalog pool)", 0) \
+    DECLARE(UInt64, iceberg_catalog_threadpool_queue_size, 10000, R"(Number of tasks which is possible to push into iceberg catalog pool)", 0) \
     DECLARE(UInt64, drop_distributed_cache_pool_size, 8, R"(The size of the threadpool used for dropping distributed cache.)", 0) \
     DECLARE(UInt64, drop_distributed_cache_queue_size, 1000, R"(The queue size of the threadpool used for dropping distributed cache.)", 0) \
     DECLARE(Bool, distributed_cache_apply_throttling_settings_from_client, true, R"(Whether cache server should apply throttling settings received from client.)", 0) \
@@ -1213,9 +1220,9 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Bool, jemalloc_enable_background_threads, 1, R"(Enable jemalloc background threads. Jemalloc uses background threads to cleanup unused memory pages. Disabling it could lead to performance degradation.)", 0) \
     DECLARE(UInt64, jemalloc_max_background_threads_num, 0, R"(Maximum amount of jemalloc background threads to create, set to 0 to use jemalloc's default value)", 0) \
     DECLARE(NonZeroUInt64, threadpool_local_fs_reader_pool_size, 100, R"(The number of threads in the thread pool for reading from local filesystem when `local_filesystem_read_method = 'pread_threadpool'`.)", 0) \
-    DECLARE(UInt64, threadpool_local_fs_reader_queue_size, 1000000, R"(The maximum number of jobs that can be scheduled on the thread pool for reading from local filesystem.)", 0) \
+    DECLARE(UInt64, threadpool_local_fs_reader_queue_size, 10000, R"(The maximum number of jobs that can be scheduled on the thread pool for reading from local filesystem.)", 0) \
     DECLARE(NonZeroUInt64, threadpool_remote_fs_reader_pool_size, 250, R"(Number of threads in the Thread pool used for reading from remote filesystem when `remote_filesystem_read_method = 'threadpool'`.)", 0) \
-    DECLARE(UInt64, threadpool_remote_fs_reader_queue_size, 1000000, R"(The maximum number of jobs that can be scheduled on the thread pool for reading from remote filesystem.)", 0) \
+    DECLARE(UInt64, threadpool_remote_fs_reader_queue_size, 10000, R"(The maximum number of jobs that can be scheduled on the thread pool for reading from remote filesystem.)", 0) \
 \
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \
@@ -1580,13 +1587,14 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
     for (const auto & setting : all())
     {
         const auto & name = setting.getName();
-        const auto & path = setting.getPath();
+        String path {setting.getPath()};
+        const String * path_or_name = path.empty() ? &name : &path;
         try
         {
-            if (config.has(path))
-                set(name, config.getString(path));
-            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + path))
-                set(name, config.getString("profiles.default." + path));
+            if (config.has(*path_or_name))
+                set(name, config.getString(*path_or_name));
+            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + *path_or_name))
+                set(name, config.getString("profiles.default." + *path_or_name));
         }
         catch (Exception & e)
         {
@@ -1767,12 +1775,12 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
-        const auto & setting_path = setting.getPath();
+        String setting_path {setting.getPath()};
 
         const auto & changeable_settings_it = changeable_settings.find(setting_name);
         const bool is_changeable = (changeable_settings_it != changeable_settings.end());
 
-        res_columns[0]->insert(setting_path);
+        res_columns[0]->insert(setting_path.empty() ? setting_name : setting_path);
         res_columns[1]->insert(is_changeable ? changeable_settings_it->second.first : setting.getValueString());
         res_columns[2]->insert(setting.getDefaultValueString());
         res_columns[3]->insert(setting.isValueChanged());

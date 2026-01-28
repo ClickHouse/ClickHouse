@@ -8,6 +8,7 @@
 #include <Common/HistogramMetrics.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
@@ -113,7 +114,8 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
                     memory_delta += set_req.bytesSize();
                     break;
                 }
-                case Coordination::OpNum::Remove: {
+                case Coordination::OpNum::Remove:
+                case Coordination::OpNum::TryRemove: {
                     Coordination::ZooKeeperRemoveRequest & remove_req
                         = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
                     memory_delta -= remove_req.bytesSize();

@@ -3041,7 +3041,7 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
 
     if (!ast_create.storage->settings)
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         ast_create.storage->set(ast_create.storage->settings, settings_ast);
     }

@@ -484,7 +484,7 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
     ASSERT_TRUE(EqualByteContainers(static_cast<uint8_t>(test_sequence.data_type->getSizeOfValueInMemory()), source_data, decoded));
 
     const auto header_size = ICompressionCodec::getHeaderSize();
-    const auto compression_ratio = (encoded_size - header_size) / (source_data.size() * 1.0);
+    const auto compression_ratio = (encoded_size - header_size) / static_cast<double>(source_data.size());
 
     if (expected_compression_ratio)
     {
@@ -614,17 +614,17 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
 
         for (const auto & v : tmp_v)
         {
-            mean += v;
+            mean += static_cast<double>(v);
         }
 
-        mean = mean / tmp_v.size();
+        mean = mean / static_cast<double>(tmp_v.size());
         double std_dev = 0.0;
         for (const auto & v : tmp_v)
         {
-            const auto d = (v - mean);
+            const auto d = (static_cast<double>(v) - mean);
             std_dev += (d * d);
         }
-        std_dev = std::sqrt(std_dev / tmp_v.size());
+        std_dev = std::sqrt(std_dev / static_cast<double>(tmp_v.size()));
 
         return std::make_tuple(mean, std_dev);
     };

@@ -234,8 +234,10 @@ bool PrometheusQueryParsingUtil::parseStringLiteral(std::string_view input, Stri
 
 namespace
 {
-    /// Finds next underscore between two digits (or two hexadecimal digits if `is_hex` is true).
-    /// The function returns String::npos if not found,
+    /// Finds next underscore between two digits, or two hexadecimal digits if `is_hex` is true.
+    /// Also we allow an underscore between prefix "0x" and hexadecimal digits, for example "0x_1_2_3" is allowed
+    /// (because it's allowed in Prometheus).
+    /// The function returns String::npos if not found.
     size_t findUnderscoreBetweenDigits(std::string_view str, bool is_hex, size_t start_pos)
     {
         chassert(start_pos <= str.length());
@@ -246,7 +248,13 @@ namespace
             {
                 char before = str[pos - 1];
                 char after = str[pos + 1];
-                bool between_digits = is_hex ? (std::isxdigit(before) && std::isxdigit(after)) : (std::isdigit(before) && std::isdigit(after));
+
+                bool between_digits;
+                if (is_hex)
+                    between_digits = (std::isxdigit(before) || (std::tolower(before) == 'x')) && std::isxdigit(after);
+                else
+                    between_digits = std::isdigit(before) && std::isdigit(after);
+
                 if (between_digits)
                     break;
             }
@@ -286,7 +294,7 @@ namespace
 
         if (!tryParse(result, str))
         {
-            error_message = fmt::format("Cannot parse number {}", quoteString(input));
+            error_message = fmt::format("Cannot parse number {}", quoteString(str));
             error_pos = 0;
             return false;
         }
@@ -318,14 +326,14 @@ namespace
         }
 
         /// Remove prefix "0x" and underscores between digits.
-        std::string_view input_without_prefix = input.substr(2);
-        String str = removeUnderscoresBetweenDigits(input_without_prefix, /* is_hex = */ true);
+        String str = removeUnderscoresBetweenDigits(input, /* is_hex = */ true);
+        std::string_view hex_without_prefix = std::string_view{str}.substr(2);
 
         /// Parse hexadecimal number.
         Int64 value;
-        if (!tryParseIntInBase<16>(value, str))
+        if (!tryParseIntInBase<16>(value, hex_without_prefix))
         {
-            error_message = fmt::format("Cannot parse hexadecimal number {}", quoteString(input_without_prefix));
+            error_message = fmt::format("Cannot parse hexadecimal number {}", quoteString(str));
             error_pos = 2;
             return false;
         }

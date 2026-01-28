@@ -23,9 +23,9 @@ $CLICKHOUSE_CLIENT --query "
         min_bytes_to_prewarm_caches = 30000,
         add_minmax_index_for_numeric_columns=0;
 
-    SYSTEM DROP MARK CACHE;
-    SYSTEM DROP INDEX MARK CACHE;
-    SYSTEM DROP PRIMARY INDEX CACHE;
+    SYSTEM CLEAR MARK CACHE;
+    SYSTEM CLEAR INDEX MARK CACHE;
+    SYSTEM CLEAR PRIMARY INDEX CACHE;
 
     INSERT INTO t_prewarm_cache_rmt_1 SELECT number, rand(), rand() FROM numbers(100, 100);
     INSERT INTO t_prewarm_cache_rmt_1 SELECT number, rand(), rand() FROM numbers(1000, 2000);
@@ -36,9 +36,9 @@ $CLICKHOUSE_CLIENT --query "
 
     SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
 
-    SYSTEM DROP MARK CACHE;
-    SYSTEM DROP INDEX MARK CACHE;
-    SYSTEM DROP PRIMARY INDEX CACHE;
+    SYSTEM CLEAR MARK CACHE;
+    SYSTEM CLEAR INDEX MARK CACHE;
+    SYSTEM CLEAR PRIMARY INDEX CACHE;
 
     OPTIMIZE TABLE t_prewarm_cache_rmt_1 FINAL;
 

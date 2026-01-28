@@ -359,9 +359,190 @@ void ConcurrencyControlFairRoundRobinScheduler::schedule(std::unique_lock<std::m
 }
 
 
+bool ConcurrencyControlMaxMinFairScheduler::AllocationCompare::operator()(const Allocation & lhs, const Allocation & rhs) const
+{
+    // Primary: sort by allocated count (minimum first for max-min fairness)
+    // Secondary: sort by sequence_number for FIFO ordering when allocated counts are equal
+    if (lhs.allocated != rhs.allocated)
+        return lhs.allocated < rhs.allocated;
+    return lhs.sequence_number < rhs.sequence_number;
+}
+
+ConcurrencyControlMaxMinFairScheduler::Slot::Slot(SlotAllocationPtr && allocation_, bool competing_, size_t slot_id_)
+    : IAcquiredSlot(slot_id_)
+    , allocation(std::move(allocation_))
+    , competing(competing_)
+    , acquired_slot_increment(competing ? CurrentMetrics::ConcurrencyControlAcquired : CurrentMetrics::ConcurrencyControlAcquiredNonCompeting)
+{
+}
+
+ConcurrencyControlMaxMinFairScheduler::Slot::~Slot()
+{
+    if (competing)
+        static_cast<ConcurrencyControlMaxMinFairScheduler::Allocation&>(*allocation).release();
+}
+
+ConcurrencyControlMaxMinFairScheduler::Allocation::Allocation(ConcurrencyControlMaxMinFairScheduler & parent_, SlotCount min_, SlotCount max, SlotCount granted_, UInt64 sequence_number_)
+    : parent(parent_)
+    , min(min_)
+    , limit(max - min)
+    , allocated(granted_)
+    , noncompeting(min)
+    , granted(granted_)
+    , sequence_number(sequence_number_)
+{
+}
+
+ConcurrencyControlMaxMinFairScheduler::Allocation::~Allocation()
+{
+    // We have to lock parent's mutex to avoid race with grant()
+    // NOTE: shortcut can be added, but it requires Allocation::mutex lock even to check if shortcut is possible
+    parent.free(this);
+}
+
+[[nodiscard]] AcquiredSlotPtr ConcurrencyControlMaxMinFairScheduler::Allocation::tryAcquire()
+{
+    // First try acquire non-competing slot (if any)
+    SlotCount value = noncompeting.load();
+    while (value)
+    {
+        if (noncompeting.compare_exchange_strong(value, value - 1))
+        {
+            ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquiredNonCompeting, 1);
+            std::unique_lock lock{mutex};
+            return AcquiredSlotPtr(new Slot(shared_from_this(), false, last_slot_id++)); // can't use std::make_shared due to private ctor
+        }
+    }
+
+    // If all non-competing slots are already acquired - try acquire granted (competing) slot
+    value = granted.load();
+    while (value)
+    {
+        if (granted.compare_exchange_strong(value, value - 1))
+        {
+            ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired, 1);
+            std::unique_lock lock{mutex};
+            return AcquiredSlotPtr(new Slot(shared_from_this(), true, last_slot_id++)); // can't use std::make_shared due to private ctor
+        }
+    }
+
+    return {}; // avoid unnecessary locking
+}
+
+[[nodiscard]] AcquiredSlotPtr ConcurrencyControlMaxMinFairScheduler::Allocation::acquire()
+{
+    auto result = tryAcquire();
+    chassert(result);
+    return result;
+}
+
+// Grant single slot to allocation returns true iff more slot(s) are required
+bool ConcurrencyControlMaxMinFairScheduler::Allocation::grant()
+{
+    std::unique_lock lock{mutex};
+    granted++;
+    allocated++;
+    return allocated < limit;
+}
+
+// Release one slot and grant it to other allocation if required
+void ConcurrencyControlMaxMinFairScheduler::Allocation::release()
+{
+    parent.release(1);
+    std::unique_lock lock{mutex};
+    released++;
+    if (released > allocated)
+        abort();
+}
+
+ConcurrencyControlMaxMinFairScheduler::ConcurrencyControlMaxMinFairScheduler(ConcurrencyControl & parent_, ConcurrencyControlState & state_)
+    : parent(parent_)
+    , state(state_)
+{
+}
+
+ConcurrencyControlMaxMinFairScheduler::~ConcurrencyControlMaxMinFairScheduler()
+{
+    if (!waiters.empty())
+        abort();
+}
+
+SlotAllocationPtr ConcurrencyControlMaxMinFairScheduler::allocate(std::unique_lock<std::mutex> & lock, SlotCount min, SlotCount max)
+{
+    // Try allocate slots up to requested `max - min` (as availability allows).
+    // Do not count `min` slots towards the limit. They are NOT considered as taking part in competition.
+    SlotCount limit = max - min;
+    SlotCount granted = std::min(limit, state.available(lock));
+    state.cur_concurrency += granted;
+    ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsGranted, min);
+
+    // Create allocation with monotonically increasing sequence number for FIFO ordering
+    auto allocation = SlotAllocationPtr(new Allocation(*this, min, max, granted, next_sequence_number++));
+
+    // Start waiting if more slots are required
+    if (granted < limit)
+    {
+        ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsDelayed, limit - granted);
+        ProfileEvents::increment(ProfileEvents::ConcurrencyControlQueriesDelayed);
+        // Insert into waiters set (sorted by allocated count, then by sequence number)
+        // The hook's is_linked() will return true after insertion
+        waiters.insert(*static_cast<Allocation*>(allocation.get()));
+    }
+
+    return allocation;
+}
+
+void ConcurrencyControlMaxMinFairScheduler::free(Allocation * allocation)
+{
+    // Allocation is allowed to be canceled even if there are:
+    //  - `amount`: granted slots (acquired slots are not possible, because Slot holds AllocationPtr)
+    //  - `waiter`: active waiting for more slots to be allocated
+    // Thus Allocation destruction may require the following lock, to avoid race conditions
+    std::unique_lock lock{state.mutex};
+    auto [amount, is_waiting] = allocation->cancel();
+
+    state.cur_concurrency -= amount;
+    if (is_waiting)
+        waiters.erase(waiters.iterator_to(*allocation));
+    parent.schedule(lock);
+}
+
+void ConcurrencyControlMaxMinFairScheduler::release(SlotCount amount)
+{
+    std::unique_lock lock{state.mutex};
+    state.cur_concurrency -= amount;
+    parent.schedule(lock);
+}
+
+// Max-min fair scheduling of available slots among waiting allocations
+// Always grant to the allocation with the minimum number of currently allocated slots
+void ConcurrencyControlMaxMinFairScheduler::schedule(std::unique_lock<std::mutex> &)
+{
+    while (!waiters.empty() && state.cur_concurrency < state.max_concurrency)
+    {
+        state.cur_concurrency++;
+
+        // Get the allocation with minimum allocated count (first element in the sorted set)
+        auto it = waiters.begin();
+        Allocation & allocation = *it;
+
+        // Remove from set before granting (as allocated count will change)
+        waiters.erase(it);
+
+        if (allocation.grant())
+        {
+            // Still needs more slots - reinsert with updated allocated count
+            waiters.insert(allocation);
+        }
+        // When not reinserted, the hook remains unlinked (is_linked() returns false)
+    }
+}
+
+
 ConcurrencyControl::ConcurrencyControl()
     : round_robin(*this, state)
     , fair_round_robin(*this, state)
+    , max_min_fair(*this, state)
 {
 }
 
@@ -383,6 +564,8 @@ ConcurrencyControl & ConcurrencyControl::instance()
             return round_robin.allocate(lock, min, max);
         case Scheduler::FairRoundRobin:
             return fair_round_robin.allocate(lock, min, max);
+        case Scheduler::MaxMinFair:
+            return max_min_fair.allocate(lock, min, max);
     }
 }
 
@@ -407,6 +590,11 @@ bool ConcurrencyControl::setScheduler(const String & value)
         scheduler = Scheduler::RoundRobin;
         return true;
     }
+    if (value == "max_min_fair")
+    {
+        scheduler = Scheduler::MaxMinFair;
+        return true;
+    }
     return false; // invalid value - stick to the current scheduler
 }
 
@@ -417,6 +605,7 @@ String ConcurrencyControl::getScheduler() const
     {
         case Scheduler::RoundRobin: return "round_robin";
         case Scheduler::FairRoundRobin: return "fair_round_robin";
+        case Scheduler::MaxMinFair: return "max_min_fair";
     }
 }
 
@@ -426,11 +615,18 @@ void ConcurrencyControl::schedule(std::unique_lock<std::mutex> & lock)
     {
         case Scheduler::RoundRobin:
             fair_round_robin.schedule(lock); // first schedule from old scheduler (works only during transition period)
+            max_min_fair.schedule(lock);
             round_robin.schedule(lock);
             return;
         case Scheduler::FairRoundRobin:
             round_robin.schedule(lock); // first schedule from old scheduler (works only during transition period)
+            max_min_fair.schedule(lock);
             fair_round_robin.schedule(lock);
+            return;
+        case Scheduler::MaxMinFair:
+            round_robin.schedule(lock); // first schedule from old scheduler (works only during transition period)
+            fair_round_robin.schedule(lock);
+            max_min_fair.schedule(lock);
             return;
     }
 }

@@ -153,7 +153,7 @@ calculateMinMarksPerTask(
             const size_t part_compressed_bytes = getSizeOfColumns(*part.data_part, columns);
 
             avg_mark_bytes = std::max<size_t>(part_compressed_bytes / part_marks_count, 1);
-            const auto min_bytes_per_task = settings[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
+            const auto & min_bytes_per_task = settings[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
             /// We're taking min here because number of tasks shouldn't be too low - it will make task stealing impossible.
             /// We also create at least two tasks per thread to have something to steal from a slow thread.
             const auto heuristic_min_marks = std::min<size_t>(
