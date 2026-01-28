@@ -4,6 +4,11 @@ from praktika.utils import Utils
 from ci.defs.defs import LLVM_ARTIFACTS_LIST, LLVM_FT_NUM_BATCHES, LLVM_IT_NUM_BATCHES, ArtifactConfigs, ArtifactNames, BuildTypes, JobNames, RunnerLabels
 
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
+# Keeper stress spins nested Docker inside the integration-tests-runner container.
+# Using nearly all host RAM for the outer container can starve the host runner
+# and lead to "runner lost communication". Reserve a larger margin on the host
+# by capping Keeper to ~70% of physical memory.
+KEEPER_DIND_MEM = Utils.physical_memory() * 70 // 100
 
 BINARY_DOCKER_COMMAND = (
     "clickhouse/binary-builder+--network=host"
@@ -857,6 +862,31 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_ASAN],
         )
+    )
+    # Nightly Keeper stress job (simple pytest suite in integration-tests-runner)
+    keeper_stress_job = Job.Config(
+        name="Keeper Stress",
+        runs_on=RunnerLabels.AMD_LARGE,
+        command=(
+            "python3 ./ci/jobs/keeper_stress_job.py"
+        ),
+        run_in_docker=(
+            f"clickhouse/integration-tests-runner+root+--memory={KEEPER_DIND_MEM}+--privileged+--dns-search='.'+"
+            f"--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--ulimit nofile=262144:262144"
+        ),
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/keeper_stress_job.py",
+                "./ci/jobs/scripts/docker_in_docker.sh",
+                "./tests/stress/keeper/",
+                "./tests/stress/keeper/tests",
+                "./tests/stress/keeper/framework/",
+                "./tests/stress/keeper/faults/",
+                "./tests/stress/keeper/workloads/",
+                "./tests/integration/helpers/",
+            ],
+        ),
+        result_name_for_cidb="Keeper Stress",
     )
     compatibility_test_jobs = Job.Config(
         name=JobNames.COMPATIBILITY,

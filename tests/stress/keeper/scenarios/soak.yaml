@@ -1,0 +1,22 @@
+version: 1
+defaults:
+  duration: 120
+  topology: 3
+scenarios:
+  - id: SOAK-01
+    name: 6–12h soak
+    topology: 3
+    duration: 3600
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+    tags: [weekly]
+
+  - id: SOAK-02
+    name: Watch/ephemeral long-run
+    topology: 3
+    duration: 3600
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+    tags: [weekly]

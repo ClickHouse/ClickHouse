@@ -1,0 +1,51 @@
+version: 1
+defaults:
+  duration: 120
+  topology: 3
+scenarios:
+  - id: RCFG-01
+    name: Add learner then promote
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: reconfig, on: leader, operation: add, spec: "server.1=keeper9:44444", ok: false }
+      - { kind: reconfig, on: leader, operation: add, spec: "server.8=keeper1:44444", ok: false }
+    gates:
+      - { type: config_members_len_eq, expected: 3 }
+
+  - id: RCFG-02
+    name: Remove participant under load
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: reconfig, on: leader, operation: remove, spec: "2" }
+    gates:
+      - { type: config_members_len_eq, expected: 2 }
+
+  - id: RCFG-03
+    name: Bulk/new_members refused
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: reconfig, on: leader, operation: set, spec: "3", ok: false }
+    gates:
+      - { type: config_members_len_eq, expected: 3 }
+
+  - id: RCFG-04
+    name: from_version refused
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: config_members_len_eq, expected: 3 }
+
+  - id: RCFG-05
+    name: Reconfig churn loop
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: reconfig, on: leader, operation: remove, spec: "2" }
+      - { kind: reconfig, on: leader, operation: add, server_id: 2, host: keeper2 }
+      - { kind: reconfig, on: leader, operation: remove, spec: "3" }
+      - { kind: reconfig, on: leader, operation: add, server_id: 3, host: keeper3 }
+    gates:
+      - { type: config_members_len_eq, expected: 3 }

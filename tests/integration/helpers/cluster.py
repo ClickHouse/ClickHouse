@@ -148,6 +148,15 @@ def run_and_check(
     nothrow=False,
     detach=False,
 ) -> str:
+    if timeout is None:
+        timeout = 300
+    try:
+        timeout = int(timeout)
+    except Exception:
+        timeout = 300
+    # Never let external commands hang longer than this from within tests.
+    # Keep below common pytest-timeout limits so we fail with actionable output.
+    timeout = max(1, min(timeout, 600))
     if shell:
         if isinstance(args, str):
             shell_args = args
@@ -167,17 +176,24 @@ def run_and_check(
         )
         return ""
 
-    res = subprocess.run(
-        args,
-        stdout=stdout,
-        stderr=stderr,
-        env=env,
-        shell=shell,
-        timeout=timeout,
-        check=False,
-    )
-    out = res.stdout.decode("utf-8", "ignore")
-    err = res.stderr.decode("utf-8", "ignore")
+    try:
+        res = subprocess.run(
+            args,
+            stdout=stdout,
+            stderr=stderr,
+            env=env,
+            shell=shell,
+            timeout=timeout,
+            check=False,
+        )
+        out = res.stdout.decode("utf-8", "ignore")
+        err = res.stderr.decode("utf-8", "ignore")
+    except subprocess.TimeoutExpired as ex:
+        out = (ex.stdout or b"").decode("utf-8", "ignore")
+        err = (ex.stderr or b"").decode("utf-8", "ignore")
+        raise Exception(
+            f"Command [{shell_args}] timed out after {timeout}s\nstdout:\n{out}\nstderr:\n{err}"
+        ) from ex
     # check_call(...) from subprocess does not print stderr, so we do it manually
     for outline in out.splitlines():
         logging.debug("Stdout:%s", outline)
@@ -1026,30 +1042,52 @@ class ClickHouseCluster:
         return self._ytsaurus_internal_ports_list
 
     def print_all_docker_pieces(self):
-        res_networks = subprocess.check_output(
-            f"docker network ls --filter name='{self.project_name}*'",
-            shell=True,
-            universal_newlines=True,
+        try:
+            timeout = int(os.environ.get("DOCKER_DIAG_TIMEOUT", "120"))
+        except Exception:
+            timeout = 120
+        timeout = max(5, min(timeout, 600))
+
+        def _try_list(cmd):
+            try:
+                return subprocess.check_output(
+                    cmd,
+                    shell=True,
+                    universal_newlines=True,
+                    timeout=timeout,
+                )
+            except Exception as ex:
+                logging.debug(
+                    "Failed to run docker diagnostic command [%s] with timeout=%ss: %s",
+                    cmd,
+                    timeout,
+                    ex,
+                )
+                return ""
+
+        res_networks = _try_list(
+            f"docker network ls --filter name='{self.project_name}*'"
         )
-        logging.debug(
-            f"Docker networks for project {self.project_name} are {res_networks}"
+        if res_networks:
+            logging.debug(
+                f"Docker networks for project {self.project_name} are {res_networks}"
+            )
+
+        res_containers = _try_list(
+            f"docker container ls -a --filter name='{self.project_name}*'"
         )
-        res_containers = subprocess.check_output(
-            f"docker container ls -a --filter name='{self.project_name}*'",
-            shell=True,
-            universal_newlines=True,
+        if res_containers:
+            logging.debug(
+                f"Docker containers for project {self.project_name} are {res_containers}"
+            )
+
+        res_volumes = _try_list(
+            f"docker volume ls --filter name='{self.project_name}*'"
         )
-        logging.debug(
-            f"Docker containers for project {self.project_name} are {res_containers}"
-        )
-        res_volumes = subprocess.check_output(
-            f"docker volume ls --filter name='{self.project_name}*'",
-            shell=True,
-            universal_newlines=True,
-        )
-        logging.debug(
-            f"Docker volumes for project {self.project_name} are {res_volumes}"
-        )
+        if res_volumes:
+            logging.debug(
+                f"Docker volumes for project {self.project_name} are {res_volumes}"
+            )
 
     def cleanup(self):
         logging.debug("Cleanup called")
@@ -1092,6 +1130,7 @@ class ClickHouseCluster:
                 f"docker network ls -q --filter name='{self.project_name}'",
                 shell=True,
                 universal_newlines=True,
+                timeout=30,
             ).splitlines()
             if list_networks:
                 logging.debug(f"Trying to remove networks: {list_networks}")
@@ -2493,6 +2532,7 @@ class ClickHouseCluster:
                 f"run container_id:{container_id} detach:{detach} nothrow:{nothrow} cmd: {cmd}"
             )
             exec_cmd = ["docker", "exec"]
+            timeout = kwargs.pop("timeout", None)
             if "user" in kwargs:
                 exec_cmd += ["-u", kwargs["user"]]
             if "privileged" in kwargs:
@@ -2508,7 +2548,11 @@ class ClickHouseCluster:
             exec_cmd += list(cmd)
 
             result = subprocess_check_call(
-                exec_cmd, detach=detach, nothrow=nothrow, env=env
+                exec_cmd,
+                detach=detach,
+                nothrow=nothrow,
+                env=env,
+                timeout=timeout,
             )
             return result
         else:
@@ -3879,6 +3923,19 @@ class ClickHouseCluster:
                     )
 
             start_timeout = 300.0  # seconds
+            connection_timeout = None
+            try:
+                v = os.environ.get("KEEPER_START_TIMEOUT_SEC")
+                if v:
+                    start_timeout = float(v)
+            except Exception:
+                start_timeout = 300.0
+            try:
+                v = os.environ.get("KEEPER_CONNECT_TIMEOUT_SEC")
+                if v:
+                    connection_timeout = float(v)
+            except Exception:
+                connection_timeout = None
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
@@ -3887,7 +3944,7 @@ class ClickHouseCluster:
                 logging.debug(
                     f"Waiting for ClickHouse start in {instance.name}, ip: {instance.ip_address}..."
                 )
-                instance.wait_for_start(start_timeout)
+                instance.wait_for_start(start_timeout, connection_timeout=connection_timeout)
                 logging.debug(f"ClickHouse {instance.name} started")
 
                 instance.client = Client(
@@ -4171,6 +4228,7 @@ services:
             - /etc/passwd:/etc/passwd:ro
             - {HELPERS_DIR}/../integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
             - {CLICKHOUSE_ROOT_DIR}:/debug:rw
+            {dev_mount}
             {metrika_xml}
             {binary_volume}
             {external_dirs_volumes}
@@ -4205,11 +4263,13 @@ services:
         security_opt:
             - label:disable
             - seccomp:unconfined
+        privileged: {privileged}
         dns_opt:
             - attempts:2
             - timeout:1
             - inet6
             - rotate
+        {ports_mappings}
         {networks}
             {app_net}
                 {ipv4_address}
@@ -5331,8 +5391,45 @@ class ClickHouseInstance:
 
     def wait_for_start(self, start_timeout=None, connection_timeout=None):
         # Wait until TCP port is ready. Usually it means that ClickHouse is ready to accept queries.
-        self.wait_until_port_is_ready(9000, timeout=start_timeout, connection_timeout=connection_timeout)
+        ports = [9000]
+        try:
+            ports_env = os.environ.get("CH_WAIT_START_PORTS", "").strip()
+            if ports_env:
+                parts = [p.strip() for p in ports_env.split(",") if p.strip()]
+                ports = [int(p) for p in parts if p.isdigit()]
+                if not ports:
+                    ports = [9000]
+        except Exception:
+            ports = [9000]
+        self.wait_until_any_port_is_ready(ports, timeout=start_timeout, connection_timeout=connection_timeout)
         self.is_up = True
+
+    def wait_until_any_port_is_ready(self, ports, timeout=None, connection_timeout=None):
+        if not ports:
+            raise Exception("No ports to check")
+        if timeout is None or timeout <= 0:
+            raise Exception("Invalid timeout: {}".format(timeout))
+        start_time = time.time()
+        last_exc = None
+        for port in ports:
+            remaining = start_time + timeout - time.time()
+            if remaining <= 0:
+                break
+            try:
+                self.wait_until_port_is_ready(port, timeout=remaining, connection_timeout=connection_timeout)
+                return
+            except Exception as e:
+                last_exc = e
+                try:
+                    h = self.get_docker_handle()
+                    h.reload()
+                    if h.status == "exited":
+                        raise
+                except Exception:
+                    pass
+        if last_exc:
+            raise last_exc
+        raise Exception("Timed out while waiting for instance '{}' to start".format(self.name))
 
     # Waits until a specified port is ready for connections.
     def wait_until_port_is_ready(self, port, timeout=None, connection_timeout=None):
@@ -5808,6 +5905,32 @@ class ClickHouseInstance:
             self.env_file = p.abspath(p.join(self.path, ".env"))
             _create_env_file(self.env_file, self.env_variables)
 
+        port_lines = []
+        # KEEPER_PUBLISH_CLIENT: publish keeper client port 9181 to host for keeper-bench on host
+        
+        if os.environ.get("KEEPER_PUBLISH_CLIENT") == "1":
+            base = int(os.environ.get("KEEPER_PUBLISH_CLIENT_BASE") or "19181")
+            m = re.search(r"keeper(\d+)", str(self.name or ""), re.I)
+            if m:
+                idx = int(m.group(1))
+                host_port = base + (idx - 1)
+                port_lines.append(f'"{host_port}:9181"')
+                self.keeper_client_host_port = host_port
+        # KEEPER_PUBLISH_CONTROL: publish keeper control port for a chosen node
+        try:
+            publish_ctl = (os.environ.get("KEEPER_PUBLISH_CONTROL", "") or "").strip()
+            ctrl_port = (os.environ.get("KEEPER_CONTROL_PORT", "") or "").strip()
+            publish_node = (os.environ.get("KEEPER_PUBLISH_NODE", "keeper1") or "keeper1").strip()
+            host_port = (os.environ.get("KEEPER_PUBLISH_HOST_PORT", ctrl_port) or "").strip()
+            if publish_ctl == "1" and ctrl_port.isdigit() and host_port.isdigit():
+                if self.hostname == publish_node or self.name == publish_node:
+                    port_lines.append(f'"{host_port}:{ctrl_port}"')
+        except Exception:
+            pass
+        ports_mappings = ("ports:\n            - " + "\n            - ".join(port_lines)) if port_lines else ""
+
+        is_priv = os.environ.get("KEEPER_PRIVILEGED", "") == "1"
+
         with open(self.docker_compose_path, "w") as docker_compose:
             docker_compose.write(
                 DOCKER_COMPOSE_TEMPLATE.format(
@@ -5843,6 +5966,11 @@ class ClickHouseInstance:
                     init_flag="true" if self.docker_init_flag else "false",
                     HELPERS_DIR=HELPERS_DIR,
                     CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR,
+                    privileged="true" if is_priv else "false",
+                    dev_mount=(
+                        "- /dev:/dev" if is_priv else ""
+                    ),
+                    ports_mappings=ports_mappings,
                 )
             )
 

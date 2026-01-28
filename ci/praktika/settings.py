@@ -101,6 +101,8 @@ class _Settings:
     SECRET_CI_DB_PASSWORD: str = ""
     CI_DB_DB_NAME = ""
     CI_DB_TABLE_NAME = ""
+    KEEPER_STRESS_METRICS_DB_NAME = "keeper_stress_tests"
+    KEEPER_STRESS_METRICS_TABLE_NAME = "keeper_metrics_ts"
     CI_DB_INSERT_TIMEOUT_SEC = 20
 
     # to post links for reading statistics in html report (with read-only user)
@@ -156,6 +158,8 @@ _USER_DEFINED_SETTINGS = [
     "SECRET_CI_DB_PASSWORD",
     "CI_DB_DB_NAME",
     "CI_DB_TABLE_NAME",
+    "KEEPER_STRESS_METRICS_DB_NAME",
+    "KEEPER_STRESS_METRICS_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
     "USE_CUSTOM_GH_AUTH",
     "SECRET_GH_APP_ID",

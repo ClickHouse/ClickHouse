@@ -1,0 +1,67 @@
+version: 1
+defaults:
+  duration: 120
+  topology: 3
+scenarios:
+  - id: DUR-01
+    name: Snapshot ENOSPC safe
+    topology: 3
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: record_lgif_before }
+      - { kind: enospc, on: leader, size_mb: 2048 }
+      - { kind: record_lgif_after }
+      - { kind: free_enospc }
+    gates:
+      - { type: lgif_monotone }
+      - { type: single_leader }
+
+  - id: DUR-02
+    name: WAL bit-flip follower
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: wal_flip, on: followers }
+    gates:
+      - { type: single_leader }
+
+  - id: DUR-03
+    name: Snapshot header corrupt
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: snap_flip, on: followers }
+    gates:
+      - { type: single_leader }
+
+  - id: DUR-04
+    name: Rotate/retain + exit snapshot
+    topology: 3
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+
+  - id: DUR-05
+    name: Force-sync disk rules
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+
+  - id: DUR-06
+    name: Stale vs fresh catch-up thresholds
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+
+  - id: DUR-07
+    name: Compaction/rotation under pressure
+    topology: 3
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+      - { type: error_rate_le, max_ratio: 0.05 }

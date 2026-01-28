@@ -1,0 +1,98 @@
+version: 1
+defaults:
+  duration: 300
+  topology: 3
+scenarios:
+  - id: WEEKLY-GP3-JIT-LONG
+    name: Weekly long-run gp3 jitter + gp3 disk
+    topology: 3
+    duration: 600
+    workload: { config: workloads/prod_mix.yaml }
+    tags: [weekly, slow]
+    pre:
+      - { kind: ensure_paths, on: leader, paths: ["/e2e/prod", "/e2e/prod/create", "/e2e/prod/set"] }
+    faults:
+      - { kind: netem, on: all, delay_ms: 10, jitter_ms: 10, loss_pct: 0, duration_s: 600, target_parallel: true }
+      - { kind: dm_delay, on: all, ms: 3, duration_s: 600, target_parallel: true }
+    gates:
+      - { type: single_leader }
+      - { type: error_rate_le }
+      - { type: p99_le }
+      - { type: log_sanity_ok }
+      - { type: print_summary }
+      - { type: mntr_print }
+      - { type: count_paths, prefixes: ["/e2e/prod", "/e2e/prod/create", "/e2e/prod/set"] }
+
+  - id: WEEKLY-RCFG-PART-NEG
+    name: Weekly negative reconfig under partition
+    topology: 3
+    duration: 120
+    workload: { config: workloads/prod_mix.yaml }
+    tags: [weekly]
+    faults:
+      - kind: partition_symmetric_during
+        on: leader
+        steps:
+          - { kind: reconfig, on: leader, operation: remove, server_id: 3, ok: false }
+    gates:
+      - { type: single_leader }
+      - { type: config_converged, timeout_s: 60 }
+      - { type: log_sanity_ok }
+
+  - id: IMP-01
+    name: fallback_session_lifetime A/B
+    topology: 3
+    duration: 120
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+
+  - id: IMP-02
+    name: TCP_NODELAY A/B
+    topology: 3
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+
+  - id: IMP-04
+    name: async_replication A/B
+    topology: 3
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+    opts:
+      coord_overrides_xml: "<coordination_settings><async_replication>true</async_replication></coordination_settings>"
+
+  - id: IMP-05
+    name: Health API gating
+    topology: 3
+    duration: 120
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+
+  - id: IMP-06
+    name: async_replication live toggle
+    topology: 3
+    duration: 120
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+    opts:
+      coord_overrides_xml: "<coordination_settings><async_replication>true</async_replication></coordination_settings>"
+
+  - id: IMP-07
+    name: Feature flags runtime flips
+    topology: 3
+    duration: 120
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+    opts:
+      feature_flags:
+        multi_read: 1
+        remove_recursive: 1
+        check_not_exists: 1
+        create_if_not_exists: 1

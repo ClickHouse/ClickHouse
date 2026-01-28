@@ -1,6 +1,6 @@
-from praktika import Workflow
+from praktika import Workflow, Job
 
-from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs, JobNames
+from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs, JobNames, ArtifactNames
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
@@ -33,6 +33,11 @@ PLAIN_FUNCTIONAL_TEST_JOB = [
     j for j in JobConfigs.functional_tests_jobs if "amd_debug, parallel" in j.name
 ][0]
 
+# Ensure Keeper stress (PR) becomes a hard gate for other tests
+KEEPER_STRESS_PR_NAME = "Keeper Stress Tests (PR)"
+# Use Keeper as an additional blocker so dependent jobs will start only after Keeper finishes
+BLOCKERS_AFTER_KEEPER = FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES + [KEEPER_STRESS_PR_NAME]
+
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
@@ -56,30 +61,51 @@ workflow = Workflow.Config(
             for job in JobConfigs.special_build_jobs
         ],
         # TODO: stabilize new jobs and remove set_allow_merge_on_failure
-        JobConfigs.lightweight_functional_tests_job,
-        JobConfigs.stateless_tests_targeted_pr_jobs[0].set_allow_merge_on_failure(),
-        JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_merge_on_failure(),
-        *JobConfigs.stateless_tests_flaky_pr_jobs,
-        *JobConfigs.integration_test_asan_flaky_pr_jobs,
-        JobConfigs.bugfix_validation_ft_pr_job,
-        JobConfigs.bugfix_validation_it_job,
+        JobConfigs.lightweight_functional_tests_job.set_dependency(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
+        JobConfigs.stateless_tests_targeted_pr_jobs[0]
+        .set_allow_merge_on_failure()
+        .set_dependency(BLOCKERS_AFTER_KEEPER),
+        JobConfigs.integration_test_targeted_pr_jobs[0]
+        .set_allow_merge_on_failure()
+        .set_dependency(BLOCKERS_AFTER_KEEPER),
         *[
+            j.set_dependency(BLOCKERS_AFTER_KEEPER)
+            for j in JobConfigs.stateless_tests_flaky_pr_jobs
+        ],
+        *[
+            j.set_dependency(BLOCKERS_AFTER_KEEPER)
+            for j in JobConfigs.integration_test_asan_flaky_pr_jobs
+        ],
+        JobConfigs.bugfix_validation_ft_pr_job.set_dependency(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
+        JobConfigs.bugfix_validation_it_job.set_dependency(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
+        *[
+            # All functional tests should wait for Keeper; the "blocking" ones
+            # do not depend on each other but still depend on Keeper.
             j.set_dependency(
-                FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+                BLOCKERS_AFTER_KEEPER
                 if j.name not in FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-                else []
+                else [KEEPER_STRESS_PR_NAME]
             )
             for j in JobConfigs.functional_tests_jobs
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_dependency(BLOCKERS_AFTER_KEEPER)
             for job in JobConfigs.integration_test_jobs_required[:]
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_dependency(BLOCKERS_AFTER_KEEPER)
             for job in JobConfigs.integration_test_jobs_non_required
         ],
-        *JobConfigs.unittest_jobs,
+        *[
+            j.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for j in JobConfigs.unittest_jobs
+        ],
         JobConfigs.docker_server.set_dependency(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
@@ -114,6 +140,18 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
+        # --- TEMP: Keeper stress validation on PRs; remove before landing ---
+        Job.Config(
+            name=KEEPER_STRESS_PR_NAME,
+            runs_on=JobConfigs.keeper_stress_job.runs_on,
+            command=JobConfigs.keeper_stress_job.command,
+            run_in_docker=JobConfigs.keeper_stress_job.run_in_docker,
+            digest_config=JobConfigs.keeper_stress_job.digest_config,
+            timeout=3600 * 8,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+            result_name_for_cidb="Keeper Stress",
+        ),
+        # --- /TEMP ---
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,

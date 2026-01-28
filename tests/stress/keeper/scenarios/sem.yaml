@@ -1,0 +1,77 @@
+version: 1
+defaults:
+  duration: 120
+  topology: 3
+scenarios:
+  - id: SEM-01
+    name: Read barrier with SYNC
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: sync_read_barrier, iterations: 3, path_prefix: /sem01 }
+      - { type: error_rate_le, max_ratio: 0.02 }
+
+  - id: SEM-02
+    name: Quorum reads linearizable
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: linearizable_reads_ok, iterations: 10, base: /sem02 }
+      - { type: error_rate_le, max_ratio: 0.02 }
+    opts:
+      coord_overrides_xml: "<coordination_settings><quorum_reads>true</quorum_reads></coordination_settings>"
+
+  - id: SEM-03
+    name: Watch churn & restart
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: record_watch_baseline }
+      - { kind: kill, on: followers }
+    gates:
+      - { type: watch_delta_within, pct: 10.0 }
+      - { type: no_watcher_hotspot, max_share: 0.9 }
+
+  - id: SEM-04
+    name: Ephemerals expiry
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    pre:
+      - { kind: create_ephemerals, on: leader, count: 1000, path_prefix: /sem_ephem }
+      - { kind: stop_ephemeral_client, on: leader }
+    gates:
+      - { type: ephemerals_gone_within, max_s: 10 }
+
+  - id: SEM-05
+    name: ACLs world/auth/digest
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: acl_matrix_ok }
+      - { type: acl_digest_rotate_ok }
+
+  - id: SEM-06
+    name: Multi-op atomicity under churn
+    topology: 3
+    duration: 60
+    workload: { config: workloads/prod_mix.yaml }
+    pre:
+      - { kind: record_watch_baseline }
+    faults:
+      - { kind: stop_cont, on: leader, count: 10, sleep_s: 1.0 }
+    gates:
+      - { type: error_rate_le, max_ratio: 0.05 }
+      - { type: watch_delta_within, pct: 50 }
+      - { type: no_watcher_hotspot, max_share: 0.95 }
+
+  - id: SEM-07
+    name: Half-open TCP session GC
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+
+  - id: SEM-08
+    name: Unsupported ZK ops
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: lin_register_ok, duration_s: 10, writers: 2, readers: 4, path: /lin/reg }
