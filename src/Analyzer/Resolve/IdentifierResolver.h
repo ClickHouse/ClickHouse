@@ -6,6 +6,7 @@
 #include <Core/Joins.h>
 
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
