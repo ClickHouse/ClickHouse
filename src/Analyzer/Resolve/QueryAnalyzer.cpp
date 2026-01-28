@@ -4957,6 +4957,15 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         auto node = node_with_duplicated_alias;
         auto node_alias = node->getAlias();
 
+        /** The alias might have already been removed by another scope's duplicate processing.
+          * This happens because when global_with_aliases is copied between scopes,
+          * the QueryTreeNodePtr smart pointers reference the same underlying nodes.
+          * If a child scope processes a duplicate and removes its alias, the parent scope's
+          * reference to the same node will also see the empty alias.
+          */
+        if (node_alias.empty())
+            continue;
+
         resolveExpressionNode(node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
         bool has_node_in_alias_table = false;

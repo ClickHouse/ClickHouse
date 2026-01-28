@@ -52,7 +52,7 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
         query.setDatabase(table_id.database_name);
     }
 
-    auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
+    auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr);
 
     auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->getEngineName() == "Replicated")

@@ -828,7 +828,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
     {
         auto column_window = make_intrusive<ASTColumnDeclaration>();
         column_window->name = window_id_name;
-        column_window->type = makeASTDataType("UInt32");
+        column_window->setType(makeASTDataType("UInt32"));
         columns_list->children.push_back(column_window);
     }
 

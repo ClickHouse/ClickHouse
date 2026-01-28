@@ -615,13 +615,13 @@ bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
 
     /// Using template from cache is approx 2x faster, than evaluating single expression
     /// Construction of new template is approx 1.5x slower, than evaluating single expression
-    double attempts_weighted = 1.5 * attempts_to_deduce_template[column_idx] +  0.5 * attempts_to_deduce_template_cached[column_idx];
+    double attempts_weighted = 1.5 * static_cast<double>(attempts_to_deduce_template[column_idx]) +  0.5 * static_cast<double>(attempts_to_deduce_template_cached[column_idx]);
 
     constexpr size_t max_attempts = 100;
     if (attempts_weighted < max_attempts)
         return true;
 
-    if (rows_parsed_using_template[column_idx] / attempts_weighted > 1)
+    if (static_cast<double>(rows_parsed_using_template[column_idx]) / attempts_weighted > 1)
     {
         /// Try again
         attempts_to_deduce_template[column_idx] = 0;
