@@ -1023,11 +1023,14 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.2",
+        {
+            {"propagate_types_serialization_versions_to_nested_types", false, true, "Propagate data types serialization version to nested types by default"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {
             {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
             {"materialize_statistics_on_merge", true, true, "New setting"},
-            {"propagate_types_serialization_versions_to_nested_types", false, true, "Propagate data types serialization version to nested types by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {
