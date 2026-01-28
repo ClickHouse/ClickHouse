@@ -408,9 +408,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
         module_repeat_cnt = FLAKY_CHECK_MODULE_REPEAT_COUNT
 
     failed_test_cases = []
-    print(f"session_timeout: {session_timeout} seconds")
-    import sys
-    sys.exit(1)
 
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
