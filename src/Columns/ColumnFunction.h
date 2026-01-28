@@ -193,6 +193,9 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getIndicesOfNonDefaultRows is not supported for {}", getName());
     }
 
+    void forEachSubcolumn(ColumnCallback callback) const override;
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
+
     bool isShortCircuitArgument() const { return is_short_circuit_argument; }
 
     DataTypePtr getResultType() const;
