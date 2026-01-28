@@ -485,10 +485,20 @@ std::pair<const char *, bool> splitMultipartQuery(
             insert->end = pos;
         }
 
+        const auto * next_pos = pos;
+
+        while (isWhitespaceASCII(*next_pos) || *next_pos == ';')
+            ++next_pos;
+
+        Tokens tokens(next_pos, end, max_query_size, true);
+        IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
+
+        if (token_iterator->isEnd())
+            pos = end;
+
         queries_list.emplace_back(queries.substr(begin - queries.data(), pos - begin));
 
-        while (isWhitespaceASCII(*pos) || *pos == ';')
-            ++pos;
+        pos = std::max(pos, next_pos);
     }
 
     return std::make_pair(begin, pos == end);
