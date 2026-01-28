@@ -509,7 +509,8 @@ private:
             }
             case TypeIndex::DateTime:
             {
-                // ClickHouse timestamp is in seconds while Substrait's is in microseconds so explicitly set precision to 6
+                // ClickHouse timestamp is in seconds, Substrait's in microseconds
+                // Explicitly set precision to 6
                 auto * ts = substrait_type->mutable_precision_timestamp();
                 ts->set_precision(6);
                 ts->set_nullability(nullability);
@@ -520,7 +521,10 @@ private:
                 auto * ts = substrait_type->mutable_precision_timestamp();
                 const auto * dt64 = checkAndGetDataType<DataTypeDateTime64>(ch_type.get());
                 if (!dt64)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected DateTime64 type but got {}", ch_type->getName());
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Expected DateTime64 type but got {}",
+                        ch_type->getName());
                 ts->set_precision(dt64->getScale());
                 ts->set_nullability(nullability);
                 break;
@@ -790,7 +794,10 @@ private:
         // Find the filter column in the DAG outputs
         const ActionsDAG::Node * filter_node = actions_dag.tryFindInOutputs(filter_column_name);
         if (!filter_node)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter column {} not found in ActionsDAG outputs", filter_column_name);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Filter column {} not found in ActionsDAG outputs",
+                filter_column_name);
         
         // Get input header from child node
         const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
@@ -1203,7 +1210,10 @@ private:
 
         const auto * merging_step = dynamic_cast<const MergingAggregatedStep *>(node->step.get());
         if (!merging_step)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected MergingAggregatedStep but got {}", node->step->getName());
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected MergingAggregatedStep but got {}",
+                node->step->getName());
 
         const auto & params = merging_step->getParams();
 
