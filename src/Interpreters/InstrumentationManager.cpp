@@ -124,9 +124,21 @@ void InstrumentationManager::ensureInitialization()
     {
         __xray_init();
         parseInstrumentationMap();
-        if (__xray_set_handler(&InstrumentationManager::dispatchHandler) == 0)
-            throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error setting handler");
+        chassert(__xray_set_handler(&InstrumentationManager::dispatchHandler) != 0);
     });
+}
+
+void handleXRayPatchingStatus(XRayPatchingStatus status, Int32 function_id, const String & method)
+{
+    switch (status)
+    {
+        case XRayPatchingStatus::FAILED:
+            throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error {} the function {}: XRay failed", method, function_id);
+        case XRayPatchingStatus::NOT_INITIALIZED:
+            throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error {} the function {}: XRay not initialized", method, function_id);
+        case XRayPatchingStatus::SUCCESS: [[fallthrough]];
+        case XRayPatchingStatus::ONGOING:
+    }
 }
 
 void InstrumentationManager::patchFunctionIfNeeded(Int32 function_id)
@@ -134,11 +146,7 @@ void InstrumentationManager::patchFunctionIfNeeded(Int32 function_id)
     if (instrumented_points.get<FunctionId>().contains(function_id))
         return;
     const auto status = __xray_patch_function(function_id);
-    if (status != XRayPatchingStatus::SUCCESS && status != XRayPatchingStatus::ONGOING)
-    {
-        throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error patching the function {}: {}",
-            function_id, status == XRayPatchingStatus::NOT_INITIALIZED ? "XRay not initialized" : "failed");
-    }
+    handleXRayPatchingStatus(status, function_id, "patching");
 }
 
 void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
@@ -150,11 +158,7 @@ void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
     if (count <= 1)
     {
         const auto status = __xray_unpatch_function(function_id);
-        if (status != XRayPatchingStatus::SUCCESS && status != XRayPatchingStatus::ONGOING)
-        {
-            throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error unpatching the function {}: {}",
-                function_id, status == XRayPatchingStatus::NOT_INITIALIZED ? "XRay not initialized" : "failed");
-        }
+        handleXRayPatchingStatus(status, function_id, "unpatching");
     }
 }
 
