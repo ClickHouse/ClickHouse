@@ -2,6 +2,15 @@
 
 #if USE_ARROWFLIGHT
 
+#include <functional>
+#include <vector>
+
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Common/Base64.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
@@ -26,7 +35,26 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/URI.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <IO/ReadBufferFromString.h>
+#include <Interpreters/ProcessList.h>
+
+#include <Common/config_version.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/StdHelpers.h>
+
+#include <boost/algorithm/string.hpp>
+
+#include <Server/arrowFlightProto.h>
+
+#include <arrow/array/builder_base.h>
+#include <arrow/array/builder_binary.h>
+#include <arrow/array/builder_nested.h>
+#include <arrow/array/builder_primitive.h>
+#include <arrow/array/builder_union.h>
+#include <arrow/table.h>
+#include <arrow/scalar.h>
 #include <arrow/flight/server_middleware.h>
+#include <arrow/flight/sql/protocol_internal.h>
 
 
 namespace DB
@@ -36,6 +64,10 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int INVALID_SESSION_TIMEOUT;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int UNKNOWN_SETTING;
+    extern const int SYNTAX_ERROR;
 }
 
 namespace
@@ -46,10 +78,16 @@ namespace
     class AuthMiddleware : public arrow::flight::ServerMiddleware
     {
     public:
-        explicit AuthMiddleware(const std::string & token, const std::string & username, const std::string & password)
-            : token_(token)
+        explicit AuthMiddleware(const arrow::flight::ServerCallContext & context, const std::string & token, const std::string & username, const std::string & password,
+                                const std::string & session_id = "", bool session_check = false, unsigned session_timeout = 0, bool session_close = false)
+            : context_(context)
+            , token_(token)
             , username_(username)
             , password_(password)
+            , session_id_(session_id)
+            , session_check_(session_check)
+            , session_timeout_(session_timeout)
+            , session_close_(session_close)
         {
         }
 
@@ -70,11 +108,42 @@ namespace
 
         std::string name() const override { return AUTHORIZATION_MIDDLEWARE_NAME; }
 
+        const arrow::flight::ServerCallContext & context() const { return context_; }
+        const std::string & sessionId() const { return session_id_; }
+        bool sessionCheck() const { return session_check_; }
+        unsigned sessionTimeout() const { return session_timeout_; }
+        bool sessionClose() const { return session_close_; }
+
     private:
+        const arrow::flight::ServerCallContext & context_;
         const std::string token_;
         const std::string username_;
         const std::string password_;
+        const std::string session_id_;
+        const bool session_check_;
+        const unsigned session_timeout_;
+        const bool session_close_;
     };
+
+    std::chrono::steady_clock::duration parseSessionTimeout(
+        const Poco::Util::AbstractConfiguration & config,
+        unsigned query_session_timeout)
+    {
+        unsigned session_timeout = config.getInt("default_session_timeout", 60);
+
+        if (query_session_timeout)
+        {
+            session_timeout = query_session_timeout;
+            unsigned max_session_timeout = config.getUInt("max_session_timeout", 3600);
+
+            if (session_timeout > max_session_timeout)
+                throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Session timeout '{}' is larger than max_session_timeout: {}. "
+                    "Maximum session timeout could be modified in configuration file.",
+                    session_timeout, max_session_timeout);
+        }
+
+        return std::chrono::seconds(session_timeout);
+    }
 
     class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory
     {
@@ -105,15 +174,46 @@ namespace
             if (token.empty())
                 return arrow::Status::IOError("Expected Basic auth scheme");
 
+            std::string user = "default";
+            std::string password;
+
             std::string credentials = base64Decode(token, true);
             auto pos = credentials.find(':');
-            if (pos == std::string::npos)
-                return arrow::Status::IOError("Malformed credentials");
+            if (pos != std::string::npos)
+            {
+                user = credentials.substr(0, pos);
+                password = credentials.substr(pos + 1);
+            }
 
-            auto user = credentials.substr(0, pos);
-            auto password = credentials.substr(pos + 1);
+            std::string session_id;
+            auto session_it = headers.find("x-clickhouse-session-id");
+            if (session_it != headers.end())
+                session_id = std::string(session_it->second);
 
-            *middleware = std::make_unique<AuthMiddleware>(token, user, password);
+            std::string session_check;
+            session_it = headers.find("x-clickhouse-session-check");
+            if (session_it != headers.end())
+                session_check = std::string(session_it->second);
+
+            std::string session_timeout_str;
+            session_it = headers.find("x-clickhouse-session-timeout");
+            if (session_it != headers.end())
+                session_timeout_str = std::string(session_it->second);
+
+            unsigned session_timeout = 0;
+            if (!session_timeout_str.empty())
+            {
+                ReadBufferFromString buf(session_timeout_str);
+                if (!tryReadIntText(session_timeout, buf) || !buf.eof())
+                    return arrow::Status::IOError("Invalid session timeout: " + session_timeout_str);
+            }
+
+            std::string session_close;
+            session_it = headers.find("x-clickhouse-session-close");
+            if (session_it != headers.end())
+                session_close = std::string(session_it->second);
+
+            *middleware = std::make_unique<AuthMiddleware>(context, token, user, password, session_id, session_check == "1", session_timeout, session_close == "1");
             return arrow::Status::OK();
         }
     };
@@ -178,6 +278,32 @@ namespace
         return Poco::Net::SocketAddress{family, peer};
     }
 
+    std::shared_ptr<Session> authenticate(const AuthMiddleware & auth, const ContextPtr & context)
+    {
+        auto session = std::make_shared<Session>(context, ClientInfo::Interface::ARROW_FLIGHT);
+        session->authenticate(auth.username(), auth.password(), getClientAddress(auth.context()));
+
+        /// The user could specify session identifier and session timeout.
+        /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
+        if (auth.sessionId().empty())
+            session->makeSessionContext();
+        else
+            session->makeSessionContext(auth.sessionId(), parseSessionTimeout(context->getConfigRef(), auth.sessionTimeout()), auth.sessionCheck());
+
+        return session;
+    }
+
+    void releaseOrCloseSession(std::shared_ptr<Session> session, const String & session_id, bool close_session)
+    {
+        if (!session_id.empty())
+        {
+            if (close_session)
+                session->closeSession(session_id);
+            else
+                session->releaseSessionID();
+        }
+    }
+
     /// Extracts an SQL query from a flight descriptor.
     /// It depends on the flight descriptor's type (PATH/CMD) and on the operation's type (DoPut/DoGet).
     [[nodiscard]] arrow::Result<String> convertDescriptorToSQL(const arrow::flight::FlightDescriptor & descriptor, bool for_put_operation)
@@ -237,8 +363,8 @@ namespace
         }
         else if (const auto * insert = dynamic_cast<const ASTInsertQuery *>(ast.get()))
         {
-            if (!insert->format.empty() && insert->format != "Arrow")
-                return arrow::Status::ExecutionError("Invalid format, only 'Arrow' format is supported");
+            if (!insert->format.empty() && insert->format != "Values" && insert->format != "Arrow")
+                return arrow::Status::ExecutionError("Invalid format (", insert->format, "), only 'Arrow' format is supported");
         }
         return arrow::Status::OK();
     }
@@ -296,11 +422,9 @@ namespace
         std::optional<Timestamp> expiration_time;
     };
 
-    /// Keeps a block associated with a ticket.
     struct TicketInfo : public TicketWithExpirationTime
     {
-        ConstBlockPtr block;
-        std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter;
+        std::shared_ptr<arrow::Table> arrow_table;
     };
 
     /// Information about a poll descriptor.
@@ -308,8 +432,8 @@ namespace
     /// the previous object is stored as `previous_info`, and the next object is referenced by `next_poll_descriptor`.
     struct PollDescriptorInfo : public PollDescriptorWithExpirationTime
     {
-        std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter;
-        std::shared_ptr<PollDescriptorInfo> previous_info;
+        std::shared_ptr<arrow::Schema> schema;
+        std::shared_ptr<const PollDescriptorInfo> previous_info;
         bool evaluating = false;
         bool evaluated = false;
 
@@ -343,35 +467,56 @@ namespace
     {
     public:
         PollSession(
-            std::unique_ptr<Session> session_,
             ContextPtr query_context_,
             ThreadGroupPtr thread_group_,
             BlockIO && block_io_,
-            std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter_)
-            : session(std::move(session_))
-            , query_context(query_context_)
+            std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier = nullptr,
+            std::function<void(Block &)> block_modifier_ = nullptr)
+            : query_context(query_context_)
             , thread_group(thread_group_)
             , block_io(std::move(block_io_))
             , executor(block_io.pipeline)
-            , ch_to_arrow_converter(ch_to_arrow_converter_)
+            , schema(
+                CHColumnToArrowColumn::calculateArrowSchema(
+                    executor.getHeader().getColumnsWithTypeAndName(),
+                    "Arrow",
+                    nullptr,
+                    {.output_string_as_string = true}
+                )
+            )
+            , block_modifier(block_modifier_)
         {
+            if (schema_modifier)
+            {
+                auto result = schema_modifier(schema);
+                if (!result.ok())
+                    throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to convert Arrow schema {}", schema->ToString());
+                schema = result.ValueUnsafe();
+            }
         }
 
         ~PollSession() = default;
 
         ThreadGroupPtr getThreadGroup() const { return thread_group; }
-        std::shared_ptr<const CHColumnToArrowColumn> getCHToArrowConverter() const { return ch_to_arrow_converter; }
-        bool getNextBlock(Block & block) { return executor.pull(block); }
+        std::shared_ptr<arrow::Schema> getSchema() const { return schema; }
+        bool getNextBlock(Block & block)
+        {
+            if (!executor.pull(block))
+                return false;
+            if (block_modifier)
+                block_modifier(block);
+            return true;
+        }
         void onFinish() { block_io.onFinish(); }
         void onException() { block_io.onException(); }
 
     private:
-        std::unique_ptr<Session> session;
         ContextPtr query_context;
         ThreadGroupPtr thread_group;
         BlockIO block_io;
         PullingPipelineExecutor executor;
-        std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter;
+        std::shared_ptr<arrow::Schema> schema;
+        std::function<void(Block &)> block_modifier;
     };
 
     /// Creates a converter to convert ClickHouse blocks to the Arrow format.
@@ -398,7 +543,7 @@ public:
     }
 
     /// Creates a flight ticket which allows to download a specified block.
-    std::shared_ptr<const TicketInfo> createTicket(ConstBlockPtr block, std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter)
+    std::shared_ptr<const TicketInfo> createTicket(std::shared_ptr<arrow::Table> arrow_table)
     {
         String ticket = generateTicketName();
         LOG_DEBUG(log, "Creating ticket {}", ticket);
@@ -406,8 +551,7 @@ public:
         auto info = std::make_shared<TicketInfo>();
         info->ticket = ticket;
         info->expiration_time = expiration_time;
-        info->block = block;
-        info->ch_to_arrow_converter = ch_to_arrow_converter;
+        info->arrow_table = arrow_table;
         std::lock_guard lock{mutex};
         bool inserted = tickets.try_emplace(ticket, info).second;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(inserted); /// Flight tickets are unique.
@@ -483,10 +627,53 @@ public:
         }
     }
 
+    void setFlightDescriptorMapLocked(const String & flight_descriptor, const String & query_id) TSA_REQUIRES(mutex)
+    {
+        flight_descriptor_to_query_id[flight_descriptor] = query_id;
+        query_id_to_flight_descriptors[query_id].insert(flight_descriptor);
+    }
+
+    std::optional<String> getQueryIdFromFlightDescriptor(const String & flight_descriptor)
+    {
+        std::lock_guard lock{mutex};
+        if (flight_descriptor_to_query_id.contains(flight_descriptor))
+            return flight_descriptor_to_query_id[flight_descriptor];
+        return std::nullopt;
+    }
+
+    void eraseFlightDescriptorMapByQueryIdLocked(const String & query_id) TSA_REQUIRES(mutex)
+    {
+        auto it = query_id_to_flight_descriptors.find(query_id);
+        if (it == query_id_to_flight_descriptors.end())
+            return;
+        for (const auto & flight_descriptor : it->second)
+            flight_descriptor_to_query_id.erase(flight_descriptor);
+        query_id_to_flight_descriptors.erase(it);
+    }
+
+    void eraseFlightDescriptorMapByQueryId(const String & query_id)
+    {
+        std::lock_guard lock{mutex};
+        eraseFlightDescriptorMapByQueryIdLocked(query_id);
+    }
+
+    void eraseFlightDescriptorMapByDescriptorLocked(const String & flight_descriptor) TSA_REQUIRES(mutex)
+    {
+        if (!flight_descriptor_to_query_id.contains(flight_descriptor))
+            return;
+        eraseFlightDescriptorMapByQueryIdLocked(flight_descriptor_to_query_id[flight_descriptor]);
+    }
+
+    void eraseFlightDescriptorMapByDescriptor(const String & flight_descriptor)
+    {
+        std::lock_guard lock{mutex};
+        eraseFlightDescriptorMapByDescriptorLocked(flight_descriptor);
+    }
+
     /// Creates a poll descriptor.
     /// Poll descriptors are returned by method PollFlightInfo to get subsequent results from a long-running query.
     std::shared_ptr<const PollDescriptorInfo>
-    createPollDescriptor(std::unique_ptr<PollSession> poll_session, std::shared_ptr<const PollDescriptorInfo> previous_info)
+    createPollDescriptor(std::unique_ptr<PollSession> poll_session, std::shared_ptr<const PollDescriptorInfo> previous_info, std::optional<String> query_id = std::nullopt)
     {
         String poll_descriptor;
         if (previous_info)
@@ -496,6 +683,7 @@ public:
             if (!previous_info->next_poll_descriptor)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding a poll descriptor while the previous poll descriptor is final");
             poll_descriptor = *previous_info->next_poll_descriptor;
+            query_id =  getQueryIdFromFlightDescriptor(previous_info->poll_descriptor);
         }
         else
         {
@@ -507,7 +695,8 @@ public:
         auto info = std::make_shared<PollDescriptorInfo>();
         info->poll_descriptor = poll_descriptor;
         info->expiration_time = expiration_time;
-        info->ch_to_arrow_converter = poll_session->getCHToArrowConverter();
+        info->schema = poll_session->getSchema();
+        info->previous_info = previous_info;
         std::lock_guard lock{mutex};
         bool inserted = poll_descriptors.try_emplace(poll_descriptor, info).second;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(inserted); /// Poll descriptors are unique.
@@ -519,6 +708,8 @@ public:
             chassert(inserted); /// Poll descriptors are unique.
             updateNextExpirationTime();
         }
+        if (query_id)
+            setFlightDescriptorMapLocked(poll_descriptor, *query_id);
         return info;
     }
 
@@ -528,6 +719,16 @@ public:
         auto it = poll_descriptors.find(poll_descriptor);
         if (it == poll_descriptors.end())
             return arrow::Status::KeyError("Poll descriptor ", quoteString(poll_descriptor), " not found");
+        return it->second;
+    }
+
+    /// Finds query id for a specified flight descriptor.
+    std::optional<String> getQueryIdByFlightDescriptor(const String & flight_descriptor) const
+    {
+        std::lock_guard lock{mutex};
+        auto it = flight_descriptor_to_query_id.find(flight_descriptor);
+        if (it == flight_descriptor_to_query_id.end())
+            return std::nullopt;
         return it->second;
     }
 
@@ -606,7 +807,7 @@ public:
     }
 
     /// Ends evaluation for a specified poll descriptor.
-    void endEvaluation(const String & poll_descriptor, const String & ticket, UInt64 rows, UInt64 bytes, bool last)
+    void endEvaluation(const String & poll_descriptor, const std::optional<String> & ticket, UInt64 rows, UInt64 bytes, bool last)
     {
         std::lock_guard lock{mutex};
         auto it = poll_descriptors.find(poll_descriptor);
@@ -787,6 +988,9 @@ private:
     std::unordered_map<String, std::shared_ptr<const PollDescriptorInfo>> poll_descriptors TSA_GUARDED_BY(mutex);
     std::unordered_map<String, std::unique_ptr<PollSession>> poll_sessions TSA_GUARDED_BY(mutex);
     std::condition_variable evaluation_ended;
+    /// associates flight descriptors with query id
+    std::unordered_map<String, String> flight_descriptor_to_query_id TSA_GUARDED_BY(mutex);
+    std::unordered_map<String, std::unordered_set<String>> query_id_to_flight_descriptors TSA_GUARDED_BY(mutex);
     /// `tickets_by_expiration_time` and `poll_descriptors_by_expiration_time` are sorted by `expiration_time` so `std::set` is used.
     std::set<std::pair<Timestamp, String>> tickets_by_expiration_time TSA_GUARDED_BY(mutex);
     std::set<std::pair<Timestamp, String>> poll_descriptors_by_expiration_time TSA_GUARDED_BY(mutex);
@@ -896,6 +1100,9 @@ void ArrowFlightHandler::stop()
             auto status = Shutdown();
             if (!status.ok())
                 LOG_ERROR(log, "Failed to shutdown Arrow Flight: {}", status.ToString());
+            status = Wait();
+            if (!status.ok())
+                LOG_ERROR(log, "Failed to wait for shutdown Arrow Flight: {}", status.ToString());
         }
         catch (...)
         {
@@ -913,12 +1120,413 @@ void ArrowFlightHandler::stop()
             cleanup_thread->join();
             cleanup_thread.reset();
         }
+        calls_data.reset();
     }
 }
 
 UInt16 ArrowFlightHandler::portNumber() const
 {
     return address_to_listen.port();
+}
+
+static size_t calculateTableBytes(const std::shared_ptr<arrow::Table>& table)
+{
+    int64_t total_bytes = 0;
+    for (const auto & chunked_array : table->columns())
+        for (const auto & array : chunked_array->chunks())
+            for (const auto& buffer : array->data()->buffers)
+                if (buffer)
+                    total_bytes += buffer->size();
+    return total_bytes;
+}
+
+static ColumnsWithTypeAndName getHeader(const ColumnsWithTypeAndName & columns)
+{
+    ColumnsWithTypeAndName res;
+    for (const auto & column : columns)
+        res.emplace_back(column.cloneEmpty());
+    return res;
+}
+
+static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std::shared_ptr<arrow::Table>>>> executeSQLtoTables_impl(
+    const std::shared_ptr<Session> & session,
+    const std::string & sql,
+    bool single_table,
+    std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier = nullptr,
+    std::function<void(Block &)> block_modifier = nullptr
+)
+{
+    auto query_context = session->makeQueryContext();
+    query_context->setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
+    CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
+
+    std::shared_ptr<arrow::Schema> schema;
+    std::vector<std::shared_ptr<arrow::Table>> tables;
+
+    auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
+    try
+    {
+        ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
+        ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
+
+        PullingPipelineExecutor executor{block_io.pipeline};
+        schema = CHColumnToArrowColumn::calculateArrowSchema(executor.getHeader().getColumnsWithTypeAndName(), "Arrow", nullptr, {.output_string_as_string = true});
+        if (schema_modifier)
+        {
+            auto status = schema_modifier(schema);
+            ARROW_RETURN_NOT_OK(status);
+            schema = status.ValueUnsafe();
+        }
+
+        std::optional<ColumnsWithTypeAndName> header;
+        std::vector<Chunk> chunks;
+        Block block;
+        while (executor.pull(block))
+        {
+            if (!block.empty())
+            {
+                if (block_modifier)
+                    block_modifier(block);
+                if (!header)
+                    header = getHeader(block.getColumnsWithTypeAndName());
+                chunks.emplace_back(Chunk{block.getColumns(), block.rows()});
+                if (!single_table)
+                {
+                    tables.emplace_back(CHColumnToArrowColumn::chunkToArrowTable(*header, "Arrow", chunks, {.output_string_as_string = true}, header->size(), schema));
+                    chunks.clear();
+                }
+            }
+        }
+        if (single_table)
+            tables.emplace_back(CHColumnToArrowColumn::chunkToArrowTable(*header, "Arrow", chunks, {.output_string_as_string = true}, header->size(), schema));
+
+        block_io.onFinish();
+    }
+    catch (...)
+    {
+        block_io.onException();
+        throw;
+    }
+
+    return std::tuple{schema, tables};
+}
+
+static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std::shared_ptr<arrow::Table>>>> executeSQLtoTables(
+    const std::shared_ptr<Session> & session,
+    const std::string & sql,
+    std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier = nullptr,
+    std::function<void(Block &)> block_modifier = nullptr
+)
+{
+    return executeSQLtoTables_impl(session, sql, false, schema_modifier, block_modifier);
+}
+
+[[maybe_unused]] static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::shared_ptr<arrow::Table>>> executeSQLtoTable(
+    const std::shared_ptr<Session> & session,
+    const std::string & sql,
+    std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier = nullptr,
+    std::function<void(Block &)> block_modifier = nullptr
+)
+{
+    auto res = executeSQLtoTables_impl(session, sql, true, schema_modifier, block_modifier);
+    ARROW_RETURN_NOT_OK(res);
+    return std::tuple{std::get<0>(res.ValueUnsafe()), std::get<1>(res.ValueUnsafe()).front()};
+}
+
+using CommandSelectorTuple = std::tuple<std::string, std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)>, std::function<void(Block &)>>;
+
+/// commandSelector accepts arrow flight sql command in protobuf any-message and produces either resulting arrow::Table
+/// (and if schema_only == true then table can be empty - only schema is requested) or set of sql query - which will be executed,
+/// and, if resulting table requires modification, possible schema_modifier and block_modifier - they should consistently
+/// manipulate schema and blocks to produce compatible results.
+std::variant<
+    CommandSelectorTuple,
+    arrow::Result<std::shared_ptr<arrow::Table>>
+>
+commandSelector(const google::protobuf::Any & any_msg, bool schema_only = false)
+{
+    std::string sql;
+    std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier;
+    std::function<void(Block &)> block_modifier;
+
+    if (any_msg.Is<arrow::flight::protocol::sql::CommandGetSqlInfo>())
+    {
+        arrow::flight::protocol::sql::CommandGetSqlInfo command;
+        if (any_msg.UnpackTo(&command))
+        {
+            arrow::MemoryPool* pool = arrow::default_memory_pool();
+
+            auto string_builder = std::make_shared<arrow::StringBuilder>();
+            auto boolean_builder = std::make_shared<arrow::BooleanBuilder>();
+            auto int64_builder = std::make_shared<arrow::Int64Builder>();
+            auto int32_builder = std::make_shared<arrow::Int32Builder>();
+
+            // string_list: list<item: string> not null
+            auto string_list_type = arrow::list(arrow::utf8());
+            auto string_list_builder = std::make_shared<arrow::ListBuilder>(pool, std::make_shared<arrow::StringBuilder>(), string_list_type);
+
+            // int32_to_int32_list_map: map<int32, list<item: int32>> not null
+            auto value_type = arrow::list(arrow::int32());
+            auto value_builder = std::make_shared<arrow::ListBuilder>(pool, std::make_shared<arrow::Int32Builder>(), value_type);
+            auto int32_to_int32_list_map_type = arrow::map(arrow::int32(), value_type);
+            auto int32_to_int32_list_map_builder = std::make_shared<arrow::MapBuilder>(pool, std::make_shared<arrow::Int32Builder>(), value_builder, int32_to_int32_list_map_type);
+
+            // dense_union
+            auto dense_union_type = arrow::dense_union(
+                {
+                    std::make_shared<arrow::Field>("string_value", arrow::utf8(), false),
+                    std::make_shared<arrow::Field>("bool_value", arrow::boolean(), false),
+                    std::make_shared<arrow::Field>("bigint_value", arrow::int64(), false),
+                    std::make_shared<arrow::Field>("int32_bitmask", arrow::int32(), false),
+                    std::make_shared<arrow::Field>("string_list", string_list_type, false),
+                    std::make_shared<arrow::Field>("int32_to_int32_list_map", int32_to_int32_list_map_type, false)
+                });
+
+            auto dense_union_builder = std::make_shared<arrow::DenseUnionBuilder>(
+                pool,
+                std::vector<std::shared_ptr<arrow::ArrayBuilder>>{
+                    string_builder,
+                    boolean_builder,
+                    int64_builder,
+                    int32_builder,
+                    string_list_builder,
+                    int32_to_int32_list_map_builder
+                },
+                dense_union_type);
+
+            using SqlInfo = arrow::flight::protocol::sql::SqlInfo;
+
+            auto info_name_builder = std::make_shared<arrow::UInt32Builder>();
+
+            [[maybe_unused]] static const size_t SQL_INFO_STRING = 0;
+            [[maybe_unused]] static const size_t SQL_INFO_BOOLEAN = 1;
+            [[maybe_unused]] static const size_t SQL_INFO_INT64 = 2;
+            [[maybe_unused]] static const size_t SQL_INFO_INT32 = 3;
+
+            [[maybe_unused]] auto builder_string_append = [&](auto i, const std::string & v)
+            {
+                ARROW_RETURN_NOT_OK(info_name_builder->Append(i));
+                ARROW_RETURN_NOT_OK(dense_union_builder->Append(SQL_INFO_STRING));
+                return string_builder->Append(v);
+            };
+
+            [[maybe_unused]] auto builder_boolean_append = [&](auto i, bool v)
+            {
+                ARROW_RETURN_NOT_OK(info_name_builder->Append(i));
+                ARROW_RETURN_NOT_OK(dense_union_builder->Append(SQL_INFO_BOOLEAN));
+                return boolean_builder->Append(v);
+            };
+
+            [[maybe_unused]] auto builder_int64_append = [&](auto i, int64_t v)
+            {
+                ARROW_RETURN_NOT_OK(info_name_builder->Append(i));
+                ARROW_RETURN_NOT_OK(dense_union_builder->Append(SQL_INFO_INT64));
+                return int64_builder->Append(v);
+            };
+
+            [[maybe_unused]] auto builder_int32_append = [&](auto i, int32_t v)
+            {
+                ARROW_RETURN_NOT_OK(info_name_builder->Append(i));
+                ARROW_RETURN_NOT_OK(dense_union_builder->Append(SQL_INFO_INT32));
+                return int32_builder->Append(v);
+            };
+
+            if (!schema_only)
+            {
+                for (const auto & info_name : command.info())
+                {
+                    switch (info_name)
+                    {
+                        case SqlInfo::FLIGHT_SQL_SERVER_NAME:
+                            ARROW_RETURN_NOT_OK(builder_string_append(info_name, "ClickHouse"));
+                            break;
+                        case SqlInfo::FLIGHT_SQL_SERVER_VERSION:
+                            ARROW_RETURN_NOT_OK(builder_string_append(info_name, VERSION_STRING));
+                            break;
+                        case SqlInfo::FLIGHT_SQL_SERVER_ARROW_VERSION:
+                            ARROW_RETURN_NOT_OK(builder_string_append(info_name, ARROW_VERSION_STRING));
+                            break;
+                        case SqlInfo::FLIGHT_SQL_SERVER_READ_ONLY:
+                            ARROW_RETURN_NOT_OK(builder_boolean_append(info_name, false));
+                            break;
+                        case SqlInfo::FLIGHT_SQL_SERVER_SQL:
+                            ARROW_RETURN_NOT_OK(builder_boolean_append(info_name, true));
+                            break;
+                        case SqlInfo::FLIGHT_SQL_SERVER_SUBSTRAIT:
+                            ARROW_RETURN_NOT_OK(builder_boolean_append(info_name, false));
+                            break;
+                        case SqlInfo::FLIGHT_SQL_SERVER_SUBSTRAIT_MIN_VERSION:
+                            ARROW_RETURN_NOT_OK(builder_string_append(info_name, ""));
+                            break;
+                        case SqlInfo::FLIGHT_SQL_SERVER_SUBSTRAIT_MAX_VERSION:
+                            ARROW_RETURN_NOT_OK(builder_string_append(info_name, ""));
+                            break;
+                        case SqlInfo::FLIGHT_SQL_SERVER_TRANSACTION:
+                            ARROW_RETURN_NOT_OK(builder_int32_append(info_name, arrow::flight::protocol::sql::SQL_SUPPORTED_TRANSACTION_NONE));
+                            break;
+                        case SqlInfo::FLIGHT_SQL_SERVER_CANCEL:
+                            ARROW_RETURN_NOT_OK(builder_boolean_append(info_name, true));
+                            break;
+                        case SqlInfo::FLIGHT_SQL_SERVER_STATEMENT_TIMEOUT:
+                        case SqlInfo::FLIGHT_SQL_SERVER_TRANSACTION_TIMEOUT:
+                            ARROW_RETURN_NOT_OK(builder_int32_append(info_name, 0));
+                            break;
+                        default:
+                            return arrow::Status::Invalid("CommandGetSqlInfo for info_name " + std::to_string(info_name) + " is not implemented.");
+                    }
+                }
+            }
+
+            // Schema for table
+            std::shared_ptr<arrow::Schema> table_schema = arrow::schema({
+                arrow::field("info_name", arrow::uint32()),
+                arrow::field("value", dense_union_type)
+            });
+
+            auto info_name = info_name_builder->Finish();
+            ARROW_RETURN_NOT_OK(info_name);
+
+            auto value = dense_union_builder->Finish();
+            ARROW_RETURN_NOT_OK(value);
+
+            return arrow::Table::Make(table_schema, {info_name.ValueUnsafe(), value.ValueUnsafe()});
+        }
+    }
+    else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetCrossReference>())
+    {
+        return arrow::Status::NotImplemented("CommandGetCrossReference is not supported");
+    }
+    else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetCatalogs>())
+    {
+        sql = "SELECT '' AS catalog_name FROM numbers(0)";
+    }
+    else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetDbSchemas>())
+    {
+        arrow::flight::protocol::sql::CommandGetDbSchemas command;
+        any_msg.UnpackTo(&command);
+
+        std::vector<std::string> where;
+        if (command.has_db_schema_filter_pattern())
+            where.push_back("database LIKE '" + command.db_schema_filter_pattern() + "'");
+
+        auto where_expression = where.empty() ? "" : " WHERE " + boost::algorithm::join(where, " AND ");
+
+        sql = "SELECT NULL::Nullable(String) AS catalog_name, name AS db_schema_name FROM system.databases" + where_expression;
+    }
+    else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetExportedKeys>())
+    {
+        return arrow::Status::NotImplemented("CommandGetExportedKeys is not supported");
+    }
+    else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetImportedKeys>())
+    {
+        return arrow::Status::NotImplemented("CommandGetImportedKeys is not supported");
+    }
+    else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetPrimaryKeys>())
+    {
+        arrow::flight::protocol::sql::CommandGetPrimaryKeys command;
+        any_msg.UnpackTo(&command);
+
+        std::vector<std::string> where;
+        where.push_back("database = '" + (command.has_db_schema() ? command.db_schema() : "default") + "'");
+        where.push_back("name = '" + command.table() + "'");
+        auto where_expression = where.empty() ? "" : " WHERE " + boost::algorithm::join(where, " AND ");
+
+        sql =
+            "SELECT "
+                "NULL::Nullable(String) AS catalog_name, "
+                "database AS schema_name, "
+                "name AS table_name, "
+                "(arrayJoin(arrayMap((x, y) -> (trimBoth(x), y), splitByChar(',', primary_key) AS p_keys, arrayEnumerate(p_keys))) AS p_key).1 AS column_name, "
+                "p_key.2 AS key_seq, "
+                "NULL::Nullable(String) AS pk_name "
+            "FROM system.tables "
+            + where_expression;
+    }
+    else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetTables>())
+    {
+        arrow::flight::protocol::sql::CommandGetTables command;
+        any_msg.UnpackTo(&command);
+
+        std::vector<std::string> where;
+        if (command.has_db_schema_filter_pattern())
+            where.push_back("database LIKE '" + command.db_schema_filter_pattern() + "'");
+        if (command.has_table_name_filter_pattern())
+            where.push_back("table LIKE '" + command.table_name_filter_pattern() + "'");
+        auto where_expression = where.empty() ? "" : " WHERE " + boost::algorithm::join(where, " AND ");
+
+        if (command.include_schema())
+        {
+            sql =
+                "SELECT "
+                    "NULL::Nullable(String) AS catalog_name, "
+                    "database::Nullable(String) AS db_schema_name, "
+                    "table AS table_name, "
+                    "engine AS table_type, "
+                    "table_schema "
+                "FROM system.tables AS left "
+                "LEFT JOIN "
+                "("
+                    "SELECT "
+                        "database, "
+                        "table, "
+                        "arraySort((x, y) -> y, groupArray((name, type)), groupArray(position)) AS table_schema "
+                    "FROM system.columns "
+                    "GROUP BY "
+                        "database, "
+                        "table"
+                ") AS right ON left.database = right.database AND left.table = right.table";
+
+            schema_modifier = [](std::shared_ptr<arrow::Schema> table_schema)
+            {
+                const auto & table_schema_field = table_schema->field(4);
+                return table_schema->SetField(4, std::make_shared<arrow::Field>(table_schema_field->name(), arrow::binary(), table_schema_field->nullable()));
+            };
+
+            block_modifier = [](Block & block)
+            {
+                const auto & table_scheme_column = block.getByPosition(4);
+                auto new_column = ColumnString::create();
+                const auto & arr = typeid_cast<const ColumnArray &>(*table_scheme_column.column);
+                const auto & tuple_col = typeid_cast<const ColumnTuple &>(arr.getData());
+                const auto & name_col = typeid_cast<const ColumnString &>(tuple_col.getColumn(0));
+                const auto & type_col = typeid_cast<const ColumnString &>(tuple_col.getColumn(1));
+                for (size_t i = 0; i < table_scheme_column.column->size(); ++i)
+                {
+                    ColumnsWithTypeAndName table_columns;
+                    auto start = i ? arr.getOffsets()[i - 1] : 0;
+                    auto end = arr.getOffsets()[i];
+                    for (size_t j = 0; j < end - start; ++j)
+                    {
+                        const auto name = name_col.getDataAt(start + j);
+                        const auto type = type_col.getDataAt(start + j);
+
+                        auto data_type = DataTypeFactory::instance().get(String(type));
+                        table_columns.emplace_back(nullptr, data_type, String(name));
+                    }
+                    auto table_schema = CHColumnToArrowColumn::calculateArrowSchema(table_columns, "Arrow", nullptr, {.output_string_as_string = true});
+                    auto serialized_buffer = arrow::ipc::SerializeSchema(*table_schema, arrow::default_memory_pool()).ValueOrDie();
+                    new_column->insertData(reinterpret_cast<const char *>(serialized_buffer->data()), serialized_buffer->size());
+                }
+
+                block.erase(4);
+                block.insert(ColumnWithTypeAndName(std::move(new_column), std::make_shared<DataTypeString>(), table_scheme_column.name));
+            };
+        }
+        else
+            sql = "SELECT NULL::Nullable(String) AS catalog_name, database::Nullable(String) AS db_schema_name, table AS table_name, engine AS table_type FROM system.tables" + where_expression;
+    }
+    else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetTableTypes>())
+    {
+        sql = "SELECT name AS table_type FROM system.table_engines";
+    }
+    else if (any_msg.Is<arrow::flight::protocol::sql::CommandStatementQuery>())
+    {
+        arrow::flight::protocol::sql::CommandStatementQuery command;
+        any_msg.UnpackTo(&command);
+        sql = command.query();
+    }
+
+    return CommandSelectorTuple{sql, schema_modifier, block_modifier};
 }
 
 arrow::Status ArrowFlightHandler::GetFlightInfo(
@@ -930,10 +1538,17 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
     {
         LOG_INFO(log, "GetFlightInfo is called for descriptor {}", request.ToString());
 
-        std::vector<arrow::flight::FlightEndpoint> endpoints;
-        int64_t total_rows = 0;
-        int64_t total_bytes = 0;
-        std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter;
+        const auto & auth = AuthMiddleware::get(context);
+        auto session = authenticate(auth, server.context());
+        /// Close session (if any) after processing the request
+        bool close_session = auth.sessionClose() && server.config().getBool("enable_arrow_close_session", true);
+        SCOPE_EXIT_SAFE({ releaseOrCloseSession(session, auth.sessionId(), close_session); });
+
+        std::string sql;
+        std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier;
+        std::function<void(Block &)> block_modifier;
+        std::shared_ptr<arrow::Table> table;
+        std::shared_ptr<arrow::Schema> schema;
 
         if ((request.type == arrow::flight::FlightDescriptor::CMD) && hasPollDescriptorPrefix(request.cmd))
         {
@@ -941,52 +1556,71 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
         }
         else
         {
-            auto sql_res = convertGetDescriptorToSQL(request);
-            ARROW_RETURN_NOT_OK(sql_res);
-            const String & sql = sql_res.ValueOrDie();
-
-            Session session{server.context(), ClientInfo::Interface::ARROW_FLIGHT};
-
-            const auto & auth = AuthMiddleware::get(context);
-            session.authenticate(auth.username(), auth.password(), getClientAddress(context));
-
-            auto query_context = session.makeQueryContext();
-            query_context->setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
-            CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
-
-            auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
-            try
+            if (
+                google::protobuf::Any any_msg;
+                    request.type == arrow::flight::FlightDescriptor::CMD
+                    && !request.cmd.empty()
+                    && any_msg.ParseFromArray(request.cmd.data(), static_cast<int>(request.cmd.size()))
+            )
             {
-                ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
-                ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
-
-                PullingPipelineExecutor executor{block_io.pipeline};
-                ch_to_arrow_converter = createCHToArrowConverter(executor.getHeader());
-
-                Block block;
-                while (executor.pull(block))
+                auto res = commandSelector(any_msg);
+                if (const auto * command_selector_tuple = std::get_if<0>(&res))
+                    std::tie(sql, schema_modifier, block_modifier) = *command_selector_tuple;
+                else if (const auto * result_table = std::get_if<1>(&res))
                 {
-                    if (!block.empty())
-                    {
-                        total_rows += block.rows();
-                        total_bytes += block.bytes();
-                        auto ticket_info = calls_data->createTicket(std::make_shared<Block>(std::move(block)), ch_to_arrow_converter);
-                        arrow::flight::FlightEndpoint endpoint;
-                        endpoint.ticket = arrow::flight::Ticket{.ticket = ticket_info->ticket};
-                        endpoint.expiration_time = ticket_info->expiration_time;
-                        endpoints.emplace_back(endpoint);
-                    }
+                    ARROW_RETURN_NOT_OK(*result_table);
+                    table = result_table->ValueUnsafe();
                 }
-                block_io.onFinish();
             }
-            catch (...)
+
+
+            if (!table && sql.empty())
             {
-                block_io.onException();
-                throw;
+                auto sql_res = convertGetDescriptorToSQL(request);
+                ARROW_RETURN_NOT_OK(sql_res);
+                sql = sql_res.ValueUnsafe();
             }
         }
 
-        auto schema = ch_to_arrow_converter->getArrowSchema();
+        std::vector<arrow::flight::FlightEndpoint> endpoints;
+        int64_t total_rows = 0;
+        int64_t total_bytes = 0;
+
+        if (table)
+        {
+            schema = table->schema();
+            total_rows = table->num_rows();
+            total_bytes = calculateTableBytes(table);
+            auto ticket_info = calls_data->createTicket(table);
+            arrow::flight::FlightEndpoint endpoint;
+            endpoint.ticket = arrow::flight::Ticket{.ticket = ticket_info->ticket};
+            endpoint.expiration_time = ticket_info->expiration_time;
+            endpoints.emplace_back(endpoint);
+        }
+        else
+        {
+            // We generate a table for every chunk of data, which then produces ticket for every table
+            // so clients can parallelize data retrieval.
+            // However, it's unclear if this is necessary since we later indicate that data is ordered
+            // and all endpoints are local. This forces clients to request data through the same connection,
+            // and even with gRPC, clients are forced to prioritize the order.
+            // TODO: Consider single ticket optimization for ordered local data to reduce overhead (executeSQLtoTable)
+            auto execute_res = executeSQLtoTables(session, sql, schema_modifier, block_modifier);
+            ARROW_RETURN_NOT_OK(execute_res);
+            std::vector<std::shared_ptr<arrow::Table>> tables;
+            std::tie(schema, tables) = execute_res.ValueUnsafe();
+
+            for (auto & t : tables)
+            {
+                total_rows += t->num_rows();
+                total_bytes += calculateTableBytes(t);
+                auto ticket_info = calls_data->createTicket(t);
+                arrow::flight::FlightEndpoint endpoint;
+                endpoint.ticket = arrow::flight::Ticket{.ticket = ticket_info->ticket};
+                endpoint.expiration_time = ticket_info->expiration_time;
+                endpoints.emplace_back(endpoint);
+            }
+        }
 
         auto flight_info_res = arrow::flight::FlightInfo::Make(
             *schema,
@@ -1009,12 +1643,19 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
 arrow::Status ArrowFlightHandler::GetSchema(
     const arrow::flight::ServerCallContext & context,
     const arrow::flight::FlightDescriptor & request,
-    std::unique_ptr<arrow::flight::SchemaResult> * schema)
+    std::unique_ptr<arrow::flight::SchemaResult> * schema_result)
 {
     auto impl = [&]
     {
         LOG_INFO(log, "GetSchema is called for descriptor {}", request.ToString());
-        std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter;
+
+        const auto & auth = AuthMiddleware::get(context);
+        auto session = authenticate(auth, server.context());
+        /// Close http session (if any) after processing the request
+        bool close_session = auth.sessionClose() && server.config().getBool("enable_arrow_close_session", true);
+        SCOPE_EXIT_SAFE({ releaseOrCloseSession(session, auth.sessionId(), close_session); });
+
+        std::shared_ptr<arrow::Schema> schema;
 
         if ((request.type == arrow::flight::FlightDescriptor::CMD) && hasPollDescriptorPrefix(request.cmd))
         {
@@ -1023,35 +1664,66 @@ arrow::Status ArrowFlightHandler::GetSchema(
             auto poll_info_res = calls_data->getPollDescriptorInfo(poll_descriptor);
             ARROW_RETURN_NOT_OK(poll_info_res);
             const auto & poll_info = poll_info_res.ValueOrDie();
-            ch_to_arrow_converter = poll_info->ch_to_arrow_converter;
+            schema = poll_info->schema;
         }
         else
         {
-            auto sql_res = convertGetDescriptorToSQL(request);
-            ARROW_RETURN_NOT_OK(sql_res);
-            const String & sql = sql_res.ValueOrDie();
+            std::string sql;
+            std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier;
+            std::function<void(Block &)> block_modifier;
+            std::shared_ptr<arrow::Table> table;
 
-            Session session{server.context(), ClientInfo::Interface::ARROW_FLIGHT};
+            if (
+                google::protobuf::Any any_msg;
+                    request.type == arrow::flight::FlightDescriptor::CMD
+                    && !request.cmd.empty()
+                    && any_msg.ParseFromArray(request.cmd.data(), static_cast<int>(request.cmd.size()))
+            )
+            {
+                auto res = commandSelector(any_msg, true);
+                if (const auto * command_selector_tuple = std::get_if<0>(&res))
+                    std::tie(sql, schema_modifier, block_modifier) = *command_selector_tuple;
+                else if (const auto * result_table = std::get_if<1>(&res))
+                {
+                    ARROW_RETURN_NOT_OK(*result_table);
+                    schema = result_table->ValueUnsafe()->schema();
+                }
+            }
 
-            const auto & auth = AuthMiddleware::get(context);
-            session.authenticate(auth.username(), auth.password(), getClientAddress(context));
+            if (!schema)
+            {
+                if (sql.empty())
+                {
+                    auto sql_res = convertGetDescriptorToSQL(request);
+                    ARROW_RETURN_NOT_OK(sql_res);
+                    sql = sql_res.ValueUnsafe();
+                }
 
-            auto query_context = session.makeQueryContext();
-            query_context->setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
-            CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
+                auto query_context = session->makeQueryContext();
+                query_context->setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
+                CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
 
-            auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
-            ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
-            ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
+                auto [ast, block_io] = executeQuery(sql, query_context, QueryFlags{}, QueryProcessingStage::Complete);
+                ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
+                ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
-            ch_to_arrow_converter = createCHToArrowConverter(block_io.pipeline.getHeader());
+                PullingPipelineExecutor executor{block_io.pipeline};
+
+                schema = CHColumnToArrowColumn::calculateArrowSchema(executor.getHeader().getColumnsWithTypeAndName(), "Arrow", nullptr, {.output_string_as_string = true});
+                if (schema_modifier)
+                {
+                    auto status = schema_modifier(schema);
+                    ARROW_RETURN_NOT_OK(status);
+                    schema = status.ValueUnsafe();
+                }
+            }
         }
 
-        auto schema_res = arrow::flight::SchemaResult::Make(*ch_to_arrow_converter->getArrowSchema());
+        auto schema_res = arrow::flight::SchemaResult::Make(*schema);
         ARROW_RETURN_NOT_OK(schema_res);
-        *schema = std::make_unique<arrow::flight::SchemaResult>(*std::move(schema_res).ValueOrDie());
+        *schema_result = std::make_unique<arrow::flight::SchemaResult>(*std::move(schema_res).ValueUnsafe());
 
-        LOG_INFO(log, "GetSchema returns schema {}", ch_to_arrow_converter->getArrowSchema()->ToString());
+        LOG_INFO(log, "GetSchema returns schema {}", schema->ToString());
         return arrow::Status::OK();
     };
     return tryRunAndLogIfError("GetSchema", impl);
@@ -1067,8 +1739,19 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
     {
         LOG_INFO(log, "PollFlightInfo is called for descriptor {}", request.ToString());
 
+        const auto & auth = AuthMiddleware::get(context);
+        auto session = authenticate(auth, server.context());
+        /// Close session (if any) after processing the request
+        bool close_session = auth.sessionClose() && server.config().getBool("enable_arrow_close_session", true);
+        SCOPE_EXIT_SAFE({ releaseOrCloseSession(session, auth.sessionId(), close_session); });
+
+        std::string sql;
+        std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier;
+        std::function<void(Block &)> block_modifier;
+        std::shared_ptr<arrow::Table> table;
+
         std::shared_ptr<const PollDescriptorInfo> poll_info;
-        std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter;
+        std::shared_ptr<arrow::Schema> schema;
         std::optional<PollDescriptorWithExpirationTime> next_poll_descriptor;
         bool should_cancel_poll_descriptor = false;
 
@@ -1080,21 +1763,54 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
             auto poll_info_res = calls_data->getPollDescriptorInfo(poll_descriptor);
             ARROW_RETURN_NOT_OK(poll_info_res);
             poll_info = poll_info_res.ValueOrDie();
-            ch_to_arrow_converter = poll_info->ch_to_arrow_converter;
+            schema = poll_info->schema;
             if (poll_info->next_poll_descriptor)
                 next_poll_descriptor = calls_data->getPollDescriptorWithExpirationTime(*poll_info->next_poll_descriptor);
             should_cancel_poll_descriptor = cancel_poll_descriptor_after_poll_flight_info;
         }
         else
         {
-            auto sql_res = convertGetDescriptorToSQL(request);
-            ARROW_RETURN_NOT_OK(sql_res);
-            const String & sql = sql_res.ValueOrDie();
+            if (
+                google::protobuf::Any any_msg;
+                    request.type == arrow::flight::FlightDescriptor::CMD
+                    && !request.cmd.empty()
+                    && any_msg.ParseFromArray(request.cmd.data(), static_cast<int>(request.cmd.size()))
+            )
+            {
+                auto res = commandSelector(any_msg);
+                if (const auto * command_selector_tuple = std::get_if<0>(&res))
+                    std::tie(sql, schema_modifier, block_modifier) = *command_selector_tuple;
+                else if (const auto * result_table = std::get_if<1>(&res))
+                {
+                    ARROW_RETURN_NOT_OK(*result_table);
+                    table = result_table->ValueUnsafe();
+                }
+            }
 
-            auto session = std::make_unique<Session>(server.context(), ClientInfo::Interface::ARROW_FLIGHT);
+            if (table)
+            {
+                auto ticket_info = calls_data->createTicket(table);
+                std::vector<arrow::flight::FlightEndpoint> endpoints;
+                arrow::flight::FlightEndpoint endpoint;
+                endpoint.ticket = arrow::flight::Ticket{.ticket = ticket_info->ticket};
+                endpoint.expiration_time = ticket_info->expiration_time;
+                endpoints.emplace_back(endpoint);
 
-            const auto & auth = AuthMiddleware::get(context);
-            session->authenticate(auth.username(), auth.password(), getClientAddress(context));
+                auto flight_info_res = arrow::flight::FlightInfo::Make(*table->schema(), request, endpoints, table->num_rows(), calculateTableBytes(table), /* ordered = */ true);
+                ARROW_RETURN_NOT_OK(flight_info_res);
+                auto flight_info = std::make_unique<arrow::flight::FlightInfo>(flight_info_res.ValueOrDie());
+                *info = std::make_unique<arrow::flight::PollInfo>(std::move(flight_info), std::nullopt, std::nullopt, std::nullopt);
+
+                LOG_INFO(log, "PollFlightInfo returns {}", (*info)->ToString());
+                return arrow::Status::OK();
+            }
+
+            if (sql.empty())
+            {
+                auto sql_res = convertGetDescriptorToSQL(request);
+                ARROW_RETURN_NOT_OK(sql_res);
+                sql = sql_res.ValueUnsafe();
+            }
 
             auto query_context = session->makeQueryContext();
             query_context->setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
@@ -1108,12 +1824,10 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
                 ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
                 ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
-                ch_to_arrow_converter = createCHToArrowConverter(block_io.pipeline.getHeader());
+                auto poll_session = std::make_unique<PollSession>(query_context, thread_group, std::move(block_io), schema_modifier, block_modifier);
+                schema = poll_session->getSchema();
 
-                auto poll_session = std::make_unique<PollSession>(std::move(session), query_context, thread_group, std::move(block_io),
-                                                                  ch_to_arrow_converter);
-
-                auto next_info = calls_data->createPollDescriptor(std::move(poll_session), /* previous_info = */ nullptr);
+                auto next_info = calls_data->createPollDescriptor(std::move(poll_session), /* previous_info = */ nullptr, query_context->getCurrentQueryId());
                 next_poll_descriptor = *next_info;
             }
             catch (...)
@@ -1144,13 +1858,9 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
         }
         std::reverse(endpoints.begin(), endpoints.end());
 
-        std::unique_ptr<arrow::flight::FlightInfo> flight_info;
-        if (!endpoints.empty())
-        {
-            auto flight_info_res = arrow::flight::FlightInfo::Make(*ch_to_arrow_converter->getArrowSchema(), request, endpoints, total_rows, total_bytes, /* ordered = */ true);
-            ARROW_RETURN_NOT_OK(flight_info_res);
-            flight_info = std::make_unique<arrow::flight::FlightInfo>(flight_info_res.ValueOrDie());
-        }
+        auto flight_info_res = arrow::flight::FlightInfo::Make(*schema, request, endpoints, total_rows, total_bytes, /* ordered = */ true);
+        ARROW_RETURN_NOT_OK(flight_info_res);
+        std::unique_ptr<arrow::flight::FlightInfo> flight_info = std::make_unique<arrow::flight::FlightInfo>(flight_info_res.ValueOrDie());
 
         std::optional<arrow::flight::FlightDescriptor> next;
         std::optional<Timestamp> expiration_time;
@@ -1195,12 +1905,11 @@ arrow::Status ArrowFlightHandler::evaluatePollDescriptor(const String & poll_des
     }
 
     ThreadGroupSwitcher thread_group_switcher{poll_session->getThreadGroup(), ThreadName::ARROW_FLIGHT};
-    auto ch_to_arrow_converter = poll_session->getCHToArrowConverter();
     bool last = false;
 
     try
     {
-        String ticket;
+        std::optional<String> ticket;
         UInt64 rows = 0;
         UInt64 bytes = 0;
         Block block;
@@ -1208,9 +1917,13 @@ arrow::Status ArrowFlightHandler::evaluatePollDescriptor(const String & poll_des
         {
             if (!block.empty())
             {
+                auto header = getHeader(block.getColumnsWithTypeAndName());
                 rows = block.rows();
                 bytes = block.bytes();
-                auto ticket_info = calls_data->createTicket(std::make_shared<Block>(std::move(block)), ch_to_arrow_converter);
+                std::vector<Chunk> chunks;
+                chunks.emplace_back(Chunk{std::move(block).getColumns(), rows});
+                std::shared_ptr<arrow::Table> table = CHColumnToArrowColumn::chunkToArrowTable(header, "Arrow", chunks, {.output_string_as_string = true}, header.size(), poll_session->getSchema());
+                auto ticket_info = calls_data->createTicket(table);
                 ticket = ticket_info->ticket;
             }
         }
@@ -1234,7 +1947,9 @@ arrow::Status ArrowFlightHandler::evaluatePollDescriptor(const String & poll_des
     auto info_res = calls_data->getPollDescriptorInfo(poll_descriptor);
     ARROW_RETURN_NOT_OK(info_res);
     const auto & info = info_res.ValueOrDie();
-    if (!last)
+    if (last)
+        calls_data->eraseFlightDescriptorMapByDescriptor(poll_descriptor);
+    else
         calls_data->createPollDescriptor(std::move(poll_session), info);
 
     return arrow::Status::OK();
@@ -1249,32 +1964,29 @@ arrow::Status ArrowFlightHandler::DoGet(
     auto impl = [&]
     {
         LOG_INFO(log, "DoGet is called for ticket {}", request.ticket);
-
-        Block header;
         std::vector<Chunk> chunks;
-        std::shared_ptr<CHColumnToArrowColumn> ch_to_arrow_converter;
+        std::shared_ptr<arrow::Table> table;
         bool should_cancel_ticket = false;
+
+        const auto & auth = AuthMiddleware::get(context);
+        auto session = authenticate(auth, server.context());
+        /// Close session (if any) after processing the request
+        bool close_session = auth.sessionClose() && server.config().getBool("enable_arrow_close_session", true);
+        SCOPE_EXIT_SAFE({ releaseOrCloseSession(session, auth.sessionId(), close_session); });
 
         if (hasTicketPrefix(request.ticket))
         {
             auto ticket_info_res = calls_data->getTicketInfo(request.ticket);
             ARROW_RETURN_NOT_OK(ticket_info_res);
             const auto & ticket_info = ticket_info_res.ValueOrDie();
-            chunks.emplace_back(Chunk(ticket_info->block->getColumns(), ticket_info->block->rows()));
-            header = ticket_info->block->cloneEmpty();
-            ch_to_arrow_converter = ticket_info->ch_to_arrow_converter->clone(/* copy_arrow_schema = */ true);
+            table = ticket_info->arrow_table;
             should_cancel_ticket = cancel_ticket_after_do_get;
         }
         else
         {
             const String & sql = request.ticket;
 
-            Session session{server.context(), ClientInfo::Interface::ARROW_FLIGHT};
-
-            const auto & auth = AuthMiddleware::get(context);
-            session.authenticate(auth.username(), auth.password(), getClientAddress(context));
-
-            auto query_context = session.makeQueryContext();
+            auto query_context = session->makeQueryContext();
             query_context->setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
             CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
 
@@ -1290,8 +2002,9 @@ arrow::Status ArrowFlightHandler::DoGet(
                 while (executor.pull(block))
                     chunks.emplace_back(Chunk(block.getColumns(), block.rows()));
 
-                header = executor.getHeader();
-                ch_to_arrow_converter = createCHToArrowConverter(header);
+                auto header = executor.getHeader();
+                auto ch_to_arrow_converter = createCHToArrowConverter(header);
+                ch_to_arrow_converter->chChunkToArrowTable(table, chunks, header.columns());
                 block_io.onFinish();
             }
             catch (...)
@@ -1301,12 +2014,8 @@ arrow::Status ArrowFlightHandler::DoGet(
             }
         }
 
-        std::shared_ptr<arrow::Table> arrow_table;
-        ch_to_arrow_converter->chChunkToArrowTable(arrow_table, chunks, header.columns());
-
         auto stream_res = arrow::RecordBatchReader::MakeFromIterator(
-            arrow::Iterator<std::shared_ptr<arrow::RecordBatch>>{arrow::TableBatchReader{arrow_table}},
-            ch_to_arrow_converter->getArrowSchema());
+            arrow::Iterator<std::shared_ptr<arrow::RecordBatch>>{arrow::TableBatchReader{table}}, table->schema());
         ARROW_RETURN_NOT_OK(stream_res);
         *stream = std::make_unique<arrow::flight::RecordBatchStream>(stream_res.ValueOrDie());
 
@@ -1323,23 +2032,67 @@ arrow::Status ArrowFlightHandler::DoGet(
 arrow::Status ArrowFlightHandler::DoPut(
     const arrow::flight::ServerCallContext & context,
     std::unique_ptr<arrow::flight::FlightMessageReader> reader,
-    std::unique_ptr<arrow::flight::FlightMetadataWriter> /*writer*/)
+    std::unique_ptr<arrow::flight::FlightMetadataWriter> writer)
 {
     auto impl = [&]
     {
-        const auto & descriptor = reader->descriptor();
-        LOG_INFO(log, "DoPut is called for descriptor {}", descriptor.ToString());
-
-        auto sql_res = convertPutDescriptorToSQL(descriptor);
-        ARROW_RETURN_NOT_OK(sql_res);
-        const String & sql = sql_res.ValueOrDie();
-
-        Session session{server.context(), ClientInfo::Interface::ARROW_FLIGHT};
+        const auto & request = reader->descriptor();
+        LOG_INFO(log, "DoPut is called for descriptor {}", request.ToString());
 
         const auto & auth = AuthMiddleware::get(context);
-        session.authenticate(auth.username(), auth.password(), getClientAddress(context));
+        auto session = authenticate(auth, server.context());
+        /// Close session (if any) after processing the request
+        bool close_session = auth.sessionClose() && server.config().getBool("enable_arrow_close_session", true);
+        SCOPE_EXIT_SAFE({ releaseOrCloseSession(session, auth.sessionId(), close_session); });
 
-        auto query_context = session.makeQueryContext();
+        std::string sql;
+
+        if (
+            google::protobuf::Any any_msg;
+                request.type == arrow::flight::FlightDescriptor::CMD
+                && !request.cmd.empty()
+                && any_msg.ParseFromArray(request.cmd.data(), static_cast<int>(request.cmd.size()))
+        )
+        {
+            if (any_msg.Is<arrow::flight::protocol::sql::CommandStatementUpdate>())
+            {
+                arrow::flight::protocol::sql::CommandStatementUpdate command;
+                any_msg.UnpackTo(&command);
+                sql = command.query();
+            }
+            else if (any_msg.Is<arrow::flight::protocol::sql::CommandStatementIngest>())
+            {
+                using CommandStatementIngest = arrow::flight::protocol::sql::CommandStatementIngest;
+                CommandStatementIngest command;
+                any_msg.UnpackTo(&command);
+                if (command.has_table_definition_options())
+                {
+                    const auto & options = command.table_definition_options();
+                    if (options.if_not_exist() != CommandStatementIngest::TableDefinitionOptions::TABLE_NOT_EXIST_OPTION_FAIL ||
+                        options.if_exists() != CommandStatementIngest::TableDefinitionOptions::TABLE_EXISTS_OPTION_APPEND)
+                    {
+                        return arrow::Status::NotImplemented("Only appending to existing tables is supported (TABLE_NOT_EXIST_OPTION_FAIL + TABLE_EXISTS_OPTION_APPEND)");
+                    }
+                }
+
+                if (command.has_catalog())
+                    return arrow::Status::NotImplemented("Catalogs are not supported.");
+
+                if (command.temporary())
+                    return arrow::Status::NotImplemented("Implicit temporary tables are not supported.");
+
+                sql = "INSERT INTO " + (command.has_schema() ? command.schema() + "." : "") + command.table() + " FORMAT Arrow";
+            }
+        }
+
+        if (sql.empty())
+        {
+            auto sql_res = convertPutDescriptorToSQL(request);
+            ARROW_RETURN_NOT_OK(sql_res);
+            sql = sql_res.ValueOrDie();
+        }
+
+        auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
         CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
 
@@ -1362,10 +2115,18 @@ arrow::Status ArrowFlightHandler::DoPut(
                 pipeline.complete(std::move(output));
             }
 
-            CompletedPipelineExecutor executor(pipeline);
-            executor.execute();
-            LOG_INFO(log, "DoPut succeeded");
+            if (pipeline.completed())
+            {
+                CompletedPipelineExecutor executor(pipeline);
+                executor.execute();
+            }
+
+            arrow::flight::protocol::sql::DoPutUpdateResult update_result;
+            update_result.set_record_count(query_context->getProcessListElement()->getInfo().written_rows);
+            ARROW_RETURN_NOT_OK(writer->WriteMetadata(*arrow::Buffer::FromString(update_result.SerializeAsString())));
+
             block_io.onFinish();
+            LOG_INFO(log, "DoPut succeeded");
         }
         catch (...)
         {
@@ -1399,11 +2160,124 @@ arrow::Status ArrowFlightHandler::tryRunAndLogIfError(std::string_view method_na
 
 
 arrow::Status ArrowFlightHandler::DoAction(
-    const arrow::flight::ServerCallContext & /*context*/,
-    const arrow::flight::Action & /*action*/,
-    std::unique_ptr<arrow::flight::ResultStream> * /*result*/)
+    const arrow::flight::ServerCallContext & context,
+    const arrow::flight::Action & action,
+    std::unique_ptr<arrow::flight::ResultStream> * result_stream)
 {
-    return arrow::Status::NotImplemented("NYI");
+    auto impl = [&]
+    {
+        LOG_INFO(log, "DoAction is called for action {} {}", action.type, action.ToString());
+
+        const auto & auth = AuthMiddleware::get(context);
+        auto session = authenticate(auth, server.context());
+        /// Close session (if any) after processing the request
+        bool close_session = auth.sessionClose() && server.config().getBool("enable_arrow_close_session", true);
+        SCOPE_EXIT_SAFE({ releaseOrCloseSession(session, auth.sessionId(), close_session); });
+
+        std::vector<arrow::flight::Result> results;
+
+        if (action.type == arrow::flight::ActionType::kCancelFlightInfo.type)
+        {
+            auto request = arrow::flight::CancelFlightInfoRequest::Deserialize({action.body->data_as<char>(), static_cast<size_t>(action.body->size())}).ValueOrDie();
+            auto query_id = calls_data->getQueryIdFromFlightDescriptor(request.info->descriptor().cmd);
+            auto result = arrow::flight::CancelFlightInfoResult{arrow::flight::CancelStatus::kNotCancellable};
+            if (query_id)
+            {
+                calls_data->eraseFlightDescriptorMapByQueryId(*query_id);
+                auto& process_list = server.context()->getProcessList();
+                auto cancel_result = process_list.sendCancelToQuery(*query_id, auth.username());
+                if (cancel_result == CancellationCode::CancelSent)
+                    result = arrow::flight::CancelFlightInfoResult{arrow::flight::CancelStatus::kCancelled};
+            }
+
+            ARROW_ASSIGN_OR_RAISE(auto serialized, result.SerializeToString())
+            ARROW_ASSIGN_OR_RAISE(auto packed_result, arrow::Result<arrow::flight::Result>{arrow::flight::Result{arrow::Buffer::FromString(std::move(serialized))}})
+
+            results.push_back(std::move(packed_result));
+        }
+        else if (action.type == arrow::flight::ActionType::kSetSessionOptions.type)
+        {
+            auto request = arrow::flight::SetSessionOptionsRequest::Deserialize({action.body->data_as<char>(), static_cast<size_t>(action.body->size())}).ValueOrDie();
+            arrow::flight::SetSessionOptionsResult result;
+
+            auto query_context = session->makeQueryContext();
+            query_context->setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
+            CurrentThread::QueryScope query_scope = CurrentThread::QueryScope::create(query_context);
+
+            auto visitor = overloaded {
+                [](const std::monostate &) { return std::string(); },
+                [](const std::string & str) { return fmt::format("='{}'", str); },
+                [](bool b) { return fmt::format("={}", b ? "true" : "false"); },
+                [](const std::vector<std::string> & strings) { return strings.empty() ? "=[]" : "=['" + boost::join(strings, "','")  + "']"; },
+                [](const auto & v) { return fmt::format("={}", v); }
+            };
+
+            for (const auto & [setting, value] : request.session_options)
+            {
+                auto set_query = "SET " + setting + std::visit(visitor, value);
+                std::optional<BlockIO> block_io;
+                try
+                {
+                    auto [ast, bio] = executeQuery(set_query, query_context, QueryFlags{}, QueryProcessingStage::Complete);
+                    block_io = std::move(bio);
+                }
+                catch (DB::Exception & e)
+                {
+                    auto error_value = [&]()
+                    {
+                        if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED || e.code() == ErrorCodes::SYNTAX_ERROR)
+                            return arrow::flight::SetSessionOptionErrorValue::kInvalidValue;
+                        else if (e.code() == ErrorCodes::UNKNOWN_SETTING)
+                            return arrow::flight::SetSessionOptionErrorValue::kInvalidName;
+                        else
+                            return arrow::flight::SetSessionOptionErrorValue::kUnspecified;
+                    }();
+
+                    result.errors[setting] = arrow::flight::SetSessionOptionsResult::Error{error_value};
+                }
+                catch (...)
+                {
+                    if (block_io)
+                        block_io->onException();
+                    throw;
+                }
+
+                if (block_io)
+                    block_io->onFinish();
+            }
+
+            ARROW_ASSIGN_OR_RAISE(auto serialized, result.SerializeToString())
+            ARROW_ASSIGN_OR_RAISE(auto packed_result, arrow::Result<arrow::flight::Result>{arrow::flight::Result{arrow::Buffer::FromString(std::move(serialized))}})
+
+            results.push_back(std::move(packed_result));
+        }
+        else if (action.type == arrow::flight::ActionType::kGetSessionOptions.type)
+        {
+            arrow::flight::GetSessionOptionsRequest::Deserialize({action.body->data_as<char>(), static_cast<size_t>(action.body->size())}).ValueOrDie();
+            arrow::flight::GetSessionOptionsResult result;
+
+            auto execute_res = executeSQLtoTable(session, "SHOW SETTINGS LIKE '%'");
+            ARROW_RETURN_NOT_OK(execute_res);
+            auto [_, table] = execute_res.ValueUnsafe();
+            for (int64_t i = 0; i < table->num_rows(); ++i)
+            {
+                auto name = static_cast<arrow::StringScalar&>(*table->column(0)->GetScalar(i).ValueOrDie()).ToString();
+                auto value = static_cast<arrow::StringScalar&>(*table->column(2)->GetScalar(i).ValueOrDie()).ToString();
+                result.session_options[name] = value;
+            }
+
+            ARROW_ASSIGN_OR_RAISE(auto serialized, result.SerializeToString())
+            ARROW_ASSIGN_OR_RAISE(auto packed_result, arrow::Result<arrow::flight::Result>{arrow::flight::Result{arrow::Buffer::FromString(std::move(serialized))}})
+
+            results.push_back(std::move(packed_result));
+        }
+        else
+            return arrow::Status::NotImplemented(action.type, " is not supported");
+
+        *result_stream = std::make_unique<arrow::flight::SimpleResultStream>(std::move(results));
+        return arrow::Status::OK();
+    };
+    return tryRunAndLogIfError("DoAction", impl);
 }
 
 }

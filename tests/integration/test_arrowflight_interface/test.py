@@ -192,7 +192,7 @@ def test_doput_cmd_insert_invalid_format():
         writer.close()
         assert False, "Expected to fail because of a wrong format but succeeded"
     except flight.FlightServerError as e:
-        assert "Invalid format, only 'Arrow' format is supported" in str(e)
+        assert "Invalid format (JSON), only 'Arrow' format is supported" in str(e)
 
 
 # INSERT queries without the FORMAT clause are considered invalid.
