@@ -2,18 +2,17 @@
 #include <Columns/ColumnMap.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeMap.h>
-
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeLowCardinality.h>
+#include <Common/SipHash.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <Parsers/IAST.h>
-#include <Common/SipHash.h>
-#include <DataTypes/>Serializations/SerializationInfoSettings.h"
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
