@@ -240,7 +240,7 @@ template<bool is_utf8>
 struct ByteEditDistanceImpl
 {
     using ResultType = UInt64;
-    using WorkigType = UInt32;
+    using WorkingType = UInt32;
 
     static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
@@ -264,22 +264,22 @@ struct ByteEditDistanceImpl
             needle_size = needle_utf8.size();
         }
 
-        PaddedPODArray<WorkigType> distances0(haystack_size + 1);
-        PaddedPODArray<WorkigType> distances1(haystack_size + 1);
+        PaddedPODArray<WorkingType> distances0(haystack_size + 1);
+        PaddedPODArray<WorkingType> distances1(haystack_size + 1);
         auto* __restrict prev = distances0.data();
         auto* __restrict curr = distances1.data();
 
-        WorkigType substitution = 0;
-        WorkigType insertion = 0;
-        WorkigType deletion = 0;
+        WorkingType substitution = 0;
+        WorkingType insertion = 0;
+        WorkingType deletion = 0;
 
-        iota(distances0.data(), haystack_size + 1, WorkigType(0));
+        iota(distances0.data(), haystack_size + 1, WorkingType(0));
 
         const auto has_tail = (haystack_size % 2) == 1;
 
         for (size_t pos_needle = 0; pos_needle < needle_size; ++pos_needle)
         {
-            curr[0] = static_cast<WorkigType>(pos_needle + 1);
+            curr[0] = static_cast<WorkingType>(pos_needle + 1);
 
             const auto needle_char = [&]{
                 if constexpr (is_utf8)
