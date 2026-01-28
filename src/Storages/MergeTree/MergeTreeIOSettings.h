@@ -69,6 +69,10 @@ struct MergeTreeReaderSettings
     size_t filesystem_prefetches_limit = 0;
     bool enable_analyzer = false;
     bool load_marks_asynchronously = false;
+    /// If true, only column sample with 0 rows will be read.
+    /// This information can be used for more optimal reading of
+    /// columns prefixes.
+    bool read_only_column_sample = false;
 
     static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove
