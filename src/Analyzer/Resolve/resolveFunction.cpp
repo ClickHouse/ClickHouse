@@ -333,25 +333,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             if (can_rewrite && names.size() == arguments.size())
             {
                 /// Create tuple('name1', 'name2', ...)(value1, value2, ...) syntax
-                auto new_function_node = std::make_shared<FunctionNode>("tuple");
+                node = node->clone();
+                function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
 
                 /// Set parameters (names)
-                auto & parameters_nodes = new_function_node->getParameters().getNodes();
+                auto & parameters_nodes = function_node_ptr->getParameters().getNodes();
                 parameters_nodes.reserve(names.size());
                 for (const auto & name : names)
                     parameters_nodes.push_back(std::make_shared<ConstantNode>(name));
 
-                /// Set arguments (keep original arguments as-is)
-                auto & new_arguments = new_function_node->getArguments().getNodes();
-                new_arguments.reserve(arguments.size());
-                for (const auto & arg : arguments)
-                    new_arguments.push_back(arg);
-
-                if (function_node_ptr->hasAlias())
-                    new_function_node->setAlias(function_node_ptr->getAlias());
-
-                node = new_function_node;
-                function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
+                /// Tuple operator with 'names' parameter is unsupported due to parser complexity.
+                function_node_ptr->markAsOperator(false);
 
                 /// Continue to resolve the new tuple function with parameters
             }
