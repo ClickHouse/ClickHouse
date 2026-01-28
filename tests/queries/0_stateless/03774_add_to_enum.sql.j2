@@ -5,9 +5,9 @@ SELECT '======= NULLABLE {{ NULLABLE_START }} {{ NULLABLE_END }} ===============
 SELECT '======= {{ ENUM_TYPE }} ===============';
 DROP TABLE IF EXISTS enum;
 CREATE TABLE enum (x {{ NULLABLE_START }}{{ ENUM_TYPE }}('One' = 1, 'Two', 'Three'){{ NULLABLE_END }}) ENGINE = Memory;
-INSERT INTO enum VALUES (0);
-SELECT * FROM enum ORDER BY x;  -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
+INSERT INTO enum VALUES (0); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
 ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Zero' = 0, 'Four' = 4);
+INSERT INTO enum VALUES (0);
 INSERT INTO enum VALUES (4);
 SELECT '======================';
 SELECT * FROM enum ORDER BY x;
