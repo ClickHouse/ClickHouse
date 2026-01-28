@@ -94,6 +94,8 @@ struct RangesInDataPart
     MarkRanges exact_ranges;
     RangesInDataPartReadHints read_hints;
 
+    std::optional<MarkRanges> ranges_snapshot_after_pk_analysis;
+
     /// Offset ranges from parent part, used during projection index reading.
     PartOffsetRanges parent_ranges;
 
