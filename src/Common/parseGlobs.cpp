@@ -1,11 +1,21 @@
 #include <Common/parseGlobs.h>
 #include <Common/re2.h>
+
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/readIntText.h>
+#include <Interpreters/Context_fwd.h>
+#include <base/arithmeticOverflow.h>
+#include <base/defines.h>
+
 #include <algorithm>
+#include <cstdlib>
+#include <limits>
+#include <optional>
 #include <sstream>
 #include <iomanip>
+#include <string_view>
 
 namespace DB
 {
@@ -13,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -46,6 +57,447 @@ bool containsOnlyEnumGlobs(const std::string & input)
 bool hasExactlyOneBracketsExpansion(const std::string & input)
 {
     return std::count(input.begin(), input.end(), '{') == 1 && containsOnlyEnumGlobs(input);
+}
+
+namespace BetterGlob
+{
+
+std::string Expression::dump() const
+{
+    switch (type())
+    {
+        case ExpressionType::CONSTANT:
+            return std::string(std::get<std::string_view>(getData()));
+        case ExpressionType::WILDCARD:
+            return dumpWildcard();
+        case ExpressionType::RANGE:
+            return dumpRange();
+        case ExpressionType::ENUM:
+            return dumpEnum();
+    }
+
+    UNREACHABLE();
+}
+
+std::string Expression::asRegex() const
+{
+    switch (type())
+    {
+        case ExpressionType::CONSTANT:
+            return escape(std::get<std::string_view>(getData()));
+        case ExpressionType::WILDCARD:
+            return wildcardAsRegex();
+        case ExpressionType::RANGE:
+            return rangeAsRegex();
+        case ExpressionType::ENUM:
+            return enumAsRegex();
+    }
+
+    UNREACHABLE();
+}
+
+std::string Expression::dumpWildcard() const
+{
+    const auto & wildcard = std::get<WildcardType>(getData());
+
+    switch (wildcard)
+    {
+        case WildcardType::QUESTION:
+            return "?";
+        case WildcardType::SINGLE_ASTERISK:
+            return "*";
+        case WildcardType::DOUBLE_ASTERISK:
+            return "**";
+    }
+
+    UNREACHABLE();
+}
+
+std::string Expression::escape(const std::string_view input) const
+{
+    WriteBufferFromOwnString buf_for_escaping;
+
+    for (const auto & letter : input)
+    {
+        if ((letter == '[') || (letter == ']') || (letter == '|') || (letter == '+') || (letter == '-') || (letter == '(') || (letter == ')') || (letter == '\\'))
+            buf_for_escaping << '\\';
+        if ((letter == '.') || (letter == '{') || (letter == '}'))
+            buf_for_escaping << '\\';
+        buf_for_escaping << letter;
+    }
+
+    return buf_for_escaping.str();
+
+}
+
+std::string Expression::wildcardAsRegex() const
+{
+    const auto & wildcard = std::get<WildcardType>(getData());
+
+    switch (wildcard)
+    {
+        case WildcardType::QUESTION:
+            return "[^/]";
+        case WildcardType::SINGLE_ASTERISK:
+            return "[^/]*";
+        case WildcardType::DOUBLE_ASTERISK:
+            return "[^{}]*";
+    }
+
+    UNREACHABLE();
+}
+
+std::string Expression::enumAsRegex() const
+{
+    const auto separator = '|';
+
+    std::string result = "(";
+    const auto & enum_values = std::get<std::vector<std::string_view>>(getData());
+
+    for (const auto & e: enum_values)
+    {
+         result += escape(e);
+         result += separator;
+    }
+
+    result.back() = ')';
+    return result;
+}
+
+std::string Expression::rangeAsRegex() const
+{
+    std::string result = "(";
+
+    const auto & range = std::get<Range>(getData());
+
+    const size_t value = std::min(range.start, range.end);
+    const size_t width = ((range.start_zero_padded && range.start_digit_count > 1) || (range.end_zero_padded && range.end_digit_count > 1))
+        ? std::max(range.start_digit_count, range.end_digit_count)
+        : 0;
+
+    for (size_t i = 0; i <= cardinality(); ++i)
+    {
+        result += fmt::format(
+            "{:0>{}}",
+            value + i,
+            width
+        );
+        result += '|';
+    }
+
+    result.back() = ')';
+
+    return result;
+}
+
+std::string Expression::dumpEnum(char separator) const
+{
+    std::string result = "{";
+    const auto & enum_values = std::get<std::vector<std::string_view>>(getData());
+
+    for (const auto & e: enum_values)
+    {
+         result += e;
+         result += separator;
+    }
+
+    result.back() = '}';
+    return result;
+}
+
+std::string Expression::dumpRange() const
+{
+    std::string result = "{";
+    const auto & range = std::get<Range>(getData());
+
+    result += fmt::format("{:0>{}}", range.start, range.start_digit_count);
+    result += "..";
+    result += fmt::format("{:0>{}}", range.end, range.end_digit_count);
+    result += "}";
+
+    return result;
+}
+
+size_t Expression::cardinality() const
+{
+    switch (type())
+    {
+        case ExpressionType::CONSTANT:
+            return 1;
+        case ExpressionType::WILDCARD:
+            return std::numeric_limits<size_t>::max();
+        case ExpressionType::ENUM:
+            return std::get<std::vector<std::string_view>>(getData()).size();
+        case ExpressionType::RANGE:
+        {
+            Range range = std::get<Range>(getData());
+            const size_t range_len = (range.start > range.end)
+                ? range.start - range.end
+                : range.end - range.start;
+            return range_len;
+        }
+    }
+
+    UNREACHABLE();
+}
+
+size_t GlobString::cardinality() const
+{
+    size_t result = 1;
+
+    for (const auto & expression : expressions)
+    {
+        size_t expression_cardinality = expression.cardinality();
+        if (expression_cardinality == std::numeric_limits<size_t>::max())
+            return std::numeric_limits<size_t>::max();
+
+        bool overflow = common::mulOverflow(result, expression_cardinality, result);
+        if (overflow)
+            return std::numeric_limits<size_t>::max();
+    }
+
+    return result;
+}
+
+bool GlobString::hasExactlyOneEnum() const
+{
+    size_t enum_counter = 0;
+
+    for (const auto & expression : expressions)
+    {
+        switch (expression.type())
+        {
+            case ExpressionType::CONSTANT:
+                continue;
+            case ExpressionType::WILDCARD:
+                return false;
+            case ExpressionType::RANGE:
+                return false;
+            case ExpressionType::ENUM:
+                enum_counter++;
+                break;
+        }
+    }
+
+    return enum_counter == 1;
+};
+
+std::string_view GlobString::consumeConstantExpression(const std::string_view & input) const
+{
+    auto first_nonconstant = input.find_first_of("{*?");
+
+    if (first_nonconstant == std::string::npos)
+        return input;
+
+    return input.substr(0, first_nonconstant);
+}
+
+std::string_view GlobString::consumeMatcher(const std::string_view & input) const
+{
+    auto first_curly_closing_brace = input.find_first_of('}');
+
+    if (first_curly_closing_brace == std::string::npos)
+        return {};
+
+    return input.substr(0, first_curly_closing_brace + 1);
+}
+
+std::vector<std::string_view> GlobString::tryParseEnumMatcher(const std::string_view & input) const
+{
+    assert(input.length() > 2);
+    assert(input.front() == '{');
+    assert(input.back() == '}');
+
+    auto separator = ',';
+
+    std::vector<std::string_view> enum_elements;
+    std::string_view contents = input.substr(1, input.length() - 2);
+
+    size_t search_start_pos = 0;
+    while (true)
+    {
+        auto next_separator_pos = contents.find(separator, search_start_pos);
+
+        if (next_separator_pos == std::string_view::npos)
+        {
+            enum_elements.emplace_back(contents.begin() + search_start_pos, contents.end());
+            break;
+        }
+
+        enum_elements.emplace_back(contents.begin() + search_start_pos, contents.begin() + next_separator_pos);
+        search_start_pos = next_separator_pos + 1;
+    }
+
+    return enum_elements;
+}
+
+std::optional<Range> GlobString::tryParseRangeMatcher(const std::string_view & input) const
+{
+    assert(input.length() > 2);
+
+    /// Range matcher must contain "..", like in "{0..10}".
+    auto double_dot_pos = input.find_first_of("..");
+    if (double_dot_pos == std::string_view::npos)
+        return std::nullopt;
+
+    Range range;
+    ReadBufferFromString read_buffer(input);
+    size_t first_digit_pos;
+
+    bool ok = true;
+
+    ok &= checkChar('{', read_buffer);
+
+    if (!ok)
+        return std::nullopt;
+
+    first_digit_pos = read_buffer.offset();
+
+    ok &= tryReadIntText(range.start, read_buffer);
+    if (!ok)
+        return std::nullopt;
+
+    range.start_digit_count = read_buffer.offset() - first_digit_pos;
+    range.start_zero_padded = input[first_digit_pos] == '0';
+
+    ok &= checkChar('.', read_buffer);
+    ok &= checkChar('.', read_buffer);
+
+    if (!ok)
+        return std::nullopt;
+
+    first_digit_pos = read_buffer.offset();
+
+    ok &= tryReadIntText(range.end, read_buffer);
+    if (!ok)
+        return std::nullopt;
+
+    range.end_digit_count = read_buffer.offset() - first_digit_pos;
+    range.end_zero_padded = input[first_digit_pos] == '0';
+
+    ok &= checkChar('}', read_buffer);
+
+    if (!ok)
+        return std::nullopt;
+
+    return range;
+}
+
+GlobString::GlobString(std::string input): input_data(std::move(input))
+{
+    parse();
+}
+
+std::string GlobString::dump() const
+{
+    std::string result;
+
+    for (const auto & e: getExpressions())
+        result += e.dump();
+
+    return result;
+}
+
+std::string GlobString::asRegex() const
+{
+    std::string result;
+
+    for (const auto & e: getExpressions())
+        result += e.asRegex();
+
+    return result;
+}
+
+void GlobString::parse()
+{
+    if (input_data.empty())
+        return;
+
+    std::string_view input = input_data;
+
+    size_t position = 0;
+    while (position < input.length())
+    {
+        if (input[position] == '?' || input[position] == '*')
+        {
+            has_globs = true;
+            has_question_or_asterisk = true;
+
+            if (position + 1 < input.length() && input[position] == input[position + 1] && input[position] == '*')
+            {
+                expressions.emplace_back(WildcardType::DOUBLE_ASTERISK);
+                position += 2;
+
+                continue;
+            }
+
+            /// FIXME move to WildcardType enum
+            switch (input[position])
+            {
+                case '?':
+                    expressions.emplace_back(WildcardType::QUESTION);
+                    break;
+                case '*':
+                    expressions.emplace_back(WildcardType::SINGLE_ASTERISK);
+                    break;
+                default:
+                    UNREACHABLE();
+            }
+            position += 1;
+
+            continue;
+        }
+        else if (input[position] == '{')  /// NOLINT
+        {
+            /// FIXME why do we even need to support double braces?
+            if (position + 1 > input.length() && input[position + 1] == '{')
+            {
+                expressions.emplace_back("{");
+                position += 1;
+            }
+
+            auto matcher_expression = consumeMatcher(input.substr(position));
+
+            auto range = tryParseRangeMatcher(matcher_expression);
+            if (range.has_value())
+            {
+                position += matcher_expression.length();
+                expressions.push_back(Expression(range.value()));
+
+                has_globs = true;
+                has_ranges = true;
+
+                continue;
+            }
+
+            auto enum_matcher = tryParseEnumMatcher(matcher_expression);
+
+            if (enum_matcher.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected an enum expression, but read 0 bytes.");  // FIXME
+
+            position += matcher_expression.length();
+            expressions.push_back(Expression(enum_matcher));
+
+            has_globs = true;
+            has_enums = true;
+
+            continue;
+        }
+        else
+        {
+            auto constant_expression = consumeConstantExpression(input.substr(position));
+
+            if (constant_expression.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a constant expression, but read 0 bytes.");  // FIXME
+
+            position += constant_expression.length();
+            expressions.push_back(Expression(constant_expression));
+
+            continue;
+        }
+    }
+}
+
 }
 
 
