@@ -14,6 +14,7 @@
 #include <Common/FieldVisitors.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <Common/StackTrace.h>
 
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
@@ -886,6 +887,7 @@ ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
         query_analysis_result.partial_sorting_limit,
         settings[Setting::exact_rows_before_limit]);
     merging_sorted->setStepDescription(description);
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}", StackTrace().toString());
     query_plan.addStep(std::move(merging_sorted));
 }
 
