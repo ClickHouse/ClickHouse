@@ -32,6 +32,7 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , reverse_flags(other.reverse_flags)
     , data_types(other.data_types)
     , additional_column(other.additional_column)
+    , sort_order_id(other.sort_order_id)
 {
     if (other.expression)
         expression = other.expression->clone();
@@ -66,6 +67,7 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
     if (additional_column.has_value() && !other.additional_column.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong key assignment, losing additional_column");
     additional_column = other.additional_column;
+    sort_order_id = other.sort_order_id;
     return *this;
 }
 
