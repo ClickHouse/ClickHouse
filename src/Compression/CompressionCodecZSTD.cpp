@@ -4,13 +4,7 @@
 #include <zstd.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -57,12 +51,13 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
 }
 
 
-void CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+UInt32 CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     size_t res = ZSTD_decompress(dest, uncompressed_size, source, source_size);
 
     if (ZSTD_isError(res))
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: {}", std::string(ZSTD_getErrorName(res)));
+    return static_cast<UInt32>(res);
 }
 
 CompressionCodecZSTD::CompressionCodecZSTD(int level_, int window_log_)
@@ -70,8 +65,10 @@ CompressionCodecZSTD::CompressionCodecZSTD(int level_, int window_log_)
     , enable_long_range(true)
     , window_log(window_log_)
 {
-    setCodecDescription(
-        "ZSTD", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level)), std::make_shared<ASTLiteral>(static_cast<UInt64>(window_log))});
+    ASTs arguments;
+    arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(level)));
+    arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(window_log)));
+    setCodecDescription("ZSTD", arguments);
 }
 
 CompressionCodecZSTD::CompressionCodecZSTD(int level_)
@@ -79,7 +76,9 @@ CompressionCodecZSTD::CompressionCodecZSTD(int level_)
     , enable_long_range(false)
     , window_log(0)
 {
-    setCodecDescription("ZSTD", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
+    ASTs arguments;
+    arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(level)));
+    setCodecDescription("ZSTD", arguments);
 }
 
 void registerCodecZSTD(CompressionCodecFactory & factory)

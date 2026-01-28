@@ -25,22 +25,24 @@
             </no_delete_objects_s3>
             <broken_s3>
                 <type>s3</type>
-                <endpoint>http://resolver:8083/root/data/</endpoint>
+                <endpoint>http://resolver:8085/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <skip_access_check>true</skip_access_check>
-                <retry_attempts>0</retry_attempts>
+                <!-- never set retry_attempts to 0, as it disables retries on all errors including sporadic timeouts -->
+                <retry_attempts>5</retry_attempts>
                 <connect_timeout_ms>20000</connect_timeout_ms>
                 <request_timeout_ms>20000</request_timeout_ms>
                 <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
             </broken_s3>
             <broken_s3_always_multi_part>
                 <type>s3</type>
-                <endpoint>http://resolver:8083/root/data/</endpoint>
+                <endpoint>http://resolver:8085/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <skip_access_check>true</skip_access_check>
-                <retry_attempts>0</retry_attempts>
+                <!-- never set retry_attempts to 0, as it disables retries on all errors including sporadic timeouts -->
+                <retry_attempts>5</retry_attempts>
                 <connect_timeout_ms>20000</connect_timeout_ms>
                 <request_timeout_ms>20000</request_timeout_ms>
                 <s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>
@@ -66,6 +68,7 @@
                 <path>/test_merge_tree_s3_jbod1/</path>
                 <max_size>1000000</max_size>
                 <max_file_segment_size>1Gi</max_file_segment_size>
+                <cache_policy>slru</cache_policy>
             </s3_with_cache_and_jbod>
             <s3_r>
                 <type>s3</type>

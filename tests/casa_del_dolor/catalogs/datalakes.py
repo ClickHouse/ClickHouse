@@ -4,7 +4,6 @@ import random
 import shutil
 import socket
 import subprocess
-import sys
 import time
 import threading
 
@@ -22,7 +21,6 @@ from .tablegenerator import LakeTableGenerator, sample_from_dict, true_false_lam
 from .datagenerator import LakeDataGenerator
 from .tablecheck import SparkAndClickHouseCheck
 
-sys.path.append("..")
 from utils.backgroundworker import BackgroundWorker
 
 
@@ -343,7 +341,7 @@ logger.jetty.level = warn
             raise Exception("Unknown lake format")
 
         os.environ["PYSPARK_SUBMIT_ARGS"] = (
-            f"--packages {",".join(all_jars)} pyspark-shell"
+            f"--packages {','.join(all_jars)} pyspark-shell"
         )
         for k, val in env.items():
             os.environ[k] = val
@@ -477,7 +475,7 @@ logger.jetty.level = warn
                 )
                 builder.config(
                     f"spark.sql.catalog.{catalog_name}.uri",
-                    f"http://localhost:{"8085/api/2.1/unity-catalog/iceberg" if catalog == LakeCatalogs.Unity else "8182"}",
+                    f"http://localhost:{'8085/api/2.1/unity-catalog/iceberg' if catalog == LakeCatalogs.Unity else '8182'}",
                 )
                 if storage == TableStorage.S3:
                     builder.config(
@@ -899,7 +897,7 @@ logger.jetty.level = warn
                 )
                 nloops = random.randint(1, 50)
                 tbl = (
-                    f"{data["catalog_name"]}.{data["table_name"]}"
+                    f"{data['catalog_name']}.{data['table_name']}"
                     if data["engine"] == "kafka"
                     else next_table.get_clickhouse_path()
                 )

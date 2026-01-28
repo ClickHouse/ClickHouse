@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -13,8 +13,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
-
-#include <h3api.h>
 
 
 namespace DB
@@ -103,6 +101,9 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const H3Index origin_hindex = data_hindex[row];
+
+            validateH3Cell(origin_hindex);
+
             const int k = data_k[row];
 
             /// Overflow is possible. The function maxGridDiskSize does not check for overflow.

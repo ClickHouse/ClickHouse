@@ -1139,10 +1139,48 @@ def test_skip_rmv_backup():
     instance.query(
         f"BACKUP DATABASE test TO {backup_name} {format_settings(backup_settings)}"
     )
+
+    assert not os.path.exists(
+        os.path.join(
+            get_path_to_backup(backup_name),
+            f"data/test/target/",
+        )
+    )
+
     instance.query(f"RESTORE DATABASE test AS restored FROM {backup_name}")
-    instance.query("SYSTEM REFRESH VIEW restored.view");
+    instance.query("SYSTEM REFRESH VIEW restored.view")
+    instance.query("SYSTEM WAIT VIEW restored.view")
 
     assert int(instance.query(f"SELECT count(*) FROM restored.target")) == size
+
+
+def test_rmv_append_backup():
+    size = 100
+    create_and_fill_table(n=size)
+    instance.query(
+        "CREATE TABLE test.target(x Int64) ENGINE=MergeTree ORDER BY tuple()"
+    )
+    instance.query(
+        "CREATE MATERIALIZED VIEW test.view REFRESH EVERY 6 HOURS APPEND TO test.target AS SELECT x FROM test.table"
+    )
+    instance.query("SYSTEM REFRESH VIEW test.view")
+    instance.query("SYSTEM WAIT VIEW test.view")
+
+    backup_name = new_backup_name()
+    backup_settings = {"backup_data_from_refreshable_materialized_view_targets": False}
+
+    instance.query(
+        f"BACKUP DATABASE test TO {backup_name} {format_settings(backup_settings)}"
+    )
+    assert os.path.exists(
+        os.path.join(
+            get_path_to_backup(backup_name),
+            f"data/test/target/",
+        )
+    )
+    instance.query(f"RESTORE DATABASE test AS restored FROM {backup_name}")
+
+    assert int(instance.query(f"SELECT count(*) FROM restored.target")) >= size
 
 
 def test_temporary_table():

@@ -102,7 +102,8 @@ void SerializationVariant::enumerateStreams(
     settings.path.push_back(Substream::VariantElements);
     settings.path.back().data = data;
 
-    for (size_t i = 0; i < variant_serializations.size(); ++i)
+    chassert(variant_serializations.size() <= std::numeric_limits<ColumnVariant::Discriminator>::max());
+    for (ColumnVariant::Discriminator i = 0; i < static_cast<ColumnVariant::Discriminator>(variant_serializations.size()); ++i)
     {
         DataTypePtr type = type_variant ? type_variant->getVariant(i) : nullptr;
         settings.path.back().creator = std::make_shared<SerializationVariantElement::VariantSubcolumnCreator>(
@@ -132,7 +133,8 @@ void SerializationVariant::enumerateStreams(
                              .withType(type_variant ? std::make_shared<DataTypeUInt8>() : nullptr)
                              .withColumn(column_variant ? ColumnUInt8::create() : nullptr);
 
-    for (size_t i = 0; i < variant_serializations.size(); ++i)
+    chassert(variant_serializations.size() <= std::numeric_limits<ColumnVariant::Discriminator>::max());
+    for (ColumnVariant::Discriminator i = 0; i < static_cast<ColumnVariant::Discriminator>(variant_serializations.size()); ++i)
     {
         if (!variant_types[i]->canBeInsideNullable())
             continue;
@@ -503,7 +505,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         if (rows_offset)
             col.getLocalDiscriminatorsPtr()->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
         else
-            insertDataFromCachedColumn(settings, col.getLocalDiscriminatorsPtr(), cached_column, num_read_rows, cache);
+            insertDataFromCachedColumn(settings, col.getLocalDiscriminatorsPtr(), cached_column, num_read_rows, cache, true);
 
         num_read_discriminators = num_read_rows;
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
@@ -638,7 +640,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         variant_offsets.reserve(variant_serializations.size());
         size_t num_non_empty_variants = 0;
         ColumnVariant::Discriminator last_non_empty_discr = 0;
-        for (size_t i = 0; i != variant_serializations.size(); ++i)
+        for (ColumnVariant::Discriminator i = 0; i != variant_serializations.size(); ++i)
         {
             if (variant_limits[i])
             {
@@ -1030,7 +1032,7 @@ bool SerializationVariant::tryDeserializeImpl(
         size_t prev_size = variant_column.size();
         if (try_deserialize_nested(variant_column, variant_serializations[global_discr], variant_buf, modified_settings) && variant_buf.eof())
         {
-            column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(global_discr));
+            column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(static_cast<ColumnVariant::Discriminator>(global_discr)));
             column_variant.getOffsets().push_back(prev_size);
             return true;
         }

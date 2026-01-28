@@ -59,7 +59,7 @@ Subsequent executions of the same query, also with parameter `use_query_conditio
 
 The query condition cache is not retained between restarts of ClickHouse.
 
-To clear the query condition cache, run [`SYSTEM DROP QUERY CONDITION CACHE`](../sql-reference/statements/system.md#drop-query-condition-cache).
+To clear the query condition cache, run [`SYSTEM CLEAR QUERY CONDITION CACHE`](../sql-reference/statements/system.md#drop-query-condition-cache).
 
 The content of the cache is displayed in system table [system.query_condition_cache](system-tables/query_condition_cache.md).
 To calculate the current size of the query condition cache in MB, run `SELECT formatReadableSize(sum(entry_size)) FROM system.query_condition_cache`.

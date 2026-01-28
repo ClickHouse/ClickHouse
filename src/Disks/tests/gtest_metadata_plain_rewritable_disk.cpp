@@ -76,7 +76,7 @@ private:
     std::shared_ptr<IMetadataStorage> createMetadataStorage(const std::string & key_prefix)
     {
         fs::remove_all("./" + key_prefix);
-        LocalObjectStorageSettings settings("./" + key_prefix, /*read_only_=*/false);
+        LocalObjectStorageSettings settings("test", "./" + key_prefix, /*read_only_=*/false);
         auto object_storage = std::make_shared<LocalObjectStorage>(std::move(settings));
         auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
 

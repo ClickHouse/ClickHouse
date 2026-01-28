@@ -444,7 +444,7 @@ void RestCatalog::getNamespacesRecursive(
 
 Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::string & base_namespace) const
 {
-    std::vector<std::string> parts;
+    std::vector<std::string_view> parts;
     splitInto<'.'>(parts, base_namespace);
     std::string parent_param;
     for (const auto & part : parts)
@@ -727,6 +727,31 @@ bool RestCatalog::getTableMetadataImpl(
                     std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token));
 
                 result.setEndpoint(storage_endpoint);
+                break;
+            }
+            case StorageType::Azure:
+            {
+                /// Azure ADLS Gen2 vended credentials use SAS tokens.
+                /// The config keys follow the pattern: adls.sas-token.<account_name>
+                /// or adls.sas-token.<account_name>.dfs.core.windows.net
+                /// We look for any key starting with "adls.sas-token." and use the first one found.
+                String sas_token;
+                std::vector<std::string> names;
+                config_object->getNames(names);
+                for (const auto & name : names)
+                {
+                    if (name.starts_with("adls.sas-token."))
+                    {
+                        sas_token = config_object->get(name).extract<String>();
+                        LOG_DEBUG(log, "Found Azure SAS token with key: {}", name);
+                        break;
+                    }
+                }
+
+                if (!sas_token.empty())
+                {
+                    result.setStorageCredentials(std::make_shared<AzureCredentials>(sas_token));
+                }
                 break;
             }
             default:

@@ -22,14 +22,14 @@ QUERY id: 0
             ORDER BY
               LIST id: 11, nodes: 1
                 SORT id: 12, sort_direction: ASCENDING, with_fill: 0
-                  EXPRESSION
+                  EXPRESSION id
                     COLUMN id: 13, column_name: id, result_type: UInt64, source_id: 10
             LIMIT
               CONSTANT id: 14, constant_value: UInt64_4, constant_value_type: UInt64
   ORDER BY
     LIST id: 15, nodes: 1
       SORT id: 16, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION id
           COLUMN id: 17, column_name: id, result_type: UInt64, source_id: 3
   LIMIT BY LIMIT
     CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt64

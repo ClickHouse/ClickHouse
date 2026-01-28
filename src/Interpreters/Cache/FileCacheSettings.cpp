@@ -52,6 +52,8 @@ namespace ErrorCodes
     DECLARE(Bool, write_cache_per_user_id_directory, false, "Internal ClickHouse Cloud setting", 0) \
     DECLARE(Bool, allow_dynamic_cache_resize, false, "Allow dynamic resize of filesystem cache", 0) \
     DECLARE(Double, max_size_ratio_to_total_space, 0, "Ratio of `max_size` to total disk space", 0) \
+    DECLARE(UInt64, overcommit_eviction_evict_step, 10 * 1_MiB, "Eviction step in bytes for overcommit eviction policy. Used for keep_free_space_*_ratio settings", 0) \
+    DECLARE(Double, check_cache_probability, 0.01, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
@@ -115,7 +117,7 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
         desc.name = setting.getName();
         desc.type = [&]() -> DataTypePtr
         {
-            const std::string type_name = setting.getTypeName();
+            const auto type_name = setting.getTypeName();
             if (type_name == "UInt64")
                 return std::make_shared<DataTypeUInt64>();
             else if (type_name == "String")
@@ -243,6 +245,9 @@ void FileCacheSettings::validate()
     if (settings[FileCacheSetting::max_size].changed && settings[FileCacheSetting::max_size] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`max_size` cannot be 0");
 
+    if (settings[FileCacheSetting::overcommit_eviction_evict_step] == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`overcommit_eviction_evict_step` cannot be zero");
+
     if (settings[FileCacheSetting::max_size_ratio_to_total_space].changed)
     {
         if (settings[FileCacheSetting::max_size_ratio_to_total_space] <= 0 || settings[FileCacheSetting::max_size_ratio_to_total_space] > 1)
@@ -252,7 +257,7 @@ void FileCacheSettings::validate()
         struct statvfs stat = getStatVFS(settings[FileCacheSetting::path]);
         const auto total_space = stat.f_blocks * stat.f_frsize;
         settings[FileCacheSetting::max_size] =
-            static_cast<UInt64>(std::floor(settings[FileCacheSetting::max_size_ratio_to_total_space].value * total_space));
+            static_cast<UInt64>(std::floor(settings[FileCacheSetting::max_size_ratio_to_total_space].value * static_cast<double>(total_space)));
 
         LOG_INFO(
             getLogger("FileCacheSettings"),

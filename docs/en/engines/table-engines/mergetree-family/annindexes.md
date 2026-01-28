@@ -7,7 +7,7 @@ title: 'Exact and Approximate Vector Search'
 doc_type: 'guide'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import BetaBadge from '@theme/badges/BetaBadge';
 
 # Exact and approximate vector search
 
@@ -601,7 +601,7 @@ Further example datasets that use approximate vector search:
 
 ### Quantized Bit (QBit) {#approximate-nearest-neighbor-search-qbit}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 One common approach to speed up exact vector search is to use a lower-precision [float data type](../../../sql-reference/data-types/float.md).
 For example, if vectors are stored as `Array(BFloat16)` instead of `Array(Float32)`, the data size is reduced by half, and query runtimes are expected to decrease proportionally.
@@ -616,7 +616,7 @@ ClickHouse offers the Quantized Bit (`QBit`) data type that addresses these limi
 This is achieved by storing data in a bit-grouped format (meaning all i-th bits of all vectors are stored together), enabling reads at only the requested precision level. You get the speed benefits of reduced I/O and computation from quantization while keeping all original data available when needed. When maximum precision is selected, the search becomes exact.
 
 :::note
-The `QBit` data type and its associated distance functions are currently experimental. To enable them, run `SET allow_experimental_qbit_type = 1`.
+The `QBit` data type and its associated distance functions are Beta features. To enable them, run `SET enable_qbit_type = 1`.
 If you encounter problems, please open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
 
@@ -698,10 +698,6 @@ ORDER BY distance;
 
 Notice that with 12-bit quantization, we get a good approximation of the distances with faster query execution. The relative ordering remains largely consistent, with 'apple' still being the closest match.
 
-:::note
-In the current state, the speed-up is due to reduced I/O as we read less data. If the original data was wide, like `Float64`, choosing a lower precision will still result in distance calculation on data of the same width – just with less precision.
-:::
-
 #### Performance Considerations {#qbit-performance}
 
 The performance benefit of `QBit` comes from reduced I/O operations, as less data needs to be read from storage when using lower precision. Moreover, when the `QBit` contains `Float32` data, if the precision parameter is 16 or below, there will be additional benefits from reduced computation. The precision parameter directly controls the trade-off between accuracy and speed:
@@ -714,3 +710,4 @@ The performance benefit of `QBit` comes from reduced I/O operations, as less dat
 Blogs:
 - [Vector Search with ClickHouse - Part 1](https://clickhouse.com/blog/vector-search-clickhouse-p1)
 - [Vector Search with ClickHouse - Part 2](https://clickhouse.com/blog/vector-search-clickhouse-p2)
+- [We built a vector search engine that lets you choose precision at query time](https://clickhouse.com/blog/qbit-vector-search)

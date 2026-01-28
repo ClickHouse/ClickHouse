@@ -22,12 +22,12 @@ bool ParserViewTargets::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
     ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
 
-    std::shared_ptr<ASTViewTargets> res;
+    boost::intrusive_ptr<ASTViewTargets> res;
 
     auto result = [&] -> ASTViewTargets &
     {
         if (!res)
-            res = std::make_shared<ASTViewTargets>();
+            res = make_intrusive<ASTViewTargets>();
         return *res;
     };
 

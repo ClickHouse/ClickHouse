@@ -1,4 +1,5 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-parallel, no-random-merge-tree-settings
+-- add_minmax_index_for_numeric_columns=0: Changes plan
 -- EXPLAIN output may differ
 
 -- { echoOn }
@@ -35,7 +36,7 @@ CREATE TABLE test_has_skip_set (
 )
 ENGINE = MergeTree
 ORDER BY event_time
-SETTINGS index_granularity = 1000;
+SETTINGS index_granularity = 1000, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO test_has_skip_set 
 SELECT 

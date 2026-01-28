@@ -724,7 +724,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
 void QueryPipelineBuilder::addCreatingSetsTransform(
     SharedHeader res_header,
     SetAndKeyPtr set_and_key,
-    StoragePtr external_table,
     const SizeLimits & limits,
     PreparedSetsCachePtr prepared_sets_cache)
 {
@@ -735,7 +734,6 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
             getSharedHeader(),
             res_header,
             std::move(set_and_key),
-            std::move(external_table),
             limits,
             std::move(prepared_sets_cache));
 

@@ -1,0 +1,27 @@
+100	200
+-- { echo }
+select count() from (select * from test_1m);
+989999
+explain indexes=1 select key from (select * from test_1m);
+Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+  Filter (additional filter)
+    ReadFromMergeTree (default.test_1m)
+    Indexes:
+      PrimaryKey
+        Keys:
+          key
+        Condition: (key in [10001, +Inf))
+        Parts: 99/100
+        Granules: 99/100
+        Distributed:
+          Address: 127.0.0.1:9000
+          Parts send: 56
+          Parts received: 56
+          Granules send: 56
+          Granules received: 56
+          Address: 127.0.0.2:9000
+          Parts send: 44
+          Parts received: 43
+          Granules send: 44
+          Granules received: 43
+      Ranges: 99

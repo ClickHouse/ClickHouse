@@ -124,7 +124,7 @@ class LakeTableGenerator:
             )
             generated = self.add_generated_col(columns_spark, spark_type)
             columns_def.append(
-                f"{val["name"]} {str_type}{"" if nullable else " NOT NULL"}{generated}"
+                f"{val['name']} {str_type}{'' if nullable else ' NOT NULL'}{generated}"
             )
             columns_spark[val["name"]] = SparkColumn(
                 val["name"], spark_type, nullable, len(generated) > 0
@@ -154,7 +154,7 @@ class LakeTableGenerator:
             random_subset = random.sample(
                 partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
             )
-            ddl += f" PARTITIONED BY ({",".join(random_subset)})"
+            ddl += f" PARTITIONED BY ({','.join(random_subset)})"
 
         # ddl += self.set_table_location(next_location) no location needed yet
 
@@ -208,7 +208,7 @@ class LakeTableGenerator:
             random_subset = random.sample(
                 partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
             )
-            return f"ALTER TABLE {table.get_table_full_path()} {random.choice(["ADD", "DROP"])} PARTITION FIELD {random.choice(list(random_subset))}"
+            return f"ALTER TABLE {table.get_table_full_path()} {random.choice(['ADD', 'DROP'])} PARTITION FIELD {random.choice(list(random_subset))}"
         elif next_operation <= 700:
             # Replace partition field
             partition_clauses = self.add_partition_clauses(table)
@@ -225,7 +225,7 @@ class LakeTableGenerator:
             # Set ORDER BY
             if random.randint(1, 2) == 1:
                 return f"ALTER TABLE {table.get_table_full_path()} WRITE UNORDERED"
-            return f"ALTER TABLE {table.get_table_full_path()} WRITE{random.choice([" LOCALLY", ""])} ORDERED BY {self.random_ordered_columns(table, True)}"
+            return f"ALTER TABLE {table.get_table_full_path()} WRITE{random.choice([' LOCALLY', ''])} ORDERED BY {self.random_ordered_columns(table, True)}"
         elif next_operation <= 900:
             # Set distribution
             if random.randint(1, 2) == 1:
@@ -233,7 +233,7 @@ class LakeTableGenerator:
             return f"ALTER TABLE {table.get_table_full_path()} WRITE DISTRIBUTED BY PARTITION LOCALLY ORDERED BY {self.random_ordered_columns(table, True)}"
         elif next_operation <= 1000:
             # Set identifier fields
-            return f"ALTER TABLE {table.get_table_full_path()} {random.choice(["SET", "DROP"])} IDENTIFIER FIELDS {self.random_ordered_columns(table, False)}"
+            return f"ALTER TABLE {table.get_table_full_path()} {random.choice(['SET', 'DROP'])} IDENTIFIER FIELDS {self.random_ordered_columns(table, False)}"
         return ""
 
     @abstractmethod
@@ -316,7 +316,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             nproperties.update(self.generate_table_properties(table))
         ctable = catalog_impl.create_table(
             identifier=("test", table.table_name),
-            location=f"s3{"a" if table.catalog == LakeCatalogs.Hive else ""}://warehouse-{"rest" if table.catalog == LakeCatalogs.REST else ("hms" if table.catalog == LakeCatalogs.Hive else "glue")}/data",
+            location=f"s3{'a' if table.catalog == LakeCatalogs.Hive else ''}://warehouse-{'rest' if table.catalog == LakeCatalogs.REST else ('hms' if table.catalog == LakeCatalogs.Hive else 'glue')}/data",
             schema=nschema,
             partition_spec=self.type_mapper.generate_random_iceberg_partition_spec(
                 nschema
@@ -328,7 +328,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         # Return created table information for logging
         schema_summary = ", ".join(
             [
-                f"{field.name}:{field.field_type}{" NOT NULL" if field.required else ""}"
+                f"{field.name}:{field.field_type}{' NOT NULL' if field.required else ''}"
                 for field in ctable.schema().fields
             ]
         )
@@ -625,11 +625,11 @@ class IcebergTableGenerator(LakeTableGenerator):
         if next_option == 1:
             res = f"CALL `{table.catalog_name}`.system.remove_orphan_files(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
-                res += f", dry_run => {random.choice(["true", "false"])}"
+                res += f", dry_run => {random.choice(['true', 'false'])}"
             if random.randint(1, 2) == 1:
                 res += f", max_concurrent_deletes => {random.randint(0, 20)}"
             if random.randint(1, 2) == 1:
-                res += f", prefix_listing => {random.choice(["true", "false"])}"
+                res += f", prefix_listing => {random.choice(['true', 'false'])}"
             timestamps = self.get_timestamps(spark, table)
             if len(timestamps) > 0 and random.randint(1, 2) == 1:
                 res += f", older_than => TIMESTAMP '{random.choice(timestamps)}'"
@@ -677,7 +677,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         if next_option == 3:
             res = f"CALL `{table.catalog_name}`.system.rewrite_manifests(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
-                res += f", use_caching => {random.choice(["true", "false"])}"
+                res += f", use_caching => {random.choice(['true', 'false'])}"
             res += ")"
             return res
         if next_option == 4:
@@ -686,13 +686,13 @@ class IcebergTableGenerator(LakeTableGenerator):
             if len(timestamps) > 0 and random.randint(1, 2) == 1:
                 res += f", older_than => TIMESTAMP '{random.choice(timestamps)}'"
             if random.randint(1, 2) == 1:
-                res += f", stream_results => {random.choice(["true", "false"])}"
+                res += f", stream_results => {random.choice(['true', 'false'])}"
             if random.randint(1, 2) == 1:
                 res += f", retain_last => {random.randint(1, 10)}"
             if random.randint(1, 2) == 1:
                 res += f", max_concurrent_deletes => {random.randint(0, 20)}"
             if random.randint(1, 2) == 1:
-                res += f", clean_expired_metadata => {random.choice(["true", "false"])}"
+                res += f", clean_expired_metadata => {random.choice(['true', 'false'])}"
             res += ")"
             return res
         if next_option in (5, 6, 7, 8):
@@ -711,9 +711,9 @@ class IcebergTableGenerator(LakeTableGenerator):
         if next_option == 9:
             res = f"CALL `{table.catalog_name}`.system.create_changelog_view(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
-                res += f", net_changes => {random.choice(["true", "false"])}"
+                res += f", net_changes => {random.choice(['true', 'false'])}"
             if random.randint(1, 2) == 1:
-                res += f", compute_updates => {random.choice(["true", "false"])}"
+                res += f", compute_updates => {random.choice(['true', 'false'])}"
             res += ")"
             return res
         snapshots = self.get_snapshots(spark, table)
@@ -825,7 +825,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         self, columns: dict[str, SparkColumn], col: sp.DataType
     ) -> str:
         if isinstance(col, sp.LongType) and random.randint(1, 10) < 3:
-            return f" GENERATED {random.choice(["ALWAYS", "BY DEFAULT"])} AS IDENTITY"
+            return f" GENERATED {random.choice(['ALWAYS', 'BY DEFAULT'])} AS IDENTITY"
         if len(columns) > 0 and random.randint(1, 10) < 3:
             flattened = {}
             for _, val in columns.items():
@@ -836,7 +836,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
                 )
                 and random.randint(1, 2) == 1
             ):
-                return f" GENERATED ALWAYS AS ({random.choice(["year", "month", "day", "hour"])}({random.choice(list(flattened.keys()))}))"
+                return f" GENERATED ALWAYS AS ({random.choice(['year', 'month', 'day', 'hour'])}({random.choice(list(flattened.keys()))}))"
             return f" GENERATED ALWAYS AS (CAST({random.choice(list(flattened.keys()))} AS {self.type_mapper.generate_random_spark_sql_type()}))"
         return ""
 
@@ -971,7 +971,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             return f"VACUUM {table.get_table_full_path()} RETAIN 0 HOURS;"
         if next_option == 2:
             # Optimize
-            return f"OPTIMIZE {table.get_table_full_path()}{f" ZORDER BY ({self.random_ordered_columns(table, False)})" if random.randint(1, 2) == 1 else ""};"
+            return f"OPTIMIZE {table.get_table_full_path()}{f' ZORDER BY ({self.random_ordered_columns(table, False)})' if random.randint(1, 2) == 1 else ''};"
         if next_option in (3, 4):
             # Restore
             result = spark.sql(

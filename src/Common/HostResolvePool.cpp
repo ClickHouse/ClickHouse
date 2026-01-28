@@ -1,9 +1,7 @@
 #include <Common/HostResolvePool.h>
 
 #include <Common/DNSResolver.h>
-#include <Common/Exception.h>
 #include <Common/NetException.h>
-#include <Common/ErrorCodes.h>
 #include <Common/thread_local_rng.h>
 #include <Common/MemoryTrackerSwitcher.h>
 
