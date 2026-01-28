@@ -20,6 +20,7 @@ public:
     const String & getTable() const { return table_name; }
     TableExpressionModifiers getTableExpressionModifiers() const { return table_expression_modifiers; }
 
+    QueryPlanStepPtr clone() const override;
 private:
     String table_name;
     TableExpressionModifiers table_expression_modifiers;

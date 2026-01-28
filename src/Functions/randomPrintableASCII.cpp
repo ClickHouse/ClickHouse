@@ -90,9 +90,9 @@ public:
             {
                 UInt64 rand = rng();
 
-                UInt16 rand1 = rand;
-                UInt16 rand2 = rand >> 16;
-                UInt16 rand3 = rand >> 32;
+                UInt16 rand1 = static_cast<UInt16>(rand);
+                UInt16 rand2 = static_cast<UInt16>(rand >> 16);
+                UInt16 rand3 = static_cast<UInt16>(rand >> 32);
                 UInt16 rand4 = rand >> 48;
 
                 /// Printable characters are from range [32; 126].
@@ -139,7 +139,7 @@ If you pass `length < 0`, the behavior of the function is undefined.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRandomPrintableASCII>(documentation);
 }

@@ -17,7 +17,7 @@ fi
 
 LIBS_PATH="${ROOT_PATH}/contrib"
 
-libs=$(echo "${ROOT_PATH}/base/poco"; (find "${LIBS_PATH}" -maxdepth 1 -type d -not -name '*-cmake' -not -name 'rust_vendor' | LC_ALL=C sort) )
+libs=$(echo "${ROOT_PATH}/base/poco"; (find "${LIBS_PATH}" -mindepth 1 -maxdepth 1 -type d -not -name '*-cmake' -not -name 'rust_vendor' | LC_ALL=C sort) )
 for LIB in ${libs}
 do
     LIB_NAME=$(basename "$LIB")

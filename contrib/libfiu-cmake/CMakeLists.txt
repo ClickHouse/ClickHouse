@@ -15,7 +15,7 @@ set(LIBFIU_SOURCES
 set(LIBFIU_HEADERS "${LIBFIU_DIR}/libfiu")
 
 add_library(_libfiu ${LIBFIU_SOURCES})
-target_compile_definitions(_libfiu PUBLIC DUMMY_BACKTRACE)
+target_compile_definitions(_libfiu PRIVATE DUMMY_BACKTRACE)
 target_compile_definitions(_libfiu PUBLIC FIU_ENABLE)
 target_include_directories(_libfiu PUBLIC ${LIBFIU_HEADERS})
 add_library(ch_contrib::libfiu ALIAS _libfiu)

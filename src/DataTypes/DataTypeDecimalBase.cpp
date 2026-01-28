@@ -23,11 +23,13 @@ constexpr size_t DataTypeDecimalBase<T>::maxPrecision()
 
 bool decimalCheckComparisonOverflow(ContextPtr context)
 {
-    return context->getSettingsRef()[Setting::decimal_check_overflow];
+    /// It may be possible that context is not set, when the function is created manually.
+    /// TODO: remove the context from the function.
+    return !context || context->getSettingsRef()[Setting::decimal_check_overflow];
 }
 bool decimalCheckArithmeticOverflow(ContextPtr context)
 {
-    return context->getSettingsRef()[Setting::decimal_check_overflow];
+    return !context || context->getSettingsRef()[Setting::decimal_check_overflow];
 }
 
 template <is_decimal T>

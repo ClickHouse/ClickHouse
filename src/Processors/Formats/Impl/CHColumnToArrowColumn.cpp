@@ -41,6 +41,7 @@
         M(Float64, arrow::DoubleBuilder)
 
 #define FOR_ARROW_TYPES(M) \
+        M(BOOL, arrow::BooleanType) \
         M(UINT8, arrow::UInt8Type) \
         M(INT8, arrow::Int8Type) \
         M(UINT16, arrow::UInt16Type) \
@@ -53,7 +54,8 @@
         M(DOUBLE, arrow::DoubleType) \
         M(BINARY, arrow::BinaryType) \
         M(STRING, arrow::StringType) \
-        M(FIXED_SIZE_BINARY, arrow::FixedSizeBinaryType)
+        M(FIXED_SIZE_BINARY, arrow::FixedSizeBinaryType) \
+        M(DATE32, arrow::Date32Type)
 
 namespace DB
 {
@@ -538,7 +540,7 @@ namespace DB
                 }
                 else
                 {
-                    std::string_view string_ref = internal_column.getDataAt(string_i).toView();
+                    std::string_view string_ref = internal_column.getDataAt(string_i);
                     status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 }
                 checkStatus(status, write_column->getName(), format_name);
@@ -548,7 +550,7 @@ namespace DB
         {
             for (size_t string_i = start; string_i < end; ++string_i)
             {
-                std::string_view string_ref = internal_column.getDataAt(string_i).toView();
+                std::string_view string_ref = internal_column.getDataAt(string_i);
                 status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 checkStatus(status, write_column->getName(), format_name);
             }
@@ -1168,7 +1170,7 @@ namespace DB
                     column = recursiveRemoveLowCardinality(column);
 
                 std::unique_ptr<arrow::ArrayBuilder> array_builder;
-                arrow::Status status = MakeBuilder(arrow::default_memory_pool(), arrow_schema->field(column_i)->type(), &array_builder);
+                arrow::Status status = MakeBuilder(arrow::default_memory_pool(), arrow_schema->field(static_cast<int>(column_i))->type(), &array_builder);
                 checkStatus(status, column->getName(), format_name);
 
                 fillArrowArray(

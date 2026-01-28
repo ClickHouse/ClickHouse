@@ -55,6 +55,8 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
     processing_start_time = now();
     processing_end_time = {};
     processed_rows = 0;
+    std::lock_guard lock(last_exception_mutex);
+    last_exception = {};
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
@@ -123,6 +125,7 @@ ObjectStorageQueueIFileMetadata::NodeMetadata ObjectStorageQueueIFileMetadata::N
 
 ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     const std::string & path_,
+    const std::string & zookeeper_name_,
     const std::string & processing_node_path_,
     const std::string & processed_node_path_,
     const std::string & failed_node_path_,
@@ -132,6 +135,7 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     bool use_persistent_processing_nodes_,
     LoggerPtr log_)
     : path(path_)
+    , zookeeper_name(zookeeper_name_)
     , node_name(getNodeName(path_))
     , file_status(file_status_)
     , max_loading_retries(max_loading_retries_)
@@ -143,32 +147,38 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     , node_metadata(createNodeMetadata(path))
     , log(log_)
 {
-    LOG_TEST(log, "Path: {}, node_name: {}, max_loading_retries: {}, "
-             "processed_path: {}, processing_path: {}, failed_path: {}",
-             path, node_name, max_loading_retries,
-             processed_node_path, processing_node_path, failed_node_path);
 }
 
 ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
 {
     if (created_processing_node)
     {
+        std::string current_exception;
         if (file_status->getException().empty())
         {
             if (std::current_exception())
-                file_status->onFailed(getCurrentExceptionMessage(true));
+            {
+                current_exception = getCurrentExceptionMessage(true);
+                file_status->onFailed(current_exception);
+            }
             else
                 file_status->onFailed("Unprocessed exception");
         }
+        else
+        {
+            chassert(file_status->state == FileStatus::State::Failed);
+        }
 
-        LOG_TEST(log, "Removing processing node in destructor for file: {}", path);
+        LOG_TEST(log, "Removing processing node in destructor for file: {} "
+                 "(state: {}, exception: {})",
+                 path, file_status->state.load(), current_exception);
         try
         {
             Coordination::Error code;
             auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
             zk_retry.retryLoop([&]
             {
-                auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+                auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
                 if (zk_retry.isRetry())
                 {
                     /// It is possible that we fail "after operation",
@@ -309,32 +319,30 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 std::optional<ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes>
 ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requests & requests, const std::string & processing_id)
 {
-    if (metadata_ref_count.load() > 1)
+    std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
+    if (!processing_lock.try_lock())
     {
-        std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
-        if (!processing_lock.try_lock())
-        {
-            /// This is possible in case on the same server
-            /// there are more than one S3(Azure)Queue table processing the same keeper path.
-            LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
-            return std::nullopt;
-        }
+        /// This is possible in case on the same server
+        /// there are more than one S3(Azure)Queue table processing the same keeper path.
+        LOG_TEST(log, "File {} is being processed by another table on this server or"
+                 " another process insert thread in case parallel_insert = 1", path);
+        return std::nullopt;
+    }
 
-        auto state = file_status->state.load();
-        if (state == FileStatus::State::Processing
-            || state == FileStatus::State::Processed
-            || (state == FileStatus::State::Failed
-                && file_status->retries
-                && file_status->retries >= max_loading_retries))
-        {
-            LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                    path, state, file_status->retries.load(), max_loading_retries);
+    auto state = file_status->state.load();
+    if (state == FileStatus::State::Processing
+        || state == FileStatus::State::Processed
+        || (state == FileStatus::State::Failed
+            && file_status->retries
+            && file_status->retries >= max_loading_retries))
+    {
+        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
+                path, state, file_status->retries.load(), max_loading_retries);
 
-            /// This is possible in case on the same server
-            /// there are more than one S3(Azure)Queue table processing the same keeper path.
-            LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
-            return std::nullopt;
-        }
+        /// This is possible in case on the same server
+        /// there are more than one S3(Azure)Queue table processing the same keeper path.
+        LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
+        return std::nullopt;
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
@@ -357,7 +365,7 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
         chassert(!created_processing_node);
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingFailed);
 
-        if (file_state.has_value())
+        if (file_state.has_value() && file_state.value() != FileStatus::State::None)
         {
             LOG_TEST(log, "Updating state of {} from {} to {}", path, file_status->state.load(), file_state.value());
             file_status->updateState(file_state.value());
@@ -368,13 +376,16 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
 void ObjectStorageQueueIFileMetadata::resetProcessing()
 {
     chassert(created_processing_node);
+    SCOPE_EXIT({
+        created_processing_node = false;
+    });
 
     auto state = file_status->state.load();
     if (state != FileStatus::State::Processing)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reset non-processing state: {}", state);
 
     SCOPE_EXIT({
-        file_status->reset();
+        (*file_status).reset();
     });
 
     Coordination::Requests requests;
@@ -385,7 +396,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]
     {
-        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
         if (zk_retry.isRetry())
         {
             /// It is possible that we fail "after operation",
@@ -432,13 +443,14 @@ void ObjectStorageQueueIFileMetadata::prepareResetProcessingRequests(Coordinatio
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 }
 
-void ObjectStorageQueueIFileMetadata::prepareProcessedRequests(Coordination::Requests & requests)
+void ObjectStorageQueueIFileMetadata::prepareProcessedRequests(Coordination::Requests & requests,
+    LastProcessedFileInfoMapPtr created_nodes)
 {
     LOG_TRACE(log, "Setting file {} as processed (keeper path: {})", path, processed_node_path);
 
     try
     {
-        prepareProcessedRequestsImpl(requests);
+        prepareProcessedRequestsImpl(requests, created_nodes);
     }
     catch (...)
     {
@@ -489,10 +501,17 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
 {
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedFiles);
 
+    SCOPE_EXIT({
+        file_status->onProcessed();
+        created_processing_node = false;
+
+        LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows.load());
+    });
+
 #ifdef DEBUG_OR_SANITIZER_BUILD
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
-        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
         chassert(
             !zk_client->exists(processing_node_path),
             fmt::format("Expected path {} not to exist while finalizing {}", processing_node_path, path));
@@ -506,29 +525,25 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
             fmt::format("Expected path {} to exist while finalizing {}", processed_node_path, path));
     });
 #endif
-
-    file_status->onProcessed();
-    created_processing_node = false;
-
-    LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows.load());
 }
 
 void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & exception_message)
 {
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFailedFiles);
 
+    SCOPE_EXIT({
+        file_status->onFailed(exception_message);
+        created_processing_node = false;
+
+        LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows.load());
+    });
 #ifdef DEBUG_OR_SANITIZER_BUILD
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
-        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
         chassert(
             !zk_client->exists(processing_node_path),
             fmt::format("Expected path {} not to exist while finalizing {}", processing_node_path, path));
-
-        if (!useBucketsForProcessing())
-            chassert(
-                !zk_client->exists(processed_node_path),
-                fmt::format("Expected path {} not to exist while finalizing {}", processed_node_path, path));
 
         chassert(
             zk_client->exists(failed_node_path) || zk_client->exists(failed_node_path + ".retriable"),
@@ -536,11 +551,6 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
 
     });
 #endif
-
-    file_status->onFailed(exception_message);
-    created_processing_node = false;
-
-    LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows.load());
 }
 
 void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
@@ -571,7 +581,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     bool has_failed_before = false;
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
-        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
         has_failed_before = zk_client->tryGet(retrieable_failed_node_path, res, &retriable_failed_node_stat);
     });
     if (has_failed_before)

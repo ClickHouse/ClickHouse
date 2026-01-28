@@ -12,9 +12,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
-
 
 namespace DataLake
 {
@@ -34,6 +32,13 @@ using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 class StorageObjectStorageConfiguration;
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
 struct StorageID;
+struct IObjectIterator;
+struct RelativePathWithMetadata;
+class IObjectStorage;
+struct ObjectInfo;
+using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
+using ObjectIterator = std::shared_ptr<IObjectIterator>;
+using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
 
 class IDataLakeMetadata : boost::noncopyable
 {
@@ -83,6 +88,12 @@ public:
     virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
 
+    /// Data which we are going to read is sorted by sorting key specified in StorageMetadataPtr.
+    /// For example in Iceberg it's a valid query to change sort_order for table, but older files will
+    /// not be rewritten and will be left unsorted or with previous sort order.
+    /// In this case we shouldn't use read in order optimization.
+    virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
+
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
@@ -109,6 +120,7 @@ public:
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(
         const MutationCommands & /*commands*/,
+        StorageObjectStorageConfigurationPtr /*configuration*/,
         ContextPtr /*context*/,
         const StorageID & /*storage_id*/,
         StorageMetadataPtr /*metadata_snapshot*/,
@@ -120,7 +132,7 @@ public:
 
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
 
-    virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, ContextPtr) const { }
+    virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, FormatParserSharedResourcesPtr, ContextPtr) const { }
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
     virtual void drop(ContextPtr) { }

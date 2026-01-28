@@ -49,7 +49,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTQueryWithOutputImpl<ASTIDAndQueryNames>>(*this);
+        auto res = make_intrusive<ASTQueryWithOutputImpl<ASTIDAndQueryNames>>(*this);
         res->children.clear();
         cloneOutputOptions(*res);
         return res;

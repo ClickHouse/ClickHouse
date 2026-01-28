@@ -199,3 +199,124 @@ The list of features that the new analyzer currently doesn't support is given be
 - Annoy index.
 - Hypothesis index. Work in progress [here](https://github.com/ClickHouse/ClickHouse/pull/48381).
 - Window view is not supported. There are no plans to support it in the future.
+
+## Cloud Migration {#cloud-migration}
+
+We are enabling the new query analyzer on all instances where it is currently disabled to support new functional and performance optimizations. This change enforces stricter SQL scoping rules, requiring customers to manually update non-compliant queries.
+
+### Migration workflow {#migration-workflow}
+
+1. Identify the query by filtering `system.query_log` using the `normalized_query_hash`:
+```sql
+SELECT query 
+FROM clusterAllReplicas(default, system.query_log)
+WHERE normalized_query_hash='{hash}' 
+LIMIT 1 
+SETTINGS skip_unavailable_shards=1
+```
+
+2. Run the query with the analyzer enabled by adding these settings.
+```sql
+SETTINGS
+    enable_analyzer=1,
+    analyzer_compatibility_join_using_top_level_identifier=1
+```
+
+3. Refactor and verify the query results to ensure they match the output generated when the analyzer is disabled.   
+
+Please refer to the most frequent incompatibilities encountered during internal testing.
+
+### Unknown expression identifier {#unknown-expression-identifier}
+
+Error: `Unknown expression identifier ... in scope ... (UNKNOWN_IDENTIFIER)`. Exception code: 47
+
+Cause: Queries that rely on non-standard, permissive legacy behaviors such as referencing calculated aliases in filters, ambiguous subquery projections, or "dynamic" CTE scoping are now correctly identified as invalid and rejected immediately.   
+
+Solution: Update your SQL patterns as follows:
+- Filter logic: Move logic from WHERE to HAVING if filtering on results, or duplicate the expression in WHERE if filtering on source data.
+- Subquery scope: Explicitly select all columns needed by the outer query.
+- JOIN keys: Use ON with full expressions instead of USING if the key is an alias.
+- In outer queries, refer to the alias of the Subquery/CTE itself, not the tables inside it.
+
+### Non-Aggregated Columns in GROUP BY {#non-aggregated-columns-in-group-by}
+
+Error: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. Exception code: 215 
+
+Cause: The old analyzer allowed selecting columns not present in the GROUP BY clause (often picking an arbitrary value). The new analyzer adheres to standard SQL: every selected column must be either an aggregate or a grouping key. 
+
+Solution: Wrap the column in `any()`, `argMax()`, or add it to the GROUP BY.
+
+```sql
+/* ORIGINAL QUERY */
+-- device_id is ambiguous
+SELECT user_id, device_id FROM table GROUP BY user_id
+
+/* FIXED QUERY */
+SELECT user_id, any(device_id) FROM table GROUP BY user_id
+-- OR
+SELECT user_id, device_id FROM table GROUP BY user_id, device_id
+```
+
+### Duplicate CTE names {#duplicate-cte-names}
+
+Error: `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. Exception code: 179
+
+Cause: The old analyzer permitted defining multiple Common Table Expressions (WITH ...) with the same name shadowing the earlier one. The new analyzer forbids this ambiguity. 
+
+Solution: Rename duplicate CTEs to be unique.
+
+```sql
+/* ORIGINAL QUERY */
+WITH 
+  data AS (SELECT 1 AS id), 
+  data AS (SELECT 2 AS id) -- Redefined
+SELECT * FROM data;
+
+/* FIXED QUERY */
+WITH 
+  raw_data AS (SELECT 1 AS id), 
+  processed_data AS (SELECT 2 AS id)
+SELECT * FROM processed_data;
+```
+
+### Ambiguous column identifiers {#ambiguous-column-identifiers}
+
+Error: `JOIN [JOIN TYPE] ambiguous identifier ... (AMBIGUOUS_IDENTIFIER)` Exception code: 207
+
+Cause: The query references a column name present in multiple tables within a JOIN without specifying the source table. The old analyzer often guessed the column based on internal logic, the new analyzer requires explicit name. 
+
+Solution: Fully qualify the column with table_alias.column_name.
+
+```sql
+/* ORIGINAL QUERY */
+SELECT table1.ID AS ID FROM table1, table2 WHERE ID...
+
+/* FIXED QUERY */
+SELECT table1.ID AS ID_RENAMED FROM table1, table2 WHERE ID_RENAMED...
+```
+
+### Invalid usage of FINAL {#invalid-usage-of-final}
+
+Error: `Table expression modifiers FINAL are not supported for subquery...` or `Storage ... doesn't support FINAL` (`UNSUPPORTED_METHOD`). Exception codes: 1, 181 
+
+Cause: FINAL is a modifier for table storage (specifically [Shared]ReplacingMergeTree). The new analyzer rejects FINAL when applied to:
+- Subqueries or derived tables (e.g., FROM (SELECT ...) FINAL).
+- Table engines that do not support it (e.g., SharedMergeTree). 
+
+Solution: Apply FINAL only to the source table inside the subquery, or remove it if the engine does not support it.
+
+```sql
+/* ORIGINAL QUERY */
+SELECT * FROM (SELECT * FROM my_table) AS subquery FINAL ...
+
+/* FIXED QUERY */
+SELECT * FROM (SELECT * FROM my_table FINAL) AS subquery ...
+```
+
+### `countDistinct()` function case-insensitivity {#countdistinct-case-insensitivity}
+
+Error: `Function with name countdistinct does not exist (UNKNOWN_FUNCTION)`. Exception code: 46
+
+Cause: Function names are case-sensitive or strictly mapped in the new analyzer. `countdistinct` (all lowercase) is no longer resolved automatically. 
+
+Solution: Use the standard `countDistinct` (camelCase) or the ClickHouse specific uniq.

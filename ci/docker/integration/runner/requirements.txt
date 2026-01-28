@@ -48,7 +48,6 @@ isodate==0.6.1
 jmespath==1.0.1
 jwcrypto==1.5.6
 kafka-python==2.0.2
-kazoo==2.9.0
 krb5==0.5.1
 lxml==5.1.0
 lz4==4.3.3

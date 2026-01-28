@@ -1,0 +1,57 @@
+src_table	5
+src_table	8
+1	Alice
+1	Alice
+1	Alice
+2	Bob
+2	Bob
+3	Charlie
+3	Charlie
+4	David
+dst_1_0	2
+2	Bob
+4	David
+dst_1_1	4
+1	Alice
+1	Alice
+3	Charlie
+3	Charlie
+dst_1_2	6
+1	Alice
+1	Alice
+2	Bob
+3	Charlie
+3	Charlie
+4	David
+dst_2_01	6
+1	Alice
+1	Alice
+2	Bob
+3	Charlie
+3	Charlie
+4	David
+Row 1:
+──────
+query:                       INSERT INTO default.src_table (id, name) FORMAT Values
+query_kind:                  AsyncInsertFlush
+exception_code:              0
+read_rows:                   72
+written_rows:                60
+QueriesWithSubqueries:       17
+SelectQueriesWithSubqueries: 12
+AsyncInsertRows:             9
+SelfDuplicatedAsyncInserts:  6
+DuplicatedAsyncInserts:      1
+
+Row 2:
+──────
+query:                       INSERT INTO default.src_table (id, name) FORMAT Values
+query_kind:                  AsyncInsertFlush
+exception_code:              0
+read_rows:                   0
+written_rows:                6
+QueriesWithSubqueries:       0
+SelectQueriesWithSubqueries: 0
+AsyncInsertRows:             6
+SelfDuplicatedAsyncInserts:  1
+DuplicatedAsyncInserts:      0

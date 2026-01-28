@@ -306,14 +306,16 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(const YAMLRegExpT
 {
 }
 
-QueryPipeline YAMLRegExpTreeDictionarySource::loadAll()
+BlockIO YAMLRegExpTreeDictionarySource::loadAll()
 {
     LOG_INFO(logger, "Loading regexp tree from yaml '{}'", filepath);
     last_modification = getLastModification();
 
     const auto node = loadYAML(filepath);
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(parseYAMLAsRegExpTree(node, key_name, structure))));
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(parseYAMLAsRegExpTree(node, key_name, structure))));
+    return io;
 }
 
 bool YAMLRegExpTreeDictionarySource::isModified() const

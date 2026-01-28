@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/transformTypesRecursively.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <IO/ReadBufferFromString.h>
@@ -791,7 +790,7 @@ namespace
 
         ReadBufferFromString buf(field);
         DayNum tmp;
-        return tryReadDateText(tmp, buf, DateLUT::instance(), /*allowed_delimiters=*/"-/:") && buf.eof();
+        return tryReadDateText(tmp, buf, DateLUT::instance(), /*allowed_delimiters=*/"-/:", /*saturate_on_overflow=*/false) && buf.eof();
     }
 
     DataTypePtr tryInferDateTimeOrDateTime64(std::string_view field, const FormatSettings & settings)
@@ -827,7 +826,7 @@ namespace
             switch (settings.date_time_input_format)
             {
                 case FormatSettings::DateTimeInputFormat::Basic:
-                    if (tryReadDateTimeText(tmp, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":") && buf.eof())
+                    if (tryReadDateTimeText(tmp, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof())
                         return std::make_shared<DataTypeDateTime>();
                     break;
                 case FormatSettings::DateTimeInputFormat::BestEffort:
@@ -846,7 +845,7 @@ namespace
         switch (settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadDateTime64Text(tmp, 9, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":") && buf.eof())
+                if (tryReadDateTime64Text(tmp, 9, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof())
                     return std::make_shared<DataTypeDateTime64>(9);
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffort:
@@ -1292,21 +1291,12 @@ namespace
 
         if (key_types.empty())
         {
-            if constexpr (is_json)
-            {
-                if (settings.json.allow_deprecated_object_type)
-                    return std::make_shared<DataTypeObjectDeprecated>("json", true);
-            }
-
             /// Empty Map is Map(Nothing, Nothing)
             return std::make_shared<DataTypeMap>(std::make_shared<DataTypeNothing>(), std::make_shared<DataTypeNothing>());
         }
 
         if constexpr (is_json)
         {
-            if (settings.json.allow_deprecated_object_type)
-                return std::make_shared<DataTypeObjectDeprecated>("json", true);
-
             if (settings.json.read_objects_as_strings)
                 return std::make_shared<DataTypeString>();
 
@@ -1360,7 +1350,7 @@ namespace
         {
             if constexpr (is_json)
             {
-                if (!settings.json.allow_deprecated_object_type && settings.json.try_infer_objects_as_tuples)
+                if (settings.json.try_infer_objects_as_tuples)
                     return tryInferJSONPaths(buf, settings, json_info, depth);
             }
 
@@ -1696,14 +1686,6 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(type.get());
         auto nested_type = adjustNullableRecursively(lc_type->getDictionaryType(), make_nullable, settings);
         return nested_type ? std::make_shared<DataTypeLowCardinality>(nested_type) : nullptr;
-    }
-
-    if (which.isObjectDeprecated())
-    {
-        const auto * object_type = assert_cast<const DataTypeObjectDeprecated *>(type.get());
-        if (object_type->hasNullableSubcolumns() == make_nullable)
-            return type;
-        return std::make_shared<DataTypeObjectDeprecated>(object_type->getSchemaFormat(), make_nullable);
     }
 
     if (which.isObject() && !settings.schema_inference_make_json_columns_nullable)

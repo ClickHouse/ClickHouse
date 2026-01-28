@@ -46,7 +46,7 @@ SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
         };
         FunctionDocumentation::IntroducedIn introduced_in = {21, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionSQLJSON<NameJSONExists, JSONExistsImpl>>(documentation);
     }
 
@@ -81,7 +81,7 @@ String
         };
         FunctionDocumentation::IntroducedIn introduced_in = {21, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionSQLJSON<NameJSONQuery, JSONQueryImpl>>(documentation);
     }
 
@@ -119,7 +119,7 @@ world
         };
         FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionSQLJSON<NameJSONValue, JSONValueImpl>>(documentation);
     }
 }

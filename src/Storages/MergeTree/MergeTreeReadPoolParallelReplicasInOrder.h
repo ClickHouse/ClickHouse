@@ -42,6 +42,9 @@ private:
     RangesInDataPartsDescription request;
     RangesInDataPartsDescription buffered_tasks;
 
+    /// See the comment in MergeTreeReadPoolParallelReplicas::getTask method.
+    bool failed_to_get_task{false};
+
     mutable std::mutex mutex;
     std::vector<size_t> per_part_marks_in_range;
 };

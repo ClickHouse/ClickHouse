@@ -235,31 +235,39 @@ QueryPipeline MySQLDictionarySource::loadFromQuery(const String & query)
             pool, query, sample_block, settings));
 }
 
-QueryPipeline MySQLDictionarySource::loadAll()
+BlockIO MySQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
-    return loadFromQuery(load_all_query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(load_all_query);
+    return io;
 }
 
-QueryPipeline MySQLDictionarySource::loadUpdatedAll()
+BlockIO MySQLDictionarySource::loadUpdatedAll()
 {
     std::string load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, fmt::runtime(load_update_query));
-    return loadFromQuery(load_update_query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(load_update_query);
+    return io;
 }
 
-QueryPipeline MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    return loadFromQuery(query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(query);
+    return io;
 }
 
-QueryPipeline MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    return loadFromQuery(query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(query);
+    return io;
 }
 
 bool MySQLDictionarySource::isModified() const
@@ -321,7 +329,9 @@ std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    return readInvalidateQuery(QueryPipeline(std::make_unique<MySQLSource>(pool->get(), request, invalidate_sample_block, settings)));
+
+    QueryPipeline pipeline(std::make_unique<MySQLSource>(pool->get(), request, invalidate_sample_block, settings));
+    return readInvalidateQuery(pipeline);
 }
 
 }

@@ -40,10 +40,10 @@ public:
     PostgreSQLDictionarySource(const PostgreSQLDictionarySource & other);
     PostgreSQLDictionarySource & operator=(const PostgreSQLDictionarySource &) = delete;
 
-    QueryPipeline loadAll() override;
-    QueryPipeline loadUpdatedAll() override;
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadAll() override;
+    BlockIO loadUpdatedAll() override;
+    BlockIO loadIds(const std::vector<UInt64> & ids) override;
+    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override;

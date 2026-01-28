@@ -145,11 +145,6 @@ bool DataTypeVariant::haveMaximumSizeOfValue() const
     return std::all_of(variants.begin(), variants.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });
 }
 
-bool DataTypeVariant::hasDynamicSubcolumnsDeprecated() const
-{
-    return std::any_of(variants.begin(), variants.end(), [](auto && elem) { return elem->hasDynamicSubcolumnsDeprecated(); });
-}
-
 std::optional<ColumnVariant::Discriminator> DataTypeVariant::tryGetVariantDiscriminator(const String & type_name) const
 {
     for (size_t i = 0; i != variants.size(); ++i)

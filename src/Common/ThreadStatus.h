@@ -3,7 +3,6 @@
 #include <Core/LogsLevel.h>
 #include <IO/Progress.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/StringRef.h>
 #include <Common/IThrottler.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
@@ -43,6 +42,8 @@ struct PerfEventsCounters;
 class InternalTextLogsQueue;
 struct ViewRuntimeData;
 class QueryViewsLog;
+enum class ThreadName : uint8_t;
+
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 
@@ -67,8 +68,9 @@ class ThreadGroup
 {
 public:
     using FatalErrorCallback = std::function<void()>;
-    explicit ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
+    ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
     explicit ThreadGroup(ThreadGroupPtr parent);
+    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -123,13 +125,14 @@ public:
     static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
+    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
-    UInt64 getThreadsTotalElapsedMs() const;
+    UInt64 getGroupElapsedMs() const;
 
     void linkThread(UInt64 thread_id);
-    void unlinkThread(UInt64 elapsed_thread_counter_ms);
+    void unlinkThread();
 
 private:
     mutable std::mutex mutex;
@@ -146,7 +149,8 @@ private:
     /// Peak threads count in the group
     size_t peak_threads_usage TSA_GUARDED_BY(mutex) = 0;
 
-    UInt64 elapsed_total_threads_counter_ms TSA_GUARDED_BY(mutex) = 0;
+    Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex) = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
+    UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
 
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
 };
@@ -170,7 +174,7 @@ public:
     ///    Use this when running a task in a thread pool.
     ///  * If true, remembers the current group and restores it in destructor.
     /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
-    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group_, const char * thread_name, bool allow_existing_group = false) noexcept;
+    ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
     ~ThreadGroupSwitcher();
 
 private:

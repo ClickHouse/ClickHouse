@@ -3,11 +3,11 @@ description: 'This engine allows integrating ClickHouse with Redis.'
 sidebar_label: 'Redis'
 sidebar_position: 175
 slug: /engines/table-engines/integrations/redis
-title: 'Redis'
+title: 'Redis table engine'
 doc_type: 'guide'
 ---
 
-# Redis
+# Redis table engine
 
 This engine allows integrating ClickHouse with [Redis](https://redis.io/). For Redis takes kv model, we strongly recommend you only query it in a point way, such as `where k=xx` or `where k in (xx, xx)`.
 

@@ -7,6 +7,8 @@
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -69,7 +71,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
         {
             SetValue & sv = const_cast<SetValue &>(i == 0 ? svs.set_value() : svs.other_values(i - 1));
 
-            if (allSettings.find(sv.property()) != allSettings.end())
+            if (allSettings.contains(sv.property()))
             {
                 const CHSetting & chs = allSettings.at(sv.property());
 
@@ -102,7 +104,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
         /// Remove partition by
         te.clear_partition_by();
     }
-    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
+    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree)
     {
         if (te.has_primary_key() && te.has_order() && rg.nextSmallNumber() < 5)
         {
@@ -187,7 +189,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                         {
                             SetValue & sv = const_cast<SetValue &>(j == 0 ? svs.set_value() : svs.other_values(j - 1));
 
-                            if (allSettings.find(sv.property()) != allSettings.end())
+                            if (allSettings.contains(sv.property()))
                             {
                                 const CHSetting & chs = allSettings.at(sv.property());
 
@@ -248,7 +250,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             newd.set_if_not_exists(true);
             deng->set_engine(t.db->deng);
             t.db->setName(newd.mutable_database());
-            t.db->finishDatabaseSpecification(deng, t.db->nparams > 0);
+            t.db->finishDatabaseSpecification(deng);
             CreateDatabaseToString(buf, newd);
             res &= !performQuery(buf + ";");
         }
@@ -264,7 +266,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             {
                 t.db->setName(est.mutable_database());
             }
-            if (rg.nextMediumNumber() < 91)
+            if (!fc.measure_performance && !fc.compare_explains && rg.nextMediumNumber() < 91)
             {
                 this->swapTableDefinitions(rg, newt);
             }
@@ -283,7 +285,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return !performQuery(fmt::format("{} {};", truncateStatement(), getTableName(t.db, t.tname)));
+    return !performQuery(fmt::format("{} {} SYNC;", truncateStatement(), getTableName(t.db, t.tname)));
 }
 
 bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
@@ -1204,7 +1206,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 }
 
@@ -1350,7 +1352,7 @@ void MongoDBIntegration::documentAppendAnyValue(
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 }
 
@@ -1457,7 +1459,7 @@ bool DolorIntegration::httpPut(const String & path, const String & body)
     Poco::URI uri;
     uri.setScheme("http");
     uri.setHost(sc.server_hostname);
-    uri.setPort(sc.port);
+    uri.setPort(static_cast<uint16_t>(sc.port));
     uri.setPath(path);
 
     /// Build PUT request
@@ -1510,11 +1512,11 @@ bool DolorIntegration::performDatabaseIntegration(RandomGenerator & rg, SQLDatab
             catalog = "unity";
             break;
         default:
-            chassert(0);
+            UNREACHABLE();
     }
     buf += fmt::format(
-        R"({{"seed":{},"database_name":"{}","storage":"{}","lake":"{}","catalog":"{}"}})",
-        rg.nextRandomUInt64(),
+        R"({{"seed":{},"database_name":"{}","storage":"{}","engine":"{}","catalog":"{}"}})",
+        rg.nextInFullRange(),
         d.getSparkCatalogName(),
         d.storage == LakeStorage::S3 ? "s3" : (d.storage == LakeStorage::Azure ? "azure" : "local"),
         d.format == LakeFormat::DeltaLake ? "deltalake" : "iceberg",
@@ -1530,7 +1532,7 @@ bool DolorIntegration::reRunCreateDatabase(const String & body)
 
 static const DB::Strings & catalogs = {"glue", "hive", "rest", "unity"};
 
-void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
+void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de)
 {
     String catalog_str;
     const Catalog * cat = nullptr;
@@ -1564,7 +1566,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
             catalog_str = d.format == LakeFormat::Iceberg ? "rest" : "unity";
             break;
         default:
-            chassert(0);
+            UNREACHABLE();
     }
 
     if (rg.nextMediumNumber() < 6)
@@ -1586,10 +1588,11 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
 
     for (uint32_t i = 0; i < total_to_add; i++)
     {
+        SettingValues * svs = de->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
         const uint32_t add_type = 3 * static_cast<uint32_t>(added_type < toadd_type);
         const uint32_t add_warehouse = 3 * static_cast<uint32_t>(added_warehouse < toadd_warehouse);
-        const uint32_t add_endpoint = 3 * static_cast<uint32_t>(added_endpoint < toadd_endpoint);
+        const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
         const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
         const uint32_t add_credentials = 3 * static_cast<uint32_t>(added_credentials < toadd_credentials);
         const uint32_t prob_space = add_type + add_warehouse + add_endpoint + add_region + add_credentials;
@@ -1632,7 +1635,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         }
         else
         {
-            chassert(0);
+            UNREACHABLE();
         }
     }
 }
@@ -1651,16 +1654,12 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
 
         collectColumnPaths("c" + std::to_string(key), val.tp, 0, cpc, entries);
     }
-
-    chassert(t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine());
+    /// Common information
     buf += fmt::format(
-        R"({{"seed":{},"catalog_name":"{}","database_name":"{}","table_name":"{}","storage":"{}","lake":"{}","format":"{}","deterministic":{},"columns":[)",
-        rg.nextRandomUInt64(),
-        t.getSparkCatalogName(),
+        R"({{"seed":{},"database_name":"{}","table_name":"{}","format":"{}","deterministic":{},"columns":[)",
+        rg.nextInFullRange(),
         t.getDatabaseName(),
         t.getTableName(false),
-        t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"),
-        t.isAnyDeltaLakeEngine() ? "deltalake" : "iceberg",
         t.file_format.has_value() ? InOutFormat_Name(t.file_format.value()).substr(6) : "any",
         t.is_deterministic ? "1" : "0");
     for (const auto & entry : entries)
@@ -1669,7 +1668,20 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
             R"({}{{"name":"{}","type":"{}"}})", first ? "" : ",", entry.getBottomName(), entry.getBottomType()->typeName(false, true));
         first = false;
     }
-    buf += "]}";
+    buf += "]";
+    if (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine())
+    {
+        buf += fmt::format(
+            R"(,"engine":"{}","catalog_name":"{}","storage":"{}")",
+            t.isAnyDeltaLakeEngine() ? "deltalake" : "iceberg",
+            t.getSparkCatalogName(),
+            t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"));
+    }
+    else if (t.isKafkaEngine())
+    {
+        buf += fmt::format(R"(,"engine":"kafka","topic":"{}","group":"{}")", t.topic.value(), t.group.value());
+    }
+    buf += "}";
     fc.outf << "--External table " << buf << std::endl;
     return httpPut("/sparktable", buf);
 }
@@ -1681,139 +1693,155 @@ bool DolorIntegration::reRunCreateTable(const String & body)
 
 void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
 {
-    const LakeCatalog catalog = t.getLakeCatalog();
-
-    if (catalog == LakeCatalog::None)
+    if (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine())
     {
-        te->add_params()->set_rvalue(
-            t.isOnS3() ? fc.minio_server.value().named_collection : (t.isOnAzure() ? fc.azurite_server.value().named_collection : "local"));
-    }
-    else
-    {
-        const Catalog * cat = nullptr;
-        String catalog_url;
-        String catalog_str;
-        SettingValues * svs = te->mutable_setting_values();
+        const LakeCatalog catalog = t.getLakeCatalog();
 
-        switch (catalog)
+        if (catalog == LakeCatalog::None)
         {
-            case LakeCatalog::Glue:
-                cat = &sc.glue_catalog.value();
-                catalog_str = "glue";
-                catalog_url = fmt::format("http://{}:{}", cat->server_hostname, cat->port);
-                break;
-            case LakeCatalog::REST:
-                cat = &sc.rest_catalog.value();
-                catalog_str = "rest";
-                catalog_url = fmt::format("http://{}:{}{}", cat->server_hostname, cat->port, cat->path);
-                break;
-            case LakeCatalog::Hive:
-                cat = &sc.hive_catalog.value();
-                catalog_str = "hive";
-                catalog_url = fmt::format("thrift://{}:{}", cat->server_hostname, cat->port);
-                break;
-            case LakeCatalog::Unity:
-                cat = &sc.unity_catalog.value();
-                catalog_str = t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "rest" : "unity";
-                catalog_url = fmt::format(
-                    "http://{}:{}{}{}",
-                    cat->server_hostname,
-                    cat->port,
-                    cat->path,
-                    t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "/iceberg" : "");
-                break;
-            default:
-                chassert(0);
+            te->add_params()->set_rvalue(
+                t.isOnS3() ? fc.minio_server.value().named_collection
+                           : (t.isOnAzure() ? fc.azurite_server.value().named_collection : "local"));
         }
-
-        /// The other storages are not tested yet
-        chassert(t.isOnS3());
-        if (rg.nextMediumNumber() < 6)
+        else
         {
-            /// Mess up with the catalog
-            catalog_str = rg.pickRandomly(catalogs);
-        }
-        uint32_t added_sct = 0;
-        uint32_t added_warehouse = 0;
-        uint32_t added_endpoint = 0;
-        uint32_t added_region = 0;
-        uint32_t added_url = 0;
-        const uint32_t toadd_sct = rg.nextMediumNumber() < 96;
-        const uint32_t toadd_warehouse = rg.nextMediumNumber() < 96;
-        const uint32_t toadd_endpoint = rg.nextMediumNumber() < 96;
-        const uint32_t toadd_region = !cat->region.empty() && rg.nextMediumNumber() < 96;
-        const uint32_t toadd_url = rg.nextMediumNumber() < 96;
-        const uint32_t total_to_add = toadd_sct + toadd_warehouse + toadd_endpoint + toadd_region + toadd_url;
+            const Catalog * cat = nullptr;
+            String catalog_url;
+            String catalog_str;
 
-        for (uint32_t i = 0; i < total_to_add; i++)
-        {
-            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-            const uint32_t add_sct = 3 * static_cast<uint32_t>(added_sct < toadd_sct);
-            const uint32_t add_warehouse = 3 * static_cast<uint32_t>(added_warehouse < toadd_warehouse);
-            const uint32_t add_endpoint = 3 * static_cast<uint32_t>(added_endpoint < toadd_endpoint);
-            const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
-            const uint32_t add_url = 3 * static_cast<uint32_t>(added_url < toadd_url);
-            const uint32_t prob_space = add_sct + add_warehouse + add_endpoint + add_region + add_url;
-            std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-            const uint32_t nopt = next_dist(rg.generator);
-
-            if (add_sct && nopt < (add_sct + 1))
+            switch (catalog)
             {
-                sv->set_property("storage_catalog_type");
-                sv->set_value("'" + catalog_str + "'");
-                added_sct++;
+                case LakeCatalog::Glue:
+                    cat = &sc.glue_catalog.value();
+                    catalog_str = "glue";
+                    catalog_url = fmt::format("http://{}:{}", cat->server_hostname, cat->port);
+                    break;
+                case LakeCatalog::REST:
+                    cat = &sc.rest_catalog.value();
+                    catalog_str = "rest";
+                    catalog_url = fmt::format("http://{}:{}{}", cat->server_hostname, cat->port, cat->path);
+                    break;
+                case LakeCatalog::Hive:
+                    cat = &sc.hive_catalog.value();
+                    catalog_str = "hive";
+                    catalog_url = fmt::format("thrift://{}:{}", cat->server_hostname, cat->port);
+                    break;
+                case LakeCatalog::Unity:
+                    cat = &sc.unity_catalog.value();
+                    catalog_str = t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "rest" : "unity";
+                    catalog_url = fmt::format(
+                        "http://{}:{}{}{}",
+                        cat->server_hostname,
+                        cat->port,
+                        cat->path,
+                        t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "/iceberg" : "");
+                    break;
+                default:
+                    UNREACHABLE();
             }
-            else if (add_warehouse && nopt < (add_sct + add_warehouse + 1))
-            {
-                sv->set_property("storage_warehouse");
-                sv->set_value("'" + t.getDatabaseName() + "'");
-                added_warehouse++;
-            }
-            else if (add_endpoint && nopt < (add_sct + add_warehouse + add_endpoint + 1))
-            {
-                /// The key-value format is not well supported for catalogs at the moment
-                const ServerCredentials & minio = fc.minio_server.value();
 
-                te->add_params()->set_svalue(t.getTablePath(fc));
-                te->add_params()->set_svalue(minio.password);
-                te->add_params()->set_svalue(minio.secret);
-                if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
+            /// The other storages are not tested yet
+            chassert(t.isOnS3());
+            if (rg.nextMediumNumber() < 6)
+            {
+                /// Mess up with the catalog
+                catalog_str = rg.pickRandomly(catalogs);
+            }
+            uint32_t added_sct = 0;
+            uint32_t added_warehouse = 0;
+            uint32_t added_endpoint = 0;
+            uint32_t added_region = 0;
+            uint32_t added_url = 0;
+            const uint32_t toadd_sct = rg.nextMediumNumber() < 96;
+            const uint32_t toadd_warehouse = rg.nextMediumNumber() < 96;
+            const uint32_t toadd_endpoint = rg.nextMediumNumber() < 96;
+            const uint32_t toadd_region = !cat->region.empty() && rg.nextMediumNumber() < 96;
+            const uint32_t toadd_url = rg.nextMediumNumber() < 96;
+            const uint32_t total_to_add = toadd_sct + toadd_warehouse + toadd_endpoint + toadd_region + toadd_url;
+
+            for (uint32_t i = 0; i < total_to_add; i++)
+            {
+                SettingValues * svs = te->mutable_setting_values();
+                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+                const uint32_t add_sct = 3 * static_cast<uint32_t>(added_sct < toadd_sct);
+                const uint32_t add_warehouse = 3 * static_cast<uint32_t>(added_warehouse < toadd_warehouse);
+                const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
+                const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
+                const uint32_t add_url = 3 * static_cast<uint32_t>(added_url < toadd_url);
+                const uint32_t prob_space = add_sct + add_warehouse + add_endpoint + add_region + add_url;
+                std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+                const uint32_t nopt = next_dist(rg.generator);
+
+                if (add_sct && nopt < (add_sct + 1))
                 {
-                    te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
-                    if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
-                    {
-                        te->add_params()->set_svalue(t.file_comp.value());
-                    }
+                    sv->set_property("storage_catalog_type");
+                    sv->set_value("'" + catalog_str + "'");
+                    added_sct++;
                 }
-                sv->set_property("object_storage_endpoint");
-                sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
-                added_endpoint++;
-            }
-            else if (add_region && nopt < (add_sct + add_warehouse + add_endpoint + add_region + 1))
-            {
-                sv->set_property("storage_region");
-                sv->set_value("'" + cat->region + "'");
-                added_region++;
-            }
-            else if (add_url && nopt < (add_sct + add_warehouse + add_endpoint + add_region + add_url + 1))
-            {
-                sv->set_property("storage_catalog_url");
-                sv->set_value("'" + catalog_url + "'");
-                added_url++;
-            }
-            else
-            {
-                chassert(0);
+                else if (add_warehouse && nopt < (add_sct + add_warehouse + 1))
+                {
+                    sv->set_property("storage_warehouse");
+                    sv->set_value("'" + t.getDatabaseName() + "'");
+                    added_warehouse++;
+                }
+                else if (add_endpoint && nopt < (add_sct + add_warehouse + add_endpoint + 1))
+                {
+                    /// The key-value format is not well supported for catalogs at the moment
+                    const ServerCredentials & minio = fc.minio_server.value();
+
+                    te->add_params()->set_svalue(t.getTablePath(fc));
+                    te->add_params()->set_svalue(minio.password);
+                    te->add_params()->set_svalue(minio.secret);
+                    if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
+                    {
+                        te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
+                        if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
+                        {
+                            te->add_params()->set_svalue(t.file_comp.value());
+                        }
+                    }
+                    sv->set_property("object_storage_endpoint");
+                    sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+                    added_endpoint++;
+                }
+                else if (add_region && nopt < (add_sct + add_warehouse + add_endpoint + add_region + 1))
+                {
+                    sv->set_property("storage_region");
+                    sv->set_value("'" + cat->region + "'");
+                    added_region++;
+                }
+                else if (add_url && nopt < (add_sct + add_warehouse + add_endpoint + add_region + add_url + 1))
+                {
+                    sv->set_property("storage_catalog_url");
+                    sv->set_value("'" + catalog_url + "'");
+                    added_url++;
+                }
+                else
+                {
+                    UNREACHABLE();
+                }
             }
         }
+    }
+    else if (t.isKafkaEngine())
+    {
+        const String & host = fc.kafka_server.has_value() ? fc.kafka_server.value().server_hostname : "localhost";
+        const uint16_t & port = static_cast<uint16_t>(fc.kafka_server.has_value() ? fc.kafka_server.value().port : 9092);
+
+        te->add_params()->set_svalue(fmt::format("{}:{}", host, port));
+        te->add_params()->set_svalue(t.topic.value()); /// topic
+        te->add_params()->set_svalue(t.group.value()); /// group
+        te->add_params()->set_in_out(t.file_format.has_value() ? t.file_format.value() : InOutFormat::INOUT_CSV);
     }
 }
 
-bool DolorIntegration::performExternalCommand(const uint64_t seed, const bool async, const String & cname, const String & tname)
+bool DolorIntegration::performExternalCommand(
+    const uint64_t seed, const bool async, const String & engine, const String & cname, const String & tname)
 {
     return httpPut(
         "/sparkupdate",
-        fmt::format(R"({{"seed":{},"async":{},"catalog_name":"{}","table_name":"{}"}})", seed, async ? 1 : 0, cname, tname));
+        fmt::format(
+            R"({{"seed":{},"async":{},"engine":"{}","catalog_name":"{}","table_name":"{}"}})", seed, async ? 1 : 0, engine, cname, tname));
 }
 
 ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
@@ -1861,7 +1889,7 @@ ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     }
 }
 
-void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
+void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de)
 {
     ClickHouseIntegration * next = nullptr;
 
@@ -1871,12 +1899,11 @@ void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatab
             next = dolor.get();
             break;
         default:
-            chassert(0);
-            break;
+            UNREACHABLE();
     }
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performDatabaseIntegration(rg, d));
-    next->setDatabaseDetails(rg, d, de, svs);
+    next->setDatabaseDetails(rg, d, de);
 }
 
 void ExternalIntegrations::createExternalDatabaseTable(
@@ -1914,8 +1941,7 @@ void ExternalIntegrations::createExternalDatabaseTable(
             next = dolor.get();
             break;
         default:
-            chassert(0);
-            break;
+            UNREACHABLE();
     }
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performTableIntegration(rg, t, true, entries));
@@ -1932,8 +1958,7 @@ bool ExternalIntegrations::reRunCreateDatabase(const IntegrationCall ic, const S
             next = dolor.get();
             break;
         default:
-            chassert(0);
-            break;
+            UNREACHABLE();
     }
     return next ? next->reRunCreateDatabase(body) : false;
 }
@@ -1948,14 +1973,13 @@ bool ExternalIntegrations::reRunCreateTable(const IntegrationCall ic, const Stri
             next = dolor.get();
             break;
         default:
-            chassert(0);
-            break;
+            UNREACHABLE();
     }
     return next ? next->reRunCreateTable(body) : false;
 }
 
 bool ExternalIntegrations::performExternalCommand(
-    const uint64_t seed, const bool async, const IntegrationCall ic, const String & cname, const String & tname)
+    const uint64_t seed, const bool async, const IntegrationCall ic, const String & engine, const String & cname, const String & tname)
 {
     ClickHouseIntegration * next = nullptr;
 
@@ -1965,17 +1989,16 @@ bool ExternalIntegrations::performExternalCommand(
             next = dolor.get();
             break;
         default:
-            chassert(0);
-            break;
+            UNREACHABLE();
     }
     if (next)
     {
         if (async)
         {
-            worker.enqueue([next, seed, cname, tname]() { next->performExternalCommand(seed, true, cname, tname); });
+            worker.enqueue([next, seed, engine, cname, tname]() { next->performExternalCommand(seed, true, engine, cname, tname); });
             return true;
         }
-        return next->performExternalCommand(seed, false, cname, tname);
+        return next->performExternalCommand(seed, false, engine, cname, tname);
     }
     return false;
 }
@@ -2041,8 +2064,7 @@ void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const Stri
             azurite->setBackupDetails(filename, br);
             break;
         default:
-            chassert(0);
-            break;
+            UNREACHABLE();
     }
 }
 

@@ -43,8 +43,6 @@ struct ReadSettings
     /// For 'pread_threadpool'/'io_uring' method. Lower value is higher priority.
     Priority priority;
 
-    bool load_marks_asynchronously = true;
-
     size_t remote_fs_read_max_backoff_ms = 10000;
     size_t remote_fs_read_backoff_max_tries = 4;
 

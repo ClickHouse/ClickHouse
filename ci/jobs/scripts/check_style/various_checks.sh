@@ -11,6 +11,10 @@ tests_with_query_log=( $(
 for test_case in "${tests_with_query_log[@]}"; do
     grep -qE current_database.*currentDatabase "$test_case" || {
         grep -qE 'current_database.*\$CLICKHOUSE_DATABASE' "$test_case"
+    } || {
+        grep -qE 'has\(databases\,\ currentDatabase\(\)\)' "$test_case"
+    } || {
+        grep -qE 'has\(databases\,\ current_database\(\)\)' "$test_case"
     } || echo "Query to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
 done
 
@@ -75,7 +79,7 @@ for test_case in "${tests_with_replicated_merge_tree[@]}"; do
 done
 
 # Check for existence of __init__.py files
-for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ ! -f "${FILE}" ] && echo "${FILE} should exist for every integration test"; done
+# for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ ! -f "${FILE}" ] && echo "${FILE} should exist for every integration test"; done
 
 # Check for executable bit on non-executable files
 git ls-files -s $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} | \
@@ -86,6 +90,83 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -nam
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFF\xFE' | grep -P '.' && echo "Files should not have UTF-16LE BOM"
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFE\xFF' | grep -P '.' && echo "Files should not have UTF-16BE BOM"
 
+# Ensure that functions do not hold copy of ContextPtr
+#
+# ContextPtr holds lots of different stuff, including some caches, so prefer to
+# use weak_ptr or copy relevant info from Context, to avoid extending lifetime
+# of other objects.
+#
+# NOTE: most of the excludes here needs context to call another function, which
+# is easy to fix.
+FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
+    -e /trap.cpp
+    -e /toInterval.cpp
+    -e /structureToFormatSchema.cpp
+    -e /splitByRegexp.cpp
+    -e /reverse.cpp
+    -e /nullIf.cpp
+    -e /midpoint.h
+    -e /ifNull.cpp
+    -e /ifNotFinite.cpp
+    -e /generateSerialID.cpp
+    -e /formatRow.cpp
+    -e /filesystem.cpp
+    -e /evalMLMethod.cpp
+    -e /date_trunc.cpp
+    -e /currentRoles.cpp
+    -e /currentProfiles.cpp
+    -e /concat.cpp
+    -e /caseWithExpression.cpp
+    -e /CastOverloadResolver.cpp
+    -e /array/arrayRemove.h
+    -e /array/arrayJaccardIndex.cpp
+    -e /array/arrayIntersect.cpp
+    -e /array/arrayElement.cpp
+    -e /UserDefined/
+    -e /LeastGreatestGeneric.h
+    -e /Kusto/KqlArraySort.cpp
+    -e /FunctionsOpDate.cpp
+    -e /FunctionUnaryArithmetic.h
+    -e /FunctionNaiveBayesClassifier.cpp
+    -e /FunctionBinaryArithmetic.h
+    -e /ITupleFunction.h
+
+    -e /FunctionJoinGet.cpp
+    -e /FunctionsExternalDictionaries.cpp
+    -e /FunctionsExternalDictionaries.h
+    -e /FunctionDictGetKeys.cpp
+
+    -e /TimeSeries/timeSeriesIdToTagsGroup.cpp
+    -e /TimeSeries/timeSeriesIdToTags.cpp
+    -e /TimeSeries/timeSeriesTagsGroupToTags.cpp
+    -e /TimeSeries/timeSeriesStoreTags.cpp
+)
+find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | grep -v "${FUNCTIONS_CONTEXT_PTR_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid holding a copy of ContextPtr in Functions"
+
+# Ensure that functions do not use WithContext, since this may lead to expired context (when it is used in MergeTree).
+FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
+    # It is OK to have WithContext for derived classes from IFunctionOverloadResolver
+    -e /FunctionJoinGet.cpp
+    # Store global context
+    -e /ExternalUserDefinedExecutableFunctionsLoader.cpp
+    # Used only in getReturnTypeImpl()
+    -e /array/arrayReduce.cpp
+    -e /array/arrayReduceInRanges.cpp
+    # Global context
+    -e /catboostEvaluate.cpp
+    # Always constant
+    -e /connectionId.cpp
+    # Do not leak HTTP headers to MergeTree
+    -e /getClientHTTPHeader.cpp
+    # Avoid leaking
+    -e /getMergeTreeSetting.cpp
+    -e /getScalar.cpp
+    -e /getSetting.cpp
+    -e /hasColumnInTable.cpp
+    -e /initializeAggregation.cpp
+)
+find $ROOT_PATH/src/Functions -type f | xargs grep -l 'WithContext(' | grep -v "${FUNCTIONS_WITH_CONTEXT_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid using WithContext in Functions"
+
 # Conflict markers
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
     xargs grep -P '^(<<<<<<<|=======|>>>>>>>)$' | grep -P '.' && echo "Conflict markers are found in files"
@@ -94,7 +175,13 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -nam
 find $ROOT_PATH/{base,src,programs,utils,docs} -name '*.md' -or -name '*.h' -or -name '*.cpp' -or -name '*.js' -or -name '*.py' -or -name '*.html' | xargs grep -l -P '\r$' && echo "^ Files contain DOS/Windows newlines (\r\n instead of \n)."
 
 # Check for misuse of timeout in .sh tests
-find $ROOT_PATH/tests/queries -name '*.sh' | grep -vP '02835_drop_user_during_session|02922_deduplication_with_zero_copy|00738_lock_for_inner_table|shared_merge_tree|_sc_' |
-    xargs grep -l -P 'export -f' | xargs grep -l -F 'timeout' && echo ".sh tests cannot use the 'timeout' command, because it leads to race conditions, when the timeout is expired, and waiting for the command is done, but the server still runs some queries"
+find $ROOT_PATH/tests/queries -name '*.sh' |
+    grep -vP '02835_drop_user_during_session|02922_deduplication_with_zero_copy|00738_lock_for_inner_table|shared_merge_tree|_sc_|03710_parallel_alter_comment_rename_selects' |
+    xargs grep -l -P 'export -f' |
+    xargs grep -l -F 'timeout' &&
+    echo ".sh tests cannot use the 'timeout' command, because it leads to race conditions, when the timeout is expired, and waiting for the command is done, but the server still runs some queries"
 
 find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' | xargs grep --with-filename -i -E -e 'system\s*flush\s*logs\s*(;|$|")' && echo "Please use SYSTEM FLUSH LOGS log_name over global SYSTEM FLUSH LOGS"
+
+# CLICKHOUSE_URL already includes "?"
+git grep -P 'CLICKHOUSE_URL(|_HTTPS)(}|}/|/|)\?' $ROOT_PATH/tests/queries/0_stateless/*.sh

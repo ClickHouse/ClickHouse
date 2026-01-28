@@ -147,11 +147,11 @@ public:
 
             if (res > MAX_H3_RES)
                 throw Exception(
-                        ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
-                        toString(res),
-                        getName(),
-                        MAX_H3_RES);
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
+                    static_cast<uint8_t>(res),
+                    getName(),
+                    MAX_H3_RES);
 
             LatLng coord;
             coord.lng = degsToRads(lon);
@@ -203,7 +203,7 @@ The previous behavior can be restored using setting `geotoh3_argument_order = 'l
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionGeoToH3>(documentation);
 }
 

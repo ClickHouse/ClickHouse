@@ -125,7 +125,7 @@ public:
     DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override;
-    StringRef getDataAt(size_t n) const override;
+    std::string_view getDataAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
 
     void insert(const Field & x) override;
@@ -143,18 +143,17 @@ public:
 
     void popBack(size_t n) override;
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
-    std::optional<size_t> getSerializedValueSize(size_t) const override { return std::nullopt; }
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
+    std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
@@ -176,6 +175,7 @@ public:
     void reserve(size_t n) override;
     size_t capacity() const override;
     void prepareForSquashing(const std::vector<ColumnPtr> & source_columns, size_t factor) override;
+    void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
@@ -203,8 +203,9 @@ public:
 
     bool hasDynamicStructure() const override { return true; }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void fixDynamicStructure() override;
 
     const PathToColumnMap & getTypedPaths() const { return typed_paths; }
     PathToColumnMap & getTypedPaths() { return typed_paths; }
@@ -278,20 +279,73 @@ public:
     static void deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column);
 
     /// Paths in shared data are sorted in each row. Use this method to find the lower bound for specific path in the row.
-    static size_t findPathLowerBoundInSharedData(StringRef path, const ColumnString & shared_data_paths, size_t start, size_t end);
+    static size_t findPathLowerBoundInSharedData(std::string_view path, const ColumnString & shared_data_paths, size_t start, size_t end);
     /// Insert all the data from shared data with specified path to dynamic column.
-    static void fillPathColumnFromSharedData(IColumn & path_column, StringRef path, const ColumnPtr & shared_data_column, size_t start, size_t end);
+    static void fillPathColumnFromSharedData(IColumn & path_column, std::string_view path, const ColumnPtr & shared_data_column, size_t start, size_t end);
 
-    /// Validate that all dynamic paths have correct sizes.
+    /// Due to previous bugs we can have an invalid state where we have some path
+    /// both in shared data and in dynamic paths and only one value is not NULL.
+    /// This methods repairs the column and removes this duplicate by removing path
+    /// and value from shared data and keeping only dynamic path containing non-Null value.
+    /// offset argument - is the offset from which we should check for duplicates.
+    void repairDuplicatesInDynamicPathsAndSharedData(size_t offset = 0);
+
     void validateDynamicPathsSizes() const;
 
+    /// Class that allows to iterate over paths inside single row in ColumnObject in sorted order.
+    class SortedPathsIterator
+    {
+    public:
+        enum class PathType
+        {
+            TYPED,
+            DYNAMIC,
+            SHARED_DATA,
+        };
+
+        struct PathInfo
+        {
+            PathType type;
+            std::string_view path;
+            ColumnPtr column;
+            size_t row;
+        };
+
+        SortedPathsIterator(const ColumnObject & column_object_, size_t row_);
+
+        void next();
+        bool end();
+
+        /// Compare paths and values of 2 iterators.
+        /// Returns -1, 0, 1 if this iterator is less, equal or greater than rhs.
+        int compare(const SortedPathsIterator & rhs, int nan_direction_hint) const;
+
+        PathInfo getCurrentPathInfo() const;
+
+    private:
+        void setCurrentPath();
+        std::string_view getCurrentPath() const;
+        std::pair<ColumnPtr, size_t> getCurrentPathColumnAndRow() const;
+
+        const ColumnObject & column_object;
+        std::vector<std::string_view>::const_iterator typed_paths_it;
+        std::vector<std::string_view>::const_iterator typed_paths_end;
+        std::set<std::string_view>::const_iterator dynamic_paths_it;
+        std::set<std::string_view>::const_iterator dynamic_paths_end;
+        size_t shared_data_it;
+        size_t shared_data_end;
+        const ColumnString * shared_data_paths;
+        const ColumnString * shared_data_values;
+        PathType current_path_type;
+        size_t row;
+    };
+
 private:
-    class SortedPathsIterator;
 
     void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
-    void serializePathAndValueIntoArena(Arena & arena, const char *& begin, StringRef path, StringRef value, StringRef & res) const;
-    void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, StringRef & res) const;
-    const char * deserializeDynamicPathsAndSharedDataFromArena(const char * pos);
+    void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;
+    void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const;
+    void deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in);
 
     /// Map path -> column for paths with explicitly specified types.
     /// This set of paths is constant and cannot be changed.

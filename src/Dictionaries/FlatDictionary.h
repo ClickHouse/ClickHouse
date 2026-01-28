@@ -7,6 +7,7 @@
 
 #include <Common/HashTable/HashSet.h>
 #include <Common/Arena.h>
+#include <QueryPipeline/Pipe.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Block_fwd.h>
 
@@ -48,14 +49,14 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
     }
 
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
+    double getLoadFactor() const override { return static_cast<double>(element_count) / static_cast<double>(bucket_count); }
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
@@ -139,7 +140,7 @@ private:
             ContainerType<UUID>,
             ContainerType<IPv4>,
             ContainerType<IPv6>,
-            ContainerType<StringRef>,
+            ContainerType<std::string_view>,
             ContainerType<Array>>
             container;
     };

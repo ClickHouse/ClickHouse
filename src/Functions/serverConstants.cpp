@@ -171,7 +171,7 @@ SELECT buildId()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBuildId>(documentation);
 }
@@ -203,7 +203,7 @@ SELECT hostName()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionHostName>(documentation);
     factory.registerAlias("hostname", "hostName");
@@ -233,7 +233,7 @@ SELECT serverUUID();
     };
     FunctionDocumentation::IntroducedIn introduced_in_serverUUID = {20, 1};
     FunctionDocumentation::Category category_serverUUID = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_serverUUID = {description_serverUUID, syntax_serverUUID, arguments_serverUUID, returned_value_serverUUID, examples_serverUUID, introduced_in_serverUUID, category_serverUUID};
+    FunctionDocumentation documentation_serverUUID = {description_serverUUID, syntax_serverUUID, arguments_serverUUID, {}, returned_value_serverUUID, examples_serverUUID, introduced_in_serverUUID, category_serverUUID};
 
     factory.registerFunction<FunctionServerUUID>(documentation_serverUUID);
 }
@@ -241,7 +241,7 @@ SELECT serverUUID();
 REGISTER_FUNCTION(TCPPort)
 {
     FunctionDocumentation::Description description = R"(
-Returns the [native interface](../../interfaces/tcp.md) TCP port number listened to by the server.
+Returns the [native interface](/interfaces/tcp) TCP port number listened to by the server.
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard.
 Otherwise it produces a constant value.
     )";
@@ -263,7 +263,7 @@ SELECT tcpPort()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTCPPort>(documentation);
 }
@@ -294,7 +294,7 @@ SELECT timezone()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimezone>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("timeZone", "timezone");
@@ -323,7 +323,7 @@ SELECT serverTimeZone()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionServerTimezone>(documentation);
     factory.registerAlias("serverTimeZone", "serverTimezone");
@@ -354,7 +354,7 @@ SELECT uptime() AS Uptime
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionUptime>(documentation);
 }
@@ -384,7 +384,7 @@ SELECT version()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionVersion>(documentation, FunctionFactory::Case::Insensitive);
 }
@@ -412,7 +412,7 @@ SELECT revision()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRevision>(documentation, FunctionFactory::Case::Insensitive);
 }
@@ -440,7 +440,7 @@ SELECT zookeeperSessionUptime();
     };
     FunctionDocumentation::IntroducedIn introduced_in_zookeeperSessionUptime = {21, 11};
     FunctionDocumentation::Category category_zookeeperSessionUptime = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_zookeeperSessionUptime = {description_zookeeperSessionUptime, syntax_zookeeperSessionUptime, arguments_zookeeperSessionUptime, returned_value_zookeeperSessionUptime, examples_zookeeperSessionUptime, introduced_in_zookeeperSessionUptime, category_zookeeperSessionUptime};
+    FunctionDocumentation documentation_zookeeperSessionUptime = {description_zookeeperSessionUptime, syntax_zookeeperSessionUptime, arguments_zookeeperSessionUptime, {}, returned_value_zookeeperSessionUptime, examples_zookeeperSessionUptime, introduced_in_zookeeperSessionUptime, category_zookeeperSessionUptime};
 
     factory.registerFunction<FunctionZooKeeperSessionUptime>(documentation_zookeeperSessionUptime);
 }
@@ -469,7 +469,7 @@ SELECT getOSKernelVersion();
     };
     FunctionDocumentation::IntroducedIn introduced_in_getOSKernelVersion = {21, 11};
     FunctionDocumentation::Category category_getOSKernelVersion = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_getOSKernelVersion = {description_getOSKernelVersion, syntax_getOSKernelVersion, arguments_getOSKernelVersion, returned_value_getOSKernelVersion, examples_getOSKernelVersion, introduced_in_getOSKernelVersion, category_getOSKernelVersion};
+    FunctionDocumentation documentation_getOSKernelVersion = {description_getOSKernelVersion, syntax_getOSKernelVersion, arguments_getOSKernelVersion, {}, returned_value_getOSKernelVersion, examples_getOSKernelVersion, introduced_in_getOSKernelVersion, category_getOSKernelVersion};
 
     factory.registerFunction<FunctionGetOSKernelVersion>(documentation_getOSKernelVersion);
 }
@@ -498,7 +498,7 @@ SELECT displayName();
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDisplayName>(documentation);
 }

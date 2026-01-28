@@ -216,7 +216,7 @@ SELECT sleep(2);
     };
     FunctionDocumentation::IntroducedIn introduced_in_sleep = {1, 1};
     FunctionDocumentation::Category category_sleep = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_sleep = {description_sleep, syntax_sleep, arguments_sleep, returned_value_sleep, examples_sleep, introduced_in_sleep, category_sleep};
+    FunctionDocumentation documentation_sleep = {description_sleep, syntax_sleep, arguments_sleep, {}, returned_value_sleep, examples_sleep, introduced_in_sleep, category_sleep};
 
     factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerBlock>>(documentation_sleep);
 
@@ -259,7 +259,7 @@ SELECT number, sleepEachRow(0.5) FROM system.numbers LIMIT 5;
     };
     FunctionDocumentation::IntroducedIn introduced_in_sleepEachRow = {1, 1};
     FunctionDocumentation::Category category_sleepEachRow = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_sleepEachRow = {description_sleepEachRow, syntax_sleepEachRow, arguments_sleepEachRow, returned_value_sleepEachRow, examples_sleepEachRow, introduced_in_sleepEachRow, category_sleepEachRow};
+    FunctionDocumentation documentation_sleepEachRow = {description_sleepEachRow, syntax_sleepEachRow, arguments_sleepEachRow, {}, returned_value_sleepEachRow, examples_sleepEachRow, introduced_in_sleepEachRow, category_sleepEachRow};
 
     factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerRow>>(documentation_sleepEachRow);
 }

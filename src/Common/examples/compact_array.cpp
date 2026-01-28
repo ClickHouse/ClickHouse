@@ -221,7 +221,7 @@ struct Generator1
 {
     static UInt8 execute(size_t, size_t width)
     {
-        return (1 << width) - 1;
+        return static_cast<UInt8>((1 << width) - 1);
     }
 };
 
@@ -229,7 +229,7 @@ struct Generator2
 {
     static UInt8 execute(size_t i, size_t width)
     {
-        return (i >> 1) & ((1 << width) - 1);
+        return static_cast<UInt8>((i >> 1) & ((1 << width) - 1));
     }
 };
 
@@ -237,7 +237,7 @@ struct Generator3
 {
     static UInt8 execute(size_t i, size_t width)
     {
-        return (i * 17 + 31) % (1ULL << width);
+        return static_cast<UInt8>((i * 17 + 31) % (1ULL << width));
     }
 };
 

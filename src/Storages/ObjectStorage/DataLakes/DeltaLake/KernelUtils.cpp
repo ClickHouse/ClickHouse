@@ -3,16 +3,15 @@
 #if USE_DELTA_KERNEL_RS
 #include "delta_kernel_ffi.hpp"
 
-#include <base/defines.h>
-#include <base/EnumReflection.h>
 
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
-#include <Core/Field.h>
+#include <IO/WriteHelpers.h>
 
 #include <Poco/String.h>
 #include <fmt/ranges.h>
 #include <filesystem>
+
 
 namespace DB::ErrorCodes
 {

@@ -177,7 +177,7 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
     };
     FunctionDocumentation::IntroducedIn introduced_in_dateTimeToUUIDv7 = {25, 9};
     FunctionDocumentation::Category category_dateTimeToUUIDv7 = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_dateTimeToUUIDv7 = {description_dateTimeToUUIDv7, syntax_dateTimeToUUIDv7, arguments_dateTimeToUUIDv7, returned_value_dateTimeToUUIDv7, examples_dateTimeToUUIDv7, introduced_in_dateTimeToUUIDv7, category_dateTimeToUUIDv7};
+    FunctionDocumentation documentation_dateTimeToUUIDv7 = {description_dateTimeToUUIDv7, syntax_dateTimeToUUIDv7, arguments_dateTimeToUUIDv7, {}, returned_value_dateTimeToUUIDv7, examples_dateTimeToUUIDv7, introduced_in_dateTimeToUUIDv7, category_dateTimeToUUIDv7};
 
     factory.registerFunction<FunctionDateTimeToUUIDv7>(documentation_dateTimeToUUIDv7);
 

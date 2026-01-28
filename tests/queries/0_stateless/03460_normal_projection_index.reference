@@ -1,7 +1,9 @@
 -- { echo ON }
 
 SET enable_analyzer = 1;
-SET enable_parallel_replicas = 0;
+-- enable projection for parallel replicas
+SET parallel_replicas_local_plan = 1;
+SET optimize_aggregation_in_order = 0;
 DROP TABLE IF EXISTS test_simple_projection;
 CREATE TABLE test_simple_projection
 (
@@ -32,78 +34,78 @@ INSERT INTO test_simple_projection VALUES (5, '2023-01-03', 104, 'https://exampl
 OPTIMIZE TABLE test_simple_projection FINAL;
 -- aggressively use projection index
 SET min_table_rows_to_use_projection_index = 0;
-EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'europe' AND user_id = 101;
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.test_simple_projection)
-    Projections:
-      Name: region_proj
-        Description: Projection has been analyzed and will be applied during reading
-        Condition: (region in [\'europe\', \'europe\'])
-        Search Algorithm: binary search
-        Parts: 1
-        Marks: 2
-        Ranges: 1
-        Rows: 2
-        Filtered Parts: 0
-      Name: user_id_proj
-        Description: Projection has been analyzed and will be applied during reading
-        Condition: (user_id in [101, 101])
-        Search Algorithm: binary search
-        Parts: 1
-        Marks: 1
-        Ranges: 1
-        Rows: 1
-        Filtered Parts: 0
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'europe' AND user_id = 101)
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
+ReadFromMergeTree (default.test_simple_projection)
+Projections:
+Name: region_proj
+Description: Projection has been analyzed and will be applied during reading
+Condition: (region in [\'europe\', \'europe\'])
+Search Algorithm: binary search
+Parts: 1
+Marks: 2
+Ranges: 1
+Rows: 2
+Filtered Parts: 0
+Name: user_id_proj
+Description: Projection has been analyzed and will be applied during reading
+Condition: (user_id in [101, 101])
+Search Algorithm: binary search
+Parts: 1
+Marks: 1
+Ranges: 1
+Rows: 1
+Filtered Parts: 0
 SELECT * FROM test_simple_projection WHERE region = 'europe' AND user_id = 101 ORDER BY ALL;
 1	2023-01-01	101	https://example.com/page1	europe
 -- region_proj is enough to filter part
-EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'zzz' AND user_id = 101;
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.test_simple_projection)
-    Projections:
-      Name: region_proj
-        Description: Projection has been analyzed and is used for part-level filtering
-        Condition: (region in [\'zzz\', \'zzz\'])
-        Search Algorithm: binary search
-        Parts: 0
-        Marks: 0
-        Ranges: 0
-        Rows: 0
-        Filtered Parts: 1
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'zzz' AND user_id = 101)
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
+ReadFromMergeTree (default.test_simple_projection)
+Projections:
+Name: region_proj
+Description: Projection has been analyzed and is used for part-level filtering
+Condition: (region in [\'zzz\', \'zzz\'])
+Search Algorithm: binary search
+Parts: 0
+Marks: 0
+Ranges: 0
+Rows: 0
+Filtered Parts: 1
 SELECT * FROM test_simple_projection WHERE region = 'zzz' AND user_id = 101 ORDER BY ALL;
 -- narrowing filter via user_id_proj
-EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'us_west' AND user_id = 106;
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.test_simple_projection)
-    Projections:
-      Name: region_proj
-        Description: Projection has been analyzed and will be applied during reading
-        Condition: (region in [\'us_west\', \'us_west\'])
-        Search Algorithm: binary search
-        Parts: 1
-        Marks: 4
-        Ranges: 1
-        Rows: 4
-        Filtered Parts: 0
-      Name: user_id_proj
-        Description: Projection has been analyzed and will be applied during reading
-        Condition: (user_id in [106, 106])
-        Search Algorithm: binary search
-        Parts: 1
-        Marks: 2
-        Ranges: 1
-        Rows: 2
-        Filtered Parts: 0
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'us_west' AND user_id = 106)
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
+ReadFromMergeTree (default.test_simple_projection)
+Projections:
+Name: region_proj
+Description: Projection has been analyzed and will be applied during reading
+Condition: (region in [\'us_west\', \'us_west\'])
+Search Algorithm: binary search
+Parts: 1
+Marks: 4
+Ranges: 1
+Rows: 4
+Filtered Parts: 0
+Name: user_id_proj
+Description: Projection has been analyzed and will be applied during reading
+Condition: (user_id in [106, 106])
+Search Algorithm: binary search
+Parts: 1
+Marks: 2
+Ranges: 1
+Rows: 2
+Filtered Parts: 0
 SELECT * FROM test_simple_projection WHERE region = 'us_west' AND user_id = 106 ORDER BY ALL;
 3	2023-01-02	106	https://example.com/page3	us_west
 -- it's not possible to use different projection indexes with or filter
-EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'asia' OR user_id = 101;
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.test_simple_projection)
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'asia' OR user_id = 101)
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
+ReadFromMergeTree (default.test_simple_projection)
 SELECT * FROM test_simple_projection WHERE region = 'asia' OR user_id = 101 ORDER BY ALL;
 1	2023-01-01	101	https://example.com/page1	europe
 5	2023-01-03	104	https://example.com/page5	asia
@@ -137,52 +139,52 @@ INSERT INTO test_projection_granule_edge_cases VALUES (15, 'bol_region', 104);
 -- add more data to ensure projection index is triggered during query planning
 INSERT INTO test_projection_granule_edge_cases SELECT number + 100, 'unknown_region', 999 FROM numbers(1000);
 OPTIMIZE TABLE test_projection_granule_edge_cases FINAL;
-EXPLAIN projections = 1 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'top_region';
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.test_projection_granule_edge_cases)
-    Projections:
-      Name: region_proj
-        Description: Projection has been analyzed and will be applied during reading
-        Condition: (region in [\'top_region\', \'top_region\'])
-        Search Algorithm: binary search
-        Parts: 1
-        Marks: 1
-        Ranges: 1
-        Rows: 16
-        Filtered Parts: 0
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'top_region')
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
+ReadFromMergeTree (default.test_projection_granule_edge_cases)
+Projections:
+Name: region_proj
+Description: Projection has been analyzed and will be applied during reading
+Condition: (region in [\'top_region\', \'top_region\'])
+Search Algorithm: binary search
+Parts: 1
+Marks: 1
+Ranges: 1
+Rows: 16
+Filtered Parts: 0
 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'top_region' ORDER BY ALL;
 0	top_region	100
-EXPLAIN projections = 1 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'mid_region';
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.test_projection_granule_edge_cases)
-    Projections:
-      Name: region_proj
-        Description: Projection has been analyzed and will be applied during reading
-        Condition: (region in [\'mid_region\', \'mid_region\'])
-        Search Algorithm: binary search
-        Parts: 1
-        Marks: 1
-        Ranges: 1
-        Rows: 16
-        Filtered Parts: 0
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'mid_region')
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
+ReadFromMergeTree (default.test_projection_granule_edge_cases)
+Projections:
+Name: region_proj
+Description: Projection has been analyzed and will be applied during reading
+Condition: (region in [\'mid_region\', \'mid_region\'])
+Search Algorithm: binary search
+Parts: 1
+Marks: 1
+Ranges: 1
+Rows: 16
+Filtered Parts: 0
 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'mid_region' ORDER BY ALL;
 7	mid_region	102
-EXPLAIN projections = 1 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'bol_region';
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.test_projection_granule_edge_cases)
-    Projections:
-      Name: region_proj
-        Description: Projection has been analyzed and will be applied during reading
-        Condition: (region in [\'bol_region\', \'bol_region\'])
-        Search Algorithm: binary search
-        Parts: 1
-        Marks: 1
-        Ranges: 1
-        Rows: 16
-        Filtered Parts: 0
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'bol_region')
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
+ReadFromMergeTree (default.test_projection_granule_edge_cases)
+Projections:
+Name: region_proj
+Description: Projection has been analyzed and will be applied during reading
+Condition: (region in [\'bol_region\', \'bol_region\'])
+Search Algorithm: binary search
+Parts: 1
+Marks: 1
+Ranges: 1
+Rows: 16
+Filtered Parts: 0
 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'bol_region' ORDER BY ALL;
 15	bol_region	104
 DROP TABLE test_projection_granule_edge_cases;
@@ -203,36 +205,36 @@ INSERT INTO test_partial_projection VALUES (1, 'us'), (2, 'eu'), (3, 'cn');
 ALTER TABLE test_partial_projection ADD PROJECTION region_proj (SELECT _part_offset ORDER BY region);
 INSERT INTO test_partial_projection VALUES (4, 'cn'), (5, 'ru'), (6, 'br');
 SET min_table_rows_to_use_projection_index = 0;
-EXPLAIN projections = 1 SELECT * FROM test_partial_projection WHERE region = 'ru';
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.test_partial_projection)
-    Projections:
-      Name: region_proj
-        Description: Projection has been analyzed and will be applied during reading
-        Condition: (region in [\'ru\', \'ru\'])
-        Search Algorithm: binary search
-        Parts: 1
-        Marks: 2
-        Ranges: 1
-        Rows: 2
-        Filtered Parts: 0
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_partial_projection WHERE region = 'ru')
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
+ReadFromMergeTree (default.test_partial_projection)
+Projections:
+Name: region_proj
+Description: Projection has been analyzed and will be applied during reading
+Condition: (region in [\'ru\', \'ru\'])
+Search Algorithm: binary search
+Parts: 1
+Marks: 2
+Ranges: 1
+Rows: 2
+Filtered Parts: 0
 SELECT * FROM test_partial_projection WHERE region = 'ru' ORDER BY ALL;
 5	ru
-EXPLAIN projections = 1 SELECT * FROM test_partial_projection WHERE region = 'cn';
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.test_partial_projection)
-    Projections:
-      Name: region_proj
-        Description: Projection has been analyzed and will be applied during reading
-        Condition: (region in [\'cn\', \'cn\'])
-        Search Algorithm: binary search
-        Parts: 1
-        Marks: 2
-        Ranges: 1
-        Rows: 2
-        Filtered Parts: 0
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_partial_projection WHERE region = 'cn')
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
+ReadFromMergeTree (default.test_partial_projection)
+Projections:
+Name: region_proj
+Description: Projection has been analyzed and will be applied during reading
+Condition: (region in [\'cn\', \'cn\'])
+Search Algorithm: binary search
+Parts: 1
+Marks: 2
+Ranges: 1
+Rows: 2
+Filtered Parts: 0
 SELECT * FROM test_partial_projection WHERE region = 'cn' ORDER BY ALL;
 3	cn
 4	cn

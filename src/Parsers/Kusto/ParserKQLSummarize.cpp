@@ -1,13 +1,7 @@
 #include <memory>
-#include <queue>
 #include <vector>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/ParserKQLSummarize.h>
 #include <Parsers/Kusto/Utilities.h>
 
@@ -83,7 +77,7 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             {
                 String alias;
                 String aggregate_fun = String(begin_pos->begin, begin_pos->end);
-                if (aggregate_functions.find(aggregate_fun) == aggregate_functions.end())
+                if (!aggregate_functions.contains(aggregate_fun))
                 {
                     alias = fmt::format("Columns{}", new_column_index);
                     ++new_column_index;

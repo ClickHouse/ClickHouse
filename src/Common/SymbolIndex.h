@@ -38,7 +38,7 @@ public:
         std::shared_ptr<Elf> elf;
     };
 
-    const Symbol * findSymbol(const void * offset) const;
+    const Symbol * findSymbol(const void * address) const;
     const Object * findObject(const void * address) const;
     const Object * thisObject() const;
 

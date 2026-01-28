@@ -4,7 +4,7 @@ description: 'This engine provides a read-only integration with existing Delta L
 sidebar_label: 'DeltaLake'
 sidebar_position: 40
 slug: /engines/table-engines/integrations/deltalake
-title: 'DeltaLake Table Engine'
+title: 'DeltaLake table engine'
 doc_type: 'reference'
 ---
 
@@ -54,7 +54,7 @@ CREATE TABLE deltalake ENGINE=DeltaLake(deltalake_conf, filename = 'test_table')
 
 ### Data cache {#data-cache}
 
-`Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](../../../engines/table-engines/integrations/s3.md#data-cache).
+`DeltaLake` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](../../../engines/table-engines/integrations/s3.md#data-cache).
 
 ## See also {#see-also}
 

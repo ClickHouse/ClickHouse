@@ -19,9 +19,8 @@ Always returns `Ok.` regardless of the result of the internal dictionary update.
 
 ## SYSTEM RELOAD DICTIONARIES {#reload-dictionaries}
 
-Reloads all dictionaries that have been successfully loaded before.
-By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
-Always returns `Ok.` regardless of the result of the dictionary update.
+The `SYSTEM RELOAD DICTIONARIES` query reloads dictionaries with a status of `LOADED` (see the `status` column of [`system.dictionaries`](/operations/system-tables/dictionaries)), i.e dictionaries that have been successfully loaded before.
+By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through use of the [`dictGet`](/sql-reference/functions/ext-dict-functions#dictGet) function or use of `SELECT` from tables with `ENGINE = Dictionary`.
 
 **Syntax**
 
@@ -88,23 +87,29 @@ Re-calculates all [asynchronous metrics](../../operations/system-tables/asynchro
 SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 ```
 
-## SYSTEM DROP DNS CACHE {#drop-dns-cache}
+## SYSTEM CLEAR|DROP DNS CACHE {#drop-dns-cache}
 
 Clears ClickHouse's internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
 
 For more convenient (automatic) cache management, see `disable_internal_dns_cache`, `dns_cache_max_entries`, `dns_cache_update_period` parameters.
 
-## SYSTEM DROP MARK CACHE {#drop-mark-cache}
+## SYSTEM CLEAR|DROP MARK CACHE {#drop-mark-cache}
 
 Clears the mark cache.
 
-## SYSTEM DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
+## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Clears the iceberg metadata cache.
 
-## SYSTEM DROP TEXT INDEX DICTIONARY CACHE {#drop-text-index-dictionary-cache}
+## SYSTEM CLEAR|DROP TEXT INDEX CACHES {#drop-text-index-caches}
 
-Clears the text index dictionary cache.
+Clears the text index's header, dictionary and postings caches.
+
+If you like to drop one of these caches individually, you can run
+
+- `SYSTEM CLEAR TEXT INDEX HEADER CACHE`,
+- `SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE`, or
+- `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
 
 ## SYSTEM DROP REPLICA {#drop-replica}
 
@@ -136,32 +141,32 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 
 Similar to `SYSTEM DROP REPLICA`, but removes the `Replicated` database replica path from ZooKeeper when there's no database to run `DROP DATABASE`. Please note that it does not remove `ReplicatedMergeTree` replicas (so you may need `SYSTEM DROP REPLICA` as well). Shard and replica names are the names that were specified in `Replicated` engine arguments when creating the database. Also, these names can be obtained from `database_shard_name` and `database_replica_name` columns in `system.clusters`. If the `FROM SHARD` clause is missing, then `replica_name` must be a full replica name in `shard_name|replica_name` format.
 
-## SYSTEM DROP UNCOMPRESSED CACHE {#drop-uncompressed-cache}
+## SYSTEM CLEAR|DROP UNCOMPRESSED CACHE {#drop-uncompressed-cache}
 
 Clears the uncompressed data cache.
 The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [`use_uncompressed_cache`](../../operations/settings/settings.md#use_uncompressed_cache).
 Its size can be configured using the server-level setting [`uncompressed_cache_size`](../../operations/server-configuration-parameters/settings.md#uncompressed_cache_size).
 
-## SYSTEM DROP COMPILED EXPRESSION CACHE {#drop-compiled-expression-cache}
+## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE {#drop-compiled-expression-cache}
 
 Clears the compiled expression cache.
 The compiled expression cache is enabled/disabled with the query/user/profile-level setting [`compile_expressions`](../../operations/settings/settings.md#compile_expressions).
 
-## SYSTEM DROP QUERY CONDITION CACHE {#drop-query-condition-cache}
+## SYSTEM CLEAR|DROP QUERY CONDITION CACHE {#drop-query-condition-cache}
 
 Clears the query condition cache.
 
-## SYSTEM DROP QUERY CACHE {#drop-query-cache}
+## SYSTEM CLEAR|DROP QUERY CACHE {#drop-query-cache}
 
 ```sql
-SYSTEM DROP QUERY CACHE;
-SYSTEM DROP QUERY CACHE TAG '<tag>'
+SYSTEM CLEAR QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '<tag>'
 ````
 
 Clears the [query cache](../../operations/query-cache.md).
 If a tag is specified, only query cache entries with the specified tag are deleted.
 
-## SYSTEM DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
+## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
 
 Clears cache for schemas loaded from [`format_schema_path`](../../operations/server-configuration-parameters/settings.md#format_schema_path).
 
@@ -171,7 +176,7 @@ Supported targets:
 Note: If no target is specified, both caches are cleared.
 
 ```sql
-SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf/Files]
+SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE [FOR Protobuf/Files]
 ```
 
 ## SYSTEM FLUSH LOGS {#flush-logs}
@@ -214,6 +219,88 @@ Normally shuts down ClickHouse (like `service clickhouse-server stop` / `kill {$
 ## SYSTEM KILL {#kill}
 
 Aborts ClickHouse process (like `kill -9 {$ pid_clickhouse-server}`)
+
+## SYSTEM INSTRUMENT {#instrument}
+
+Manages instrumentation points using LLVM's XRay feature which is available when ClickHouse is built using `ENABLE_XRAY=1`.
+This enables to debug and profile in production without modifying the source code and with minimal overhead.
+When no instrumentation point is added, the performance penalty is negligible because it only adds an extra jump to a nearby
+address at the prolog and epilog of those functions that are longer than 200 instructions.
+
+### SYSTEM INSTRUMENT ADD {#instrument-add}
+
+Adds a new instrumentation point. Functions instrumented can be inspected in the [`system.instrumentation`](../../operations/system-tables/instrumentation.md) system table. More than one handler can be added for the same function, and they will be executed in the same order the instrumentation is added.
+The functions to be instrumented can be collected from [`system.symbols`](../../operations/system-tables/symbols.md) system table.
+
+There are three different kind of handlers to add to functions:
+
+**Syntax**
+```sql
+SYSTEM INSTRUMENT ADD FUNCTION HANDLER [PARAMETERS]
+```
+
+where `FUNCTION` is any function or substring of a function such as `QueryMetricLog::startQuery`, and the handler one of the following
+
+#### LOG {#instrument-add-log}
+
+Prints the text provided as an argument and the stack trace either on `ENTRY` or `EXIT` of the function.
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'this is a log printed at entry'
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'this is a log printed at exit'
+```
+
+#### SLEEP {#instrument-add-sleep}
+
+Sleeps for a number of fix amount of seconds either on `ENTRY` or `EXIT`:
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0.5
+```
+
+or for a uniformly distributed random amount of seconds providing min and max separated by a whitespace:
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0 1
+```
+
+#### PROFILE {#instrument-add-profile}
+
+Measures the time spent between `ENTRY` and `EXIT` of a function.
+The result of the profiling is stored in [`system.trace_log`](../../operations/system-tables/trace_log.md) and can be converted
+to [Chrome Event Trace Format](../../operations/system-tables/trace_log.md#chrome-event-trace-format).
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' PROFILE
+```
+
+### SYSTEM INSTRUMENT REMOVE {#instrument-remove}
+
+Removes either a single instrumentation point with:
+
+```sql
+SYSTEM INSTRUMENT REMOVE ID
+```
+
+all of them using the `ALL` parameter:
+
+```sql
+SYSTEM INSTRUMENT REMOVE ALL
+```
+
+a set of IDs from a subquery:
+
+```sql
+SYSTEM INSTRUMENT REMOVE (SELECT id FROM system.instrumentation WHERE handler = 'log')
+```
+
+or all instrumentation points that match a given function_name:
+
+```sql
+SYSTEM INSTRUMENT REMOVE 'QueryMetricLog::startQuery'
+```
+
+The instrumentation point information can be collected from [`system.instrumentation`](../../operations/system-tables/instrumentation.md) system table.
 
 ## Managing Distributed Tables {#managing-distributed-tables}
 
@@ -498,7 +585,7 @@ SYSTEM RESTORE DATABASE REPLICA repl_db [ON CLUSTER cluster]
 **Example**
 
 ```sql
-CREATE DATABASE repl_db 
+CREATE DATABASE repl_db
 ENGINE=Replicated("/clickhouse/repl_db", shard1, replica1);
 
 CREATE TABLE repl_db.test_table (n UInt32)
@@ -549,12 +636,12 @@ SYSTEM RESTORE REPLICA test ON CLUSTER cluster;
 
 Provides possibility to reinitialize Zookeeper sessions state for all `ReplicatedMergeTree` tables, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed
 
-### SYSTEM DROP FILESYSTEM CACHE {#drop-filesystem-cache}
+### SYSTEM CLEAR|DROP FILESYSTEM CACHE {#drop-filesystem-cache}
 
 Allows to drop filesystem cache.
 
 ```sql
-SYSTEM DROP FILESYSTEM CACHE [ON CLUSTER cluster_name]
+SYSTEM CLEAR FILESYSTEM CACHE [ON CLUSTER cluster_name]
 ```
 
 ### SYSTEM SYNC FILE CACHE {#sync-file-cache}
@@ -616,6 +703,11 @@ Wait for the currently running refresh to complete. If the refresh fails, throws
 Disable periodic refreshing of the given view or all refreshable views. If a refresh is in progress, cancel it too.
 
 If the view is in a Replicated or Shared database, `STOP VIEW` only affects the current replica, while `STOP REPLICATED VIEW` affects all replicas.
+
+:::note
+The stopped state does not persist across server restarts. After a restart, views will resume their configured refresh schedules.
+In Replicated or Shared databases, `SYSTEM STOP VIEW` only affects the current replica. Use `SYSTEM STOP REPLICATED VIEW` to stop refreshes on all replicas.
+:::
 
 ```sql
 SYSTEM STOP VIEW [db.]name

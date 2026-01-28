@@ -2,7 +2,6 @@
 # Tags: long, no-replicated-database
 # Tag no-replicated-database: Fails due to additional replicas or shards
 
-
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

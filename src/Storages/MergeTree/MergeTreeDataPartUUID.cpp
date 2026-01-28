@@ -13,7 +13,7 @@ std::vector<UUID> PartUUIDs::add(const std::vector<UUID> & new_uuids)
     /// First check any presence of uuids in a uuids, return duplicates back if any
     for (const auto & uuid : new_uuids)
     {
-        if (uuids.find(uuid) != uuids.end())
+        if (uuids.contains(uuid))
             intersection.emplace_back(uuid);
     }
 
@@ -34,7 +34,7 @@ std::vector<UUID> PartUUIDs::get() const
 bool PartUUIDs::has(const UUID & uuid) const
 {
     std::lock_guard lock(mutex);
-    return uuids.find(uuid) != uuids.end();
+    return uuids.contains(uuid);
 }
 
 }

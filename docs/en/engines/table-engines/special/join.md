@@ -3,17 +3,13 @@ description: 'Optional prepared data structure for usage in JOIN operations.'
 sidebar_label: 'Join'
 sidebar_position: 70
 slug: /engines/table-engines/special/join
-title: 'Join Table Engine'
+title: 'Join table engine'
 doc_type: 'reference'
 ---
 
-# `Join` table engine
+# Join table engine
 
 Optional prepared data structure for usage in [JOIN](/sql-reference/statements/select/join) operations.
-
-:::note
-This is not an article about the [JOIN clause](/sql-reference/statements/select/join) itself.
-:::
 
 :::note
 In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.

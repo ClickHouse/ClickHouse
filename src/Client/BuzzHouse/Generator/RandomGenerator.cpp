@@ -65,6 +65,11 @@ int64_t RandomGenerator::nextRandomInt64()
     return ints64(generator);
 }
 
+uint64_t RandomGenerator::nextInFullRange()
+{
+    return full_range(generator);
+}
+
 uint32_t RandomGenerator::nextStrlen()
 {
     return strlens(generator);
@@ -125,7 +130,7 @@ String RandomGenerator::nextTime(const String & separator, const bool allow_func
     {
         const int32_t offset_seconds = second_offsets(generator);
 
-        return fmt::format("addSeconds(now(), {})::Time", offset_seconds);
+        return fmt::format("addSeconds(now(), {})", offset_seconds);
     }
     else
     {
@@ -143,7 +148,7 @@ String RandomGenerator::nextTime64(const String & separator, const bool allow_fu
     {
         const int32_t offset_seconds = second_offsets(generator);
 
-        return fmt::format("addSeconds(now(), {})::Time64", offset_seconds);
+        return fmt::format("addSeconds(now(), {})", offset_seconds);
     }
     else
     {
@@ -250,9 +255,7 @@ double RandomGenerator::randomZeroOne()
 
 String RandomGenerator::nextJSONCol()
 {
-    const String & pick = pickRandomly(jcols);
-
-    return pick;
+    return pickRandomly(jcols);
 }
 
 String RandomGenerator::nextTokenString()
@@ -282,10 +285,11 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
         {
             ret += pick;
             /// A few times, generate a large string
-            if (this->nextLargeNumber() < 4)
+            if (this->nextMediumNumber() < 16)
             {
                 uint32_t i = 0;
                 uint32_t len = static_cast<uint32_t>(pick.size());
+                const bool use_space = this->nextBool();
                 const uint32_t max_iterations = this->nextBool() ? 10000 : this->nextMediumNumber();
 
                 while (i < max_iterations)
@@ -295,9 +299,10 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
                                      : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings
                                                                                    : (this->nextBool() ? common_english : common_chinese)));
 
-                    len += (npick.length() >> (use_bad_utf8 ? 1 : 0));
+                    len += ((use_space ? 1 : 0) + (npick.length() >> (use_bad_utf8 ? 1 : 0)));
                     if (len < limit)
                     {
+                        ret += use_space ? " " : "";
                         ret += npick;
                     }
                     else

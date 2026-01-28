@@ -57,5 +57,19 @@ bool makeFilterNodeOnTopOf(
 
 bool isPassthroughActions(const ActionsDAG & actions_dag);
 
+enum class FilterResult
+{
+    UNKNOWN,
+    TRUE,
+    FALSE,
+};
+
+[[nodiscard]] FilterResult getFilterResult(const ColumnWithTypeAndName & column);
+
+[[nodiscard]] FilterResult filterResultForNotMatchedRows(
+    const ActionsDAG & filter_dag,
+    const String & filter_column_name,
+    const Block & input_stream_header,
+    bool allow_unknown_function_arguments = false);
 
 }

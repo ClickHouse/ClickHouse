@@ -38,7 +38,7 @@ bool ParserDropNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node
             return false;
     }
 
-    auto query = std::make_shared<ASTDropNamedCollectionQuery>();
+    auto query = make_intrusive<ASTDropNamedCollectionQuery>();
 
     tryGetIdentifierNameInto(collection_name, query->collection_name);
     query->if_exists = if_exists;

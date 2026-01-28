@@ -22,10 +22,10 @@ namespace ErrorCodes
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
-    , data_path("data/" + escapeForFileName(database_name) + "/")
+    , data_path(DatabaseCatalog::getDataDirPath(name_) / "")
 {
-    /// Temporary database should not have any data on the moment of its creation
-    /// In case of sudden server shutdown remove database folder of temporary database
+    /// Temporary database should not have any data at the moment of its creation.
+    /// In case of starting up after sudden server shutdown, remove the database folder of the temporary database.
     if (name_ == DatabaseCatalog::TEMPORARY_DATABASE)
         removeDataPath(context_);
 }
@@ -92,17 +92,17 @@ void DatabaseMemory::dropTable(
         DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
 }
 
-ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
+ASTPtr DatabaseMemory::getCreateDatabaseQueryImpl() const
 {
-    auto create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(getDatabaseName());
-    create_query->set(create_query->storage, std::make_shared<ASTStorage>());
+    auto create_query = make_intrusive<ASTCreateQuery>();
+    create_query->setDatabase(database_name);
+    create_query->set(create_query->storage, make_intrusive<ASTStorage>());
     auto engine = makeASTFunction(getEngineName());
     engine->no_empty_args = true;
     create_query->storage->set(create_query->storage->engine, engine);
 
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+    if (!comment.empty())
+        create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
 
     return create_query;
 }
@@ -217,11 +217,6 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     }
 
     return res;
-}
-
-void DatabaseMemory::alterDatabaseComment(const AlterCommand & command)
-{
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
 
 void registerDatabaseMemory(DatabaseFactory & factory)

@@ -1,0 +1,75 @@
+Unsorted ORDER BY key LIMIT BY key: LimitByTransform (InOrder)
+Unsorted ORDER BY key DESC LIMIT BY key: LimitByTransform (InOrder)
+Unsorted ORDER BY key, val LIMIT BY key: LimitByTransform (InOrder)
+Unsorted ORDER BY val LIMIT BY key: LimitByTransform
+Unsorted ORDER BY val, key LIMIT BY key: LimitByTransform
+Unsorted ORDER BY key LIMIT BY key, val: LimitByTransform
+Unsorted ORDER BY key, dt LIMIT BY key, val: LimitByTransform
+Unsorted w/o ORDER BY: LimitByTransform
+
+-- Unsorted with LIMIT 1 BY
+0
+1
+2
+3
+4
+10
+11
+12
+50
+51
+-- Unsorted with LIMIT 2 BY
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4
+10
+10
+11
+11
+12
+12
+
+Sorted ORDER BY key LIMIT BY key: LimitByTransform (InOrder)
+Sorted ORDER BY key DESC LIMIT BY key: LimitByTransform (InOrder)
+Sorted ORDER BY key, val LIMIT BY key: LimitByTransform (InOrder)
+Sorted ORDER BY val LIMIT BY key: LimitByTransform
+Sorted ORDER BY val, key LIMIT BY key: LimitByTransform
+Sorted ORDER BY key LIMIT BY key, val: LimitByTransform
+Sorted ORDER BY key, dt LIMIT BY key, val: LimitByTransform
+Sorted w/o ORDER BY: LimitByTransform
+
+-- Sorted with LIMIT 1 BY
+0
+1
+2
+3
+4
+10
+11
+12
+50
+51
+-- Sorted with LIMIT 2 BY
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4
+10
+10
+11
+11
+12
+12

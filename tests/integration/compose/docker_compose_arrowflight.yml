@@ -6,3 +6,4 @@ services:
       - "5006:5006"
     stop_signal: SIGINT
     stop_grace_period: 5s
+    cpus: 3

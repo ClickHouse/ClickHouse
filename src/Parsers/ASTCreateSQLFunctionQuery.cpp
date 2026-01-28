@@ -14,7 +14,7 @@ extern const int LOGICAL_ERROR;
 
 ASTPtr ASTCreateSQLFunctionQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateSQLFunctionQuery>(*this);
+    auto res = make_intrusive<ASTCreateSQLFunctionQuery>(*this);
     res->children.clear();
 
     res->function_name = function_name->clone();

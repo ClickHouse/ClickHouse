@@ -25,7 +25,7 @@ Returns the remainder of the division of `x` by `y`, or null when the divisor is
     FunctionDocumentation::Examples examples = {{"moduloOrNull by zero", "SELECT moduloOrNull(5, 0)", "\\N"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionModuloOrNull>(documentation);
     factory.registerAlias("modOrNull", "moduloOrNull", FunctionFactory::Case::Insensitive);
@@ -55,7 +55,7 @@ Returns the difference between `x` and the nearest integer not greater than
     FunctionDocumentation::Examples examples = {{"positiveModuloOrNull", "SELECT positiveModuloOrNull(5, 0)", "\\N"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionPositiveModuloOrNll>(documentation, FunctionFactory::Case::Insensitive);
 

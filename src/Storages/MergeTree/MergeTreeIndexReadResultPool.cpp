@@ -24,12 +24,16 @@ namespace ErrorCodes
 
 MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     UsefulSkipIndexes skip_indexes_,
+    std::optional<KeyCondition> & key_condition_rpn_template_,
+    bool use_for_disjunctions_,
     MarkCachePtr mark_cache_,
     UncompressedCachePtr uncompressed_cache_,
     VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
     MergeTreeReaderSettings reader_settings_,
     LoggerPtr log_)
     : skip_indexes(std::move(skip_indexes_))
+    , key_condition_rpn_template(key_condition_rpn_template_)
+    , use_for_disjunctions(use_for_disjunctions_)
     , mark_cache(std::move(mark_cache_))
     , uncompressed_cache(std::move(uncompressed_cache_))
     , vector_similarity_index_cache(std::move(vector_similarity_index_cache_))
@@ -43,7 +47,11 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
     CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
     auto ranges = part.ranges;
-    size_t ending_mark = ranges.empty() ? 0 : ranges.back().end;
+    [[maybe_unused]] size_t total_granules = ranges.getNumberOfMarks();
+
+    MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
+    if (use_for_disjunctions)
+        partial_eval_results.resize(part.data_part->index_granularity->getMarksCountWithoutFinal() * MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
     for (const auto & index_and_condition : skip_indexes.useful_indices)
     {
         if (is_cancelled)
@@ -57,6 +65,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
         ranges = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition,
+            key_condition_rpn_template,
             part.data_part,
             ranges,
             part.read_hints,
@@ -64,7 +73,24 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             mark_cache.get(),
             uncompressed_cache.get(),
             vector_similarity_index_cache.get(),
+            use_for_disjunctions,
+            partial_eval_results,
             log).first;
+
+        LOG_DEBUG(log, "Index {} has dropped {}/{} granules in part {}", index_and_condition.index->index.name,
+                        (total_granules - ranges.getNumberOfMarks()), total_granules, part.data_part->name);
+        total_granules = ranges.getNumberOfMarks();
+    }
+
+    if (use_for_disjunctions)
+    {
+        ranges = MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
+                            part.data_part, ranges, key_condition_rpn_template.value(),
+                            partial_eval_results, reader_settings, log);
+
+        LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",
+                        ranges.getNumberOfMarks(), total_granules, part.data_part->name);
+        total_granules = ranges.getNumberOfMarks();
     }
 
     for (const auto & indices_and_condition : skip_indexes.merged_indices)
@@ -92,11 +118,28 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
     if (is_cancelled)
         return {};
 
-    auto res = std::make_shared<SkipIndexReadResult>(ending_mark);
+    auto res = std::make_shared<SkipIndexReadResult>();
+    res->granules_selected.resize(part.data_part->index_granularity->getMarksCountWithoutFinal(), false);
     for (const auto & range : ranges)
     {
         for (auto i = range.begin; i < range.end; ++i)
-            (*res)[i] = true;
+            (*res).granules_selected[i] = true;
+    }
+
+    if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker)
+    {
+        res->min_max_index_for_top_k = MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
+            part.data_part,
+            skip_indexes.skip_index_for_top_k_filtering,
+            ranges,
+            skip_indexes.threshold_tracker->getDirection(),
+            true,/*access_by_mark*/
+            reader_settings,
+            mark_cache.get(),
+            uncompressed_cache.get(),
+            vector_similarity_index_cache.get());
+
+        res->threshold_tracker = skip_indexes.threshold_tracker;
     }
     return res;
 }
@@ -226,7 +269,7 @@ bool ProjectionIndexBitmap::rangeAllZero(size_t begin, size_t end) const
     {
         roaring::api::roaring_uint32_iterator_t it;
         roaring_iterator_init(data.bitmap32, &it);
-        if (!roaring_uint32_iterator_move_equalorlarger(&it, begin))
+        if (!roaring_uint32_iterator_move_equalorlarger(&it, static_cast<UInt32>(begin)))
             return true;
 
         return it.current_value >= end;
@@ -265,7 +308,7 @@ bool ProjectionIndexBitmap::appendToFilter(PaddedPODArray<UInt8> & filter, size_
     {
         roaring::api::roaring_uint32_iterator_t it;
         roaring_iterator_init(data.bitmap32, &it);
-        if (!roaring_uint32_iterator_move_equalorlarger(&it, starting_row))
+        if (!roaring_uint32_iterator_move_equalorlarger(&it, static_cast<UInt32>(starting_row)))
             return false;
 
         bool has_value = false;
@@ -329,7 +372,6 @@ SingleProjectionIndexReader::SingleProjectionIndexReader(
           std::make_unique<MergeTreeProjectionIndexSelectAlgorithm>(),
           nullptr /*row_level_filter*/,
           std::move(prewhere_info),
-          nullptr /*lazily_read_info*/,
           IndexReadTasks{} /*index_read_tasks*/,
           actions_settings,
           reader_settings))
@@ -340,16 +382,15 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
 {
     bool can_use_32bit_part_offset = ranges.parent_ranges.max_part_offset <= std::numeric_limits<UInt32>::max();
 
-    /// Prepare the read processor with the current part and its read ranges.
-    /// This sets up internal state needed to read the projection data.
-    assert_cast<MergeTreeProjectionIndexSelectAlgorithm &>(*processor->algorithm).preparePartToRead(&ranges);
+    auto task = projection_index_read_pool->getTask(ranges);
+    MergeTreeProjectionIndexSelectAlgorithm algorithm;
     auto res = can_use_32bit_part_offset ? ProjectionIndexBitmap::create32() : ProjectionIndexBitmap::create64();
 
     /// Start reading chunks from the projection index reader.
     /// Each chunk contains a column of UInt64 offsets that we insert into the bitmap.
-    while (true)
+    while (!processor->is_cancelled && !task->isFinished())
     {
-        auto chunk = processor->read();
+        auto chunk = processor->readCurrentTask(*task, algorithm);
         if (chunk.chunk)
         {
             if (chunk.chunk.getNumRows() > 0)
@@ -363,14 +404,14 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
                     if (ranges.parent_ranges.isContiguousFullRange())
                     {
                         for (auto offset : offsets.getData())
-                            res->add<Offset>(offset);
+                            res->add<Offset>(static_cast<Offset>(offset));
                     }
                     else
                     {
                         for (auto offset : offsets.getData())
                         {
                             if (ranges.parent_ranges.contains(offset))
-                                res->add<Offset>(offset);
+                                res->add<Offset>(static_cast<Offset>(offset));
                         }
                     }
                 };
@@ -380,9 +421,6 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
                     add_offsets(UInt64{});
             }
         }
-
-        if (chunk.is_finished)
-            break;
     }
 
     /// If the read was cancelled, return nullptr to avoid using an incomplete index bitmap.

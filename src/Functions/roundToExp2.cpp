@@ -17,7 +17,7 @@ template <typename T>
 requires std::is_integral_v<T> && (sizeof(T) <= sizeof(UInt32))
 inline T roundDownToPowerOfTwo(T x)
 {
-    return x <= 0 ? 0 : (T(1) << (31 - __builtin_clz(x)));
+    return x <= 0 ? 0 : static_cast<T>(static_cast<T>(1) << (31 - __builtin_clz(x)));
 }
 
 template <typename T>
@@ -111,7 +111,7 @@ If the number is less than one, it returns `0`.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionRoundToExp2>(documentation);
 }
 

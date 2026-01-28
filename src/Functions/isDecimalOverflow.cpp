@@ -182,7 +182,7 @@ SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
     };
     FunctionDocumentation::IntroducedIn introduced_in_isDecimalOverflow = {20, 8};
     FunctionDocumentation::Category category_isDecimalOverflow = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_isDecimalOverflow = {description_isDecimalOverflow, syntax_isDecimalOverflow, arguments_isDecimalOverflow, returned_value_isDecimalOverflow, examples_isDecimalOverflow, introduced_in_isDecimalOverflow, category_isDecimalOverflow};
+    FunctionDocumentation documentation_isDecimalOverflow = {description_isDecimalOverflow, syntax_isDecimalOverflow, arguments_isDecimalOverflow, {}, returned_value_isDecimalOverflow, examples_isDecimalOverflow, introduced_in_isDecimalOverflow, category_isDecimalOverflow};
 
     factory.registerFunction<FunctionIsDecimalOverflow>(documentation_isDecimalOverflow);
 }

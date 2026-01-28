@@ -134,7 +134,7 @@ private:
                     getName(),
                     argument.type->getName());
 
-            names.push_back(column.getDataAt(i).toString());
+            names.push_back(std::string{column.getDataAt(i)});
             types.push_back(std::move(type));
         }
 

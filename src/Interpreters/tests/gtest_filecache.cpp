@@ -1,4 +1,5 @@
 #include <IO/copyData.h>
+#include <Interpreters/Cache/IFileCachePriority.h>
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -385,7 +386,7 @@ TEST_F(FileCacheTest, LRUPolicy)
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(query_id);
     chassert(&DB::CurrentThread::get() == &thread_status);
-    DB::CurrentThread::QueryScope query_scope_holder(query_context);
+    auto query_scope_holder = DB::CurrentThread::QueryScope::create(query_context);
 
     DB::FileCacheSettings settings;
     settings[FileCacheSetting::path] = cache_base_path;
@@ -658,7 +659,7 @@ TEST_F(FileCacheTest, LRUPolicy)
                 query_context_1->makeQueryContext();
                 query_context_1->setCurrentQueryId("query_id_1");
                 chassert(&DB::CurrentThread::get() == &thread_status_1);
-                DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
+                auto query_scope_holder_1 = DB::CurrentThread::QueryScope::create(query_context_1);
 
                 auto holder2 = get_or_set(25, 5); /// Get [25, 29] once again.
                 assertEqual(holder2,
@@ -724,7 +725,7 @@ TEST_F(FileCacheTest, LRUPolicy)
                 query_context_1->makeQueryContext();
                 query_context_1->setCurrentQueryId("query_id_1");
                 chassert(&DB::CurrentThread::get() == &thread_status_1);
-                DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
+                auto query_scope_holder_1 = DB::CurrentThread::QueryScope::create(query_context_1);
 
                 auto holder2 = get_or_set(3, 23); /// get [3, 25] once again.
                 assertEqual(holder,
@@ -751,7 +752,7 @@ TEST_F(FileCacheTest, LRUPolicy)
                 cv.wait(lock, [&]{ return lets_start_download; });
             }
 
-            holder.reset();
+            holder = nullptr;
             other_1.join();
             ASSERT_TRUE(file_segment->state() == DB::FileSegment::State::DOWNLOADED);
         }
@@ -1066,7 +1067,7 @@ try
 
         ASSERT_GT(stream->write(generateBlock(100)), 0);
 
-        some_data_holder.reset();
+        some_data_holder = nullptr;
 
         stream->write(generateBlock(2000));
 
@@ -1118,7 +1119,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(query_id);
     chassert(&DB::CurrentThread::get() == &thread_status);
-    DB::CurrentThread::QueryScope query_scope_holder(query_context);
+    auto query_scope_holder = DB::CurrentThread::QueryScope::create(query_context);
 
     DB::FileCacheSettings settings;
     settings[FileCacheSetting::path] = cache_base_path;
@@ -1248,7 +1249,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(query_id);
     chassert(&DB::CurrentThread::get() == &thread_status);
-    DB::CurrentThread::QueryScope query_scope_holder(query_context);
+    auto query_scope_holder = DB::CurrentThread::QueryScope::create(query_context);
 
     DB::FileCacheSettings settings;
     settings[FileCacheSetting::path] = cache_base_path;
@@ -1517,13 +1518,18 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     auto key = DB::FileCacheKey::fromPath("evict_key");
     auto user = FileCache::getCommonUser();
 
+    CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
-    auto cache_lock = cache_guard.lock();
     auto key_metadata = std::make_shared<KeyMetadata>(key, user, &cache_metadata);
 
     auto add_file_segment = [&](size_t offset, size_t size)
     {
-        auto it = priority.add(key_metadata, offset, size, user, cache_lock);
+        IFileCachePriority::IteratorPtr it;
+        {
+            auto write_lock = cache_guard.writeLock();
+            auto state_lock = state_guard.lock();
+            it = priority.add(key_metadata, offset, size, user, write_lock, &state_lock);
+        }
         auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, user);
 
         if (std::filesystem::exists(path))
@@ -1540,46 +1546,56 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
             CreateFileSegmentSettings{}, false, nullptr, key_metadata, it);
 
         LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
-        return it;
-    };
 
-    auto get_file_segment = [&](size_t offset)
-    {
-        return LockedKey(key_metadata).getByOffset(offset)->file_segment;
+        return it;
     };
 
     auto it1 = add_file_segment(0, 10);
     auto it2 = add_file_segment(10, 10);
 
-    ASSERT_EQ(priority.getElementsCount(cache_lock), 2);
-    ASSERT_EQ(priority.getEvictionPos(), 2); /// queue.end()
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
+    ASSERT_EQ(priority.getEvictionPosCount(), 2); /// queue.end()
 
     FileCacheReserveStat stat;
+    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
     auto evicted = std::make_unique<EvictionCandidates>();
-    priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, false, user.user_id, cache_lock);
+
+    auto eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, false, user, state_guard.lock());
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, user, cache_guard, state_guard);
+    eviction_info.reset();
 
     ASSERT_EQ(evicted->size(), 0); /// Nothing is evicted.
-    ASSERT_EQ(priority.getElementsCount(cache_lock), 2);
-    ASSERT_EQ(priority.getEvictionPos(), 2); /// queue.end()
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
+    ASSERT_EQ(priority.getEvictionPosCount(), 2); /// queue.end()
 
     auto it3 = add_file_segment(20, 10);
 
-    ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
-    ASSERT_EQ(priority.getEvictionPos(), 3); /// queue.end()
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
+    ASSERT_EQ(priority.getEvictionPosCount(), 3); /// queue.end()
 
     evicted = std::make_unique<EvictionCandidates>();
     stat = {};
-    priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, true, user.user_id, cache_lock);
+    eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, false, user, state_guard.lock());
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, user, cache_guard, state_guard);
 
     ASSERT_EQ(evicted->size(), 1);
-    ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
-    ASSERT_EQ(priority.getEvictionPos(), 0); /// queue.begin()
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
+    ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
 
-    evicted->evict();
-    evicted->finalize(nullptr, cache_lock);
-    evicted.reset();
-    ASSERT_EQ(priority.getElementsCount(cache_lock), 2);
-    ASSERT_EQ(priority.getEvictionPos(), 0); /// still queue.begin(), but it2
+    {
+        evicted->evict();
+        evicted->afterEvictState(state_guard.lock());
+        evicted->afterEvictWrite(cache_guard.writeLock());
+        IFileCachePriority::removeEntries(invalidated_entries, cache_guard.writeLock());
+        evicted.reset();
+    }
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
+    ASSERT_EQ(priority.getEvictionPosCount(), 0); /// still queue.begin(), but it2
+
+    auto get_file_segment = [&](size_t offset)
+    {
+        return LockedKey(key_metadata).getByOffset(offset)->file_segment;
+    };
 
     /// Make fs2 (it2) non-evictable.
     auto fs2 = get_file_segment(10);
@@ -1589,20 +1605,21 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     ASSERT_EQ(it3->getEntry()->offset, fs3->offset());
 
     auto it4 = add_file_segment(30, 10);
-    ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
-    ASSERT_EQ(priority.getEvictionPos(), 0);
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
+    ASSERT_EQ(priority.getEvictionPosCount(), 0);
 
     evicted = std::make_unique<EvictionCandidates>();
     stat = {};
-    priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, true, user.user_id, cache_lock);
+    eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, false, user, state_guard.lock());
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, user, cache_guard, state_guard);
 
     ASSERT_EQ(evicted->size(), 1);
-    ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
-    ASSERT_EQ(priority.getEvictionPos(), 2); /// Last element in the queue.
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
+    ASSERT_EQ(priority.getEvictionPosCount(), 3); /// 3 and not 2, because 1 entry is invalidated.
 
     fs2.reset();
     fs3.reset();
 
-    priority.resetEvictionPos(cache_lock);
-    ASSERT_EQ(priority.getEvictionPos(), 3); /// queue.end()
+    priority.resetEvictionPos();
+    ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
 }

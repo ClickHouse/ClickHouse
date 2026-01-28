@@ -2,6 +2,7 @@
 
 #include <BridgeHelper/ExternalDictionaryLibraryBridgeHelper.h>
 #include <Common/LocalDateTime.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Core/UUID.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Core/ExternalResultDescription.h>
@@ -46,16 +47,16 @@ public:
 
     ~LibraryDictionarySource() override;
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
-    QueryPipeline loadUpdatedAll() override
+    BlockIO loadUpdatedAll() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for LibraryDictionarySource");
     }
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    BlockIO loadIds(const std::vector<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows) override;
+    BlockIO loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows) override;
 
     bool isModified() const override;
 

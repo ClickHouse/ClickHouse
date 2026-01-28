@@ -273,15 +273,15 @@ public:
         std::shared_ptr<FixedHashMap<UInt16, Mapped>>                         key16;
         std::shared_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>           key32;
         std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           key64;
-        std::shared_ptr<HashMapWithSavedHash<StringRef, Mapped>>              key_string;
-        std::shared_ptr<HashMapWithSavedHash<StringRef, Mapped>>              key_fixed_string;
+        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_string;
+        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_fixed_string;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
         std::shared_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
         std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_key32;
         std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_key64;
-        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>>      two_level_key_string;
-        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>>      two_level_key_fixed_string;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_string;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_fixed_string;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_keys128;
         std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>>   two_level_keys256;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> two_level_hashed;
@@ -369,6 +369,16 @@ public:
     {
         const ScatteredColumns * columns;
         ColumnPtr column;
+        size_t selector_rows = 0;
+
+        NullMapHolder() = default;
+        explicit NullMapHolder(const ScatteredColumns * columns_, ColumnPtr column_)
+            : columns(columns_), column(column_)
+        {
+            // we can cache the selector size at construction to make the holder robust
+            // even if columns are moved/cleared later
+            selector_rows = columns ? columns->selector.size() : (this->column ? this->column->size() : 0);
+        }
 
         size_t allocatedBytes() const;
     };
@@ -379,7 +389,6 @@ public:
     struct RightTableData
     {
         Type type = Type::EMPTY;
-        bool empty = true;
 
         /// tab1 join tab2 on t1.x = t2.x or t1.y = t2.y
         /// =>
@@ -452,9 +461,13 @@ public:
     void tryRerangeRightTableData() override;
     size_t getAndSetRightTableKeys() const;
 
+    bool hasNonJoinedRows();
+    void updateNonJoinedRowsStatus();
+
     const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 
     std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
+    void setUsedFlags(std::shared_ptr<JoinStuff::JoinUsedFlags> flags) { used_flags = std::move(flags); }
 
     bool enableLazyColumnsReplication() const { return enable_lazy_columns_replication; }
 
@@ -472,6 +485,9 @@ private:
     std::shared_ptr<TableJoin> table_join;
     JoinKind kind;
     JoinStrictness strictness;
+
+    bool has_non_joined_rows_checked = false;
+    bool has_non_joined_rows = false;
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;

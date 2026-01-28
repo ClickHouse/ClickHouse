@@ -1,4 +1,5 @@
 #include <chrono>
+#include <ranges>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/OSThreadNiceValue.h>
@@ -351,7 +352,7 @@ void ZooKeeper::flushWriteBuffer()
 void ZooKeeper::cancelWriteBuffer() noexcept
 {
     if (compressed_out)
-         compressed_out->cancel();
+        compressed_out->cancel();
     if (out)
         out->cancel();
 }
@@ -398,6 +399,7 @@ ZooKeeper::ZooKeeper(
     : send_receive_os_threads_nice_value(args_.send_receive_os_threads_nice_value)
     , path_acls(args_.path_acls)
     , args(args_)
+    , last_zxid_seen(args_.last_zxid_seen)
 {
     log = getLogger("ZooKeeperClient");
     zk_log = std::move(zk_log_);
@@ -589,7 +591,6 @@ void ZooKeeper::connect(
                     throw;
                 }
 
-                connected = true;
                 if (use_compression)
                 {
                     compressed_in.emplace(*in);
@@ -597,6 +598,8 @@ void ZooKeeper::connect(
                 }
 
                 original_index.store(node.original_index);
+
+                connected = true;
                 break;
             }
             catch (...)
@@ -640,7 +643,6 @@ void ZooKeeper::connect(
 void ZooKeeper::sendHandshake()
 {
     int32_t handshake_length = 45;
-    int64_t last_zxid_seen = 0;
     int32_t timeout = args.session_timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     std::string password = args.password;
@@ -661,7 +663,7 @@ void ZooKeeper::sendHandshake()
     {
         write(ZOOKEEPER_PROTOCOL_VERSION);
     }
-    write(last_zxid_seen);
+    write(last_zxid_seen.load(std::memory_order_relaxed));
     write(timeout);
     write(previous_session_id);
     write(password);
@@ -766,7 +768,7 @@ void ZooKeeper::sendThread()
 {
     [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
 
-    setThreadName("ZooKeeperSend");
+    DB::setThreadName(ThreadName::ZOOKEEPER_SEND);
 
     scope_guard os_thread_nice_value_guard;
     if (send_receive_os_threads_nice_value != 0)
@@ -863,7 +865,7 @@ void ZooKeeper::receiveThread()
 {
     [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
 
-    setThreadName("ZooKeeperRecv");
+    DB::setThreadName(ThreadName::ZOOKEEPER_RECV);
 
     scope_guard os_thread_nice_value_guard;
     if (send_receive_os_threads_nice_value != 0)
@@ -950,6 +952,12 @@ void ZooKeeper::receiveEvent()
     }
     read(zxid);
     read(err);
+
+    /// Watches have zxid = -1, some errors have zxid = 0.
+    if (zxid > 0)
+    {
+        last_zxid_seen.store(zxid, std::memory_order_relaxed);
+    }
 
     RequestInfo request_info;
     ZooKeeperResponsePtr response;
@@ -1178,7 +1186,10 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
     bool already_started = finalization_started.test_and_set();
 
     if (already_started)
+    {
+        LOG_INFO(log, "Session {} already finalized. Current reason: '{}'", session_id, reason);
         return;
+    }
 
     LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
              session_id, already_started, requests_queue.isFinished(), reason);
@@ -1633,10 +1644,24 @@ void ZooKeeper::list(
     const String & path,
     ListRequestType list_request_type,
     ListCallback callback,
-    WatchCallbackPtrOrEventPtr watch)
+    WatchCallbackPtrOrEventPtr watch,
+    bool with_stat,
+    bool with_data)
 {
     std::shared_ptr<ZooKeeperListRequest> request{nullptr};
-    if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
+
+    if (with_stat || with_data)
+    {
+        if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA) || !isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
+            throw Exception::fromMessage(Error::ZBADARGUMENTS, "List with stat/data cannot be used because it's not supported by the server");
+
+        auto list_with_stats_request = std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>();
+        list_with_stats_request->list_request_type = list_request_type;
+        list_with_stats_request->with_stat = with_stat;
+        list_with_stats_request->with_data = with_data;
+        request = std::move(list_with_stats_request);
+    }
+    else if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
     {
         if (list_request_type != ListRequestType::ALL)
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "Filtered list request type cannot be used because it's not supported by the server");
@@ -1884,6 +1909,9 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
 
     auto maybe_zk_log = getZooKeeperLog();
     if (!maybe_zk_log)
+        return;
+
+    if (elapsed_microseconds < maybe_zk_log->getDurationMicrosecondsThreshold())
         return;
 
     ZooKeeperLogElement::Type log_type = ZooKeeperLogElement::UNKNOWN;

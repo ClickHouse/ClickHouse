@@ -58,6 +58,12 @@ enum MultiQueryProcessingStage
     PARSING_FAILED,
 };
 
+// On illumos, <curses.h> defines ERR as a macro (error return value).
+// Undef it to allow use of ERR as an enum value below.
+#ifdef ERR
+#  undef ERR
+#endif
+
 enum ProgressOption
 {
     DEFAULT,
@@ -337,7 +343,7 @@ protected:
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     bool stdout_is_a_tty = false; /// stdout is a terminal.
     bool stderr_is_a_tty = false; /// stderr is a terminal.
-    uint64_t terminal_width = 0;
+    uint16_t terminal_width = 0;
 
     String pager;
 
@@ -349,7 +355,10 @@ protected:
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
-    std::optional<size_t> insert_format_max_block_size_from_config; /// Max block size when reading INSERT data.
+    std::optional<size_t> insert_format_max_block_size_rows_from_config; /// Max block size in rows when reading INSERT data.
+    std::optional<size_t> insert_format_max_block_size_bytes_from_config; /// Max block size in bytes when reading INSERT data.
+    std::optional<size_t> insert_format_min_block_size_rows_from_config; /// Min block size in rows when reading INSERT data.
+    std::optional<size_t> insert_format_min_block_size_bytes_from_config; /// Min block size in bytes when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
@@ -405,7 +414,10 @@ protected:
     std::atomic_bool progress_table_toggle_on = false;
     bool need_render_profile_events = true;
     bool written_first_block = false;
-    size_t processed_rows = 0; /// How many rows have been read or written.
+    /// How many rows have been read or written. `processed_rows_from_blocks` does not increment when data does not flow through client,
+    /// like with `INSERT ... SELECT`. We can use progress reports by server in that case to track processed rows.
+    size_t processed_rows_from_blocks = 0;
+    size_t processed_rows_from_progress = 0;
 
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the

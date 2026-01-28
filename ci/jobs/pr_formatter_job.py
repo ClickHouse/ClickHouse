@@ -55,13 +55,14 @@ Header: "### Details"
   - Text under unknown/unrecognized headers
   - Any text that was dropped or doesn't fit in other sections
   - Additional context from the original PR body
-- Preserve all markdown formatting (links, lists, code blocks, bold, italic, etc.)
 - Make only minimal edits to fix grammatical mistakes or bad formatting
 - Include issue link if referenced, for example: "Resolves #NUMBER"
 
-## Formatting
-- Separate all sections with blank lines
-- Remove all markdown comments
+## Formatting Rules
+- Separate all sections with a single blank line
+- Remove all HTML/markdown comments (e.g., `<!-- ... -->`) from the PR body
+- Never modify text inside code blocks (enclosed in triple backticks ``` or single backticks `)
+- Preserve original markdown syntax for links, lists, bold, italic, and other formatting
 
 ## Output
 - Write the final PR body to ./ci/tmp/pr_body_generated.md (do not update the actual PR).
@@ -94,7 +95,7 @@ Header: "### Details"
                 command=[
                     f"cat {output_file}",
                     f"test -f {output_file} && test $(wc -l < {output_file}) -gt 1 && test $(wc -c < {output_file}) -gt 50",
-                    f"sed -i.bak '1s/^/<!---AI changelog entry and formatting assistance: false-->\\n/' {output_file} && rm -f {output_file}.bak",
+                    f"sed -i.bak '1s/^/<!--- Disable AI PR formatting assistant: true -->\\n/' {output_file} && rm -f {output_file}.bak",
                 ],
             )
         )

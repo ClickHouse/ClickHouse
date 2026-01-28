@@ -25,6 +25,7 @@ def started_cluster():
         stay_alive=True,
         main_configs=["configs/remote_servers.xml", "configs/logger.xml"],
         user_configs=["configs/users.xml"],
+        mem_limit='14g'
     )
 
     for name in NODES:

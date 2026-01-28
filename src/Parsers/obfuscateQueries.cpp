@@ -803,14 +803,14 @@ void obfuscateLiteral(
                 hash_value /= 60;
                 uint32_t new_second = hash_value % 60;
 
-                result.write('0' + (new_hour / 10));
-                result.write('0' + (new_hour % 10));
+                result.write('0' + static_cast<char>(new_hour / 10));
+                result.write('0' + static_cast<char>(new_hour % 10));
                 result.write(':');
-                result.write('0' + (new_minute / 10));
-                result.write('0' + (new_minute % 10));
+                result.write('0' + static_cast<char>(new_minute / 10));
+                result.write('0' + static_cast<char>(new_minute % 10));
                 result.write(':');
-                result.write('0' + (new_second / 10));
-                result.write('0' + (new_second % 10));
+                result.write('0' + static_cast<char>(new_second / 10));
+                result.write('0' + static_cast<char>(new_second % 10));
 
                 src_pos += strlen(" 00:00:00");
             }

@@ -17,6 +17,9 @@ class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 namespace JSONBuilder { class JSONMap; }
 
 class QueryPlan;
@@ -118,6 +121,31 @@ public:
 
     virtual bool hasCorrelatedExpressions() const;
 
+    virtual bool supportsDataflowStatisticsCollection() const { return false; }
+
+    void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);
+
+    /// Returns true if the step has implemented removeUnusedColumns.
+    virtual bool canRemoveUnusedColumns() const { return false; }
+
+    enum class RemovedUnusedColumns
+    {
+        None,
+        OutputOnly,
+        OutputAndInput
+    };
+
+    /// Removes the unnecessary inputs and outputs from the step based on required_outputs.
+    /// required_outputs must be a maybe empty subset of the current outputs of the step.
+    /// It is guaranteed that the output header of the step will contain all columns from
+    /// required_outputs and might contain some other columns too.
+    /// Can be used only if canRemoveUnusedColumns returns true.
+    /// The order of the remaining outputs must be preserved.
+    virtual RemovedUnusedColumns removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/);
+
+    /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
+    virtual bool canRemoveColumnsFromOutput() const;
+
 protected:
     virtual void updateOutputHeader() = 0;
 
@@ -132,6 +160,8 @@ protected:
     /// This field is used to store added processors from this step.
     /// It is used only for introspection (EXPLAIN PIPELINE).
     Processors processors;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 

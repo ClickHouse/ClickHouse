@@ -4,11 +4,11 @@ description: 'Queries data to/from a remote HTTP/HTTPS server. This engine is si
 sidebar_label: 'URL'
 sidebar_position: 80
 slug: /engines/table-engines/special/url
-title: 'URL Table Engine'
+title: 'URL table engine'
 doc_type: 'reference'
 ---
 
-# `URL` table engine
+# URL table engine
 
 Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](../../../engines/table-engines/special/file.md) engine.
 

@@ -5,7 +5,7 @@
 
 #include <IO/ReadBufferFromIStream.h>
 #include <aws/s3/model/GetObjectResult.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 namespace DB::S3
 {

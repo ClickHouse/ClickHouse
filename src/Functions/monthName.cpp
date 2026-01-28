@@ -102,7 +102,7 @@ SELECT monthName(date_value)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMonthName>(documentation, FunctionFactory::Case::Insensitive);
 }

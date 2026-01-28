@@ -42,7 +42,7 @@ protected:
     size_t prev_row_number_width = 7;
     size_t row_number_width = 7; // "10000. "
 
-    const FormatSettings format_settings;
+    FormatSettings format_settings;
     Serializations serializations;
 
     using Widths = PODArray<size_t>;

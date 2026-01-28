@@ -67,8 +67,8 @@ off_t ReadBufferFromEncryptedFile::seek(off_t off, int whence)
     {
         /// Position is still inside buffer.
         pos = working_buffer.end() - offset + new_pos;
-        assert(pos >= working_buffer.begin());
-        assert(pos <= working_buffer.end());
+        chassert(pos >= working_buffer.begin());
+        chassert(pos <= working_buffer.end());
     }
     else
     {
@@ -79,7 +79,7 @@ off_t ReadBufferFromEncryptedFile::seek(off_t off, int whence)
 
         /// No more reading from the current working buffer until next() is called.
         resetWorkingBuffer();
-        assert(!hasPendingData());
+        chassert(!hasPendingData());
     }
 
     return new_pos;
@@ -107,8 +107,14 @@ void ReadBufferFromEncryptedFile::setReadUntilPosition(size_t position)
 
     if (static_cast<off_t>(position) < offset)
     {
-        working_buffer.resize(working_buffer.size() - (offset - position));
+        size_t new_buffer_size = working_buffer.size() - (offset - position);
+        chassert(new_buffer_size < working_buffer.size());
+        working_buffer.resize(new_buffer_size);
         offset = position;
+
+        /// The internal buffer must seek backward before reading a next portion of data because the next portion of data should be read
+        /// starting from the new position which is pointed by the new `offset` (assigned to `position` at the previous line),
+        /// and not the previous `offset`.
         need_seek = true;
     }
 }
@@ -155,12 +161,7 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     }
 
     /// Read up to the size of `encrypted_buffer`.
-    size_t count = 0;
-    while (bytes_to_read && !in->eof())
-    {
-        count += in->read(encrypted_buffer.data() + count, bytes_to_read);
-        bytes_to_read -= count;
-    }
+    size_t count = in->read(encrypted_buffer.data(), bytes_to_read);
 
     if (!count)
         return false;
@@ -169,6 +170,7 @@ bool ReadBufferFromEncryptedFile::nextImpl()
 
     /// The used cipher algorithms generate the same number of bytes in output as it were in input,
     /// so after deciphering the numbers of bytes will be still `count`.
+    chassert(count <= internal_buffer.size());
     working_buffer.resize(count);
 
     /// The decryptor needs to know what the current offset is (because it's used in the decryption algorithm).

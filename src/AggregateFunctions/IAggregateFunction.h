@@ -11,6 +11,7 @@
 #include <Core/ValuesWithType.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
+#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/ThreadPool_fwd.h>
 
 #include <IO/ReadBuffer.h>
@@ -346,10 +347,7 @@ public:
     /// For most functions if one of arguments is always NULL, we return NULL (it's implemented in combinator Null),
     /// but in some functions we can want to process this argument somehow (for example condition argument in If combinator).
     /// This method returns the set of argument indexes that can be always NULL, they will be skipped in combinator Null.
-    virtual std::unordered_set<size_t> getArgumentsThatCanBeOnlyNull() const
-    {
-        return {};
-    }
+    virtual UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const { return {}; }
 
     /** Return the nested function if this is an Aggregate Function Combinator.
       * Otherwise return nullptr.
@@ -544,13 +542,14 @@ public:
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr __restrict place,
-        const IColumn ** columns,
+        const IColumn ** __restrict columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
         if (if_argument_pos >= 0)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            alignas(32) const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 if (flags[i])

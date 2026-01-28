@@ -63,8 +63,6 @@ namespace Setting
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
     extern const SettingsBool distributed_insert_skip_read_only_replicas;
-    extern const SettingsBool enable_deflate_qpl_codec;
-    extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
     extern const SettingsUInt64 insert_shard_id;
@@ -105,7 +103,8 @@ static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log
     auto converting_dag = ActionsDAG::makeConvertingActions(
         block.cloneEmpty().getColumnsWithTypeAndName(),
         header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
+        ActionsDAG::MatchColumnsMode::Name,
+        nullptr);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
     Block converted = block;
@@ -125,13 +124,13 @@ static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & 
 
 static ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Names & column_names)
 {
-    auto query = std::make_shared<ASTInsertQuery>();
+    auto query = make_intrusive<ASTInsertQuery>();
     query->table_id = StorageID(database, table);
-    auto columns = std::make_shared<ASTExpressionList>();
+    auto columns = make_intrusive<ASTExpressionList>();
     query->columns = columns;
     query->children.push_back(columns);
     for (const auto & column_name : column_names)
-        columns->children.push_back(std::make_shared<ASTIdentifier>(column_name));
+        columns->children.push_back(make_intrusive<ASTIdentifier>(column_name));
     return query;
 }
 
@@ -333,7 +332,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         if (isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Writing job was cancelled");
 
-        ThreadGroupSwitcher switcher(thread_group, "DistrOutStrProc");
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_SINK);
 
         OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
@@ -573,7 +572,7 @@ void DistributedSink::onFinish()
     auto log_performance = [this]()
     {
         double elapsed = watch.elapsedSeconds();
-        LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
+        LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, static_cast<double>(inserted_rows) / elapsed, getCurrentStateDescription());
     };
 
     std::lock_guard lock(execution_mutex);
@@ -595,7 +594,7 @@ void DistributedSink::onFinish()
                     {
                         pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup()]()
                         {
-                            ThreadGroupSwitcher switcher(thread_group, "");
+                            ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_SINK);
 
                             job.executor->finish();
                         });
@@ -806,9 +805,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         compression_method,
         compression_level,
         !settings[Setting::allow_suspicious_codecs],
-        settings[Setting::allow_experimental_codecs],
-        settings[Setting::enable_deflate_qpl_codec],
-        settings[Setting::enable_zstd_qat_codec]);
+        settings[Setting::allow_experimental_codecs]);
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 
     /// tmp directory is used to ensure atomicity of transactions
@@ -915,12 +912,12 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
 
         // Create hardlink here to reuse increment number
         auto bin_file = (fs::path(path) / file_name).string();
-        auto & directory_queue = storage.getDirectoryQueue(disk, *it);
+        auto directory_queue = storage.getDirectoryQueue(disk, *it);
         {
             createHardLink(first_file_tmp_path, bin_file);
             auto dir_sync_guard = make_directory_sync_guard(*it);
         }
-        directory_queue.addFileAndSchedule(bin_file, file_size, sleep_ms);
+        directory_queue->addFileAndSchedule(bin_file, file_size, sleep_ms);
     }
     ++it;
 
@@ -931,12 +928,12 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         fs::create_directory(path);
 
         auto bin_file = (fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin")).string();
-        auto & directory_queue = storage.getDirectoryQueue(disk, *it);
+        auto directory_queue = storage.getDirectoryQueue(disk, *it);
         {
             createHardLink(first_file_tmp_path, bin_file);
             auto dir_sync_guard = make_directory_sync_guard(*it);
         }
-        directory_queue.addFileAndSchedule(bin_file, file_size, sleep_ms);
+        directory_queue->addFileAndSchedule(bin_file, file_size, sleep_ms);
     }
 
     /// remove the temporary file, enabling the OS to reclaim inode after all threads

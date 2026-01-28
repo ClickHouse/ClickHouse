@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 
@@ -34,7 +34,7 @@ void StorageFromMergeTreeProjection::read(
     const auto & parts = snapshot_data.parts;
 
     RangesInDataParts projection_parts;
-    for (const auto & part : parts)
+    for (const auto & part : *parts)
     {
         const auto & created_projections = part.data_part->getProjectionParts();
         auto it = created_projections.find(projection->name);
@@ -45,9 +45,9 @@ void StorageFromMergeTreeProjection::read(
         }
     }
 
-    auto step = MergeTreeDataSelectExecutor(merge_tree)
+    auto step = MergeTreeDataSelectExecutor(merge_tree, projection)
                     .readFromParts(
-                        std::move(projection_parts),
+                        std::make_shared<RangesInDataParts>(projection_parts),
                         snapshot_data.mutations_snapshot->cloneEmpty(),
                         column_names,
                         storage_snapshot,
@@ -62,10 +62,9 @@ void StorageFromMergeTreeProjection::read(
     }
     else
     {
-        Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(projection->sample_block)));
-        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-        read_from_pipe->setStepDescription("Read from NullSource (Projection)");
-        query_plan.addStep(std::move(read_from_pipe));
+        auto read_nothing = std::make_unique<ReadNothingStep>(std::make_shared<const Block>(projection->sample_block));
+        read_nothing->setStepDescription("Read from NullSource (Projection)");
+        query_plan.addStep(std::move(read_nothing));
     }
 }
 
@@ -80,7 +79,7 @@ StorageFromMergeTreeProjection::getStorageSnapshot(const StorageMetadataPtr & me
     data->parts = parent_snapshot_data.parts;
     data->mutations_snapshot = parent_snapshot_data.mutations_snapshot;
 
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(data));
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(data));
 }
 
 }

@@ -2,33 +2,30 @@
 set -eo pipefail
 
 dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
-lib_dir="$(realpath "${dir}/../../../../../tmp/docker-library/official-images/test")"
+source "$dir/../lib.sh"
 
 image="$1"
 
-CLICKHOUSE_TEST_SLEEP=3
-CLICKHOUSE_TEST_TRIES=5
-
-cname="clickhouse-container-$RANDOM-$RANDOM"
 cid="$(
   docker run -d \
     -e CLICKHOUSE_SKIP_USER_SETUP=1 \
     -v "$dir/initdb.sql":/docker-entrypoint-initdb.d/initdb.sql:ro \
-    --name "$cname" \
+    --name "$(cname)" \
     "$image"
 )"
 trap 'docker rm -vf $cid > /dev/null' EXIT
 
 chCli() {
   docker run --rm -i \
-    --link "$cname":clickhouse \
+    --link "$cid":clickhouse \
     "$image" \
     clickhouse-client \
     --host clickhouse \
     --query "$*"
 }
 
-. "$lib_dir/retry.sh" \
+# shellcheck source=../../../../../tmp/docker-library/official-images/test/retry.sh
+. "$TESTS_LIB_DIR/retry.sh" \
   --tries "$CLICKHOUSE_TEST_TRIES" \
   --sleep "$CLICKHOUSE_TEST_SLEEP" \
   chCli SELECT 1

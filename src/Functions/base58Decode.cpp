@@ -38,7 +38,7 @@ If the string is not valid Base58-encoded, an exception is thrown.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBase58Decode>(documentation);
 }

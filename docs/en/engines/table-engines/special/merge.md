@@ -4,7 +4,7 @@ description: 'The `Merge` engine (not to be confused with `MergeTree`) does not 
 sidebar_label: 'Merge'
 sidebar_position: 30
 slug: /engines/table-engines/special/merge
-title: 'Merge Table Engine'
+title: 'Merge table engine'
 doc_type: 'reference'
 ---
 

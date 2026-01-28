@@ -67,6 +67,7 @@ concept is_native_int_or_decimal_v
 
 // This macro performs a branch-free conditional assignment for floating point types.
 // It uses bitwise operations to avoid branching, which can be beneficial for performance.
+#pragma clang diagnostic ignored "-Wundefined-reinterpret-cast"
 #define BRANCHFREE_IF_FLOAT(TYPE, vc, va, vb, vr) \
     using UIntType = typename NumberTraits::Construct<false, false, sizeof(TYPE)>::Type; \
     using IntType = typename NumberTraits::Construct<true, false, sizeof(TYPE)>::Type; \
@@ -142,10 +143,19 @@ inline void fillConstantConstant(const ArrayCond & cond, A a, B b, ArrayResult &
     /// We manually optimize the loop for types like (U)Int128|256 or Decimal128/256 to avoid branches
     if constexpr (is_over_big_int<ResultType>)
     {
-        alignas(64) const ResultType ab[2] = {static_cast<ResultType>(a), static_cast<ResultType>(b)};
+        auto new_a = static_cast<ResultType>(a);
+        auto new_b = static_cast<ResultType>(b);
+
         for (size_t i = 0; i < size; ++i)
         {
-            res[i] = ab[!cond[i]];
+            // produces cmpb + sete
+            // results in less uops than ResultType{static_cast<MaskType>(cond[i]) - 1};
+            uint8_t flag = (cond[i] != 0);
+
+            ResultType mask{};
+            std::memset(&mask, flag ? 0xFF : 0x00, sizeof(ResultType));
+
+            res[i] = (mask & new_a) | (~mask & new_b);
         }
     }
     else if constexpr (std::is_same_v<ResultType, Decimal32> || std::is_same_v<ResultType, Decimal64>)
@@ -924,7 +934,7 @@ private:
         if (isColumnNullable(*materialized))
             return materialized;
 
-        return ColumnNullable::create(materialized, ColumnUInt8::create(column->size(), 0));
+        return ColumnNullable::create(materialized, ColumnUInt8::create(column->size(), static_cast<UInt8>(0)));
     }
 
     /// Return nested column recursively removing Nullable, examples:
@@ -1362,7 +1372,7 @@ SELECT if(1, 2 + 2, 2 + 6) AS res;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIf>(documentation, FunctionFactory::Case::Insensitive);
 }

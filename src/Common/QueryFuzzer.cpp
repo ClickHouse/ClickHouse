@@ -320,12 +320,12 @@ ASTPtr QueryFuzzer::getRandomExpressionList(const size_t nproj)
         return nullptr;
     }
 
-    ASTPtr new_ast = std::make_shared<ASTExpressionList>();
+    ASTPtr new_ast = make_intrusive<ASTExpressionList>();
     for (size_t i = 0; i < fuzz_rand() % 5 + 1; ++i)
     {
         /// Use Group by number in the projection, starting from position 1
         new_ast->children.emplace_back(
-            nproj && (fuzz_rand() % 4 == 0) ? std::make_shared<ASTLiteral>((fuzz_rand() % nproj) + 1) : getRandomColumnLike());
+            nproj && (fuzz_rand() % 4 == 0) ? make_intrusive<ASTLiteral>((fuzz_rand() % nproj) + 1) : getRandomColumnLike());
     }
     return new_ast;
 }
@@ -387,11 +387,11 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast, const size_t nproj)
     if (fuzz_rand() % 50 == 0)
     {
         /// Order by one of the projections, starting from position 1
-        auto * pos = list->children.empty() ? list->children.begin() : list->children.begin() + fuzz_rand() % list->children.size();
-        const auto col = nproj && (fuzz_rand() % 4 == 0) ? std::make_shared<ASTLiteral>((fuzz_rand() % nproj) + 1) : getRandomColumnLike();
+        auto pos = list->children.empty() ? list->children.begin() : list->children.begin() + fuzz_rand() % list->children.size();
+        const auto col = nproj && (fuzz_rand() % 4 == 0) ? make_intrusive<ASTLiteral>((fuzz_rand() % nproj) + 1) : getRandomColumnLike();
         if (col)
         {
-            auto elem = std::make_shared<ASTOrderByElement>();
+            auto elem = make_intrusive<ASTOrderByElement>();
             elem->children.emplace_back(col);
             elem->direction = 1;
             elem->nulls_direction = 1;
@@ -439,7 +439,7 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     // Add element
     if (fuzz_rand() % 50 == 0)
     {
-        auto * pos = impl->children.empty() ? impl->children.begin() : impl->children.begin() + fuzz_rand() % impl->children.size();
+        auto pos = impl->children.empty() ? impl->children.begin() : impl->children.begin() + fuzz_rand() % impl->children.size();
         auto col = getRandomColumnLike();
         if (col)
             impl->children.insert(pos, col);
@@ -503,7 +503,7 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
             if (def.frame_begin_type == WindowFrame::BoundaryType::Offset)
             {
                 // The offsets are fuzzed normally through 'children'.
-                def.frame_begin_offset = std::make_shared<ASTLiteral>(getRandomField(0));
+                def.frame_begin_offset = make_intrusive<ASTLiteral>(getRandomField(0));
             }
             else
             {
@@ -519,7 +519,7 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
 
             if (def.frame_end_type == WindowFrame::BoundaryType::Offset)
             {
-                def.frame_end_offset = std::make_shared<ASTLiteral>(getRandomField(0));
+                def.frame_end_offset = make_intrusive<ASTLiteral>(getRandomField(0));
             }
             else
             {
@@ -620,13 +620,13 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 
 void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
 {
-    if (column.type)
+    if (auto type = column.getType())
     {
-        auto data_type = fuzzDataType(DataTypeFactory::instance().get(column.type));
+        auto data_type = fuzzDataType(DataTypeFactory::instance().get(type));
 
         ParserDataType parser;
-        column.type = parseQuery(
-            parser, data_type->getName(), DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        column.setType(parseQuery(
+            parser, data_type->getName(), DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
     }
 }
 
@@ -792,7 +792,7 @@ void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
         auto new_table_name = it->second.begin();
         std::advance(new_table_name, fuzz_rand() % it->second.size());
         StorageID new_table_id(table_id.database_name, *new_table_name);
-        table.database_and_table_name = std::make_shared<ASTTableIdentifier>(new_table_id);
+        table.database_and_table_name = make_intrusive<ASTTableIdentifier>(new_table_id);
     }
 }
 
@@ -817,7 +817,7 @@ void QueryFuzzer::fuzzExplainQuery(ASTExplainQuery & explain)
 
     if (!settings_have_fuzzed)
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         fuzzExplainSettings(*settings_ast, explain.getKind());
         explain.setSettings(settings_ast);
@@ -956,15 +956,15 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
     {
         const String value = l->value.safeGet<String>();
         child = makeASTFunction(
-            "toFixedString", std::make_shared<ASTLiteral>(value), std::make_shared<ASTLiteral>(static_cast<UInt64>(value.size())));
+            "toFixedString", make_intrusive<ASTLiteral>(value), make_intrusive<ASTLiteral>(static_cast<UInt64>(value.size())));
     }
     else if (type == Field::Types::Which::UInt64 && fuzz_rand() % 7 == 0)
     {
-        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toUInt128" : "toUInt256", std::make_shared<ASTLiteral>(l->value.safeGet<UInt64>()));
+        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toUInt128" : "toUInt256", make_intrusive<ASTLiteral>(l->value.safeGet<UInt64>()));
     }
     else if (type == Field::Types::Which::Int64 && fuzz_rand() % 7 == 0)
     {
-        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toInt128" : "toInt256", std::make_shared<ASTLiteral>(l->value.safeGet<Int64>()));
+        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toInt128" : "toInt256", make_intrusive<ASTLiteral>(l->value.safeGet<Int64>()));
     }
     else if (type == Field::Types::Which::Float64 && fuzz_rand() % 7 == 0)
     {
@@ -972,23 +972,23 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
         if (decimal == 0)
             child = makeASTFunction(
                 "toDecimal32",
-                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
-                std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 9)));
+                make_intrusive<ASTLiteral>(l->value.safeGet<Float64>()),
+                make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 9)));
         else if (decimal == 1)
             child = makeASTFunction(
                 "toDecimal64",
-                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
-                std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 18)));
+                make_intrusive<ASTLiteral>(l->value.safeGet<Float64>()),
+                make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 18)));
         else if (decimal == 2)
             child = makeASTFunction(
                 "toDecimal128",
-                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
-                std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 38)));
+                make_intrusive<ASTLiteral>(l->value.safeGet<Float64>()),
+                make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 38)));
         else
             child = makeASTFunction(
                 "toDecimal256",
-                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
-                std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 76)));
+                make_intrusive<ASTLiteral>(l->value.safeGet<Float64>()),
+                make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 76)));
     }
 
     if (fuzz_rand() % 7 == 0)
@@ -1047,14 +1047,14 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
         {
             /// Return a '*' literal
             if (fuzz_rand() % asterisk_prob == 0)
-                child = std::make_shared<ASTAsterisk>();
+                child = make_intrusive<ASTAsterisk>();
             else if (fuzz_rand() % 13 == 0)
                 child = fuzzLiteralUnderExpressionList(child);
         }
         else if (fuzz_rand() % asterisk_prob == 0 && dynamic_cast<ASTWithAlias *>(child.get()))
         {
             /// Return a '*' literal
-            child = std::make_shared<ASTAsterisk>();
+            child = make_intrusive<ASTAsterisk>();
         }
         else
         {
@@ -1123,15 +1123,16 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
             {
                 /// Move alias to the end of the identifier (most of the time) or somewhere else
                 Strings clone_parts = id->name_parts;
-                const int index = (fuzz_rand() % 2) == 0 ? (id->name_parts.size() - 1) : (fuzz_rand() % id->name_parts.size());
+                int name_parts_size = static_cast<int>(id->name_parts.size());
+                const int index = (fuzz_rand() % 2) == 0 ? (name_parts_size - 1) : (fuzz_rand() % name_parts_size);
 
                 clone_parts[index] = alias;
-                return std::make_shared<ASTIdentifier>(std::move(clone_parts));
+                return make_intrusive<ASTIdentifier>(std::move(clone_parts));
             }
             else if (next_action == 1)
             {
                 /// Replace expression with the alias as an identifier
-                return std::make_shared<ASTIdentifier>(Strings{alias});
+                return make_intrusive<ASTIdentifier>(Strings{alias});
             }
         }
     }
@@ -1178,34 +1179,34 @@ ASTPtr QueryFuzzer::generatePredicate()
                 /// Pick a random identifier
                 auto rand_col1 = colids.begin();
                 std::advance(rand_col1, fuzz_rand() % colids.size());
-                ASTPtr exp1 = rand_col1->second->clone();
+                ASTPtr expression_1 = rand_col1->second->clone();
 
-                exp1 = setIdentifierAliasOrNot(exp1);
+                expression_1 = setIdentifierAliasOrNot(expression_1);
                 if (nprob == 0)
                 {
-                    next_condition = makeASTFunction(fuzz_rand() % 2 == 0 ? "isNull" : "isNotNull", exp1);
+                    next_condition = makeASTFunction(fuzz_rand() % 2 == 0 ? "isNull" : "isNotNull", expression_1);
                 }
                 else
                 {
                     /// Pick any other column reference
                     auto rand_col2 = column_like.begin();
                     std::advance(rand_col2, fuzz_rand() % column_like.size());
-                    ASTPtr exp2 = rand_col2->second->clone();
+                    ASTPtr expression_2 = rand_col2->second->clone();
 
-                    exp2 = setIdentifierAliasOrNot(exp2);
+                    expression_2 = setIdentifierAliasOrNot(expression_2);
                     if (fuzz_rand() % 3 == 0)
                     {
                         /// Swap sides
-                        auto exp3 = exp1;
-                        exp1 = exp2;
-                        exp2 = exp3;
+                        auto expression_3 = expression_1;
+                        expression_1 = expression_2;
+                        expression_2 = expression_3;
                     }
                     /// Run mostly equality conditions
                     /// No isNotDistinctFrom outside join conditions
                     next_condition = makeASTFunction(
                         comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % (comparison_comparators.size() - 1)) : 0],
-                        exp1,
-                        exp2);
+                        expression_1,
+                        expression_2);
                 }
                 next_condition = tryNegateNextPredicate(next_condition, 30);
                 /// Sometimes use multiple conditions
@@ -1390,7 +1391,7 @@ ASTPtr QueryFuzzer::addJoinClause()
     {
         ASTPtr table_exp;
         ASTPtr join_condition;
-        auto table_join = std::make_shared<ASTTableJoin>();
+        auto table_join = make_intrusive<ASTTableJoin>();
 
         fuzzJoinType(table_join.get());
         /// Add a table to the query
@@ -1417,7 +1418,7 @@ ASTPtr QueryFuzzer::addJoinClause()
             else if (dynamic_cast<ASTWithAlias *>(input_table.get()))
             {
                 ASTPtr child = input_table->clone();
-                table_exp = std::make_shared<ASTTableExpression>();
+                table_exp = make_intrusive<ASTTableExpression>();
                 auto * ntexp = typeid_cast<ASTTableExpression *>(table_exp.get());
 
                 child->setAlias(next_alias);
@@ -1443,9 +1444,9 @@ ASTPtr QueryFuzzer::addJoinClause()
         else
         {
             /// It already has an alias, so make a reference to it
-            table_exp = std::make_shared<ASTTableExpression>();
+            table_exp = make_intrusive<ASTTableExpression>();
             auto * ntexp = typeid_cast<ASTTableExpression *>(table_exp.get());
-            auto new_identifier = std::make_shared<ASTTableIdentifier>(old_alias);
+            auto new_identifier = make_intrusive<ASTTableIdentifier>(old_alias);
             new_identifier->setAlias(next_alias);
             ntexp->children.push_back(new_identifier);
             ntexp->database_and_table_name = ntexp->children.back();
@@ -1467,20 +1468,20 @@ ASTPtr QueryFuzzer::addJoinClause()
 
             const String id1_alias = id1->tryGetAlias();
             const String & nidentifier = (id1_alias.empty() || (fuzz_rand() % 2 == 0)) ? id1->shortName() : id1_alias;
-            ASTPtr exp1 = std::make_shared<ASTIdentifier>(Strings{next_alias, nidentifier});
-            ASTPtr exp2 = rand_col2->second->clone();
+            ASTPtr expression_1 = make_intrusive<ASTIdentifier>(Strings{next_alias, nidentifier});
+            ASTPtr expression_2 = rand_col2->second->clone();
 
-            exp2 = setIdentifierAliasOrNot(exp2);
+            expression_2 = setIdentifierAliasOrNot(expression_2);
             if (fuzz_rand() % 3 == 0)
             {
                 /// Swap sides
-                auto exp3 = exp1;
-                exp1 = exp2;
-                exp2 = exp3;
+                auto expression_e = expression_1;
+                expression_1 = expression_2;
+                expression_2 = expression_e;
             }
             /// Run mostly equi-joins
             ASTPtr next_condition = makeASTFunction(
-                comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % comparison_comparators.size()) : 0], exp1, exp2);
+                comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % comparison_comparators.size()) : 0], expression_1, expression_2);
             next_condition = tryNegateNextPredicate(next_condition, 30);
 
             /// Sometimes use multiple conditions
@@ -1492,7 +1493,7 @@ ASTPtr QueryFuzzer::addJoinClause()
         table_join->children.push_back(join_condition);
         table_join->on_expression = table_join->children.back();
 
-        auto table = std::make_shared<ASTTablesInSelectQueryElement>();
+        auto table = make_intrusive<ASTTablesInSelectQueryElement>();
         table->table_join = table_join;
         table->table_expression = table_exp;
         return table;
@@ -1506,12 +1507,12 @@ ASTPtr QueryFuzzer::addArrayJoinClause()
     const ASTPtr arr_join_list = getRandomExpressionList(0);
     if (arr_join_list)
     {
-        auto array_join = std::make_shared<ASTArrayJoin>();
+        auto array_join = make_intrusive<ASTArrayJoin>();
         array_join->kind = fuzz_rand() % 2 == 0 ? ASTArrayJoin::Kind::Left : ASTArrayJoin::Kind::Inner;
         array_join->children.push_back(arr_join_list);
         array_join->expression_list = array_join->children.back();
 
-        auto table_join = std::make_shared<ASTTablesInSelectQueryElement>();
+        auto table_join = make_intrusive<ASTTablesInSelectQueryElement>();
         table_join->children.push_back(std::move(array_join));
         table_join->array_join = table_join->children.back();
         return table_join;
@@ -1566,9 +1567,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// And we only fuzzing the root query into an EXPLAIN query, not fuzzing subquery
         if (fuzz_rand() % 20 == 0 && current_ast_depth <= 1)
         {
-            auto explain = std::make_shared<ASTExplainQuery>(fuzzExplainKind());
+            auto explain = make_intrusive<ASTExplainQuery>(fuzzExplainKind());
 
-            auto settings_ast = std::make_shared<ASTSetQuery>();
+            auto settings_ast = make_intrusive<ASTSetQuery>();
             settings_ast->is_standalone = false;
             fuzzExplainSettings(*settings_ast, explain->getKind());
             explain->setSettings(settings_ast);
@@ -1631,7 +1632,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             const auto old_type = DataTypeFactory::instance().tryGet(fn->arguments->children[1]);
             const auto new_type = old_type ? fuzzDataType(old_type) : getRandomType();
 
-            fn->arguments->children[1] = std::make_shared<ASTLiteral>(new_type->getName());
+            fn->arguments->children[1] = make_intrusive<ASTLiteral>(new_type->getName());
         }
         else if (AggregateUtils::isAggregateFunction(*fn))
         {

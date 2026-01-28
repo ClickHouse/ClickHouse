@@ -98,6 +98,12 @@ void filterArraysImplOnlyData(
     PaddedPODArray<T> & res_elems,
     const IColumn::Filter & filt, ssize_t result_size_hint);
 
+/// In-place version of filterArraysImpl for when src and res are the same arrays
+template <typename T>
+void filterArraysImplInPlace(
+    PaddedPODArray<T> & elems, IColumn::Offsets & offsets,
+    const IColumn::Filter & filt);
+
 namespace detail
 {
     template <typename T>

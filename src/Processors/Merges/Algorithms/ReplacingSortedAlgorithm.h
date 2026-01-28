@@ -44,6 +44,7 @@ public:
         const String & version_column,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
+        std::optional<size_t> max_dynamic_subcolumns_,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false,
         bool cleanup = false,

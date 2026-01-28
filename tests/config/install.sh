@@ -21,7 +21,7 @@ NO_AZURE=0
 KEEPER_INJECT_AUTH=1
 WASM_ENGINE=""
 USE_ENCRYPTED_STORAGE=0
-REMOTE_DATABASE_DISK=1
+REMOTE_DATABASE_DISK=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -43,6 +43,7 @@ while [[ "$#" -gt 0 ]]; do
 
         --no-keeper-inject-auth) KEEPER_INJECT_AUTH=0 ;;
         --wasm-engine) WASM_ENGINE=$2 && shift ;;
+        --remote-database-disk) REMOTE_DATABASE_DISK=1 ;;
         --no-remote-database-disk) REMOTE_DATABASE_DISK=0 ;;
 
         --encrypted-storage) USE_ENCRYPTED_STORAGE=1 ;;
@@ -140,6 +141,7 @@ ln -sf $SRC_PATH/config.d/ssl_certs.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_cache_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_read_prefetches_log.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/session_log.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/background_schedule_pool_log.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/system_unfreeze.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/nlp.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/nb_models.xml $DEST_SERVER_PATH/config.d/
@@ -164,6 +166,7 @@ ln -sf $SRC_PATH/config.d/storage_conf_03008.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/memory_access.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/jemalloc_flush_profile.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/allow_impersonate_user.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/wait_remaining_connections.xml $DEST_SERVER_PATH/config.d/
 
 if [ "$FAST_TEST" != "1" ]; then
     ln -sf $SRC_PATH/config.d/abort_on_logical_error.yaml $DEST_SERVER_PATH/config.d/
@@ -193,6 +196,9 @@ ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
+if check_clickhouse_version 26.1; then
+    ln -sf $SRC_PATH/users.d/distributed_index_analysis.yaml $DEST_SERVER_PATH/users.d/
+fi
 if [[ $(is_fast_build) == 1 ]]; then
     ln -sf $SRC_PATH/users.d/limits_fast.yaml $DEST_SERVER_PATH/users.d/
 fi
@@ -341,9 +347,12 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/storage_conf_02963.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02961.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_03517.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/storage_conf_03755.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/users.d/s3_cache.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/users.d/s3_cache_new.xml $DEST_SERVER_PATH/users.d/
 fi
+
+ln -sf $SRC_PATH/config.d/storage_conf_local.xml $DEST_SERVER_PATH/config.d/
 
 if [[ "$USE_PARALLEL_REPLICAS" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/users.d/
@@ -415,12 +424,8 @@ if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
 fi
 
 if [[ $REMOTE_DATABASE_DISK -eq 1 ]]; then
-    # Enable remote_database_disk in ASAN build
-    build_opts=$(clickhouse local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-    if [[ "$build_opts" == *-fsanitize=address* ]]; then
-        ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
-        echo "Installed remote_database_disk.xml config"
-    fi
+    ln -sf $SRC_PATH/config.d/remote_database_disk.xml $DEST_SERVER_PATH/config.d/
+    echo "Installed remote_database_disk.xml config"
 fi
 
 ln -sf $SRC_PATH/client_config.xml $DEST_CLIENT_PATH/config.xml

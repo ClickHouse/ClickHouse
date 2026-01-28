@@ -47,12 +47,12 @@ using FunctionDivide = BinaryArithmeticOverloadResolver<DivideFloatingImpl, Name
 REGISTER_FUNCTION(Divide)
 {
     FunctionDocumentation::Description description = R"(
-    Calculates the quotient of two values `a` and `b`. The result type is always [Float64](/sql-reference/data-types/float).
-    Integer division is provided by the `intDiv` function.
+Calculates the quotient of two values `a` and `b`. The result type is always [Float64](/sql-reference/data-types/float).
+Integer division is provided by the `intDiv` function.
 
-    :::note
-    Division by `0` returns `inf`, `-inf`, or `nan`.
-    :::
+:::note
+Division by `0` returns `inf`, `-inf`, or `nan`.
+:::
     )";
     FunctionDocumentation::Syntax syntax = "divide(x, y)";
     FunctionDocumentation::Argument argument1 = {"x", "Dividend"};
@@ -64,7 +64,7 @@ REGISTER_FUNCTION(Divide)
     FunctionDocumentation::Examples examples = {example1, example2};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionDivide>(documentation);
 }
@@ -86,7 +86,7 @@ Same as `divide` but returns NULL when dividing by zero.
     FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionDivideOrNull>(documentation);
 }

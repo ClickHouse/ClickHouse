@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Session.h>
+#include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
@@ -1337,7 +1338,7 @@ public:
             }
             else
             {
-                prefix.push_back(std::toupper(query[i]));
+                prefix.push_back(static_cast<char>(std::toupper(query[i])));
                 prev_was_space = false;
             }
         }
@@ -1643,7 +1644,7 @@ public:
 
             for (auto user_authentication_type : user_authentication_types)
             {
-                if (type_to_method.find(user_authentication_type) != type_to_method.end())
+                if (type_to_method.contains(user_authentication_type))
                 {
                     type_to_method[user_authentication_type]->authenticate(user_name, session, mt, address);
                     mt.send(Messaging::AuthenticationOk(), true);

@@ -1,17 +1,14 @@
 #include <optional>
 
-#include <Common/Macros.h>
-#include <Common/ProfileEvents.h>
-#include <Common/FailPoint.h>
-#include <Common/randomSeed.h>
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -21,19 +18,24 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>
-#include <Formats/FormatFactory.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
-#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
+#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <Storages/ObjectStorage/Utils.h>
-#include <Storages/AlterCommands.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/HivePartitioningUtils.h>
+#include <Common/FailPoint.h>
+#include <Common/Macros.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/randomSeed.h>
 
 #include <filesystem>
 
@@ -46,7 +48,6 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueCommitRequests;
     extern const Event ObjectStorageQueueSuccessfulCommits;
     extern const Event ObjectStorageQueueUnsuccessfulCommits;
-    extern const Event ObjectStorageQueueRemovedObjects;
     extern const Event ObjectStorageQueueInsertIterations;
     extern const Event ObjectStorageQueueProcessedRows;
 }
@@ -105,7 +106,18 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_rows_for_materialized_views;
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const ObjectStorageQueueSettingsBool use_persistent_processing_nodes;
+    extern const ObjectStorageQueueSettingsBool commit_on_select;
     extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
+    extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
+    extern const ObjectStorageQueueSettingsString after_processing_move_uri;
+    extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
+    extern const ObjectStorageQueueSettingsString after_processing_move_access_key_id;
+    extern const ObjectStorageQueueSettingsString after_processing_move_secret_access_key;
+    extern const ObjectStorageQueueSettingsString after_processing_move_connection_string;
+    extern const ObjectStorageQueueSettingsString after_processing_move_container;
+    extern const ObjectStorageQueueSettingsString after_processing_tag_key;
+    extern const ObjectStorageQueueSettingsString after_processing_tag_value;
+    extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
 }
 
 namespace ErrorCodes
@@ -139,10 +151,60 @@ namespace
 
         if (queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] > queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms])
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
-                            queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value,
-                            queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
+                queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value,
+                queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
+        }
+        if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::MOVE)
+        {
+            bool move_uri = !queue_settings[ObjectStorageQueueSetting::after_processing_move_uri].toString().empty();
+            bool move_access_key_id = !queue_settings[ObjectStorageQueueSetting::after_processing_move_access_key_id].toString().empty();
+            bool move_secret_access_key = !queue_settings[ObjectStorageQueueSetting::after_processing_move_secret_access_key].toString().empty();
+            bool move_connection_string = !queue_settings[ObjectStorageQueueSetting::after_processing_move_connection_string].toString().empty();
+            bool move_container = !queue_settings[ObjectStorageQueueSetting::after_processing_move_container].toString().empty();
+            bool move_prefix = !queue_settings[ObjectStorageQueueSetting::after_processing_move_prefix].toString().empty();
+
+            if (move_uri || move_access_key_id || move_secret_access_key)
+            {
+                if (!move_uri || !move_access_key_id || !move_secret_access_key)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Move to S3 bucket requires all of settings: move_uri, move_access_key_id, move_secret_access_key");
+                }
+                if (move_connection_string || move_container)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Unexpected Azure settings when S3 settings are provided:{}{}",
+                        move_connection_string ? " move_connection_string" : "",
+                        move_container ? " move_container" : "");
+                }
+            }
+            else if (move_connection_string || move_container)
+            {
+                if (!move_connection_string || !move_container)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Move to Azure container requires all of settings: move_connection_string, move_container");
+                }
+            }
+            else if (!move_prefix)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Move of processed objects requires specifying target bucket/container or prefix");
+            }
+        }
+        if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::TAG)
+        {
+            if (queue_settings[ObjectStorageQueueSetting::after_processing_tag_key].toString().empty())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "after_processing action 'tag' requires non-empty after_processing_tag_key");
+            }
+            if (queue_settings[ObjectStorageQueueSetting::after_processing_tag_value].toString().empty())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "after_processing action 'tag' requires non-empty after_processing_tag_value");
+            }
         }
     }
 
@@ -188,7 +250,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , WithContext(context_)
     , type(configuration_->getType())
     , engine_name(engine_args->engine->name)
-    , zk_path(chooseZooKeeperPath(getContext(), table_id_, context_->getSettingsRef(), *queue_settings_))
     , enable_logging_to_queue_log((*queue_settings_)[ObjectStorageQueueSetting::enable_logging_to_queue_log])
     , polling_min_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , polling_max_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_max_timeout_ms])
@@ -201,6 +262,18 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         .max_processed_bytes_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processed_bytes_before_commit],
         .max_processing_time_sec_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processing_time_sec_before_commit],
     })
+    , after_processing_settings(AfterProcessingSettings{
+        .after_processing_retries = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_retries],
+        .after_processing_move_uri = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_uri],
+        .after_processing_move_prefix = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_prefix],
+        .after_processing_move_access_key_id = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_access_key_id],
+        .after_processing_move_secret_access_key = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_secret_access_key],
+        .after_processing_move_connection_string = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_connection_string],
+        .after_processing_move_container = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_container],
+        .after_processing_tag_key = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_tag_key],
+        .after_processing_tag_value = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_tag_value],
+    })
+    , commit_on_select((*queue_settings_)[ObjectStorageQueueSetting::commit_on_select])
     , min_insert_block_size_rows_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views])
     , min_insert_block_size_bytes_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views])
     , configuration{configuration_}
@@ -209,6 +282,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
     , can_be_moved_between_databases((*queue_settings_)[ObjectStorageQueueSetting::keeper_path].changed)
     , keep_data_in_keeper(keep_data_in_keeper_)
+    , use_hive_partitioning((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
 {
     const auto & read_path = configuration->getPathForRead();
     if (read_path.path.empty())
@@ -236,24 +310,70 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
     configuration->check(context_);
 
+    bool is_path_with_hive_partitioning = false;
+    if (use_hive_partitioning)
+    {
+        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(
+            columns, configuration->getRawPath().path, format_settings, context_);
+
+        is_path_with_hive_partitioning = !hive_partition_columns_to_read_from_file_path.empty();
+        if (is_path_with_hive_partitioning)
+        {
+            auto hive_columns_set = hive_partition_columns_to_read_from_file_path.getNameSet();
+            for (const auto & column : columns.getAllPhysical())
+            {
+                auto hive_column = hive_columns_set.find(column.getNameInStorage());
+                if (hive_column == hive_columns_set.end())
+                    file_columns.emplace_back(column);
+                else
+                    hive_columns_set.erase(hive_column);
+            }
+
+            /// All hive columns must be in storage schema
+            if (!hive_columns_set.empty())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_QUERY_PARAMETER,
+                    "All hive partitioning columns must be in engine schema. "
+                    "Next columns not found: {}",
+                    fmt::join(hive_columns_set, ", "));
+            }
+        }
+    }
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     if (engine_args->settings)
-        storage_metadata.settings_changes = engine_args->settings->ptr();
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
+        storage_metadata.settings_changes = engine_args->getChild(*engine_args->settings);
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
+    zk_path = chooseZooKeeperPath(
+        getContext(),
+        table_id_,
+        context_->getSettingsRef(),
+        *queue_settings_,
+        UUIDHelpers::Nil,
+        &zookeeper_name);
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
-        zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
+        zookeeper_name,
+        zk_path,
+        *queue_settings_,
+        storage_metadata.getColumns(),
+        configuration_->format,
+        context_,
+        is_attach,
+        log);
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
 
     temp_metadata = std::make_unique<ObjectStorageQueueMetadata>(
         storage_type,
+        zookeeper_name,
         zk_path,
         std::move(table_metadata),
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
@@ -265,7 +385,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
-        auto task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
+        auto task = getContext()->getSchedulePool().createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
         streaming_tasks.emplace_back(std::move(task));
     }
 }
@@ -282,6 +402,7 @@ void StorageObjectStorageQueue::startup()
     /// Create a persistent node for the table under /registry node.
     bool created_new_metadata = false;
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(
+        zookeeper_name,
         zk_path,
         std::move(temp_metadata),
         getStorageID(),
@@ -296,6 +417,7 @@ void StorageObjectStorageQueue::startup()
             /// if it was just created by us (created_new_metadata == true)
             /// and if /registry is empty (no table was concurrently created).
             ObjectStorageQueueMetadataFactory::instance().remove(
+                zookeeper_name,
                 zk_path,
                 getStorageID(),
                 /* is_drop */created_new_metadata,
@@ -371,7 +493,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
             tryLogCurrentException(log);
         }
 
-        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), is_drop, keep_data_in_keeper);
+        ObjectStorageQueueMetadataFactory::instance().remove(zookeeper_name, zk_path, getStorageID(), is_drop, keep_data_in_keeper);
 
         files_metadata.reset();
     }
@@ -405,7 +527,8 @@ public:
         SharedHeader sample_block,
         ReadFromFormatInfo info_,
         std::shared_ptr<StorageObjectStorageQueue> storage_,
-        size_t max_block_size_)
+        size_t max_block_size_,
+        bool commit_once_processed_)
         : SourceStepWithFilter(
             std::move(sample_block),
             column_names_,
@@ -415,13 +538,15 @@ public:
         , info(std::move(info_))
         , storage(std::move(storage_))
         , max_block_size(max_block_size_)
+        , commit_once_processed(commit_once_processed_)
     {
     }
 
 private:
-    ReadFromFormatInfo info;
-    std::shared_ptr<StorageObjectStorageQueue> storage;
-    size_t max_block_size;
+    const ReadFromFormatInfo info;
+    const std::shared_ptr<StorageObjectStorageQueue> storage;
+    const size_t max_block_size;
+    const bool commit_once_processed;
 
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> iterator;
 
@@ -461,16 +586,21 @@ void StorageObjectStorageQueue::read(
     if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
     {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. "
-                        "To enable use setting `stream_like_engine_allow_direct_select`");
+                        "To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
     }
-
-    if (mv_attached)
+    bool do_commit_on_select;
+    {
+        std::lock_guard lock(mutex);
+        do_commit_on_select = commit_on_select;
+    }
+    if (do_commit_on_select && getDependencies() > 0)
     {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
-                        "Cannot read from {} with attached materialized views", getName());
+                        "Cannot read from {} with attached materialized views and commit_on_select=1", getName());
     }
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
+
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
 
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
@@ -481,7 +611,8 @@ void StorageObjectStorageQueue::read(
         std::make_shared<const Block>(read_from_format_info.source_header),
         read_from_format_info,
         std::move(this_ptr),
-        max_block_size);
+        max_block_size,
+        do_commit_on_select);
 
     query_plan.addStep(std::move(reading));
 }
@@ -506,7 +637,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
             iterator,
             max_block_size,
             context,
-            true /* commit_once_processed */));
+            commit_once_processed));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
@@ -529,9 +660,11 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     bool commit_once_processed)
 {
     CommitSettings commit_settings_copy;
+    AfterProcessingSettings after_processing_settings_copy;
     {
         std::lock_guard lock(mutex);
         commit_settings_copy = commit_settings;
+        after_processing_settings_copy = after_processing_settings;
     }
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
@@ -544,6 +677,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         format_settings,
         parser_shared_resources,
         commit_settings_copy,
+        after_processing_settings_copy,
         files_metadata,
         local_context,
         max_block_size,
@@ -608,9 +742,6 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
             const size_t dependencies_count = getDependencies();
             if (dependencies_count)
             {
-                mv_attached.store(true);
-                SCOPE_EXIT({ mv_attached.store(false); });
-
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
                 files_metadata->registerActive(storage_id);
@@ -678,7 +809,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
 
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
@@ -733,7 +864,11 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             block_io.pipeline.getHeader().getNames(),
             storage_snapshot,
             queue_context,
-            supportsSubsetOfColumns(queue_context));
+            supportsSubsetOfColumns(queue_context),
+            /*supports_tuple_elements*/ false,
+            PrepareReadingFromFormatHiveParams {file_columns,
+                hive_partition_columns_to_read_from_file_path.getNameToTypeMap()}
+        );
 
         Pipes pipes;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;
@@ -811,6 +946,27 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     return total_rows > 0;
 }
 
+void StorageObjectStorageQueue::postProcess(const StoredObjects & successful_objects) const
+{
+    std::optional<ObjectStorageQueuePostProcessor> post_processor;
+
+    {
+        std::lock_guard lock(mutex);
+        post_processor.emplace(
+            getContext(),
+            type,
+            object_storage,
+            getName(),
+            files_metadata->getTableMetadata(),
+            after_processing_settings);
+    }
+
+    if (post_processor)
+    {
+        post_processor->process(successful_objects);
+    }
+}
+
 void StorageObjectStorageQueue::commit(
     bool insert_succeeded,
     size_t inserted_rows,
@@ -823,8 +979,22 @@ void StorageObjectStorageQueue::commit(
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
+
+    PartitionLastProcessedFileInfoMap last_processed_file_per_partition;
+    auto created_nodes = std::make_shared<LastProcessedFileInfoMap>();
     for (auto & source : sources)
-        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message, error_code);
+    {
+        source->prepareCommitRequests(
+            requests, insert_succeeded, successful_objects,
+            last_processed_file_per_partition, created_nodes, exception_message, error_code);
+    }
+
+    // Use partition-based processing for both HIVE and REGEX modes
+    bool has_partitioning = files_metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
+    if (has_partitioning)
+        ObjectStorageQueueSource::preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
+    else
+        chassert(last_processed_file_per_partition.empty());
 
     if (requests.empty())
     {
@@ -835,12 +1005,9 @@ void StorageObjectStorageQueue::commit(
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
 
     if (!successful_objects.empty()
-        && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
+        && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
-        /// We do need to apply after-processing action before committing requests to keeper.
-        /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
-        object_storage->removeObjectsIfExist(successful_objects);
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, successful_objects.size());
+        postProcess(successful_objects);
     }
 
     auto context = getContext();
@@ -875,7 +1042,8 @@ void StorageObjectStorageQueue::commit(
         throw Exception(
             ErrorCodes::KEEPER_EXCEPTION,
             "Failed to commit files with {} retries, last error message: {}",
-            settings[Setting::keeper_max_retries].value, zk_retry.getLastKeeperErrorMessage());
+            settings[Setting::keeper_max_retries].value,
+            zk_retry.getLastKeeperErrorMessage());
     }
 
     chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
@@ -890,16 +1058,29 @@ void StorageObjectStorageQueue::commit(
     const auto commit_id = generateCommitID();
     const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
+    std::exception_ptr finalize_exception;
     for (auto & source : sources)
     {
-        source->finalizeCommit(
-            insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message);
+        try
+        {
+            source->finalizeCommit(
+                insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            if (!finalize_exception)
+                finalize_exception = std::current_exception();
+        }
     }
+    if (finalize_exception)
+        std::rethrow_exception(finalize_exception);
 
     LOG_DEBUG(
         log, "Successfully committed {} requests for {} sources with commit id {} "
-        "(inserted rows: {}, successful files: {})",
-        requests.size(), sources.size(), commit_id, inserted_rows, successful_objects.size());
+        "(inserted rows: {}, successful files ({}): {})",
+        requests.size(), sources.size(), commit_id, inserted_rows,
+        successful_objects.size(), collectRemotePaths(successful_objects));
 }
 
 UInt64 StorageObjectStorageQueue::generateCommitID()
@@ -908,8 +1089,7 @@ UInt64 StorageObjectStorageQueue::generateCommitID()
     return rng();
 }
 
-static const std::unordered_set<std::string_view> changeable_settings_unordered_mode
-{
+static const std::unordered_set<std::string_view> changeable_settings_unordered_mode{
     "processing_threads_num",
     /// Is not allowed to change on fly:
     /// "parallel_inserts",
@@ -932,10 +1112,19 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "cleanup_interval_min_ms",
     "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
+    "after_processing_retries",
+    "after_processing_move_uri",
+    "after_processing_move_prefix",
+    "after_processing_move_access_key_id",
+    "after_processing_move_secret_access_key",
+    "after_processing_move_connection_string",
+    "after_processing_move_container",
+    "after_processing_tag_key",
+    "after_processing_tag_value",
+    "commit_on_select",
 };
 
-static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
-{
+static const std::unordered_set<std::string_view> changeable_settings_ordered_mode{
     "loading_retries",
     "after_processing",
     "polling_min_timeout_ms",
@@ -953,6 +1142,16 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "cleanup_interval_min_ms",
     "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
+    "after_processing_retries",
+    "after_processing_move_uri",
+    "after_processing_move_prefix",
+    "after_processing_move_access_key_id",
+    "after_processing_move_secret_access_key",
+    "after_processing_move_connection_string",
+    "after_processing_move_container",
+    "after_processing_tag_key",
+    "after_processing_tag_value",
+    "commit_on_select",
 };
 
 static std::string normalizeSetting(const std::string & name)
@@ -1142,6 +1341,9 @@ void StorageObjectStorageQueue::alter(
         std::set<std::string> new_settings_set;
 
         const auto mode = getTableMetadata().getMode();
+        const size_t dependencies_count = getDependencies();
+        bool requires_detached_mv = false;
+
         for (auto & setting : new_settings)
         {
             LOG_TEST(log, "New setting {}: {}", setting.name, setting.value);
@@ -1172,7 +1374,6 @@ void StorageObjectStorageQueue::alter(
 
             if (requiresDetachedMV(setting.name))
             {
-                const size_t dependencies_count = getDependencies();
                 if (dependencies_count)
                 {
                     throw Exception(
@@ -1181,15 +1382,40 @@ void StorageObjectStorageQueue::alter(
                         "(dependencies count: {})",
                         setting.name, dependencies_count);
                 }
+                requires_detached_mv = true;
             }
 
             changed_settings.push_back(setting);
         }
+        if (requires_detached_mv)
+        {
+            LOG_TRACE(log, "Deactivating {} streaming tasks", streaming_tasks.size());
 
-        LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatForLogging());
+            for (auto & task : streaming_tasks)
+                task->deactivate();
+
+            LOG_TRACE(log, "Deactivated streaming tasks");
+        }
+        SCOPE_EXIT({
+            if (requires_detached_mv)
+            {
+                for (auto & task : streaming_tasks)
+                    task->activateAndSchedule();
+
+                LOG_TRACE(log, "Re-activated streaming tasks");
+            }
+        });
+
+        LOG_TRACE(
+            log, "New settings changes: {} (requires_detached_mv: {}, changed settings ({}):  {})",
+            new_metadata.settings_changes->formatForLogging(),
+            requires_detached_mv, changed_settings.size(), changed_settings.namesToString());
 
         /// Alter settings which are stored in keeper.
-        files_metadata->alterSettings(changed_settings, local_context);
+        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        {
+            files_metadata->alterSettings(changed_settings, local_context);
+        });
 
         /// Alter settings which are not stored in keeper.
         for (const auto & change : changed_settings)
@@ -1218,9 +1444,32 @@ void StorageObjectStorageQueue::alter(
                 list_objects_batch_size = change.value.safeGet<UInt64>();
             else if (change.name == "enable_hash_ring_filtering")
                 enable_hash_ring_filtering = change.value.safeGet<bool>();
+            else if (change.name == "after_processing_retries")
+                after_processing_settings.after_processing_retries = static_cast<UInt32>(change.value.safeGet<UInt32>());
+            else if (change.name == "after_processing_move_uri")
+                after_processing_settings.after_processing_move_uri = change.value.safeGet<String>();
+            else if (change.name == "after_processing_move_prefix")
+                after_processing_settings.after_processing_move_prefix = change.value.safeGet<String>();
+            else if (change.name == "after_processing_move_access_key_id")
+                after_processing_settings.after_processing_move_access_key_id = change.value.safeGet<String>();
+            else if (change.name == "after_processing_move_secret_access_key")
+                after_processing_settings.after_processing_move_secret_access_key = change.value.safeGet<String>();
+            else if (change.name == "after_processing_move_connection_string")
+                after_processing_settings.after_processing_move_connection_string = change.value.safeGet<String>();
+            else if (change.name == "after_processing_move_container")
+                after_processing_settings.after_processing_move_container = change.value.safeGet<String>();
+            else if (change.name == "after_processing_tag_key")
+                after_processing_settings.after_processing_tag_key = change.value.safeGet<String>();
+            else if (change.name == "after_processing_tag_value")
+                after_processing_settings.after_processing_tag_value = change.value.safeGet<String>();
+            else if (change.name == "commit_on_select")
+                commit_on_select = change.value.safeGet<UInt64>();
         }
 
         files_metadata->updateSettings(changed_settings);
+        /// Reset streaming_iterator as it can hold state which we could have just altered.
+        if (requires_detached_mv)
+            streaming_file_iterator.reset();
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
         setInMemoryMetadata(new_metadata);
@@ -1229,7 +1478,7 @@ void StorageObjectStorageQueue::alter(
 
 zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
 {
-    return getContext()->getZooKeeper();
+    return getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
 }
 
 const ObjectStorageQueueTableMetadata & StorageObjectStorageQueue::getTableMetadata() const
@@ -1262,6 +1511,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         list_objects_batch_size_copy,
         predicate,
         getVirtualsList(),
+        hive_partition_columns_to_read_from_file_path,
         local_context,
         log,
         enable_hash_ring_filtering_copy,
@@ -1282,7 +1532,10 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     const auto & table_metadata = getTableMetadata();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
-    settings[ObjectStorageQueueSetting::keeper_path] = zk_path;
+    if (zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME)
+        settings[ObjectStorageQueueSetting::keeper_path] = zk_path.string();
+    else
+        settings[ObjectStorageQueueSetting::keeper_path] = fmt::format("{}:{}", zookeeper_name, zk_path.string());
     settings[ObjectStorageQueueSetting::loading_retries] = table_metadata.loading_retries;
     settings[ObjectStorageQueueSetting::processing_threads_num] = table_metadata.processing_threads_num;
     settings[ObjectStorageQueueSetting::parallel_inserts] = table_metadata.parallel_inserts;
@@ -1293,9 +1546,9 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
 
     auto cleanup_interval_ms = files_metadata->getCleanupIntervalMS();
-    settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = cleanup_interval_ms.first;
-    settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = cleanup_interval_ms.second;
-    settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = files_metadata->getPersistentProcessingNodeTTLSeconds();
+    settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = static_cast<UInt32>(cleanup_interval_ms.first);
+    settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
+    settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(files_metadata->getPersistentProcessingNodeTTLSeconds());
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = files_metadata->usePersistentProcessingNode();
 
     {
@@ -1307,10 +1560,20 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::max_processed_rows_before_commit] = commit_settings.max_processed_rows_before_commit;
         settings[ObjectStorageQueueSetting::max_processed_bytes_before_commit] = commit_settings.max_processed_bytes_before_commit;
         settings[ObjectStorageQueueSetting::max_processing_time_sec_before_commit] = commit_settings.max_processing_time_sec_before_commit;
+        settings[ObjectStorageQueueSetting::after_processing_retries] = after_processing_settings.after_processing_retries;
+        settings[ObjectStorageQueueSetting::after_processing_move_uri] = after_processing_settings.after_processing_move_uri;
+        settings[ObjectStorageQueueSetting::after_processing_move_prefix] = after_processing_settings.after_processing_move_prefix;
+        settings[ObjectStorageQueueSetting::after_processing_move_access_key_id] = after_processing_settings.after_processing_move_access_key_id;
+        settings[ObjectStorageQueueSetting::after_processing_move_secret_access_key] = after_processing_settings.after_processing_move_secret_access_key;
+        settings[ObjectStorageQueueSetting::after_processing_move_connection_string] = after_processing_settings.after_processing_move_connection_string;
+        settings[ObjectStorageQueueSetting::after_processing_move_container] = after_processing_settings.after_processing_move_container;
+        settings[ObjectStorageQueueSetting::after_processing_tag_key] = after_processing_settings.after_processing_tag_key;
+        settings[ObjectStorageQueueSetting::after_processing_tag_value] = after_processing_settings.after_processing_tag_value;
         settings[ObjectStorageQueueSetting::enable_hash_ring_filtering] = enable_hash_ring_filtering;
         settings[ObjectStorageQueueSetting::list_objects_batch_size] = list_objects_batch_size;
         settings[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views] = min_insert_block_size_rows_for_materialized_views;
         settings[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views] = min_insert_block_size_bytes_for_materialized_views;
+        settings[ObjectStorageQueueSetting::commit_on_select] = commit_on_select;
     }
 
     return settings;
@@ -1333,7 +1596,8 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
     const StorageID & table_id,
     const Settings & settings,
     const ObjectStorageQueueSettings & queue_settings,
-    UUID database_uuid)
+    UUID database_uuid,
+    String * result_zookeeper_name)
 {
     /// keeper_path setting can be set explicitly by the user in the CREATE query, or filled in registerQueueStorage.cpp.
     /// We also use keeper_path to determine whether we move it between databases, since the default path contains UUID of the database.
@@ -1345,12 +1609,34 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
     std::string result_zk_path;
     if (queue_settings[ObjectStorageQueueSetting::keeper_path].changed)
     {
-        /// We do not add table uuid here on purpose.
-        result_zk_path = fs::path(zk_path_prefix) / queue_settings[ObjectStorageQueueSetting::keeper_path].value;
+        String configured_path = queue_settings[ObjectStorageQueueSetting::keeper_path].value;
 
-        Macros::MacroExpansionInfo info;
-        info.table_id.uuid = table_id.uuid;
-        result_zk_path = context_->getMacros()->expand(result_zk_path, info);
+        const auto first_slash = configured_path.find('/');
+        const auto first_colon = configured_path.find(':');
+        const bool has_keeper_prefix = first_colon != String::npos && (first_slash == String::npos || first_colon < first_slash);
+
+        String keeper_name;
+        String keeper_path = configured_path;
+        if (has_keeper_prefix)
+        {
+            keeper_name = configured_path.substr(0, first_colon);
+            keeper_path = configured_path.substr(first_colon + 1);
+            if (keeper_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'");
+        }
+
+        const bool starts_with_slash = !keeper_path.empty() && keeper_path.front() == '/';
+
+        if (starts_with_slash)
+            result_zk_path = configured_path;
+        else
+        {
+            const auto prefixed_path = (fs::path(zk_path_prefix) / keeper_path).string();
+            if (has_keeper_prefix)
+                result_zk_path = keeper_name + ":" + prefixed_path;
+            else
+                result_zk_path = prefixed_path;
+        }
     }
     else
     {
@@ -1359,6 +1645,16 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
 
         result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
     }
+
+    if (context_ && result_zk_path.find('{') != String::npos)
+    {
+        Macros::MacroExpansionInfo info;
+        info.table_id = table_id;
+        result_zk_path = context_->getMacros()->expand(result_zk_path, info);
+    }
+
+    if (result_zookeeper_name)
+        *result_zookeeper_name = zkutil::extractZooKeeperName(result_zk_path);
     return zkutil::extractZooKeeperPath(result_zk_path, true);
 }
 

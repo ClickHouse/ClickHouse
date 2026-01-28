@@ -1,22 +1,23 @@
+#include <memory>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Planner/Planner.h>
 
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnSet.h>
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Processors/QueryPlan/BlocksMarshallingStep.h>
+#include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitors.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
-#include <DataTypes/DataTypeString.h>
 
-#include <Functions/FunctionFactory.h>
-#include <Functions/CastOverloadResolver.h>
-
-#include <QueryPipeline/Pipe.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/QueryPlan/FractionalLimitStep.h>
+#include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -39,12 +40,10 @@
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
-#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/StorageID.h>
 
@@ -54,7 +53,6 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
-#include <Storages/StorageMerge.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -63,17 +61,12 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
-#include <Analyzer/WindowNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Analyzer/JoinNode.h>
-#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 
@@ -82,7 +75,6 @@
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/findQueryForParallelReplicas.h>
 #include <Planner/PlannerActionsVisitor.h>
-#include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -92,6 +84,7 @@
 #include <Planner/PlannerSorting.h>
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
+#include <base/types.h>
 
 
 namespace ProfileEvents
@@ -148,6 +141,10 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_parallel_blocks_marshalling;
+    extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool serialize_string_in_memory_with_zero_byte;
+    extern const SettingsString temporary_files_codec;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace ServerSetting
@@ -163,6 +160,7 @@ namespace ErrorCodes
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int INVALID_LIMIT_EXPRESSION;
 }
 
 namespace
@@ -348,26 +346,37 @@ void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const Planner
     }
 }
 
-std::pair<UInt64, bool> getLimitAbsAndSign(const Field & field)
+/// The LIMIT/OFFSET expression value can be either UInt64 or Float64, negative or positive.
+std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const Field & field)
 {
     // First check if it is nonnegative limit since they are more common
     const Field converted_value_uint = convertFieldToType(field, DataTypeUInt64());
     if (!converted_value_uint.isNull())
-        return {converted_value_uint.safeGet<UInt64>(), false};
+        return {converted_value_uint.safeGet<UInt64>(), 0, false};
 
     const Field converted_value_int = convertFieldToType(field, DataTypeInt64());
 
-    assert(!converted_value_int.isNull() && "limit/offset type should be either UInt64 or Int64");
+    if (!converted_value_int.isNull())
+    {
+        Int64 int_value = converted_value_int.safeGet<Int64>();
 
-    Int64 int_value = converted_value_int.safeGet<Int64>();
+        assert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
-    assert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
+        // We need to be careful because -Int64::min() is not representable as Int64
+        const UInt64 magnitude = (int_value == std::numeric_limits<Int64>::min())
+            ? (static_cast<UInt64>(std::numeric_limits<Int64>::max()) + 1ULL)
+            : static_cast<UInt64>(-int_value);
+        return {magnitude, 0, true};
+    }
 
-    // We need to be careful because -Int64::min() is not representable as Int64
-    const UInt64 magnitude = (int_value == std::numeric_limits<Int64>::min())
-        ? (static_cast<UInt64>(std::numeric_limits<Int64>::max()) + 1ULL)
-        : static_cast<UInt64>(-int_value);
-    return {magnitude, true};
+    Field converted_value_float = convertFieldToType(field, DataTypeFloat64());
+    if (!converted_value_float.isNull())
+        return {0, converted_value_float.safeGet<Float64>(), false};
+
+    throw Exception(
+        ErrorCodes::INVALID_LIMIT_EXPRESSION,
+        "The value {} of LIMIT/OFFSET expression is not representable as UInt64 or Int64 or Float64 in the range (0, 1)",
+        applyVisitor(FieldVisitorToString(), field));
 }
 
 class QueryAnalysisResult
@@ -399,27 +408,31 @@ public:
         if (query_node.hasLimit())
         {
             /// Constness of limit is validated during query analysis stage
-            std::tie(limit_length, is_limit_length_negative) = getLimitAbsAndSign(query_node.getLimit()->as<ConstantNode &>().getValue());
+            std::tie(limit_length, fractional_limit, is_limit_length_negative)
+                = getLimitOffsetValue(query_node.getLimit()->as<ConstantNode &>().getValue());
 
-            if (query_node.hasOffset() && limit_length)
+            if (query_node.hasOffset() && (limit_length || fractional_limit > 0))
             {
                 /// Constness of offset is validated during query analysis stage
-                std::tie(limit_offset, is_limit_offset_negative)
-                    = getLimitAbsAndSign(query_node.getOffset()->as<ConstantNode &>().getValue());
+                std::tie(limit_offset, fractional_offset, is_limit_offset_negative)
+                    = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>().getValue());
             }
         }
         else if (query_node.hasOffset())
         {
             /// Constness of offset is validated during query analysis stage
-            std::tie(limit_offset, is_limit_offset_negative) = getLimitAbsAndSign(query_node.getOffset()->as<ConstantNode &>().getValue());
+            std::tie(limit_offset, fractional_offset, is_limit_offset_negative)
+                = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>().getValue());
         }
 
-        /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN, NEGATIVE LIMIT
+        /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN, NEGATIVE LIMIT, FRACTIONAL LIMIT/OFFSET
         if (limit_length != 0 &&
             !query_node.isDistinct() &&
             !query_node.isLimitWithTies() &&
             !query_node.hasLimitBy() &&
             !query_has_array_join_in_join_tree &&
+            fractional_offset == 0 &&
+            fractional_limit == 0 &&
             limit_length <= std::numeric_limits<UInt64>::max() - limit_offset &&
             !is_limit_length_negative)
         {
@@ -428,8 +441,22 @@ public:
 
         if (query_node.hasLimitBy())
         {
-            if (is_limit_length_negative || is_limit_offset_negative)
+            bool is_limitby_limit_negative = false;
+            Float64 fractional_limitby_limit = 0;
+            std::tie(std::ignore, fractional_limitby_limit, is_limitby_limit_negative)
+                = getLimitOffsetValue(query_node.getLimitByLimit()->as<ConstantNode &>().getValue());
+
+            bool is_limitby_offset_negative = false;
+            Float64 fractional_limitby_offset = 0;
+            if (query_node.hasLimitByOffset())
+                std::tie(std::ignore, fractional_limitby_offset, is_limitby_offset_negative)
+                    = getLimitOffsetValue(query_node.getLimitByOffset()->as<ConstantNode &>().getValue());
+
+            if (is_limitby_limit_negative || is_limitby_offset_negative)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT/OFFSET with LIMIT BY is not supported yet");
+
+            if (fractional_limitby_limit > 0 || fractional_limitby_offset > 0)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
         }
 
 
@@ -449,6 +476,8 @@ public:
     SortDescription sort_description;
     UInt64 limit_length = 0;
     UInt64 limit_offset = 0;
+    Float64 fractional_limit = 0;
+    Float64 fractional_offset = 0;
     UInt64 partial_sorting_limit = 0;
     bool is_limit_length_negative = false;
     bool is_limit_offset_negative = false;
@@ -540,6 +569,9 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             aggregate_description.argument_names.clear();
     }
 
+    auto tmp_data_scope = query_context->getTempDataOnDisk();
+    if (tmp_data_scope)
+        tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
@@ -553,7 +585,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
                 && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
-        query_context->getTempDataOnDisk(),
+        tmp_data_scope,
         settings[Setting::max_threads],
         settings[Setting::min_free_disk_space_for_temporary_data],
         settings[Setting::compile_aggregate_expressions],
@@ -564,7 +596,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
-        settings[Setting::enable_producing_buckets_out_of_order_in_aggregation]);
+        settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
+        settings[Setting::serialize_string_in_memory_with_zero_byte]);
 
     return aggregator_params;
 }
@@ -674,7 +707,8 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         query_analysis_result.aggregate_overflow_row,
         max_threads,
         settings[Setting::max_block_size],
-        settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization]);
+        settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
+        settings[Setting::serialize_string_in_memory_with_zero_byte]);
 
     bool is_remote_storage = false;
     bool parallel_replicas_from_merge_tree = false;
@@ -857,8 +891,11 @@ ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
 
 void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
+    SortAnalysisResult & sort_analysis_result,
     const PlannerContextPtr & planner_context,
-    const QueryNode & query_node)
+    const QueryNode & query_node,
+    const SelectQueryOptions & select_query_options,
+    UsefulSets & useful_sets)
 {
     NameSet column_names_with_fill;
     SortDescription fill_description;
@@ -883,8 +920,11 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 
     if (query_node.hasInterpolate())
     {
+        auto & before_interpolate_actions = sort_analysis_result.before_interpolate_actions;
+        addExpressionStep(planner_context, query_plan, before_interpolate_actions, CorrelatedSubtrees(), select_query_options, "Before INTERPOLATE", useful_sets);
+
         ActionsDAG interpolate_actions_dag;
-        auto query_plan_columns = header->getColumnsWithTypeAndName();
+        auto query_plan_columns = query_plan.getCurrentHeader()->getColumnsWithTypeAndName();
         for (auto & query_plan_column : query_plan_columns)
         {
             /// INTERPOLATE actions dag input columns must be non constant
@@ -928,41 +968,17 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
 
                 const auto * expression_to_interpolate = expression_to_interpolate_expression_nodes[0];
-                const auto & expression_to_interpolate_name = expression_to_interpolate->result_name;
-
                 const auto * interpolate_expression = interpolate_expression_nodes[0];
                 if (!interpolate_expression->result_type->equals(*expression_to_interpolate->result_type))
                 {
                     interpolate_expression = &interpolate_actions_dag.addCast(*interpolate_expression,
                         expression_to_interpolate->result_type,
-                        interpolate_expression->result_name);
+                        interpolate_expression->result_name,
+                        planner_context->getQueryContext());
                 }
 
-                const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, expression_to_interpolate_name);
+                const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, interpolate_node_typed.getExpressionName());
                 interpolate_actions_dag.getOutputs().push_back(alias_node);
-
-                /// Here we fix INTERPOLATE by constant expression.
-                /// Example from 02336_sort_optimization_with_fill:
-                ///
-                /// SELECT 5 AS x, 'Hello' AS s ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (s AS s||'A')
-                ///
-                /// For this query, INTERPOLATE_EXPRESSION would be : s AS concat(s, 'A'),
-                /// so that interpolate_actions_dag would have INPUT `s`.
-                ///
-                /// However, INPUT `s` does not exist. Instead, we have a constant with execution name 'Hello'_String.
-                /// To fix this, we prepend a rename : 'Hello'_String -> s
-                if (const auto * /*constant_node*/ _ = interpolate_node_typed.getExpression()->as<const ConstantNode>())
-                {
-                    const auto & name = interpolate_node_typed.getExpressionName();
-                    const auto * node = &rename_dag.addInput(alias_node->result_name, alias_node->result_type);
-                    node = &rename_dag.addAlias(*node, name);
-                    rename_dag.getOutputs().push_back(node);
-
-                    /// Interpolate DAG should contain INPUT with same name to ensure a proper merging
-                    const auto & inputs = interpolate_actions_dag.getInputs();
-                    if (std::ranges::find_if(inputs, [&name](const auto & input){ return input->result_name == name; }) == inputs.end())
-                        interpolate_actions_dag.addInput(name, interpolate_node_typed.getExpression()->getResultType());
-                }
             }
 
             if (!rename_dag.getOutputs().empty())
@@ -978,7 +994,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
     auto filling_step = std::make_unique<FillingStep>(
-        header,
+        query_plan.getCurrentHeader(),
         query_analysis_result.sort_description,
         std::move(fill_description),
         interpolate_description,
@@ -1015,7 +1031,8 @@ void addLimitByStep(
     query_plan.addStep(std::move(limit_by_step));
 }
 
-void addPreliminaryLimitStep(QueryPlan & query_plan,
+void addPreliminaryLimitStep(
+    QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
     bool do_not_skip_offset)
@@ -1062,7 +1079,7 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
         auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, 0);
         query_plan.addStep(std::move(limit));
     }
-    else // !is_limit_length_negative && is_limit_offset_negative
+    else // if (!is_limit_length_negative && is_limit_offset_negative)
     {
         auto offset = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), limit_offset);
 
@@ -1096,10 +1113,18 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
         }
     }
 
+    /// Note: Preliminary Limits mustn't be added if there is a fractional limit/offset
+    /// because in order to correctly calculate the number of rows to be produced
+    /// based on the given fraction the final limit/offset processor must count the entire dataset.
+    /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
+
     bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
     bool apply_prelimit = apply_limit && query_node.hasLimit() && !query_node.isLimitWithTies() && !query_node.isGroupByWithTotals()
         && !query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree
-        && !query_analysis_result.query_has_array_join_in_join_tree && !query_node.isDistinct() && !query_node.hasLimitBy()
+        && !query_analysis_result.query_has_array_join_in_join_tree
+        && query_analysis_result.fractional_limit == 0
+        && query_analysis_result.fractional_offset == 0
+        && !query_node.isDistinct() && !query_node.hasLimitBy()
         && !settings[Setting::extremes] && !has_withfill;
     bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
     if (apply_prelimit)
@@ -1179,8 +1204,15 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         return;
     }
 
+
+    /// Note: Preliminary Limits mustn't be added if there is a fractional limit/offset
+    /// because in order to correctly calculate the number of rows to be produced
+    /// based on the given fraction the final limit/offset processor must count the entire dataset.
+    /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
+
     /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
-    if (query_node.hasLimit() && !query_node.hasLimitByOffset() && !query_node.isLimitWithTies())
+    if (query_node.hasLimit() && !query_node.hasLimitByOffset() && !query_node.isLimitWithTies()
+        && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0)
         addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, true /*do_not_skip_offset*/);
 }
 
@@ -1241,7 +1273,8 @@ void addWindowSteps(QueryPlan & query_plan,
     }
 }
 
-void addLimitStep(QueryPlan & query_plan,
+void addLimitStep(
+    QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
     const QueryNode & query_node)
@@ -1279,10 +1312,33 @@ void addLimitStep(QueryPlan & query_plan,
 
     UInt64 limit_length = query_analysis_result.limit_length;
     UInt64 limit_offset = query_analysis_result.limit_offset;
+    Float64 fractional_limit = query_analysis_result.fractional_limit;
+    Float64 fractional_offset = query_analysis_result.fractional_offset;
     bool is_limit_length_negative = query_analysis_result.is_limit_length_negative;
     bool is_limit_offset_negative = query_analysis_result.is_limit_offset_negative;
 
-    if (!is_limit_length_negative && !is_limit_offset_negative) [[likely]]
+    if (is_limit_length_negative && fractional_offset > 0)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT is not supported with fractional OFFSET yet");
+
+    if (is_limit_offset_negative && fractional_limit > 0)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT is not supported with negative OFFSET yet");
+
+    /// only one of limit_length or fractional_limit should have a value not both
+    if (limit_length && fractional_limit > 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT can't have both absolute and fractional values non-zero");
+    /// only one of limit_offset or fractional_offset should have a value not both
+    if (limit_offset && fractional_offset > 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both absolute and fractional values non-zero");
+
+    /// if fractional_limit has value is_limit_length_negative should be always false
+    if (fractional_limit > 0 && is_limit_length_negative)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT can't have both negative and fractional values non-zero");
+    /// if fractional_offset has value is_limit_offset_negative should be always false
+    if (fractional_offset > 0 && is_limit_offset_negative)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both negative and fractional values non-zero");
+
+    if (!is_limit_length_negative && !is_limit_offset_negative
+            && fractional_offset == 0 && fractional_limit == 0) [[likely]]
     {
         auto limit = std::make_unique<LimitStep>(
             query_plan.getCurrentHeader(),
@@ -1312,7 +1368,7 @@ void addLimitStep(QueryPlan & query_plan,
         auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, 0);
         query_plan.addStep(std::move(limit));
     }
-    else // !is_limit_length_negative && is_limit_offset_negative
+    else if (!is_limit_length_negative && is_limit_offset_negative)
     {
         auto offset = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), limit_offset);
 
@@ -1323,6 +1379,33 @@ void addLimitStep(QueryPlan & query_plan,
         if (limit_with_ties)
             limit->setStepDescription("LIMIT WITH TIES");
         query_plan.addStep(std::move(limit));
+    }
+    else if (limit_length && fractional_offset > 0)
+    {
+        auto fractional_offset_step
+            = std::make_unique<FractionalOffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.fractional_offset);
+        query_plan.addStep(std::move(fractional_offset_step));
+
+        auto limit = std::make_unique<LimitStep>(
+            query_plan.getCurrentHeader(),
+            limit_length,
+            0,
+            always_read_till_end,
+            limit_with_ties,
+            limit_with_ties_sort_description);
+        query_plan.addStep(std::move(limit));
+    }
+    else
+    {
+        // Else its fractional limit + fractional offset or normal offset
+        auto fractional_limit_step = std::make_unique<FractionalLimitStep>(
+            query_plan.getCurrentHeader(),
+            fractional_limit,
+            fractional_offset,
+            limit_offset,
+            limit_with_ties,
+            limit_with_ties_sort_description);
+        query_plan.addStep(std::move(fractional_limit_step));
     }
 }
 
@@ -1338,18 +1421,33 @@ void addExtremesStepIfNeeded(QueryPlan & query_plan, const PlannerContextPtr & p
 
 void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_analysis_result)
 {
-    /// If there is not a LIMIT but an offset
-    if (!query_analysis_result.limit_length && query_analysis_result.limit_offset)
+    /// If there is not a LIMIT or but an OFFSET
+    if ((!query_analysis_result.limit_length && query_analysis_result.fractional_limit == 0)
+        && (query_analysis_result.limit_offset || query_analysis_result.fractional_offset > 0))
     {
+        // only one of limit_offset or fractional_offset should have a value not both
+        if (query_analysis_result.limit_offset && query_analysis_result.fractional_offset > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both absolute and fractional values non-zero");
+
+        // negative fractional offset is not supported yet
+        if (query_analysis_result.is_limit_offset_negative && query_analysis_result.fractional_offset > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both negative and fractional values non-zero");
+
         if (query_analysis_result.is_limit_offset_negative) [[unlikely]]
         {
-            auto offsets_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.limit_offset);
-            query_plan.addStep(std::move(offsets_step));
+            auto offset_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.limit_offset);
+            query_plan.addStep(std::move(offset_step));
         }
-        else
+        else if (query_analysis_result.limit_offset) [[likely]]
         {
-            auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.limit_offset);
-            query_plan.addStep(std::move(offsets_step));
+            auto offset_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.limit_offset);
+            query_plan.addStep(std::move(offset_step));
+        }
+        else [[unlikely]]
+        {
+            auto fractional_offset_step
+                = std::make_unique<FractionalOffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.fractional_offset);
+            query_plan.addStep(std::move(fractional_offset_step));
         }
     }
 }
@@ -1381,8 +1479,14 @@ void addBuildSubqueriesForSetsStepIfNeeded(
             std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
         subquery_planner.buildQueryPlanIfNeeded();
 
-        query_plan.addInterpreterContext(subquery_planner.getPlannerContext()->getQueryContext());
-        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
+        auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
+        /// Contexts should be copied into the root query plan, because some functions may
+        /// be created using them while this subquery plan will be destroyed after
+        /// FutureSetFromSubquery::buildSetInplace(). Otherwise, function execution may fail
+        /// with a "Context has expired" exception.
+        for (const auto & context : subquery_plan.getInterpretersContexts())
+            query_plan.addInterpreterContext(context);
+        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
     }
 
     if (!subqueries.empty())
@@ -1575,10 +1679,10 @@ void Planner::buildPlanForUnionNode()
         query_plans.push_back(std::move(query_node_plan));
     }
 
-    Block union_common_header = buildCommonHeaderForUnion(query_plans_headers, union_mode);
-    addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers);
-
+    Block union_common_header = buildCommonHeaderForUnion(
+        query_plans_headers, union_mode, union_node.getContext()->getSettingsRef()[Setting::use_variant_as_common_type]);
     const auto & query_context = planner_context->getQueryContext();
+    addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers, query_context);
     const auto & settings = query_context->getSettingsRef();
     auto max_threads = settings[Setting::max_threads];
 
@@ -1631,7 +1735,6 @@ void Planner::buildPlanForQueryNode()
 
     auto & query_node = query_tree->as<QueryNode &>();
     const auto & query_context = planner_context->getQueryContext();
-
     if (query_node.hasWhere())
     {
         auto condition_constant = tryExtractConstantFromConditionNode(query_node.getWhere());
@@ -2063,7 +2166,7 @@ void Planner::buildPlanForQueryNode()
         }
 
         if (query_node.hasOrderBy())
-            addWithFillStepIfNeeded(query_plan, query_analysis_result, planner_context, query_node);
+            addWithFillStepIfNeeded(query_plan, query_analysis_result, expression_analysis_result.getSort(), planner_context, query_node, select_query_options, useful_sets);
 
         const bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
         const bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
@@ -2136,3 +2239,4 @@ void Planner::addStorageLimits(const StorageLimitsList & limits)
 }
 
 }
+

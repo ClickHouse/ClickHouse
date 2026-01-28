@@ -8,6 +8,8 @@ namespace DB
 {
 
 class IMergeTreeIndexCondition;
+class IMergeTreeDataPart;
+struct IMergeTreeIndex;
 
 /// Represents a substream of a merge tree index.
 /// By default skip indexes have one substream (skp_idx_<name>.idx),
@@ -27,6 +29,13 @@ struct MergeTreeIndexSubstream
     String suffix;
     /// Extension of the index substream's file with data. Encodes the serialization version (".idx", "idx2", etc.)
     String extension;
+
+    static bool isCompressed(Type type)
+    {
+        /// Text index postings are not compressed by write buffer,
+        /// because the compression is implicitly applied during building them.
+        return type != Type::TextIndexPostings;
+    }
 };
 
 using MergeTreeIndexSubstreams = std::vector<MergeTreeIndexSubstream>;
@@ -50,9 +59,8 @@ struct MergeTreeIndexDeserializationState
 {
     MergeTreeIndexVersion version;
     const IMergeTreeIndexCondition * condition;
-    String path_to_data_part;
-    String index_name;
-    size_t index_mark;
+    const IMergeTreeDataPart & part;
+    const IMergeTreeIndex & index;
 };
 
 }

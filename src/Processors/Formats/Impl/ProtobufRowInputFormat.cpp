@@ -46,7 +46,7 @@ void ProtobufRowInputFormat::createReaderAndSerializer()
 
 void ProtobufRowInputFormat::destroyReaderAndSerializer()
 {
-    serializer.reset();
+    serializer = nullptr;
     reader.reset();
 }
 

@@ -433,9 +433,18 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
 
         prewhere_actions_dag.getOutputs().push_back(expression_nodes.back());
 
+        /// Add required input columns to outputs, but avoid duplicates
+        std::unordered_set<const ActionsDAG::Node *> existing_outputs(
+            prewhere_actions_dag.getOutputs().begin(), prewhere_actions_dag.getOutputs().end());
+
         for (const auto & prewhere_input_node : prewhere_actions_dag.getInputs())
-            if (required_column_names_without_prewhere.contains(prewhere_input_node->result_name))
+        {
+            if (required_column_names_without_prewhere.contains(prewhere_input_node->result_name)
+                && !existing_outputs.contains(prewhere_input_node))
+            {
                 prewhere_actions_dag.getOutputs().push_back(prewhere_input_node);
+            }
+        }
 
         table_expression_data.setPrewhereFilterActions(std::move(prewhere_actions_dag));
     }

@@ -19,11 +19,11 @@ node1 = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     tmpfs=[
-        "/jbod1:size=40M",
-        "/jbod2:size=40M",
-        "/jbod3:size=40M",
-        "/jbod4:size=40M",
-        "/external:size=200M",
+        "/test_reloading_storage_config_jbod1:size=40M",
+        "/test_reloading_storage_config_jbod2:size=40M",
+        "/test_reloading_storage_config_jbod3:size=40M",
+        "/test_reloading_storage_config_jbod4:size=40M",
+        "/test_reloading_storage_config_external:size=200M",
     ],
     macros={"shard": 0, "replica": 1},
 )
@@ -34,11 +34,11 @@ node2 = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     tmpfs=[
-        "/jbod1:size=40M",
-        "/jbod2:size=40M",
-        "/jbod3:size=40M",
-        "/jbod4:size=40M",
-        "/external:size=200M",
+        "/test_reloading_storage_config_jbod1:size=40M",
+        "/test_reloading_storage_config_jbod2:size=40M",
+        "/test_reloading_storage_config_jbod3:size=40M",
+        "/test_reloading_storage_config_jbod4:size=40M",
+        "/test_reloading_storage_config_external:size=200M",
     ],
     macros={"shard": 0, "replica": 2},
 )
@@ -187,7 +187,7 @@ def test_add_disk(started_cluster):
             node1.query("SELECT name FROM system.disks").splitlines()
         )
 
-        add_disk(node1, "jbod3", "/jbod3/")
+        add_disk(node1, "jbod3", "/test_reloading_storage_config_jbod3/")
         node1.query("SYSTEM RELOAD CONFIG")
 
         assert "jbod3" in set(node1.query("SELECT name FROM system.disks").splitlines())
@@ -221,14 +221,14 @@ def test_update_disk(started_cluster):
 
         assert node1.query(
             "SELECT path, keep_free_space FROM system.disks where name = 'jbod2'"
-        ) == TSV([["/jbod2/", "10485760"]])
+        ) == TSV([["/test_reloading_storage_config_jbod2/", "10485760"]])
 
-        update_disk(node1, "jbod2", "/jbod2/", "20971520")
+        update_disk(node1, "jbod2", "/test_reloading_storage_config_jbod2/", "20971520")
         node1.query("SYSTEM RELOAD CONFIG")
 
         assert node1.query(
             "SELECT path, keep_free_space FROM system.disks where name = 'jbod2'"
-        ) == TSV([["/jbod2/", "20971520"]])
+        ) == TSV([["/test_reloading_storage_config_jbod2/", "20971520"]])
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
@@ -261,7 +261,7 @@ def test_add_disk_to_separate_config(started_cluster):
             node1.query("SELECT name FROM system.disks").splitlines()
         )
 
-        add_disk(node1, "jbod3", "/jbod3/", separate_file=True)
+        add_disk(node1, "jbod3", "/test_reloading_storage_config_jbod3/", separate_file=True)
         node1.query("SYSTEM RELOAD CONFIG")
 
         assert "jbod3" in set(node1.query("SELECT name FROM system.disks").splitlines())
@@ -280,8 +280,8 @@ def test_add_policy(started_cluster):
         engine = "MergeTree()"
 
         start_over()
-        add_disk(node1, "jbod3", "/jbod3/")
-        add_disk(node1, "jbod4", "/jbod4/")
+        add_disk(node1, "jbod3", "/test_reloading_storage_config_jbod3/")
+        add_disk(node1, "jbod4", "/test_reloading_storage_config_jbod4/")
         node1.restart_clickhouse(kill=True)
         time.sleep(2)
 
@@ -328,7 +328,7 @@ def test_new_policy_works(started_cluster):
         engine = "MergeTree()"
 
         start_over()
-        add_disk(node1, "jbod3", "/jbod3/")
+        add_disk(node1, "jbod3", "/test_reloading_storage_config_jbod3/")
         node1.restart_clickhouse(kill=True)
         time.sleep(2)
 
@@ -358,8 +358,8 @@ def test_new_policy_works(started_cluster):
             )
 
         start_over()
-        add_disk(node1, "jbod3", "/jbod3/")
-        add_disk(node1, "jbod4", "/jbod4/")
+        add_disk(node1, "jbod3", "/test_reloading_storage_config_jbod3/")
+        add_disk(node1, "jbod4", "/test_reloading_storage_config_jbod4/")
         add_policy(
             node1,
             "cool_policy",
@@ -409,8 +409,8 @@ def test_add_volume_to_policy(started_cluster):
         engine = "MergeTree()"
 
         start_over()
-        add_disk(node1, "jbod3", "/jbod3/")
-        add_disk(node1, "jbod4", "/jbod4/")
+        add_disk(node1, "jbod3", "/test_reloading_storage_config_jbod3/")
+        add_disk(node1, "jbod4", "/test_reloading_storage_config_jbod4/")
         add_policy(node1, "cool_policy", {"volume1": ["jbod3"]})
         node1.restart_clickhouse(kill=True)
         time.sleep(2)
@@ -428,8 +428,8 @@ def test_add_volume_to_policy(started_cluster):
         )
 
         start_over()
-        add_disk(node1, "jbod3", "/jbod3/")
-        add_disk(node1, "jbod4", "/jbod4/")
+        add_disk(node1, "jbod3", "/test_reloading_storage_config_jbod3/")
+        add_disk(node1, "jbod4", "/test_reloading_storage_config_jbod4/")
         add_policy(
             node1,
             "cool_policy",
@@ -463,8 +463,8 @@ def test_add_disk_to_policy(started_cluster):
         engine = "MergeTree()"
 
         start_over()
-        add_disk(node1, "jbod3", "/jbod3/")
-        add_disk(node1, "jbod4", "/jbod4/")
+        add_disk(node1, "jbod3", "/test_reloading_storage_config_jbod3/")
+        add_disk(node1, "jbod4", "/test_reloading_storage_config_jbod4/")
         add_policy(node1, "cool_policy", {"volume1": ["jbod3"]})
         node1.restart_clickhouse(kill=True)
         time.sleep(2)
@@ -482,8 +482,8 @@ def test_add_disk_to_policy(started_cluster):
         )
 
         start_over()
-        add_disk(node1, "jbod3", "/jbod3/")
-        add_disk(node1, "jbod4", "/jbod4/")
+        add_disk(node1, "jbod3", "/test_reloading_storage_config_jbod3/")
+        add_disk(node1, "jbod4", "/test_reloading_storage_config_jbod4/")
         add_policy(node1, "cool_policy", {"volume1": ["jbod3", "jbod4"]})
         node1.query("SYSTEM RELOAD CONFIG")
 
@@ -513,7 +513,7 @@ def test_remove_disk(started_cluster):
         engine = "MergeTree()"
 
         start_over()
-        add_disk(node1, "remove_disk_jbod3", "/jbod3/")
+        add_disk(node1, "remove_disk_jbod3", "/test_reloading_storage_config_jbod3/")
         node1.restart_clickhouse(kill=True)
         time.sleep(2)
 
@@ -553,8 +553,8 @@ def test_remove_policy(started_cluster):
         engine = "MergeTree()"
 
         start_over()
-        add_disk(node1, "jbod3", "/jbod3/")
-        add_disk(node1, "jbod4", "/jbod4/")
+        add_disk(node1, "jbod3", "/test_reloading_storage_config_jbod3/")
+        add_disk(node1, "jbod4", "/test_reloading_storage_config_jbod4/")
         add_policy(node1, "remove_policy_cool_policy", {"volume1": ["jbod3", "jbod4"]})
         node1.restart_clickhouse(kill=True)
         time.sleep(2)
@@ -576,8 +576,8 @@ def test_remove_policy(started_cluster):
         )
 
         start_over()
-        add_disk(node1, "jbod3", "/jbod3/")
-        add_disk(node1, "jbod4", "/jbod4/")
+        add_disk(node1, "jbod3", "/test_reloading_storage_config_jbod3/")
+        add_disk(node1, "jbod4", "/test_reloading_storage_config_jbod4/")
         node1.query("SYSTEM RELOAD CONFIG")
 
         assert "remove_policy_cool_policy" in set(
@@ -598,8 +598,8 @@ def test_remove_volume_from_policy(started_cluster):
         engine = "MergeTree()"
 
         start_over()
-        add_disk(node1, "jbod3", "/jbod3/")
-        add_disk(node1, "jbod4", "/jbod4/")
+        add_disk(node1, "jbod3", "/test_reloading_storage_config_jbod3/")
+        add_disk(node1, "jbod4", "/test_reloading_storage_config_jbod4/")
         add_policy(
             node1,
             "test_remove_volume_from_policy_cool_policy",
@@ -634,8 +634,8 @@ def test_remove_volume_from_policy(started_cluster):
         assert {"['jbod3']", "['jbod4']"} == disks_sets
 
         start_over()
-        add_disk(node1, "jbod3", "/jbod3/")
-        add_disk(node1, "jbod4", "/jbod4/")
+        add_disk(node1, "jbod3", "/test_reloading_storage_config_jbod3/")
+        add_disk(node1, "jbod4", "/test_reloading_storage_config_jbod4/")
         add_policy(node1, "cool_policy", {"volume1": ["jbod3"]})
         node1.query("SYSTEM RELOAD CONFIG")
 
@@ -668,8 +668,8 @@ def test_remove_disk_from_policy(started_cluster):
         engine = "MergeTree()"
 
         start_over()
-        add_disk(node1, "jbod3", "/jbod3/")
-        add_disk(node1, "jbod4", "/jbod4/")
+        add_disk(node1, "jbod3", "/test_reloading_storage_config_jbod3/")
+        add_disk(node1, "jbod4", "/test_reloading_storage_config_jbod4/")
         add_policy(
             node1,
             "test_remove_disk_from_policy_cool_policy",
@@ -704,8 +704,8 @@ def test_remove_disk_from_policy(started_cluster):
         assert {"['jbod3','jbod4']"} == disks_sets
 
         start_over()
-        add_disk(node1, "jbod3", "/jbod3/")
-        add_disk(node1, "jbod4", "/jbod4/")
+        add_disk(node1, "jbod3", "/test_reloading_storage_config_jbod3/")
+        add_disk(node1, "jbod4", "/test_reloading_storage_config_jbod4/")
         add_policy(node1, "cool_policy", {"volume1": ["jbod3"]})
         node1.query("SYSTEM RELOAD CONFIG")
 

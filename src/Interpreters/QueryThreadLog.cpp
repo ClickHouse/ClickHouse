@@ -1,9 +1,5 @@
 #include <Interpreters/QueryThreadLog.h>
-#include <array>
 #include <base/getFQDNOrHostName.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -16,7 +12,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/QueryLog.h>
-#include <Poco/Net/IPAddress.h>
 #include <Common/ClickHouseRevision.h>
 
 
@@ -116,7 +111,8 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(memory_usage);
     columns[i++]->insert(peak_memory_usage);
 
-    columns[i++]->insertData(thread_name.data(), thread_name.size());
+    auto thread_name_str = toString(thread_name);
+    columns[i++]->insertData(thread_name_str.data(), thread_name_str.size());
     columns[i++]->insert(thread_id);
     columns[i++]->insert(master_thread_id);
 

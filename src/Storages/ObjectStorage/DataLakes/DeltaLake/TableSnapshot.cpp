@@ -3,6 +3,7 @@
 #if USE_DELTA_KERNEL_RS
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
+#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Types.h>
@@ -16,9 +17,11 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/escapeForFileName.h>
+#include <Common/setThreadName.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
@@ -28,6 +31,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
+#include <roaring/roaring.hh>
 
 
 namespace fs = std::filesystem;
@@ -60,7 +64,7 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
     {
         ReadBufferFromString buffer(value);
         auto col = data_type->createColumn();
-        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT});
+        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT}, {});
         serialization->deserializeWholeText(*col, buffer, FormatSettings{});
         return (*col)[0];
     }
@@ -83,7 +87,7 @@ class TableSnapshot::Iterator final : public DB::IObjectIterator
 public:
     Iterator(
         std::shared_ptr<KernelSnapshotState> kernel_snapshot_state_,
-        const std::string & data_prefix_,
+        KernelHelperPtr helper_,
         const ReadSchema & read_schema_,
         const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
@@ -97,7 +101,7 @@ public:
         bool enable_engine_predicate_,
         LoggerPtr log_)
         : kernel_snapshot_state(kernel_snapshot_state_)
-        , data_prefix(data_prefix_)
+        , helper(helper_)
         , read_schema(read_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
@@ -140,7 +144,7 @@ public:
             {
                 /// Attach to current query thread group, to be able to
                 /// have query id in logs and metrics from scanDataFunc.
-                DB::ThreadGroupSwitcher switcher(thread_group, "TableSnapshot");
+                DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
                 scanDataFunc();
             });
     }
@@ -152,6 +156,10 @@ public:
         if (thread.joinable())
             thread.join();
     }
+
+    const std::string & getDataPath() const { return helper->getDataPath(); }
+
+    const std::string & getTableLocation() const { return helper->getTableLocation(); }
 
     void setScanException()
     {
@@ -166,15 +174,23 @@ public:
     {
         if (filter.has_value() && enable_engine_predicate)
         {
-            auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception);
+            auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, nullptr);
             scan = KernelUtils::unwrapResult(
-                ffi::scan(kernel_snapshot_state->snapshot.get(), kernel_snapshot_state->engine.get(), predicate.get()),
+                ffi::scan(
+                    kernel_snapshot_state->snapshot.get(),
+                    kernel_snapshot_state->engine.get(),
+                    predicate.get(),
+                    /* schema */nullptr),
                 "scan");
         }
         else
         {
             scan = KernelUtils::unwrapResult(
-                ffi::scan(kernel_snapshot_state->snapshot.get(), kernel_snapshot_state->engine.get(), nullptr),
+                ffi::scan(
+                    kernel_snapshot_state->snapshot.get(),
+                    kernel_snapshot_state->engine.get(),
+                    /* predicate */nullptr,
+                    /* schema */nullptr),
                 "scan");
         }
 
@@ -286,7 +302,7 @@ public:
                 continue;
             }
 
-            object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath()));
+            object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath(), /*with_tags=*/ false));
 
             if (callback)
             {
@@ -309,6 +325,7 @@ public:
         ffi::NullableCvoid engine_context,
         struct ffi::KernelStringSlice path,
         int64_t size,
+        int64_t /*mod_time*/,
         const ffi::Stats * stats,
         const ffi::CDvInfo * dv_info,
         const ffi::Expression * transform,
@@ -332,7 +349,7 @@ public:
         struct ffi::KernelStringSlice path,
         int64_t size,
         const ffi::Stats * stats,
-        const ffi::CDvInfo * /* dv_info */,
+        const ffi::CDvInfo * dv_info,
         const ffi::Expression * transform,
         const struct ffi::CStringMap * /* deprecated */)
     {
@@ -343,8 +360,9 @@ public:
             return;
         }
 
-        std::string full_path = fs::path(context->data_prefix) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
+        std::string full_path = fs::path(context->getDataPath()) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
         auto object = std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
+        object->data_lake_metadata.emplace();
 
         if (transform && !context->partition_columns.empty())
         {
@@ -354,20 +372,46 @@ public:
                 context->expression_schema,
                 context->enable_expression_visitor_logging);
 
-            object->data_lake_metadata = DB::DataLakeObjectMetadata{ .transform = parsed_transform };
-
             LOG_TEST(
                 context->log,
-                "Scanned file: {}, size: {}, num records: {}, transform: {}",
+                "Scanned file: {}, size: {}, num records: {}, transform: {}, has dv info: {}",
                 object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown",
-                parsed_transform->dumpNames());
+                parsed_transform->dumpNames(), dv_info && dv_info->has_vector);
+
+            object->data_lake_metadata->schema_transform = std::move(parsed_transform);
         }
         else
         {
             LOG_TEST(
                 context->log,
-                "Scanned file: {}, size: {}, num records: {}",
-                object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown");
+                "Scanned file: {}, size: {}, num records: {}, has db info: {}",
+                object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown",
+                dv_info && dv_info->has_vector);
+        }
+
+        if (dv_info && dv_info->has_vector)
+        {
+            /// `row_indexes_from_dv` returns a vector of row indexes
+            /// that should be *removed* from the result set
+            ffi::KernelRowIndexArray row_indexes = KernelUtils::unwrapResult(
+                ffi::row_indexes_from_dv(
+                    dv_info->info,
+                    context->kernel_snapshot_state->engine.get(),
+                    KernelUtils::toDeltaString(context->getTableLocation())),
+                "row_indexes_from_dv");
+
+            SCOPE_EXIT({
+                ffi::free_row_indexes(row_indexes);
+            });
+
+            LOG_TEST(context->log, "Row indexes size: {}", row_indexes.len);
+
+            auto bitmap = std::make_shared<DB::DataLakeObjectMetadata::ExcludedRows>();
+            for (size_t i = 0; i < row_indexes.len; ++i)
+            {
+                bitmap->add(row_indexes.ptr[i]);
+            }
+            object->data_lake_metadata->excluded_rows = std::move(bitmap);
         }
 
         {
@@ -387,7 +431,7 @@ private:
     std::optional<PartitionPruner> pruner;
     std::optional<DB::ActionsDAG> filter;
 
-    const std::string data_prefix;
+    KernelHelperPtr helper;
     DB::NamesAndTypesList read_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
@@ -422,8 +466,6 @@ private:
     ThreadFromGlobalPool thread;
 };
 
-static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
-
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
     DB::ObjectStoragePtr object_storage_,
@@ -448,7 +490,12 @@ void TableSnapshot::updateSettings(const DB::ContextPtr & context)
     enable_expression_visitor_logging = settings[DB::Setting::delta_lake_enable_expression_visitor_logging];
     throw_on_engine_visitor_error = settings[DB::Setting::delta_lake_throw_on_engine_predicate_error];
     enable_engine_predicate = settings[DB::Setting::delta_lake_enable_engine_predicate];
-    if (settings[DB::Setting::delta_lake_snapshot_version].value != LATEST_SNAPSHOT_VERSION)
+
+    if (settings[DB::Setting::delta_lake_snapshot_version].value == LATEST_SNAPSHOT_VERSION)
+    {
+        snapshot_version_to_read = std::nullopt;
+    }
+    else
     {
         if (settings[DB::Setting::delta_lake_snapshot_version].value < 0)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Snapshot version cannot be a negative value");
@@ -498,7 +545,9 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
             "snapshot");
     }
     snapshot_version = ffi::version(snapshot.get());
-    scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
+    scan = KernelUtils::unwrapResult(
+        ffi::scan(snapshot.get(), engine.get(), /* predicate */{}, /* engine_schema */nullptr),
+        "scan");
 }
 
 void TableSnapshot::initSnapshotImpl() const
@@ -532,7 +581,7 @@ DB::ObjectIterator TableSnapshot::iterate(
     initSnapshot();
     return std::make_shared<TableSnapshot::Iterator>(
         kernel_snapshot_state,
-        helper->getDataPath(),
+        helper,
         getReadSchema(),
         getTableSchema(),
         getPhysicalNamesMap(),

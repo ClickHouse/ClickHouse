@@ -37,7 +37,7 @@ void checkFinalInferredType(
                     "of data, most likely this column contains only Nulls or empty "
                     "Arrays/Maps. You can specify the type for this column using setting schema_inference_hints. "
                     "If your data contains complex JSON objects, try enabling one "
-                    "of the settings allow_experimental_object_type/input_format_json_read_objects_as_strings",
+                    "of the settings input_format_json_read_objects_as_strings",
                     name,
                     rows_read);
             throw Exception(

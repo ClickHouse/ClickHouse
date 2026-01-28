@@ -175,7 +175,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn toStringCutToZero_introduced_in = {1, 1};
     FunctionDocumentation::Category toStringCutToZero_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toStringCutToZero_documentation = {toStringCutToZero_description, toStringCutToZero_syntax, toStringCutToZero_arguments, toStringCutToZero_returned_value, toStringCutToZero_examples, toStringCutToZero_introduced_in, toStringCutToZero_category};
+    FunctionDocumentation toStringCutToZero_documentation = {toStringCutToZero_description, toStringCutToZero_syntax, toStringCutToZero_arguments, {}, toStringCutToZero_returned_value, toStringCutToZero_examples, toStringCutToZero_introduced_in, toStringCutToZero_category};
 
     factory.registerFunction<FunctionToStringCutToZero>(toStringCutToZero_documentation);
 }

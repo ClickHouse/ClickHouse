@@ -29,9 +29,8 @@ public:
         return std::make_shared<FunctionCoalesce>(context);
     }
 
-    explicit FunctionCoalesce(ContextPtr context_)
-        : context(context_)
-        , is_not_null(FunctionFactory::instance().get("isNotNull", context))
+    explicit FunctionCoalesce(ContextPtr context)
+        : is_not_null(FunctionFactory::instance().get("isNotNull", context))
         , assume_not_null(FunctionFactory::instance().get("assumeNotNull", context))
         , if_function(FunctionFactory::instance().get("if", context))
         , multi_if_function(FunctionFactory::instance().get("multiIf", context))
@@ -169,7 +168,6 @@ public:
     }
 
 private:
-    ContextPtr context;
     FunctionOverloadResolverPtr is_not_null;
     FunctionOverloadResolverPtr assume_not_null;
     FunctionOverloadResolverPtr if_function;
@@ -220,7 +218,7 @@ SELECT name, coalesce(mail, phone, CAST(telegram,'Nullable(String)')) FROM aBook
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCoalesce>(documentation, FunctionFactory::Case::Insensitive);
 }

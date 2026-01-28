@@ -14,8 +14,6 @@ namespace
     class FunctionToBool : public IFunction
     {
     private:
-        ContextPtr context;
-
         static String getReturnTypeName(const DataTypePtr & argument)
         {
             return argument->isNullable() ? "Nullable(Bool)" : "Bool";
@@ -56,7 +54,7 @@ namespace
                 }
             };
 
-            auto func_cast = createInternalCast(arguments[0], result_type, CastType::nonAccurate, {});
+            auto func_cast = createInternalCast(arguments[0], result_type, CastType::nonAccurate, {}, nullptr);
             return func_cast->execute(cast_args, result_type, arguments[0].column->size(), /* dry_run = */ false);
         }
     };
@@ -97,7 +95,7 @@ toBool('FALSE'):         false
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToBool>(documentation);
 }

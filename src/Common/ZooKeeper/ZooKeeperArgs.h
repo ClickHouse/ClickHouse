@@ -77,6 +77,8 @@ struct ZooKeeperArgs
     SessionLifetimeConfiguration fallback_session_lifetime = {};
     DB::GetPriorityForLoadBalancing get_priority_load_balancing;
 
+    int64_t last_zxid_seen = 0;
+
 private:
     void initFromKeeperServerSection(const Poco::Util::AbstractConfiguration & config);
     void initFromKeeperSection(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);

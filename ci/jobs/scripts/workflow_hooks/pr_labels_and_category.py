@@ -50,7 +50,6 @@ class Labels:
     DO_NOT_TEST = "do not test"
     NO_FAST_TESTS = "no-fast-tests"
     MUST_BACKPORT = "pr-must-backport"
-    MUST_BACKPORT_CLOUD = "pr-must-backport-cloud"
     JEPSEN_TEST = "jepsen-test"
     SKIP_MERGEABLE_CHECK = "skip mergeable check"
     PR_BACKPORT = "pr-backport"
@@ -100,9 +99,6 @@ def get_category(pr_body: str) -> Tuple[str, str]:
     lines = list(map(lambda x: x.strip(), pr_body.split("\n") if pr_body else []))
     lines = [re.sub(r"\s+", " ", line) for line in lines]
 
-    if "Reverts ClickHouse/" in pr_body:
-        return "", LABEL_CATEGORIES["pr-not-for-changelog"][0]
-
     category = ""
     error = ""
     i = 0
@@ -131,6 +127,8 @@ def get_category(pr_body: str) -> Tuple[str, str]:
         else:
             i += 1
     if not category or normalize_category(category) not in CATEGORIES_FOLD:
+        if "Reverts ClickHouse/" in pr_body:
+            return "", LABEL_CATEGORIES["pr-not-for-changelog"][0]
         error = "Change category is missing or invalid"
     return error, category
 
@@ -156,7 +154,7 @@ def check_labels(category, info):
             pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
 
     if any(label in Labels.AUTO_BACKPORT for label in pr_labels_to_add):
-        backport_labels = [Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_CLOUD]
+        backport_labels = [Labels.MUST_BACKPORT]
         pr_labels_to_add += [label for label in backport_labels if label not in labels]
         print(f"Add backport labels [{backport_labels}] for PR category [{category}]")
 

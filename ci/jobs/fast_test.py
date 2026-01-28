@@ -9,11 +9,13 @@ from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
-from ci.praktika.utils import MetaClasses, Shell, Utils
+from ci.praktika.utils import MetaClasses, Shell, Utils, ContextManager
 
 current_directory = Utils.cwd()
-build_dir = f"{current_directory}/ci/tmp/build"
+build_dir = f"{current_directory}/ci/tmp/fast_build"
 temp_dir = f"{current_directory}/ci/tmp/"
+repo_path_normalized = "/ClickHouse"
+build_dir_normalized = f"{repo_path_normalized}/ci/tmp/fast_build"
 
 
 def clone_submodules():
@@ -25,7 +27,7 @@ def clone_submodules():
         "contrib/zlib-ng",
         "contrib/libxml2",
         "contrib/fmtlib",
-        "contrib/aklomp-base64",
+        "contrib/base64",
         "contrib/cctz",
         "contrib/libcpuid",
         "contrib/libdivide",
@@ -50,9 +52,9 @@ def clone_submodules():
         "contrib/morton-nd",
         "contrib/xxHash",
         "contrib/simdjson",
+        "contrib/simdcomp",
         "contrib/liburing",
         "contrib/libfiu",
-        "contrib/incbin",
         "contrib/yaml-cpp",
         "contrib/corrosion",
         "contrib/StringZilla",
@@ -128,7 +130,26 @@ def main():
         stages.insert(0, stage)
 
     clickhouse_bin_path = Path(f"{build_dir}/programs/clickhouse")
+
+    # Global sccache settings for local and CI runs
+    os.environ["SCCACHE_DIR"] = f"{temp_dir}/sccache"
+    os.environ["SCCACHE_CACHE_SIZE"] = "40G"
+    os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
+    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
+    os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
+    os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
+    os.environ["SCCACHE_LOG"] = "info"
+
     if Info().is_local_run:
+        os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
+        for path in [
+            clickhouse_bin_path,
+            Path(temp_dir) / "clickhouse",
+            Path(current_directory) / "clickhouse",
+        ]:
+            if path.exists():
+                clickhouse_bin_path = path
+                break
         if clickhouse_bin_path.exists():
             print(
                 f"NOTE: It's a local run and clickhouse binary is found [{clickhouse_bin_path}] - skip the build"
@@ -139,10 +160,16 @@ def main():
                 f"NOTE: It's a local run and clickhouse binary is not found [{clickhouse_bin_path}] - will be built"
             )
             time.sleep(5)
-        clickhouse_server_link = Path(f"{build_dir}/programs/clickhouse-server")
-        if not clickhouse_server_link.is_file():
-            Shell.check(f"ln -sf {clickhouse_bin_path} {clickhouse_server_link}")
-        Shell.check(f"chmod +x {clickhouse_bin_path}")
+        resolved_clickhouse_bin_path = clickhouse_bin_path.resolve()
+        Shell.check(
+            f"ln -sf {resolved_clickhouse_bin_path} {resolved_clickhouse_bin_path.parent}/clickhouse-server",
+            strict=True,
+        )
+        Shell.check(
+            f"ln -sf {resolved_clickhouse_bin_path} {resolved_clickhouse_bin_path.parent}/clickhouse-client",
+            strict=True,
+        )
+        Shell.check(f"chmod +x {resolved_clickhouse_bin_path}", strict=True)
     else:
         os.environ["CH_HOSTNAME"] = (
             "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
@@ -151,12 +178,9 @@ def main():
         os.environ["CH_PASSWORD"] = chcache_secret.get_value()
         os.environ["CH_USE_LOCAL_CACHE"] = "false"
 
-        os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
-        os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
-        os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
-        Shell.check("sccache --show-stats", verbose=True)
-
-    Utils.add_to_PATH(f"{build_dir}/programs:{current_directory}/tests")
+    Utils.add_to_PATH(
+        f"{os.path.dirname(clickhouse_bin_path)}:{current_directory}/tests"
+    )
 
     res = True
     results = []
@@ -164,7 +188,6 @@ def main():
     job_info = ""
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
-        Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
         results.append(
             Result.from_commands_run(
                 name="Checkout Submodules",
@@ -173,21 +196,24 @@ def main():
         )
         res = results[-1].is_ok()
 
+    os.makedirs(build_dir, exist_ok=True)
+
     if res and JobStages.CMAKE in stages:
         results.append(
             # TODO: commented out to make job platform agnostic
             #   -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-x86_64-musl.cmake \
             Result.from_commands_run(
                 name="Cmake configuration",
-                command=f"cmake {current_directory} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} \
+                command=f"cmake {repo_path_normalized} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} \
                 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} \
                 -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE} \
                 -DENABLE_LIBRARIES=0 \
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
-                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1",
-                workdir=build_dir,
+                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
+                -B {build_dir_normalized}",
+                workdir=repo_path_normalized,
             )
         )
         res = results[-1].is_ok()
@@ -197,8 +223,8 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
-                command="command time -v ninja clickhouse-bundle clickhouse-stripped lexer_test",
-                workdir=build_dir,
+                command=f"command time -v cmake --build {build_dir_normalized} --"
+                " clickhouse-bundle clickhouse-stripped lexer_test",
             )
         )
         Shell.check(f"{build_dir}/rust/chcache/chcache stats")
@@ -207,16 +233,14 @@ def main():
 
     if res and JobStages.BUILD in stages:
         commands = [
-            f"mkdir -p {Settings.OUTPUT_DIR}/binaries",
             "sccache --show-stats",
             "clickhouse-client --version",
-            # "clickhouse-test --help",
         ]
         results.append(
             Result.from_commands_run(
                 name="Check and Compress binary",
                 command=commands,
-                workdir=build_dir,
+                workdir=build_dir_normalized,
             )
         )
         res = results[-1].is_ok()
@@ -274,7 +298,7 @@ def main():
 
     if attach_debug:
         attach_files += [
-            Utils.compress_file(f"{temp_dir}/build/programs/clickhouse-stripped"),
+            clickhouse_bin_path,
             f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
             f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
         ]

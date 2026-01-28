@@ -81,11 +81,10 @@ def test_mark_segment_size_communicated_correctly(
 
 
 def test_final_on_parallel_replicas(start_cluster):
+    nodes[0].query("DROP TABLE IF EXISTS t0")
     nodes[0].query(
-        "DROP TABLE IF EXISTS t0"
-    )
-    nodes[0].query(
-        "CREATE TABLE t0 (c0 Int) ENGINE = SummingMergeTree() ORDER BY tuple()"
+        "CREATE TABLE t0 (c0 Int) ENGINE = SummingMergeTree() ORDER BY tuple()",
+        settings={"allow_suspicious_primary_key": 1},
     )
     nodes[0].query("INSERT INTO t0 VALUES (1)")
     nodes[0].query("OPTIMIZE TABLE t0 FINAL")
@@ -101,9 +100,7 @@ def test_final_on_parallel_replicas(start_cluster):
 
 
 def test_insert_cluster_parallel_replicas(start_cluster):
-    nodes[0].query(
-        "DROP TABLE IF EXISTS t0 ON CLUSTER 'test_cluster_two_shards'"
-    )
+    nodes[0].query("DROP TABLE IF EXISTS t0 ON CLUSTER 'test_cluster_two_shards'")
     nodes[0].query(
         "CREATE TABLE t0 ON CLUSTER 'test_cluster_two_shards' (c0 Int) ENGINE = Log()"
     )

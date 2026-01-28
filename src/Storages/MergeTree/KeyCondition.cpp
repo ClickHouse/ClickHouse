@@ -26,9 +26,11 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -260,6 +262,14 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                return true;
+            }
+        },
+        {
+            "has",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_IN_SET;
                 return true;
             }
         },
@@ -642,11 +652,19 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             {
                 /// Remove "materialize" from index analysis.
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+
+                /// `need_inversion` was already pushed into the child; avoid adding an extra `not()` wrapper
+                /// Without this, we could add an extra `not()` here (double inversion), e.g. `NOT materialize(x = 0)` -> `not(notEquals(x, 0))`.
+                handled_inversion = true;
             }
             else if (isTrivialCast(node))
             {
                 /// Remove trivial cast and keep its first argument.
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+
+                /// `need_inversion` was already pushed into the child; avoid adding an extra `not()` wrapper
+                /// Without this, we could add an extra `not()` here (double inversion), e.g. `NOT CAST(x = 0, 'UInt8')` -> `not(notEquals(x, 0))`.
+                handled_inversion = true;
             }
             else if (need_inversion && (name == "and" || name == "or"))
             {
@@ -863,19 +881,34 @@ KeyCondition::KeyCondition(
     ContextPtr context,
     const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
-    bool single_point_)
+    bool single_point_,
+    bool skip_analysis_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
 {
-    auto info = BuildInfo {.key_expr = key_expr_, .key_subexpr_names = getAllSubexpressionNames(*key_expr_)};
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
     {
         key_columns.try_emplace(name, key_index);
         ++key_index;
     }
+
+    /// Skip any analysis. Toggled by the `use_primary_key` setting. This is useful for catching bugs
+    /// in the index condition analysis logic. It is better to skip analysis in the constructor rather than in
+    /// `checkInHyperrectangle` or elsewhere, because bugs during `extractAtomFromTree` calls can lead to
+    /// unexpected exceptions.
+    /// This will lead to reading all granules with no primary key skipping.
+    if (skip_analysis_)
+    {
+        has_filter = (filter_dag.predicate != nullptr);
+        relaxed = true;
+        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        return;
+    }
+
+    auto info = BuildInfo {.key_expr = key_expr_, .key_subexpr_names = getAllSubexpressionNames(*key_expr_)};
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves(info);
@@ -929,6 +962,11 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
     RPNBuilderTreeNode node(expr.get(), tree_context);
 
     return node.tryGetConstant(out_value, out_type);
+}
+
+bool KeyCondition::hasOnlyConjunctions() const
+{
+    return std::ranges::none_of(rpn, [](RPNElement element) { return element.function == RPNElement::FUNCTION_OR; });
 }
 
 
@@ -1021,6 +1059,11 @@ bool applyFunctionChainToColumn(
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
         result_type = in_argument_type;
     }
+    else if (!in_argument_type->isNullable() && !in_argument_type->canBeInsideNullable())
+    {
+        /// We cannot apply castColumnAccurateOrNull() because it will throw exception
+        return false;
+    }
     // If column cannot be cast accurate, casting with OrNull, and in case all
     // values has been cast (no nulls), unpacking nested column from nullable.
     // In case any further functions require Nullable input, they'll be able
@@ -1049,8 +1092,10 @@ bool applyFunctionChainToColumn(
             return false;
 
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
-        result_type = removeLowCardinality(func->getResultType());
-        result_column = func->execute({{result_column, argument_type, ""}}, result_type, result_column->size(), /* dry_run = */ false);
+        auto func_result_type = func->getResultType();
+        result_column = func->execute({{result_column, argument_type, ""}}, func_result_type, result_column->size(), /* dry_run = */ false);
+        result_column = result_column->convertToFullColumnIfLowCardinality();
+        result_type = removeLowCardinality(func_result_type);
 
         // Transforming nullable columns to the nested ones, in case no nulls found
         if (result_column->isNullable())
@@ -1215,18 +1260,14 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     return true;
 }
 
-bool KeyCondition::tryPrepareSetIndex(
-    const RPNBuilderFunctionTreeNode & func,
-    const BuildInfo & info,
-    RPNElement & out,
-    bool allow_constant_transformation)
+void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
+        std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
+        std::vector<MonotonicFunctionsChain> &set_transforming_chains,
+        DataTypes & data_types,
+        size_t & args_count,
+        const BuildInfo & info,
+        bool allow_constant_transformation)
 {
-    const auto & left_arg = func.getArgumentAt(0);
-
-    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
-    std::vector<MonotonicFunctionsChain> set_transforming_chains;
-    DataTypes data_types;
-
     auto get_key_tuple_position_mapping = [&](const RPNBuilderTreeNode & node, size_t tuple_index)
     {
         MergeTreeSetIndex::KeyTuplePositionMapping index_mapping;
@@ -1253,88 +1294,74 @@ bool KeyCondition::tryPrepareSetIndex(
         }
     };
 
-    size_t left_args_count = 1;
-    if (left_arg.isFunction())
+    args_count = 1;
+    if (arg.isFunction())
     {
         /// Note: in case of ActionsDAG, tuple may be a constant.
         /// In this case, there is no keys in tuple. So, we don't have to check it.
-        auto left_arg_tuple = left_arg.toFunctionNode();
-        if (left_arg_tuple.getFunctionName() == "tuple" && left_arg_tuple.getArgumentsSize() > 1)
+        auto arg_tuple = arg.toFunctionNode();
+        if (arg_tuple.getFunctionName() == "tuple" && arg_tuple.getArgumentsSize() > 1)
         {
-            left_args_count = left_arg_tuple.getArgumentsSize();
-            for (size_t i = 0; i < left_args_count; ++i)
-                get_key_tuple_position_mapping(left_arg_tuple.getArgumentAt(i), i);
+            args_count = arg_tuple.getArgumentsSize();
+            for (size_t i = 0; i < args_count; ++i)
+                get_key_tuple_position_mapping(arg_tuple.getArgumentAt(i), i);
         }
         else
         {
-            get_key_tuple_position_mapping(left_arg, 0);
+            get_key_tuple_position_mapping(arg, 0);
         }
     }
     else
     {
-        get_key_tuple_position_mapping(left_arg, 0);
+        get_key_tuple_position_mapping(arg, 0);
     }
+}
 
-    if (indexes_mapping.empty())
-        return false;
-
-    const auto right_arg = func.getArgumentAt(1);
-
-    auto future_set = right_arg.tryGetPreparedSet();
-    if (!future_set)
-        return false;
-
-    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
-    if (!prepared_set)
-        return false;
-
-    /// The index can be prepared if the elements of the set were saved in advance.
-    if (!prepared_set->hasExplicitSetElements())
-        return false;
-
-    /** Try to convert set columns to primary key columns.
-      * Example: SELECT id FROM test_table WHERE id IN (SELECT 1);
-      * In this example table `id` column has type UInt64, Set column has type UInt8. To use index
-      * we need to convert set column to primary key column.
-      */
-    auto set_columns = prepared_set->getSetElements();
-    auto set_types = future_set->getTypes();
+bool tryPrepareSetColumnsForIndex(
+    Columns & set_columns,
+    DataTypes & set_types,
+    const std::vector<KeyCondition::MonotonicFunctionsChain> & set_transforming_chains,
+    const DataTypes & data_types,
+    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
+    size_t args_count,
+    bool & is_constant_transformed)
+{
+    Columns new_columns;
+    DataTypes new_types;
+    while (set_columns.size() < args_count) /// If we have a packed tuple inside, we unpack it
     {
-        Columns new_columns;
-        DataTypes new_types;
-        while (set_columns.size() < left_args_count) /// If we have an unpacked tuple inside, we unpack it
+        bool has_tuple = false;
+        for (size_t i = 0; i < set_columns.size(); ++i)
         {
-            bool has_tuple = false;
-            for (size_t i = 0; i < set_columns.size(); ++i)
+            if (isTuple(set_types[i]))
             {
-                if (isTuple(set_types[i]))
-                {
-                    has_tuple = true;
-                    auto columns_tuple = assert_cast<const ColumnTuple*>(set_columns[i].get())->getColumns();
-                    auto subtypes = assert_cast<const DataTypeTuple&>(*set_types[i]).getElements();
-                    new_columns.insert(new_columns.end(), columns_tuple.begin(), columns_tuple.end());
-                    new_types.insert(new_types.end(), subtypes.begin(), subtypes.end());
-                }
-                else
-                {
-                    new_columns.push_back(set_columns[i]);
-                    new_types.push_back(set_types[i]);
-                }
+                has_tuple = true;
+                auto columns_tuple = assert_cast<const ColumnTuple*>(set_columns[i].get())->getColumns();
+                auto subtypes = assert_cast<const DataTypeTuple&>(*set_types[i]).getElements();
+                new_columns.insert(new_columns.end(), columns_tuple.begin(), columns_tuple.end());
+                new_types.insert(new_types.end(), subtypes.begin(), subtypes.end());
             }
-            if (!has_tuple)
-                return false;
-
-            set_columns.swap(new_columns);
-            set_types.swap(new_types);
-            new_columns.clear();
-            new_types.clear();
+            else
+            {
+                new_columns.push_back(set_columns[i]);
+                new_types.push_back(set_types[i]);
+            }
         }
+        if (!has_tuple)
+            return false;
+
+        set_columns.swap(new_columns);
+        set_types.swap(new_types);
+        new_columns.clear();
+        new_types.clear();
     }
-    size_t set_types_size = set_types.size();
-    assert(set_types_size == set_columns.size());
+    chassert(set_types.size() == set_columns.size());
 
     Columns transformed_set_columns = set_columns;
-    bool is_constant_transformed = false;
+    is_constant_transformed = false;
+
+    IColumn::Filter filter(transformed_set_columns.front()->size(), 1);
+    bool filter_used = false;
 
     for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping.size(); ++indexes_mapping_index)
     {
@@ -1407,32 +1434,113 @@ bool KeyCondition::tryPrepareSetIndex(
         const NullMap & nullable_set_column_null_map = nullable_set_column_typed->getNullMapData();
         size_t nullable_set_column_null_map_size = nullable_set_column_null_map.size();
 
-        IColumn::Filter filter(nullable_set_column_null_map_size);
-
         if (set_column_null_map)
         {
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
             {
                 if (nullable_set_column_null_map_size < set_column_null_map->size())
-                    filter[i] = (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
+                    filter[i] &= (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
                 else
-                    filter[i] = !nullable_set_column_null_map[i];
+                    filter[i] &= !nullable_set_column_null_map[i];
             }
 
-            set_column = nullable_set_column_typed->filter(filter, 0);
+            set_column = nullable_set_column;
         }
         else
         {
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
-                filter[i] = !nullable_set_column_null_map[i];
+                filter[i] &= !nullable_set_column_null_map[i];
 
-            set_column = nullable_set_column_typed->getNestedColumn().filter(filter, 0);
+            set_column = nullable_set_column_typed->getNestedColumnPtr();
         }
+        filter_used = true;
 
         transformed_set_columns[set_element_index] = std::move(set_column);
     }
 
-    set_columns = std::move(transformed_set_columns);
+    if (filter_used)
+    {
+        for (size_t set_element_index = 0; set_element_index < transformed_set_columns.size(); ++set_element_index)
+            set_columns[set_element_index] = transformed_set_columns[set_element_index]->filter(filter, 0);
+    }
+    else
+    {
+        set_columns = std::move(transformed_set_columns);
+    }
+    return true;
+}
+
+bool KeyCondition::tryPrepareSetIndexForIn(
+    const RPNBuilderFunctionTreeNode & func,
+    const BuildInfo & info,
+    RPNElement & out,
+    bool allow_constant_transformation)
+{
+    const RPNBuilderTreeNode & left_arg = func.getArgumentAt(0);
+    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
+    std::vector<MonotonicFunctionsChain> set_transforming_chains;
+    DataTypes data_types;
+    size_t left_args_count = 0;
+
+    analyzeKeyExpressionForSetIndex(
+        left_arg,
+        indexes_mapping,
+        set_transforming_chains,
+        data_types,
+        left_args_count,
+        info,
+        allow_constant_transformation);
+
+    if (indexes_mapping.empty())
+        return false;
+
+    const RPNBuilderTreeNode & right_arg = func.getArgumentAt(1);
+    auto future_set = right_arg.tryGetPreparedSet();
+    if (!future_set)
+        return false;
+
+    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
+    if (!prepared_set)
+        return false;
+
+    /// The index can be prepared if the elements of the set were saved in advance.
+    if (!prepared_set->hasExplicitSetElements())
+        return false;
+
+    /** Try to convert set columns to primary key columns.
+      * Example: SELECT id FROM test_table WHERE id IN (SELECT 1);
+      * In this example table `id` column has type UInt64, Set column has type UInt8. To use index
+      * we need to convert set column to primary key column.
+      */
+    auto set_columns = prepared_set->getSetElements();
+
+    auto set_types = future_set->getTypes();
+
+    chassert(set_types.size() == set_columns.size());
+
+    /// Special case: ORDER BY key_tuple (a single Tuple-typed key column) with predicate
+    /// `key_tuple IN ((a, b), (c, d), ...)`.
+    ///
+    /// The prepared set for `IN` can come as "unpacked" columns (one column per tuple element),
+    /// but for a packed tuple key we must keep it as a single ColumnTuple so it can be cast to
+    /// the key column type when preparing index conditions
+    if (left_args_count == 1 && data_types.size() == 1 && set_columns.size() > 1)
+    {
+        DataTypePtr key_type = removeNullable(data_types[0]);
+        if (const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get()))
+        {
+            if (key_tuple_type->getElements().size() == set_types.size())
+            {
+                set_columns = {ColumnTuple::create(set_columns)};
+                set_types = {std::make_shared<DataTypeTuple>(set_types)};
+            }
+        }
+    }
+
+    bool is_constant_transformed = false;
+    if (!tryPrepareSetColumnsForIndex(
+            set_columns, set_types, set_transforming_chains, data_types, indexes_mapping, left_args_count, is_constant_transformed))
+        return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
 
@@ -1444,7 +1552,119 @@ bool KeyCondition::tryPrepareSetIndex(
     /// When not all key columns are used or when there are multiple elements in
     /// the set, the atom's hyperrectangle is expanded to encompass the missing
     /// dimensions and any "gaps".
-    if (adjusted_indexes_mapping.size() < set_types_size || out.set_index->size() > 1 || is_constant_transformed)
+    if (adjusted_indexes_mapping.size() < set_types.size() || out.set_index->size() > 1 || is_constant_transformed)
+        relaxed = true;
+
+    return true;
+}
+
+bool KeyCondition::tryPrepareSetIndexForHas(
+    const RPNBuilderFunctionTreeNode & func,
+    const BuildInfo & info,
+    RPNElement & out,
+    bool allow_constant_transformation)
+{
+    chassert(func.getFunctionName() == "has");
+    chassert(func.getArgumentsSize() == 2);
+
+    const RPNBuilderTreeNode & array_arg = func.getArgumentAt(0);
+    const RPNBuilderTreeNode & key_arg = func.getArgumentAt(1);
+
+    /// First argument of has() must be a constant array
+    Field array_value;
+    DataTypePtr array_type;
+    if (!array_arg.tryGetConstant(array_value, array_type))
+        return false;
+
+    if (array_value.getType() != Field::Types::Array)
+        return false;
+
+    const auto * array_data_type = typeid_cast<const DataTypeArray *>(array_type.get());
+    chassert(array_data_type);
+
+    const Array & values = array_value.safeGet<Array>();
+    if (values.empty())
+    {
+        /// has([], x) is always false – we can mark the condition as always false
+        out.function = RPNElement::ALWAYS_FALSE;
+        return true;
+    }
+
+    Columns set_columns;
+    DataTypes set_types;
+
+    const DataTypePtr & array_nested_type = array_data_type->getNestedType();
+
+    if (isTuple(array_nested_type))
+    {
+        /// Array of tuples: Array(Tuple(...), Tuple(...), ...)
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*array_nested_type);
+        const auto & element_types = tuple_type.getElements();
+        size_t tuple_size = element_types.size();
+
+        MutableColumns tuple_columns;
+        tuple_columns.reserve(tuple_size);
+        for (size_t i = 0; i < tuple_size; ++i)
+            tuple_columns.emplace_back(element_types[i]->createColumn());
+
+        for (const auto & value : values)
+        {
+            chassert(value.getType() == Field::Types::Tuple);
+
+            const auto & tuple_value = value.safeGet<Tuple>();
+
+            chassert(tuple_value.size() == tuple_size);
+
+            for (size_t i = 0; i < tuple_size; ++i)
+                tuple_columns[i]->insert(tuple_value[i]);
+        }
+
+        auto column_tuple = ColumnTuple::create(std::move(tuple_columns));
+        set_columns.emplace_back(std::move(column_tuple));
+        set_types.push_back(array_nested_type);
+    }
+    else
+    {
+        /// Array(T)
+        MutableColumnPtr column = array_nested_type->createColumn();
+        column->reserve(values.size());
+
+        for (const auto & value : values)
+        {
+            column->insert(value);
+        }
+
+        set_columns.emplace_back(std::move(column));
+        set_types.push_back(array_nested_type);
+    }
+
+    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
+    std::vector<MonotonicFunctionsChain> set_transforming_chains;
+    DataTypes data_types;
+    size_t key_args_count = 0;
+
+    analyzeKeyExpressionForSetIndex(
+        key_arg, indexes_mapping, set_transforming_chains, data_types, key_args_count, info, allow_constant_transformation);
+
+    if (indexes_mapping.empty())
+        return false;
+
+    bool is_constant_transformed = false;
+    if (!tryPrepareSetColumnsForIndex(
+            set_columns, set_types, set_transforming_chains, data_types, indexes_mapping, key_args_count, is_constant_transformed))
+        return false;
+
+    out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
+
+    /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
+    const auto & adjusted_indexes_mapping = out.set_index->getIndexesMapping();
+    for (const auto & index_mapping : adjusted_indexes_mapping)
+        out.key_columns.push_back(index_mapping.key_index);
+
+    /// When not all key columns are used or when there are multiple elements in
+    /// the set, the atom's hyperrectangle is expanded to encompass the missing
+    /// dimensions and any "gaps".
+    if (adjusted_indexes_mapping.size() < set_types.size() || out.set_index->size() > 1 || is_constant_transformed)
         relaxed = true;
 
     return true;
@@ -2064,8 +2284,26 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         {
             if (functionIsInOrGlobalInOperator(func_name))
             {
-                if (tryPrepareSetIndex(func, info, out, allow_constant_transformation))
+                if (tryPrepareSetIndexForIn(func, info, out, allow_constant_transformation))
                 {
+                    const auto atom_it = atom_map.find(func_name);
+                    bool valid_atom = atom_it->second(out, const_value);
+                    if (valid_atom && out.relaxed)
+                        relaxed = true;
+                    return valid_atom;
+                }
+                else
+                    return false;
+            }
+
+            if (func_name == "has")
+            {
+                if (tryPrepareSetIndexForHas(func, info, out, allow_constant_transformation))
+                {
+                    /// Found empty array constant in has([], x) -> always false
+                    if (out.function == RPNElement::ALWAYS_FALSE)
+                        return true;
+
                     const auto atom_it = atom_map.find(func_name);
                     bool valid_atom = atom_it->second(out, const_value);
                     if (valid_atom && out.relaxed)
@@ -2198,7 +2436,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                             ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
                             : common_type;
 
-                        auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {});
+                        auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                         if (!single_point && !func_cast->hasInformationAboutMonotonicity())
@@ -2246,6 +2484,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
     {
         /// For cases where it says, for example, `WHERE 0 AND something`
 
+        if (const_value.isNull())
+        {
+            out.function = RPNElement::ALWAYS_FALSE;
+            return true;
+        }
         if (const_value.getType() == Field::Types::UInt64)
         {
             out.function = const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
@@ -3110,7 +3353,8 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
-    const ColumnIndexToBloomFilter & column_index_to_column_bf) const
+    const ColumnIndexToBloomFilter & column_index_to_column_bf,
+    const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     std::vector<BoolMask> rpn_stack;
 
@@ -3122,6 +3366,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
+    size_t element_idx = 0;
     for (const auto & element : rpn)
     {
         if (element.argument_num_of_space_filling_curve.has_value())
@@ -3175,6 +3420,16 @@ BoolMask KeyCondition::checkInHyperrectangle(
             {
                 rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
             }
+
+            /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
+            /// If `element.range` is relaxed (and thus wider) and contains `key_range`, then `can_be_false` becomes false.
+            /// However, in reality `can_be_false` may be true, because the actual range of element may be stricter than `element.range`.
+            /// For example, for `match(...)`, a false negative here (i.e. `can_be_false` is false) would make
+            /// `not match(...)` set `can_be_true = false`, causing us to skip the granule, which would be incorrect.
+            /// Therefore, we must set `can_be_false = true` to be safe.
+            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
+            if (element.relaxed)
+                rpn_stack.back().can_be_false = true;
 
             if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
                 rpn_stack.back() = !rpn_stack.back();
@@ -3432,6 +3687,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+
+        if (update_partial_disjunction_result_fn)
+        {
+            update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
+            ++element_idx;
+        }
     }
 
     if (rpn_stack.size() != 1)

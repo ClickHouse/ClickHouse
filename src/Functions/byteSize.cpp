@@ -118,7 +118,7 @@ SELECT byteSize(NULL, 1, 0.3, '')
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionByteSize>(documentation);
 }

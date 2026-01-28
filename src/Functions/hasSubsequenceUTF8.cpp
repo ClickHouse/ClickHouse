@@ -58,7 +58,7 @@ Like [`hasSubsequence`](/sql-reference/functions/string-search-functions#hasSubs
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionHasSubsequenceUTF8>(documentation, FunctionFactory::Case::Insensitive);
 }

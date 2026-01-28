@@ -15,6 +15,8 @@ instance = cluster.add_instance(
     main_configs=[
         "configs/testkeeper.xml",
     ],
+    # Test operates files on a filesystem manually.
+    with_remote_database_disk=False,
 )
 q = instance.query
 path_to_data = "/var/lib/clickhouse/"
@@ -526,7 +528,7 @@ def test_detached_part_dir_exists(started_cluster):
     data_path = q(
         f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='detached_part_dir_exists'"
     ).strip()
-     
+
     q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
     q(
         "alter table detached_part_dir_exists detach partition id 'all'"
@@ -659,4 +661,83 @@ def test_make_clone_in_detached(started_cluster):
         "broken_all_2_2_0_try1",
     ] == sorted(
         instance.exec_in_container(["ls", path + "detached/"]).strip().split("\n")
+    )
+
+
+def test_attach_broken_parts(drop_detached_parts_table):
+    instance.query(
+        """
+        DROP TABLE IF EXISTS t_attach_broken;
+        CREATE TABLE t_attach_broken (id UInt64) ENGINE = MergeTree ORDER BY id;
+        SYSTEM STOP MERGES t_attach_broken;
+    """
+    )
+
+    instance.query("INSERT INTO t_attach_broken VALUES (1)")
+    instance.query("INSERT INTO t_attach_broken VALUES (2)")
+    instance.query("INSERT INTO t_attach_broken VALUES (3)")
+
+    path = path_to_data + "data/default/t_attach_broken/"
+
+    instance.exec_in_container(
+        [
+            "mv",
+            "{}/all_2_2_0/".format(path),
+            "{}/detached/broken-on-start_all_2_2_0".format(path),
+        ]
+    )
+    instance.exec_in_container(
+        [
+            "mv",
+            "{}/all_3_3_0/".format(path),
+            "{}/detached/invalid-part-name".format(path),
+        ]
+    )
+
+    instance.query("DETACH TABLE t_attach_broken")
+    instance.query("ATTACH TABLE t_attach_broken")
+
+    assert instance.query("SELECT count(), sum(id) FROM t_attach_broken") == "1\t1\n"
+
+    assert (
+        instance.query(
+            "SELECT count() FROM system.detached_parts WHERE table = 't_attach_broken'"
+        )
+        == "2\n"
+    )
+
+    with pytest.raises(Exception) as e:
+        instance.query("ALTER TABLE t_attach_broken ATTACH PART 'all_2_2_0'")
+
+    assert "BAD_DATA_PART_NAME" in str(e.value)
+
+    with pytest.raises(Exception) as e:
+        instance.query(
+            "ALTER TABLE t_attach_broken ATTACH PART 'broken-on-start_all_2_2_0'"
+        )
+
+    assert "BAD_DATA_PART_NAME" in str(e.value)
+
+    with pytest.raises(Exception) as e:
+        instance.query(
+            "ALTER TABLE t_attach_broken ATTACH PART '1_2_2_0' FROM 'broken-on-start_all_2_2_0'"
+        )
+
+    assert "differs from partition ID" in str(e.value)
+
+    instance.query(
+        "ALTER TABLE t_attach_broken ATTACH PART 'all_2_2_0' FROM 'broken-on-start_all_2_2_0'"
+    )
+
+    instance.query(
+        "ALTER TABLE t_attach_broken ATTACH PART 'all_3_3_0' FROM 'invalid-part-name'"
+    )
+
+    assert instance.query("SELECT count(), sum(id) FROM t_attach_broken") == "3\t6\n"
+
+    assert (
+        instance.query(
+            "SELECT count() FROM system.detached_parts WHERE table = 't_attach_broken'"
+        )
+        == "0\n"
     )

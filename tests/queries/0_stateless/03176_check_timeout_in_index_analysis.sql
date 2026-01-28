@@ -1,4 +1,4 @@
--- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest
+-- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest, no-llvm-coverage
 
 CREATE TABLE t_03176(k UInt64, v UInt64) ENGINE=MergeTree() ORDER BY k PARTITION BY k;
 
@@ -22,3 +22,4 @@ WHERE current_database = currentDatabase() AND log_comment LIKE '03176_q_' AND t
 ORDER BY log_comment;
 
 DROP TABLE t_03176;
+

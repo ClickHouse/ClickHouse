@@ -1,21 +1,13 @@
 #!/usr/bin/env bash
 
-testAlias+=(
-	['clickhouse/clickhouse-server']='clickhouse'
-)
-
 # Get current file directory
-currentDir="${PWD}/ci/jobs/scripts/docker_server"
+currentDir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 
 # interate over all directories in current path
-imageTestsDefinition='
-	'
-for testDir in "${currentDir}"/tests/*/; do
-  customTestName=$(basename "${testDir}")
-	imageTestsDefinition="${imageTestsDefinition}	${customTestName}
-	"
-done
+clickhouseTests=$( find "$currentDir"/tests/ -maxdepth 1 -name 'clickhouse-*' -type d -exec basename {} \; )
+keeperTests=$( find "$currentDir"/tests/ -maxdepth 1 -name 'keeper-*' -type d -exec basename {} \; )
 
 imageTests+=(
-	['clickhouse']="${imageTestsDefinition}"
+	['clickhouse/clickhouse-server']="${clickhouseTests}"
+	['clickhouse/clickhouse-keeper']="${keeperTests}"
 )

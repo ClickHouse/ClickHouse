@@ -1,6 +1,5 @@
 1	str
 1	str
-1	str
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64

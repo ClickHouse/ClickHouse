@@ -1,8 +1,9 @@
 -- { echo ON }
 
 SET enable_analyzer = 1;
-SET enable_parallel_replicas = 0;
-
+-- enable projection for parallel replicas
+SET parallel_replicas_local_plan = 1;
+SET optimize_aggregation_in_order = 0;
 DROP TABLE IF EXISTS test_simple_projection;
 
 CREATE TABLE test_simple_projection
@@ -38,19 +39,27 @@ OPTIMIZE TABLE test_simple_projection FINAL;
 -- aggressively use projection index
 SET min_table_rows_to_use_projection_index = 0;
 
-EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'europe' AND user_id = 101;
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'europe' AND user_id = 101)
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM test_simple_projection WHERE region = 'europe' AND user_id = 101 ORDER BY ALL;
 
 -- region_proj is enough to filter part
-EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'zzz' AND user_id = 101;
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'zzz' AND user_id = 101)
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM test_simple_projection WHERE region = 'zzz' AND user_id = 101 ORDER BY ALL;
 
 -- narrowing filter via user_id_proj
-EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'us_west' AND user_id = 106;
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'us_west' AND user_id = 106)
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM test_simple_projection WHERE region = 'us_west' AND user_id = 106 ORDER BY ALL;
 
 -- it's not possible to use different projection indexes with or filter
-EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'asia' OR user_id = 101;
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'asia' OR user_id = 101)
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM test_simple_projection WHERE region = 'asia' OR user_id = 101 ORDER BY ALL;
 
 -- Fuzzer
@@ -89,13 +98,19 @@ INSERT INTO test_projection_granule_edge_cases SELECT number + 100, 'unknown_reg
 
 OPTIMIZE TABLE test_projection_granule_edge_cases FINAL;
 
-EXPLAIN projections = 1 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'top_region';
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'top_region')
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'top_region' ORDER BY ALL;
 
-EXPLAIN projections = 1 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'mid_region';
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'mid_region')
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'mid_region' ORDER BY ALL;
 
-EXPLAIN projections = 1 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'bol_region';
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'bol_region')
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'bol_region' ORDER BY ALL;
 
 DROP TABLE test_projection_granule_edge_cases;
@@ -123,10 +138,14 @@ INSERT INTO test_partial_projection VALUES (4, 'cn'), (5, 'ru'), (6, 'br');
 
 SET min_table_rows_to_use_projection_index = 0;
 
-EXPLAIN projections = 1 SELECT * FROM test_partial_projection WHERE region = 'ru';
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_partial_projection WHERE region = 'ru')
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM test_partial_projection WHERE region = 'ru' ORDER BY ALL;
 
-EXPLAIN projections = 1 SELECT * FROM test_partial_projection WHERE region = 'cn';
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_partial_projection WHERE region = 'cn')
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM test_partial_projection WHERE region = 'cn' ORDER BY ALL;
 
 DROP TABLE test_partial_projection;

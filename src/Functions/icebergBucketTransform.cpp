@@ -99,7 +99,7 @@ public:
                                      ->execute(arguments, std::make_shared<DataTypeUInt32>(), input_rows_count, false);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                result_data[i] = murmur_result->getUInt(i);
+                result_data[i] = static_cast<Int32>(murmur_result->getUInt(i));
             }
         }
         else if (which.isUUID())
@@ -109,20 +109,30 @@ public:
                                                         .get("toUInt128", context)
                                                         ->build(arguments)
                                                         ->execute(arguments, std::make_shared<DataTypeUInt128>(), input_rows_count, false);
-            const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(intermediate_representation.get());
-            const IColumn & wrapper_column = const_column ? const_column->getDataColumn() : *intermediate_representation.get();
-            const ColumnVector<UInt128> & uuid_column = checkAndGetColumn<const ColumnVector<UInt128> &>(wrapper_column);
+            const IColumn * wrapper_column = intermediate_representation.get();
+            size_t idx_mask = ~size_t(0);
+            if (const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(intermediate_representation.get()))
+            {
+                wrapper_column = &const_column->getDataColumn();
+                idx_mask = 0;
+            }
+            const ColumnVector<UInt128> & uuid_column = checkAndGetColumn<const ColumnVector<UInt128> &>(*wrapper_column);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                UInt128 value = uuid_column.getData()[i];
+                UInt128 value = uuid_column.getData()[i & idx_mask];
                 result_data[i] = hashUnderlyingIntBigEndian(value, /*reduce_two_complement*/ false);
             }
         }
         else if (which.isDateTime64())
         {
-            const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
-            const IColumn & wrapper_column = const_column ? const_column->getDataColumn() : *arguments[0].column.get();
-            const auto & source_col = checkAndGetColumn<DataTypeDateTime64::ColumnType>(wrapper_column);
+            const IColumn * wrapper_column = arguments[0].column.get();
+            size_t idx_mask = ~size_t(0);
+            if (const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get()))
+            {
+                wrapper_column = &const_column->getDataColumn();
+                idx_mask = 0;
+            }
+            const auto & source_col = checkAndGetColumn<DataTypeDateTime64::ColumnType>(*wrapper_column);
             const ColumnDateTime64 * decimal_column = &source_col;
             assert(decimal_column != nullptr);
             UInt32 scale = decimal_column->getScale();
@@ -134,7 +144,7 @@ public:
             }
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                    DateTime64 value = decimal_column->getElement(i);
+                    DateTime64 value = decimal_column->getElement(i & idx_mask);
                     Int64 value_int = value.convertTo<Int64>();
                     if (scale == 9)
                     {
@@ -145,30 +155,35 @@ public:
         }
         else if (which.isDecimal())
         {
-            const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
-            const IColumn & wrapper_column = const_column ? const_column->getDataColumn() : *arguments[0].column.get();
+            const IColumn * wrapper_column = arguments[0].column.get();
+            size_t idx_mask = ~size_t(0);
+            if (const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get()))
+            {
+                wrapper_column = &const_column->getDataColumn();
+                idx_mask = 0;
+            }
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 UInt128 value;
                 if (which.isDecimal32())
                 {
-                    const ColumnDecimal<Decimal32> * decimal_column = typeid_cast<const ColumnDecimal<Decimal32> *>(&wrapper_column);
-                    value = decimal_column->getElement(i).value;
+                    const ColumnDecimal<Decimal32> * decimal_column = typeid_cast<const ColumnDecimal<Decimal32> *>(wrapper_column);
+                    value = decimal_column->getElement(i & idx_mask).value;
                 }
                 else if (which.isDecimal64())
                 {
-                    const ColumnDecimal<Decimal64> * decimal_column = typeid_cast<const ColumnDecimal<Decimal64> *>(&wrapper_column);
-                    value = decimal_column->getElement(i).value;
+                    const ColumnDecimal<Decimal64> * decimal_column = typeid_cast<const ColumnDecimal<Decimal64> *>(wrapper_column);
+                    value = decimal_column->getElement(i & idx_mask).value;
                 }
                 else if (which.isDecimal128())
                 {
-                    const ColumnDecimal<Decimal128> * decimal_column = typeid_cast<const ColumnDecimal<Decimal128> *>(&wrapper_column);
-                    value = decimal_column->getElement(i).value;
+                    const ColumnDecimal<Decimal128> * decimal_column = typeid_cast<const ColumnDecimal<Decimal128> *>(wrapper_column);
+                    value = decimal_column->getElement(i & idx_mask).value;
                 }
                 else if (which.isDecimal256())
                 {
-                    const ColumnDecimal<Decimal256> * decimal_column = typeid_cast<const ColumnDecimal<Decimal256> *>(&wrapper_column);
-                    value = decimal_column->getElement(i).value;
+                    const ColumnDecimal<Decimal256> * decimal_column = typeid_cast<const ColumnDecimal<Decimal256> *>(wrapper_column);
+                    value = decimal_column->getElement(i & idx_mask).value;
                 }
                 else
                 {
@@ -185,6 +200,10 @@ public:
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
+    bool useDefaultImplementationForVariant() const override { return false; }
 
 private:
     static Int32 hashLong(Int64 value)
@@ -251,16 +270,19 @@ private:
 
 REGISTER_FUNCTION(IcebergHash)
 {
-    FunctionDocumentation::Description description = R"(Implements logic of iceberg hashing transform: https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements.)";
-    FunctionDocumentation::Syntax syntax = "icebergHash(N, value)";
-    FunctionDocumentation::Arguments arguments
-        = {{"value", "Integer, bool, decimal, float, string, fixed_string, uuid, date, time, datetime."}};
-    FunctionDocumentation::ReturnedValue returned_value = {"Int32"};
+    FunctionDocumentation::Description description = R"(Implements the logic of the iceberg [hashing transform](https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements))";
+    FunctionDocumentation::Syntax syntax = "icebergHash(value)";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"value", "Source value to take the hash of", {"Integer", "Bool", "Decimal", "Float*", "String", "FixedString", "UUID", "Date", "Time", "DateTime"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a 32-bit Murmur3 hash, x86 variant, seeded with 0", {"Int32"}};
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergHash(1.0 :: Float32)", "-142385009"}};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionIcebergHash>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionIcebergHash>(documentation);
 }
 
 class FunctionIcebergBucket : public IFunction
@@ -334,23 +356,29 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
+    bool useDefaultImplementationForVariant() const override { return false; }
 };
 
 REGISTER_FUNCTION(IcebergBucket)
 {
     FunctionDocumentation::Description description
-        = R"(Implements logic of iceberg bucket transform: https://iceberg.apache.org/spec/#bucket-transform-details.)";
+        = R"(Implements logic for the [iceberg bucket transform](https://iceberg.apache.org/spec/#bucket-transform-details.))";
     FunctionDocumentation::Syntax syntax = "icebergBucket(N, value)";
-    FunctionDocumentation::Arguments arguments
-        = {{"N", "modulo, positive integer, always constant."},
-           {"value", "Integer, bool, decimal, float, string, fixed_string, uuid, date, time or datetime value."}};
-    FunctionDocumentation::ReturnedValue returned_value = {"Int32"};
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"N", "The number of buckets, modulo.", {"const (U)Int*"}},
+        {"value", "The source value to transform.", {"(U)Int*", "Bool", "Decimal", "Float*", "String", "FixedString", "UUID", "Date", "Time", "DateTime"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a 32-bit hash of the source value.", {"Int32"}};
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergBucket(5, 1.0 :: Float32)", "4"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-
-    factory.registerFunction<FunctionIcebergBucket>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionIcebergBucket>(documentation);
 }
 
 }

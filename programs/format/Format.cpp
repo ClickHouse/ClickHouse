@@ -94,26 +94,26 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
         po::notify(options);
 
-        if (options.count("help"))
+        if (options.contains("help"))
         {
             std::cout << "Usage: " << argv[0] << " [options] < query" << std::endl;
             std::cout << desc << std::endl;
             return 1;
         }
 
-        bool hilite = options.count("hilite");
-        bool oneline = options.count("oneline");
-        bool quiet = options.count("quiet");
-        bool multiple = options.count("multiquery");
+        bool hilite = options.contains("hilite");
+        bool oneline = options.contains("oneline");
+        bool quiet = options.contains("quiet");
+        bool multiple = options.contains("multiquery");
         size_t max_line_length = options["max_line_length"].as<size_t>();
-        bool obfuscate = options.count("obfuscate");
-        bool backslash = options.count("backslash");
-        bool allow_settings_after_format_in_insert = options.count("allow_settings_after_format_in_insert");
+        bool obfuscate = options.contains("obfuscate");
+        bool backslash = options.contains("backslash");
+        bool allow_settings_after_format_in_insert = options.contains("allow_settings_after_format_in_insert");
         bool show_secrets = options["show_secrets"].as<bool>();
-        bool semicolon_inline = options.count("semicolons_inline");
+        bool semicolon_inline = options.contains("semicolons_inline");
 
         std::function<void(std::string_view)> comments_callback;
-        if (options.count("comments"))
+        if (options.contains("comments"))
             comments_callback = [](const std::string_view comment) { std::cout << comment << '\n'; };
 
         SharedContextHolder shared_context = Context::createShared();
@@ -155,7 +155,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
         String query;
 
-        if (options.count("query"))
+        if (options.contains("query"))
         {
             query = options["query"].as<std::string>();
         }
@@ -171,7 +171,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             WordSet used_nouns;
             SipHash hash_func;
 
-            if (options.count("seed"))
+            if (options.contains("seed"))
             {
                 hash_func.update(options["seed"].as<std::string>());
             }

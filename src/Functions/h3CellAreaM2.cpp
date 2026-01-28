@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -7,12 +7,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <Common/typeid_cast.h>
-#include <base/range.h>
-
-#include <constants.h>
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -81,6 +75,8 @@ public:
         {
             const UInt64 index = data[row];
 
+            validateH3Cell(index);
+
             CellBoundary boundary{};
             auto err = cellToBoundary(index, &boundary);
             if (err)
@@ -122,7 +118,7 @@ Returns the exact area of a specific cell in square meters corresponding to the 
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3CellAreaM2>(documentation);
 }
 

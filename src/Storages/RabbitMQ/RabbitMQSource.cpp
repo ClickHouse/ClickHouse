@@ -1,6 +1,6 @@
 #include <Storages/RabbitMQ/RabbitMQSource.h>
 
-#include <Columns/IColumn.h>
+#include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
 #include <Common/DateLUT.h>
 #include <Formats/FormatFactory.h>
@@ -10,6 +10,7 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <base/sleep.h>
 #include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -270,8 +271,8 @@ Chunk RabbitMQSource::generateImpl()
                 {
                     if (exception_message)
                     {
-                        virtual_columns[6]->insertData(message.message.data(), message.message.size());
-                        virtual_columns[7]->insertData(exception_message->data(), exception_message->size());
+                        virtual_columns[6]->insertData(message.message);
+                        virtual_columns[7]->insertData(*exception_message);
                     }
                     else
                     {
@@ -288,25 +289,27 @@ Chunk RabbitMQSource::generateImpl()
                 auto storage_id = storage.getStorageID();
 
                 auto dead_letter_queue = context->getDeadLetterQueue();
-                dead_letter_queue->add(
-                    DeadLetterQueueElement{
-                        .table_engine = DeadLetterQueueElement::StreamType::RabbitMQ,
-                        .event_time = timeInSeconds(time_now),
-                        .event_time_microseconds = timeInMicroseconds(time_now),
-                        .database = storage_id.database_name,
-                        .table = storage_id.table_name,
-                        .raw_message = message.message,
-                        .error = exception_message.value(),
-                        .details = DeadLetterQueueElement::RabbitMQDetails{
-                            .exchange_name = exchange_name,
-                            .message_id = message.message_id,
-                            .timestamp = message.timestamp,
-                            .redelivered = message.redelivered,
-                            .delivery_tag = message.delivery_tag,
-                            .channel_id = message.channel_id
-                        }
-
-                    });
+                if (!dead_letter_queue)
+                    LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
+                else
+                    dead_letter_queue->add(
+                        DeadLetterQueueElement{
+                            .table_engine = DeadLetterQueueElement::StreamType::RabbitMQ,
+                            .event_time = timeInSeconds(time_now),
+                            .event_time_microseconds = timeInMicroseconds(time_now),
+                            .database = storage_id.database_name,
+                            .table = storage_id.table_name,
+                            .raw_message = message.message,
+                            .error = exception_message.value(),
+                            .details = DeadLetterQueueElement::RabbitMQDetails{
+                                .exchange_name = exchange_name,
+                                .message_id = message.message_id,
+                                .timestamp = message.timestamp,
+                                .redelivered = message.redelivered,
+                                .delivery_tag = message.delivery_tag,
+                                .channel_id = message.channel_id
+                            }
+                        });
             }
 
             total_rows += new_rows;

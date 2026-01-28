@@ -121,7 +121,7 @@ class FunctionWidthBucket : public IFunction
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "The calculation resulted in NaN or Inf which is unexpected in function {}.", getName());
         }
-        return static_cast<TResultType>(count * relative_bucket + 1);
+        return static_cast<TResultType>(static_cast<Float64>(count) * relative_bucket + 1);
     }
 
     template <is_any_of<UInt8, UInt16, UInt32, UInt64> TCountType>
@@ -271,7 +271,7 @@ FunctionDocumentation::Examples examples = {
 };
 FunctionDocumentation::IntroducedIn introduced_in = {23, 3};
 FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionWidthBucket>(documentation);
 
     factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::Case::Insensitive);

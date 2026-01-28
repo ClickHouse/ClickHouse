@@ -1,5 +1,6 @@
 #include <QueryPipeline/QueryPipeline.h>
 
+#include <iterator>
 #include <queue>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
@@ -722,12 +723,21 @@ void QueryPipeline::addStorageHolder(StoragePtr storage)
     resources.storage_holders.emplace_back(std::move(storage));
 }
 
-void QueryPipeline::addCompletedPipeline(QueryPipeline other)
+void QueryPipeline::addCompletedPipeline(QueryPipeline && other)
 {
     if (!other.completed())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add not completed pipeline");
 
-    resources = std::move(other.resources);
+    resources.append(other.resources);
+    processors->insert(processors->end(), std::make_move_iterator(other.processors->begin()), std::make_move_iterator(other.processors->end()));
+}
+
+void QueryPipeline::addCompletedPipeline(const QueryPipeline & other)
+{
+    if (!other.completed())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add not completed pipeline");
+
+    resources.append(other.resources);
     processors->insert(processors->end(), other.processors->begin(), other.processors->end());
 }
 
@@ -758,7 +768,7 @@ static void addExpression(OutputPort *& port, ExpressionActionsPtr actions, Proc
     }
 }
 
-void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns)
+void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns, const ContextPtr & context)
 {
     if (!pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to convert header");
@@ -766,7 +776,8 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns)
     auto converting = ActionsDAG::makeConvertingActions(
         output->getHeader().getColumnsWithTypeAndName(),
         columns,
-        ActionsDAG::MatchColumnsMode::Position);
+        ActionsDAG::MatchColumnsMode::Position,
+        context);
 
     auto actions = std::make_shared<ExpressionActions>(std::move(converting));
     addExpression(output, actions, *processors);

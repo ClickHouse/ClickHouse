@@ -5,6 +5,7 @@
 
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
+#include <unordered_set>
 #include <mutex>
 
 namespace DB
@@ -36,6 +37,7 @@ public:
 
     using FileCacheDataPtr = std::shared_ptr<FileCacheData>;
     using CacheByName = std::unordered_map<std::string, FileCacheDataPtr>;
+    using Caches = std::unordered_set<FileCacheDataPtr>;
 
     static FileCacheFactory & instance();
 
@@ -52,6 +54,7 @@ public:
         const std::string & config_path);
 
     CacheByName getAll();
+    Caches getUniqueInstances();
 
     FileCacheDataPtr getByName(const std::string & cache_name);
 

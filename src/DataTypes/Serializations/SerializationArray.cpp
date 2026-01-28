@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -113,6 +114,21 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
     offsets.push_back(offsets.back() + size);
 }
 
+void SerializationArray::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+    const ColumnArray::Offsets & offsets = column_array.getOffsets();
+
+    size_t offset = offsets[ssize_t(row_num) - 1];
+    size_t next_offset = offsets[row_num];
+    size_t size = next_offset - offset;
+
+    writeVarUInt(size, ostr);
+
+    const IColumn & nested_column = column_array.getData();
+    for (size_t i = offset; i < next_offset; ++i)
+        nested->serializeForHashCalculation(nested_column, i, ostr);
+}
 
 namespace
 {
@@ -372,7 +388,7 @@ void SerializationArray::serializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
-void SerializationArray::deserializeOffsetsBinaryBulk(
+bool SerializationArray::deserializeOffsetsBinaryBulk(
     ColumnPtr & offsets_column,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
@@ -390,8 +406,11 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
             insertArraySizesToOffsets(offsets_column, cached_column, cached_column->size() - num_read_rows, cached_column->size());
         else
             offsets_column = arraySizesToOffsets(*cached_column);
+
+        return true;
     }
-    else if (auto * stream = settings.getter(settings.path))
+
+    if (auto * stream = settings.getter(settings.path))
     {
         size_t prev_size = offsets_column->size();
 
@@ -416,7 +435,11 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
         /// Add array sizes read from current range into the cache.
         if (cache)
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(*offsets_column), offsets_column->size() - prev_size);
+
+        return true;
     }
+
+    return false;
 }
 
 std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(
@@ -429,7 +452,8 @@ std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGet
     const auto & offsets_data = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData();
     size_t prev_last_offset = offsets_data.back();
     size_t prev_offset_size = offsets_data.size();
-    deserializeOffsetsBinaryBulk(offsets_column, offset + limit, settings, cache);
+    if (!deserializeOffsetsBinaryBulk(offsets_column, offset + limit, settings, cache))
+        return {0, 0};
 
     size_t skipped_nested_rows = 0;
 
@@ -705,16 +729,34 @@ void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t 
         return;
     }
 
-    writeCString("[\n", ostr);
+    auto nested_column_type = removeNullable(column_array.getDataPtr())->getDataType();
+    bool print_each_element_on_separate_line =
+        nested_column_type == TypeIndex::Array ||
+        nested_column_type == TypeIndex::Map ||
+        nested_column_type == TypeIndex::Object ||
+        nested_column_type == TypeIndex::Tuple;
+
+
+    writeChar('[', ostr);
     for (size_t i = offset; i < next_offset; ++i)
     {
         if (i != offset)
-            writeCString(",\n", ostr);
-        writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+            writeChar(',', ostr);
+
+        if (print_each_element_on_separate_line)
+        {
+            writeChar('\n', ostr);
+            writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+        }
+
         nested->serializeTextJSONPretty(nested_column, i, ostr, settings, indent + 1);
     }
-    writeChar('\n', ostr);
-    writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+
+    if (print_each_element_on_separate_line)
+    {
+        writeChar('\n', ostr);
+        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+    }
     writeChar(']', ostr);
 }
 

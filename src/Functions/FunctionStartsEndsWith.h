@@ -270,9 +270,12 @@ private:
             else
             {
                 if constexpr (std::is_same_v<Name, NameStartsWith>) /// startsWith
-                    res_data[row_num] = StringRef(haystack.data, needle.size) == StringRef(needle.data, needle.size);
+                    res_data[row_num] = std::string_view(reinterpret_cast<const char *>(haystack.data), needle.size)
+                        == std::string_view(reinterpret_cast<const char *>(needle.data), needle.size);
                 else if constexpr (std::is_same_v<Name, NameEndsWith>) /// endsWith
-                    res_data[row_num] = StringRef(haystack.data + haystack.size - needle.size, needle.size) == StringRef(needle.data, needle.size);
+                    res_data[row_num]
+                        = std::string_view(reinterpret_cast<const char *>(haystack.data) + haystack.size - needle.size, needle.size)
+                        == std::string_view(reinterpret_cast<const char *>(needle.data), needle.size);
                 else /// startsWithUTF8 or endsWithUTF8
                 {
                     auto length = UTF8::countCodePoints(needle.data, needle.size);
@@ -280,12 +283,14 @@ private:
                     if constexpr (std::is_same_v<Name, NameStartsWithUTF8>)
                     {
                         auto slice = haystack_source.getSliceFromLeft(0, length);
-                        res_data[row_num] = StringRef(slice.data, slice.size) == StringRef(needle.data, needle.size);
+                        res_data[row_num] = std::string_view(reinterpret_cast<const char *>(slice.data), slice.size)
+                            == std::string_view(reinterpret_cast<const char *>(needle.data), needle.size);
                     }
                     else
                     {
                         auto slice = haystack_source.getSliceFromRight(length);
-                        res_data[row_num] = StringRef(slice.data, slice.size) == StringRef(needle.data, needle.size);
+                        res_data[row_num] = std::string_view(reinterpret_cast<const char *>(slice.data), slice.size)
+                            == std::string_view(reinterpret_cast<const char *>(needle.data), needle.size);
                     }
                 }
             }

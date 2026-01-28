@@ -33,6 +33,7 @@ IMergeTreeReader::IMergeTreeReader(
     const NamesAndTypesList & columns_,
     const VirtualFields & virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
+    const MergeTreeSettingsPtr & storage_settings_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
     const MarkRanges & all_mark_ranges_,
@@ -46,6 +47,7 @@ IMergeTreeReader::IMergeTreeReader(
     , uncompressed_cache(uncompressed_cache_)
     , mark_cache(mark_cache_)
     , settings(settings_)
+    , storage_settings(storage_settings_)
     , storage_snapshot(storage_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(data_part_info_for_read->getAlterConversions())
@@ -53,6 +55,10 @@ IMergeTreeReader::IMergeTreeReader(
     , converted_requested_columns(Nested::convertToSubcolumns(columns_))
     , virtual_fields(virtual_fields_)
 {
+    /// Check the memory consumption before doing all the heavy-lifting such as
+    /// initializing buffers, reading marks, etc. Maybe that's not needed?
+    CurrentMemoryTracker::check();
+
     columns_to_read.reserve(getColumns().size());
     serializations.reserve(getColumns().size());
 
@@ -359,7 +365,9 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         if (copy_block.empty())
             return;
 
-        DB::performRequiredConversions(copy_block, getColumns(), data_part_info_for_read->getContext());
+        DB::performRequiredConversions(copy_block, getColumns(),
+            data_part_info_for_read->getContext(),
+            storage_snapshot->metadata->getColumns().getDefaults());
 
         /// Move columns from block.
         name_and_type = getColumns().begin();
@@ -465,6 +473,7 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
@@ -478,6 +487,7 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
@@ -491,6 +501,7 @@ MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
@@ -505,6 +516,7 @@ MergeTreeReaderPtr createMergeTreeReader(
             read_info,
             columns_to_read,
             storage_snapshot,
+            storage_settings,
             mark_ranges,
             virtual_fields,
             uncompressed_cache,
@@ -519,6 +531,7 @@ MergeTreeReaderPtr createMergeTreeReader(
             read_info,
             columns_to_read,
             storage_snapshot,
+            storage_settings,
             mark_ranges,
             virtual_fields,
             uncompressed_cache,
@@ -534,15 +547,17 @@ MergeTreeReaderPtr createMergeTreeReader(
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
-    const NamesAndTypesList & columns_to_read);
+    const NamesAndTypesList & columns_to_read,
+    bool can_skip_mark);
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
-    const NamesAndTypesList & columns_to_read)
+    const NamesAndTypesList & columns_to_read,
+    bool can_skip_mark)
 {
     if (index.index->index.type == "text")
-        return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read);
+        return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read, can_skip_mark);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create reader for index with type {}", index.index->index.type);
 }

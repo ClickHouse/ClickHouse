@@ -6,7 +6,7 @@ description: 'Used for implementing views (for more information, see the `CREATE
 sidebar_label: 'View'
 sidebar_position: 90
 slug: /engines/table-engines/special/view
-title: 'View Table Engine'
+title: 'View table engine'
 doc_type: 'reference'
 ---
 

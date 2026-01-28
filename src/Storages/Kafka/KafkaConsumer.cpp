@@ -10,6 +10,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/DateLUT.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 #include <Storages/Kafka/IKafkaExceptionInfoSink.h>
 
@@ -49,10 +50,12 @@ KafkaConsumer::KafkaConsumer(
     size_t poll_timeout_,
     bool intermediate_commit_,
     const std::atomic<bool> & stopped_,
-    const Names & _topics)
+    const Names & _topics,
+    size_t skip_bytes_)
     : log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
+    , skip_bytes(skip_bytes_)
     , intermediate_commit(intermediate_commit_)
     , stopped(stopped_)
     , current(messages.begin())
@@ -520,8 +523,8 @@ ReadBufferPtr KafkaConsumer::getNextMessage()
     size_t size = current->get_payload().get_size();
     ++current;
 
-    if (data)
-        return std::make_shared<ReadBufferFromMemory>(data, size);
+    if (data && size >= skip_bytes)
+        return std::make_shared<ReadBufferFromMemory>(data + skip_bytes, size - skip_bytes);
 
     return getNextMessage();
 }

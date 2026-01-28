@@ -208,17 +208,99 @@ AggregateFunctionPtr createAggregateFunctionMaxIntersections(
 
 void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description = R"(
+Aggregate function that calculates the maximum number of times that a group of intervals intersects each other (if all the intervals intersect at least once).
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+maxIntersections(start_column, end_column)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"start_column", "A numeric column that represents the start of each interval. If `start_column` is `NULL` or 0 then the interval will be skipped.", {"(U)Int*", "Float*"}},
+        {"end_column", "A numeric column that represents the end of each interval. If `end_column` is `NULL` or 0 then the interval will be skipped.", {"(U)Int*", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the maximum number of intersected intervals.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Calculating maximum intersections",
+        R"(
+CREATE TABLE my_events (
+    start UInt32,
+    end UInt32
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO my_events VALUES
+(1, 3),
+(1, 6),
+(2, 5),
+(3, 7);
+
+SELECT maxIntersections(start, end) FROM my_events;
+        )",
+        R"(
+┌─maxIntersections(start, end)─┐
+│                            3 │
+└──────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
     factory.registerFunction("maxIntersections",
-        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {[](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return createAggregateFunctionMaxIntersections(AggregateFunctionIntersectionsKind::Count, name, argument_types, parameters);
-        });
+        }, {}, documentation});
+
+    FunctionDocumentation::Description position_description = R"(
+Aggregate function that calculates the positions of the occurrences of the [`maxIntersections`](/sql-reference/aggregate-functions/reference/maxintersections) function.
+    )";
+    FunctionDocumentation::Syntax position_syntax = R"(
+maxIntersectionsPosition(start_column, end_column)
+    )";
+    FunctionDocumentation::Arguments position_arguments = {
+        {"start_column", "A numeric column that represents the start of each interval. If `start_column` is `NULL` or 0 then the interval will be skipped.", {"(U)Int*", "Float*"}},
+        {"end_column", "A numeric column that represents the end of each interval. If `end_column` is `NULL` or 0 then the interval will be skipped.", {"(U)Int*", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue position_returned_value = {"Returns the start positions of the maximum number of intersected intervals.", {"Any"}};
+    FunctionDocumentation::Examples position_examples = {
+    {
+        "Finding maximum intersections position",
+        R"(
+CREATE TABLE my_events (
+    start UInt32,
+    end UInt32
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO my_events VALUES
+(1, 3),
+(1, 6),
+(2, 5),
+(3, 7);
+
+SELECT maxIntersectionsPosition(start, end) FROM my_events;
+        )",
+        R"(
+┌─maxIntersectionsPosition(start, end)─┐
+│                                    2 │
+└──────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn position_introduced_in = {1, 1};
+    FunctionDocumentation::Category position_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation position_documentation = {position_description, position_syntax, position_arguments, {}, position_returned_value, position_examples, position_introduced_in, position_category};
 
     factory.registerFunction("maxIntersectionsPosition",
-        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {[](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return createAggregateFunctionMaxIntersections(AggregateFunctionIntersectionsKind::Position, name, argument_types, parameters);
-        });
+        }, {}, position_documentation});
 }
 
 }

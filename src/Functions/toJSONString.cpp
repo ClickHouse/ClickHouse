@@ -103,7 +103,7 @@ SELECT toJSONString(tuple(1.25, NULL, NaN, +inf, -inf, [])) SETTINGS output_form
     };
     FunctionDocumentation::IntroducedIn introduced_in_toJSONString = {21, 7};
     FunctionDocumentation::Category category_toJSONString = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation documentation_toJSONString = {description_toJSONString, syntax_toJSONString, arguments_toJSONString, returned_value_toJSONString, examples_toJSONString, introduced_in_toJSONString, category_toJSONString};
+    FunctionDocumentation documentation_toJSONString = {description_toJSONString, syntax_toJSONString, arguments_toJSONString, {}, returned_value_toJSONString, examples_toJSONString, introduced_in_toJSONString, category_toJSONString};
 
     factory.registerFunction<FunctionToJSONString>(documentation_toJSONString);
 }

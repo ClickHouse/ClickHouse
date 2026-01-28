@@ -3,7 +3,7 @@
         <disks>
             <hdd_blob>
                 <type>local_blob_storage</type>
-                <path>/</path>
+                <path>/var/lib/clickhouse/local_disk/</path>
             </hdd_blob>
             <cache_dynamic_resize>
                 <type>cache</type>

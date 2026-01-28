@@ -25,8 +25,6 @@ public:
 
     void setSchemaToLastFile(const ColumnsDescription & columns) override;
 
-    void setResultingSchema(const ColumnsDescription & columns) override;
-
     String getLastFilePath() const override;
 
     void setFormatName(const String & format_name) override;

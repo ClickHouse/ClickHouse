@@ -10,6 +10,8 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP TABLE IF EXISTS test_table;
     DROP TABLE IF EXISTS test_alias;
 
+    SET allow_experimental_alias_table_engine = 1;
+
     CREATE TABLE test_table (id UInt32, value String) ENGINE = MergeTree ORDER BY id;
     INSERT INTO test_table VALUES (1, 'one'), (2, 'two'), (3, 'three');
 

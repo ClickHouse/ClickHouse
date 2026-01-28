@@ -54,8 +54,45 @@ public:
     };
     using FileStatusPtr = std::shared_ptr<FileStatus>;
 
+    /// Helper structure for storing the flag of presence or absence of a node in the keeper.
+    struct PartitionLastProcessedFileInfo
+    {
+        /// Flag if node exists. For existing node need to call `set`, for non-existing - `create`.
+        bool exists;
+        /// Last processed path for this partition.
+        std::string file_path;
+    };
+
+    /// Used only in Ordered mode with partitioning (HIVE or REGEX mode).
+    /// Key: <processed_node_path>/<partition_key>
+    /// Value: last processed file info
+    /// Explanation:
+    ///    Used to collect `requests` list via preparePartitionProcessedRequests
+    ///    to set values for each <processed_node_path>/<partition_key>.
+    using PartitionLastProcessedFileInfoMap = std::unordered_map<std::string, PartitionLastProcessedFileInfo>;
+
+    struct LastProcessedFileInfo
+    {
+        /// Last processed path for some hive partition.
+        std::string file_path;
+        /// Position of record in `requests` list with keeper commands.
+        /// Used to avoid double creation of Keeper node with same path.
+        /// Instead more actual record overrides old one in the `requests` list.
+        size_t index;
+    };
+
+    /// Used only in Ordered mode.
+    /// Key: <processed_node_path> (without <hive_part>)
+    /// Value: last processed file info
+    /// Explanation:
+    ///    Used to collect `requests` list via prepareProcessedRequests
+    ///    to set values for each <processed_node_path>.
+    using LastProcessedFileInfoMap = std::unordered_map<std::string, LastProcessedFileInfo>;
+    using LastProcessedFileInfoMapPtr = std::shared_ptr<LastProcessedFileInfoMap>;
+
     explicit ObjectStorageQueueIFileMetadata(
         const std::string & path_,
+        const std::string & zookeeper_name_,
         const std::string & processing_node_path_,
         const std::string & processed_node_path_,
         const std::string & failed_node_path_,
@@ -92,12 +129,19 @@ public:
     void resetProcessing();
 
     /// Prepare keeper requests, required to set file as Processed.
-    void prepareProcessedRequests(Coordination::Requests & requests);
+    /// `created_nodes` is a helper index for hive partitioning case,
+    /// keeps values and indexes of already inserted commands
+    /// to avoid double creation with the same path.
+    void prepareProcessedRequests(Coordination::Requests & requests,
+        LastProcessedFileInfoMapPtr created_nodes = nullptr);
     /// Prepare keeper requests, required to set file as Failed.
     void prepareFailedRequests(
         Coordination::Requests & requests,
         const std::string & exception_message,
         bool reduce_retry_count);
+
+    /// Prepare keeper requests to save partition last processed files (for HIVE or REGEX partitioning modes).
+    virtual void preparePartitionProcessedMap(PartitionLastProcessedFileInfoMap & /* file_map */) {}
 
     struct SetProcessingResponseIndexes
     {
@@ -121,16 +165,10 @@ public:
     /// which we find out after unsuccessfully attempting to set file as processing.
     void afterSetProcessing(bool success, std::optional<FileStatus::State> file_state);
 
-    /// Set a starting point for processing.
-    /// Done on table creation, when we want to tell the table
-    /// that processing must be started from certain point,
-    /// instead of from scratch.
-    virtual void prepareProcessedAtStartRequests(Coordination::Requests & requests) = 0;
-
     /// A struct, representing information stored in keeper for a single file.
     struct NodeMetadata
     {
-        std::string file_path;
+        std::string file_path; /// Ignored in hive partitioning case, subnodes hive_path=>file_name used instead.
         UInt64 last_processed_timestamp = 0;
         std::string last_exception;
         UInt64 retries = 0;
@@ -141,21 +179,23 @@ public:
 
 protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
-    virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests) = 0;
+    virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests,
+        LastProcessedFileInfoMapPtr created_nodes) = 0;
 
-    virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &, const std::string &)
+    virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &,
+        const std::string &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method prepareProcesingRequestsImpl is not implemented");
     }
     void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
 
     const std::string path;
+    const std::string zookeeper_name;
     const std::string node_name;
     const FileStatusPtr file_status;
     const size_t max_loading_retries;
     const std::atomic<size_t> & metadata_ref_count;
     const bool use_persistent_processing_nodes;
-
     const std::string processing_node_path;
     const std::string processed_node_path;
     const std::string failed_node_path;

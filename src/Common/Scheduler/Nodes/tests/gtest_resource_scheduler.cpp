@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "Common/setThreadName.h"
 #include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
@@ -18,7 +19,7 @@ struct ResourceTest : public ResourceTestBase
 
     ResourceTest()
     {
-        scheduler.start("Sch.Test");
+        scheduler.start(ThreadName::TEST_SCHEDULER);
     }
 
     ~ResourceTest()

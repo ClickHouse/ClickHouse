@@ -77,8 +77,7 @@ namespace
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                auto str_ref = col->getDataAt(i);
-                std::string_view str_view(str_ref.data, str_ref.size);
+                auto str_view = col->getDataAt(i);
                 bool ok = parser.parse(std::move(str_view), element);
                 if (!ok || !element.isArray())
                 {
@@ -127,7 +126,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_JSONArrayLength = {23, 2};
     FunctionDocumentation::Category category_JSONArrayLength = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation documentation_JSONArrayLength = {description_JSONArrayLength, syntax_JSONArrayLength, arguments_JSONArrayLength, returned_value_JSONArrayLength, examples_JSONArrayLength, introduced_in_JSONArrayLength, category_JSONArrayLength};
+    FunctionDocumentation documentation_JSONArrayLength = {description_JSONArrayLength, syntax_JSONArrayLength, arguments_JSONArrayLength, {}, returned_value_JSONArrayLength, examples_JSONArrayLength, introduced_in_JSONArrayLength, category_JSONArrayLength};
 
     factory.registerFunction<FunctionJSONArrayLength>(documentation_JSONArrayLength);
 

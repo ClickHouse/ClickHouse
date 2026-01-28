@@ -18,7 +18,7 @@
 #define Foundation_Exception_INCLUDED
 
 
-#include <stdexcept>
+#include <exception>
 #include "Poco/Foundation.h"
 
 
@@ -47,10 +47,14 @@ public:
     Exception(const Exception & exc);
     /// Copy constructor.
 
+    Exception(Exception && exc);
+    /// Move constructor.
+
     ~Exception() throw();
     /// Destroys the exception and deletes the nested exception.
 
     Exception & operator=(const Exception & exc);
+    Exception & operator=(Exception && exc);
     /// Assignment operator.
 
     virtual const char * name() const throw();

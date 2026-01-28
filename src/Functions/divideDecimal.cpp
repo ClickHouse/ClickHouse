@@ -95,7 +95,7 @@ SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1
     FunctionDocumentation::Examples examples = {example1, example2};
     FunctionDocumentation::IntroducedIn introduced_in = {22, 12};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
     factory.registerFunction<FunctionsDecimalArithmetics<DivideDecimalsImpl>>(documentation);
 }
 

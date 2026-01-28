@@ -37,7 +37,7 @@ SELECT path('https://clickhouse.com/docs/sql-reference/functions/url-functions/?
     };
     FunctionDocumentation::IntroducedIn introduced_in_path = {1, 1};
     FunctionDocumentation::Category category_path = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_path = {description_path, syntax_path, arguments_path, returned_value_path, examples_path, introduced_in_path, category_path};
+    FunctionDocumentation documentation_path = {description_path, syntax_path, arguments_path, {}, returned_value_path, examples_path, introduced_in_path, category_path};
 
     factory.registerFunction<FunctionPath>(documentation_path);
 }

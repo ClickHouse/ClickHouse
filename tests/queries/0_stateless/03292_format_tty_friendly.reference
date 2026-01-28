@@ -2,6 +2,7 @@ Arrow	1	0
 ArrowStream	1	0
 Avro	1	0
 BSONEachRow	1	0
+Buffers	1	0
 CapnProto	1	0
 JSON	1	1
 JSONEachRow	1	1

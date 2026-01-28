@@ -10,6 +10,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Coordination/KeeperConstants.h>
 
+#include <functional>
 #include <future>
 #include <memory>
 #include <string>
@@ -193,6 +194,8 @@ class ZooKeeper
     /// Allows to keep info about availability zones when starting a new session
     ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
 
+    explicit ZooKeeper(std::unique_ptr<Coordination::IKeeper> existing_impl);
+
     /// See addCheckSessionOp
     void initSession();
 
@@ -202,11 +205,17 @@ public:
 
     ~ZooKeeper();
 
+    ZooKeeperArgs getArgs() const { return args; }
+
     std::vector<ShuffleHost> shuffleHosts() const;
 
     static Ptr create(ZooKeeperArgs args_,
                       std::shared_ptr<DB::ZooKeeperLog> zk_log_,
                       std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_);
+
+    /// Creates ZooKeeper from a custom IKeeper implementation using a factory.
+    /// The factory is stored and used by startNewSession() for reconnection.
+    static Ptr create_from_impl(std::function<std::unique_ptr<Coordination::IKeeper>()> factory);
 
     template <typename... Args>
     static Ptr createWithoutKillingPreviousSessions(Args &&... args)
@@ -338,31 +347,35 @@ public:
     Strings getChildren(const std::string & path,
                         Coordination::Stat * stat = nullptr,
                         const Coordination::EventPtr & watch = nullptr,
-                        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+                        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL,
+                        bool with_stat = false,
+                        bool with_data = false);
 
     Strings getChildrenWatch(const std::string & path,
                              Coordination::Stat * stat,
                              Coordination::WatchCallbackPtrOrEventPtr watch_callback,
-                             Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+                             Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL,
+                             bool with_stat = false,
+                             bool with_data = false);
 
     using MultiGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, false>;
     using MultiTryGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, true>;
 
     template <typename TIter>
     MultiGetChildrenResponse
-    getChildren(TIter start, TIter end, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
+    getChildren(TIter start, TIter end, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL, bool with_stat = false, bool with_data = false)
     {
         return multiRead<Coordination::ListResponse, false>(
             start,
             end,
-            [list_request_type](const auto & path) { return zkutil::makeListRequest(path, list_request_type); },
-            [&](const auto & path) { return asyncGetChildren(path, list_request_type); });
+            [list_request_type, with_stat, with_data](const auto & path) { return zkutil::makeListRequest(path, list_request_type, with_stat, with_data); },
+            [&](const auto & path) { return asyncGetChildren(path, list_request_type, with_stat, with_data); });
     }
 
     MultiGetChildrenResponse
-    getChildren(const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
+    getChildren(const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL, bool with_stat = false, bool with_data = false)
     {
-        return getChildren(paths.begin(), paths.end(), list_request_type);
+        return getChildren(paths.begin(), paths.end(), list_request_type, with_stat, with_data);
     }
 
     /// Doesn't not throw in the following cases:
@@ -372,30 +385,34 @@ public:
         Strings & res,
         Coordination::Stat * stat = nullptr,
         const Coordination::EventPtr & watch = nullptr,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL,
+        bool with_stat = false,
+        bool with_data = false);
 
     Coordination::Error tryGetChildrenWatch(
         const std::string & path,
         Strings & res,
         Coordination::Stat * stat,
         Coordination::WatchCallbackPtrOrEventPtr watch_callback,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL,
+        bool with_stat = false,
+        bool with_data = false);
 
     template <typename TIter>
     MultiTryGetChildrenResponse
-    tryGetChildren(TIter start, TIter end, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
+    tryGetChildren(TIter start, TIter end, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL, bool with_stat = false, bool with_data = false)
     {
         return multiRead<Coordination::ListResponse, true>(
             start,
             end,
-            [list_request_type](const auto & path) { return zkutil::makeListRequest(path, list_request_type); },
-            [&](const auto & path) { return asyncTryGetChildren(path, list_request_type); });
+            [list_request_type, with_stat, with_data](const auto & path) { return zkutil::makeListRequest(path, list_request_type, with_stat, with_data); },
+            [&](const auto & path) { return asyncTryGetChildren(path, list_request_type, with_stat, with_data); });
     }
 
     MultiTryGetChildrenResponse
-    tryGetChildren(const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
+    tryGetChildren(const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL, bool with_stat = false, bool with_data = false)
     {
-        return tryGetChildren(paths.begin(), paths.end(), list_request_type);
+        return tryGetChildren(paths.begin(), paths.end(), list_request_type, with_stat, with_data);
     }
 
     Coordination::ACLs getACL(const std::string & path, Coordination::Stat * stat = nullptr);
@@ -501,12 +518,16 @@ public:
     using FutureGetChildren = std::future<Coordination::ListResponse>;
     FutureGetChildren asyncGetChildren(
         const std::string & path,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL,
+        bool with_stat = false,
+        bool with_data = false);
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureGetChildren asyncTryGetChildrenNoThrow(
         const std::string & path,
         Coordination::WatchCallbackPtrOrEventPtr watch_callback = {},
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL,
+        bool with_stat = false,
+        bool with_data = false);
 
     using FutureSet = std::future<Coordination::SetResponse>;
     FutureSet asyncSet(const std::string & path, const std::string & data, int32_t version = -1);
@@ -551,7 +572,9 @@ public:
     /// * The node doesn't exist
     FutureGetChildren asyncTryGetChildren(
         const std::string & path,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL,
+        bool with_stat = false,
+        bool with_data = false);
 
     using FutureReconfig = std::future<Coordination::ReconfigResponse>;
     FutureReconfig asyncReconfig(
@@ -565,6 +588,8 @@ public:
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
 
     uint64_t getSessionTimeoutMS() const { return args.session_timeout_ms; }
+
+    int64_t getLastZXIDSeen() const { return impl->getLastZXIDSeen(); }
 
     void setServerCompletelyStarted();
 
@@ -607,7 +632,9 @@ private:
         Strings & res,
         Coordination::Stat * stat,
         Coordination::WatchCallbackPtrOrEventPtr watch_callback,
-        Coordination::ListRequestType list_request_type);
+        Coordination::ListRequestType list_request_type,
+        bool with_stat,
+        bool with_data);
     Coordination::Error getACLImpl(const std::string & path, Coordination::ACLs & res, Coordination::Stat * stat);
 
     /// returns error code with optional reason
@@ -659,6 +686,9 @@ private:
 
     std::unique_ptr<Coordination::IKeeper> impl;
     mutable std::unique_ptr<Coordination::IKeeper> optimal_impl;
+
+    /// Factory to create new IKeeper instances for reconnection (used by create_from_impl)
+    std::function<std::unique_ptr<Coordination::IKeeper>()> impl_factory;
 
     ZooKeeperArgs args;
 

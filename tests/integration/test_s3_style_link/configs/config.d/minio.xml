@@ -6,5 +6,8 @@
         <minio>
             <to>http://minio1:9001/root/{bucket}</to>
         </minio>
+        <s3>
+            <to>http://minio1:9001/root/{bucket}</to>
+        </s3>
     </url_scheme_mappers>
 </clickhouse>

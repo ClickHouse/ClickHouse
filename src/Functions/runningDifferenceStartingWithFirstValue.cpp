@@ -41,7 +41,7 @@ FROM numbers(5);
     };
     FunctionDocumentation::IntroducedIn introduced_in_runningDifferenceStartingWithFirstValue = {1, 1};
     FunctionDocumentation::Category category_runningDifferenceStartingWithFirstValue = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_runningDifferenceStartingWithFirstValue = {description_runningDifferenceStartingWithFirstValue, syntax_runningDifferenceStartingWithFirstValue, arguments_runningDifferenceStartingWithFirstValue, returned_value_runningDifferenceStartingWithFirstValue, examples_runningDifferenceStartingWithFirstValue, introduced_in_runningDifferenceStartingWithFirstValue, category_runningDifferenceStartingWithFirstValue};
+    FunctionDocumentation documentation_runningDifferenceStartingWithFirstValue = {description_runningDifferenceStartingWithFirstValue, syntax_runningDifferenceStartingWithFirstValue, arguments_runningDifferenceStartingWithFirstValue, {}, returned_value_runningDifferenceStartingWithFirstValue, examples_runningDifferenceStartingWithFirstValue, introduced_in_runningDifferenceStartingWithFirstValue, category_runningDifferenceStartingWithFirstValue};
 
     factory.registerFunction<FunctionRunningDifferenceImpl<false>>(documentation_runningDifferenceStartingWithFirstValue);
 }

@@ -23,7 +23,7 @@ namespace ErrorCodes
  * To obtain the value's index, call #getOrFindIndex.
  * To operate on the data (so called indices column), call #getIndexes.
  *
- * @note The indices column always contains the default value (empty StringRef) with the first index.
+ * @note The indices column always contains the default value (empty std::string_view) with the first index.
  */
 class ColumnLowCardinality final : public COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>
 {
@@ -64,7 +64,7 @@ public:
         return getDictionary().getValueNameAndTypeImpl(name_buf, getIndexes().getUInt(n), options);
     }
 
-    StringRef getDataAt(size_t n) const override { return getDictionary().getDataAt(getIndexes().getUInt(n)); }
+    std::string_view getDataAt(size_t n) const override { return getDictionary().getDataAt(getIndexes().getUInt(n)); }
 
     bool isDefaultAt(size_t n) const override { return getDictionary().isDefaultAt(getIndexes().getUInt(n)); }
     UInt64 get64(size_t n) const override { return getDictionary().get64(getIndexes().getUInt(n)); }
@@ -102,16 +102,14 @@ public:
 
     void popBack(size_t n) override { idx.popBack(n); }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    char * serializeValueIntoMemory(size_t n, char * memory) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
-    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
@@ -126,6 +124,11 @@ public:
     {
         return ColumnLowCardinality::create(
             dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint), isSharedDictionary());
+    }
+
+    void filter(const Filter & filt) override
+    {
+        idx.getIndexesPtr()->filter(filt);
     }
 
     void expand(const Filter & mask, bool inverted) override

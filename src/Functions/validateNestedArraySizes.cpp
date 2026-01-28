@@ -114,7 +114,7 @@ ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
         }
     }
 
-    return ColumnUInt8::create(input_rows_count, 1);
+    return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(1));
 }
 
 REGISTER_FUNCTION(ValidateNestedArraySizes)

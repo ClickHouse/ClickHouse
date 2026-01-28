@@ -11,9 +11,11 @@ void registerDatabaseAtomic(DatabaseFactory & factory);
 void registerDatabaseOrdinary(DatabaseFactory & factory);
 void registerDatabaseDictionary(DatabaseFactory & factory);
 void registerDatabaseMemory(DatabaseFactory & factory);
-void registerDatabaseLazy(DatabaseFactory & factory);
 void registerDatabaseFilesystem(DatabaseFactory & factory);
 void registerDatabaseReplicated(DatabaseFactory & factory);
+#if CLICKHOUSE_CLOUD
+void registerDatabaseShared(DatabaseFactory & factory);
+#endif
 
 #if USE_MYSQL
 void registerDatabaseMySQL(DatabaseFactory & factory);
@@ -50,9 +52,11 @@ void registerDatabases()
     registerDatabaseOrdinary(factory);
     registerDatabaseDictionary(factory);
     registerDatabaseMemory(factory);
-    registerDatabaseLazy(factory);
     registerDatabaseFilesystem(factory);
     registerDatabaseReplicated(factory);
+#if CLICKHOUSE_CLOUD
+    registerDatabaseShared(factory);
+#endif
 
 #if USE_MYSQL
     registerDatabaseMySQL(factory);
