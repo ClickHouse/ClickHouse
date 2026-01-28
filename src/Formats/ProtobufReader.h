@@ -23,6 +23,8 @@ public:
     void endMessage(bool ignore_errors);
     void startNestedMessage();
     void endNestedMessage();
+    Int64 getCursor() const { return cursor; }
+    void setCurrentMessageEnd(Int64 message_end);
 
     bool readFieldNumber(int & field_number);
     Int64 readInt();
@@ -36,6 +38,11 @@ public:
     bool eof() const { return in->eof(); }
 
     void setReadBuffer(ReadBuffer & in_) { in = &in_; }
+
+    ReadBuffer * getBuffer() const
+    {
+        return in;
+    }
 
 private:
     void readBinary(void * data, size_t size);

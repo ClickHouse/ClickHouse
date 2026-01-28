@@ -974,6 +974,7 @@ PromQL
 Promql
 Promtail
 Protobuf
+ProtobufConfluent
 ProtobufList
 ProtobufSingle
 ProxySQL
