@@ -130,8 +130,9 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         }
         else if (add_enum_values)
         {
-            ostr << " ADD ENUM VALUES ";
+            ostr << " ADD ENUM VALUES ( ";
             add_enum_values->format(ostr, settings, state, frame);
+            ostr << " ) ";
         }
         else
         {

@@ -152,7 +152,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma),
         /* allow_empty = */ false);
 
-    ParserFunction parser_add_enum_values;
+    ParserExpressionList parser_add_enum_values(false);
     ParserSelectWithUnionQuery select_p;
     ParserSQLSecurity sql_security_p;
     ParserRefreshStrategy refresh_p;
@@ -177,6 +177,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_settings_changes;
     ASTPtr command_settings_resets;
     ASTPtr command_add_enum_values;
+    auto parse_add_enum_values = [&](Pos & pos_, ASTPtr & node_, Expected & expected_) -> bool
+    {
+        ParserToken open(TokenType::OpeningRoundBracket);
+        ParserToken close(TokenType::ClosingRoundBracket);
+
+        if (!open.ignore(pos_, expected_))
+            return false;
+        if (!parser_add_enum_values.parse(pos_, node_, expected_))
+            return false;
+        if (!close.ignore(pos_, expected_))
+            return false;
+
+        return true;
+    };
     ASTPtr command_select;
     ASTPtr command_rename_to;
     ASTPtr command_sql_security;
@@ -826,7 +840,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 {
                     check_no_type(s_add_enum_values.getName());
 
-                    if (!parser_add_enum_values.parse(pos, command_add_enum_values, expected))
+                    if (!parse_add_enum_values(pos, command_add_enum_values, expected))
                         return false;
                 }
                 else
@@ -988,7 +1002,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_add_enum_values.ignore(pos, expected))
             {
-                if (!parser_add_enum_values.parse(pos, command_add_enum_values, expected))
+                if (!parse_add_enum_values(pos, command_add_enum_values, expected))
                     return false;
                 command->type = ASTAlterCommand::ADD_ENUM_VALUES;
             }
