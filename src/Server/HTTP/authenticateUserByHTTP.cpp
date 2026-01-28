@@ -250,7 +250,7 @@ bool authenticateUserByHTTP(
     try
     {
         if (forwarded_address && global_context->getConfigRef().getBool("auth_use_forwarded_address", false))
-            session.authenticate(*current_credentials, *forwarded_address);
+            session.authenticate(*current_credentials, *forwarded_address, request.clientAddress());
         else
             session.authenticate(*current_credentials, request.clientAddress());
     }
