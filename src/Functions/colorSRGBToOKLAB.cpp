@@ -66,7 +66,7 @@ REGISTER_FUNCTION(ColorSRGBToOKLAB)
                     )"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
