@@ -550,7 +550,7 @@ bool StorageObjectStorage::optimize(
 void StorageObjectStorage::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr /* context */,
+    ContextPtr context,
     TableExclusiveLockHolder & /* table_holder */)
 {
     const auto path = configuration->getRawPath();
@@ -576,12 +576,50 @@ void StorageObjectStorage::truncate(
             getName(), path.path);
     }
 
-    StoredObjects objects;
-    for (const auto & key : configuration->getPaths())
+    auto query_settings = configuration->getQuerySettings(context);
+    query_settings.throw_on_zero_files_match = false;
+    query_settings.ignore_non_existent_file = true;
+
+    bool local_distributed_processing = false;
+
+    auto iterator = StorageObjectStorageSource::createFileIterator(
+        configuration,
+        query_settings,
+        object_storage,
+        getInMemoryMetadataPtr(),
+        local_distributed_processing,
+        context,
+        {}, // predicate
+        {},
+        {}, // virtual_columns
+        {}, // hive_columns
+        nullptr, // read_keys
+        {} // file_progress_callback
+    );
+
+    std::vector<StoredObject> paths;
+    static const size_t DELETE_CHUNK_SIZE = 1000;
+    paths.reserve(DELETE_CHUNK_SIZE);
+    while (auto element = iterator->next(0))
     {
-        objects.emplace_back(key.path);
+        paths.push_back(StoredObject(element->getPath()));
+        // Delete in chunks to avoid holding too many objects in memory
+        if (paths.size() >= DELETE_CHUNK_SIZE)
+        {
+            object_storage->removeObjectsIfExist(paths);
+            paths.clear();
+        }
     }
-    object_storage->removeObjectsIfExist(objects);
+
+    if (!paths.empty())
+    {
+        object_storage->removeObjectsIfExist(paths);
+    }
+
+    // When hive partitioning is not being used,
+    // StorageObjectStorageConfiguration::paths gets populated with inserted file paths.
+    // We need to clear it.
+    configuration->setPaths({});
 }
 
 void StorageObjectStorage::drop()
