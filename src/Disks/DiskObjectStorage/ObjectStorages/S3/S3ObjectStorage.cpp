@@ -199,7 +199,8 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         /* offset */0,
         /* read_until_position */0,
         read_settings.remote_read_buffer_restrict_seek,
-        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt);
+        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
+        credentials_refresh_callback);
 }
 
 SmallObjectDataWithMetadata S3ObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -464,10 +465,11 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
     {
         object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
     }
-    catch (DB::Exception & e)
+    catch (const DB::Exception &)
     {
-        e.addMessage("while reading " + path);
-        throw;
+        auto new_client = credentials_refresh_callback();
+        client.set(std::move(new_client));
+        object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
     }
 
     ObjectMetadata result;
@@ -521,6 +523,11 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
             /// If authentication/permissions error occurs then fallthrough to copy with buffer.
             if (exc.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
                 throw;
+            else
+            {
+                auto new_client = credentials_refresh_callback();
+                client.set(std::move(new_client));
+            }
             LOG_WARNING(getLogger("S3ObjectStorage"),
                 "S3-server-side copy object from the disk {} to the disk {} can not be performed: {}\n",
                 getName(), dest_s3->getName(), exc.what());

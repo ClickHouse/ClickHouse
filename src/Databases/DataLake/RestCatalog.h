@@ -81,6 +81,8 @@ public:
     String getClientId() const { return client_id; }
     String getClientSecret() const { return client_secret; }
 
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback() override;
+
 private:
     void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
 
