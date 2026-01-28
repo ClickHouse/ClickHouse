@@ -20,12 +20,14 @@ def started_cluster():
 
 def test_enabling_access_management():
     instance.query("DROP USER IF EXISTS Alex")
+    instance.query("DROP USER IF EXISTS Bob")
     instance.query("CREATE USER Alex", user="default")
+    instance.query("CREATE USER Bob", user="default")
 
     # 20G should be probably enough
     instance.query("system allocate untracked memory 20000000000", user="default")
     instance.query("select 1", user="default")
-    assert "(total) memory limit exceeded" in instance.query_and_get_error("select 1", user="readonly")
+    assert "(total) memory limit exceeded" in instance.query_and_get_error("select 1", user="Bob")
 
     server_ip = cluster.get_instance_ip("instance")
     endpoint = "'http://{}:8123/?query=SELECT+1&user=Alex'".format(server_ip)
@@ -42,7 +44,8 @@ def test_enabling_access_management():
     assert "(total) memory limit exceeded" not in instance.exec_in_container(["bash", "-c", f"curl {endpoint}"])
     instance.query("select 1", user="default")
 
-    assert "(total) memory limit exceeded" in instance.query_and_get_error("select 1", user="readonly")
+    assert "(total) memory limit exceeded" in instance.query_and_get_error("select 1", user="Bob")
 
     instance.query("system free untracked memory")
     instance.query("DROP USER IF EXISTS Alex")
+    instance.query("DROP USER IF EXISTS Bob")
