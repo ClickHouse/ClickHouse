@@ -227,6 +227,11 @@ private:
     friend class MergeTreeMergePredicate;
     friend struct PlainCommittingBlockHolder;
 
+    bool mutationVersionsEquivalent(
+        const MergeTreePartInfo & left,
+        const MergeTreePartInfo & right,
+        std::unique_lock<std::mutex> & lock) const;
+
     std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
         bool aggressive,

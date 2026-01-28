@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
+#include <Storages/StorageMergeTree.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -47,14 +48,21 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
                     file_name_);
 }
 
-MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
-                                               const TransactionID & tid_, const WriteSettings & settings)
+MergeTreeMutationEntry::MergeTreeMutationEntry(
+    MutationCommands commands_,
+    DiskPtr disk_,
+    const String & path_prefix_,
+    UInt64 tmp_number,
+    PartitionIds && partition_ids_,
+    const TransactionID & tid_,
+    const WriteSettings & settings)
     : create_time(time(nullptr))
     , commands(std::make_shared<MutationCommands>(std::move(commands_)))
     , disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
     , is_temp(true)
+    , partition_ids(std::move(partition_ids_))
     , tid(tid_)
 {
     try
@@ -115,7 +123,8 @@ void MergeTreeMutationEntry::writeCSN(CSN csn_)
     out->finalize();
 }
 
-MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_)
+MergeTreeMutationEntry::MergeTreeMutationEntry(
+    DiskPtr disk_, const String & path_prefix_, const String & file_name_, StorageMergeTree * storage_, ContextPtr context_)
     : commands(std::make_shared<MutationCommands>())
     , disk(std::move(disk_))
     , path_prefix(path_prefix_)
@@ -155,6 +164,8 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     }
 
     assertEOF(*buf);
+
+    partition_ids = storage_->getPartitionIdsAffectedByCommands(*commands, context_);
 }
 
 MergeTreeMutationEntry::~MergeTreeMutationEntry()

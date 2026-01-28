@@ -48,11 +48,8 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canMergeParts(
     }
 
     {
-        uint64_t left_mutation_version = storage.getCurrentMutationVersion(left.info.getDataVersion(), merge_mutate_lock);
-        uint64_t right_mutation_version = storage.getCurrentMutationVersion(right.info.getDataVersion(), merge_mutate_lock);
-
-        if (left_mutation_version != right_mutation_version)
-            return std::unexpected(PreformattedMessage::create("Parts {} and {} have different mutation version", left.name, right.name));
+        if (!storage.mutationVersionsEquivalent(left.info, right.info, merge_mutate_lock))
+            return std::unexpected(PreformattedMessage::create("Parts {} and {} have different (not equivalent) mutation versions", left.name, right.name));
     }
 
     {
