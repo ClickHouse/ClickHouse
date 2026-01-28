@@ -8,6 +8,7 @@
 
 #include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
+#include <Common/formatMacAddress.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
@@ -18,6 +19,7 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
 #include <base/IPv4andIPv6.h>
+#include <base/MacAddress.h>
 
 #include <Common/NaNUtils.h>
 
@@ -744,6 +746,7 @@ inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 
 void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf);
 void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf);
+void writeMacAddressText(const MacAddress & mac, WriteBuffer & buf);
 
 template <typename DecimalType, bool cut_trailing_zeros_align_to_groups_of_thousands = false>
 inline void writeDateTime64FractionalText(typename DecimalType::NativeType fractional, UInt32 scale, WriteBuffer & buf)
@@ -1146,6 +1149,11 @@ inline void writeBinary(const LocalTime & x, WriteBuffer & buf) { writePODBinary
 inline void writeBinary(const IPv4 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const IPv6 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
+inline void writeBinary(const MacAddress & x, WriteBuffer & buf)
+{
+    writePODBinary(x.toUInt64(), buf);
+}
+
 inline void writeBinary(const UUID & x, WriteBuffer & buf)
 {
     writeUUIDBinary(x, buf);
@@ -1186,6 +1194,7 @@ inline void writeText(const LocalTime & x, WriteBuffer & buf) { writeTimeText(x,
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 inline void writeText(const IPv4 & x, WriteBuffer & buf) { writeIPv4Text(x, buf); }
 inline void writeText(const IPv6 & x, WriteBuffer & buf) { writeIPv6Text(x, buf); }
+inline void writeText(const MacAddress & x, WriteBuffer & buf) { writeMacAddressText(x, buf); }
 
 template <typename T>
 void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros,
@@ -1323,6 +1332,13 @@ inline void writeQuoted(const IPv4 & x, WriteBuffer & buf)
 }
 
 inline void writeQuoted(const IPv6 & x, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    writeText(x, buf);
+    writeChar('\'', buf);
+}
+
+inline void writeQuoted(const MacAddress & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
     writeText(x, buf);

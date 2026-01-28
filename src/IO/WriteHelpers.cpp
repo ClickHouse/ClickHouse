@@ -2,6 +2,7 @@
 #include <base/DecomposedFloat.h>
 #include <base/hex.h>
 #include <Common/formatIPv6.h>
+#include <Common/formatMacAddress.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-parameter"
@@ -74,6 +75,27 @@ void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
     char * paddr = addr;
 
     formatIPv6(reinterpret_cast<const unsigned char *>(&ip), paddr);
+    buf.write(addr, paddr - addr);
+}
+
+void writeMacAddressText(const MacAddress & mac, WriteBuffer & buf)
+{
+    char addr[MAC_ADDRESS_MAX_TEXT_LENGTH + 1] {};
+    char * paddr = addr;
+
+    // Convert UInt64 to 6-byte array in big-endian order
+    auto value = mac.toUInt64();
+    unsigned char bytes[MAC_ADDRESS_BINARY_LENGTH];
+
+    // Extract bytes from most significant to least significant
+    bytes[0] = (value >> 40) & 0xFF;
+    bytes[1] = (value >> 32) & 0xFF;
+    bytes[2] = (value >> 24) & 0xFF;
+    bytes[3] = (value >> 16) & 0xFF;
+    bytes[4] = (value >> 8) & 0xFF;
+    bytes[5] = value & 0xFF;
+
+    paddr = formatMacAddress(bytes, paddr);
     buf.write(addr, paddr - addr);
 }
 
