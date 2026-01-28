@@ -166,6 +166,8 @@ def buildx_args(
     action_url: str,
 ) -> List[str]:
     args = [
+        "--provenance=true",
+        "--sbom=true",
         f"--platform=linux/{arch}",
         f"--label=build-url={action_url}",
         f"--label=com.clickhouse.build.githash={sha}",
