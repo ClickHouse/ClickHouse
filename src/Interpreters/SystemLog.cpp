@@ -766,7 +766,10 @@ void SystemLog<LogElement>::prepareTable()
     if (enable_log_marker)
     {
         auto columns = LogElement::getColumnsDescription();
-        if (!columns.has("log_marker"))
+        // TODO @bharatnc: Skip log_marker column and validation for ZooKeeper-related logs to try fix arm_asan targeted stateless tests timeout
+        std::string log_name = LogElement::name();
+        bool is_zk_log = (log_name == "ZooKeeperLog" || log_name == "ZooKeeperConnectionLog" || log_name == "AggregatedZooKeeperLog");
+        if (!columns.has("log_marker") && !is_zk_log)
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
