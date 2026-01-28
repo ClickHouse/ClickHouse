@@ -708,7 +708,9 @@ Pipe ReadFromMergeTree::readInOrder(
             size_t mark_range_begin = part_with_ranges.ranges.front().begin;
 
             ColumnsWithTypeAndName pk_columns;
-            size_t num_columns = virtual_row_conversion->getRequiredColumnsWithTypes().size();
+            /// The index may have fewer columns than the primary key if suffix columns were
+            /// removed by optimizeIndexColumns (controlled by primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns).
+            size_t num_columns = std::min(virtual_row_conversion->getRequiredColumnsWithTypes().size(), index->size());
             pk_columns.reserve(num_columns);
 
             for (size_t j = 0; j < num_columns; ++j)
