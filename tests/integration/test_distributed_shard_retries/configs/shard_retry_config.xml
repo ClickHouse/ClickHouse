@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <distributed_shard_retry_count>5</distributed_shard_retry_count>
+        </default>
+    </profiles>
+</clickhouse>
