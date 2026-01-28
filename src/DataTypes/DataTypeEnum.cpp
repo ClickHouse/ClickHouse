@@ -30,7 +30,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 template <typename FieldType> struct EnumName;
@@ -199,7 +198,6 @@ bool DataTypeEnum<Type>::contains(const IDataType & rhs) const
     return false;
 }
 
-
 template <typename Type>
 SerializationPtr DataTypeEnum<Type>::doGetDefaultSerialization() const
 {
@@ -301,12 +299,11 @@ static DataTypePtr createExact(const ASTPtr & arguments, bool is_add = false, bo
         const auto * name_literal = func->arguments->children[0]->as<ASTLiteral>();
         const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
 
-        if (!name_literal
-            || !value_literal
-            || name_literal->value.getType() != Field::Types::String
+        if (!name_literal || !value_literal || name_literal->value.getType() != Field::Types::String
             || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
         {
-            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+            throw Exception(
+                ErrorCodes::UNEXPECTED_AST_STRUCTURE,
                 "Elements of Enum data type must be of form: "
                 "'name' = number or 'name', where name is string literal and number is an integer");
         }
@@ -347,15 +344,15 @@ static DataTypePtr create(const ASTPtr & arguments, bool is_add = false)
         Int64 value = value_literal->value.safeGet<Int64>();
 
         if (value > std::numeric_limits<Int8>::max() || value < std::numeric_limits<Int8>::min())
-            return createExact<DataTypeEnum16>(arguments, is_add, false /* auto_assign*/, is_relative);
+            return createExact<DataTypeEnum16>(arguments, is_add, false /*auto_assign*/, is_relative);
     }
 
-    return createExact<DataTypeEnum8>(arguments, is_add, false /* auto_assign*/, is_relative);
+    return createExact<DataTypeEnum8>(arguments, is_add, false /*auto_assign*/, is_relative);
 }
 
-// Used by addToEnum
-template <typename TypeBase, typename TypeAdd>
-DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEnum<TypeAdd> & add)
+// Used by ADD ENUM VALUES
+template <typename TypeBase>
+DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEnum<TypeBase> & add)
 {
     auto merged_values = base.getValues();
     std::unordered_map<String, TypeBase> name_to_value;
@@ -406,18 +403,10 @@ DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEn
 
 template DataTypePtr mergeEnumTypes(const DataTypeEnum8 & base, const DataTypeEnum8 & add);
 template DataTypePtr mergeEnumTypes(const DataTypeEnum16 & base, const DataTypeEnum16 & add);
-template DataTypePtr mergeEnumTypes(const DataTypeEnum16 & base, const DataTypeEnum8 & add);
 
-DataTypePtr createAddToEnumType(const String & family_name, const ASTPtr & arguments)
+DataTypePtr createEnumAdd(const ASTPtr & arguments, bool is_enum16)
 {
-    if (family_name == "addToEnum8")
-        return createExact<DataTypeEnum8>(arguments, true /*is_add*/);
-    if (family_name == "addToEnum16")
-        return createExact<DataTypeEnum16>(arguments, true /*is_add*/);
-    if (family_name == "addToEnum")
-        return create(arguments, true /*is_add*/);
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown Enum type '{}'", family_name);
+    return is_enum16 ? createExact<DataTypeEnum16>(arguments, true /*is_add*/) : createExact<DataTypeEnum8>(arguments, true /*is_add*/);
 }
 
 void registerDataTypeEnum(DataTypeFactory & factory)

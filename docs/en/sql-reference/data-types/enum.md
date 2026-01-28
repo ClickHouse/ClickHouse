@@ -165,16 +165,16 @@ The Enum type can be changed without cost using ALTER, if only the set of values
 
 Using ALTER, it is possible to change an Enum8 to an Enum16 or vice versa, just like changing an Int8 to Int16.
 
-## addToEnum {#add-to-enum}
+## ADD ENUM VALUES {#add-enum-values}
 
-There is a syntax sugar to add new values to enum using ALTER
+There is a syntax sugar to add new values to enum using ALTER [modify-column-add-enum-values](../../sql-reference/statements/alter/column.md)
 
 ```sql
 CREATE TABLE enum
 (
 	x Enum('One' = 1, 'Two', 'Three')
 ) ENGINE = Memory;
-ALTER TABLE enum MODIFY COLUMN x addToEnum('Zero' = 0, 'Four' = 4);
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES ('Zero' = 0, 'Four' = 4);
 SHOW CREATE TABLE enum;
 ```
 

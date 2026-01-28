@@ -173,7 +173,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     /// This keyword may occur only in MODIFY COLUMN query. We check it here
     /// because ParserDataType parses types as an arbitrary identifiers and
     /// doesn't check that parsed string is existing data type. In this way,
-    /// REMOVE, MODIFY SETTING, or RESET SETTING can be parsed as data type
+    /// REMOVE, MODIFY SETTING, RESET SETTING or ADD ENUM VALUES
+    /// can be parsed as data type
     /// and further parsing will fail. So we just check these keyword and in
     /// case of success return column declaration with name only.
     if (!require_type

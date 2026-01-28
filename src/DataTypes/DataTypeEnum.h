@@ -45,8 +45,8 @@ public:
 private:
     std::string type_name;
     static std::string generateName(const Values & values);
-    bool is_add; // created by addToEnum
-    bool is_relative; // addToEnum is able to renumber
+    bool is_add; // created by ALTER ... ADD ENUM VALUES
+    bool is_relative; // ADD ENUM VALUES is able to renumber
 
 public:
     explicit DataTypeEnum(const Values & values_, bool is_add_ = false, bool is_relative_ = false);
@@ -85,10 +85,10 @@ public:
     bool isRelative() const override  { return is_relative; }
 };
 
-template <typename TypeBase, typename TypeAdd>
-DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEnum<TypeAdd> & add);
+template <typename TypeBase>
+DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEnum<TypeBase> & add);
 
-DataTypePtr createAddToEnumType(const String & family_name, const ASTPtr & arguments);
+DataTypePtr createEnumAdd(const ASTPtr & arguments, bool is_enum16);
 
 using DataTypeEnum8 = DataTypeEnum<Int8>;
 using DataTypeEnum16 = DataTypeEnum<Int16>;

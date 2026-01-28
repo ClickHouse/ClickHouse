@@ -7,20 +7,22 @@ DROP TABLE IF EXISTS enum;
 CREATE TABLE enum (x {{ NULLABLE_START }}{{ ENUM_TYPE }}('One' = 1, 'Two', 'Three'){{ NULLABLE_END }}) ENGINE = Memory;
 INSERT INTO enum VALUES (0);
 SELECT * FROM enum ORDER BY x;  -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
-ALTER TABLE enum MODIFY COLUMN x addToEnum('Zero' = 0, 'Four' = 4);
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Zero' = 0, 'Four' = 4);
 INSERT INTO enum VALUES (4);
 SELECT '======================';
 SELECT * FROM enum ORDER BY x;
 {% if ENUM_TYPE != 'Enum16' -%}
-ALTER TABLE enum MODIFY COLUMN x addToEnum16('Thousand' = 1000); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('ThousanD' = 1000); -- { serverError ARGUMENT_OUT_OF_BOUND }
 {% else %}
-ALTER TABLE enum MODIFY COLUMN x addToEnum16('Thousand' = 1000);
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Thousand' = 1000);
 {% endif %}
-ALTER TABLE enum MODIFY COLUMN x addToEnum8('Thousand' = 1000); -- { serverError ARGUMENT_OUT_OF_BOUND }
-ALTER TABLE enum MODIFY COLUMN x addToEnum8('Hundred' = 100);
-ALTER TABLE enum MODIFY COLUMN x addToEnum8('Four' = 44, 'Five' = 5); -- { serverError BAD_ARGUMENTS }
-ALTER TABLE enum MODIFY COLUMN x addToEnum8('FortyFour' = 4, 'Five' = 5); -- { serverError BAD_ARGUMENTS }
-ALTER TABLE enum MODIFY COLUMN x addToEnum8('ThousandOne');
+{% if ENUM_TYPE == 'Enum8' -%}
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Thousand' = 1000); -- { serverError ARGUMENT_OUT_OF_BOUND }
+{% endif %}
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Hundred' = 100);
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Four' = 44, 'Five' = 5); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('FortyFour' = 4, 'Five' = 5); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('ThousandOne');
 SHOW CREATE TABLE enum;
 INSERT INTO enum VALUES (100);
 INSERT INTO enum VALUES ('Hundred');
@@ -33,15 +35,11 @@ DROP TABLE enum;
 {% endfor -%}
 
 
-CREATE TABLE addtoenum (x addToEnum8('One' = 1, 'Two', 'Three')) ENGINE = Memory; -- { serverError UNKNOWN_TYPE }
-CREATE TABLE addtoenum (x addToEnum8('One' = 1, 'Two', 'Three')) ENGINE = Memory; -- { serverError UNKNOWN_TYPE }
-CREATE TABLE addtoenum (x addToEnum('One' = 1, 'Two' = 2)) ENGINE = Memory; -- { serverError UNKNOWN_TYPE }
-
 CREATE TABLE nonenum (x Int8) ENGINE = Memory;
-ALTER TABLE nonenum MODIFY COLUMN x addToEnum('A' = 1); -- { serverError ILLEGAL_COLUMN }
-ALTER TABLE nonenum ADD COLUMN z addToEnum('A' = 1); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE nonenum MODIFY COLUMN x ADD ENUM VALUES('A' = 1); -- { serverError ILLEGAL_COLUMN }
+ALTER TABLE nonenum ADD COLUMN z ADD ENUM VALUES('A' = 1); -- { clientError SYNTAX_ERROR }
 DROP TABLE nonenum;
 
 CREATE TABLE enumoverflow (x Enum8('a' = 127)) ENGINE = Memory;
-ALTER TABLE enumoverflow MODIFY COLUMN x addToEnum('b'); -- { serverError ARGUMENT_OUT_OF_BOUND }
+ALTER TABLE enumoverflow MODIFY COLUMN x ADD ENUM VALUES('b'); -- { serverError ARGUMENT_OUT_OF_BOUND }
 DROP TABLE enumoverflow;

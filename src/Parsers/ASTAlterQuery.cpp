@@ -65,6 +65,8 @@ ASTPtr ASTAlterCommand::clone() const
         res->sql_security = res->children.emplace_back(sql_security->clone()).get();
     if (rename_to)
         res->rename_to = res->children.emplace_back(rename_to->clone()).get();
+    if (add_enum_values)
+        res->add_enum_values = res->children.emplace_back(add_enum_values->clone());
 
     return res;
 }
@@ -500,11 +502,6 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << "RESET SETTING ";
         settings_resets->format(ostr, settings, state, frame);
     }
-    // else if (type == ASTAlterCommand::ADD_ENUM_VALUES)
-    // {
-    //     ostr << "ADD ENUM VALUES ";
-    //     settings_resets->format(ostr, settings, state, frame);
-    // }
     else if (type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
     {
         ostr << "MODIFY SETTING ";
@@ -580,6 +577,7 @@ void ASTAlterCommand::forEachPointerToChild(std::function<void(void**)> f)
     f(reinterpret_cast<void **>(&ttl));
     f(reinterpret_cast<void **>(&settings_changes));
     f(reinterpret_cast<void **>(&settings_resets));
+    f(reinterpret_cast<void **>(&add_enum_values));
     f(reinterpret_cast<void **>(&select));
     f(reinterpret_cast<void **>(&sql_security));
     f(reinterpret_cast<void **>(&rename_to));
@@ -605,7 +603,7 @@ bool ASTAlterQuery::isOneCommandTypeOnly(const ASTAlterCommand::Type & type) con
 
 bool ASTAlterQuery::isSettingsAlter() const
 {
-    return isOneCommandTypeOnly(ASTAlterCommand::MODIFY_SETTING) || isOneCommandTypeOnly(ASTAlterCommand::RESET_SETTING) || isOneCommandTypeOnly(ASTAlterCommand::ADD_ENUM_VALUES);
+    return isOneCommandTypeOnly(ASTAlterCommand::MODIFY_SETTING) || isOneCommandTypeOnly(ASTAlterCommand::RESET_SETTING);
 }
 
 bool ASTAlterQuery::isFreezeAlter() const

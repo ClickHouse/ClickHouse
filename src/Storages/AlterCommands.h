@@ -158,9 +158,6 @@ struct AlterCommand
 
     ASTPtr add_enum_values = nullptr;
 
-    // /// For MODIFY COLUMN ADD ENUM VALUES
-    // ASTPtr add_enum_values = nullptr;
-
     /// Target column name
     String rename_to;
 
@@ -169,8 +166,6 @@ struct AlterCommand
 
     /// Is this MODIFY COLUMN MODIFY SETTING or MODIFY COLUMN column with settings declaration)
     bool append_column_setting = false;
-
-
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 

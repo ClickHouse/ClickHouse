@@ -183,7 +183,6 @@ public:
     /// For MODIFY REFRESH
     ASTPtr refresh;
 
-
     bool detach = false;        /// true for DETACH PARTITION
 
     bool part = false;          /// true for ATTACH PART, DROP DETACHED PART and MOVE
