@@ -387,12 +387,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     has_error = False
     if not is_targeted_check:
-        session_timeout = 5400
+        session_timeout_parallel = 3600 * 2
+        session_timeout_sequential = 3600
     else:
         # For targeted jobs, use a shorter session timeout to keep feedback fast.
         # If this timeout is exceeded but all completed tests have passed, the
         # targeted check will not fail solely because the session timed out.
-        session_timeout = 1200
+        session_timeout_parallel = 1200
+        session_timeout_sequential = 1200
     error_info = []
 
     module_repeat_cnt = 1
@@ -405,7 +407,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
             test_result_parallel = Result.from_pytest_run(
-                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout}",
+                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                 cwd="./tests/integration/",
                 env=test_env,
                 pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
@@ -436,7 +438,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_sequential.log"
             test_result_sequential = Result.from_pytest_run(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout}",
+                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                 env=test_env,
                 cwd="./tests/integration/",
                 pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
