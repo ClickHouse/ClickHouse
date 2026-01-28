@@ -430,6 +430,9 @@ class Result(MetaClasses.Serializable):
             if name is None:
                 name = f"pytest_{command}"
 
+            #REMOVEME
+            print(f"DEBUG: full_command: {full_command}")
+
             # Run pytest
             _res = Shell.check(full_command, verbose=True)
             test_result = ResultTranslator.from_pytest_jsonl(
