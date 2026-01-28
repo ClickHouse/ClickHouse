@@ -6803,6 +6803,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
     auto backup = restorer.getBackup();
     Strings part_names = backup->listFiles(data_path_in_backup, /*recursive*/ false);
     std::erase(part_names, "mutations");
+    std::erase(part_names, "table_metadata_version.txt");
 
     bool restore_broken_parts_as_detached = restorer.getRestoreSettings().restore_broken_parts_as_detached;
 

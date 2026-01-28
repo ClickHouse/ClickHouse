@@ -1155,6 +1155,29 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
                     table_def_from_backup->formatForErrorMessage());
             }
         }
+
+        {
+            std::lock_guard lock{mutex};
+            auto & table_info = table_infos.at(table_name);
+            String metadata_version_path = fs::path(table_info.data_path_in_backup) / "table_metadata_version.txt";
+            // Metadata version is only important to replicated tables
+            if (table_info.storage && table_info.storage->getName().starts_with("Replicated") && backup->fileExists(metadata_version_path))
+            {
+                auto buf = backup->readFile(metadata_version_path);
+                String metadata_version_str;
+                readStringUntilEOF(metadata_version_str, *buf);
+                int32_t metadata_version = parse<int32_t>(metadata_version_str);
+
+                // Now update the table's metadata version
+                // We only update the in-memory version and let the replication system handle ZooKeeper synchronization
+                auto metadata_ptr = table_info.storage->getInMemoryMetadataPtr();
+                auto new_metadata = metadata_ptr->withMetadataVersion(metadata_version);
+                storage->setInMemoryMetadata(new_metadata);
+
+                LOG_DEBUG(log, "Table {}: Restored in-memory metadata_version: {}", table_name.getFullName(), metadata_version);
+            }
+        }
+
     }
     catch (Exception & e)
     {
