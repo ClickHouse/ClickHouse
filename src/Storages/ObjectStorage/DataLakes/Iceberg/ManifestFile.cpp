@@ -156,9 +156,10 @@ ManifestFileContent::ManifestFileContent(
     const String & path_to_manifest_file_)
     : path_to_manifest_file(path_to_manifest_file_)
 {
+    auto dump_metadata = [&]()->String { return manifest_file_deserializer.getMetadataContent(); };
     insertRowToLogTable(
         context,
-        manifest_file_deserializer.getMetadataContent(),
+        dump_metadata,
         DB::IcebergMetadataLogLevel::ManifestFileMetadata,
         common_path,
         path_to_manifest_file,
@@ -233,9 +234,10 @@ ManifestFileContent::ManifestFileContent(
 
     for (size_t i = 0; i < manifest_file_deserializer.rows(); ++i)
     {
+        auto dump_row_metadata = [&]()->String { return manifest_file_deserializer.getContent(i); };
         insertRowToLogTable(
             context,
-            manifest_file_deserializer.getContent(i),
+            dump_row_metadata,
             DB::IcebergMetadataLogLevel::ManifestFileEntry,
             common_path,
             path_to_manifest_file,
