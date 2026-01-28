@@ -9,11 +9,13 @@ from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
-from ci.praktika.utils import MetaClasses, Shell, Utils
+from ci.praktika.utils import MetaClasses, Shell, Utils, ContextManager
 
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/fast_build"
 temp_dir = f"{current_directory}/ci/tmp/"
+repo_path_normalized = "/ClickHouse"
+build_dir_normalized = f"{repo_path_normalized}/ci/tmp/fast_build"
 
 
 def clone_submodules():
@@ -128,7 +130,18 @@ def main():
         stages.insert(0, stage)
 
     clickhouse_bin_path = Path(f"{build_dir}/programs/clickhouse")
+
+    # Global sccache settings for local and CI runs
+    os.environ["SCCACHE_DIR"] = f"{temp_dir}/sccache"
+    os.environ["SCCACHE_CACHE_SIZE"] = "40G"
+    os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
+    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
+    os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
+    os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
+    os.environ["SCCACHE_LOG"] = "info"
+
     if Info().is_local_run:
+        os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
         for path in [
             clickhouse_bin_path,
             Path(temp_dir) / "clickhouse",
@@ -165,11 +178,6 @@ def main():
         os.environ["CH_PASSWORD"] = chcache_secret.get_value()
         os.environ["CH_USE_LOCAL_CACHE"] = "false"
 
-        os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
-        os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
-        os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
-        Shell.check("sccache --show-stats", verbose=True)
-
     Utils.add_to_PATH(
         f"{os.path.dirname(clickhouse_bin_path)}:{current_directory}/tests"
     )
@@ -188,13 +196,15 @@ def main():
         )
         res = results[-1].is_ok()
 
+    os.makedirs(build_dir, exist_ok=True)
+
     if res and JobStages.CMAKE in stages:
         results.append(
             # TODO: commented out to make job platform agnostic
             #   -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-x86_64-musl.cmake \
             Result.from_commands_run(
                 name="Cmake configuration",
-                command=f"cmake {current_directory} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} \
+                command=f"cmake {repo_path_normalized} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} \
                 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} \
                 -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE} \
                 -DENABLE_LIBRARIES=0 \
@@ -202,7 +212,8 @@ def main():
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
-                -B {build_dir}",
+                -B {build_dir_normalized}",
+                workdir=repo_path_normalized,
             )
         )
         res = results[-1].is_ok()
@@ -212,7 +223,7 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
-                command=f"command time -v cmake --build {build_dir} --"
+                command=f"command time -v cmake --build {build_dir_normalized} --"
                 " clickhouse-bundle clickhouse-stripped lexer_test",
             )
         )
@@ -222,16 +233,14 @@ def main():
 
     if res and JobStages.BUILD in stages:
         commands = [
-            f"mkdir -p {Settings.OUTPUT_DIR}/binaries",
             "sccache --show-stats",
             "clickhouse-client --version",
-            # "clickhouse-test --help",
         ]
         results.append(
             Result.from_commands_run(
                 name="Check and Compress binary",
                 command=commands,
-                workdir=build_dir,
+                workdir=build_dir_normalized,
             )
         )
         res = results[-1].is_ok()

@@ -39,6 +39,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.2",
+        {
+
+        });
         addSettingsChanges(settings_changes_history, "26.1",
         {
             {"use_statistics", true, true, "Enable this optimization by default."},
@@ -1031,6 +1035,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.2",
+        {
+            {"add_minmax_index_for_temporal_columns", false, false, "New setting"},
+            {"distributed_index_analysis_min_parts_to_activate", 10, 10, "New setting"},
+            {"distributed_index_analysis_min_indexes_size_to_activate", 1_GiB, 1_GiB, "New setting"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {
             {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
