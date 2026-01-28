@@ -24,6 +24,7 @@
 #include <Interpreters/ProcessList.h>
 
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTCheckDatabaseQuery.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
@@ -430,6 +431,15 @@ BlockIO InterpreterCheckQuery::execute()
         auto databases = getAllDatabases(context);
         LOG_DEBUG(log, "Checking {} databases", databases.size());
         worker_source = std::make_shared<TableCheckSource>(databases, context, log);
+    }
+    else if (const auto * check_database_query = query_ptr->as<ASTCheckDatabaseQuery>())
+    {
+        /// Check specific database
+        LOG_DEBUG(log, "Checking database name = {} ", check_database_query->getDatabase());
+        auto database = DatabaseCatalog::instance().getDatabase(check_database_query->getDatabase());
+        database->checkDatabase();
+        BlockIO res;
+        return res;
     }
     else
     {

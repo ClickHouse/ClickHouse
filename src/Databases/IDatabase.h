@@ -389,6 +389,11 @@ public:
         return database_name;
     }
 
+    virtual void checkDatabase() const
+    {
+        //No-op
+    }
+
     // Alter comment of database.
     virtual void alterDatabaseComment(const AlterCommand &, ContextPtr);
 
