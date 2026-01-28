@@ -129,7 +129,7 @@ StoragePtr TableFunctionURL::getStorage(
             configuration);
     }
 
-    if (!is_insert_query && configuration.http_method.empty())
+    if (!is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(source))
     {
         auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
 

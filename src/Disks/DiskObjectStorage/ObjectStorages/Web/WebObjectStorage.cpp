@@ -163,7 +163,7 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::
         getContext()->getSettingsRef(),
         getContext()->getServerSettings());
 
-    auto response_buf = BuilderRWBufferFromHTTP(Poco::URI(buildURL(path)))
+    auto response_buf = BuilderRWBufferFromHTTP(Poco::URI(buildURL(path), false))
                             .withConnectionGroup(HTTPConnectionGroupType::DISK)
                             .withSettings(getContext()->getReadSettings())
                             .withTimeouts(timeouts)

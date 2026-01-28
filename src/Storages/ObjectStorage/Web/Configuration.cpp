@@ -91,7 +91,7 @@ StorageObjectStorageQuerySettings StorageWebConfiguration::getQuerySettings(cons
 void StorageWebConfiguration::check(ContextPtr context)
 {
     StorageObjectStorageConfiguration::check(context);
-    context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(raw_url));
+    context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(raw_url, false));
     context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
 }
 
@@ -203,7 +203,7 @@ void StorageWebConfiguration::fromDisk(const String & disk_name, ASTs & args, Co
 
 void StorageWebConfiguration::setNamespaceFromURL()
 {
-    Poco::URI uri(raw_url);
+    Poco::URI uri(raw_url, false);
 
     namespace_prefix = uri.getHost();
     if (uri.getPort())
@@ -215,8 +215,8 @@ void StorageWebConfiguration::setNamespaceFromURL()
         path.path.erase(0, 1);
 
     query_fragment.clear();
-    if (!uri.getQuery().empty())
-        query_fragment = "?" + uri.getQuery();
+    if (!uri.getRawQuery().empty())
+        query_fragment = "?" + uri.getRawQuery();
     if (!uri.getFragment().empty())
         query_fragment += "#" + uri.getFragment();
 }

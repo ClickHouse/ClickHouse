@@ -156,6 +156,13 @@ def test_url_wildcard_with_headers():
     assert result.strip() == "15"
 
 
+def test_url_wildcard_with_raw_query():
+    result = node1.query(
+        "SELECT sum(x) FROM url('http://resolver:8081/data/**/part*.tsv?x={1,2}', 'TSV', 'x UInt64')"
+    )
+    assert result.strip() == "12"
+
+
 def test_url_wildcard_glob_patterns():
     # '?' is reserved in URLs as a query delimiter, so use '*' to cover wildcard matching in URL paths.
     result = node1.query(
