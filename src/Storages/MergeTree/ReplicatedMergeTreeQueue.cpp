@@ -1629,6 +1629,10 @@ bool ReplicatedMergeTreeQueue::shouldApplyWaitBackoff(const LogEntry & entry) co
     if (entry.postpone_reason.contains("to execute merge"))
         return true;
 
+    /// Continue backoff if already in backoff state (postpone_reason was overwritten by backoff message)
+    if (entry.postpone_reason.contains("wait backoff policy"))
+        return true;
+
     return false;
 }
 

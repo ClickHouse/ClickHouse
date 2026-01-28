@@ -42,13 +42,14 @@ SELECT sleepEachRow(3) FROM numbers(1) FORMAT Null;
 --   1ms + 2ms + 4ms + 8ms + 16ms + ... converges quickly
 -- Without backoff, num_postponed could be thousands
 -- With backoff, should be < 50 in 3 seconds
+-- Note: postpone_reason changes to 'wait backoff policy' after first postpone
 SELECT
     if(count() > 0 AND max(num_postponed) < 50, 'OK', 'FAIL') AS status
 FROM system.replication_queue
 WHERE database = currentDatabase()
     AND table LIKE 'ttl_recompress_test%'
     AND type = 'MERGE_PARTS'
-    AND postpone_reason LIKE '%TTL recompression%';
+    AND (postpone_reason LIKE '%TTL recompression%' OR postpone_reason LIKE '%wait backoff policy%');
 
 -- Cleanup
 DROP TABLE IF EXISTS ttl_recompress_test_1 SYNC;
