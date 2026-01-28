@@ -26,7 +26,7 @@ node1 = cluster.add_instance(
         "configs/config.d/cluster.xml",
     ],
     with_zookeeper=True,
-    tmpfs=["/test_ttl_move_jbod1:size=40M", "/test_ttl_move_jbod2:size=40M", "/test_ttl_move_external:size=200M"],
+    tmpfs=["/test_ttl_move_jbod1:size=40M", "/test_ttl_move_jbod2:size=40M", "/test_ttl_move_external:size=500M"],
     macros={"shard": 0, "replica": 1},
     stay_alive=True,
 )
@@ -40,7 +40,7 @@ node2 = cluster.add_instance(
         "configs/config.d/cluster.xml",
     ],
     with_zookeeper=True,
-    tmpfs=["/test_ttl_move_jbod1:size=40M", "/test_ttl_move_jbod2:size=40M", "/test_ttl_move_external:size=200M"],
+    tmpfs=["/test_ttl_move_jbod1:size=40M", "/test_ttl_move_jbod2:size=40M", "/test_ttl_move_external:size=500M"],
     macros={"shard": 0, "replica": 2},
 )
 
@@ -55,7 +55,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def get_used_disks_for_table(node, table_name, partition=None):
+def get_used_disks_for_table(node, table_name, partition):
     if partition is None:
         suffix = ""
     else:
@@ -75,14 +75,29 @@ def get_used_disks_for_table(node, table_name, partition=None):
         .split("\n")
     )
 
-
-def check_used_disks_with_retry(node, table_name, expected_disks, retries=1):
+def get_used_disks_with_retry(node, table_name, retries, partition):
     for _ in range(retries):
-        used_disks = get_used_disks_for_table(node, table_name)
-        if set(used_disks).issubset(expected_disks):
-            return True
-        time.sleep(0.5)
-    return False
+        used_disks = set(get_used_disks_for_table(node, table_name, partition))
+        return used_disks
+        if len(used_disks) > 0:
+            return used_disks
+        time.sleep(1)
+
+    # Most probably a logical error, if we ended up here - better to fail unconditionally
+    assert False, "Failed to get used disks for node={} table{} partition={} in retries={}".format(
+        node, table_name, partition, retries
+    )
+    return None
+
+def assert_used_disks_exactly(node, table_name, expected_disks, retries=20, partition=None):
+    used_disks = get_used_disks_with_retry(node, table_name, retries, partition)
+    assert used_disks == expected_disks
+    return True
+
+def assert_used_disks_subset(node, table_name, expected_disks, retries=20, partition=None):
+    used_disks = get_used_disks_with_retry(node, table_name, retries, partition)
+    assert used_disks.issubset(expected_disks)
+    return True
 
 
 # Use unique table name for flaky checker, that run tests multiple times
@@ -247,8 +262,11 @@ def test_inserts_to_disk_work(started_cluster, name, engine, positive):
                 name, ",".join(["(" + ",".join(x) + ")" for x in data])
             )
         )
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"external" if positive else "jbod1"}
+
+        if positive:
+            assert_used_disks_exactly(node1, name, {"external"})
+        else:
+            assert_used_disks_exactly(node1, name, {"jbod1"})
 
         assert (
             node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
@@ -321,13 +339,13 @@ def test_moves_work_after_storage_policy_change(started_cluster, name, engine):
                 name, ",".join(["(" + ",".join(x) + ")" for x in data])
             )
         )
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod1"}
 
+        assert_used_disks_exactly(node1, name, {"jbod1"})
+
+        # TODO: wasn't sure how to safely eliminate following sleep, need to figure out separately
         wait_parts_mover(node1, name, retry_count=40)
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"external"}
+        assert_used_disks_exactly(node1, name, {"external"})
 
         assert (
             node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
@@ -408,14 +426,16 @@ def test_moves_to_disk_work(started_cluster, name, engine, positive):
                 name, ",".join(["(" + ",".join(x) + ")" for x in data])
             )
         )
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod1"}
+
+        assert_used_disks_exactly(node1, name, {"jbod1"})
 
         wait_expire_1_thread.join()
         time.sleep(wait_expire_2 / 2)
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"external" if positive else "jbod1"}
+        if positive:
+            assert_used_disks_exactly(node1, name, {"external"})
+        else:
+            assert_used_disks_exactly(node1, name, {"jbod1"})
 
         assert (
             node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
@@ -480,13 +500,11 @@ def test_moves_to_volume_work(started_cluster, name, engine):
                 )
             )
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod1", "jbod2"}
+        assert_used_disks_exactly(node1, name, {"jbod1", "jbod2"})
 
         wait_parts_mover(node1, name, retry_count=40)
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"external"}
+        assert_used_disks_exactly(node1, name, {"external"})
 
         assert (
             node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
@@ -566,8 +584,10 @@ def test_inserts_to_volume_work(started_cluster, name, engine, positive):
                 )
             )
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"external" if positive else "jbod1"}
+        if positive:
+            assert_used_disks_exactly(node1, name, {"external"})
+        else:
+            assert_used_disks_exactly(node1, name, {"jbod1"})
 
         assert (
             node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "20"
@@ -619,8 +639,7 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
                 name_temp, ",".join(["(" + x + ")" for x in data])
             )
         )
-        used_disks = get_used_disks_for_table(node1, name_temp)
-        assert set(used_disks) == {"jbod2"}
+        assert_used_disks_exactly(node1, name_temp, {"jbod2"})
 
         node1.query(
             """
@@ -650,15 +669,14 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
                 name, ",".join(["(" + ",".join(x) + ")" for x in data])
             )
         )
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod1"}
+
+        assert_used_disks_exactly(node1, name, {"jbod1"})
 
         node1.query("DROP TABLE {} SYNC".format(name_temp))
 
         wait_parts_mover(node1, name)
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod2"}
+        assert_used_disks_exactly(node1, name, {"jbod2"})
 
         assert (
             node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
@@ -696,12 +714,11 @@ def test_replicated_download_ttl_info(started_cluster):
             )
         )
 
-        assert set(get_used_disks_for_table(node2, name)) == {"external"}
+        assert_used_disks_exactly(node2, name, {"external"})
 
-        time.sleep(1)
-
+        # TODO: double check if that's okay to reverse order of the following two checks
+        assert_used_disks_exactly(node1, name, {"external"})
         assert node1.query("SELECT count() FROM {}".format(name)).splitlines() == ["1"]
-        assert set(get_used_disks_for_table(node1, name)) == {"external"}
 
     finally:
         for node in (node1, node2):
@@ -789,8 +806,7 @@ def test_merges_to_disk_work(started_cluster, name, engine, positive):
                 )
             )
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod1"}
+        assert_used_disks_exactly(node1, name, {"jbod1"})
         assert (
             "2"
             == node1.query(
@@ -806,8 +822,10 @@ def test_merges_to_disk_work(started_cluster, name, engine, positive):
         node1.query("SYSTEM START MERGES {}".format(name))
         node1.query("OPTIMIZE TABLE {}".format(name))
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"external" if positive else "jbod1"}
+        if positive:
+            assert_used_disks_exactly(node1, name, {"external"})
+        else:
+            assert_used_disks_exactly(node1, name, {"jbod1"})
         assert (
             "1"
             == node1.query(
@@ -867,8 +885,7 @@ def test_merges_with_full_disk_work(started_cluster, name, engine):
                 name_temp, ",".join(["(" + x + ")" for x in data])
             )
         )
-        used_disks = get_used_disks_for_table(node1, name_temp)
-        assert set(used_disks) == {"jbod2"}
+        assert_used_disks_exactly(node1, name_temp, {"jbod2"})
 
         node1.query(
             """
@@ -904,8 +921,7 @@ def test_merges_with_full_disk_work(started_cluster, name, engine):
                 )
             )
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod1"}
+        assert_used_disks_exactly(node1, name, {"jbod1"})
         assert (
             "2"
             == node1.query(
@@ -918,10 +934,8 @@ def test_merges_with_full_disk_work(started_cluster, name, engine):
         wait_expire_1_thread.join()
 
         node1.query("OPTIMIZE TABLE {}".format(name))
-        time.sleep(1)
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod1"}  # Merged to the same disk against the rule.
+        assert_used_disks_exactly(node1, name, {"jbod1"})
         assert (
             "1"
             == node1.query(
@@ -1017,8 +1031,7 @@ def test_moves_after_merges_work(started_cluster, name, engine, positive):
 
         node1.query("OPTIMIZE TABLE {}".format(name))
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod1"}
+        assert_used_disks_exactly(node1, name, {"jbod1"})
         assert (
             "1"
             == node1.query(
@@ -1031,8 +1044,10 @@ def test_moves_after_merges_work(started_cluster, name, engine, positive):
         wait_expire_1_thread.join()
         time.sleep(wait_expire_2 / 2)
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"external" if positive else "jbod1"}
+        if positive:
+            assert_used_disks_exactly(node1, name, {"external"})
+        else:
+            assert_used_disks_exactly(node1, name, {"jbod1"})
 
         assert (
             node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "14"
@@ -1146,8 +1161,10 @@ def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive, b
             )
         )
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod1" if positive else "external"}
+        if positive:
+            assert_used_disks_exactly(node1, name, {"jbod1"})
+        else:
+            assert_used_disks_exactly(node1, name, {"external"})
 
         assert (
             node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
@@ -1202,8 +1219,7 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
             )
         )
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod1"}
+        assert_used_disks_exactly(node1, name, {"jbod1"})
 
         node1.query(
             """
@@ -1215,10 +1231,7 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
             )
         )
 
-        time.sleep(3)
-
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod1"}
+        assert_used_disks_exactly(node1, name, {"jbod1"})
 
         node1.query(
             """
@@ -1233,17 +1246,16 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
             """
                 ALTER TABLE {name}
                     MATERIALIZE TTL IN PARTITION 4
+                SETTINGS mutations_sync=1
         """.format(
                 name=name
             )
         )
 
-        time.sleep(3)
-
         used_disks_sets = []
         for i in range(len(data)):
             used_disks_sets.append(
-                set(get_used_disks_for_table(node1, name, partition=i))
+                get_used_disks_with_retry(node1, name, retries=20, partition=i)
             )
 
         assert used_disks_sets == [
@@ -1343,26 +1355,32 @@ def test_alter_multiple_ttls(started_cluster, name, engine, positive):
                 )
             )
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod2"} if positive else {"jbod1", "jbod2"}
+        if positive:
+            assert_used_disks_exactly(node1, name, {"jbod2"})
+        else:
+            assert_used_disks_exactly(node1, name, {"jbod1", "jbod2"})
 
         assert node1.query(
             "SELECT count() FROM {name}".format(name=name)
         ).splitlines() == ["6"]
 
+        # TODO: HOW COULD IT WORK WITHOUT WAITING HERE???!!!
+        time.sleep(15)
+
         if positive:
             expected_disks = {"external"}
+            assert_used_disks_exactly(node1, name, {"external"})
         else:
             expected_disks = {"jbod1", "jbod2"}
+            assert_used_disks_exactly(node1, name, {"jbod1", "jbod2"})
 
-        check_used_disks_with_retry(node1, name, expected_disks, 50)
+        assert_used_disks_subset(node1, name, expected_disks, retries=50)
 
         assert node1.query(
             "SELECT count() FROM {name}".format(name=name)
         ).splitlines() == ["6"]
 
         time.sleep(5)
-
         for i in range(50):
             rows_count = int(
                 node1.query("SELECT count() FROM {name}".format(name=name)).strip()
@@ -1601,8 +1619,7 @@ def test_alter_with_merge_work(started_cluster, name, engine, positive):
                 )
             )
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod1", "jbod2"}
+        assert_used_disks_exactly(node1, name, {"jbod1", "jbod2"})
 
         node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == [
             "6"
@@ -1635,18 +1652,17 @@ def test_alter_with_merge_work(started_cluster, name, engine, positive):
         optimize_table(20)
 
         if positive:
-            assert check_used_disks_with_retry(
-                node1, name, set(["external"])
+            assert assert_used_disks_subset(node1, name, {"external"}
             ), "Parts: " + node1.query(
                 f"SELECT disk_name, name FROM system.parts WHERE table = '{name}' AND active = 1"
             )
         else:
-            assert check_used_disks_with_retry(
-                node1, name, set(["jbod1", "jbod2"])
+            assert assert_used_disks_subset(node1, name, {"jbod1", "jbod2"}
             ), "Parts: " + node1.query(
                 f"SELECT disk_name, name FROM system.parts WHERE table = '{name}' AND active = 1"
             )
 
+        # TODO: wasn't sure how to eliminate this 'sleep', need to figure out separately
         time.sleep(25)
 
         optimize_table(20)
@@ -1721,17 +1737,14 @@ def test_disabled_ttl_move_on_insert(started_cluster, name, dest_type, engine):
             )
         )
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"jbod1"}
+        assert_used_disks_exactly(node1, name, {"jbod1"})
         assert (
             node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
         )
 
         node1.query("SYSTEM START MOVES {}".format(name))
-        time.sleep(3)
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"external"}
+        assert_used_disks_exactly(node1, name, {"external"})
         assert (
             node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
         )
@@ -1805,12 +1818,8 @@ def test_ttl_move_if_exists(started_cluster, name, dest_type):
         node2.query("SYSTEM SYNC REPLICA {}".format(name))
 
         time.sleep(5)
-
-        used_disks1 = get_used_disks_for_table(node1, name)
-        assert set(used_disks1) == {"jbod1"}
-
-        used_disks2 = get_used_disks_for_table(node2, name)
-        assert set(used_disks2) == {"external"}
+        assert_used_disks_exactly(node1, name, {"jbod1"})
+        assert_used_disks_exactly(node2, name, {"external"})
 
         assert (
             node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
@@ -1895,7 +1904,7 @@ class TestCancelBackgroundMoving:
         )
 
         # Ensure that part was not moved
-        assert set(get_used_disks_for_table(node1, name)) == {"jbod1"}
+        assert_used_disks_exactly(node1, name, {"jbod1"})
 
     def test_cancel_background_moving_on_table_detach(self, prepare_table):
         name = prepare_table
