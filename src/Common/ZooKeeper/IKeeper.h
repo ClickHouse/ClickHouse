@@ -171,6 +171,8 @@ struct WatchResponse : virtual Response
 using WatchCallback = std::function<void(const WatchResponse &)>;
 using WatchCallbackPtr = std::shared_ptr<WatchCallback>;
 using EventPtr = std::shared_ptr<Poco::Event>;
+using WatchCallbackWeakPtr = std::weak_ptr<WatchCallback>;
+using EventWeakPtr = std::weak_ptr<Poco::Event>;
 struct TestKeeperRequest;
 struct WatchCallbackPtrOrEventPtr
 {
@@ -180,22 +182,44 @@ private:
     friend class TestKeeper;
     friend struct TestKeeperRequest;
 
-    WatchCallbackPtr callback;
-    EventPtr event;
+    WatchCallbackWeakPtr callback;
+    EventWeakPtr event;
+    size_t hash = 0;
 
     void operator()(WatchResponse response) const
     {
-        if (callback)
-            (*callback)(response);
-        else if (event)
-            event->set();
+        if (auto callback_locked = callback.lock())
+            (*callback_locked)(response);
+        else if (auto event_locked = event.lock())
+            event_locked->set();
     }
+
+    size_t calculateHash() const
+    {
+        if (auto callback_locked = callback.lock())
+        {
+            std::hash<Coordination::WatchCallbackPtr> hasher;
+            return hasher(callback_locked);
+        }
+        if (auto event_locked = event.lock())
+        {
+            std::hash<Coordination::EventPtr> hasher;
+            return hasher(event_locked);
+        }
+        return 0;
+     }
 
 public:
     WatchCallbackPtrOrEventPtr() = default;
 
-    WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_) : callback(std::move(callback_)) {} // NOLINT(google-explicit-constructor)
-    WatchCallbackPtrOrEventPtr(EventPtr event_) : event(std::move(event_)) {} // NOLINT(google-explicit-constructor)
+    WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_) // NOLINT(google-explicit-constructor)
+        : callback(callback_)
+        , hash(calculateHash())
+    {}
+    WatchCallbackPtrOrEventPtr(EventPtr event_) // NOLINT(google-explicit-constructor)
+        : event(event_)
+        , hash(calculateHash())
+    {}
 
     WatchCallbackPtrOrEventPtr(WatchCallbackPtrOrEventPtr &&) = default;
     WatchCallbackPtrOrEventPtr(const WatchCallbackPtrOrEventPtr &) = default;
@@ -204,28 +228,15 @@ public:
 
     explicit operator bool() const
     {
-        return static_cast<bool>(event) || static_cast<bool>(callback);
+        return static_cast<bool>(event.lock()) || static_cast<bool>(callback.lock());
     }
 
     bool operator==(const WatchCallbackPtrOrEventPtr & rhs) const
     {
-        return std::tie(callback, event) == std::tie(rhs.callback, rhs.event);
+        return std::make_tuple(callback.lock(), event.lock()) == std::make_tuple(rhs.callback.lock(), rhs.event.lock());
     }
 
-    size_t hash() const
-    {
-        if (callback)
-        {
-            std::hash<Coordination::WatchCallbackPtr> hasher;
-            return hasher(callback);
-        }
-        if (event)
-        {
-            std::hash<Coordination::EventPtr> hasher;
-            return hasher(event);
-        }
-        return 0;
-    }
+    size_t getHash() const { return hash; }
 };
 
 
@@ -845,6 +856,6 @@ template <> struct std::hash<Coordination::WatchCallbackPtrOrEventPtr>
 {
     size_t operator()(const Coordination::WatchCallbackPtrOrEventPtr & self) const
     {
-        return self.hash();
+        return self.getHash();
     }
 };
