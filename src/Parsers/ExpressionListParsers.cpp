@@ -1955,7 +1955,7 @@ protected:
         auto func = makeASTFunction("tuple", std::move(elements));
         if (!names.empty())
         {
-            func->parameters = std::make_shared<ASTExpressionList>();
+            func->parameters = make_intrusive<ASTExpressionList>();
             func->parameters->children = std::move(names);
             func->children.push_back(func->parameters);
         }
