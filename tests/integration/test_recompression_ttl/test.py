@@ -77,7 +77,7 @@ def test_recompression_simple(started_cluster):
 
     assert (
         node1.query(
-            "SELECT default_compression_codec FROM system.parts where name = 'all_1_1_0'"
+            f"SELECT default_compression_codec FROM system.parts where name = 'all_1_1_0' and table = '{name}'"
         )
         == "LZ4\n"
     )
