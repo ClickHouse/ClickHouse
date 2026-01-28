@@ -1770,7 +1770,7 @@ namespace ErrorCodes
     DECLARE(Bool, enable_block_offset_column, false, R"(
     Persists virtual column `_block_number` on merges.
     )", 0) \
-    DECLARE(Bool, add_minmax_index_for_numeric_columns, false, R"(
+    DECLARE(Bool, add_minmax_index_for_numeric_columns, true, R"(
     When enabled, min-max (skipping) indices are added for all numeric columns
     of the table.
     )", 0) \
