@@ -22,8 +22,8 @@ def test_enabling_access_management():
     instance.query("DROP USER IF EXISTS Alex")
     instance.query("CREATE USER Alex", user="default")
 
-    # 100G should be probably enough
-    instance.query("system allocate untracked memory 100000000000", user="default")
+    # 20G should be probably enough
+    instance.query("system allocate untracked memory 20000000000", user="default")
     instance.query("select 1", user="default")
     assert "(total) memory limit exceeded" in instance.query_and_get_error("select 1", user="readonly")
 
