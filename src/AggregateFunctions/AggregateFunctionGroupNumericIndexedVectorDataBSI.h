@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
@@ -1197,6 +1198,16 @@ public:
         pointwiseRawBinaryOperate(lhs, rhs, multiply_op_code, res);
     }
 
+    /** Performs pointwise multiplication of vector and bitmap.
+     * bitmap can treat as a vector with all value of keys equal to 1.
+     * The result is stored in the res.
+     */
+    static void
+    pointwiseMultiply(const BSINumericIndexedVector & lhs, const AggregateFunctionGroupBitmapData<IT> & rhs, BSINumericIndexedVector & res)
+    {
+        lhs.andBitmap(rhs.roaring_bitmap_with_small_set, res);
+    }
+
     /** Performs pointwise division of two original vectors.
      * The result is stored in the res.
      */
@@ -1230,29 +1241,38 @@ public:
         pointwiseRawBinaryOperate(lhs, rhs, divide_op_code, res);
     }
 
+    static std::shared_ptr<Roaring>
+    pointwiseEqualWithinScope(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, Roaring & scope)
+    {
+        BSINumericIndexedVector lhs_ref;
+        lhs_ref.shallowCopyFrom(lhs);
+        BSINumericIndexedVector rhs_ref;
+        rhs_ref.shallowCopyFrom(rhs);
+        UInt32 total_bit_num = promoteBitPrecisionInplace(lhs_ref, rhs_ref);
+
+        auto equal = std::make_shared<Roaring>();
+        equal->rb_or(scope);
+        for (UInt32 i = 0; i < total_bit_num && equal->size() > 0; ++i)
+        {
+            Roaring x_xor_y;
+            x_xor_y.rb_or(*lhs_ref.getDataArrayAt(i));
+            x_xor_y.rb_xor(*rhs_ref.getDataArrayAt(i));
+            x_xor_y.rb_and(*equal);
+            equal->rb_andnot(x_xor_y);
+        }
+        return equal;
+    }
+
     /** Performs pointwise equality comparison between two original vectors.
      * The returned Roaring Bitmap contains indexes that satisfy:
      *  original_vector(lhs)[index] == original_vector(rhs)[index].
      */
     static std::shared_ptr<Roaring> pointwiseEqual(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs)
     {
-        auto res_bm = lhs.getAllIndex();
-        res_bm->rb_or(*rhs.zero_indexes);
-
-        BSINumericIndexedVector lhs_ref;
-        lhs_ref.shallowCopyFrom(lhs);
-        BSINumericIndexedVector rhs_ref;
-        rhs_ref.shallowCopyFrom(rhs);
-        UInt32 total_bit_num = promoteBitPrecisionInplace(lhs_ref, rhs_ref);
-        for (size_t i = 0; i < total_bit_num; ++i)
-        {
-            Roaring x_xor_y;
-            x_xor_y.rb_or(*lhs_ref.getDataArrayAt(i));
-            x_xor_y.rb_xor(*rhs_ref.getDataArrayAt(i));
-            res_bm->rb_andnot(x_xor_y);
-        }
-
-        return res_bm;
+        Roaring scope;
+        scope.rb_or(*lhs.getAllIndex());
+        scope.rb_or(*rhs.getAllIndex());
+        return pointwiseEqualWithinScope(lhs, rhs, scope);
     }
 
     /** Performs pointwise equality comparison between original vector and a scalar value.
@@ -1364,42 +1384,150 @@ public:
         res_bm = lhs_all_indexes;
     }
 
-    static std::shared_ptr<Roaring> pointwiseLessUnsigned(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs)
+    /// lhs < rhs with unsigned.
+    static std::shared_ptr<Roaring>
+    pointwiseLessUnsignedWithinScope(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, const Roaring & scope)
     {
+        if (scope.size() == 0)
+            return std::make_shared<Roaring>();
+
         BSINumericIndexedVector lhs_ref;
         lhs_ref.shallowCopyFrom(lhs);
         BSINumericIndexedVector rhs_ref;
         rhs_ref.shallowCopyFrom(rhs);
-        UInt32 total_bit_num = promoteBitPrecisionInplace(lhs_ref, rhs_ref);
+        const UInt32 total_bit_num = promoteBitPrecisionInplace(lhs_ref, rhs_ref);
+        if (total_bit_num == 0)
+            return std::make_shared<Roaring>();
 
-        auto bin = std::make_shared<Roaring>();
-        for (size_t i = 0; i < total_bit_num; ++i)
+        Roaring equal;
+        equal.rb_or(*lhs_ref.getAllIndex());
+        equal.rb_or(*rhs_ref.getAllIndex());
+        equal.rb_and(scope);
+        if (equal.size() == 0)
+            return std::make_shared<Roaring>();
+
+        auto less_than = std::make_shared<Roaring>();
+
+        const Int64 msb = static_cast<Int64>(lhs_ref.getTotalBitNum()) - 1;
+
+        for (Int64 i = msb; i >= 0 && equal.size() > 0; --i)
         {
-            const auto & minuend = lhs_ref.getDataArrayAt(i);
-            const auto & subtrahend = rhs_ref.getDataArrayAt(i);
+            const Roaring & lhs_ref_i = *lhs_ref.getDataArrayAt(i);
+            const Roaring & rhs_ref_i = *rhs_ref.getDataArrayAt(i);
 
-            Roaring subtrahend_or_bin;
-            subtrahend_or_bin.rb_or(*subtrahend);
-            subtrahend_or_bin.rb_or(*bin);
+            Roaring left;
+            left.rb_or(equal);
+            left.rb_and(lhs_ref_i);
 
-            subtrahend_or_bin.rb_andnot(*minuend);
+            Roaring not_left;
+            not_left.rb_or(equal);
+            not_left.rb_andnot(lhs_ref_i);
 
-            bin->rb_and(*subtrahend);
-            bin->rb_or(subtrahend_or_bin);
+            Roaring right;
+            right.rb_or(equal);
+            right.rb_and(rhs_ref_i);
+
+            Roaring not_right;
+            not_right.rb_or(equal);
+            not_right.rb_andnot(rhs_ref_i);
+
+            Roaring zero_one;
+            zero_one.rb_or(not_left);
+            zero_one.rb_and(right);
+
+            less_than->rb_or(zero_one);
+
+            Roaring both1;
+            both1.rb_or(left);
+            both1.rb_and(right);
+
+            Roaring both0;
+            both0.rb_or(not_left);
+            both0.rb_and(not_right);
+
+            both1.rb_or(both0);
+
+            equal.rb_and(both1);
         }
-        return bin;
+        return less_than;
     }
 
-    static void filterWithMask(const BSINumericIndexedVector & lhs, const std::shared_ptr<Roaring> & mask, BSINumericIndexedVector & res)
+    static std::shared_ptr<Roaring> pointwiseLessUnsigned(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs)
     {
-        res.initialize(lhs.integer_bit_num, lhs.fraction_bit_num);
-        for (size_t i = 0; i < lhs.getTotalBitNum(); ++i)
-        {
-            res.getDataArrayAt(i)->rb_or(*lhs.getDataArrayAt(i));
-            res.getDataArrayAt(i)->rb_and(*mask);
-        }
-        res.zero_indexes->merge(*lhs.zero_indexes);
-        res.zero_indexes->rb_and(*mask);
+        Roaring scope;
+        scope.rb_or(*lhs.getAllIndex());
+        scope.rb_or(*rhs.getAllIndex());
+        return pointwiseLessUnsignedWithinScope(lhs, rhs, scope);
+    }
+
+    /// A < B (signed two's complement)
+    static std::shared_ptr<Roaring>
+    pointwiseLessSignedWithinScope(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, Roaring & scope)
+    {
+        if (scope.size() == 0)
+            return std::make_shared<Roaring>();
+
+        BSINumericIndexedVector lhs_ref;
+        lhs_ref.shallowCopyFrom(lhs);
+        BSINumericIndexedVector rhs_ref;
+        rhs_ref.shallowCopyFrom(rhs);
+        const UInt32 total_bit_num = promoteBitPrecisionInplace(lhs_ref, rhs_ref);
+        if (total_bit_num == 0)
+            return std::make_shared<Roaring>();
+
+        Roaring base_scope;
+        base_scope.rb_or(*lhs_ref.getAllIndex());
+        base_scope.rb_or(*rhs_ref.getAllIndex());
+        base_scope.rb_and(scope);
+        if (base_scope.size() == 0)
+            return std::make_shared<Roaring>();
+
+        const Int64 sign_bit = static_cast<Int64>(total_bit_num) - 1;
+
+        Roaring lhs_sign;
+        lhs_sign.rb_or(base_scope);
+        lhs_sign.rb_and(*lhs_ref.getDataArrayAt(sign_bit));
+
+        Roaring rhs_sign;
+        rhs_sign.rb_or(base_scope);
+        rhs_sign.rb_and(*rhs_ref.getDataArrayAt(sign_bit));
+
+        Roaring lhs_pos;
+        lhs_pos.rb_or(base_scope);
+        lhs_pos.rb_andnot(*lhs_ref.getDataArrayAt(sign_bit));
+
+        Roaring rhs_pos;
+        rhs_pos.rb_or(base_scope);
+        rhs_pos.rb_andnot(*rhs_ref.getDataArrayAt(sign_bit));
+
+        Roaring neg_pos;
+        neg_pos.rb_or(lhs_sign);
+        neg_pos.rb_and(rhs_pos);
+
+        Roaring pos_pos;
+        pos_pos.rb_or(lhs_pos);
+        pos_pos.rb_and(rhs_pos);
+
+        Roaring neg_neg;
+        neg_neg.rb_or(lhs_sign);
+        neg_neg.rb_and(rhs_sign);
+
+        auto lt_pos_pos = pointwiseLessUnsignedWithinScope(lhs_ref, rhs_ref, pos_pos);
+        auto lt_neg_neg = pointwiseLessUnsignedWithinScope(lhs_ref, rhs_ref, neg_neg);
+
+        auto result = std::make_shared<Roaring>();
+        result->rb_or(neg_pos);
+        result->rb_or(*lt_pos_pos);
+        result->rb_or(*lt_neg_neg);
+
+        return result;
+    }
+    static std::shared_ptr<Roaring> pointwiseLessSigned(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs)
+    {
+        Roaring scope;
+        scope.rb_or(*lhs.getAllIndex());
+        scope.rb_or(*rhs.getAllIndex());
+        return pointwiseLessSignedWithinScope(lhs, rhs, scope);
     }
 
     static std::shared_ptr<Roaring> numericIndexedVectorAnd(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs)
@@ -1422,61 +1550,7 @@ public:
         }
         else if (lhs.isValueTypeSigned() && rhs.isValueTypeSigned())
         {
-            std::shared_ptr<Roaring> lhs_negative_indexes = std::make_shared<Roaring>();
-            if (lhs.getTotalBitNum() > 0)
-            {
-                lhs_negative_indexes->rb_or(*lhs.getDataArrayAt(lhs.getTotalBitNum() - 1));
-            }
-            auto lhs_positive_indexes = std::make_shared<Roaring>();
-            lhs_positive_indexes->rb_or(*lhs.getAllNonZeroIndex());
-            lhs_positive_indexes->rb_andnot(*lhs_negative_indexes);
-            BSINumericIndexedVector lhs_positive_vector;
-            filterWithMask(lhs, lhs_positive_indexes, lhs_positive_vector);
-            BSINumericIndexedVector lhs_negative_vector;
-            filterWithMask(lhs, lhs_negative_indexes, lhs_negative_vector);
-
-            std::shared_ptr<Roaring> rhs_negative_indexes = std::make_shared<Roaring>();
-            if (rhs.getTotalBitNum() > 0)
-            {
-                rhs_negative_indexes->rb_or(*rhs.getDataArrayAt(rhs.getTotalBitNum() - 1));
-            }
-            auto rhs_positive_indexes = std::make_shared<Roaring>();
-            rhs_positive_indexes->rb_or(*rhs.getAllNonZeroIndex());
-            rhs_positive_indexes->rb_andnot(*rhs_negative_indexes);
-            BSINumericIndexedVector rhs_positive_vector;
-            filterWithMask(rhs, rhs_positive_indexes, rhs_positive_vector);
-            BSINumericIndexedVector rhs_negative_vector;
-            filterWithMask(rhs, rhs_negative_indexes, rhs_negative_vector);
-
-            /// (lhs_zero_indexes | lhs_negative_indexes) & rhs_positive_indexes
-            auto bm1 = std::make_shared<Roaring>();
-            bm1->merge(*lhs.zero_indexes);
-            bm1->merge(*lhs_negative_indexes);
-            bm1->rb_and(*rhs_positive_indexes);
-            /// lhs_negative_indexes & rhs_zero_indexes
-            auto bm2 = std::make_shared<Roaring>();
-            bm2->merge(*lhs_negative_indexes);
-            bm2->rb_and(*rhs.zero_indexes);
-            /// lhs_positive_vector less than rhs_positive_vector;
-            auto bm3 = pointwiseLessUnsigned(lhs_positive_vector, rhs_positive_vector);
-            /// lhs_negative_vector less than rhs_negative_vector;
-
-
-            auto and_negative_indexes = lhs_negative_vector.getAllNonZeroIndex();
-            and_negative_indexes->rb_and(*rhs_negative_vector.getAllNonZeroIndex());
-            BSINumericIndexedVector filter_lhs_negative_vector;
-            filterWithMask(lhs_negative_vector, and_negative_indexes, filter_lhs_negative_vector);
-            BSINumericIndexedVector filter_rhs_negative_vector;
-            filterWithMask(rhs_negative_vector, and_negative_indexes, filter_rhs_negative_vector);
-            auto bm4 = pointwiseLessUnsigned(filter_lhs_negative_vector, filter_rhs_negative_vector);
-            auto res = std::make_shared<Roaring>();
-            res->rb_or(*bm1);
-            res->rb_or(*bm2);
-            res->rb_or(*bm3);
-            res->rb_or(*bm4);
-            PaddedPODArray<IndexType> res_array;
-            res->rb_to_array(res_array);
-            return res;
+            return pointwiseLessSigned(lhs, rhs);
         }
         else
         {
@@ -1600,6 +1674,122 @@ public:
         res_bm->rb_or(*eq_bm);
     }
 
+    /// pointwise select helper: choose L or R per-key using (lhs < rhs) mask on `both`.
+    /// pick_lhs_when_lt = false  => max semantics (equal -> lhs).
+    /// pick_lhs_when_lt = true   => min semantics (equal -> lhs).
+    static void pointwiseSelectWithLTMask(
+        const BSINumericIndexedVector & lhs,
+        const BSINumericIndexedVector & rhs,
+        const bool pick_lhs_when_lt,
+        BSINumericIndexedVector & res)
+    {
+        if (lhs.isValueTypeSigned() != rhs.isValueTypeSigned())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "lhs and rhs isValueTypeSigned must be same");
+
+        BSINumericIndexedVector lhs_ref;
+        lhs_ref.shallowCopyFrom(lhs);
+
+        BSINumericIndexedVector rhs_ref;
+        rhs_ref.shallowCopyFrom(rhs);
+
+        const UInt32 total_bit_num = promoteBitPrecisionInplace(lhs_ref, rhs_ref);
+
+        if (total_bit_num == 0)
+        {
+            res.initialize(0, 0);
+            return;
+        }
+
+        res.initialize(lhs_ref.integer_bit_num, lhs_ref.fraction_bit_num);
+
+        Roaring present_lhs;
+        present_lhs.rb_or(*lhs_ref.getAllIndex());
+        Roaring present_rhs;
+        present_rhs.rb_or(*rhs_ref.getAllIndex());
+
+        Roaring both;
+        both.rb_or(present_lhs);
+        both.rb_and(present_rhs);
+
+        Roaring only_lhs;
+        only_lhs.rb_or(present_lhs);
+        only_lhs.rb_andnot(present_rhs);
+
+        Roaring only_rhs;
+        only_rhs.rb_or(present_rhs);
+        only_rhs.rb_andnot(present_lhs);
+
+        Roaring present_union;
+        present_union.rb_or(present_lhs);
+        present_union.rb_or(present_rhs);
+
+        Roaring choose_lhs;
+        Roaring choose_rhs;
+
+        if (both.size() > 0)
+        {
+            std::shared_ptr<Roaring> lt_mask;
+            if (!lhs_ref.isValueTypeSigned())
+                lt_mask = pointwiseLessUnsignedWithinScope(lhs_ref, rhs_ref, both);
+            else
+                lt_mask = pointwiseLessSignedWithinScope(lhs_ref, rhs_ref, both);
+
+            choose_lhs.rb_or(both);
+            if (pick_lhs_when_lt)
+                choose_lhs.rb_and(*lt_mask);
+            else
+                choose_lhs.rb_andnot(*lt_mask);
+
+            choose_rhs.rb_or(both);
+            if (pick_lhs_when_lt)
+                choose_rhs.rb_andnot(*lt_mask);
+            else
+                choose_rhs.rb_and(*lt_mask);
+        }
+
+        choose_lhs.rb_or(only_lhs);
+        choose_rhs.rb_or(only_rhs);
+
+        Roaring nonzero;
+
+        for (UInt32 i = 0; i < total_bit_num; ++i)
+        {
+            const Roaring & lhs_ref_i = *lhs_ref.getDataArrayAt(i);
+            const Roaring & rhs_ref_i = *rhs_ref.getDataArrayAt(i);
+
+            Roaring left_part;
+            left_part.rb_or(choose_lhs);
+            left_part.rb_and(lhs_ref_i);
+
+            Roaring right_part;
+            right_part.rb_or(choose_rhs);
+            right_part.rb_and(rhs_ref_i);
+
+            auto & res_i = res.getDataArrayAt(i);
+            res_i->rb_or(left_part);
+            res_i->rb_or(right_part);
+
+            nonzero.rb_or(*res_i);
+        }
+
+        res.zero_indexes->rb_or(present_union);
+        res.zero_indexes->rb_andnot(nonzero);
+    }
+
+    /// pointwise max of two vectors.
+    /// If key only in lhs, use lhs; if key only in rhs, use rhs; if key in both, use max(lhs, rhs)
+    static void pointwiseMax(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
+    {
+        pointwiseSelectWithLTMask(lhs, rhs, /*pick_lhs_when_lt=*/false, res);
+    }
+
+    /// pointwise min of two vectors.
+    /// If key only in lhs, use lhs; if key only in rhs, use rhs; if key in both, use min(lhs, rhs)
+    static void pointwiseMin(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
+    {
+        pointwiseSelectWithLTMask(lhs, rhs, /*pick_lhs_when_lt=*/true, res);
+    }
+
     /// original_vector(this)[index] += value.
     void addValue(IndexType index, ValueType value)
     {
@@ -1701,6 +1891,180 @@ public:
             }
         }
         return static_cast<ValueType>(scaled_value) / static_cast<ValueType>(1LL << fraction_bit_num);
+    }
+
+    /**
+     * Greedily accumulate the maximum (or minimum) bit pattern that exists in `candidates`,
+     * scanning from the most significant bit (MSB) `start_bit` down to the least significant bit 0.
+     *
+     * This routine never "expands" values; it only refines the candidate index set by
+     * intersecting / subtracting per-bit Roaring bitmaps. It returns the integer bit pattern
+     * (as UInt64) that corresponds to the extremal value under the given preference:
+     *
+     *   - prefer_one = true  : at each bit, prefer choosing 1 if it keeps `candidates` non-empty
+     *                          (used for unsigned max, or signed non-negative max, etc.)
+     *   - prefer_one = false : at each bit, prefer choosing 0 if it keeps `candidates` non-empty
+     *                          (used for unsigned min, or signed negative "closest to zero" max, etc.)
+     */
+    UInt64 greedyAccumulateBits(Roaring & candidates, Int64 start_bit, bool prefer_one) const
+    {
+        if (candidates.size() == 0)
+            return 0;
+
+        UInt64 acc = 0;
+        Roaring for_clear;
+        for (Int64 i = start_bit; i >= 0; --i)
+        {
+            if (prefer_one)
+            {
+                Roaring d;
+                d.rb_or(candidates);
+                d.rb_and(*getDataArrayAt(i));
+                if (d.size() > 0)
+                {
+                    acc |= (1ULL << i);
+                    candidates.rb_and(for_clear);
+                    candidates.rb_or(d);
+                }
+            }
+            else
+            {
+                Roaring d0;
+                d0.rb_or(candidates);
+                d0.rb_andnot(*getDataArrayAt(i));
+                if (d0.size() > 0)
+                {
+                    candidates.rb_and(for_clear);
+                    candidates.rb_or(d0);
+                }
+                else if (candidates.size() > 0)
+                {
+                    acc |= (1ULL << i);
+                }
+            }
+        }
+        return acc;
+    }
+    Int64 signExtendFromTotalBits(UInt64 x) const
+    {
+        const UInt32 tb = getTotalBitNum();
+        if (tb == 0)
+            return 0;
+        if (tb >= 64)
+            return static_cast<Int64>(x);
+        const UInt64 sign_mask = 1ULL << (tb - 1);
+        if (x & sign_mask)
+        {
+            const UInt64 extend_mask = (~0ULL) << tb;
+            x |= extend_mask;
+        }
+        return static_cast<Int64>(x);
+    }
+
+    ValueType materializeValueSigned(UInt64 scaled_bits) const
+    {
+        const Int64 se = signExtendFromTotalBits(scaled_bits);
+        if constexpr (std::is_floating_point_v<ValueType>)
+        {
+            return std::ldexp(static_cast<ValueType>(se), -static_cast<int>(fraction_bit_num));
+        }
+        else
+        {
+            return static_cast<ValueType>(se);
+        }
+    }
+    ValueType materializeValueUnsigned(UInt64 scaled_bits) const
+    {
+        if constexpr (std::is_floating_point_v<ValueType>)
+        {
+            return std::ldexp(static_cast<ValueType>(scaled_bits), -static_cast<int>(fraction_bit_num));
+        }
+        else
+        {
+            return static_cast<ValueType>(scaled_bits);
+        }
+    }
+
+    /// Max value of origin_vector(this)
+    ValueType getMaxValue() const
+    {
+        const UInt32 total_bit_num = getTotalBitNum();
+        if (total_bit_num == 0)
+            return static_cast<ValueType>(0);
+
+        auto all_idx_ptr = getAllIndex();
+        if (all_idx_ptr->size() == 0)
+            return static_cast<ValueType>(0);
+
+        if (!isValueTypeSigned())
+        {
+            Roaring cand;
+            cand.rb_or(*all_idx_ptr);
+            const UInt64 scaled = greedyAccumulateBits(cand, static_cast<Int64>(total_bit_num) - 1, /*prefer_one=*/true);
+            return materializeValueUnsigned(scaled);
+        }
+        else
+        {
+            const Int64 sign_bit = static_cast<Int64>(total_bit_num) - 1;
+            Roaring nonneg;
+            nonneg.rb_or(*all_idx_ptr);
+            nonneg.rb_andnot(*getDataArrayAt(sign_bit));
+            if (nonneg.size() > 0)
+            {
+                const UInt64 rest = greedyAccumulateBits(nonneg, sign_bit - 1, /*prefer_one=*/true);
+                return materializeValueSigned(rest);
+            }
+            else
+            {
+                Roaring neg;
+                neg.rb_or(*getDataArrayAt(sign_bit));
+                UInt64 scaled = (1ULL << sign_bit); // 置符号位
+                scaled |= greedyAccumulateBits(neg, sign_bit - 1, /*prefer_one=*/false);
+                return materializeValueSigned(scaled);
+            }
+        }
+    }
+
+    /// Min value of origin_vector(this)
+    ValueType getMinValue() const
+    {
+        const UInt32 total_bit_num = getTotalBitNum();
+        if (total_bit_num == 0)
+            return static_cast<ValueType>(0);
+
+        auto all_idx_ptr = getAllIndex();
+        if (all_idx_ptr->size() == 0)
+            return static_cast<ValueType>(0);
+
+        if (!isValueTypeSigned())
+        {
+            Roaring cand;
+            cand.rb_or(*all_idx_ptr);
+            const UInt64 scaled = greedyAccumulateBits(cand, static_cast<Int64>(total_bit_num) - 1, /*prefer_one=*/false);
+            return materializeValueUnsigned(scaled);
+        }
+        else
+        {
+            const Int64 sign_bit = static_cast<Int64>(total_bit_num) - 1;
+
+            Roaring neg;
+            neg.rb_or(*getDataArrayAt(sign_bit));
+            if (neg.size() > 0)
+            {
+                /// Exists negative numbers.
+                UInt64 scaled = (1ULL << sign_bit);
+                scaled |= greedyAccumulateBits(neg, sign_bit - 1, /*prefer_one=*/false);
+                return materializeValueSigned(scaled);
+            }
+            else
+            {
+                /// All non-negative numbers.
+                Roaring nonneg;
+                nonneg.rb_or(*all_idx_ptr);
+                const UInt64 scaled = greedyAccumulateBits(nonneg, sign_bit - 1, /*prefer_one=*/false);
+                return materializeValueSigned(scaled);
+            }
+        }
     }
 
     /// sum(origin_vector(this))
