@@ -211,10 +211,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         }
     }
 
-    task_context = Context::createCopy(storage.getContext());
+    task_context = Context::createCopy(storage.getContext()->getBackgroundContext());
     task_context->makeQueryContextForMutate(*storage.getSettings());
     task_context->setCurrentQueryId(getQueryId());
-    task_context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MUTATION);
 
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),

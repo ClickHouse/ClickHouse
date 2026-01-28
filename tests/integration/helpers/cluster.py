@@ -2030,7 +2030,7 @@ class ClickHouseCluster:
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/var/lib/clickhouse/server_%h_%p_%m.profraw"
+            "/debug/it-%4m.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd
@@ -4170,7 +4170,7 @@ services:
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
             - {HELPERS_DIR}/../integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
-            - {CLICKHOUSE_ROOT_DIR}:/debug:ro
+            - {CLICKHOUSE_ROOT_DIR}:/debug:rw
             {metrika_xml}
             {binary_volume}
             {external_dirs_volumes}
@@ -4471,6 +4471,12 @@ class ClickHouseInstance:
             "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
         )
         return "NDEBUG" not in build_opts
+    
+    def is_built_with_llvm_coverage(self):
+        with_coverage = self.query(
+            "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'"
+        )
+        return "ON" in with_coverage.upper()
 
     def is_built_with_thread_sanitizer(self):
         return self.is_built_with_sanitizer("thread")
@@ -4812,7 +4818,7 @@ class ClickHouseInstance:
                 return False
 
             self.exec_in_container(
-                ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")],
+                ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "-15")],
                 user="root",
             )
 

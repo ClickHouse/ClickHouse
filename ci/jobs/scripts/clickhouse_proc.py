@@ -419,6 +419,9 @@ profiles:
             Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
         )
 
+        # set profile file for the server
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-server-%m.profraw"
+
         env = os.environ.copy()
         env["TSAN_OPTIONS"] = " ".join(
             filter(
@@ -431,7 +434,6 @@ profiles:
         )
         tsan_options = env["TSAN_OPTIONS"]
         print(f"TSAN_OPTIONS = {tsan_options}")
-
         proc = subprocess.Popen(
             command,
             stderr=subprocess.STDOUT,

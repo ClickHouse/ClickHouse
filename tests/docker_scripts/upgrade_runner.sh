@@ -47,11 +47,11 @@ echo $previous_release_tag | download_release_packages && echo -e "Download scri
 if ! [ "$(ls -A previous_release_repository/tests/queries)" ]
 then
     echo -e 'failure\tFailed to clone previous release tests' > /test_output/check_status.tsv
-    exit
+    exit 1
 elif ! [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
 then
     echo -e 'failure\tFailed to download previous release packages' > /test_output/check_status.tsv
-    exit
+    exit 1
 fi
 
 echo -e "Successfully cloned previous release tests$OK" >> /test_output/test_results.tsv
@@ -361,26 +361,5 @@ tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 collect_query_and_trace_logs
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
-
-# Write check result into check_status.tsv
-# Try to choose most specific error for the whole check status
-clickhouse-local --structure "test String, res String, time Nullable(Float32), desc String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by
-(test like '%Sanitizer%') DESC,
-(test like '%Killed by signal%') DESC,
-(test like '%gdb.log%') DESC,
-(test ilike '%possible deadlock%') DESC,
-(test like '%start%') DESC,
-(test like '%dmesg%') DESC,
-(test like '%OOM%') DESC,
-(test like '%Signal 9%') DESC,
-(test like '%Fatal message%') DESC,
-(test like '%Error message%') DESC,
-(test like '%previous release%') DESC,
-(test like '%Changed settings%') DESC,
-(test like '%New settings%') DESC,
-rowNumberInAllBlocks()
-LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo -e "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
-[ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
-
 
 collect_core_dumps

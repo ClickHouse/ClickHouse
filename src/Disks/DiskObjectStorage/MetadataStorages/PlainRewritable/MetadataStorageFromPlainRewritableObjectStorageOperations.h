@@ -130,8 +130,9 @@ private:
     std::filesystem::path remote_source_path;
     std::filesystem::path remote_tmp_path;
     std::optional<FileRemoteInfo> file_remote_info;
-    bool copy_created = false;
-    bool source_removed = false;
+    bool copy_started = false;
+    bool remove_started = false;
+    bool remove_finished = false;
 
 public:
     MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
