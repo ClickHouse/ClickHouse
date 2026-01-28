@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.2",
         {
+         {"input_format_max_block_wait_ms", 0, 0, "New setting to limit maximum wait time in milliseconds before a block is emitted by input format"}
 
         });
         addSettingsChanges(settings_changes_history, "26.1",
@@ -75,7 +76,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_qbit_type", false, true, "QBit was moved to Beta"},
             {"enable_qbit_type", false, true, "QBit was moved to Beta. Added an alias for setting 'allow_experimental_qbit_type'."},
             {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
-            {"input_format_max_block_wait_ms", 0, 0, "New setting to limit maximum wait time in milliseconds before a block is emitted by input format"},
             {"use_variant_as_common_type", false, true, "Improves usability."},
             {"max_dynamic_subcolumns_in_json_type_parsing", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns during JSON type parsing regardless the parameters specified in the data type"},
             {"use_hash_table_stats_for_join_reordering", true, true, "New setting. Previously mirrored 'collect_hash_table_stats_during_joins' setting."},
