@@ -1,13 +1,18 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/defines.h>
+#include <cstdlib>
 #include <utility>
 
 // MemoryTrackerBlockerInThread
 thread_local VariableContext MemoryTrackerBlockerInThread::level = VariableContext::Max;
 
 MemoryTrackerBlockerInThread::MemoryTrackerBlockerInThread(VariableContext level_)
-    : previous_level(level)
 {
+    /// Prevent unblocking a higher-level tracker
+    if (level <= level_)
+        return;
+
+    previous_level = level;
     level = level_;
 }
 
@@ -17,7 +22,8 @@ MemoryTrackerBlockerInThread::~MemoryTrackerBlockerInThread()
 }
 
 MemoryTrackerBlockerInThread::MemoryTrackerBlockerInThread(MemoryTrackerBlockerInThread && rhs) noexcept
-    : previous_level(std::exchange(rhs.previous_level, std::nullopt)) {}
+    : previous_level(std::exchange(rhs.previous_level, std::nullopt))
+{}
 
 MemoryTrackerBlockerInThread & MemoryTrackerBlockerInThread::operator=(MemoryTrackerBlockerInThread && rhs) noexcept
 {
@@ -32,5 +38,9 @@ void MemoryTrackerBlockerInThread::reset()
     {
         level = previous_level.value();
         previous_level.reset();
+
+        /// Having MemoryTracker blocked on Global level upon exit is a bug.
+        if (level == VariableContext::Global) [[unlikely]]
+            abort();
     }
 }
