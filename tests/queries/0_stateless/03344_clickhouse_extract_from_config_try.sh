@@ -18,3 +18,10 @@ $CLICKHOUSE_BINARY extract-from-config --key merge_tree.anything_yaml --config $
 
 $CLICKHOUSE_BINARY extract-from-config --key include_from --config ${prefix}_bad_include_from.xml |& grep -o 'File not found: I hope such path will never exists, since it does not even contain a single slash'
 $CLICKHOUSE_BINARY extract-from-config --key include_from --config ${prefix}_bad_include_from.xml --try
+
+echo "# pretty xml"
+echo "# merge_tree.comment"
+$CLICKHOUSE_BINARY extract-from-config --key merge_tree.comment --config $prefix.xml --pretty
+echo "# merge_tree"
+$CLICKHOUSE_BINARY extract-from-config --key merge_tree --config $prefix.xml --pretty
+$CLICKHOUSE_BINARY extract-from-config --key merge_tree.anything_yaml --config $prefix.yaml --pretty |& grep -o 'Not found: merge_tree.anything_yaml'
