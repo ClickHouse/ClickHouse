@@ -182,6 +182,13 @@ public:
     IBlocksStreamPtr getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
+    /// Overload for parallel iteration over two-level hash map buckets.
+    /// bucket_idx and num_buckets define which buckets this stream will iterate:
+    /// buckets {bucket_idx, bucket_idx + num_buckets, bucket_idx + 2*num_buckets, ...}
+    IBlocksStreamPtr getNonJoinedBlocks(
+        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
+        size_t bucket_idx, size_t num_buckets) const;
+
     void onBuildPhaseFinish() override;
 
     /// Number of keys in all built JOIN maps.

@@ -447,14 +447,6 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}",
                         table_join->kind(), table_join->strictness());
 
-    // If two-level maps are used, the probe stage uses only slot 0 (see joinBlock()),
-    // and on build finish we merged buckets into slot 0 and copied the shared map/flags to all instances
-    if (hash_joins[0]->data->twoLevelMapIsUsed())
-    {
-        std::lock_guard lock(hash_joins[0]->mutex);
-        return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
-    }
-
     /// For joins with always false condition
     if (table_join->getOnlyClause().key_names_right.empty())
     {
@@ -463,9 +455,36 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         std::lock_guard lock(hash_joins[0]->mutex);
         return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
+
+    // If two-level maps are used, the probe stage uses only slot 0 (see joinBlock()),
+    // and on build finish we merged buckets into slot 0 and copied the shared map/flags to all instances
+    // but here we create multiple streams where each iterates over a subset of buckets (that originally belonged to that slot)
+    // so hashtable in slot 0 looks like this:
+    //┌─────────────────────────────────────────────────────┐
+    //│ bucket[0] │ bucket[1] │ bucket[2] │ ... │ bucket[n] │
+    //└─────────────────────────────────────────────────────┘
+    if (hash_joins[0]->data->twoLevelMapIsUsed())
+    {
+        std::vector<IBlocksStreamPtr> streams;
+        streams.reserve(slots);
+        for (size_t i = 0; i < slots; ++i)
+        {
+            // Each slot iterates over buckets {i, i+slots, i+2*slots, ...}
+            // This mirrors the bucket ownership during the parallel build phase
+            // All slots share the same merged hash map (in slot 0), but each iterates different buckets
+            std::lock_guard lock(hash_joins[0]->mutex);
+            if (auto s = hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size, i, slots))
+                streams.push_back(std::move(s));
+        }
+        if (streams.empty())
+            return {};
+        if (streams.size() == 1)
+            return streams[0];
+        return std::make_shared<ConcatStreams>(std::move(streams));
+    }
     else
     {
-        // Old per-slot streams approach
+        // Non-two-level: per-slot streams approach
         std::vector<IBlocksStreamPtr> streams;
         streams.reserve(slots);
         for (const auto & hash_join : hash_joins)
