@@ -1047,6 +1047,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"merge_max_dynamic_subcolumns_in_compact_part", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns in Compact part after merge regardless the parameters specified in the data type"},
             {"materialize_statistics_on_merge", true, true, "New setting"},
             {"escape_index_filenames", false, true, "Escape non-ascii characters in filenames created for indices"},
+            {"min_postpone_time_for_waiting_ms", 0, 1000, "Added new setting to control minimum (initial) backoff for waiting operations."},
+            {"max_postpone_time_for_waiting_ms", 0, 10ULL * 1000, "Added new setting to control maximum backoff for waiting operations like TTL recompression wait."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {

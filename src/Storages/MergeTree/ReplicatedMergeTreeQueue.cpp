@@ -19,6 +19,7 @@
 #include <base/defines.h>
 #include <base/sort.h>
 #include <cassert>
+#include <limits>
 #include <ranges>
 #include <Poco/Timestamp.h>
 
@@ -35,6 +36,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_fetches_ms;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_merges_ms;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_tasks_ms;
+    extern const MergeTreeSettingsUInt64 min_postpone_time_for_waiting_ms;
+    extern const MergeTreeSettingsUInt64 max_postpone_time_for_waiting_ms;
 }
 
 namespace ErrorCodes
@@ -1611,6 +1614,49 @@ UInt64 ReplicatedMergeTreeQueue::getPostponeTimeMsForEntry(const LogEntry & entr
     return ((current_time_ms >= next_min_allowed_time_ms) ? 0ull : next_min_allowed_time_ms - current_time_ms);
 }
 
+bool ReplicatedMergeTreeQueue::shouldApplyWaitBackoff(const LogEntry & entry) const
+{
+    /// Only apply backoff for specific "waiting" scenarios.
+    /// Check postpone_reason to identify these cases.
+
+    if (entry.postpone_reason.empty())
+        return false;
+
+    /// TTL recompression wait: "waiting for X to complete TTL recompression"
+    if (entry.postpone_reason.contains("TTL recompression"))
+        return true;
+
+    /// Single-replica merge wait: "waiting for X to execute merge"
+    if (entry.postpone_reason.contains("to execute merge"))
+        return true;
+
+    return false;
+}
+
+UInt64 ReplicatedMergeTreeQueue::getWaitBackoffTimeMsForEntry(const LogEntry & entry, const MergeTreeData & data) const
+{
+    if (!shouldApplyWaitBackoff(entry))
+        return 0;
+
+    const auto data_settings = data.getSettings();
+    UInt64 min_backoff_ms = (*data_settings)[MergeTreeSetting::min_postpone_time_for_waiting_ms];
+    UInt64 max_backoff_ms = (*data_settings)[MergeTreeSetting::max_postpone_time_for_waiting_ms];
+
+    if (!max_backoff_ms)
+        return 0;
+
+    /// Exponential backoff: min_value * 2^num_postponed ms, capped at max_backoff_ms
+    /// With default min=1000ms: 1000, 2000, 4000, 8000, 10000 (capped at max)
+    UInt64 multiplier = 1ULL << std::min(entry.num_postponed, static_cast<size_t>(std::numeric_limits<UInt64>::digits - 1));
+    UInt64 backoff_ms = std::min(min_backoff_ms * multiplier, max_backoff_ms);
+
+    auto current_time_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000ULL;
+    auto last_postpone_time_ms = static_cast<UInt64>(entry.last_postpone_time) * 1000ULL;
+    auto next_allowed_time_ms = last_postpone_time_ms + backoff_ms;
+
+    return (current_time_ms >= next_allowed_time_ms) ? 0ULL : next_allowed_time_ms - current_time_ms;
+}
+
 bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     const LogEntry & entry,
     String & out_postpone_reason,
@@ -1625,6 +1671,16 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                            "because recently it has failed. According to exponential backoff policy, put aside this log entry for {} ms.";
 
         LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), postpone_time);
+        return false;
+    }
+
+    /// Check for wait backoff (TTL recompression wait, single-replica merge wait, etc.)
+    if (auto wait_time = getWaitBackoffTimeMsForEntry(entry, data))
+    {
+        constexpr auto fmt_string = "Not executing log entry {} of type {} "
+                           "because waiting for another replica. According to wait backoff policy, put aside this log entry for {} ms.";
+
+        LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), wait_time);
         return false;
     }
 
@@ -1747,6 +1803,18 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             {
                 constexpr auto fmt_string = "Not executing merge for the part {}, waiting for {} to execute merge.";
                 out_postpone_reason = fmt::format(fmt_string, entry.new_part_name, replica_to_execute_merge.value());
+                return false;
+            }
+        }
+
+        /// Check if we should wait for TTL recompression to complete on source replica.
+        /// This prevents rapid re-selection of the same entry while waiting.
+        if (merge_strategy_picker.shouldWaitForTTLRecompression(entry))
+        {
+            if (!merge_strategy_picker.isTTLRecompressFinishedByReplica(entry.source_replica, entry))
+            {
+                constexpr auto fmt_string = "Not executing merge for the part {}, waiting for {} to complete TTL recompression.";
+                out_postpone_reason = fmt::format(fmt_string, entry.new_part_name, entry.source_replica);
                 return false;
             }
         }
