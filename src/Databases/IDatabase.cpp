@@ -50,7 +50,7 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
         backQuoteIfNeed(hint.second));
 }
 
-IDatabase::IDatabase(String database_name_) : database_name(std::move(database_name_))
+IDatabase::IDatabase(String database_name_, bool is_temporary_) : database_name(std::move(database_name_)), is_temporary(is_temporary_)
 {
     CurrentMetrics::add(CurrentMetrics::AttachedDatabase, 1);
 }

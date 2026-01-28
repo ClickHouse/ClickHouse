@@ -295,7 +295,9 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     if (database && !table)
     {
         ostr
-            << (attach ? "ATTACH DATABASE " : "CREATE DATABASE ")
+            << (attach ? "ATTACH " : "CREATE ")
+            << (temporary ? "TEMPORARY " : "")
+            << "DATABASE "
             << (if_not_exists ? "IF NOT EXISTS " : "");
 
         database->format(ostr, settings, state, frame);

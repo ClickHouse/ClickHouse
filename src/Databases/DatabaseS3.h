@@ -34,7 +34,7 @@ public:
         std::optional<std::string> secret_access_key;
     };
 
-    DatabaseS3(const String & name, const Configuration& config, ContextPtr context);
+    DatabaseS3(const String & name, const Configuration& config, bool is_temporary, ContextPtr context);
 
     String getEngineName() const override { return "S3"; }
 

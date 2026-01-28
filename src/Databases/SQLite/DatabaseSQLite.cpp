@@ -38,8 +38,9 @@ DatabaseSQLite::DatabaseSQLite(
         ContextPtr context_,
         const ASTStorage * database_engine_define_,
         bool is_attach_,
-        const String & database_path_)
-    : DatabaseWithAltersOnDiskBase("SQLite")
+        const String & database_path_,
+        bool is_temporary_)
+    : DatabaseWithAltersOnDiskBase("SQLite", is_temporary_)
     , WithContext(context_->getGlobalContext())
     , database_engine_define(database_engine_define_->clone())
     , database_path(database_path_)
@@ -175,6 +176,7 @@ ASTPtr DatabaseSQLite::getCreateDatabaseQueryImpl() const
     auto create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_define);
+    create_query->temporary = isTemporary();
 
     if (!comment.empty())
         create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
@@ -231,7 +233,7 @@ void registerDatabaseSQLite(DatabaseFactory & factory)
 
         String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
 
-        return std::make_shared<DatabaseSQLite>(args.context, engine_define, args.create_query.attach, database_path);
+        return std::make_shared<DatabaseSQLite>(args.context, engine_define, args.create_query.attach, database_path, args.is_temporary);
     };
     factory.registerDatabase("SQLite", create_fn, {.supports_arguments = true});
 }

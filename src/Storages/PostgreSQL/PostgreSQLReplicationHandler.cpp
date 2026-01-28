@@ -434,7 +434,7 @@ ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializ
     pqxx::nontransaction tx(connection.getRef());
 
     auto table_structure = fetchTableStructure(tx, table_name);
-    auto table_override = tryGetTableOverride(current_database_name, table_name);
+    auto table_override = tryGetTableOverride(current_database_name, table_name, getContext());
     return storage->getCreateNestedTableQuery(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
 }
 
@@ -480,7 +480,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
 
     LOG_DEBUG(log, "Loading PostgreSQL table {}.{}", postgres_database, quoted_name);
 
-    auto table_override = tryGetTableOverride(current_database_name, table_name);
+    auto table_override = tryGetTableOverride(current_database_name, table_name, getContext());
     materialized_storage->createNestedIfNeeded(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
     auto nested_storage = materialized_storage->getNested();
 

@@ -11,6 +11,7 @@ namespace DB
 class Context;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 class AccessRightsElements;
+struct GetDatabasesOptions;
 
 /** Allow to either drop table with all its data (DROP),
   * or remove information about table (just forget) from server (DETACH),
@@ -32,6 +33,8 @@ public:
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
 
 private:
+    GetDatabasesOptions getDatabaseOptions() const;
+
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     ASTPtr query_ptr;
     ASTPtr current_query_ptr;

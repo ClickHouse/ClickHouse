@@ -7567,6 +7567,12 @@ Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_temporary_databases, false, R"(
+Allow to create experimental temporary databases.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, show_temporary_databases_from_other_sessions_in_system_tables, false, R"(
+Show temporary databases from other sessions in system tables.
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

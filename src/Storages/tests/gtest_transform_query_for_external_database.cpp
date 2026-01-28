@@ -98,7 +98,7 @@ private:
     {
         tryRegisterFunctions();
         tryRegisterAggregateFunctions();
-        DatabasePtr database = std::make_shared<DatabaseMemory>("test", context);
+        DatabasePtr database = std::make_shared<DatabaseMemory>("test", false, context);
 
         for (const auto & tab : tables)
         {

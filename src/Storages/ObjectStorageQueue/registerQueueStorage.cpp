@@ -61,7 +61,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     {
         if (auto * path_setting = args.storage_def->settings->changes.tryGet("keeper_path"))
         {
-            auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
+            auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name, args.getLocalContext());
             const String database_engine = database ? database->getEngineName() : "";
 
             bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;

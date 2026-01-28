@@ -23,7 +23,7 @@ namespace DB
 class DatabaseDictionary final : public IDatabase, WithContext
 {
 public:
-    DatabaseDictionary(const String & name_, ContextPtr context_);
+    DatabaseDictionary(const String & name_, bool is_temporary_, ContextPtr context_);
 
     String getEngineName() const override
     {

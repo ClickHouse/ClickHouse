@@ -33,7 +33,13 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query);
 class DatabaseOnDisk : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseOnDisk(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr context);
+    DatabaseOnDisk(
+        const String & name,
+        const String & metadata_path_,
+        const String & data_path_,
+        bool is_temporary_,
+        const String & logger,
+        ContextPtr context);
 
     void shutdown() override;
 

@@ -46,7 +46,8 @@ public:
         std::unique_ptr<MySQLSettings> settings_,
         mysqlxx::PoolWithFailover && pool,
         bool attach,
-        UUID uuid);
+        UUID uuid,
+        bool is_temporary);
 
     String getEngineName() const override { return "MySQL"; }
     UUID getUUID() const override { return db_uuid; }

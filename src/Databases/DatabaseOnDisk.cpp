@@ -176,8 +176,13 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
 
 
 DatabaseOnDisk::DatabaseOnDisk(
-    const String & name, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr local_context)
-    : DatabaseWithOwnTablesBase(name, logger, local_context), metadata_path(metadata_path_), data_path(data_path_)
+    const String & name,
+    const String & metadata_path_,
+    const String & data_path_,
+    const bool is_temporary_,
+    const String & logger,
+    ContextPtr local_context)
+    : DatabaseWithOwnTablesBase(name, is_temporary_, logger, local_context), metadata_path(metadata_path_), data_path(data_path_)
 {
 }
 
@@ -560,7 +565,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQueryImpl() const
 
     const auto & settings = getContext()->getSettingsRef();
     {
-        auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
+        auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name, isTemporary());
         ast = parseQueryFromMetadata(log, getContext(), default_db_disk, metadata_file_path, true);
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;
@@ -576,11 +581,10 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQueryImpl() const
             parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     }
 
+    auto & ast_create_query = ast->as<ASTCreateQuery &>();
+    ast_create_query.temporary = isTemporary();
     if (!comment.empty())
-    {
-        auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
-    }
 
     return ast;
 }
@@ -907,8 +911,8 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
-    auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(TSA_SUPPRESS_WARNING_FOR_READ(database_name));   /// FIXME
-    auto metadata_tmp_file_path = DatabaseCatalog::getMetadataTmpFilePath(TSA_SUPPRESS_WARNING_FOR_READ(database_name));
+    auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(TSA_SUPPRESS_WARNING_FOR_READ(database_name), isTemporary());   /// FIXME
+    auto metadata_tmp_file_path = DatabaseCatalog::getMetadataTmpFilePath(TSA_SUPPRESS_WARNING_FOR_READ(database_name), isTemporary());
 
     auto default_db_disk = getContext()->getDatabaseDisk();
     writeMetadataFile(

@@ -267,7 +267,7 @@ private:
         {
             auto database_name = std::move(databases.back());
             databases.pop_back();
-            auto current_database = database_catalog.tryGetDatabase(database_name);
+            auto current_database = database_catalog.tryGetDatabase(database_name, context);
             if (current_database)
             {
                 LOG_DEBUG(log, "Checking '{}' database", database_name);
@@ -395,7 +395,7 @@ InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, ContextP
 static Strings getAllDatabases(const ContextPtr & context)
 {
     Strings res;
-    const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+    const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}, context);
     res.reserve(databases.size());
     for (const auto & [database_name, _] : databases)
     {

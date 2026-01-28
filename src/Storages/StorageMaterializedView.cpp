@@ -173,7 +173,7 @@ StorageMaterializedView::StorageMaterializedView(
     {
         fixed_uuid = query.refresh_strategy->append;
 
-        auto db = DatabaseCatalog::instance().getDatabase(getStorageID().database_name);
+        auto db = DatabaseCatalog::instance().getDatabase(getStorageID().database_name, local_context);
         bool is_replicated_db = db->getEngineName() == "Replicated";
 
         /// Decide whether to enable coordination.
@@ -552,7 +552,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     {
        auto query_scope = CurrentThread::QueryScope::create(refresh_context);
 
-        auto db = DatabaseCatalog::instance().getDatabase(inner_table_id.database_name);
+        auto db = DatabaseCatalog::instance().getDatabase(inner_table_id.database_name, refresh_context);
         String db_name = db->getDatabaseName();
         auto new_table_name = ".tmp" + generateInnerTableName(getStorageID());
 
@@ -610,8 +610,8 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
     auto stale_table_id = getTargetTableId();
     fresh_table.uuid = UUIDHelpers::Nil;
 
-    auto db = DatabaseCatalog::instance().getDatabase(stale_table_id.database_name);
-    auto target_db = DatabaseCatalog::instance().getDatabase(fresh_table.database_name);
+    auto db = DatabaseCatalog::instance().getDatabase(stale_table_id.database_name, refresh_context);
+    auto target_db = DatabaseCatalog::instance().getDatabase(fresh_table.database_name, refresh_context);
     bool exchange = DatabaseCatalog::instance().isTableExist(stale_table_id, refresh_context);
 
     auto query_scope = CurrentThread::QueryScope::create(refresh_context);
@@ -682,7 +682,7 @@ void StorageMaterializedView::alter(
         checkAllTypesAreAllowedInTable(new_metadata.getColumns().getAll());
     }
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name, local_context)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
     auto & instance = ViewDefinerDependencies::instance();
     if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)

@@ -98,7 +98,7 @@ namespace
         std::optional<StorageID> mv_to_dependency;
         std::optional<StorageID> mv_from_dependency;
 
-        /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
+        /// CREATE TABLE, CREATE DICTIONARY, CREATE VIEW, CREATE TEMPORARY TABLE, CREATE DATABASE, CREATE TEMPORARY DATABASE queries.
         void visitCreateQuery(const ASTCreateQuery & create)
         {
             if (create.targets)

@@ -146,6 +146,7 @@ CREATE TABLE system.databases
     `engine_full` String,
     `comment` String,
     `is_external` UInt8,
+    `is_temporary` UInt8,
     `database` String ALIAS name
 )
 ENGINE = SystemDatabases

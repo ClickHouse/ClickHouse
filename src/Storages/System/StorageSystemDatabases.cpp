@@ -26,6 +26,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+    extern const SettingsBool show_temporary_databases_from_other_sessions_in_system_tables;
 }
 
 ColumnsDescription StorageSystemDatabases::getColumnsDescription()
@@ -40,6 +41,7 @@ ColumnsDescription StorageSystemDatabases::getColumnsDescription()
         {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the database engine."},
         {"comment", std::make_shared<DataTypeString>(), "Database comment."},
         {"is_external", std::make_shared<DataTypeUInt8>(), "Database is external (i.e. PostgreSQL/DataLakeCatalog)."},
+        {"is_temporary", std::make_shared<DataTypeUInt8>(), "Database is temporary(created with TEMPORARY modifier)."},
     };
 
     description.setAliases({
@@ -58,7 +60,7 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
         guard = DatabaseCatalog::instance().getDDLGuard(name, "");
 
         /// Ensure that the database was not renamed before we acquired the lock
-        auto locked_database = DatabaseCatalog::instance().tryGetDatabase(name);
+        auto locked_database = DatabaseCatalog::instance().tryGetDatabase(name, ctx);
 
         if (locked_database.get() == database.get())
             break;
@@ -125,7 +127,10 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
     const auto access = context->getAccess();
     const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
     const auto & settings = context->getSettingsRef();
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
+        .with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables],
+        .skip_temporary_owner_check = settings[Setting::show_temporary_databases_from_other_sessions_in_system_tables],
+    }, context); // todo: column with id of user that owns the temporary database
     ColumnPtr filtered_databases_column = getFilteredDatabases(databases, predicate, context);
 
     for (size_t i = 0; i < filtered_databases_column->size(); ++i)
@@ -161,6 +166,8 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[res_index++]->insert(database->getDatabaseComment());
         if (columns_mask[src_index++])
             res_columns[res_index++]->insert(database->isExternal());
+        if (columns_mask[src_index++])
+            res_columns[res_index++]->insert(database->isTemporary());
    }
 }
 

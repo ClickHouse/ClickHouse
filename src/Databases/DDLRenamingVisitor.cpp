@@ -24,53 +24,56 @@ namespace ErrorCodes
 
 namespace
 {
-    /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
+    /// CREATE TABLE, CREATE DICTIONARY, CREATE VIEW, CREATE TEMPORARY TABLE, CREATE DATABASE, CREATE TEMPORARY DATABASE queries.
     void visitCreateQuery(ASTCreateQuery & create, const DDLRenamingVisitor::Data & data)
     {
-        if (create.temporary)
+        if (create.table)
         {
-            /// CREATE TEMPORARY TABLE
-            String table_name = create.getTable();
-            QualifiedTableName full_table_name{DatabaseCatalog::TEMPORARY_DATABASE, table_name};
-            const auto & new_table_name = data.renaming_map.getNewTableName(full_table_name);
-            if (new_table_name != full_table_name)
+            if (create.temporary)
             {
-                create.setTable(new_table_name.table);
-                if (new_table_name.database != DatabaseCatalog::TEMPORARY_DATABASE)
-                {
-                    create.temporary = false;
-                    create.setDatabase(new_table_name.database);
-                }
-            }
-        }
-        else if (create.table)
-        {
-            /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW
-            QualifiedTableName full_name;
-            full_name.table = create.getTable();
-            full_name.database = create.getDatabase();
-
-            if (!full_name.database.empty() && !full_name.table.empty())
-            {
-                auto new_table_name = data.renaming_map.getNewTableName(full_name);
-                if (new_table_name != full_name)
+                /// CREATE TEMPORARY TABLE
+                String table_name = create.getTable();
+                QualifiedTableName full_table_name{DatabaseCatalog::TEMPORARY_DATABASE, table_name};
+                const auto & new_table_name = data.renaming_map.getNewTableName(full_table_name);
+                if (new_table_name != full_table_name)
                 {
                     create.setTable(new_table_name.table);
-                    if (new_table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
+                    if (new_table_name.database != DatabaseCatalog::TEMPORARY_DATABASE)
                     {
-                        create.temporary = true;
-                        create.setDatabase("");
-                    }
-                    else
-                    {
+                        create.temporary = false;
                         create.setDatabase(new_table_name.database);
+                    }
+                }
+            }
+            else
+            {
+                /// CREATE TABLE, CREATE DICTIONARY, CREATE VIEW
+                QualifiedTableName full_name;
+                full_name.table = create.getTable();
+                full_name.database = create.getDatabase();
+
+                if (!full_name.database.empty() && !full_name.table.empty())
+                {
+                    auto new_table_name = data.renaming_map.getNewTableName(full_name);
+                    if (new_table_name != full_name)
+                    {
+                        create.setTable(new_table_name.table);
+                        if (new_table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
+                        {
+                            create.temporary = true;
+                            create.setDatabase("");
+                        }
+                        else
+                        {
+                            create.setDatabase(new_table_name.database);
+                        }
                     }
                 }
             }
         }
         else if (create.database)
         {
-            /// CREATE DATABASE
+            /// CREATE [TEMPORARY] DATABASE
             String database_name = create.getDatabase();
             if (!database_name.empty())
             {

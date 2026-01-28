@@ -100,8 +100,9 @@ DatabaseDataLake::DatabaseDataLake(
     const DatabaseDataLakeSettings & settings_,
     ASTPtr database_engine_definition_,
     ASTPtr table_engine_definition_,
-    UUID uuid)
-    : IDatabase(database_name_)
+    UUID uuid,
+    bool is_temporary_)
+    : IDatabase(database_name_, is_temporary_)
     , url(url_)
     , settings(settings_)
     , database_engine_definition(database_engine_definition_)
@@ -816,6 +817,7 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
     create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_definition);
     create_query->uuid = db_uuid;
+    create_query->temporary = isTemporary();
     return create_query;
 }
 
@@ -1014,7 +1016,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             database_settings,
             database_engine_define->clone(),
             std::move(engine_for_tables),
-            args.uuid);
+            args.uuid,
+            args.is_temporary);
     };
     factory.registerDatabase("DataLakeCatalog", create_fn, { .supports_arguments = true, .supports_settings = true });
 }

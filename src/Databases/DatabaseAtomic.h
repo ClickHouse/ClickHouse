@@ -25,6 +25,7 @@ public:
         String name_,
         String metadata_path_,
         UUID uuid,
+        bool is_temporary_,
         const String & logger_name,
         ContextPtr context_,
         DatabaseMetadataDiskSettings database_metadata_disk_settings_ = {});
@@ -32,6 +33,7 @@ public:
         String name_,
         String metadata_path_,
         UUID uuid,
+        bool is_temporary_,
         ContextPtr context_,
         DatabaseMetadataDiskSettings database_metadata_disk_settings_ = {});
 

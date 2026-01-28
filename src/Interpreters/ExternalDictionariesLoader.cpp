@@ -194,7 +194,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
         res = current_database_name + '.' + name;
     }
 
-    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
+    auto [db, table] = DatabaseCatalog::instance().tryGetTableWithDatabase(
         {qualified_name->database, qualified_name->table},
         const_pointer_cast<Context>(getContext()));
 

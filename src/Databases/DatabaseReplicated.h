@@ -69,7 +69,7 @@ public:
 
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
                        const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,
-                       DatabaseReplicatedSettings db_settings_,
+                       DatabaseReplicatedSettings db_settings_, bool is_temporary_,
                        ContextPtr context);
 
     ~DatabaseReplicated() override;
@@ -118,7 +118,7 @@ public:
 
     void shutdown() override;
 
-    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr &) const override;
+    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & context) const override;
     void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms) override;
 
     bool shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const override;

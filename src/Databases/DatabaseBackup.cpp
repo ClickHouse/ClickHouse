@@ -149,11 +149,12 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
 
 }
 
-DatabaseBackup::DatabaseBackup(const String & name_, const String & metadata_path_, const Configuration & config_, ContextPtr context_)
+DatabaseBackup::DatabaseBackup(const String & name_, const String & metadata_path_, const Configuration & config_, bool is_temporary_, ContextPtr context_)
     : DatabaseOrdinary(
         name_,
         metadata_path_,
-        DatabaseCatalog::getDataDirPath(name_) / "",
+        DatabaseCatalog::getDataDirPath(name_, is_temporary_) / "",
+        is_temporary_,
         "DatabaseBackup(" + name_ + ")",
         context_)
     , config(config_)
@@ -220,7 +221,7 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     {
         DiskBackup::PathPrefixReplacement path_prefix_replacement;
         path_prefix_replacement.from = data_path;
-        path_prefix_replacement.to = DatabaseCatalog::getDataDirPath(config.database_name) / "";
+        path_prefix_replacement.to = DatabaseCatalog::getDataDirPath(config.database_name, isTemporary()) / "";
 
         DiskBackupConfiguration disk_backup_config;
 
@@ -418,11 +419,10 @@ ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
+    auto & ast_create_query = ast->as<ASTCreateQuery &>();
+    ast_create_query.temporary = isTemporary();
     if (!comment.empty())
-    {
-        auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
-    }
 
     return ast;
 }
@@ -463,7 +463,7 @@ void registerDatabaseBackup(DatabaseFactory & factory)
             engine_args = engine->arguments->children;
 
         auto config = parseArguments(engine_args, args.context);
-        return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
+        return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.is_temporary, args.context);
     };
 
     factory.registerDatabase("Backup", create_fn, {.supports_arguments = true});

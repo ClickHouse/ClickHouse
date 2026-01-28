@@ -20,7 +20,7 @@ public:
     using SQLitePtr = std::shared_ptr<sqlite3>;
 
     DatabaseSQLite(ContextPtr context_, const ASTStorage * database_engine_define_,
-                   bool is_attach_, const String & database_path_);
+                   bool is_attach_, const String & database_path_, bool is_temporary_);
 
     String getEngineName() const override { return "SQLite"; }
 

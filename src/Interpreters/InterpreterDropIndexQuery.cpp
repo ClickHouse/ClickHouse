@@ -42,7 +42,7 @@ BlockIO InterpreterDropIndexQuery::execute()
     auto table_id = current_context->resolveStorageID(drop_index, Context::ResolveOrdinary);
     query_ptr->as<ASTDropIndexQuery &>().setDatabase(table_id.database_name);
 
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name, current_context); // todo: double getDatabase
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);

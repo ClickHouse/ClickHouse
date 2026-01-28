@@ -1,0 +1,18 @@
+<clickhouse>
+    <temporary_databases_cleanup_interval_sec>1</temporary_databases_cleanup_interval_sec>
+    <remote_servers>
+        <default>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
+    <logger>
+        <level>test</level>
+        <log>/var/log/clickhouse-keeper/clickhouse-keeper.log</log>
+        <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
+    </logger>
+</clickhouse>

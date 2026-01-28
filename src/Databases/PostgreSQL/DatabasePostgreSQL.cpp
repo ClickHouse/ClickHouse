@@ -62,8 +62,9 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     const StoragePostgreSQL::Configuration & configuration_,
     postgres::PoolWithFailoverPtr pool_,
     bool cache_tables_,
-    UUID uuid)
-    : DatabaseWithAltersOnDiskBase(dbname_)
+    UUID uuid,
+    bool is_temporary_)
+    : DatabaseWithAltersOnDiskBase(dbname_, is_temporary_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
@@ -427,6 +428,7 @@ ASTPtr DatabasePostgreSQL::getCreateDatabaseQueryImpl() const
     create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_define);
     create_query->uuid = db_uuid;
+    create_query->temporary = isTemporary();
 
     if (!comment.empty())
         create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
@@ -596,7 +598,8 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             configuration,
             pool,
             use_table_cache,
-            args.uuid);
+            args.uuid,
+            args.is_temporary);
     };
     factory.registerDatabase("PostgreSQL", create_fn, {.supports_arguments = true});
 }

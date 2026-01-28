@@ -12,7 +12,7 @@ doc_type: 'reference'
 Creates a new database.
 
 ```sql
-CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [COMMENT 'Comment']
+CREATE [TEMPORARY] DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [COMMENT 'Comment']
 ```
 
 ## Clauses {#clauses}
@@ -60,3 +60,31 @@ Result:
 │ db_comment │ The temporary database │
 └────────────┴────────────────────────┘
 ```
+
+### TEMPORARY {#temporary}
+Creates a temporary database that will be asynchronously deleted when the current session ends.
+
+Temporary databases are available to access only in the current session but may be visible to others in the system tables depending
+on the [show_temporary_databases_from_other_sessions_in_system_tables](/operations/settings/settings.md#show_temporary_databases_from_other_sessions_in_system_tables) setting.
+
+:::note
+You probably want to specify `session_id` if the [HTTP interface](/interfaces/http) is used.
+:::
+
+#### Unsupported features {#unsupported-clauses-and-engines}
+- [DETACH](/sql-reference/statements/detach) statement on database or tables inside
+- [ATTACH](/sql-reference/statements/attach) statement on database or and tables inside
+- [ON CLUSTER](#on-cluster) clause
+- [Replicated](/engines/database-engines/replicated) and [Backup](/engines/database-engines/backup) database engines
+- Cannot be backed up with [BACKUP](/sql-reference/statements/backup) statement
+
+:::note
+Please note that the database name will be reserved, and you will not be able to create a new database with the same name, as with regular databases.
+:::
+
+**See Also**
+
+- [allow_experimental_temporary_databases](/operations/settings/settings.md#allow_experimental_temporary_databases)
+- [show_temporary_databases_from_other_sessions_in_system_tables](/operations/settings/settings.md#show_temporary_databases_from_other_sessions_in_system_tables)
+- [temporary_databases_cleanup_interval_sec](/operations/server-configuration-parameters/settings.md/#temporary_databases_cleanup_interval_sec)
+- [Using ClickHouse sessions in the HTTP protocol](/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)

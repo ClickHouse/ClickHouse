@@ -53,8 +53,8 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-DatabaseS3::DatabaseS3(const String & name_, const Configuration& config_, ContextPtr context_)
-    : IDatabase(name_)
+DatabaseS3::DatabaseS3(const String & name_, const Configuration& config_, bool is_temporary_, ContextPtr context_)
+    : IDatabase(name_, is_temporary_)
     , WithContext(context_->getGlobalContext())
     , config(config_)
     , log(getLogger("DatabaseS3(" + name_ + ")"))
@@ -202,11 +202,10 @@ ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
     ASTPtr ast
         = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
+    auto & ast_create_query = ast->as<ASTCreateQuery &>();
+    ast_create_query.temporary = isTemporary();
     if (!comment.empty())
-    {
-        auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
-    }
 
     return ast;
 }
@@ -332,7 +331,7 @@ void registerDatabaseS3(DatabaseFactory & factory)
             config = DatabaseS3::parseArguments(engine_args, args.context);
         }
 
-        return std::make_shared<DatabaseS3>(args.database_name, config, args.context);
+        return std::make_shared<DatabaseS3>(args.database_name, config, args.is_temporary, args.context);
     };
     factory.registerDatabase("S3", create_fn, {.supports_arguments = true});
 }

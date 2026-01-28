@@ -490,7 +490,7 @@ static bool getRMVCoordinationInfo(
     if (parent_uuid == UUIDHelpers::Nil)
         return false;
 
-    const auto storage = DatabaseCatalog::instance().tryGetByUUID(parent_uuid).second;
+    const auto storage = DatabaseCatalog::instance().tryGetTableWithDatabase(parent_uuid, {}).second;
     if (!storage)
         return false;
     auto in_memory_metadata = storage->getInMemoryMetadataPtr();
@@ -758,7 +758,7 @@ bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name,
 
 bool DatabaseReplicatedDDLWorker::checkParentTableExists(const UUID & uuid) const
 {
-    auto [db, table] = DatabaseCatalog::instance().tryGetByUUID(uuid);
+    auto [db, table] = DatabaseCatalog::instance().tryGetTableWithDatabase(uuid, {});
     return db.get() == database && table != nullptr && !table->is_dropped.load() && !table->is_detached.load();
 }
 

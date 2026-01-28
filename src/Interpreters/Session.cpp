@@ -589,8 +589,8 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     if (session_tracker_handle)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session tracker handle was created before making session");
 
-    LOG_DEBUG(log, "Creating named session context with name: {}, user_id: {}",
-            session_name_, toString(*user_id));
+    LOG_DEBUG(log, "Creating named session context with name: {}, user_id: {}, timeout: {}s",
+            session_name_, toString(*user_id), std::chrono::duration_cast<std::chrono::seconds>(timeout_).count());
 
     /// Make a new session context OR
     /// if the `session_id` and `user_id` were used before then just get a previously created session context.

@@ -8,6 +8,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/DatabasesCommon.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/AlterCommands.h>
@@ -73,47 +74,49 @@ BlockIO InterpreterUpdateQuery::execute()
 
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
+    const auto & context = getContext();
 
     AccessRightsElements required_access;
     required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
 
     if (!update_query.cluster.empty())
     {
+        throwIfTemporaryDatabaseUsedOnCluster(update_query.getDatabase(), context);
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(query_ptr, context, params);
     }
 
     if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Update queries are prohibited");
 
-    getContext()->checkAccess(required_access);
+    context->checkAccess(required_access);
     auto table_id = getContext()->resolveStorageID(update_query, Context::ResolveOrdinary);
     update_query.setDatabase(table_id.database_name);
 
     /// First check table storage for validations.
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
     if (auto supports = table->supportsLightweightUpdate(); !supports)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported. {}", supports.error().text);
 
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    if (database->shouldReplicateQuery(getContext(), query_ptr))
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name, context);
+    if (database->shouldReplicateQuery(context, query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
+        return database->tryEnqueueReplicatedDDL(query_ptr, context, {});
     }
 
     MutationCommands commands;
     commands.emplace_back(createMutationCommand(update_query));
 
-    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+    auto table_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
 
     BlockIO res;
-    res.pipeline = table->updateLightweight(commands, getContext());
+    res.pipeline = table->updateLightweight(commands, context);
     res.pipeline.addStorageHolder(table);
     return res;
 }

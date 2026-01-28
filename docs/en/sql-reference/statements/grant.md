@@ -210,6 +210,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `CREATE ARBITRARY TEMPORARY TABLE`
       - `CREATE TEMPORARY TABLE`
     - `CREATE DATABASE`
+      - `CREATE TEMPORARY DATABASE`
     - `CREATE DICTIONARY`
     - `CREATE FUNCTION`
     - `CREATE RESOURCE`
@@ -465,6 +466,7 @@ Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [A
 
 - `CREATE`. Level: `GROUP`
   - `CREATE DATABASE`. Level: `DATABASE`
+    - `CREATE TEMPORARY DATABASE`. Level: `DATABASE`
   - `CREATE TABLE`. Level: `TABLE`
     - `CREATE ARBITRARY TEMPORARY TABLE`. Level: `GLOBAL`
       - `CREATE TEMPORARY TABLE`. Level: `GLOBAL`

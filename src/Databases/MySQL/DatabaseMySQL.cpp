@@ -85,8 +85,9 @@ DatabaseMySQL::DatabaseMySQL(
     std::unique_ptr<MySQLSettings> settings_,
     mysqlxx::PoolWithFailover && pool,
     bool attach,
-    UUID uuid)
-    : DatabaseWithAltersOnDiskBase(database_name_)
+    UUID uuid,
+    bool is_temporary_)
+    : DatabaseWithAltersOnDiskBase(database_name_, is_temporary_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
@@ -256,6 +257,7 @@ ASTPtr DatabaseMySQL::getCreateDatabaseQueryImpl() const
     create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_define);
     create_query->uuid = db_uuid;
+    create_query->temporary = isTemporary();
 
     if (!comment.empty())
         create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
@@ -652,7 +654,8 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
                 std::move(mysql_settings),
                 std::move(mysql_pool),
                 args.create_query.attach,
-                args.uuid);
+                args.uuid,
+                args.is_temporary);
         }
         catch (...)
         {

@@ -50,8 +50,8 @@ namespace ErrorCodes
 static constexpr std::string_view HDFS_HOST_REGEXP = "^hdfs://[^/]*";
 
 
-DatabaseHDFS::DatabaseHDFS(const String & name_, const String & source_url, ContextPtr context_)
-    : IDatabase(name_)
+DatabaseHDFS::DatabaseHDFS(const String & name_, const String & source_url, bool is_temporary_, ContextPtr context_)
+    : IDatabase(name_, is_temporary_)
     , WithContext(context_->getGlobalContext())
     , source(source_url)
     , log(getLogger("DatabaseHDFS(" + name_ + ")"))
@@ -195,11 +195,10 @@ ASTPtr DatabaseHDFS::getCreateDatabaseQueryImpl() const
     ASTPtr ast
         = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
+    auto & ast_create_query = ast->as<ASTCreateQuery &>();
+    ast_create_query.temporary = isTemporary();
     if (!comment.empty())
-    {
-        auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
-    }
 
     return ast;
 }
@@ -260,7 +259,7 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
             source_url = safeGetLiteralValue<String>(arguments[0], engine_name);
         }
 
-        return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
+        return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.is_temporary, args.context);
     };
     factory.registerDatabase("HDFS", create_fn, {.supports_arguments = true});
 }

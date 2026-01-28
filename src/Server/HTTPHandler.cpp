@@ -195,7 +195,7 @@ void HTTPHandler::processQuery(
         return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
 
     /// The user could specify session identifier and session timeout.
-    /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
+    /// It allows to modify settings, create temporary tables/databases and reuse them in subsequent requests.
 
     String session_id;
     std::chrono::steady_clock::duration session_timeout;

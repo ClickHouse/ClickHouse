@@ -265,7 +265,7 @@ void registerStorageKafka(StorageFactory & factory)
 
         const auto is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         const auto is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-            && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
+            && DatabaseCatalog::instance().getDatabase(args.table_id.database_name, args.getLocalContext())->getEngineName() == "Replicated";
 
         // UUID macro is only allowed:
         // - with Atomic database only with ON CLUSTER queries, otherwise it is easy to misuse: each replica would have separate uuid generated.
@@ -302,7 +302,7 @@ void registerStorageKafka(StorageFactory & factory)
         info.table_id = args.table_id;
         if (is_replicated_database)
         {
-            auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
+            auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name, context);
             info.shard.reset();
             info.replica = getReplicatedDatabaseReplicaName(database);
         }

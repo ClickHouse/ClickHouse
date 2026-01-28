@@ -20,8 +20,10 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-DatabaseOverlay::DatabaseOverlay(const String & name_, ContextPtr context_)
-    : IDatabase(name_), WithContext(context_->getGlobalContext()), log(getLogger("DatabaseOverlay(" + name_ + ")"))
+DatabaseOverlay::DatabaseOverlay(const String & name_, bool is_temporary_, ContextPtr context_)
+    : IDatabase(name_, is_temporary_)
+    , WithContext(context_->getGlobalContext())
+    , log(getLogger("DatabaseOverlay(" + name_ + ")"))
 {
 }
 
@@ -188,6 +190,7 @@ ASTPtr DatabaseOverlay::getCreateDatabaseQueryImpl() const
 {
     auto query = make_intrusive<ASTCreateQuery>();
     query->setDatabase(database_name);
+    query->temporary = isTemporary();
     return query;
 }
 

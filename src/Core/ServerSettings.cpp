@@ -1545,7 +1545,9 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, keeper_server_socket_receive_timeout_sec, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, R"(Keeper socket receive timeout.)", 0, "keeper_server.socket_receive_timeout_sec") \
     DECLARE(UInt64, keeper_server_socket_send_timeout_sec, DBMS_DEFAULT_SEND_TIMEOUT_SEC, R"(Keeper socket send timeout.)", 0, "keeper_server.socket_send_timeout_sec") \
     DECLARE(String, hdfs_libhdfs3_conf, "", R"(Points libhdfs3 to the right location for its config.)", 0, "hdfs.libhdfs3_conf") \
-    DECLARE(String, config_file, "config.xml", R"(Points to the server config file.)", 0, "config-file")
+    DECLARE(String, config_file, "config.xml", R"(Points to the server config file.)", 0, "config-file") \
+    DECLARE(UInt64, temporary_databases_cleanup_interval_sec, 3, R"(Interval for temporary databases cleanup thread.)", 0, "temporary_databases.cleanup.interval_sec")
+
 
 // clang-format on
 

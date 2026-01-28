@@ -39,8 +39,11 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path_, ContextPtr context_)
-    : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(getLogger("DatabaseFileSystem(" + name_ + ")"))
+DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path_, bool is_temporary_, ContextPtr context_)
+    : IDatabase(name_, is_temporary_)
+    , WithContext(context_->getGlobalContext())
+    , path(path_)
+    , log(getLogger("DatabaseFileSystem(" + name_ + ")"))
 {
     bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
     fs::path user_files_path = is_local ? "" : fs::canonical(getContext()->getUserFilesPath());
@@ -196,11 +199,10 @@ ASTPtr DatabaseFilesystem::getCreateDatabaseQueryImpl() const
     ASTPtr ast
         = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
+    auto & ast_create_query = ast->as<ASTCreateQuery &>();
+    ast_create_query.temporary = isTemporary();
     if (!comment.empty())
-    {
-        auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
-    }
 
     return ast;
 }
@@ -261,7 +263,7 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
             init_path = safeGetLiteralValue<String>(arguments[0], engine_name);
         }
 
-        return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context);
+        return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.is_temporary, args.context);
     };
     factory.registerDatabase("Filesystem", create_fn, {.supports_arguments = true});
 }

@@ -154,6 +154,7 @@ struct ParallelReadResponse;
 class S3SettingsByEndpoint;
 class AzureSettingsByEndpoint;
 class IDatabase;
+using DatabasePtr = std::shared_ptr<IDatabase>;
 class DDLWorker;
 class ITableFunction;
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;
@@ -187,6 +188,9 @@ class AsyncLoader;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
 struct ICgroupsReader;
+
+struct TemporaryDatabaseHolder;
+using TemporaryDatabasesMapping = std::map<String, std::shared_ptr<TemporaryDatabaseHolder>>;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
@@ -377,6 +381,7 @@ protected:
 
     String insert_format; /// Format, used in insert query.
 
+    TemporaryDatabasesMapping temporary_databases_mapping;
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
@@ -911,6 +916,12 @@ public:
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
+    void addTemporaryDatabase(const String & database_name, DatabasePtr database);
+    bool hasTemporaryDatabase(const String & database_name) const;
+    bool hasTemporaryDatabase(const DatabasePtr & database) const;
+    void renameTemporaryDatabase(const String & old_name, const String & new_name);
+    void removeTemporaryDatabase(const String & database_name);
+
     Scalars getScalars() const;
     Block getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
@@ -1162,6 +1173,11 @@ public:
 
     ContextMutablePtr getSessionContext() const;
     bool hasSessionContext() const { return !session_context.expired(); }
+    bool isSessionContext() const
+    {
+        auto ptr = session_context.lock();
+        return ptr && ptr.get() == this;
+    }
 
     ContextMutablePtr getGlobalContext() const;
 

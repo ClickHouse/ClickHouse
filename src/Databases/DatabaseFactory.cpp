@@ -155,6 +155,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         .database_name = database_name,
         .metadata_path = metadata_path,
         .uuid = create.uuid,
+        .is_temporary = create.temporary,
         .context = context};
 
     // creator_fn creates and returns a DatabasePtr with the supplied arguments

@@ -9,6 +9,7 @@
 #include <Common/SharedMutex.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/escapeForFileName.h>
+#include <IO/WriteHelpers.h>
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -82,6 +83,18 @@ using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 class FutureSetFromSubquery;
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
+struct TemporaryDatabaseHolder : boost::noncopyable
+{
+    explicit TemporaryDatabaseHolder(DatabasePtr database_) : database(database_) {}
+    ~TemporaryDatabaseHolder() noexcept;
+
+    DatabasePtr getDatabase() const { return database; }
+    void clear() { database.reset(); }
+
+protected:
+    DatabasePtr database;
+};
+
 /// Creates temporary table in `_temporary_and_external_tables` with randomly generated unique StorageID.
 /// Such table can be accessed from everywhere by its ID.
 /// Removes the table from database on destruction.
@@ -125,7 +138,9 @@ class BackgroundSchedulePoolTaskHolder;
 
 struct GetDatabasesOptions
 {
-    bool with_datalake_catalogs{false};
+    bool with_datalake_catalogs{true};
+    bool with_temporaries{true};
+    bool skip_temporary_owner_check{false};
 };
 
 /// For some reason Context is required to get Storage from Database object.
@@ -143,16 +158,28 @@ public:
     /// Returns true if a passed name is one of the predefined databases' names.
     static bool isPredefinedDatabase(std::string_view database_name);
 
-    static fs::path getMetadataDirPath() { return fs::path("metadata"); }
-    static fs::path getMetadataDirPath(const String & database_name) { return getMetadataDirPath() / escapeForFileName(database_name); }
-    static fs::path getMetadataFilePath(const String & database_name) { return getMetadataDirPath() / (escapeForFileName(database_name) + ".sql"); }
-    static fs::path getMetadataTmpFilePath(const String & database_name) { return getMetadataDirPath() / (escapeForFileName(database_name) + ".sql.tmp"); }
+    static String formatUUIDForFilePath(const UUID & uuid);
 
-    static fs::path getDataDirPath() { return fs::path("data"); }
-    static fs::path getDataDirPath(const String & database_name) { return getDataDirPath() / escapeForFileName(database_name); }
+    static fs::path getTemporaryDir() { return fs::path("temporary"); }
 
-    static fs::path getStoreDirPath() { return fs::path("store"); }
-    static fs::path getStoreDirPath(const UUID & uuid) { return getStoreDirPath() / getPathForUUID(uuid); }
+    static fs::path getDataDirPath(const bool is_temporary) { return !is_temporary ? fs::path("data") : getTemporaryDir() / "data"; }
+    static fs::path getDataDirPath(const String & database_name, const bool is_temporary) { return getDataDirPath(is_temporary) / escapeForFileName(database_name); }
+
+    static fs::path getStoreDirPath(const bool is_temporary) { return !is_temporary ? fs::path("store") : getTemporaryDir() / "store"; }
+    static fs::path getStoreDirPath(const UUID & uuid, const bool is_temporary) { return getStoreDirPath(is_temporary) / formatUUIDForFilePath(uuid); }
+
+    static fs::path getMetadataDirPath(const bool is_temporary) { return !is_temporary ? fs::path("metadata") : getTemporaryDir() / "metadata"; }
+    static fs::path getMetadataDirPath(const String & database_name, const bool is_temporary) { return getMetadataDirPath(is_temporary) / escapeForFileName(database_name); }
+    static fs::path getMetadataFilePath(const String & database_name, const bool is_temporary) { return getMetadataDirPath(is_temporary) / (escapeForFileName(database_name) + ".sql"); }
+    static fs::path getMetadataTmpFilePath(const String & database_name, const bool is_temporary) { return getMetadataDirPath(is_temporary) / (escapeForFileName(database_name) + ".sql.tmp"); }
+
+    static fs::path getMetadataDroppedDirPath(const bool is_temporary) { return !is_temporary ? fs::path("metadata_dropped") : getTemporaryDir() / "metadata_dropped"; }
+    static fs::path getMetadataDroppedFilePath(const StorageID & table_id, const bool is_temporary)
+    {
+        return getMetadataDroppedDirPath(is_temporary) /
+            fmt::format("{}.{}.{}.sql", escapeForFileName(table_id.getDatabaseName()), escapeForFileName(table_id.getTableName()), toString(table_id.uuid));
+    }
+
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
@@ -162,6 +189,7 @@ public:
     void initializeAndLoadTemporaryDatabase();
     void startupBackgroundTasks();
     void loadMarkedAsDroppedTables();
+    void enqueueTemporaryDatabaseDrop(DatabasePtr db) noexcept;
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table);
@@ -176,6 +204,7 @@ public:
 
     void assertDatabaseExists(const String & database_name) const;
     void assertDatabaseDoesntExist(const String & database_name) const;
+    Exception makeUnknownDatabaseException(const std::string_view & database_name, const bool & show_hints = true) const;
 
     DatabasePtr getDatabaseForTemporaryTables() const;
     DatabasePtr getSystemDatabase() const;
@@ -184,35 +213,32 @@ public:
     DatabasePtr detachDatabase(ContextPtr local_context, const String & database_name, bool drop = false, bool check_empty = true);
     void updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database);
 
-    /// database_name must be not empty
-    DatabasePtr getDatabase(std::string_view database_name) const;
-    DatabasePtr tryGetDatabase(std::string_view database_name) const;
-    DatabasePtr getDatabase(const UUID & uuid) const;
-    DatabasePtr tryGetDatabase(const UUID & uuid) const;
-    bool isDatabaseExist(std::string_view database_name) const;
     /// Datalake catalogs are implement at IDatabase level in ClickHouse.
     /// In general case Datalake catalog is a some remote service which contains iceberg/delta tables.
     /// Sometimes this service charges money for requests. With this flag we explicitly protect ourself
     /// to not accidentally query external non-free service for some trivial things like
     /// autocompletion hints or system.tables query. We have a setting which allow to show
     /// these databases everywhere, but user must explicitly specify it.
-    Databases getDatabases(GetDatabasesOptions options) const;
+    Databases getDatabases(GetDatabasesOptions options, ContextPtr context) const;
 
-    /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
-    DatabasePtr getDatabase(const String & database_name, ContextPtr local_context) const;
+    /// Database_name must not be empty.
+    /// ContextPtr used to ensure that found temporary database belongs to passed session (can by bypassed by flag in options).
+    /// It is safe to pass global context.
+    DatabasePtr getDatabase(std::string_view database_name, ContextPtr context, const GetDatabasesOptions & options = {}) const;
+    DatabasePtr tryGetDatabase(std::string_view database_name, ContextPtr context, const GetDatabasesOptions & options = {}) const;
+    bool isDatabaseExist(std::string_view database_name) const;
 
     /// For all of the following methods database_name in table_id must be not empty (even for temporary tables).
+    /// Note: temporary database owner check is skipped here.
     void assertTableDoesntExist(const StorageID & table_id, ContextPtr context) const;
     bool isTableExist(const StorageID & table_id, ContextPtr context) const;
     bool isDictionaryExist(const StorageID & table_id) const;
 
-    StoragePtr getTable(const StorageID & table_id, ContextPtr context) const;
-    StoragePtr tryGetTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable getTableImpl(const StorageID & table_id,
-                                  ContextPtr context,
-                                  std::optional<Exception> * exception = nullptr) const;
+    StoragePtr getTable(const StorageID & table_id, ContextPtr context, const GetDatabasesOptions & options = {}) const;
+    StoragePtr tryGetTable(const StorageID & table_id, ContextPtr context, const GetDatabasesOptions & options = {}) const;
+    DatabaseAndTable getTableWithDatabase(const StorageID & table_id, ContextPtr context, const GetDatabasesOptions & options = {}) const;
+    DatabaseAndTable tryGetTableWithDatabase(const StorageID & table_id, ContextPtr context, const GetDatabasesOptions & options = {}) const;
+    DatabaseAndTable tryGetTableWithDatabase(const UUID & uuid, ContextPtr context, const GetDatabasesOptions & options = {}) const;
 
     /// Returns true if a passed table_id refers to one of the predefined tables' names.
     /// All tables in the "system" database with System* table engine are predefined.
@@ -230,7 +256,7 @@ public:
     void addUUIDMapping(const UUID & uuid, const DatabasePtr & database, const StoragePtr & table);
     void removeUUIDMapping(const UUID & uuid);
     void removeUUIDMappingFinally(const UUID & uuid);
-    /// For moving table between databases
+    /// For moving table between databases.
     void updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
     /// This method adds empty mapping (with database and storage equal to nullptr).
     /// It's required to "lock" some UUIDs and protect us from collision.
@@ -242,15 +268,8 @@ public:
 
     bool hasUUIDMapping(const UUID & uuid);
 
-    static String getPathForUUID(const UUID & uuid);
-
-    DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
-
-    String getPathForDroppedMetadata(const StorageID & table_id) const;
-    String getPathForMetadata(const StorageID & table_id) const;
-    void enqueueDroppedTableCleanup(
-        StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay = false);
-    void undropTable(StorageID table_id);
+    void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay, bool is_temporary_db);
+    void undropTable(StorageID table_id, ContextPtr context);
 
     void waitTableFinallyDropped(const UUID & uuid);
 
@@ -280,6 +299,7 @@ public:
         StoragePtr table;
         DiskPtr db_disk;
         String metadata_path;
+        String data_path;
         time_t drop_time{};
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
@@ -297,7 +317,6 @@ public:
     bool canPerformReplicatedDDLQueries() const;
 
     void updateMetadataFile(const String & database_name, const ASTPtr & create_query);
-    bool hasDatalakeCatalogs() const;
     bool isDatalakeCatalog(const String & database_name) const;
 
 private:
@@ -308,8 +327,12 @@ private:
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
+    static bool checkDatabaseOptions(const DatabasePtr & db, const GetDatabasesOptions & options, const ContextPtr & context_);
 
     void shutdownImpl(std::function<void()> shutdown_system_logs);
+    String getPathForTableMetadata(const DatabasePtr & db, const StorageID & table_id) const;
+
+    DatabaseAndTable getTableImpl(const StorageID & table_id, ContextPtr context, const GetDatabasesOptions & options, std::optional<Exception> * exception = nullptr) const;
 
     void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
 
@@ -327,6 +350,7 @@ private:
         return UUIDHelpers::getHighBytes(uuid) >> (64 - bits_for_first_level);
     }
 
+    void dropTemporaryDatabasesTask();
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table);
 
@@ -344,9 +368,12 @@ private:
     static constexpr size_t reschedule_time_ms = 100;
 
     mutable std::mutex databases_mutex;
+    Databases all_databases TSA_GUARDED_BY(databases_mutex);
+    Databases temporary_databases TSA_GUARDED_BY(databases_mutex);
+    Databases datalake_catalogs TSA_GUARDED_BY(databases_mutex);
+    Databases regular_databases TSA_GUARDED_BY(databases_mutex);
+    Databases & chooseDatabasesContainer(const DatabasePtr & db) TSA_REQUIRES(databases_mutex);
 
-    Databases databases TSA_GUARDED_BY(databases_mutex);
-    Databases databases_without_datalake_catalogs TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
     /// Referential dependencies between tables: table "A" depends on table "B"
@@ -392,6 +419,10 @@ private:
     std::condition_variable wait_table_finally_dropped;
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> cleanup_task;
 
+    std::mutex drop_temporary_databases_mutex;
+    std::vector<DatabasePtr> drop_temporary_databases_queue TSA_GUARDED_BY(drop_temporary_databases_mutex);
+    std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_temporary_databases_task;
+
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> reload_disks_task;
     std::mutex reload_disks_mutex;
     std::set<String> disks_to_reload;
@@ -418,6 +449,8 @@ public:
 
     TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept;
     TemporaryLockForUUIDDirectory & operator = (TemporaryLockForUUIDDirectory && rhs) noexcept;
+private:
+    void maybeUnlock();
 };
 
 }

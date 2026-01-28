@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterBackupQuery.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 #include <Backups/BackupsWorker.h>
 #include <Backups/BackupSettings.h>
@@ -10,6 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/logger_useful.h>
@@ -17,6 +19,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -38,7 +45,29 @@ namespace
 
 BlockIO InterpreterBackupQuery::execute()
 {
-    const ASTBackupQuery & backup_query = query_ptr->as<const ASTBackupQuery &>();
+    auto & backup_query = query_ptr->as<ASTBackupQuery &>();
+
+    /// Remove temporary databases from query: they can't be backed up.
+    for (auto it = backup_query.elements.begin(); it != backup_query.elements.end();)
+    {
+        if (!it->database_name.empty())
+        {
+            const auto & db = DatabaseCatalog::instance().tryGetDatabase(it->database_name, context);
+            if (db && db->isTemporary())
+            {
+                /// database explicitly specified, throw error
+                if (it->type != ASTBackupQuery::ElementType::ALL)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Temporary database '{}' cannot be backed up", it->database_name);
+
+                it = backup_query.elements.erase(it);
+                continue;
+            }
+        }
+        ++it;
+    }
+    if (backup_query.elements.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No targets specified");
+
     auto & backups_worker = context->getBackupsWorker();
 
     auto [id, status] = backups_worker.start(query_ptr, context);

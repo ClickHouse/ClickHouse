@@ -1,6 +1,7 @@
 #include <Common/computeMaxTableNameLength.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 #include <filesystem>
 #include <unistd.h>
@@ -14,8 +15,9 @@ size_t computeMaxTableNameLength(const String & database_name, ContextPtr contex
     namespace fs = std::filesystem;
 
     const String suffix = ".sql.detached";
-    const String metadata_path = fs::path(context->getPath()) / "metadata";
-    const String metadata_dropped_path = fs::path(context->getPath()) / "metadata_dropped";
+    // is_temporary is irrelevant: _PC_NAME_MAX limits a single path component, not the full path.
+    const String metadata_path = fs::path(context->getPath()) / DatabaseCatalog::getMetadataDirPath(false);
+    const String metadata_dropped_path = fs::path(context->getPath()) / DatabaseCatalog::getMetadataDroppedDirPath(false);
 
     // Helper lambda to get the maximum name length
     auto get_max_name_length = [](const String & path) -> size_t {

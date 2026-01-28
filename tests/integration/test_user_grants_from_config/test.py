@@ -49,7 +49,7 @@ def test_user_grants_from_config():
             "GRANT SHOW ON *.* TO another",
             "GRANT CREATE ON *.* TO another WITH GRANT OPTION",
             "GRANT SELECT ON system.* TO another",
-            "REVOKE CREATE DATABASE, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY ON system.* FROM another",
+            "REVOKE CREATE DATABASE, CREATE TEMPORARY DATABASE, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY ON system.* FROM another",
         ]
     )
 

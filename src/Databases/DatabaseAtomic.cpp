@@ -62,26 +62,40 @@ DatabaseAtomic::DatabaseAtomic(
     String name_,
     String metadata_path_,
     UUID uuid,
+    bool is_temporary_,
     const String & logger_name,
     ContextPtr context_,
     DatabaseMetadataDiskSettings database_metadata_disk_settings_)
     : DatabaseOrdinary(
         name_,
         metadata_path_,
-        DatabaseCatalog::getStoreDirPath() / "",
+        DatabaseCatalog::getStoreDirPath(is_temporary_) / "",
+        is_temporary_,
         logger_name,
         context_,
         database_metadata_disk_settings_)
-    , path_to_table_symlinks(DatabaseCatalog::getDataDirPath(name_) / "")
-    , path_to_metadata_symlink(DatabaseCatalog::getMetadataDirPath(name_))
+    , path_to_table_symlinks(DatabaseCatalog::getDataDirPath(name_, is_temporary_) / "")
+    , path_to_metadata_symlink(DatabaseCatalog::getMetadataDirPath(name_, is_temporary_))
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
 }
 
 DatabaseAtomic::DatabaseAtomic(
-    String name_, String metadata_path_, UUID uuid, ContextPtr context_, DatabaseMetadataDiskSettings database_metadata_disk_settings_)
-    : DatabaseAtomic(name_, std::move(metadata_path_), uuid, "DatabaseAtomic (" + name_ + ")", context_, database_metadata_disk_settings_)
+    String name_,
+    String metadata_path_,
+    UUID uuid,
+    bool is_temporary_,
+    ContextPtr context_,
+    DatabaseMetadataDiskSettings database_metadata_disk_settings_)
+    : DatabaseAtomic(
+        name_,
+        std::move(metadata_path_),
+        uuid,
+        is_temporary_,
+        "DatabaseAtomic (" + name_ + ")",
+        context_,
+        database_metadata_disk_settings_)
 {
 }
 
@@ -96,7 +110,7 @@ void DatabaseAtomic::createDirectoriesUnlocked()
     auto db_disk = getDisk();
 
     DatabaseOnDisk::createDirectoriesUnlocked();
-    db_disk->createDirectories(DatabaseCatalog::getMetadataDirPath());
+    db_disk->createDirectories(DatabaseCatalog::getMetadataDirPath(isTemporary()));
     if (db_disk->isSymlinkSupported())
         db_disk->createDirectories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
@@ -114,7 +128,7 @@ String DatabaseAtomic::getTableDataPath(const String & table_name) const
 
 String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 {
-    auto tmp = data_path + DatabaseCatalog::getPathForUUID(query.uuid);
+    auto tmp = data_path + DatabaseCatalog::formatUUIDForFilePath(query.uuid);
     assert(tmp != data_path && !tmp.empty());
     return tmp;
 }
@@ -203,7 +217,7 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
     {
         std::lock_guard lock(mutex);
         table = getTableUnlocked(table_name);
-        table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
+        table_metadata_path_drop = DatabaseCatalog::getMetadataDroppedFilePath(table->getStorageID(), isTemporary());
 
         db_disk->createDirectories(fs::path(table_metadata_path_drop).parent_path());
 
@@ -228,7 +242,7 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
 
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
-    DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, db_disk, table_metadata_path_drop, sync);
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, db_disk, table_metadata_path_drop, sync, isTemporary());
 }
 
 void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
@@ -738,8 +752,8 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
     }
 
-    auto old_metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
-    auto new_metadata_file_path = DatabaseCatalog::getMetadataFilePath(new_name);
+    auto old_metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name, isTemporary());
+    auto new_metadata_file_path = DatabaseCatalog::getMetadataFilePath(new_name, isTemporary());
     auto default_db_disk = getContext()->getDatabaseDisk();
     default_db_disk->moveFile(old_metadata_file_path, new_metadata_file_path);
 
@@ -767,9 +781,9 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
             snapshot.database = database_name;
         }
 
-        path_to_metadata_symlink = DatabaseCatalog::getMetadataDirPath(new_name);
+        path_to_metadata_symlink = DatabaseCatalog::getMetadataDirPath(new_name, isTemporary());
         old_path_to_table_symlinks = path_to_table_symlinks;
-        path_to_table_symlinks = DatabaseCatalog::getDataDirPath(new_name) / "";
+        path_to_table_symlinks = DatabaseCatalog::getDataDirPath(new_name, isTemporary()) / "";
     }
 
     auto db_disk = getDisk();
@@ -823,7 +837,7 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
         database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, args.create_query.attach);
 
         return make_shared<DatabaseAtomic>(
-            args.database_name, args.metadata_path, args.uuid, args.context, database_metadata_disk_settings);
+            args.database_name, args.metadata_path, args.uuid, args.is_temporary, args.context, database_metadata_disk_settings);
     };
     factory.registerDatabase("Atomic", create_fn, /*features=*/{.supports_settings = true});
 }

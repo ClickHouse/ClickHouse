@@ -248,7 +248,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     if (has_valid_arguments)
     {
         bool is_replicated_database = local_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->getEngineName() == "Replicated";
+            DatabaseCatalog::instance().getDatabase(table_id.database_name, local_context)->getEngineName() == "Replicated";
 
         /// Get path and name from engine arguments
         auto * ast_zk_path = engine_args[arg_num]->as<ASTLiteral>();

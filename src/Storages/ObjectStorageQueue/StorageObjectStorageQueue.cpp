@@ -1460,7 +1460,7 @@ void StorageObjectStorageQueue::alter(
         if (requires_detached_mv)
             streaming_file_iterator.reset();
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name, local_context)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
         setInMemoryMetadata(new_metadata);
     }
 }
@@ -1604,7 +1604,7 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
     else
     {
         if (database_uuid == UUIDHelpers::Nil)
-            database_uuid = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID();
+            database_uuid = DatabaseCatalog::instance().getDatabase(table_id.database_name, context_)->getUUID();
 
         result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
     }

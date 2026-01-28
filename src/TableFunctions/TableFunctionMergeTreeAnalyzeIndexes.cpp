@@ -159,8 +159,8 @@ StoragePtr TableFunctionMergeTreeAnalyzeIndexes::executeImpl(
     if (source_table_id.hasUUID())
     {
         /// Note, there is no getByUUID() at the time of writing, hence using try*() methods.
-        auto database_and_table = DatabaseCatalog::instance().tryGetByUUID(source_table_id.uuid);
-        source_table = DatabaseCatalog::instance().tryGetByUUID(source_table_id.uuid).second;
+        auto database_and_table = DatabaseCatalog::instance().tryGetTableWithDatabase(source_table_id.uuid, context);
+        source_table = DatabaseCatalog::instance().tryGetTableWithDatabase(source_table_id.uuid, context).second;
         if (!source_table)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table with UUID {} does not exist", source_table_id.uuid);
     }

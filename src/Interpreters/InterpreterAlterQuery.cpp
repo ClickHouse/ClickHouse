@@ -62,7 +62,6 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
-    extern const int UNKNOWN_DATABASE;
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -108,18 +107,21 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
     auto table_id = getContext()->tryResolveStorageID(alter);
+    DatabasePtr database;
     StoragePtr table;
 
     if (table_id)
     {
-        query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+        query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
+        database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name, getContext());
     }
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
+        throwIfTemporaryDatabaseUsedOnCluster(database);
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
@@ -128,10 +130,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     getContext()->checkAccess(getRequiredAccess());
 
-    if (!table_id)
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
+    if (!table_id || !database)
+        throw DatabaseCatalog::instance().makeUnknownDatabaseException(alter.getDatabase());
 
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
@@ -311,7 +312,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 {
     BlockIO res;
     getContext()->checkAccess(getRequiredAccess());
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.getDatabase());
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.getDatabase(), getContext());
     AlterCommands alter_commands;
 
     for (const auto & child : alter.command_list->children)
@@ -325,6 +326,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 
     if (!alter.cluster.empty())
     {
+        throwIfTemporaryDatabaseUsedOnCluster(database);
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);

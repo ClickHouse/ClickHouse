@@ -115,7 +115,7 @@ namespace DB
             if (database_name.empty())
                 database_name = context->getCurrentDatabase();
 
-            auto database = DatabaseCatalog::instance().getDatabase(database_name);
+            auto database = DatabaseCatalog::instance().getDatabase(database_name, context);
             storage = database->tryGetTable(loop_table_name, context);
             if (!storage)
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
