@@ -102,7 +102,7 @@ Field FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_
         else
         {
             shifted_value = std::move(next_value);
-            step_len = step_len * 2 > step_len ? step_len * 2 : step_len;
+            step_len = step_len <= INT64_MAX/2 ? step_len * 2 : step_len;
         }
     }
 
