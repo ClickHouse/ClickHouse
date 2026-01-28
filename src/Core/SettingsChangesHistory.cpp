@@ -42,10 +42,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.2",
         {
             {"default_dictionary_database", "", "", "New setting"},
+            {"sync_request_timeout", DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, "Make sync_request_timeout configurable."},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
-            {"sync_request_timeout", DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, "Make sync_request_timeout configurable."},
             {"use_statistics", true, true, "Enable this optimization by default."},
             {"ignore_on_cluster_for_replicated_database", false, false, "Add a new setting to ignore ON CLUSTER clause for DDL queries with a replicated database."},
             {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
