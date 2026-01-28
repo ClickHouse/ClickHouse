@@ -117,34 +117,29 @@ def test_clickhouse_client_max_peak_memory_usage_distributed(started_cluster):
     assert peak_memory_usage
     
     # Extract required_query_id from shard2 logs
+    print(f"Searching shard2 logs for initial_query_id: {query_id}")
     required_query_id = None
     shard_2_logs = shard_2.grep_in_log(f"initial_query_id: {query_id}")
+    print(f"Shard2 logs result:\n{shard_2_logs}")
     
     if shard_2_logs:
         log_lines = shard_2_logs.strip().split('\n')
+        print(f"Found {len(log_lines)} log lines with initial_query_id")
         for log_line in log_lines:
+            print(f"Processing log line: {log_line}")
+            # Extract query_id from curly braces {required_query_id}
             query_id_match = re.search(r"\{([a-f0-9-]+)\}", log_line)
             if query_id_match:
                 required_query_id = query_id_match.group(1)
+                print(f"required_query_id from shard2: {required_query_id}")
                 break
     
     assert required_query_id, "Failed to extract required_query_id from shard2 logs"
     
-    # Extract server peak memory usage from logs
-    server_memory_log = shard_2.grep_in_log(f"{{{required_query_id}}} <Debug> MemoryTracker: Query peak memory usage:")
-    assert server_memory_log, f"Memory usage log not found for query {required_query_id}"
-    
-    # Parse server memory usage value
-    server_memory_match = re.search(r"Query peak memory usage: ([0-9.]+)", server_memory_log)
-    assert server_memory_match, "Failed to parse server memory usage"
-    server_memory_value = float(server_memory_match.group(1))
-    
-    # Parse client memory usage value
-    client_memory_value = float(peak_memory_usage)
-    
-    # Assert difference is less than 1 MB
-    memory_diff = abs(client_memory_value - server_memory_value)
-    assert memory_diff < 1.0, f"Memory usage difference {memory_diff} MiB exceeds 1 MiB threshold (client: {client_memory_value} MiB, server: {server_memory_value} MiB)"
+    # Assert that shard2 logs contain the query peak memory usage with the required_query_id
+    expected_log_pattern = f"{{{required_query_id}}} <Debug> MemoryTracker: Query peak memory usage: {peak_memory_usage}"
+    print(f"Checking for log pattern: {expected_log_pattern}")
+    assert shard_2.contains_in_log(expected_log_pattern)
 
 
 def test_clickhouse_client_max_peak_memory_single_node(started_cluster):
