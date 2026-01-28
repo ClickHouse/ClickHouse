@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import HDFSArguments from './snippets/_hdfs_arguments.md'
 
 # hdfs Table Function
 
@@ -23,11 +24,7 @@ hdfs(URI, format, structure)
 
 ## Arguments {#arguments}
 
-| Argument  | Description                                                                                                                                                              |
-|-----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `URI`     | The relative URI to the file in HDFS. Path to file support following globs in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc', 'def'` — strings. |
-| `format`  | The [format](/sql-reference/formats) of the file.                                                                                                                          |
-| `structure`| Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                           |
+<HDFSArguments/>
 
 ## Returned value {#returned_value}
 
