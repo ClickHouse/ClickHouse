@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 -- Basic usage of tuple with names (parameter syntax)
 SELECT tuple('x', 'y')(1, 'hello') AS t, toTypeName(t), t.x, t.y;
 
