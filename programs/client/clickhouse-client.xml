@@ -79,6 +79,8 @@
     <secure>1</secure>
     <user>dbuser</user>
     <password>dbpwd123</password>
+    <ssh_key_file>/home/alice/.ssh_key</ssh_key_file>
+    <ssh_key_passphrase>foobar</ssh_key_passphrase>
     <format>PrettyCompactMonoBlock</format>
     <multiline>1</multiline>
     <multiquery>1</multiquery>
@@ -112,6 +114,8 @@
             <secure>1</secure>
             <user>default</user>
             <password></password>
+            <ssh_key_file>/home/bob/.ssh_key</ssh_key_file>
+            <ssh_key_passphrase>foobar</ssh_key_passphrase>
             <database></database>
             <!-- '~' is expanded to HOME, like in any shell -->
             <history_file></history_file>
