@@ -1222,13 +1222,9 @@ static BlockIO executeQueryImpl(
                 catch (const Exception & e)
                 {
                     if (e.code() == ErrorCodes::SYNTAX_ERROR)
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}.\nExpected AST:\n{}\n, but got\n{}",
-                            formatted1,
-                            original_query,
-                            out_ast->dumpTree(),
-                            ast2->dumpTree());
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
+                            formatted1, original_query);
                     else
                         throw;
                 }
@@ -1241,10 +1237,8 @@ static BlockIO executeQueryImpl(
                 {
                     /// Try to find the problematic part of the AST (it's not guaranteed to find it correctly though)
                     auto bad_ast = out_ast;
-                    bool found_bad_ast;
-                    do
+                    while (bad_ast)
                     {
-                        found_bad_ast = false;
                         for (const auto & child : bad_ast->children)
                         {
                             auto formatted_child = format_ast(child);
@@ -1259,20 +1253,19 @@ static BlockIO executeQueryImpl(
                                 /// We didn't find it - so it was formatted in a different way
                                 LOG_FATAL(getLogger("executeQuery"), "Suspicious part of the AST: {}: {}", child->getID(), formatted_child);
                                 bad_ast = child;
-                                found_bad_ast = true;
                                 break;
                             }
                         }
-                    } while (found_bad_ast);
+                    }
 
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting in {}: the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
-                        bad_ast->getID(), original_query, formatted1, formatted2);
+                        "Inconsistent AST formatting in {}: the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}\nExpected AST:\n{}\n, but got\n{}",
+                        bad_ast->getID(), original_query, formatted1, formatted2, out_ast->dumpTree(), ast2->dumpTree());
                 }
             }
             catch (const Exception & e)
             {
-                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail inder debug build.
+                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under debug build.
                 if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                     throw;
             }
