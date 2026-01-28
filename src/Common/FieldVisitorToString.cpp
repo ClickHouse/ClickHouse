@@ -22,9 +22,7 @@ static inline String formatQuoted(T x)
 
     if constexpr (is_decimal_field<T>)
     {
-        writeChar('\'', wb);
         writeText(x.getValue(), x.getScale(), wb, {});
-        writeChar('\'', wb);
     }
     else if constexpr (is_big_int_v<T>)
     {
