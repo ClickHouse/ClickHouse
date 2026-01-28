@@ -247,10 +247,12 @@ namespace
                 visitDistributedTableEngine(table_engine);
 
             /// Alias(table_name) or Alias(db_name, table_name)
+            /// Note: Alias resolves non-qualified target names to its own database (not current_database),
+            /// so we use addQualifiedNameFromArgumentUsingTableDatabase for the single-argument case.
             if (table_engine.name == "Alias" && table_engine.arguments)
             {
                 if (table_engine.arguments->children.size() == 1)
-                    addQualifiedNameFromArgument(table_engine, 0);
+                    addQualifiedNameFromArgumentUsingTableDatabase(table_engine, 0);
                 else
                     addDatabaseAndTableNameFromArguments(table_engine, 0, 1);
             }
@@ -467,6 +469,19 @@ namespace
         {
             if (auto qualified_name = tryGetQualifiedNameFromArgument(function, arg_idx, evaluate))
                 dependencies.emplace(std::move(qualified_name).value());
+        }
+
+        /// Like addQualifiedNameFromArgument, but uses the database of the table being created
+        /// as the default database (instead of current_database). This matches the behavior of
+        /// engines like Alias that resolve non-qualified target names to their own database.
+        void addQualifiedNameFromArgumentUsingTableDatabase(const ASTFunction & function, size_t arg_idx, bool evaluate = true)
+        {
+            if (auto qualified_name = tryGetQualifiedNameFromArgument(function, arg_idx, evaluate, /* apply_current_database= */ false))
+            {
+                if (qualified_name->database.empty())
+                    qualified_name->database = table_name.database;
+                dependencies.emplace(std::move(qualified_name).value());
+            }
         }
 
         /// Returns a database name and a table name extracted from two separate arguments.
