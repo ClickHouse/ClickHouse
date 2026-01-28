@@ -55,6 +55,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
     processing_start_time = now();
     processing_end_time = {};
     processed_rows = 0;
+    std::lock_guard lock(last_exception_mutex);
     last_exception = {};
 }
 
