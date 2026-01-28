@@ -717,9 +717,7 @@ void optimizeTreeSecondPass(
         {
             read_from_local_parallel_replica_plan = true;
 
-            auto local_plan = read_from_local->extractQueryPlan();
-            local_plan->optimize(optimization_settings);
-
+            auto local_plan = read_from_local->optimizeAndExtractQueryPlan(optimization_settings);
             auto * local_plan_node = frame.node;
             query_plan.replaceNodeWithPlan(local_plan_node, std::move(*local_plan));
 

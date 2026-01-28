@@ -16,7 +16,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    QueryPlanPtr extractQueryPlan();
+    QueryPlanPtr optimizeAndExtractQueryPlan(const QueryPlanOptimizationSettings & optimization_settings);
 
     void addFilter(FilterDAGInfo filter);
 

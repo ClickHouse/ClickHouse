@@ -1,6 +1,7 @@
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/Transforms/FilterTransform.h>
-#include <Processors/QueryPlan/FilterStep.h>
 
 namespace DB
 {
@@ -21,12 +22,22 @@ void ReadFromLocalParallelReplicaStep::initializePipeline(QueryPipelineBuilder &
     throw Exception(ErrorCodes::LOGICAL_ERROR, "{} shouldn't be called", __PRETTY_FUNCTION__);
 }
 
-QueryPlanPtr ReadFromLocalParallelReplicaStep::extractQueryPlan()
+QueryPlanPtr ReadFromLocalParallelReplicaStep::optimizeAndExtractQueryPlan(const QueryPlanOptimizationSettings & optimization_settings)
 {
     chassert(query_plan);
 
     auto qp = std::move(query_plan);
     query_plan.reset();
+
+    /// see https://github.com/ClickHouse/ClickHouse/pull/95306
+    if (!optimization_settings.aggregation_in_order)
+        qp->optimize(optimization_settings);
+    else
+    {
+        auto pr_optimization_settings = optimization_settings;
+        pr_optimization_settings.aggregation_in_order = false;
+        qp->optimize(pr_optimization_settings);
+    }
     return qp;
 }
 

@@ -71,6 +71,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool parallel_replicas_support_projection;
+    extern const SettingsBool optimize_aggregation_in_order;
 }
 
 namespace DistributedSetting
@@ -511,6 +512,37 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
 
         /// disable hedged connections -> parallel replicas uses own logic to choose replicas
         context_mutable->setSetting("use_hedged_requests", Field{false});
+    }
+
+    /// When parallel replicas use a local query plan on the initiator node,
+    /// the "aggregation in order" optimization can be affected by filter pushdown,
+    /// which is implemented differently for local and remote execution.
+    ///
+    /// This, in turn, may lead to different read modes (Default, InOrder, InReverseOrder)
+    /// being chosen for the same table on local and remote replicas,
+    /// resulting in a LOGICAL_ERROR such as:
+    /// "Replica 1 decided to read in WithOrder mode, not in ReverseOrder".
+    ///
+    /// Since the "aggregation in order" optimization is disabled by default,
+    /// we mitigate this issue by explicitly disabling it for parallel replicas
+    /// until remote execution also uses the query plan, so that filter pushdown
+    /// is applied uniformly on local and remote nodes.
+    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::optimize_aggregation_in_order])
+    {
+        if (settings[Setting::optimize_aggregation_in_order].changed)
+        {
+            LOG_INFO(
+                logger,
+                "Aggregation in order optimization is enabled explicitly but will not be applied with parallel replicas");
+        }
+        else
+        {
+            LOG_TRACE(
+                logger,
+                "Aggregation in order optimization is enabled but will not be applied with parallel replicas");
+        }
+
+        context_mutable->setSetting("optimize_aggregation_in_order", Field{false});
     }
 
     /// If parallel replicas executed over distributed table i.e. in scope of a shard,

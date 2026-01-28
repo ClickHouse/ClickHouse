@@ -2,7 +2,7 @@
 set optimize_aggregation_in_order = 0;
 SELECT trimLeft(*) FROM (explain select sum(b) from pr_t group by a order by a limit 5 offset 500) WHERE explain LIKE '%ReadFromMergeTree%';
 ReadFromMergeTree (p_agg)
-set optimize_aggregation_in_order = 1;
+set optimize_aggregation_in_order = 1; -- optimize_aggregation_in_order will be disabled with parallel replicas, see https://github.com/ClickHouse/ClickHouse/pull/95306
 explain pipeline select sum(b) from pr_t group by a order by a limit 5 offset 500;
 (Expression)
 ExpressionTransform
@@ -16,18 +16,18 @@ ExpressionTransform
             (Expression)
             ExpressionTransform × 4
               (MergingAggregated)
-              MergingAggregatedBucketTransform × 4
-                Resize 1 → 4
-                  FinishAggregatingInOrderTransform 3 → 1
-                    (Union)
-                      (Aggregating)
-                      FinalizeAggregatedTransform
-                        AggregatingInOrderTransform
+              Resize 4 → 4
+                MergingAggregatedBucketTransform × 4
+                  Resize 1 → 4
+                    GroupingAggregatedTransform 3 → 1
+                      (Union)
+                        (Aggregating)
+                        AggregatingTransform
                           (Expression)
                           ExpressionTransform
                             (ReadFromMergeTree)
-                            MergeTreeSelect(pool: ReadPoolParallelReplicasInOrder, algorithm: InOrder) 0 → 1
-                      (ReadFromRemoteParallelReplicas)
+                            MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread) 0 → 1
+                        (ReadFromRemoteParallelReplicas)
 select sum(b) from pr_t group by a order by a limit 5 offset 500;
 500000
 501000
