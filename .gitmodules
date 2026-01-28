@@ -353,7 +353,7 @@
 	url = https://github.com/gabime/spdlog.git
 [submodule "contrib/wasmtime"]
 	path = contrib/wasmtime
-	url = https://github.com/vdimir/wasmtime.git
+	url = https://github.com/bytecodealliance/wasmtime.git
 [submodule "contrib/delta-kernel-rs"]
 	path = contrib/delta-kernel-rs
 	url = https://github.com/ClickHouse/delta-kernel-rs.git
