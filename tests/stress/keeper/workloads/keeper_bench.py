@@ -251,7 +251,7 @@ class KeeperBench:
         """Stop bench execution and wait for completion."""
         self._stop = True
         if self._th:
-            self._th.join(timeout=(self.duration_s+30))
+            self._th.join(timeout=(self.duration_s + 30))
             paths = [
                 ("config (original)", self.cfg_path),
                 ("replay", self.replay_path),
@@ -264,6 +264,23 @@ class KeeperBench:
             for label, path in paths:
                 if path:
                     print(f"  {label}: {path}")
+            # Print the contents of the patched config YAML
+            try:
+                with open(self.patched_config_path, "r", encoding="utf-8") as f:
+                    patched_config_content = f.read()
+                try:
+                    data = yaml.safe_load(patched_config_content)
+                    printed_yaml = yaml.dump(
+                        data,
+                        default_flow_style=False,
+                        sort_keys=False,
+                        allow_unicode=True,
+                    )
+                except Exception:
+                    printed_yaml = patched_config_content
+                print(f"[keeper][bench][config patched] Contents of {self.patched_config_path}:\n{printed_yaml}")
+            except Exception as e:
+                print(f"[keeper][bench][config patched] Failed to read {self.patched_config_path}: {e}")
             if self._th.is_alive():
                 raise AssertionError("bench thread did not terminate gracefully. Timeout exceeded.")
             self._th = None
