@@ -746,6 +746,11 @@ void DataPartStorageOnDiskBase::remove(
 
         try
         {
+            /// Evaluate can_remove_callback before moving the directory so zero-copy reference checks
+            /// use the current (existing) path. We intentionally don't update part_dir to avoid races.
+            if (!can_remove_description)
+                can_remove_description.emplace(can_remove_callback());
+
             disk->moveDirectory(from, to);
             /// NOTE: we intentionally don't update part_dir here because it would cause a data race
             /// with concurrent readers (e.g. system.parts table queries calling getFullPath()).
