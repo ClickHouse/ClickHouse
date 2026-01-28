@@ -1,15 +1,15 @@
 #include <chrono>
 #include <gtest/gtest.h>
 
-#include <Common/Scheduler/ISchedulerNode.h>
+#include <Common/Scheduler/ITimeSharedNode.h>
 
 using namespace DB;
 
-class FakeSchedulerNode : public ISchedulerNode
+class FakeSchedulerNode : public ITimeSharedNode
 {
 public:
-    explicit FakeSchedulerNode(String & log_, EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : ISchedulerNode(event_queue_, config, config_prefix)
+    explicit FakeSchedulerNode(String & log_, EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+        : ITimeSharedNode(event_queue_, config, config_prefix)
         , log(log_)
     {}
 
@@ -34,9 +34,9 @@ public:
         return nullptr;
     }
 
-    void activateChild(ISchedulerNode * child) override
+    void activateChild(ITimeSharedNode & child) override
     {
-        log += " A" + child->basename;
+        log += " A" + child.basename;
     }
 
     bool isActive() override
@@ -65,14 +65,14 @@ struct QueueTest {
     FakeSchedulerNode root_node;
 
     QueueTest()
-        : root_node(log, &event_queue)
+        : root_node(log, event_queue)
     {}
 
     SchedulerNodePtr makeNode(const String & name)
     {
-        auto node = std::make_shared<FakeSchedulerNode>(log, &event_queue);
+        auto node = std::make_shared<FakeSchedulerNode>(log, event_queue);
         node->basename = name;
-        node->setParent(&root_node);
+        node->setParentNode(&root_node);
         return std::static_pointer_cast<ISchedulerNode>(node);
     }
 
@@ -90,7 +90,7 @@ struct QueueTest {
 
     void activate(const SchedulerNodePtr & node)
     {
-        event_queue.enqueueActivation(node.get());
+        event_queue.enqueueActivation(*node);
     }
 
     void event(const String & text)

@@ -3449,6 +3449,12 @@ If the timeout is reached and memory is not freed, an exception is thrown.
 Read more about [memory overcommit](memory-overcommit.md).
 )", 0) \
     \
+    DECLARE(UInt64, reserve_memory, 0, R"(
+Used in workload scheduling. The minimum amount of RAM reserved to be used for running a query on a single server. Reservation is made through the WORKLOAD hierarchy using the value of a `workload` query setting.
+If not enough memory is available to the workload, a query is prevented from starting and waits in pending state until the reservation can be fulfilled.
+A value of `0` means no reservation.
+This setting takes effect only if MEMORY RESERVATION resource is created.
+)", 0) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 

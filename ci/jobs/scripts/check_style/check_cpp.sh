@@ -214,6 +214,7 @@ std_cerr_cout_excludes=(
     src/Client/ClientApplicationBase.cpp
     src/Client/ClientBase.cpp
     src/Common/ProgressIndication.h
+    src/Common/Scheduler/Debug.h
     src/Client/LineReader.h
     src/Client/LineReader.cpp
     src/Client/ReplxxLineReader.h
