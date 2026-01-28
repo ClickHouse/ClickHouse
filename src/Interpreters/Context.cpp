@@ -630,7 +630,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::mutex dashboard_mutex;
     std::optional<Context::Dashboards> dashboards;
 
-    mutable std::shared_mutex users_to_ignore_early_memory_limit_check_mutex;
+    mutable SharedMutex users_to_ignore_early_memory_limit_check_mutex;
     std::string users_to_ignore_early_memory_limit_check_source TSA_GUARDED_BY(users_to_ignore_early_memory_limit_check_mutex);
     std::shared_ptr<std::unordered_set<std::string_view>> users_to_ignore_early_memory_limit_check TSA_GUARDED_BY(users_to_ignore_early_memory_limit_check_mutex);
 

@@ -41,7 +41,7 @@ namespace
     void checkUserNameNotEmptyAndServerHasEnoughMemory(const String & user_name, std::string_view method, const ContextPtr & context)
     {
         auto users_to_ignore_early_memory_limit_check = context->getUsersToIgnoreEarlyMemoryLimitCheck();
-        if (!(users_to_ignore_early_memory_limit_check && users_to_ignore_early_memory_limit_check->count(user_name)))
+        if (!(users_to_ignore_early_memory_limit_check && users_to_ignore_early_memory_limit_check->contains(user_name)))
             CurrentMemoryTracker::check();
 
         if (user_name.empty())
