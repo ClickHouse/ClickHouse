@@ -94,9 +94,6 @@ static void extractLiteralTokensImpl(
         }
         return;
     }
-
-    if (ast->as<ASTQueryParameter>() || ast->as<ASTIdentifier>())
-        return;
 }
 
 static std::vector<std::optional<LiteralTokenInfo>> extractLiteralTokens(
@@ -515,7 +512,9 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
                                                            const String & salt)
 {
     TemplateStructurePtr res;
-    /// Extract token info from original AST before cloning (so pointers match)
+    /// Extract token info from original AST before cloning.
+    /// The token_map keys are pointers to original AST nodes, so we must
+    /// extract the info before cloning to ensure the pointers match.
     auto token_info_vec = extractLiteralTokens(expression_, token_map, context);
     ASTPtr expression = expression_->clone();
     ReplaceLiteralsVisitor visitor(context, token_info_vec);
