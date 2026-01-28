@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/StringTokenizer.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
@@ -1850,11 +1851,13 @@ try
         global_context->setUserScriptsPath(user_scripts_path);
     }
 
-    /// audit log types
+    /// Audit log configuration
     {
-        if (config().has("logger.auditlog"))
+        /// Audit logging is enabled only when `logger.auditlog` is non-empty.
+        const auto auditlog_path_prop = config().getString("logger.auditlog", "");
+        if (!auditlog_path_prop.empty())
         {
-            std::string auditlog_types = config().getString("logger.auditlog_types");
+            const auto auditlog_types = config().getString("logger.auditlog_types", "");
             std::unordered_set<Context::AuditLogTypes> types_set;
 
             /// Default audit log type is DDL
@@ -1862,50 +1865,30 @@ try
                 types_set.emplace(Context::AuditLogTypes::DDL);
             else
             {
-                std::string_view types_view = auditlog_types;
-                size_t pos = 0;
+                Poco::StringTokenizer auditlog_types_tok(auditlog_types, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
 
-                while (pos < types_view.size())
+                for (const auto & item : auditlog_types_tok)
                 {
-                    /// skip leading whitespaces
-                    pos = types_view.find_first_not_of(" \t", pos);
-                    if (pos == std::string_view::npos)
-                        break;
-
-                    /// find end of token
-                    auto end = types_view.find(',', pos);
-                    size_t token_end = end == std::string_view::npos ? types_view.size() : end;
-
-                    /// trim trailing whitespaces
-                    size_t last = types_view.find_last_not_of(" \t", token_end - 1);
-                    std::string_view item = types_view.substr(pos, last - pos + 1);
-
-                    /// parse token
-                    if (!item.empty())
+                    /// Parse token
+                    if (item == "USER")
+                        types_set.emplace(Context::AuditLogTypes::USER);
+                    else if (item == "DDL")
+                        types_set.emplace(Context::AuditLogTypes::DDL);
+                    else if (item == "DML")
+                        types_set.emplace(Context::AuditLogTypes::DML);
+                    else if (item == "DCL")
+                        types_set.emplace(Context::AuditLogTypes::DCL);
+                    else if (item == "MISC")
+                        types_set.emplace(Context::AuditLogTypes::MISC);
+                    else if (item == "ALL")
+                        types_set.emplace(Context::AuditLogTypes::ALL);
+                    else
                     {
-                        if (item == "USER")
-                            types_set.emplace(Context::AuditLogTypes::USER);
-                        else if (item == "DDL")
-                            types_set.emplace(Context::AuditLogTypes::DDL);
-                        else if (item == "DML")
-                            types_set.emplace(Context::AuditLogTypes::DML);
-                        else if (item == "DCL")
-                            types_set.emplace(Context::AuditLogTypes::DCL);
-                        else if (item == "MISC")
-                            types_set.emplace(Context::AuditLogTypes::MISC);
-                        else if (item == "ALL")
-                            types_set.emplace(Context::AuditLogTypes::ALL);
-                        else
-                        {
-                            throw Exception(ErrorCodes::UNEXPECTED_AUDIT_TYPE,
-                                "Unexpected audit type: {}, expected values are USER, DDL, DML, DCL, MISC, ALL", item);
-                        }
+                        throw Exception(
+                            ErrorCodes::UNEXPECTED_AUDIT_TYPE,
+                            "Unexpected audit type: {}, expected values are USER, DDL, DML, DCL, MISC, ALL",
+                            item);
                     }
-
-                    if (end == std::string_view::npos)
-                        break;
-
-                    pos = end + 1;
                 }
             }
 

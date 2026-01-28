@@ -33,6 +33,10 @@
 
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+
+        <!-- <auditlog>/var/log/clickhouse-server/clickhouse-server.audit.log</auditlog> -->
+        <!-- <auditlog_types>USER,DDL,DCL</auditlog_types> -->
+
         <!-- Rotation policy
              See https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/FileChannel.h#L54-L85
           -->
