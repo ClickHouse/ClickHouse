@@ -2006,7 +2006,7 @@ void Planner::buildPlanForQueryNode()
         }
         else
         {
-            if (expression_analysis_result.hasHaving())
+            if (query_processing_info.getToStage() == QueryProcessingStage::WithMergeableState && expression_analysis_result.hasHaving())
                 addFilterStep(
                     planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);
         }
