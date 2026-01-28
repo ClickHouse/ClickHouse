@@ -31,11 +31,11 @@ struct ExecutableSettingsImpl : public BaseSettings<ExecutableSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) ExecutableSettings##TYPE NAME = &ExecutableSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) ExecutableSettings##TYPE NAME = &ExecutableSettingsImpl ::NAME;
 
 namespace ExecutableSetting
 {
-LIST_OF_EXECUTABLE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+LIST_OF_EXECUTABLE_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -85,7 +85,7 @@ void ExecutableSettings::loadFromQuery(ASTStorage & storage_def)
     }
     else
     {
-        auto settings_ast = make_intrusive<ASTSetQuery>();
+        auto settings_ast = std::make_shared<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }

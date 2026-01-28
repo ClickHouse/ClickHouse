@@ -13,7 +13,7 @@ INSERT INTO ids (id) VALUES (1);
 CREATE DICTIONARY dict
 (
     id Int64,
-    children Array(Int64),
+    children Array(Int64)
 )
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(QUERY 'SELECT 1 id, [1] children'))

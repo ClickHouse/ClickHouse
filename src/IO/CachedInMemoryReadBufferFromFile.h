@@ -21,7 +21,10 @@ public:
     String getInfoForLog() override;
     bool isSeekCheap() override;
 
-    bool isContentCached(size_t offset, size_t size) override;
+    /// Should we override isContentCached to do a cache lookup? It would save ThreadPoolRemoteFSReader
+    /// the overhead of passing the task to another thread and back, but will add overhead of doing
+    /// cache lookup twice.
+    /// bool isContentCached(size_t offset, size_t size) override;
 
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
@@ -33,6 +36,8 @@ public:
 private:
     PageCacheKey cache_key; // .offset is offset of `chunk` start
     PageCachePtr cache;
+    size_t block_size;
+    size_t lookahead_blocks;
     ReadSettings settings;
     std::unique_ptr<ReadBufferFromFileBase> in;
 

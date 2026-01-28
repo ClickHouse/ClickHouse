@@ -4,11 +4,9 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Interpreters/TransactionLog.h>
-#include <Common/setThreadName.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -41,7 +39,7 @@ bool MergePlainMergeTreeTask::executeStep()
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_list_entry)
     {
-        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+        switcher.emplace((*merge_list_entry)->thread_group, "", /*allow_existing_group*/ true);
     }
 
     switch (state)
@@ -181,33 +179,21 @@ void MergePlainMergeTreeTask::finish()
         ThreadFuzzer::maybeInjectSleep();
         ThreadFuzzer::maybeInjectMemoryLimitException();
     }
-
-    merge_mutate_entry->finalize();
 }
 
 void MergePlainMergeTreeTask::cancel() noexcept
 {
     if (merge_task)
         merge_task->cancel();
-
-    if (new_part)
-        new_part->removeIfNeeded();
-
-    /// We need to destroy task here because it holds RAII wrapper for
-    /// temp directories which guards temporary dir from background removal which can
-    /// conflict with the next scheduled merge because it will be possible after merge_mutate_entry->finalize()
-    merge_task.reset();
-
-    if (merge_mutate_entry)
-        merge_mutate_entry->finalize();
 }
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const
 {
-    auto context = Context::createCopy(storage.getContext()->getBackgroundContext());
+    auto context = Context::createCopy(storage.getContext());
     context->makeQueryContextForMerge(*storage.getSettings());
     auto query_id = getQueryId();
     context->setCurrentQueryId(query_id);
+    context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MERGE);
     return context;
 }
 

@@ -1,9 +1,8 @@
-#include <Common/DNSResolver.h>
+#include "DNSResolver.h"
 #include <Common/CacheBase.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/IPAddress.h>
@@ -13,21 +12,13 @@
 #include <atomic>
 #include <optional>
 #include <string_view>
-#include <Common/MultiVersion.h>
+#include "Common/MultiVersion.h"
 #include <unordered_set>
-#include <Common/DNSPTRResolverProvider.h>
+#include "DNSPTRResolverProvider.h"
 
 namespace ProfileEvents
 {
     extern const Event DNSError;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric DNSHostsCacheBytes;
-    extern const Metric DNSHostsCacheSize;
-    extern const Metric DNSAddressesCacheBytes;
-    extern const Metric DNSAddressesCacheSize;
 }
 
 namespace std
@@ -179,8 +170,8 @@ struct DNSResolver::Impl
     using HostWithConsecutiveFailures = std::unordered_map<String, UInt32>;
     using AddressWithConsecutiveFailures = std::unordered_map<Poco::Net::IPAddress, UInt32>;
 
-    CacheBase<std::string, DNSResolver::CacheEntry> cache_host{CurrentMetrics::DNSHostsCacheBytes, CurrentMetrics::DNSHostsCacheSize, 1024};
-    CacheBase<Poco::Net::IPAddress, std::unordered_set<std::string>> cache_address{CurrentMetrics::DNSAddressesCacheBytes, CurrentMetrics::DNSAddressesCacheSize, 1024};
+    CacheBase<std::string, DNSResolver::CacheEntry> cache_host{1024};
+    CacheBase<Poco::Net::IPAddress, std::unordered_set<std::string>> cache_address{1024};
 
     std::mutex drop_mutex;
     std::mutex update_mutex;
@@ -222,7 +213,7 @@ struct DNSResolver::AddressFilter
         }
         if (!dns_resolve_ipv4 && !dns_resolve_ipv6)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DNS can't resolve any address, because dns_allow_resolve_names_to_ipv6 and dns_allow_resolve_names_to_ipv4 both are disabled");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DNS can't resolve any address, because dns_resolve_ipv6_interfaces and dns_resolve_ipv4_interfaces both are disabled");
         }
 
         std::erase_if(addresses, [dns_resolve_ipv6, dns_resolve_ipv4](const Poco::Net::IPAddress& address)

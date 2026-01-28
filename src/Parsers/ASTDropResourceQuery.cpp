@@ -7,17 +7,18 @@ namespace DB
 
 ASTPtr ASTDropResourceQuery::clone() const
 {
-    return make_intrusive<ASTDropResourceQuery>(*this);
+    return std::make_shared<ASTDropResourceQuery>(*this);
 }
 
 void ASTDropResourceQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    ostr << "DROP RESOURCE ";
+    ostr << (settings.hilite ? hilite_keyword : "") << "DROP RESOURCE ";
 
     if (if_exists)
         ostr << "IF EXISTS ";
 
-    ostr << backQuoteIfNeed(resource_name);
+    ostr << (settings.hilite ? hilite_none : "");
+    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(resource_name) << (settings.hilite ? hilite_none : "");
     formatOnCluster(ostr, settings);
 }
 

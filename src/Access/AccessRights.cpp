@@ -2,6 +2,7 @@
 #include <base/sort.h>
 #include <Common/Exception.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <boost/container/small_vector.hpp>
 #include <list>
@@ -42,8 +43,8 @@ namespace
             if (left.is_partial_revoke != right.is_partial_revoke)
                 return right.is_partial_revoke; /// if left is grant, right is partial revoke, we assume left < right
 
-            /// Grants with a grant option after other grants.
-            /// Revoke the grant option after normal revokes.
+            /// Grants with grant option after other grants.
+            /// Revoke grant option after normal revokes.
             if (left.grant_option != right.grant_option)
                 return right.grant_option; /// if left is without grant option, and right is with grant option, we assume left < right
 
@@ -71,16 +72,8 @@ namespace
                 }
                 case 2:
                 {
-                    if (access_flags.isGlobalWithParameter())
-                    {
-                        res.parameter = full_name[0];
-                        res.filter = full_name[1];
-                    }
-                    else
-                    {
-                        res.database = full_name[0];
-                        res.table = full_name[1];
-                    }
+                    res.database = full_name[0];
+                    res.table = full_name[1];
                     break;
                 }
                 case 3:
@@ -239,8 +232,8 @@ namespace
         {
             case GLOBAL_LEVEL: return AccessFlags::allFlagsGrantableOnGlobalLevel();
             case DATABASE_LEVEL: return AccessFlags::allFlagsGrantableOnDatabaseLevel() | AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
-            case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel() | AccessFlags::allSourceFlags() | AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
-            case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel() | AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
+            case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel();
+            case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel();
         }
         chassert(false);
     }
@@ -260,7 +253,7 @@ namespace
   * node3: GRANT ON db.table*  (matches db.table, db.table1)
   * node4: GRANT ON db.table   (matches db.table)
   *
-  * If two paths have the same prefix, the tree splits in between:
+  * If too paths have the same prefix, the tree splits in between:
   *
   * GRANT ON team.*
   * GRANT ON test.table
@@ -572,7 +565,7 @@ public:
 
     void makeUnion(const Node & other)
     {
-        /// We need these tmp nodes because union/intersect operations use the `getLeaf` function, which can't be made const.
+        /// We need these tmp nodes because union/intersect operations are use `getLeaf` function which can't be made const.
         /// Potentially, we can use tryGetLeaf, but it's very complicated to traverse both trees at the same time:
         ///
         /// Tree1:
@@ -652,16 +645,6 @@ public:
             for (auto & child : *children)
                 child.dumpTree(buffer, title, depth + 1);
         }
-    }
-
-    std::vector<Filter> getFilters(std::string_view parameter)
-    {
-        std::vector<Filter> res;
-        auto & node = getLeaf(parameter, GLOBAL_WITH_PARAMETER);
-        for (auto it = node.begin(); it != node.end(); ++it)
-            res.emplace_back(it->flags, it.getPath());
-
-        return res;
     }
 
 private:
@@ -919,13 +902,7 @@ private:
         const AccessFlags & parent_flags_go,
         String path)
     {
-        Node * target_node = node;
-        if (!target_node)
-            target_node = node_go;
-
-        auto grantable_flags = target_node
-            ? ::DB::getAllGrantableFlags(target_node->level)
-            : ::DB::getAllGrantableFlags(static_cast<Level>(full_name.size()));
+        auto grantable_flags = ::DB::getAllGrantableFlags(static_cast<Level>(full_name.size()));
         auto parent_fl = parent_flags & grantable_flags;
         auto parent_fl_go = parent_flags_go & grantable_flags;
         auto flags = node ? node->flags : parent_fl;
@@ -934,6 +911,10 @@ private:
         auto revokes_go = parent_fl_go - flags_go - revokes;
         auto grants_go = flags_go - parent_fl_go;
         auto grants = flags - parent_fl - grants_go;
+
+        Node * target_node = node;
+        if (!target_node)
+            target_node = node_go;
 
         /// Inserts into result only meaningful nodes (e.g. wildcards or leafs).
         if (target_node && (target_node->isLeaf() || target_node->wildcard_grant))
@@ -1327,8 +1308,6 @@ void AccessRights::grantImplHelper(const AccessRightsElement & element)
     {
         if (element.anyParameter())
             grantImpl<with_grant_option, wildcard>(element.access_flags);
-        else if (element.hasFilter())
-            grantImpl<with_grant_option, wildcard>(element.access_flags, element.parameter, element.filter);
         else
             grantImpl<with_grant_option, wildcard>(element.access_flags, element.parameter);
     }
@@ -1699,15 +1678,6 @@ void AccessRights::makeDifference(const AccessRights & other)
     };
     helper(root, other.root);
     helper(root_with_grant_option, other.root_with_grant_option);
-}
-
-
-std::vector<AccessRights::Filter> AccessRights::getFilters(std::string_view parameter) const
-{
-    if (root)
-        return root->getFilters(parameter);
-
-    return {};
 }
 
 

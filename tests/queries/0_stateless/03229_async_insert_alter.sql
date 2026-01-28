@@ -1,4 +1,5 @@
--- Tags: no-async-insert
+-- Tags: no-parallel
+-- no-parallel because the test uses FLUSH ASYNC INSERT QUEUE
 
 SET wait_for_async_insert = 0;
 SET async_insert_busy_timeout_max_ms = 300000;
@@ -15,7 +16,8 @@ INSERT INTO t_async_insert_alter VALUES (42, 24);
 
 ALTER TABLE t_async_insert_alter ADD COLUMN value2 Int64;
 
-SYSTEM FLUSH ASYNC INSERT QUEUE t_async_insert_alter;
+SYSTEM FLUSH ASYNC INSERT QUEUE;
+SYSTEM FLUSH LOGS;
 
 SELECT * FROM t_async_insert_alter ORDER BY id;
 
@@ -25,7 +27,8 @@ INSERT INTO t_async_insert_alter VALUES (43, 34, 55);
 
 ALTER TABLE t_async_insert_alter MODIFY COLUMN value2 String;
 
-SYSTEM FLUSH ASYNC INSERT QUEUE t_async_insert_alter;
+SYSTEM FLUSH ASYNC INSERT QUEUE;
+SYSTEM FLUSH LOGS;
 
 SELECT * FROM t_async_insert_alter ORDER BY id;
 
@@ -35,8 +38,8 @@ INSERT INTO t_async_insert_alter VALUES ('100', '200', '300');
 
 ALTER TABLE t_async_insert_alter DROP COLUMN value2;
 
-SYSTEM FLUSH ASYNC INSERT QUEUE t_async_insert_alter;
-SYSTEM FLUSH LOGS asynchronous_insert_log;
+SYSTEM FLUSH ASYNC INSERT QUEUE;
+SYSTEM FLUSH LOGS;
 
 SELECT * FROM t_async_insert_alter ORDER BY id;
 SELECT query, data_kind, status FROM system.asynchronous_insert_log WHERE database = currentDatabase() AND table = 't_async_insert_alter' ORDER BY event_time_microseconds;

@@ -10,8 +10,9 @@ from pathlib import Path
 
 import yaml
 from clickhouse_driver import Client
-from praktika.result import Result
-from praktika.utils import Shell, Utils
+
+from ci.praktika.result import Result
+from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
@@ -290,12 +291,9 @@ def main():
                 command=do,
             )
         )
+        results[-1].set_files("report.html")
 
-    Result.create_from(
-        results=results,
-        stopwatch=stop_watch,
-        files=["report.html"] if results[-1].is_ok() else [],
-    ).complete_job()
+    Result.create_from(results=results, stopwatch=stop_watch, files=[]).complete_job()
 
 
 if __name__ == "__main__":

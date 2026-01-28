@@ -7,7 +7,7 @@ namespace DB
 
 ASTPtr ASTRefreshStrategy::clone() const
 {
-    auto res = make_intrusive<ASTRefreshStrategy>(*this);
+    auto res = std::make_shared<ASTRefreshStrategy>(*this);
     res->children.clear();
 
     if (period)
@@ -28,44 +28,45 @@ void ASTRefreshStrategy::formatImpl(
 {
     frame.need_parens = false;
 
-    ostr << "REFRESH ";
+    ostr << (f_settings.hilite ? hilite_keyword : "") << "REFRESH " << (f_settings.hilite ? hilite_none : "");
     using enum RefreshScheduleKind;
     switch (schedule_kind)
     {
         case AFTER:
-            ostr << "AFTER ";
+            ostr << "AFTER " << (f_settings.hilite ? hilite_none : "");
             period->format(ostr, f_settings, state, frame);
             break;
         case EVERY:
-            ostr << "EVERY ";
+            ostr << "EVERY " << (f_settings.hilite ? hilite_none : "");
             period->format(ostr, f_settings, state, frame);
             if (offset)
             {
-                ostr << " OFFSET ";
+                ostr << (f_settings.hilite ? hilite_keyword : "") << " OFFSET " << (f_settings.hilite ? hilite_none : "");
                 offset->format(ostr, f_settings, state, frame);
             }
             break;
         default:
+            ostr << (f_settings.hilite ? hilite_none : "");
             break;
     }
 
     if (spread)
     {
-        ostr << " RANDOMIZE FOR ";
+        ostr << (f_settings.hilite ? hilite_keyword : "") << " RANDOMIZE FOR " << (f_settings.hilite ? hilite_none : "");
         spread->format(ostr, f_settings, state, frame);
     }
     if (dependencies)
     {
-        ostr << " DEPENDS ON ";
+        ostr << (f_settings.hilite ? hilite_keyword : "") << " DEPENDS ON " << (f_settings.hilite ? hilite_none : "");
         dependencies->format(ostr, f_settings, state, frame);
     }
     if (settings)
     {
-        ostr << " SETTINGS ";
+        ostr << (f_settings.hilite ? hilite_keyword : "") << " SETTINGS " << (f_settings.hilite ? hilite_none : "");
         settings->format(ostr, f_settings, state, frame);
     }
     if (append)
-        ostr << " APPEND";
+        ostr << (f_settings.hilite ? hilite_keyword : "") << " APPEND" << (f_settings.hilite ? hilite_none : "");
 }
 
 }

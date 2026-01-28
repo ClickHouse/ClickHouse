@@ -5,7 +5,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/setThreadName.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 
@@ -104,7 +103,9 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
         std::lock_guard lock(storage.queue.state_mutex);
 
         auto & log_entry = selected_entry->log_entry;
-        log_entry->updateLastExeption(saved_exception);
+
+        log_entry->exception = saved_exception;
+        log_entry->last_exception_time = time(nullptr);
 
         if (log_entry->type == ReplicatedMergeTreeLogEntryData::MUTATE_PART)
         {
@@ -114,7 +115,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
             auto source_part_info = MergeTreePartInfo::fromPartName(
                 log_entry->source_parts.at(0), storage.queue.format_version);
 
-            auto in_partition = storage.queue.mutations_by_partition.find(source_part_info.getPartitionId());
+            auto in_partition = storage.queue.mutations_by_partition.find(source_part_info.partition_id);
             if (in_partition != storage.queue.mutations_by_partition.end())
             {
                 auto mutations_begin_it = in_partition->second.upper_bound(source_part_info.getDataVersion());
@@ -128,6 +129,8 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
                     status.latest_fail_time = time(nullptr);
                     status.latest_fail_reason = getExceptionMessage(saved_exception, false);
                     status.latest_fail_error_code_name = ErrorCodes::getName(getExceptionErrorCode(saved_exception));
+                    if (result_data_version == it->first)
+                        storage.mutation_backoff_policy.addPartMutationFailure(src_part, (*storage.getSettings())[MergeTreeSetting::max_postpone_time_for_failed_mutations_ms]);
                 }
             }
         }
@@ -144,7 +147,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_mutate_entry)
-        switcher.emplace((*merge_mutate_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+        switcher.emplace((*merge_mutate_entry)->thread_group, "", /*allow_existing_group*/ true);
 
     auto remove_processed_entry = [&] () -> bool
     {
@@ -152,6 +155,12 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
         {
             storage.queue.removeProcessedEntry(storage.getZooKeeper(), selected_entry->log_entry);
             state = State::SUCCESS;
+
+            auto & log_entry = selected_entry->log_entry;
+            if (log_entry->type == ReplicatedMergeTreeLogEntryData::MUTATE_PART)
+            {
+                storage.mutation_backoff_policy.removePartFromFailed(log_entry->source_parts.at(0));
+            }
         }
         catch (...)
         {
@@ -294,7 +303,7 @@ void ReplicatedMergeMutateTaskBase::maybeSleepBeforeZeroCopyLock(uint64_t estima
 
         if (log_scale)
         {
-            double start_to_sleep_seconds = std::logf(static_cast<float>(min_parts_size_sleep));
+            double start_to_sleep_seconds = std::logf(min_parts_size_sleep);
             right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_result) - start_to_sleep_seconds + 0.5) * 1000);
         }
 

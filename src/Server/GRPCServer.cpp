@@ -1,4 +1,4 @@
-#include <Server/GRPCServer.h>
+#include "GRPCServer.h"
 #include <limits>
 #include <memory>
 #include <Poco/Net/SocketAddress.h>
@@ -7,7 +7,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
@@ -74,10 +73,7 @@ namespace Setting
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
-    extern const SettingsNonZeroUInt64 max_insert_block_size;
-    extern const SettingsUInt64 max_insert_block_size_bytes;
-    extern const SettingsUInt64 min_insert_block_size_rows;
-    extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -838,7 +834,7 @@ namespace
     {
         try
         {
-            DB::setThreadName(ThreadName::GRPC_SERVER_CALL);
+            setThreadName("GRPCServerCall");
             receiveQuery();
             executeQuery();
             processInput();
@@ -927,7 +923,7 @@ namespace
         query_context->applySettingsChanges(settings_changes);
 
         query_context->setCurrentQueryId(query_info.query_id());
-        query_scope = CurrentThread::QueryScope::create(query_context, /* fatal_error_callback */ [this]{ onFatalError(); });
+        query_scope.emplace(query_context, /* fatal_error_callback */ [this]{ onFatalError(); });
 
         /// Set up tracing context for this query on current thread
         thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("GRPCServer",
@@ -1025,7 +1021,7 @@ namespace
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in InputBlocksReader");
 
             Block block;
-            while (block.empty() && pipeline_executor->pull(block));
+            while (!block && pipeline_executor->pull(block));
 
             return block;
         });
@@ -1069,7 +1065,7 @@ namespace
         Block block;
         while (pipeline_executor->pull(block))
         {
-            if (!block.empty())
+            if (block)
                 executor.push(block);
         }
 
@@ -1081,7 +1077,7 @@ namespace
 
     void Call::initializePipeline(const Block & header)
     {
-        chassert(!read_buffer);
+        assert(!read_buffer);
         read_buffer = std::make_unique<ReadBufferFromCallback>([this]() -> std::pair<const void *, size_t>
         {
             if (need_input_data_from_insert_query)
@@ -1141,18 +1137,8 @@ namespace
         read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
 
         assert(!pipeline);
-
-        const Settings & settings = query_context->getSettingsRef();
-
-        auto source = query_context->getInputFormat(
-            input_format,
-            *read_buffer,
-            header,
-            settings[Setting::max_insert_block_size],
-            std::nullopt,
-            settings[Setting::max_insert_block_size_bytes],
-            settings[Setting::min_insert_block_size_rows],
-            settings[Setting::min_insert_block_size_bytes]);
+        auto source
+            = query_context->getInputFormat(input_format, *read_buffer, header, query_context->getSettingsRef()[Setting::max_insert_block_size]);
 
         pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -1219,22 +1205,13 @@ namespace
                         external_table_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
-                    const Settings & settings = external_table_context->getSettingsRef();
-
                     auto in = external_table_context->getInputFormat(
-                        format,
-                        *buf,
-                        metadata_snapshot->getSampleBlock(),
-                        settings[Setting::max_insert_block_size],
-                        std::nullopt,
-                        settings[Setting::max_insert_block_size_bytes],
-                        settings[Setting::min_insert_block_size_rows],
-                        settings[Setting::min_insert_block_size_bytes]);
+                        format, *buf, metadata_snapshot->getSampleBlock(), external_table_context->getSettingsRef()[Setting::max_insert_block_size]);
 
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));
                     cur_pipeline.addTransform(std::move(sink));
-                    cur_pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType)
+                    cur_pipeline.setSinks([&](const Block & header, Pipe::StreamType)
                     {
                         return std::make_shared<EmptySink>(header);
                     });
@@ -1333,7 +1310,7 @@ namespace
                 if (!check_for_cancel())
                     break;
 
-                if (!block.empty() && !io.null_format)
+                if (block && !io.null_format)
                     output_format_processor->write(materializeBlock(block));
 
                 if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
@@ -1457,7 +1434,7 @@ namespace
         /// because the client may decide to send another query with the same query ID or session ID
         /// immediately after it receives our final result, and it's prohibited to have
         /// two queries executed at the same time with the same query ID or session ID.
-        io.process_list_entries.clear();
+        io.process_list_entry.reset();
         if (query_context)
             query_context->setProcessListElement(nullptr);
         if (session)
@@ -1468,7 +1445,7 @@ namespace
     {
         responder.reset();
         pipeline_executor.reset();
-        pipeline = nullptr;
+        pipeline.reset();
         output_format_processor.reset();
         read_buffer.reset();
         write_buffer.reset();
@@ -1612,7 +1589,7 @@ namespace
 
     void Call::addTotalsToResult(const Block & totals)
     {
-        if (totals.empty())
+        if (!totals)
             return;
 
         PODArray<char> memory;
@@ -1630,7 +1607,7 @@ namespace
 
     void Call::addExtremesToResult(const Block & extremes)
     {
-        if (extremes.empty())
+        if (!extremes)
             return;
 
         PODArray<char> memory;
@@ -1693,13 +1670,13 @@ namespace
                 auto & log_entry = *result.add_logs();
                 log_entry.set_time(column_time.getElement(row));
                 log_entry.set_time_microseconds(column_time_microseconds.getElement(row));
-                std::string_view query_id = column_query_id.getDataAt(row);
+                std::string_view query_id = column_query_id.getDataAt(row).toView();
                 log_entry.set_query_id(query_id.data(), query_id.size());
                 log_entry.set_thread_id(column_thread_id.getElement(row));
                 log_entry.set_level(static_cast<::clickhouse::grpc::LogsLevel>(column_level.getElement(row)));
-                std::string_view source = column_source.getDataAt(row);
+                std::string_view source = column_source.getDataAt(row).toView();
                 log_entry.set_source(source.data(), source.size());
-                std::string_view text = column_text.getDataAt(row);
+                std::string_view text = column_text.getDataAt(row).toView();
                 log_entry.set_text(text.data(), text.size());
             }
         }
@@ -1922,7 +1899,7 @@ private:
 
     void run()
     {
-        DB::setThreadName(ThreadName::GRPC_SERVER_QUEUE);
+        setThreadName("GRPCServerQueue");
 
         bool ok = false;
         void * tag = nullptr;

@@ -6,38 +6,14 @@
 #include <Backups/BackupIO_Default.h>
 #include <Common/Logger.h>
 #include <Disks/DiskType.h>
-#include <Disks/IDisk.h>
 #include <IO/S3Common.h>
 #include <IO/S3Settings.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/BlobStorageLogWriter.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 #include <IO/S3/S3Capabilities.h>
-
-#include <functional>
-
 
 namespace DB
 {
-
-class S3BackupDiskClientFactory
-{
-public:
-    struct Entry
-    {
-        std::shared_ptr<S3::Client> backup_client;
-        std::weak_ptr<const S3::Client> disk_reported_client;
-    };
-    using CreateFn = std::function<Entry(DiskPtr)>;
-    explicit S3BackupDiskClientFactory(const CreateFn & create_fn_);
-    std::shared_ptr<S3::Client> getOrCreate(DiskPtr disk);
-
-private:
-    const CreateFn create_fn;
-
-    mutable std::mutex clients_mutex;
-    /// Disk name to client entry;
-    std::unordered_map<std::string, Entry> clients TSA_GUARDED_BY(clients_mutex);
-};
 
 /// Represents a backup stored to AWS S3.
 class BackupReaderS3 : public BackupReaderDefault
@@ -47,9 +23,7 @@ public:
         const S3::URI & s3_uri_,
         const String & access_key_id_,
         const String & secret_access_key_,
-        const String & role_arn,
-        const String & role_session_name,
-        bool allow_s3_native_copy,
+        std::optional<bool> allow_s3_native_copy,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const ContextPtr & context_,
@@ -80,9 +54,7 @@ public:
         const S3::URI & s3_uri_,
         const String & access_key_id_,
         const String & secret_access_key_,
-        const String & role_arn,
-        const String & role_session_name,
-        bool allow_s3_native_copy,
+        std::optional<bool> allow_s3_native_copy,
         const String & storage_class_name,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
@@ -111,7 +83,6 @@ private:
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
     S3Capabilities s3_capabilities;
-    S3BackupDiskClientFactory disk_client_factory;
     BlobStorageLogWriterPtr blob_storage_log;
 };
 

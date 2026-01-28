@@ -4,14 +4,13 @@ description: 'A table engine storing time series, i.e. a set of values associate
 sidebar_label: 'TimeSeries'
 sidebar_position: 60
 slug: /engines/table-engines/special/time_series
-title: 'TimeSeries table engine'
-doc_type: 'reference'
+title: 'TimeSeries Engine'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# TimeSeries table engine
+# TimeSeries Engine
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
@@ -49,8 +48,8 @@ CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
 Then this table can be used with the following protocols (a port must be assigned in the server configuration):
-- [prometheus remote-write](/interfaces/prometheus#remote-write)
-- [prometheus remote-read](/interfaces/prometheus#remote-read)
+- [prometheus remote-write](../../../interfaces/prometheus.md#remote-write)
+- [prometheus remote-read](../../../interfaces/prometheus.md#remote-read)
 
 ## Target tables {#target-tables}
 
@@ -75,6 +74,7 @@ The _data_ table must have columns:
 | `id` | [x] | `UUID` | any | Identifies a combination of a metric names and tags |
 | `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
+
 
 ### Tags table {#tags-table}
 
@@ -113,13 +113,13 @@ A `TimeSeries` table contains all those columns from the [data](#data-table), [t
 There are multiple ways to create a table with the `TimeSeries` table engine.
 The simplest statement
 
-```sql
+``` sql
 CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
 will actually create the following table (you can see that by executing `SHOW CREATE TABLE my_table`):
 
-```sql
+``` sql
 CREATE TABLE my_table
 (
     `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
@@ -223,12 +223,11 @@ The `id` column contains identifiers, every identifier is calculated for a combi
 The DEFAULT expression for the `id` column is an expression which will be used to calculate such identifiers.
 Both the type of the `id` column and that expression can be adjusted by specifying them explicitly:
 
-```sql
+``` sql
 CREATE TABLE my_table
 (
-  id UInt64 DEFAULT sipHash64(metric_name, all_tags)
-)
-ENGINE=TimeSeries
+    id UInt64 DEFAULT sipHash64(metric_name, all_tags)
+) ENGINE=TimeSeries
 ```
 
 ## The `tags` and `all_tags` columns {#tags-and-all-tags}
@@ -238,31 +237,23 @@ if setting `tags_to_columns` is used. This setting allows to specify that a spec
 in a map inside the `tags` column:
 
 ```sql
-CREATE TABLE my_table
-ENGINE = TimeSeries 
-SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
+CREATE TABLE my_table ENGINE=TimeSeries SETTINGS = {'instance': 'instance', 'job': 'job'}
 ```
 
-This statement will add columns:
-
+This statement will add columns
 ```sql
-`instance` String,
-`job` String
+    `instance` String,
+    `job` String
 ```
-
 to the definition of both `my_table` and its inner [tags](#tags-table) target table. In this case the `tags` column will not contain tags `instance` and `job`,
 but the `all_tags` column will contain them. The `all_tags` column is ephemeral and its only purpose to be used in the DEFAULT expression
 for the `id` column.
 
 The types of columns can be adjusted by specifying them explicitly:
 
-```sql
-CREATE TABLE my_table (
-  instance LowCardinality(String),
-  job LowCardinality(Nullable(String))
-)
-ENGINE=TimeSeries
-SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
+``` sql
+CREATE TABLE my_table (instance LowCardinality(String), job LowCardinality(Nullable(String)))
+ENGINE=TimeSeries SETTINGS = {'instance': 'instance', 'job': 'job'}
 ```
 
 ## Table engines of inner target tables {#inner-table-engines}

@@ -1,9 +1,5 @@
     # BUGS
 
-    https://github.com/ClickHouse/ClickHouse/issues/94612
-    Filter pushdown for distributed table with datetime
-02915_input_table_function_in_subquery
-
     Can't select from temporary table
     ReadFromParallelRemoteReplicasStep: There is no table `_temporary_and_external_tables`.`_tmp_fad23aad-ce65-4447-81fe-114409a5f0f9` on server: 127.0.0.2:9000
 00600_create_temporary_table_if_not_exists
@@ -14,9 +10,6 @@
 03045_unknown_identifier_alias_substitution
 02561_temporary_table_sessions
 02525_different_engines_in_temporary_tables
-00645_date_time_input_format
-02154_default_keyword_insert
-02807_default_date_time_nullable
 
     https://github.com/ClickHouse/ClickHouse/issues/74324
     MULTIPLE_EXPRESSIONS_FOR_ALIAS
@@ -40,16 +33,12 @@
     Duplicates on RIGHT JOIN with Values table
 03006_join_on_inequal_expression_3.gen
 
+    optimize_read_in_order=0 leads to "Replica 1 decided to read in Default mode, not in WithOrder. This is a bug: While executing Remote. (LOGICAL_ERROR)"
+02317_distinct_in_order_optimization
+
     https://github.com/ClickHouse/ClickHouse/issues/74343
     Cannot find column `tuple(col_a, type)` in source stream, there are only columns: [__table1.id, tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type), tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type)]. (THERE_IS_NO_COLUMN) (in query: SELECT id, tuple(replaceAll(data, 'a', 'e') AS col_a, type) AS a, tuple(replaceAll(data, 'a', 'e') AS col_b, type) AS b FROM src;)
 03240_insert_select_named_tuple
-00500_point_in_polygon_non_const_poly
-01017_tuplehamming_distance
-01300_svg
-01849_geoToS2
-02504_regexp_dictionary_table_source
-02833_tuple_concat
-02378_analyzer_projection_names
 
     https://github.com/ClickHouse/ClickHouse/issues/74367
     Cannot find column in source stream
@@ -60,8 +49,34 @@
     Sizes of columns doesn't match
 02861_filter_pushdown_const_bug
 
+    https://github.com/ClickHouse/ClickHouse/issues/74547
+    vector search segfault
+02354_vector_search_multiple_marks
+02354_vector_search_expansion_search
+02354_vector_search_detach_attach
+02354_vector_search_different_array_sizes
+
     https://github.com/ClickHouse/ClickHouse/issues/74711
 03080_incorrect_join_with_merge
+
+    https://github.com/ClickHouse/ClickHouse/issues/74226
+    Database _table_function does not exist
+    clickhouse-test --no-shard
+00944_ml_test
+00098_shard_i_union_all
+00459_group_array_insert_at
+03303_distributed_explain
+00163_shard_join_with_empty_table
+01568_window_functions_distributed
+00162_shard_global_join
+01223_dist_on_dist
+01418_query_scope_constants_and_remote
+01758_optimize_skip_unused_shards_once
+03164_parallel_replicas_range_filter_min_max
+01245_limit_infinite_sources
+01812_optimize_skip_unused_shards_single_node
+01913_exact_rows_before_limit_full
+
 
     Storage Join/Set
     https://github.com/ClickHouse/ClickHouse/issues/74362
@@ -69,13 +84,10 @@
 01594_storage_join_uuid
     Unsupported JOIN keys of type keys256 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3) ORDER BY key1;)
 02498_storage_join_key_positions.gen
-03447_storage_join_unsupported_keys
 
-    https://github.com/ClickHouse/ClickHouse/issues/74360
-    LOGICAL ERROR https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=84536&sha=516c114f38828a2853efa3f0935f19d11b7c0d23&name_0=PR&name_1=Stateless+tests+%28amd_binary%2C+ParallelReplicas%2C+s3+storage%2C+parallel%29
-    https://github.com/ClickHouse/ClickHouse/issues/81144
+    https://github.com/ClickHouse/ClickHouse/pull/73609
     Cannot parse string
-    03208_multiple_joins_with_storage_join
+03208_multiple_joins_with_storage_join
 
     GLOBAL IN engine set not supported (Method read is not supported by storage Set. (NOT_IMPLEMENTED) (version 25.1.1.1927 (official build)) (from [::1]:42612) (comment: 01231_operator_null_in.sql) (in query: SELECT count() == 1 FROM null_in WHERE i global in test_set)
 01231_operator_null_in
@@ -104,6 +116,8 @@
 
     CANNOT_PARSE_TEXT
 02771_ignore_data_skipping_indices
+    minor: Object('json')   Cannot parse string 'str' as Int8: syntax error at begin of string. Note: there are toInt8OrZero and toInt8OrNull functions, which returns zero/NULL instead of throwing exception.: While executing Remote. (CANNOT_PARSE_TEXT) (in query: SELECT * FROM t_json_race WHERE 0 IN (SELECT sleep(0.05)) FORMAT Null
+01825_type_json_schema_race_long
 
     order is never guaranteed
     https://github.com/ClickHouse/ClickHouse/issues/63203
@@ -126,21 +140,39 @@
 02950_dictionary_ssd_cache_short_circuit
 02504_regexp_dictionary_ua_parser
 03062_analyzer_join_engine_missing_column
-01852_dictionary_query_count_long
-01904_dictionary_default_nullable_type
-02391_hashed_dictionary_shards
-02740_hashed_dictionary_load_factor_smoke
 
     https://github.com/ClickHouse/clickhouse-private/issues/11670
     Actual WithMergeableState
+02477_analyzer_array_join_with_join
 01483_merge_table_join_and_group_by
-01147_partial_merge_full_join
+03130_analyzer_array_join_prefer_column
+02769_compare_functions_nan
+00848_join_use_nulls_segfault
+02785_left_anti_join_bug
+02276_full_sort_join_unsupported
+01323_redundant_functions_in_order_by
+02911_cte_invalid_query_analysis
+02174_cte_scalar_cache_mv
+02526_merge_join_int_decimal
 01010_partial_merge_join
+00927_asof_join_long
+01147_partial_merge_full_join
+02933_paste_join
+01495_subqueries_in_with_statement
+03144_asof_join_ddb_doubles
+03200_subcolumns_join_use_nulls
+01720_join_implicit_cast.gen
+00952_input_function
+03246_json_subcolumn_correct_type
+01780_column_sparse_full
+01783_merge_engine_join_key_condition
 02789_filesystem_cache_alignment
-03325_sqlite_join_wrong_answer
+
 
     https://github.com/ClickHouse/clickhouse-private/issues/17173
+02023_transform_or_to_in
 03174_exact_rows_before_aggregation
+00066_sorting_distributed_many_replicas
 
     https://github.com/ClickHouse/clickhouse-private/issues/19792
 01622_constraints_simple_optimization
@@ -153,26 +185,13 @@
 02941_any_RESPECT_NULL_sparse_column
 02662_first_last_value
 
+    https://github.com/ClickHouse/clickhouse-private/issues/14844
+02367_analyzer_table_alias_columns
+02989_join_using_parent_scope
+02514_if_with_lazy_low_cardinality
+
     https://github.com/ClickHouse/ClickHouse/issues/74411
 02884_create_view_with_sql_security_option
-
-    https://github.com/ClickHouse/ClickHouse/issues/80426
-    Duplicates with all right join and join engine
-01051_all_join_engine
-02497_storage_join_right_assert
-02495_analyzer_storage_join
-
-    https://github.com/ClickHouse/clickhouse-private/issues/27882
-    duplicates cross_to_inner_join_rewrite=1
-02564_analyzer_cross_to_inner
-
-    https://github.com/ClickHouse/ClickHouse/issues/80439
-    Predicate pushdown CTE incorrect result
-02901_predicate_pushdown_cte_stateful
-
-    https://github.com/ClickHouse/ClickHouse/issues/80440
-    MULTIPLE_EXPRESSIONS_FOR_ALIAS
-03121_analyzer_filed_redefenition_in_subquery
 
     Transactions
 02421_truncate_isolation_no_merges
@@ -193,6 +212,36 @@
 03038_recursive_cte_postgres_4
 03040_recursive_cte_postgres_6
 03154_recursive_cte_distributed
+
+    https://github.com/ClickHouse/clickhouse-private/issues/14887
+    Projections
+01710_minmax_count_projection
+01710_projection_vertical_merges
+01710_force_use_projection
+01710_projection_pk_trivial_count
+01710_projection_additional_filters
+01710_projection_in_index
+02906_force_optimize_projection_name
+01710_projections
+02907_preferred_optimize_projection_name
+01710_projection_aggregation_in_order
+01710_projections_optimize_aggregation_in_order
+03206_projection_merge_special_mergetree_ignore
+03254_project_lwd_respects_row_exists
+02968_projection_merge
+01710_normal_projection_fix1
+03128_argMin_combinator_projection
+01710_projections_partial_optimize_aggregation_in_order
+03282_block_number_otehr_mutations
+01710_normal_projection_with_query_plan_optimization
+01710_query_log_with_projection_info
+02494_zero_copy_and_projection_and_mutation_work_together
+02680_illegal_type_of_filter_projection
+02998_projection_after_attach_partition
+01710_aggregate_projections
+01710_projection_analysis_reuse_partition
+01710_projections_in_distributed_query
+03290_force_normal_projection
 
     WINDOW VIEW
 01047_window_view_parser_inner_table
@@ -245,6 +294,7 @@
 
 
     EXPLAIN / PLAN / ProfileEvents
+02725_agg_projection_resprect_PK
 02676_distinct_reading_in_order_analyzer
 02866_size_of_marks_skip_idx_explain
 03032_redundant_equals
@@ -278,8 +328,6 @@
 02346_aggregation_in_order_fixed_prefix
 02377_optimize_sorting_by_input_stream_properties_explain
 03000_minmax_index_first
-03563_coarser_minmax_indexes_first
-03565_clickhouse_smaller_indexes_first
 00940_order_by_read_in_order_query_plan
 02493_max_streams_for_merge_tree_reading
 02675_predicate_push_down_filled_join_fix
@@ -289,7 +337,6 @@
 00175_partition_by_ignore
 01655_plan_optimizations_optimize_read_in_window_order
 01625_constraints_index_append
-01883_with_grouping_sets
     Query memory limit exceeded: would use 19.63 MiB (attempt to allocate chunk of 1308788 bytes), current RSS 21.39 MiB, maximum: 19.07 MiB. (MEMORY_LIMIT_EXCEEDED
 01655_plan_optimizations_optimize_read_in_window_order_long
 01824_move_to_prewhere_many_columns
@@ -297,7 +344,6 @@
 02810_fix_remove_dedundant_distinct_view
 02864_statistics_delayed_materialization_in_merge
 03130_convert_outer_join_to_inner_join
-03355_join_to_in_optimization
 03152_join_filter_push_down_equivalent_columns
 03155_test_move_to_prewhere
 03176_check_timeout_in_index_analysis
@@ -315,6 +361,7 @@
 02149_read_in_order_fixed_prefix
 02151_hash_table_sizes_stats
 02156_storage_merge_prewhere
+02346_fulltext_index_match_predicate
 02354_vector_search_subquery
 02421_explain_subquery
 02451_order_by_monotonic
@@ -335,8 +382,6 @@
 03273_primary_index_cache_low_cardinality
     profile events
 03279_join_choose_build_table
-03279_join_choose_build_table_statistics
-03279_join_choose_build_table_auto_statistics
 03275_subcolumns_in_primary_key.gen
 03277_json_subcolumns_in_primary_key.gen
 03165_string_functions_with_token_text_indexes
@@ -349,8 +394,6 @@
 03262_filter_push_down_view
 01283_max_threads_simple_query_optimization
 00183_prewhere_conditions_order
-03302_analyzer_join_filter_push_down_bug
-02815_join_algorithm_setting
 
     # NOT BUGS
     Not a bug
@@ -373,7 +416,6 @@
 02402_merge_engine_with_view
     No order guarantee with group_by_overflow_mode='any'
 02180_group_by_lowcardinality
-03657_gby_overflow_any_sparse
 
     RMT zookeeper test
 01154_move_partition_long
@@ -401,20 +443,52 @@
     Limit for rows (controlled by 'max_rows_to_read' setting) exceeded
     !!!max rows: 20.00 million, current rows: 21.00 million
 02275_full_sort_join_long.gen
+    !!!max rows: 20.00 million, current rows: 21.00 million.
+00375_shard_group_uniq_array_of_string
+    !!!max rows: 2.00, current rows: 10.00 thousand
+00979_toFloat_monotonicity
     !!!max rows: 16.00, current rows: 3.08 thousand
 00990_hasToken_and_tokenbf
+    !!!max rows: 2.00 thousand, current rows: 1.00 million
+01312_comparison_with_constant_string_in_index_analysis
     !!!max rows: 8.00, current rows: 16.38 thousand
 01414_push_predicate_when_contains_with_clause
+    !!!max rows: 2.00, current rows: 10.00 thousand
+01234_to_string_monotonic
+    !!!max rows: 8.19 thousand, current rows: 1.05 million
+02899_indexing_by_space_filling_curves
+    !!!max rows: 8.19 thousand, current rows: 1.00 million
+00997_set_index_array
+    !!!max rows: 2.00, current rows: 10.00 thousand
+02418_tautological_if_index
+    !!!max rows: 10.00 thousand, current rows: 1.00 million
+03147_datetime64_constant_index_analysis
+    !!!max rows: 8.19 thousand, current rows: 1.05 million
+03171_indexing_by_hilbert_curve
     !!!max rows: 20.00 million, current rows: 22.00 million
 02435_rollback_cancelled_queries
     !!!max rows: 20.00 million, current rows: 26.64 million
 00063_loyalty_joins
+    !!!max rows: 1.00 million, current rows: 8.88 million
+00097_constexpr_in_index
+
+
+    max rows: 3.00, current rows: 8.00. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::ffff:127.0.0.1]:38554) (comment: 00319_index_for_like.sql) (in query: SELECT `__table1`.`s` AS `s` FROM `test_l6on3y96`.`index_for_like` AS `__table1` WHERE `__table1`.`s` LIKE 'Hello, World%')
+00319_index_for_like
     max rows: 5.00, current rows: 20.00. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::ffff:127.0.0.1]:52038) (comment: 00489_pk_subexpression.sql) (in query: SELECT toUInt32(`__table1`.`x`) AS `toUInt32(x)`, `__table1`.`y` AS `y`, `__table1`.`z` AS `z` FROM `test_i815geoe`.`pk` AS `__table1` WHERE (`__table1`.`x` >= _CAST(0, 'DateTime')) AND (`__table1`.`x` <= _CAST(59, 'DateTime')))
 00489_pk_subexpression
-    max rows: 7.12 thousand, current rows: 51.00 thousand. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::ffff:127.0.0.1]:59090) (comment: 01064_incremental_streaming_from_2_src_with_feedback.sql) (in query: SELECT `__table1`.`id` AS `id`, maxMerge(`__table1`.`latest_checkout_time`) AS `current_latest_checkout_time` FROM `test_jgsjo4al`.`target_table` AS `__table1` WHERE `__table1`.`id` IN (SELECT `__table1`.`id` AS `id` FROM `test_jgsjo4al`.`logins` AS `__table1`) GROUP BY `__table1`.`id`)
+    Limit for rows or bytes to read exceeded, max rows: 7.00, current rows: 8.00: While executing Remote. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::1]:44010) (comment: 00945_bloom_filter_index.sql) (in query: SELECT COUNT() FROM single_column_bloom_filter WHERE i32 IN (SELECT arrayJoin([toInt32(1), toInt32(2)])) SETTINGS max_rows_to_read = 7;)
+00945_bloom_filter_index
+     max rows: 7.12 thousand, current rows: 51.00 thousand. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::ffff:127.0.0.1]:59090) (comment: 01064_incremental_streaming_from_2_src_with_feedback.sql) (in query: SELECT `__table1`.`id` AS `id`, maxMerge(`__table1`.`latest_checkout_time`) AS `current_latest_checkout_time` FROM `test_jgsjo4al`.`target_table` AS `__table1` WHERE `__table1`.`id` IN (SELECT `__table1`.`id` AS `id` FROM `test_jgsjo4al`.`logins` AS `__table1`) GROUP BY `__table1`.`id`)
 01064_incremental_streaming_from_2_src_with_feedback
+    max rows: 4.00, current rows: 20.00. (TOO_MANY_ROWS) (version 25.1.1.1927 (official build)) (from [::ffff:127.0.0.1]:57410) (comment: 00318_pk_tuple_order.sql) (in query: SELECT `__table1`.`d` AS `d`, `__table1`.`x` AS `x`, `__table1`.`y` AS `y`, `__table1`.`z` AS `z` FROM `test_n94x7t79`.`pk` AS `__table1` WHERE (`__table1`.`x` = 2) AND (`__table1`.`y` = 11) ORDER BY `__table1`.`d` ASC, `__table1`.`x` ASC, `__table1`.`y` ASC, `__table1`.`z` ASC)
+00318_pk_tuple_order
+    max rows: 1.00, current rows: 2.00. (TOO_MANY_ROWS) (version 25.1.1.1927 (official build)) (from [::ffff:127.0.0.1]:53910) (comment: 00607_index_in_in.sql) (in query: SELECT count() AS `count()` FROM `test_ruwpzeq2`.`merge_tree` AS `__table1` WHERE `__table1`.`x` = 0),
+00607_index_in_in
     max rows: 3.00, current rows: 13.00
 01410_nullable_key_and_index
+    max rows: 5.00, current rows: 20.00
+01460_mark_inclusion_search_crash
     max rows: 1.00, current rows: 10.00
 01576_alias_column_rewrite
     max rows: 4.00, current rows: 10.00
@@ -423,13 +497,30 @@
 02465_limit_trivial_max_rows_to_read
     max rows: 5.00, current rows: 20.00
 00926_adaptive_index_granularity_pk
+    max rows: 8.00, current rows: 10.00
+01114_materialize_clear_index_compact_parts
+    max rows: 1.00, current rows: 3.00
+01440_to_date_monotonicity
     max rows: 12.00, current rows: 20.00
 01583_const_column_in_set_index
     max rows: 2.00, current rows: 11.00
 01585_use_index_for_global_in_with_null
+    max rows: 2.00, current rows: 4.00
+02461_mullable_pk_monotonicity_bug
+    max rows: 1.00, current rows: 10.00
+02200_use_skip_indexes
+    max rows: 2.00 million, current rows: 2.00 million
+02781_data_skipping_index_merge_tree_min_for_seek
+    max bytes: 1.00 B, current bytes: 60.00 B
+02950_part_offset_as_primary_key
+    max rows: 3.00, current rows: 4.00
+01480_binary_operator_monotonicity
+    max rows: 10.00, current rows: 100.00
+01801_approx_total_rows_mergetree_reverse
 
 00955_test_final_mark_use
 01624_soft_constraints
+02968_file_log_multiple_read
 03031_minmax_index_for_pointinpolygon
 
     ORDER BY ALL is missing for multiple queries
@@ -454,6 +545,3 @@
 00443_optimize_final_vertical_merge
 01660_join_or_any
 01801_s3_cluster
-
-    Produces different result:
-03658_joined_block_split_single_row_bytes

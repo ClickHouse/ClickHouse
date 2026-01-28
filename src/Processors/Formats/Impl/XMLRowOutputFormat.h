@@ -16,11 +16,9 @@ namespace DB
 class XMLRowOutputFormat final : public RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>
 {
 public:
-    XMLRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
+    XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "XMLRowOutputFormat"; }
-
-    bool supportsSpecialSerializationKinds() const override { return format_settings.allow_special_serialization_kinds; }
 
 private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
@@ -55,6 +53,8 @@ private:
         statistics.rows_before_aggregation = rows_before_aggregation_;
     }
     void onRowsReadBeforeUpdate() override { row_count = getRowsReadBefore(); }
+
+    String getContentType() const override { return "application/xml; charset=UTF-8"; }
 
     void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
     void writeRowsBeforeLimitAtLeast();

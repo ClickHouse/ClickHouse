@@ -1,21 +1,15 @@
 #pragma once
 
-#include <cmath>
 #include <type_traits>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnDecimal.h>
-#include <Core/DecimalFunctions.h>
-#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
-#include <Functions/FunctionsRound.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
+#include <Core/DecimalFunctions.h>
 
 #include "config.h"
 
@@ -26,28 +20,6 @@
 
 namespace DB
 {
-
-/// Convert Float64 avg result to target type with rounding
-/// Returns 0 for NaN (empty set case)
-template <typename ValueType>
-ValueType avgResultToValue(Float64 v, UInt32 scale = 0)
-{
-    if (std::isnan(v))
-        return ValueType(0);
-
-    if constexpr (is_decimal<ValueType>)
-    {
-        const auto mult = DecimalUtils::scaleMultiplier<ValueType>(scale);
-        const Float64 scaled = v * static_cast<Float64>(mult);
-        const auto rounded = roundWithMode(scaled, RoundingMode::Round);
-        return ValueType(static_cast<typename ValueType::NativeType>(rounded));
-    }
-    else
-    {
-        const auto rounded = roundWithMode(v, RoundingMode::Round);
-        return static_cast<ValueType>(rounded);
-    }
-}
 
 struct Settings;
 
@@ -81,7 +53,7 @@ struct AvgFraction
         if constexpr (is_decimal<Denominator>)
             denominator_float = DecimalUtils::convertTo<Float64>(denominator, denom_scale);
         else
-            denominator_float = static_cast<Float64>(denominator);
+            denominator_float = denominator;
 
         return numerator_float / denominator_float;
     }
@@ -91,7 +63,7 @@ struct AvgFraction
         if constexpr (DecimalOrExtendedInt<Denominator>) /// if extended int
             return static_cast<Float64>(numerator) / static_cast<Float64>(denominator);
         else
-            return static_cast<Float64>(numerator) / static_cast<Float64>(denominator);
+            return static_cast<Float64>(numerator) / denominator;
     }
 };
 
@@ -156,33 +128,11 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        const auto compute_avg = [&]() -> Float64
-        {
-            if constexpr (is_decimal<Numerator> || is_decimal<Denominator>)
-                return this->data(place).divideIfAnyDecimal(num_scale, denom_scale);
-            else
-                return this->data(place).divide();
-        };
-
-        const auto & res_type = this->getResultType();
-        WhichDataType result_which(res_type);
-
-        Float64 v = compute_avg();
-
-        /// Processing of results with Date/Time types
-        if (callOnBasicType<void, false, false, false, true>(result_which.idx, [&](auto types) -> bool
-        {
-            using ValueType = typename decltype(types)::RightType;
-            auto & col = assert_cast<ColumnVectorOrDecimal<ValueType> &>(to);
-            if constexpr (is_decimal<ValueType>)
-                col.getData().push_back(avgResultToValue<ValueType>(v, col.getScale()));
-            else
-                col.getData().push_back(avgResultToValue<ValueType>(v));
-            return true;
-        }))
-            return;
-
-        assert_cast<ColumnVector<Float64> &>(to).getData().push_back(v);
+        if constexpr (is_decimal<Numerator> || is_decimal<Denominator>)
+            assert_cast<ColumnVector<Float64> &>(to).getData().push_back(
+                this->data(place).divideIfAnyDecimal(num_scale, denom_scale));
+        else
+            assert_cast<ColumnVector<Float64> &>(to).getData().push_back(this->data(place).divide());
     }
 
 
@@ -200,9 +150,6 @@ public:
 
         const auto & result_type = this->getResultType();
         can_be_compiled &= canBeNativeType(*result_type);
-
-        /// JIT compilation does not support non-float result types (like DateTime[64]/Time[64])
-        can_be_compiled &= WhichDataType(result_type).isFloat64();
 
         return can_be_compiled;
     }
@@ -222,14 +169,12 @@ public:
 
         auto * numerator_dst_ptr = aggregate_data_dst_ptr;
         auto * numerator_dst_value = b.CreateLoad(numerator_type, numerator_dst_ptr);
-        numerator_dst_value->setAlignment(llvm::Align(alignof(TNumerator)));
 
         auto * numerator_src_ptr = aggregate_data_src_ptr;
         auto * numerator_src_value = b.CreateLoad(numerator_type, numerator_src_ptr);
-        numerator_src_value->setAlignment(llvm::Align(alignof(TNumerator)));
 
         auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_dst_value, numerator_src_value) : b.CreateFAdd(numerator_dst_value, numerator_src_value);
-        b.CreateStore(numerator_result_value, numerator_dst_ptr)->setAlignment(llvm::Align(alignof(TNumerator)));
+        b.CreateStore(numerator_result_value, numerator_dst_ptr);
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
@@ -237,12 +182,10 @@ public:
         auto * denominator_src_ptr = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_src_ptr, denominator_offset);
 
         auto * denominator_dst_value = b.CreateLoad(denominator_type, denominator_dst_ptr);
-        denominator_dst_value->setAlignment(llvm::Align(alignof(TDenominator)));
         auto * denominator_src_value = b.CreateLoad(denominator_type, denominator_src_ptr);
-        denominator_src_value->setAlignment(llvm::Align(alignof(TDenominator)));
 
         auto * denominator_result_value = denominator_type->isIntegerTy() ? b.CreateAdd(denominator_src_value, denominator_dst_value) : b.CreateFAdd(denominator_src_value, denominator_dst_value);
-        b.CreateStore(denominator_result_value, denominator_dst_ptr)->setAlignment(llvm::Align(alignof(TDenominator)));
+        b.CreateStore(denominator_result_value, denominator_dst_ptr);
     }
 
     void
@@ -255,43 +198,19 @@ public:
     llvm::Value * compileGetResultImpl(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const
     requires(canBeNativeType<Numerator>() && canBeNativeType<Denominator>())
     {
-        const auto & result_type = this->getResultType();
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         auto * numerator_type = toNativeType<Numerator>(b);
         auto * numerator_ptr = aggregate_data_ptr;
         auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
-        numerator_value->setAlignment(llvm::Align(alignof(TNumerator)));
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
         auto * denominator_ptr = b.CreateConstGEP1_32(b.getInt8Ty(), aggregate_data_ptr, denominator_offset);
         auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
-        denominator_value->setAlignment(llvm::Align(alignof(TDenominator)));
 
-        auto * double_numerator = nativeCast<Numerator>(b, numerator_value, result_type);
-        auto * double_denominator = nativeCast<Denominator>(b, denominator_value, result_type);
-
-        /// If numerator is decimal, we need to scale it to the result type
-        if constexpr (is_decimal<Numerator>)
-        {
-            auto scale = getDecimalScale(*removeNullable(this->argument_types[0]));
-            auto multiplier = DecimalUtils::scaleMultiplier<NativeType<Numerator>>(scale);
-
-            llvm::Value * multiplier_value = nullptr;
-            if constexpr (!is_over_big_decimal<Numerator>)
-            {
-                multiplier_value = llvm::ConstantInt::get(numerator_type, static_cast<uint64_t>(multiplier), true);
-            }
-            else
-            {
-                llvm::APInt value(numerator_type->getIntegerBitWidth(), multiplier.items);
-                multiplier_value = llvm::ConstantInt::get(numerator_type, value);
-            }
-
-            auto double_multiplier = nativeCast<Numerator>(b, multiplier_value, result_type);
-            double_numerator = b.CreateFDiv(double_numerator, double_multiplier);
-        }
+        auto * double_numerator = nativeCast<Numerator>(b, numerator_value, this->getResultType());
+        auto * double_denominator = nativeCast<Denominator>(b, denominator_value, this->getResultType());
 
         return b.CreateFDiv(double_numerator, double_denominator);
     }
@@ -416,18 +335,15 @@ public:
 
         auto * numerator_ptr = aggregate_data_ptr;
         auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
-        numerator_value->setAlignment(llvm::Align(alignof(Numerator)));
         auto * value_cast_to_numerator = nativeCast(b, arguments[0], toNativeDataType<Numerator>());
         auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_value, value_cast_to_numerator) : b.CreateFAdd(numerator_value, value_cast_to_numerator);
-        b.CreateStore(numerator_result_value, numerator_ptr)->setAlignment(llvm::Align(alignof(Numerator)));
+        b.CreateStore(numerator_result_value, numerator_ptr);
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
         auto * denominator_ptr = b.CreateConstGEP1_32(b.getInt8Ty(), aggregate_data_ptr, denominator_offset);
-        auto * denominator_value_loaded = b.CreateLoad(denominator_type, denominator_ptr);
-        denominator_value_loaded->setAlignment(llvm::Align(alignof(Denominator)));
-        auto * denominator_value_updated = b.CreateAdd(denominator_value_loaded, llvm::ConstantInt::get(denominator_type, 1));
-        b.CreateStore(denominator_value_updated, denominator_ptr)->setAlignment(llvm::Align(alignof(Denominator)));
+        auto * denominator_value_updated = b.CreateAdd(b.CreateLoad(denominator_type, denominator_ptr), llvm::ConstantInt::get(denominator_type, 1));
+        b.CreateStore(denominator_value_updated, denominator_ptr);
     }
 
     void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override

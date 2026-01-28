@@ -13,14 +13,15 @@ std::string getInsertQuery(const std::string & db_name, const std::string & tabl
     ASTInsertQuery query;
     query.table_id.database_name = db_name;
     query.table_id.table_name = table_name;
-    query.columns = make_intrusive<ASTExpressionList>(',');
+    query.columns = std::make_shared<ASTExpressionList>(',');
     query.children.push_back(query.columns);
     for (const auto & column : columns)
-        query.columns->children.emplace_back(make_intrusive<ASTIdentifier>(column.name));
+        query.columns->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
 
     WriteBufferFromOwnString buf;
     IAST::FormatSettings settings(
         /*one_line=*/true,
+        /*hilite=*/false,
         /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
         /*identifier_quoting_style=*/quoting);
     query.IAST::format(buf, settings);

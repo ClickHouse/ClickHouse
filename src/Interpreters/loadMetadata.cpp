@@ -1,6 +1,6 @@
 #include <Common/PoolId.h>
+#include <Common/ThreadPool.h>
 #include <Common/thread_local_rng.h>
-#include <Common/CurrentThread.h>
 
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -17,19 +17,21 @@
 #include <Databases/TablesLoader.h>
 #include <Storages/StorageMaterializedView.h>
 
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 
 #include <Core/Settings.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <IO/ReadSettings.h>
+#include "IO/ReadSettings.h"
 
 #include <filesystem>
 
 #include <fmt/ranges.h>
 
 #define ORDINARY_TO_ATOMIC_PREFIX ".tmp_convert."
-
 
 namespace fs = std::filesystem;
 
@@ -99,20 +101,17 @@ static bool isSystemOrInformationSchema(const String & database_name)
 static void loadDatabase(
     ContextMutablePtr context,
     const String & database,
-    const fs::path & metadata_file_path,
+    const String & database_path,
     bool force_restore_data)
 {
-    /// If it is already loaded.
-    if (DatabaseCatalog::instance().isDatabaseExist(database))
-        return;
-
     String database_attach_query;
+    String database_metadata_file = database_path + ".sql";
 
-    auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
-    if (default_db_disk->existsFile(metadata_file_path))
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
+    if (db_disk->existsFile(fs::path(database_metadata_file)))
     {
         /// There is .sql file with database creation statement.
-        database_attach_query = readMetadataFile(default_db_disk, metadata_file_path);
+        database_attach_query = readMetadataFile(db_disk, database_metadata_file);
     }
     else
     {
@@ -123,87 +122,62 @@ static void loadDatabase(
 
     try
     {
-        executeCreateQuery(database_attach_query, context, database, metadata_file_path, /* create */ true, force_restore_data);
+        executeCreateQuery(database_attach_query, context, database, database_metadata_file, /* create */ true, force_restore_data);
     }
     catch (Exception & e)
     {
-        e.addMessage(fmt::format("while loading database {} from file {}", backQuote(database), metadata_file_path));
+        e.addMessage(fmt::format("while loading database {} from path {}", backQuote(database), database_path));
         throw;
     }
 }
 
 static void checkUnsupportedVersion(ContextMutablePtr, const String & database_name)
 {
-    auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
     /// Produce better exception message
-    auto metadata_dir_path = DatabaseCatalog::getMetadataDirPath(database_name);
-    if (default_db_disk->existsDirectory(metadata_dir_path))
+    auto metadata_path = fs::path("metadata") / database_name;
+    if (db_disk->existsDirectory(metadata_path))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data directory for {} database exists, but metadata file does not. "
                                                      "Probably you are trying to upgrade from version older than 20.7. "
                                                      "If so, you should upgrade through intermediate version.", database_name);
 }
 
-static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const std::map<String, fs::path> & databases)
+static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const std::map<String, String> & databases)
 {
     if (context->getConfigRef().has("allow_reserved_database_name_tmp_convert"))
         return;
 
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
+
     auto convert_flag_path = fs::path(context->getFlagsPath()) / "convert_ordinary_to_atomic";
-    if (!fs::exists(convert_flag_path))
+    if (!db_disk->existsFile(convert_flag_path))
         return;
 
     /// Flag exists. Let's check if we had an unsuccessful conversion attempt previously
-    for (const auto & [name, metadata_file] : databases)
+    for (const auto & db : databases)
     {
-        if (!name.starts_with(ORDINARY_TO_ATOMIC_PREFIX))
+        if (!db.first.starts_with(ORDINARY_TO_ATOMIC_PREFIX))
             continue;
-        size_t last_dot = name.rfind('.');
+        size_t last_dot = db.first.rfind('.');
         if (last_dot <= strlen(ORDINARY_TO_ATOMIC_PREFIX))
             continue;
 
-        String actual_name = name.substr(strlen(ORDINARY_TO_ATOMIC_PREFIX), last_dot - strlen(ORDINARY_TO_ATOMIC_PREFIX));
+        String actual_name = db.first.substr(strlen(ORDINARY_TO_ATOMIC_PREFIX), last_dot - strlen(ORDINARY_TO_ATOMIC_PREFIX));
 
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Found a database with special name: {}. "
-            "Most likely it indicates that conversion of database {} from Ordinary to Atomic "
-            "was interrupted or failed in the middle. You can add <allow_reserved_database_name_tmp_convert> to config.xml "
-            "or remove convert_ordinary_to_atomic file from flags/ directory, so the server will start forcefully. "
-            "After starting the server, you can finish conversion manually by moving rest of the tables from {} to {} "
-            "(using RENAME TABLE) and executing DROP DATABASE {} and RENAME DATABASE {} TO {}",
-            backQuote(name),
-            backQuote(actual_name),
-            backQuote(actual_name),
-            backQuote(name),
-            backQuote(actual_name),
-            backQuote(name),
-            backQuote(actual_name));
-    }
-}
-void dropRestoringDatabasesForTableDropping(ContextMutablePtr context, const std::unordered_set<String> & restoring_database_names)
-{
-    for (const auto & restoring_database_name : restoring_database_names)
-    {
-        auto drop_context = Context::createCopy(context);
-        drop_context->makeQueryContext();
-        drop_context->setCurrentQueryId({});
-        String name_quoted = backQuoteIfNeed(restoring_database_name);
-        drop_context->setSetting("force_remove_data_recursively_on_drop", false);
-
-        CurrentThread::QueryScope query_scope;
-        if (!CurrentThread::getGroup())
-            query_scope = CurrentThread::QueryScope::create(drop_context);
-
-        String drop_query = fmt::format("DROP DATABASE {}", name_quoted);
-
-        auto res = executeQuery(drop_query, drop_context, QueryFlags{.internal = true}).second;
-        executeTrivialBlockIO(res, drop_context);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Found a database with special name: {}. "
+                        "Most likely it indicates that conversion of database {} from Ordinary to Atomic "
+                        "was interrupted or failed in the middle. You can add <allow_reserved_database_name_tmp_convert> to config.xml "
+                        "or remove convert_ordinary_to_atomic file from flags/ directory, so the server will start forcefully. "
+                        "After starting the server, you can finish conversion manually by moving rest of the tables from {} to {} "
+                        "(using RENAME TABLE) and executing DROP DATABASE {} and RENAME DATABASE {} TO {}",
+                        backQuote(db.first), backQuote(actual_name), backQuote(actual_name), backQuote(db.first),
+                        backQuote(actual_name), backQuote(db.first), backQuote(actual_name));
     }
 }
 
 LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_database_name, bool async_load_databases)
 {
-    auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
     LoggerPtr log = getLogger("loadMetadata");
 
@@ -211,12 +185,12 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     /// on difference of data parts while initializing tables.
     /// This file is immediately deleted i.e. "one-shot".
     auto force_restore_data_flag_file = fs::path(context->getFlagsPath()) / "force_restore_data";
-    bool has_force_restore_data_flag = fs::exists(force_restore_data_flag_file);
+    bool has_force_restore_data_flag = db_disk->existsFile(force_restore_data_flag_file);
     if (has_force_restore_data_flag)
     {
         try
         {
-            fs::remove(force_restore_data_flag_file);
+            db_disk->removeFileIfExists(force_restore_data_flag_file);
         }
         catch (...)
         {
@@ -224,46 +198,40 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         }
     }
 
-    auto metadata_dir_path = DatabaseCatalog::getMetadataDirPath();
+
+    auto metadata_dir_path = fs::path("metadata");
 
     /// Loop over databases.
-    std::map<String, fs::path> databases;
-
-    /// Some databases don't have an .sql metadata file.
-    std::map<String, fs::path> orphan_directories_and_symlinks;
-
-    for (const auto it = default_db_disk->iterateDirectory(metadata_dir_path); it->isValid(); it->next())
+    std::map<String, String> databases;
+    for (const auto it = db_disk->iterateDirectory(metadata_dir_path); it->isValid(); it->next())
     {
         auto sub_path = fs::path(it->path());
         if (sub_path.filename().empty())
             sub_path = sub_path.parent_path();
 
-        if (default_db_disk->isSymlinkSupported() && default_db_disk->isSymlink(sub_path))
-        {
-            String db_name = sub_path.filename().string();
-            if (!isSystemOrInformationSchema(db_name))
-                orphan_directories_and_symlinks.emplace(unescapeForFileName(db_name), fs::path(sub_path.string() + ".sql"));
-            continue;
-        }
-
-        if (default_db_disk->existsDirectory(sub_path))
+        if (db_disk->isSymlinkSupported() && db_disk->isSymlink(sub_path))
             continue;
 
-        if (sub_path.extension() == ".sql")
+        if (db_disk->existsDirectory(sub_path))
+            continue;
+
+        const auto current_file = sub_path.filename().string();
+
+        /// TODO: DETACH DATABASE PERMANENTLY ?
+        if (fs::path(current_file).extension() == ".sql")
         {
-            String db_name = sub_path.stem();
-            orphan_directories_and_symlinks.erase(unescapeForFileName(db_name));
+            String db_name = fs::path(current_file).stem();
             if (!isSystemOrInformationSchema(db_name))
-                databases.emplace(unescapeForFileName(db_name), sub_path);
+                databases.emplace(unescapeForFileName(db_name), metadata_dir_path / db_name);
         }
 
         /// Temporary fails may be left from previous server runs.
-        if (sub_path.extension() == ".tmp")
+        if (fs::path(current_file).extension() == ".tmp")
         {
             LOG_WARNING(log, "Removing temporary file {}", sub_path.string());
             try
             {
-                default_db_disk->removeFileIfExists(sub_path);
+                db_disk->removeFileIfExists(sub_path);
             }
             catch (...)
             {
@@ -282,29 +250,17 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     if (create_default_db_if_not_exists && !metadata_dir_for_default_db_already_exists)
     {
         checkUnsupportedVersion(context, default_database_name);
-        databases.emplace(default_database_name, metadata_dir_path / (escapeForFileName(default_database_name) + ".sql"));
+        databases.emplace(default_database_name, metadata_dir_path / escapeForFileName(default_database_name));
     }
-
 
     TablesLoader::Databases loaded_databases;
-    std::unordered_set<String> restoring_database_for_table_dropping_names;
-    for (const auto & [name, metadata_file] : databases)
+    for (const auto & [name, db_path] : databases)
     {
-        loadDatabase(context, name, metadata_file, has_force_restore_data_flag);
+        loadDatabase(context, name, db_path, has_force_restore_data_flag);
         loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
-        if (name.starts_with(InterpreterSystemQuery::RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX))
-            restoring_database_for_table_dropping_names.insert(name);
     }
 
-    for (const auto & [name, metadata_file] : orphan_directories_and_symlinks)
-    {
-        loadDatabase(context, name, metadata_file, has_force_restore_data_flag);
-        loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
-        if (name.starts_with(InterpreterSystemQuery::RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX))
-            restoring_database_for_table_dropping_names.insert(name);
-    }
-
-    auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag, /* secondary */ false);
+    auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag, /*secondary*/ false);
     TablesLoader loader{context, std::move(loaded_databases), mode};
     auto load_tasks = loader.loadTablesAsync();
     auto startup_tasks = loader.startupTablesAsync();
@@ -331,30 +287,28 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     waitLoad(TablesLoaderForegroundPoolId, load_tasks); // First prioritize, schedule and wait all the load table tasks
     LOG_INFO(log, "Start synchronous startup of databases");
     waitLoad(TablesLoaderForegroundPoolId, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
-    dropRestoringDatabasesForTableDropping(context, restoring_database_for_table_dropping_names);
     return {};
 }
 
 static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & database_name, const String & default_engine)
 {
-    /// If it is already loaded.
-    if (DatabaseCatalog::instance().isDatabaseExist(database_name))
-        return;
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
-    auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
-    auto metadata_file = DatabaseCatalog::getMetadataFilePath(database_name);
-    auto metadata_tmp_file = DatabaseCatalog::getMetadataTmpFilePath(database_name);
-    default_db_disk->removeFileIfExists(metadata_tmp_file);
-
-    LOG_TEST(
+    String database_name_escaped = escapeForFileName(database_name);
+    auto metadata_dir_path = fs::path("metadata");
+    auto database_dir_path = metadata_dir_path / database_name_escaped;
+    auto metadata_file = metadata_dir_path / (database_name_escaped + ".sql");
+    auto metadata_file_tmp = metadata_dir_path / (database_name_escaped + ".sql" + ".tmp");
+    db_disk->removeFileIfExists(metadata_file_tmp);
+    LOG_DEBUG(
         getLogger("loadSystemDatabase"),
         "metadata_file_path {}, existsFile {}",
         metadata_file,
-        default_db_disk->existsFile(metadata_file));
-    if (default_db_disk->existsFile(metadata_file))
+        db_disk->existsFile(fs::path(metadata_file)));
+    if (db_disk->existsFile(fs::path(metadata_file)))
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
-        loadDatabase(context, database_name, metadata_file, true);
+        loadDatabase(context, database_name, database_dir_path, true);
     }
     else
     {
@@ -379,21 +333,10 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
 
     LOG_INFO(log, "Will convert database {} from Ordinary to Atomic", name_quoted);
 
-    {
-        auto create_database_query_context = Context::createCopy(context);
-        create_database_query_context->makeQueryContext();
-        create_database_query_context->setCurrentQueryId("");
-
-        CurrentThread::QueryScope query_scope;
-        if (!CurrentThread::getGroup())
-            query_scope = CurrentThread::QueryScope::create(create_database_query_context);
-
-        String create_database_query = fmt::format("CREATE DATABASE IF NOT EXISTS {}", tmp_name_quoted);
-
-        auto res = executeQuery(create_database_query, std::move(create_database_query_context), QueryFlags{ .internal = true }).second;
-        executeTrivialBlockIO(res, context);
-    }
-
+    String create_database_query = fmt::format("CREATE DATABASE IF NOT EXISTS {}", tmp_name_quoted);
+    auto res = executeQuery(create_database_query, context, QueryFlags{ .internal = true }).second;
+    executeTrivialBlockIO(res, context);
+    res = {};
     auto tmp_database = DatabaseCatalog::instance().getDatabase(tmp_name);
     assert(tmp_database->getEngineName() == "Atomic");
 
@@ -430,17 +373,10 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
         id.database_name = tmp_name;
         String tmp_qualified_quoted_name = id.getFullTableName();
 
-        auto move_table_query_context = Context::createCopy(context);
-        move_table_query_context->makeQueryContext();
-        move_table_query_context->setCurrentQueryId("");
-
         String move_table_query = fmt::format("RENAME TABLE {} TO {}", qualified_quoted_name, tmp_qualified_quoted_name);
-        CurrentThread::QueryScope query_scope;
-        if (!CurrentThread::getGroup())
-            query_scope = CurrentThread::QueryScope::create(move_table_query_context);
-
-        auto res = executeQuery(move_table_query, std::move(move_table_query_context), QueryFlags{ .internal = true }).second;
+        res = executeQuery(move_table_query, context, QueryFlags{ .internal = true }).second;
         executeTrivialBlockIO(res, context);
+        res = {};
     }
 
     LOG_INFO(log, "Moved all tables from {} to {}", name_quoted, tmp_name_quoted);
@@ -448,31 +384,14 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
     if (!database->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database {} is not empty after moving tables", name_quoted);
 
-    {
-        auto drop_query_context = Context::createCopy(context);
-        drop_query_context->makeQueryContext();
-        drop_query_context->setCurrentQueryId("");
-        drop_query_context->setSetting("force_remove_data_recursively_on_drop", false);
-
-        CurrentThread::QueryScope query_scope;
-        if (!CurrentThread::getGroup())
-            query_scope = CurrentThread::QueryScope::create(drop_query_context);
-
-        String drop_query = fmt::format("DROP DATABASE {}", name_quoted);
-        auto res = executeQuery(drop_query, std::move(drop_query_context), QueryFlags{ .internal = true }).second;
-        executeTrivialBlockIO(res, context);
-    }
-
-    auto rename_query_context = Context::createCopy(context);
-    rename_query_context->makeQueryContext();
-    rename_query_context->setCurrentQueryId("");
+    String drop_query = fmt::format("DROP DATABASE {}", name_quoted);
+    context->setSetting("force_remove_data_recursively_on_drop", false);
+    res = executeQuery(drop_query, context, QueryFlags{ .internal = true }).second;
+    executeTrivialBlockIO(res, context);
+    res = {};
 
     String rename_query = fmt::format("RENAME DATABASE {} TO {}", tmp_name_quoted, name_quoted);
-    CurrentThread::QueryScope query_scope;
-    if (!CurrentThread::getGroup())
-        query_scope = CurrentThread::QueryScope::create(rename_query_context);
-
-    auto res = executeQuery(rename_query, std::move(rename_query_context), QueryFlags{ .internal = true }).second;
+    res = executeQuery(rename_query, context, QueryFlags{ .internal = true }).second;
     executeTrivialBlockIO(res, context);
 
     LOG_INFO(log, "Finished database engine conversion of {}", name_quoted);
@@ -536,18 +455,11 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         for (auto iterator = new_database->getTablesIterator(context); iterator->isValid(); iterator->next())
             tables_uuids.push_back(iterator->uuid());
 
-        auto detach_query_context = Context::createCopy(context);
-        detach_query_context->makeQueryContext();
-        detach_query_context->setCurrentQueryId("");
-
         /// Reload database just in case (and update logger name)
         String detach_query = fmt::format("DETACH DATABASE {}", backQuoteIfNeed(database_name));
-        CurrentThread::QueryScope query_scope;
-        if (!CurrentThread::getGroup())
-            query_scope = CurrentThread::QueryScope::create(detach_query_context);
-
-        auto res = executeQuery(detach_query, std::move(detach_query_context), QueryFlags{ .internal = true }).second;
+        auto res = executeQuery(detach_query, context, QueryFlags{ .internal = true }).second;
         executeTrivialBlockIO(res, context);
+        res = {};
 
         /// Unlock UUID mapping, because it will be locked again on database reload.
         /// It's safe to do during metadata loading, because cleanup task is not started yet.
@@ -555,9 +467,9 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         for (const auto & uuid : tables_uuids)
             DatabaseCatalog::instance().removeUUIDMappingFinally(uuid);
 
-        auto metadata_file_path = fs::path(context->getPath()) / DatabaseCatalog::getMetadataFilePath(database_name);
+        auto path = fs::path(context->getPath()) / "metadata" / escapeForFileName(database_name);
         /// force_restore_data is needed to re-create metadata symlinks
-        loadDatabase(context, database_name, metadata_file_path, /* force_restore_data */ true);
+        loadDatabase(context, database_name, path, /* force_restore_data */ true);
 
         TablesLoader::Databases databases =
         {
@@ -588,32 +500,29 @@ void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & load_s
 
 void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMutablePtr context)
 {
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
+
     auto convert_flag_path = fs::path(context->getFlagsPath()) / "convert_ordinary_to_atomic";
-    if (!fs::exists(convert_flag_path))
+    if (!db_disk->existsFile(convert_flag_path))
         return;
 
-    LOG_INFO(
-        getLogger("loadMetadata"),
-        "Found convert_ordinary_to_atomic file in flags directory, "
-        "will try to convert all Ordinary databases to Atomic");
+    LOG_INFO(getLogger("loadMetadata"), "Found convert_ordinary_to_atomic file in flags directory, "
+                                                 "will try to convert all Ordinary databases to Atomic");
 
     // Wait for all table to be loaded and started
     waitLoad(TablesLoaderForegroundPoolId, load_metadata);
 
-    for (const auto & [name, _] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (const auto & [name, _] : DatabaseCatalog::instance().getDatabases())
         if (name != DatabaseCatalog::SYSTEM_DATABASE)
             maybeConvertOrdinaryDatabaseToAtomic(context, name);
 
     LOG_INFO(getLogger("loadMetadata"), "Conversion finished, removing convert_ordinary_to_atomic flag");
-    fs::remove(convert_flag_path);
-
-    context->removeWarningMessage(Context::WarningType::DB_ORDINARY_DEPRECATED);
+    db_disk->removeFileIfExists(convert_flag_path);
 }
 
 LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database)
 {
-    loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE,
-        context->getApplicationType() == Context::ApplicationType::SERVER ? "Atomic" : "Memory");
+    loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE, "Atomic");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA, "Memory");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, "Memory");
 

@@ -1,16 +1,13 @@
-#include <Databases/SQLite/DatabaseSQLite.h>
+#include "DatabaseSQLite.h"
 
 #if USE_SQLITE
 
-#include <Storages/AlterCommands.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
@@ -39,7 +36,7 @@ DatabaseSQLite::DatabaseSQLite(
         const ASTStorage * database_engine_define_,
         bool is_attach_,
         const String & database_path_)
-    : DatabaseWithAltersOnDiskBase("SQLite")
+    : IDatabase("SQLite")
     , WithContext(context_->getGlobalContext())
     , database_engine_define(database_engine_define_->clone())
     , database_path(database_path_)
@@ -170,17 +167,18 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
 }
 
 
-ASTPtr DatabaseSQLite::getCreateDatabaseQueryImpl() const
+ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
 {
-    auto create_query = make_intrusive<ASTCreateQuery>();
-    create_query->setDatabase(database_name);
+    const auto & create_query = std::make_shared<ASTCreateQuery>();
+    create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, database_engine_define);
 
-    if (!comment.empty())
-        create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
+    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
 
     return create_query;
 }
+
 
 ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
@@ -202,7 +200,7 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     auto storage_engine_arguments = ast_storage->engine->arguments;
     auto table_id = storage->getStorageID();
     /// Add table_name to engine arguments
-    storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 1, make_intrusive<ASTLiteral>(table_id.table_name));
+    storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 1, std::make_shared<ASTLiteral>(table_id.table_name));
 
     const Settings & settings = getContext()->getSettingsRef();
 

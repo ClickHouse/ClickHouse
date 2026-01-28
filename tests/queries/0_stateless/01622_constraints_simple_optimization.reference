@@ -34,10 +34,10 @@
 0
 SELECT count()
 FROM constraint_test_constants
-WHERE ((a > 100) OR (b > 100) OR (c > 100)) AND ((a <= 100) OR (b > 100) OR (c > 100))
+WHERE (b > 100) OR (c > 100)
 SELECT count()
 FROM constraint_test_constants
-WHERE ((a > 100) OR (b > 100) OR (c > 100)) AND ((a <= 100) OR (b > 100) OR (c > 100)) AND ((NOT (b > 100)) OR (c > 100))
+WHERE c > 100
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -55,7 +55,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT count()
 FROM constraint_test_constants
-WHERE ((a > 100) OR (b > 100) OR (c > 100)) AND ((a <= 100) OR (b > 100) OR (c > 100)) AND ((NOT (b > 100)) OR (c > 100)) AND (c > 100)
+WHERE c > 100
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -73,7 +73,6 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT count()
 FROM constraint_test_constants
-WHERE ((a > 100) OR (b > 100) OR (c > 100)) AND ((a <= 100) OR (b > 100) OR (c > 100)) AND ((NOT (b > 100)) OR (c > 100)) AND (c <= 100)
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64

@@ -45,23 +45,8 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
     , coordination_settings(std::move(coordination_settings_))
 {
     /// enable by default some feature flags
-    static constexpr std::array enabled_by_default_feature_flags
-    {
-        KeeperFeatureFlag::FILTERED_LIST,
-        KeeperFeatureFlag::MULTI_READ,
-        KeeperFeatureFlag::CHECK_NOT_EXISTS,
-        KeeperFeatureFlag::CREATE_IF_NOT_EXISTS,
-        KeeperFeatureFlag::REMOVE_RECURSIVE,
-        KeeperFeatureFlag::MULTI_WATCHES,
-        KeeperFeatureFlag::CHECK_STAT,
-        KeeperFeatureFlag::PERSISTENT_WATCHES,
-        KeeperFeatureFlag::TRY_REMOVE,
-        KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA,
-    };
-
-    for (const auto feature_flag : enabled_by_default_feature_flags)
-        feature_flags.enableFeatureFlag(feature_flag);
-
+    feature_flags.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
+    feature_flags.enableFeatureFlag(KeeperFeatureFlag::MULTI_READ);
     system_nodes_with_data[keeper_api_feature_flags_path] = feature_flags.getFeatureFlags();
 
     /// for older clients, the default is equivalent to WITH_MULTI_READ version
@@ -445,7 +430,7 @@ KeeperContext::Storage KeeperContext::getLogsPathFromConfig(const Poco::Util::Ab
             fs::create_directories(path);
 
         auto disk = std::make_shared<DiskLocal>("LocalLogDisk", path);
-        disk->startup(false);
+        disk->startup(Context::getGlobalContextInstance(), false);
         return disk;
     };
 
@@ -472,7 +457,7 @@ KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Uti
             fs::create_directories(path);
 
         auto disk = std::make_shared<DiskLocal>("LocalSnapshotDisk", path);
-        disk->startup(false);
+        disk->startup(Context::getGlobalContextInstance(), false);
         return disk;
     };
 
@@ -499,7 +484,7 @@ KeeperContext::Storage KeeperContext::getStatePathFromConfig(const Poco::Util::A
             fs::create_directories(path);
 
         auto disk = std::make_shared<DiskLocal>("LocalStateFileDisk", path);
-        disk->startup(false);
+        disk->startup(Context::getGlobalContextInstance(), false);
         return disk;
     };
 
@@ -630,8 +615,6 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
     {
         case Coordination::OpNum::FilteredList:
             return feature_flags.isEnabled(KeeperFeatureFlag::FILTERED_LIST);
-        case Coordination::OpNum::FilteredListWithStatsAndData:
-            return feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA);
         case Coordination::OpNum::MultiRead:
             return feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ);
         case Coordination::OpNum::CreateIfNotExists:
@@ -640,18 +623,6 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS);
         case Coordination::OpNum::RemoveRecursive:
             return feature_flags.isEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE);
-        case Coordination::OpNum::CheckStat:
-            return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
-        case Coordination::OpNum::Create2:
-            return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_WITH_STATS);
-        case Coordination::OpNum::TryRemove:
-            return feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE);
-        case Coordination::OpNum::SetWatch:
-        case Coordination::OpNum::SetWatch2:
-        case Coordination::OpNum::AddWatch:
-        case Coordination::OpNum::CheckWatch:
-        case Coordination::OpNum::RemoveWatch:
-            return feature_flags.isEnabled(KeeperFeatureFlag::PERSISTENT_WATCHES);
         case Coordination::OpNum::Close:
         case Coordination::OpNum::Error:
         case Coordination::OpNum::Create:

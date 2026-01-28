@@ -14,16 +14,19 @@ String ASTCheckGrantQuery::getID(char) const
 
 ASTPtr ASTCheckGrantQuery::clone() const
 {
-    auto res = make_intrusive<ASTCheckGrantQuery>(*this);
+    auto res = std::make_shared<ASTCheckGrantQuery>(*this);
 
     return res;
 }
 
 
-void ASTCheckGrantQuery::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
+void ASTCheckGrantQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr << "CHECK GRANT ";
-    access_rights_elements.formatElementsWithoutOptions(ostr);
+    ostr << (settings.hilite ? IAST::hilite_keyword : "") << "CHECK GRANT"
+                  << (settings.hilite ? IAST::hilite_none : "");
+
+    ostr << " ";
+    access_rights_elements.formatElementsWithoutOptions(ostr, settings.hilite);
 }
 
 

@@ -1,0 +1,20 @@
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+            Granules: 6/6
+            Granules: 2/6
+            Granules: 6/6
+            Granules: 2/6
+---
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+6	True World Champion
+            Granules: 6/6
+            Granules: 3/6
+            Granules: 6/6
+            Granules: 3/6
+---
+5	Its An OLAP Database
+            Granules: 6/6
+            Granules: 1/6
+            Granules: 6/6
+            Granules: 1/6

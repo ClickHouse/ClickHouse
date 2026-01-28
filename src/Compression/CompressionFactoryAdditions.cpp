@@ -34,22 +34,22 @@ namespace ErrorCodes
 
 
 void CompressionCodecFactory::validateCodec(
-    const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const
+    const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs, bool enable_deflate_qpl_codec, bool enable_zstd_qat_codec) const
 {
     if (family_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compression codec name cannot be empty");
 
     if (level)
     {
-        auto literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
+        auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)),
-            {}, sanity_check, allow_experimental_codecs);
+            {}, sanity_check, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
     }
     else
     {
-        auto identifier = make_intrusive<ASTIdentifier>(Poco::toUpper(family_name));
+        auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier),
-            {}, sanity_check, allow_experimental_codecs);
+            {}, sanity_check, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
     }
 }
 
@@ -77,11 +77,11 @@ bool innerDataTypeIsFloat(const DataTypePtr & type)
 }
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
-    const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs) const
+    const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs, bool enable_deflate_qpl_codec, bool enable_zstd_qat_codec) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
-        ASTPtr codecs_descriptions = make_intrusive<ASTExpressionList>();
+        ASTPtr codecs_descriptions = std::make_shared<ASTExpressionList>();
 
         bool with_compression_codec = false;
         bool with_none_codec = false;
@@ -119,7 +119,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                         "{} codec cannot have any arguments, it's just an alias for codec specified in config.xml", DEFAULT_CODEC_NAME);
 
                 result_codec = default_codec;
-                codecs_descriptions->children.emplace_back(make_intrusive<ASTIdentifier>(DEFAULT_CODEC_NAME));
+                codecs_descriptions->children.emplace_back(std::make_shared<ASTIdentifier>(DEFAULT_CODEC_NAME));
             }
             else
             {
@@ -156,7 +156,19 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 if (!allow_experimental_codecs && result_codec->isExperimental())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Codec {} is experimental and not meant to be used in production."
-                        " You can enable it with the 'allow_experimental_codecs' setting",
+                        " You can enable it with the 'allow_experimental_codecs' setting.",
+                        codec_family_name);
+
+                if (!enable_deflate_qpl_codec && result_codec->isDeflateQpl())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Codec {} is disabled by default."
+                        " You can enable it with the 'enable_deflate_qpl_codec' setting.",
+                        codec_family_name);
+
+                if (!enable_zstd_qat_codec && result_codec->isZstdQat())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Codec {} is disabled by default."
+                        " You can enable it with the 'enable_zstd_qat_codec' setting.",
                         codec_family_name);
 
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
@@ -245,7 +257,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         /// readability and backward compatibility.
         if (can_substitute_codec_arguments)
         {
-            boost::intrusive_ptr<ASTFunction> result = make_intrusive<ASTFunction>();
+            std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
             result->name = "CODEC";
             result->arguments = codecs_descriptions;
             return result;

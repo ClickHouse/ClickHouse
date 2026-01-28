@@ -11,7 +11,7 @@ class WatermarkTransform : public ISimpleTransform
 {
 public:
     WatermarkTransform(
-        SharedHeader header_,
+        const Block & header_,
         StorageWindowView & storage_,
         const String & window_column_name_,
         UInt32 lateness_upper_bound_);
@@ -23,7 +23,7 @@ public:
 protected:
     void transform(Chunk & chunk) override;
 
-    SharedHeader block_header;
+    Block block_header;
 
     StorageWindowView & storage;
     String window_column_name;

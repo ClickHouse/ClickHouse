@@ -1,20 +1,18 @@
-#include <Access/Common/AccessFlags.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/DataTypeString.h>
-#include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Parsers/ASTShowTablesQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
-#include <Interpreters/executeQuery.h>
-#include <Parsers/ASTShowTablesQuery.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
-#include <Common/Macros.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Access/Common/AccessFlags.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -60,7 +58,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         return rewritten_query.str();
     }
 
-    /// SHOW CLUSTERS
+    /// SHOW CLUSTER/CLUSTERS
     if (query.clusters)
     {
         WriteBufferFromOwnString rewritten_query;
@@ -83,17 +81,12 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
         return rewritten_query.str();
     }
-
-    /// SHOW CLUSTER
     if (query.cluster)
     {
         WriteBufferFromOwnString rewritten_query;
-        rewritten_query
-            << "SELECT cluster, shard_num, replica_num, host_name, host_address, port FROM system.clusters";
+        rewritten_query << "SELECT * FROM system.clusters";
 
-        auto cluster_name_expanded = getContext()->getMacros()->expand(query.cluster_str);
-
-        rewritten_query << " WHERE cluster = " << DB::quote << cluster_name_expanded;
+        rewritten_query << " WHERE cluster = " << DB::quote << query.cluster_str;
 
         /// (*)
         rewritten_query << " ORDER BY cluster, shard_num, replica_num, host_name, host_address, port";
@@ -225,27 +218,13 @@ BlockIO InterpreterShowTablesQuery::execute()
             res_columns[0]->insert(name);
         BlockIO res;
         size_t num_rows = res_columns[0]->size();
-        auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
+        auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
         res.pipeline = QueryPipeline(std::move(source));
 
         return res;
     }
-    auto rewritten_query = getRewrittenQuery();
-    String database = getContext()->resolveDatabase(query.getFrom());
-    if (query.databases || DatabaseCatalog::instance().isDatalakeCatalog(database))
-    {
-        auto query_context = Context::createCopy(getContext());
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId("");
-        /// HACK To always show them in explicit "SHOW TABLES" queries
-        query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
-        return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
-    }
 
-    auto query_context = Context::createCopy(getContext());
-    query_context->makeQueryContext();
-    query_context->setCurrentQueryId("");
-    return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
 /// (*) Sorting is strictly speaking not necessary but 1. it is convenient for users, 2. SQL currently does not allow to

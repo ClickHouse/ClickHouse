@@ -25,16 +25,12 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash --noprofile --norc -c "PS1='bash) ' bash --noprofile --norc"
+spawn bash
 send "source $basedir/../shell_config.sh\r"
-expect "bash) "
 
 send "yes | head -n10000000 | \$CLICKHOUSE_CLIENT --progress --query \"insert into function null('foo String') format TSV\" >/dev/null\r"
 expect "Progress: "
 send "\3"
-expect "bash) "
-send "\r"
-expect "bash) "
 
 send "exit\r"
 expect eof

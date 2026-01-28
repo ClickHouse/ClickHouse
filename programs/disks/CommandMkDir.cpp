@@ -1,4 +1,4 @@
-#include <ICommand.h>
+#include "ICommand.h"
 
 #include <Interpreters/Context.h>
 #include <Common/TerminalSize.h>
@@ -21,7 +21,7 @@ public:
 
     void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        bool recursive = options.contains("parents");
+        bool recursive = options.count("parents");
         const auto & disk = client.getCurrentDiskWithPath();
 
         String path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));

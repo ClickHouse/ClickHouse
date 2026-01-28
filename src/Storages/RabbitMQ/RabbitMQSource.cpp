@@ -1,22 +1,19 @@
 #include <Storages/RabbitMQ/RabbitMQSource.h>
 
-#include <IO/WriteHelpers.h>
+#include <Columns/IColumn.h>
 #include <Core/Settings.h>
-#include <Common/DateLUT.h>
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DeadLetterQueue.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <base/sleep.h>
 #include <Common/logger_useful.h>
-
 
 namespace DB
 {
 namespace Setting
 {
-extern const SettingsMilliseconds rabbitmq_max_wait_ms;
+    extern const SettingsMilliseconds rabbitmq_max_wait_ms;
 }
 
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot, const Names & column_names)
@@ -84,7 +81,7 @@ RabbitMQSource::RabbitMQSource(
     bool nack_broken_messages_,
     bool ack_in_suffix_,
     LoggerPtr log_)
-    : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
+    : ISource(getSampleBlock(headers.first, headers.second))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
@@ -152,11 +149,8 @@ Chunk RabbitMQSource::generateImpl()
 
     if (is_finished || !consumer || consumer->isConsumerStopped())
     {
-        LOG_TRACE(
-            log,
-            "RabbitMQSource is stopped (is_finished: {}, consumer_stopped: {})",
-            is_finished,
-            consumer ? toString(consumer->isConsumerStopped()) : "No consumer");
+        LOG_TRACE(log, "RabbitMQSource is stopped (is_finished: {}, consumer_stopped: {})",
+                  is_finished, consumer ? toString(consumer->isConsumerStopped()) : "No consumer");
         return {};
     }
 
@@ -167,50 +161,29 @@ Chunk RabbitMQSource::generateImpl()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(),
-        empty_buf,
-        non_virtual_header,
-        context,
-        max_block_size,
-        std::nullopt,
-        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
+        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
 
     std::optional<String> exception_message;
     size_t total_rows = 0;
-    bool is_dead_letter = false;
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
-        switch (handle_error_mode)
+        if (handle_error_mode == StreamingHandleErrorMode::STREAM)
         {
-            case StreamingHandleErrorMode::STREAM:
+            exception_message = e.message();
+            for (size_t i = 0; i < result_columns.size(); ++i)
             {
-                exception_message = e.message();
-                for (size_t i = 0; i < result_columns.size(); ++i)
-                {
-                    // We could already push some rows to result_columns before exception, we need to fix it.
-                    result_columns[i]->rollback(*checkpoints[i]);
+                // We could already push some rows to result_columns before exception, we need to fix it.
+                result_columns[i]->rollback(*checkpoints[i]);
 
-                    // All data columns will get default value in case of error.
-                    result_columns[i]->insertDefault();
-                }
-                return 1;
+                // All data columns will get default value in case of error.
+                result_columns[i]->insertDefault();
             }
-            case StreamingHandleErrorMode::DEAD_LETTER_QUEUE:
-            {
-                exception_message = e.message();
-                for (size_t i = 0; i < result_columns.size(); ++i)
-                {
-                    // We could already push some rows to result_columns before exception, we need to fix it.
-                    result_columns[i]->rollback(*checkpoints[i]);
-                }
 
-                is_dead_letter = true;
-                return 0;
-            }
-            case StreamingHandleErrorMode::DEFAULT:
-                throw std::move(e);
+            return 1;
         }
+
+        throw std::move(e);
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
@@ -220,7 +193,6 @@ Chunk RabbitMQSource::generateImpl()
     {
         exception_message.reset();
         size_t new_rows = 0;
-        is_dead_letter = false;
 
         if (consumer->hasPendingMessages())
         {
@@ -231,21 +203,16 @@ Chunk RabbitMQSource::generateImpl()
             }
         }
 
-        if (new_rows || is_dead_letter)
+        if (new_rows)
         {
             const auto exchange_name = storage.getExchange();
             const auto & message = consumer->currentMessage();
 
-            LOG_TEST(
-                log,
-                "Pulled {} rows, message delivery tag: {}, "
-                "previous delivery tag: {}, redelivered: {}, failed delivery tags by this moment: {}, exception message: {}",
-                new_rows,
-                message.delivery_tag,
-                commit_info.delivery_tag,
-                message.redelivered,
-                commit_info.failed_delivery_tags.size(),
-                exception_message.has_value() ? exception_message.value() : "None");
+            LOG_TEST(log, "Pulled {} rows, message delivery tag: {}, "
+                     "previous delivery tag: {}, redelivered: {}, failed delivery tags by this moment: {}, exception message: {}",
+                     new_rows, message.delivery_tag, commit_info.delivery_tag, message.redelivered,
+                     commit_info.failed_delivery_tags.size(),
+                     exception_message.has_value() ? exception_message.value() : "None");
 
             commit_info.channel_id = message.channel_id;
 
@@ -271,8 +238,8 @@ Chunk RabbitMQSource::generateImpl()
                 {
                     if (exception_message)
                     {
-                        virtual_columns[6]->insertData(message.message);
-                        virtual_columns[7]->insertData(*exception_message);
+                        virtual_columns[6]->insertData(message.message.data(), message.message.size());
+                        virtual_columns[7]->insertData(exception_message->data(), exception_message->size());
                     }
                     else
                     {
@@ -280,36 +247,6 @@ Chunk RabbitMQSource::generateImpl()
                         virtual_columns[7]->insertDefault();
                     }
                 }
-            }
-
-            if (is_dead_letter)
-            {
-                assert(exception_message);
-                const auto time_now = std::chrono::system_clock::now();
-                auto storage_id = storage.getStorageID();
-
-                auto dead_letter_queue = context->getDeadLetterQueue();
-                if (!dead_letter_queue)
-                    LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
-                else
-                    dead_letter_queue->add(
-                        DeadLetterQueueElement{
-                            .table_engine = DeadLetterQueueElement::StreamType::RabbitMQ,
-                            .event_time = timeInSeconds(time_now),
-                            .event_time_microseconds = timeInMicroseconds(time_now),
-                            .database = storage_id.database_name,
-                            .table = storage_id.table_name,
-                            .raw_message = message.message,
-                            .error = exception_message.value(),
-                            .details = DeadLetterQueueElement::RabbitMQDetails{
-                                .exchange_name = exchange_name,
-                                .message_id = message.message_id,
-                                .timestamp = message.timestamp,
-                                .redelivered = message.redelivered,
-                                .delivery_tag = message.delivery_tag,
-                                .channel_id = message.channel_id
-                            }
-                        });
             }
 
             total_rows += new_rows;
@@ -345,15 +282,12 @@ Chunk RabbitMQSource::generateImpl()
     LOG_TEST(
         log,
         "Flushing {} rows (max block size: {}, time: {} / {} ms)",
-        total_rows,
-        max_block_size,
-        total_stopwatch.elapsedMilliseconds(),
-        max_execution_time_ms);
+        total_rows, max_block_size, total_stopwatch.elapsedMilliseconds(), max_execution_time_ms);
 
     if (total_rows == 0)
         return {};
 
-    auto result_columns = executor.getResultColumns();
+    auto result_columns  = executor.getResultColumns();
     for (auto & column : virtual_columns)
         result_columns.push_back(std::move(column));
 

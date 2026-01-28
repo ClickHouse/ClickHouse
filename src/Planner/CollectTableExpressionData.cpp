@@ -2,20 +2,18 @@
 
 #include <Storages/IStorage.h>
 
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/ListNode.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/JoinNode.h>
+#include <Analyzer/ListNode.h>
+#include <Analyzer/FunctionNode.h>
 
-#include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
-#include <Planner/PlannerCorrelatedSubqueries.h>
-
+#include <Planner/PlannerActionsVisitor.h>
 
 namespace DB
 {
@@ -70,6 +68,10 @@ public:
         if (column_node->hasExpression() && column_source_node_type == QueryTreeNodeType::JOIN)
         {
             auto & columns_from_subtrees = column_node->getExpression()->as<ListNode &>().getNodes();
+            if (columns_from_subtrees.size() != 2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Expected two columns in JOIN using expression for column {}", column_node->dumpTree());
+
             visit(columns_from_subtrees[0]);
             visit(columns_from_subtrees[1]);
             return;
@@ -102,15 +104,11 @@ public:
                 auto column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(node);
 
                 ActionsDAG alias_column_actions_dag;
-                ColumnNodePtrWithHashSet empty_correlated_columns_set;
-                PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false);
-                auto [outputs, correlated_subtrees] = actions_visitor.visit(alias_column_actions_dag, column_node->getExpression());
+                PlannerActionsVisitor actions_visitor(planner_context, false);
+                auto outputs = actions_visitor.visit(alias_column_actions_dag, column_node->getExpression());
                 if (outputs.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Expected single output in actions dag for alias column {}. Actual {}", column_node->dumpTree(), outputs.size());
-                if (correlated_subtrees.notEmpty())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Correlated subquery in alias column expression {}. Actual {}", column_node->dumpTree(), outputs.size());
 
                 auto & alias_node = outputs[0];
                 const auto & column_name = column_node->getColumnName();
@@ -170,41 +168,12 @@ public:
                column_source->getNodeType() != QueryTreeNodeType::ARRAY_JOIN;
     }
 
-    /// Check if query node is a subquery and add used in correlated subquery columns to the table expression data.
-    /// These columns can be used only by correlated subquery, but still they
-    /// must be read by query plan for current query.
-    ///
-    /// Example: SELECT 1 FROM table as t WHERE EXISTS (SELECT * FROM numbers(10) WHERE t.id = number);
-    bool checkSubquery(const QueryTreeNodePtr & node)
+    static bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
     {
-        auto node_type = node->getNodeType();
-        switch (node_type)
-        {
-            case QueryTreeNodeType::QUERY:
-            {
-                auto * query_node = node->as<QueryNode>();
-                chassert(query_node != nullptr);
-
-                /// Register correlated columns for the query or union node.
-                visit(query_node->getCorrelatedColumnsNode());
-                return true;
-            }
-            case QueryTreeNodeType::UNION:
-            {
-                auto * union_node = node->as<UnionNode>();
-                chassert(union_node != nullptr);
-
-                visit(union_node->getCorrelatedColumnsNode());
-                return true;
-            }
-            default:
-                return false;
-        }
-    }
-
-    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
-    {
-        return !(checkSubquery(child_node) || isAliasColumn(parent_node));
+        auto child_node_type = child_node->getNodeType();
+        return !(child_node_type == QueryTreeNodeType::QUERY ||
+                 child_node_type == QueryTreeNodeType::UNION ||
+                 isAliasColumn(parent_node));
     }
 
     static bool isIndexHintFunction(const QueryTreeNodePtr & node)
@@ -286,11 +255,9 @@ public:
                 column_source->formatASTForErrorMessage(),
                 query_node->formatASTForErrorMessage());
 
-        const auto & storage = table_column_source ? table_column_source->getStorage() : table_function_column_source->getStorage();
-        const auto & storage_snapshot = table_column_source ? table_column_source->getStorageSnapshot() : table_function_column_source->getStorageSnapshot();
-
         if (!table_expression)
         {
+            const auto & storage = table_column_source ? table_column_source->getStorage() : table_function_column_source->getStorage();
             if (!storage->supportsPrewhere())
                 throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                     "Storage {} (table {}) does not support PREWHERE",
@@ -301,10 +268,7 @@ public:
             table_supported_prewhere_columns = storage->supportedPrewhereColumns();
         }
 
-        const bool has_table_virtual_column =
-            column_node->getColumnName() == "_table" && storage->isVirtualColumn(column_node->getColumnName(), storage_snapshot->metadata);
-
-        if ((table_supported_prewhere_columns && !table_supported_prewhere_columns->contains(column_node->getColumnName())) || has_table_virtual_column)
+        if (table_supported_prewhere_columns && !table_supported_prewhere_columns->contains(column_node->getColumnName()))
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Table expression {} does not support column {} in PREWHERE. In query {}",
                 table_expression->formatASTForErrorMessage(),
@@ -418,33 +382,19 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         ActionsDAG prewhere_actions_dag;
 
         QueryTreeNodePtr query_tree_node = query_node_typed.getPrewhere();
-        auto correlated_columns_set = query_node_typed.getCorrelatedColumnsSet();
 
-        PlannerActionsVisitor visitor(planner_context, /*correlated_columns_set_=*/correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
-        auto [expression_nodes, correlated_subtrees] = visitor.visit(prewhere_actions_dag, query_tree_node);
+        PlannerActionsVisitor visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
+        auto expression_nodes = visitor.visit(prewhere_actions_dag, query_tree_node);
         if (expression_nodes.size() != 1)
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Invalid PREWHERE. Expected single boolean expression. In query {}",
                 query_node->formatASTForErrorMessage());
-        if (correlated_subtrees.notEmpty())
-            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
-                "Correlated subqueries are not allowed in PREWHERE expression. In query {}",
-                query_node->formatASTForErrorMessage());
 
         prewhere_actions_dag.getOutputs().push_back(expression_nodes.back());
 
-        /// Add required input columns to outputs, but avoid duplicates
-        std::unordered_set<const ActionsDAG::Node *> existing_outputs(
-            prewhere_actions_dag.getOutputs().begin(), prewhere_actions_dag.getOutputs().end());
-
         for (const auto & prewhere_input_node : prewhere_actions_dag.getInputs())
-        {
-            if (required_column_names_without_prewhere.contains(prewhere_input_node->result_name)
-                && !existing_outputs.contains(prewhere_input_node))
-            {
+            if (required_column_names_without_prewhere.contains(prewhere_input_node->result_name))
                 prewhere_actions_dag.getOutputs().push_back(prewhere_input_node);
-            }
-        }
 
         table_expression_data.setPrewhereFilterActions(std::move(prewhere_actions_dag));
     }

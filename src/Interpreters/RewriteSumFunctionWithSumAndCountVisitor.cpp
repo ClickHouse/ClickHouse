@@ -90,13 +90,13 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
 
     if (column_id == 0)
     {
-        const auto new_ast = makeASTOperator(func_plus_minus->name,
+        const auto new_ast = makeASTFunction(func_plus_minus->name,
                                                 makeASTFunction("sum",
-                                                                make_intrusive<ASTIdentifier>(column_name)
+                                                                std::make_shared<ASTIdentifier>(column_name)
                                                                 ),
-                                             makeASTOperator("multiply",
-                                                                make_intrusive<ASTLiteral>(* literal),
-                                                                makeASTFunction("count", make_intrusive<ASTIdentifier>(column_name))
+                                                makeASTFunction("multiply",
+                                                                std::make_shared<ASTLiteral>(* literal),
+                                                                makeASTFunction("count", std::make_shared<ASTIdentifier>(column_name))
                                                                 )
                                                 );
         if (!new_ast)
@@ -108,12 +108,12 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
     else if (column_id == 1)
     {
         const auto new_ast = makeASTFunction(func_plus_minus->name,
-                                             makeASTOperator("multiply",
-                                                                make_intrusive<ASTLiteral>(* literal),
-                                                                makeASTFunction("count", make_intrusive<ASTIdentifier>(column_name))
+                                                makeASTFunction("multiply",
+                                                                std::make_shared<ASTLiteral>(* literal),
+                                                                makeASTFunction("count", std::make_shared<ASTIdentifier>(column_name))
                                                                 ),
                                                 makeASTFunction("sum",
-                                                                make_intrusive<ASTIdentifier>(column_name)
+                                                                std::make_shared<ASTIdentifier>(column_name)
                                                                 )
                                                 );
         if (!new_ast)

@@ -6,8 +6,8 @@
 #include <Core/Types.h>
 #include <libnuraft/nuraft.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Coordination/KeeperStateMachine.h>
-#include <Coordination/RaftServerConfig.h>
+#include "Coordination/KeeperStateMachine.h"
+#include "Coordination/RaftServerConfig.h"
 #include <Access/AuthenticationData.h>
 
 namespace DB
@@ -106,7 +106,7 @@ private:
     struct KeeperConfigurationWrapper
     {
         /// Our port
-        int port = -1;
+        int port;
         /// Our config
         KeeperServerConfigPtr config;
         /// Password to access keeper

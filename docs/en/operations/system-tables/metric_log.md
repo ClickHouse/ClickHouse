@@ -4,7 +4,6 @@ description: 'System table containing history of metrics values from tables `sys
 keywords: ['system table', 'metric_log']
 slug: /operations/system-tables/metric_log
 title: 'system.metric_log'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -23,11 +22,11 @@ Columns:
 
 **Example**
 
-```sql
+``` sql
 SELECT * FROM system.metric_log LIMIT 1 FORMAT Vertical;
 ```
 
-```text
+``` text
 Row 1:
 ──────
 hostname:                                                        clickhouse.eu-central1.internal
@@ -54,11 +53,6 @@ CurrentMetric_LocalThread:                                       0
 CurrentMetric_LocalThreadActive:                                 0
 CurrentMetric_DistributedFilesToInsert:                          0
 ```
-
-**Schema**
-This table can be configured with different schema types using the XML tag `<schema_type>`. The default schema type is `wide`, where each metric or profile event is stored as a separate column. This schema is the most performant and efficient for single-column reads.
-
-The `transposed` schema stores data in a format similar to `system.asynchronous_metric_log`, where metrics and events are stored as rows. This schema is useful for low-resource setups because it reduces resource consumption during merges.
 
 **See also**
 

@@ -1,4 +1,4 @@
-#include <Common/NetlinkMetricsProvider.h>
+#include "NetlinkMetricsProvider.h"
 #include <Common/Exception.h>
 #include <base/defines.h>
 #include <base/types.h>
@@ -7,7 +7,7 @@
 
 #if defined(OS_LINUX)
 
-#include <Common/hasLinuxCapability.h>
+#include "hasLinuxCapability.h"
 #include <base/unaligned.h>
 #include <base/getThreadId.h>
 #include <Common/logger_useful.h>
@@ -162,7 +162,7 @@ NetlinkMessage query(
     request.generic_header.version = 1;
 
     request.payload.attribute.header.nla_type = attribute_type;
-    request.payload.attribute.header.nla_len = static_cast<__u16>(attribute_size + NLA_HDRLEN);
+    request.payload.attribute.header.nla_len = attribute_size + NLA_HDRLEN;
 
     memcpy(&request.payload.attribute.payload, attribute_data, attribute_size);
 

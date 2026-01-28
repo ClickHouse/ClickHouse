@@ -10,7 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <base/range.h>
 
-#include <Functions/s2_fwd.h>
+#include "s2_fwd.h"
 
 class S2CellId;
 

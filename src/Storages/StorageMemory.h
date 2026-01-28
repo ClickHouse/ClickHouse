@@ -6,7 +6,6 @@
 
 #include <Core/Block_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 
 #include <Common/MultiVersion.h>
@@ -64,6 +63,7 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
@@ -86,8 +86,8 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
 
-    std::optional<UInt64> totalRows(ContextPtr) const override;
-    std::optional<UInt64> totalBytes(ContextPtr) const override;
+    std::optional<UInt64> totalRows(const Settings &) const override;
+    std::optional<UInt64> totalBytes(const Settings &) const override;
 
     /** Delays initialization of StorageMemory::read() until the first read is actually happen.
       * Usually, fore code like this:
@@ -128,7 +128,7 @@ public:
 
 private:
     /// Restores the data of this table from backup.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
+    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const DiskPtr & temporary_disk);
 
     /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
 

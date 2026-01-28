@@ -10,6 +10,8 @@
 namespace DB
 {
 
+class ASTIdentifier;
+
 class RedundantFunctionsInOrderByMatcher
 {
 public:

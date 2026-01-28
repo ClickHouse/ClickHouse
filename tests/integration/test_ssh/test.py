@@ -138,23 +138,3 @@ def test_simple_query_with_paramiko(started_cluster):
     # Secsh channel 1 open FAILED: : Administratively prohibited
 
     client.close()
-
-def test_paramiko_password(started_cluster):
-    instance.query("CREATE USER OR REPLACE mister IDENTIFIED BY 'P@$$WORD';")
-
-    pkey = paramiko.Ed25519Key.from_private_key_file(f"{SCRIPT_DIR}/keys/lucy_ed25519")
-    client = paramiko.SSHClient()
-    policy = paramiko.AutoAddPolicy()
-    client.set_missing_host_key_policy(policy)
-    client.connect(hostname=instance.ip_address, port=9022, username="mister", password='P@$$WORD')
-
-    stdin, stdout, stderr = client.exec_command("SELECT 1;")
-    stdin.close()
-    result = stdout.read().decode()
-    expected = instance.query("SELECT 1;")
-    assert result.replace("\n\x00", "\n") == expected
-
-    # FIXME: If I'm trying to execute more queries with the same client I get the error:
-    # Secsh channel 1 open FAILED: : Administratively prohibited
-
-    client.close()

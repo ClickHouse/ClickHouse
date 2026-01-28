@@ -25,11 +25,12 @@ bool ASTQueryWithOnCluster::parse(Pos & pos, std::string & cluster_str, Expected
 }
 
 
-void ASTQueryWithOnCluster::formatOnCluster(WriteBuffer & ostr, const IAST::FormatSettings &) const
+void ASTQueryWithOnCluster::formatOnCluster(WriteBuffer & ostr, const IAST::FormatSettings & settings) const
 {
     if (!cluster.empty())
     {
-        ostr << " ON CLUSTER " << backQuoteIfNeed(cluster);
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " ON CLUSTER " << (settings.hilite ? IAST::hilite_none : "")
+        << backQuoteIfNeed(cluster);
     }
 }
 

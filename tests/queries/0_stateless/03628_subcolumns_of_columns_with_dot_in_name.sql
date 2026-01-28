@@ -1,3 +1,5 @@
+set output_format_json_quote_64bit_integers=0;
+
 drop table if exists test;
 create table test (`my.json` JSON) engine=Memory;
 insert into test select '{"a" : 42}';

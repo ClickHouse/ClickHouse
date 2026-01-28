@@ -4,14 +4,13 @@ sidebar_label: 'DATABASE'
 sidebar_position: 35
 slug: /sql-reference/statements/create/database
 title: 'CREATE DATABASE'
-doc_type: 'reference'
 ---
 
 # CREATE DATABASE
 
 Creates a new database.
 
-```sql
+``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [COMMENT 'Comment']
 ```
 
@@ -30,7 +29,7 @@ ClickHouse creates the `db_name` database on all the servers of a specified clus
 
 ### ENGINE {#engine}
 
-By default, ClickHouse uses its own [Atomic](../../../engines/database-engines/atomic.md) database engine. There are also [MySQL](../../../engines/database-engines/mysql.md), [PostgresSQL](../../../engines/database-engines/postgresql.md), [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md), [Replicated](../../../engines/database-engines/replicated.md), [SQLite](../../../engines/database-engines/sqlite.md).
+By default, ClickHouse uses its own [Atomic](../../../engines/database-engines/atomic.md) database engine. There are also [Lazy](../../../engines/database-engines/lazy.md), [MySQL](../../../engines/database-engines/mysql.md), [PostgresSQL](../../../engines/database-engines/postgresql.md), [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md), [Replicated](../../../engines/database-engines/replicated.md), [SQLite](../../../engines/database-engines/sqlite.md).
 
 ### COMMENT {#comment}
 
@@ -40,7 +39,7 @@ The comment is supported for all database engines.
 
 **Syntax**
 
-```sql
+``` sql
 CREATE DATABASE db_name ENGINE = engine(...) COMMENT 'Comment'
 ```
 
@@ -48,7 +47,7 @@ CREATE DATABASE db_name ENGINE = engine(...) COMMENT 'Comment'
 
 Query:
 
-```sql
+``` sql
 CREATE DATABASE db_comment ENGINE = Memory COMMENT 'The temporary database';
 SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 ```

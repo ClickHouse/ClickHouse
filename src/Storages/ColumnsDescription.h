@@ -11,8 +11,6 @@
 #include <Common/NamePrompter.h>
 #include <Common/SettingsChanges.h>
 
-#include <Parsers/IAST.h>
-
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/mem_fun.hpp>
 #include <boost/multi_index/hashed_index.hpp>
@@ -59,13 +57,6 @@ struct GetColumnsOptions
     GetColumnsOptions & withSubcolumns(bool value = true)
     {
         with_subcolumns = value;
-        with_dynamic_subcolumns = value;
-        return *this;
-    }
-
-    GetColumnsOptions & withRegularSubcolumns(bool value = true)
-    {
-        with_subcolumns = value;
         return *this;
     }
 
@@ -75,11 +66,17 @@ struct GetColumnsOptions
         return *this;
     }
 
+    GetColumnsOptions & withExtendedObjects(bool value = true)
+    {
+        with_extended_objects = value;
+        return *this;
+    }
+
     Kind kind;
     VirtualsKind virtuals_kind = VirtualsKind::None;
 
     bool with_subcolumns = false;
-    bool with_dynamic_subcolumns = false;
+    bool with_extended_objects = false;
 };
 
 /// Description of a single table column (in CREATE TABLE for example).
@@ -120,7 +117,7 @@ public:
 
     static ColumnsDescription fromNamesAndTypes(NamesAndTypes ordinary);
 
-    explicit ColumnsDescription(NamesAndTypesList ordinary, bool with_subcolumns = true);
+    explicit ColumnsDescription(NamesAndTypesList ordinary);
 
     ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
 
@@ -216,7 +213,7 @@ public:
     std::optional<const ColumnDescription> tryGetColumnOrSubcolumnDescription(GetColumnsOptions::Kind kind, const String & column_name) const;
     std::optional<const ColumnDescription> tryGetColumnDescription(const GetColumnsOptions & options, const String & column_name) const;
 
-    ColumnDefaults getDefaults() const;
+    ColumnDefaults getDefaults() const; /// TODO: remove
     bool hasDefault(const String & column_name) const;
     bool hasDefaults() const;
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
@@ -224,7 +221,7 @@ public:
     /// Does column has non default specified compression codec
     bool hasCompressionCodec(const String & column_name) const;
 
-    String toString(bool include_comments) const;
+    String toString(bool include_comments = true) const;
     static ColumnsDescription parse(const String & str);
 
     size_t size() const

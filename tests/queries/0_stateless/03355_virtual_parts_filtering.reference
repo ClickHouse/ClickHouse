@@ -1,2 +1,0 @@
-enable_analyzer: 0, filtering by virtual columns
-enable_analyzer: 1, filtering by virtual columns

@@ -6,9 +6,9 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/URI.h>
 #include <Common/LocalDateTime.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Interpreters/Context_fwd.h>
+#include "DictionaryStructure.h"
+#include "IDictionarySource.h"
+#include <Interpreters/Context.h>
 #include <IO/CompressionMethod.h>
 
 namespace Poco
@@ -43,13 +43,13 @@ public:
     HTTPDictionarySource(const HTTPDictionarySource & other);
     HTTPDictionarySource & operator=(const HTTPDictionarySource &) = delete;
 
-    BlockIO loadAll() override;
+    QueryPipeline loadAll() override;
 
-    BlockIO loadUpdatedAll() override;
+    QueryPipeline loadUpdatedAll() override;
 
-    BlockIO loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 

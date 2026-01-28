@@ -15,7 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 #include <Databases/MySQL/DatabaseMySQL.h>
 #include <Common/parseRemoteDescription.h>
@@ -57,7 +57,7 @@ public:
     }
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageEngineName() const override { return "MySQL"; }
+    const char * getStorageTypeName() const override { return "MySQL"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -81,7 +81,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     mysql_settings[MySQLSetting::connect_timeout] = settings[Setting::external_storage_connect_timeout_sec];
     mysql_settings[MySQLSetting::read_write_timeout] = settings[Setting::external_storage_rw_timeout_sec];
 
-    for (auto it = args.begin(); it != args.end(); ++it)
+    for (auto * it = args.begin(); it != args.end(); ++it)
     {
         const ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)

@@ -62,7 +62,7 @@ void PacketReceiver::Task::run(AsyncCallback async_callback, SuspendCallback sus
     while (true)
     {
         {
-            AsyncCallbackSetter<Connection> async_setter(receiver.connection, async_callback);
+            AsyncCallbackSetter async_setter(receiver.connection, async_callback);
             receiver.packet = receiver.connection->receivePacket();
         }
         suspend_callback();

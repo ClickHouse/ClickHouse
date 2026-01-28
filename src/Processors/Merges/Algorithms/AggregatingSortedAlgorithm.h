@@ -20,12 +20,11 @@ class AggregatingSortedAlgorithm final : public IMergingAlgorithmWithDelayedChun
 {
 public:
     AggregatingSortedAlgorithm(
-        SharedHeader header,
+        const Block & header,
         size_t num_inputs,
         SortDescription description_,
         size_t max_block_size_rows_,
-        size_t max_block_size_bytes_,
-        std::optional<size_t> max_dynamic_subcolumns_);
+        size_t max_block_size_bytes_);
 
     const char * getName() const override { return "AggregatingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -87,11 +86,6 @@ public:
         ColumnsDefinition(ColumnsDefinition &&) noexcept; /// Is needed because destructor is defined.
         ~ColumnsDefinition(); /// Is needed because otherwise std::vector's destructor uses incomplete types.
 
-        /// Memory pool for SimpleAggregateFunction
-        /// (only when allocates_memory_in_arena == true).
-        std::unique_ptr<Arena> arena;
-        size_t arena_size = 0;
-
         /// Columns with which numbers should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
         std::vector<AggregateDescription> columns_to_aggregate;
@@ -113,7 +107,6 @@ private:
         AggregatingMergedData(
             UInt64 max_block_size_rows_,
             UInt64 max_block_size_bytes_,
-            std::optional<size_t> max_dynamic_subcolumns_,
             ColumnsDefinition & def_);
 
         void initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs) override;
@@ -131,6 +124,11 @@ private:
 
     private:
         ColumnsDefinition & def;
+
+        /// Memory pool for SimpleAggregateFunction
+        /// (only when allocates_memory_in_arena == true).
+        std::unique_ptr<Arena> arena;
+        size_t arena_size = 0;
 
         bool is_group_started = false;
 

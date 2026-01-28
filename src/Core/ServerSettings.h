@@ -21,7 +21,6 @@ struct ServerSettingsImpl;
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, GroupArrayActionWhenLimitReached) \
     M(CLASS_NAME, Float) \
-    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, Int32) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
@@ -43,8 +42,6 @@ struct ServerSettings
     ServerSettings();
     ServerSettings(const ServerSettings & settings);
     ~ServerSettings();
-
-    Field get(std::string_view name) const;
 
     void set(std::string_view name, const Field & value);
 
