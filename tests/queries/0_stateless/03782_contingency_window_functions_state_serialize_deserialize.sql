@@ -734,7 +734,9 @@ SELECT
 
 
 SELECT 'Reject different state types in window functions';
-SELECT cramersVMerge(theilsUState(toUInt8(1), toUInt8(1))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT cramersVMerge(theilsUState(toUInt8(1), toUInt8(1))) SETTINGS enable_analyzer = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT cramersVMerge(theilsUState(toUInt8(1), toUInt8(1))) SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_AGGREGATION }
+
 WITH
     (SELECT theilsUIf(toUInt8(number % 10), toUInt8(number % 6), number % 10 < 5) FROM numbers(10_000)) AS direct_raw,
     (
