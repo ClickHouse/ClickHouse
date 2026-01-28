@@ -132,6 +132,7 @@ private:
     std::optional<FileRemoteInfo> file_remote_info;
     bool copy_started = false;
     bool remove_started = false;
+    bool remove_finished = false;
 
 public:
     MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(

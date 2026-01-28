@@ -392,6 +392,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
     remove_started = true;
     object_storage->removeObjectIfExists(StoredObject(remote_source_path));
 
+    remove_finished = true;
     fs_tree->removeFile(path);
 }
 
@@ -406,7 +407,9 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
         object_storage->copyObject(StoredObject(remote_tmp_path), StoredObject(remote_source_path), getReadSettings(), getWriteSettings());
 
     object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
-    fs_tree->recordFile(path, std::move(file_remote_info.value()));
+
+    if (remove_finished)
+        fs_tree->recordFile(path, std::move(file_remote_info.value()));
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize()
