@@ -3,7 +3,7 @@ name: test
 description: Run ClickHouse stateless or integration tests. Use when the user wants to run or execute tests.
 argument-hint: [test-name] [--flags]
 disable-model-invocation: false
-allowed-tools: Task, Bash(./tests/clickhouse-test:*), Bash(pgrep:*), Bash(./build/*/programs/clickhouse:*), Bash(python:*), Bash(python3:*)
+allowed-tools: Task, Bash(./tests/clickhouse-test:*), Bash(pgrep:*), Bash(./build/*/programs/clickhouse:*), Bash(python:*), Bash(python3:*), Bash(mktemp:*), Bash(export:*)
 ---
 
 # ClickHouse Test Runner Skill
@@ -51,56 +51,86 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
 **IMPORTANT**: ALWAYS perform the server check at the start of EVERY stateless test execution, even for repeated runs.
 
 1. **Check if ClickHouse server is running (MANDATORY for stateless tests):**
-   ```bash
-   pgrep -f "clickhouse[- ]server" | xargs -I {} ps -p {} -o pid,cmd --no-headers 2>/dev/null | grep -v "cmake\|ninja\|Building"
+   - **CRITICAL**: Use Task tool with `subagent_type=general-purpose` to perform server liveness check
+   - The Task agent should:
+     - Check if any `clickhouse-server` process is running (filter out build processes like cmake/ninja)
+     - Test if server responds to a simple query: `SELECT 1`
+     - Report status: "Server is running and healthy" or "Server is not running" or "Server is running but not responding"
+
+   Example Task prompt:
    ```
-   - This check MUST be performed before every stateless test execution
-   - This check filters out build processes (cmake, ninja) to avoid false positives
-   - If no server is running:
-     - Report that no server is running
+   Check if the ClickHouse server is running and responding to queries.
+
+   Perform these checks:
+   1. Check if any clickhouse-server process is running (filter out build processes like cmake/ninja)
+      Command: pgrep -f "clickhouse[- ]server" | xargs -I {} ps -p {} -o pid,cmd --no-headers 2>/dev/null | grep -v "cmake\|ninja\|Building"
+
+   2. Test if the server responds to a simple query: SELECT 1
+      Command: ./build/RelWithDebInfo/programs/clickhouse client -q "SELECT 1" 2>/dev/null
+
+   Report:
+   - Whether a server process is running (show PID and command if found)
+   - Whether the server responds to queries
+   - Overall status: "Server is running and healthy" or "Server is not running" or "Server is running but not responding"
+   ```
+
+   - **If server is not running or not responding:**
+     - Report the Task agent's finding
      - Provide instructions: "Start the server with: `./build/RelWithDebInfo/programs/clickhouse server --config-file ./programs/server/config.xml`"
      - Use `AskUserQuestion` to prompt: "Did you start the ClickHouse server?"
-       - Option 1: "Yes, server is running now" - Proceed with verification
+       - Option 1: "Yes, server is running now" - Run the liveness check Task again to verify
        - Option 2: "No, I'll start it later" - Exit without running the test
-     - If user confirms server is running, verify it with the check again before proceeding
+     - If user confirms server is running, run the liveness check Task again before proceeding
 
-2. **Verify server is ready:**
-   ```bash
-   ./build/RelWithDebInfo/programs/clickhouse client -q "SELECT 1" 2>/dev/null
-   ```
-   - This check verifies the server is actually responding to queries
-   - If server doesn't respond, report the issue and exit
+   - **If server is running and healthy:**
+     - Proceed to run the test
+
    - Note: Build directory path is configured via `/install-skills` (currently: `build/RelWithDebInfo`)
 
-3. **Determine test name and type:**
+2. **Determine test name and type:**
    - If `$ARGUMENTS` is provided, use it as the test name
    - Otherwise, use `AskUserQuestion` to prompt user for test selection
    - Detect test type using patterns described in "Test Types" section
    - For stateless: Test name should NOT include file extension (`.sql`, `.sh`, etc.)
 
-4. **Run the stateless test:**
+3. **Create log file and run the stateless test:**
+
+   **Step 3a: Create temporary log file first:**
+   ```bash
+   mktemp /tmp/test_clickhouse_XXXXXX.log
+   ```
+   - This will print the log file path
+   - **IMMEDIATELY report to the user:**
+     - "Test logs will be written to: [log file path]"
+     - Then display in a copyable code block:
+       ```bash
+       tail -f [log file path]
+       ```
+     - Example: "You can monitor the test progress in real-time with:" followed by the tail command in a code block
+
+   **Step 3b: Start the stateless test:**
    ```bash
    # Add clickhouse binary to PATH
    # Configured via /install-skills (currently: build/RelWithDebInfo)
-   export PATH="./build/RelWithDebInfo/programs:$PATH"
-   ./tests/clickhouse-test <test_name> [flags]
+   export PATH="./build/RelWithDebInfo/programs:$PATH" && ./tests/clickhouse-test <test_name> [flags] > [log file path] 2>&1
    ```
 
    **Important:**
    - Run from repository root directory
+   - Use the log file path from step 3a
+   - Redirect both stdout and stderr to the log file using `> "$logfile" 2>&1`
    - Run in the background using `run_in_background: true`
-   - **IMMEDIATELY after starting the test**, report the output file location and provide a copiable command:
-     ```
-     Test output is being written to: /tmp/claude/.../tasks/[task_id].output
-
-     Monitor test progress:
-     tail -f /tmp/claude/.../tasks/[task_id].output
-     ```
+   - **After starting the test**, report: "Test started in the background. Waiting for completion..."
 
    Common flags to mention if user asks:
    - `--no-random-settings` - Disable settings randomization
    - `--no-random-merge-tree-settings` - Disable MergeTree settings randomization
    - `--record` - Update `.reference` files when output differs
+
+4. **Wait for stateless test completion:**
+   - Use TaskOutput with `block=true` to wait for the background task to finish
+   - The log file path is already known from step 3a
+   - Pass the log file path to the Task agent in step 5
 
 ### For Integration Tests
 
@@ -111,32 +141,50 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
    - Otherwise, use `AskUserQuestion` to prompt user for test selection
    - Test name should be the directory name (e.g., `test_keeper_three_nodes_start`)
 
-2. **Run the integration test with praktika:**
+2. **Create log file and run the integration test:**
+
+   **Step 2a: Create temporary log file first:**
    ```bash
-   python -u -m ci.praktika run "integration" --test <test_name>
+   mktemp /tmp/test_clickhouse_XXXXXX.log
+   ```
+   - This will print the log file path
+   - **IMMEDIATELY report to the user:**
+     - "Test logs will be written to: [log file path]"
+     - Then display in a copyable code block:
+       ```bash
+       tail -f [log file path]
+       ```
+     - Example: "You can monitor the test progress in real-time with:" followed by the tail command in a code block
+
+   **Step 2b: Start the integration test with praktika:**
+   ```bash
+   python -u -m ci.praktika run "integration" --test <test_name> > [log file path] 2>&1
    ```
 
    **Important:**
    - Run from repository root directory
    - Use `python -u` flag to ensure unbuffered output (so logs stream in real-time)
+   - Use the log file path from step 2a
+   - Redirect both stdout and stderr to the log file using `> "$logfile" 2>&1`
    - Integration tests use Docker containers (managed automatically)
    - Tests may take longer than stateless tests (container startup time)
-   - Run in the background using `run_in_background: true` for long-running tests
-   - **IMMEDIATELY after starting the test**, report the output file location and provide a copiable command:
-     ```
-     Test output is being written to: /tmp/claude/.../tasks/[task_id].output
+   - Run in the background using `run_in_background: true`
+   - **After starting the test**, report: "Test started in the background. Waiting for completion..."
 
-     Monitor test progress:
-     tail -f /tmp/claude/.../tasks/[task_id].output
-     ```
+3. **Wait for integration test completion:**
+   - Use TaskOutput with `block=true` to wait for the background task to finish
+   - The log file path is already known from step 2a
+   - Pass the log file path to the Task agent in step 4
 
-3. **Report results:**
+5. **Report results:**
 
    **For Stateless Tests:**
 
    **ALWAYS use Task tool to analyze results** (both pass and fail):
    - Use Task tool with `subagent_type=general-purpose` to analyze the test output
-   - The Task agent should analyze the full output and provide:
+   - **Pass the log file path from step 3a** to the Task agent - let it read the file directly
+   - Example Task prompt: "Read and analyze the test output from: /tmp/test_clickhouse_abc123.log"
+   - The Task agent should read the file and provide:
 
      **If tests passed:**
      - Confirm all tests passed
@@ -177,7 +225,9 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
          - Output differences: "Investigate the difference between expected and actual output in test [test_name]. Explain why the output changed. Do NOT fix the code."
          - Exception/error: "Investigate the error [error_message] in test [test_name]. Find where it originates and explain the cause. Do NOT fix the code."
        - The subagent should only investigate and analyze, NOT edit or fix code
-       - Return ONLY the agent's analysis summary to the user
+       - **CRITICAL: Return ONLY the agent's summary of findings to the user**
+       - **DO NOT return full investigation details, raw file contents, or excessive verbose output**
+       - **Present findings in a well-organized summary format**
      - If user chooses "No, I'll fix it myself":
        - Skip deeper analysis
 
@@ -185,7 +235,9 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
 
    **ALWAYS use Task tool to analyze results** (both pass and fail):
    - Use Task tool with `subagent_type=general-purpose` to analyze the test output
-   - The Task agent should analyze the full output and provide:
+   - **Pass the log file path from step 2a** to the Task agent - let it read the file directly
+   - Example Task prompt: "Read and analyze the test output from: /tmp/test_clickhouse_abc123.log"
+   - The Task agent should read the file and provide:
 
      **If tests passed:**
      - Confirm all tests passed
@@ -225,7 +277,9 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
          - Assertion failures: "Analyze the assertion failure at [file:line] in test [test_name]. Explain why the assertion failed. Do NOT fix the code."
          - Exception/error: "Investigate the exception [exception] in test [test_name]. Find where it originates and explain the cause. Do NOT fix the code."
        - The subagent should only investigate and analyze, NOT edit or fix code
-       - Return ONLY the agent's analysis summary to the user
+       - **CRITICAL: Return ONLY the agent's summary of findings to the user**
+       - **DO NOT return full investigation details, raw file contents, or excessive verbose output**
+       - **Present findings in a well-organized summary format**
      - If user chooses "No, I'll fix it myself":
        - Skip deeper analysis
 
@@ -268,7 +322,8 @@ The test runner automatically detects and sets the necessary environment variabl
 - Test type is automatically detected based on name pattern or file location
 - **MANDATORY:** ALL test output (success or failure) MUST be analyzed by a Task agent with `subagent_type=general-purpose`
 - **MANDATORY:** For test failures, MUST prompt user if they want deeper analysis and use Task subagent if requested
-- **Subagents available:** Task tool is used to analyze all test output and provide concise summaries. Additional agents (Explore or general-purpose) are used for deeper investigation of test failures when user requests it
+- **CRITICAL:** Test output is redirected to a unique log file created with `mktemp`. The log file path is reported to the user in a copyable format BEFORE starting the test, allowing real-time monitoring with `tail -f`. The log file path is saved and passed to the Task agent for analysis. This keeps large test logs out of the main context.
+- **Subagents available:** Task tool is used to analyze all test output (by reading from log file) and provide concise summaries. Additional agents (Explore or general-purpose) are used for deeper investigation of test failures when user requests it
 
 ### Stateless Tests
 - Test names do NOT include extensions (use `03312_issue_63093`, not `03312_issue_63093.sh`)

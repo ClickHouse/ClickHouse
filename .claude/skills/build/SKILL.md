@@ -3,7 +3,7 @@ name: build
 description: Build ClickHouse with various configurations (Release, Debug, ASAN, TSAN, etc.). Use when the user wants to compile ClickHouse.
 argument-hint: [build-type] [target] [options]
 disable-model-invocation: false
-allowed-tools: Task, Bash(ninja:*), Bash(cd:*), Bash(ls:*), Bash(pgrep:*), Bash(ps:*), Bash(pkill:*)
+allowed-tools: Task, Bash(ninja:*), Bash(cd:*), Bash(ls:*), Bash(pgrep:*), Bash(ps:*), Bash(pkill:*), Bash(mktemp:*), Bash(sleep:*)
 ---
 
 # ClickHouse Build Skill
@@ -45,32 +45,46 @@ Build ClickHouse in `build/${buildType}` directory (e.g., `build/Debug`, `build/
    - Target: `$1` or `clickhouse` if not specified
    - Build directory: `build/${buildType}` (e.g., `build/RelWithDebInfo`, `build/Debug`, `build/ASAN`)
 
-2. **Build the target directly with ninja:**
-   ```bash
-   cd build/${buildType}
+2. **Create log file and start the build:**
 
-   # Use ninja (preferred) - ninja auto-detects parallelism
-   ninja [target]
+   **Step 2a: Create temporary log file first:**
+   ```bash
+   mktemp /tmp/build_clickhouse_XXXXXX.log
+   ```
+   - This will print the log file path
+   - **IMMEDIATELY report to the user:**
+     - "Build logs will be written to: [log file path]"
+     - Then display in a copyable code block:
+       ```bash
+       tail -f [log file path]
+       ```
+     - Example: "You can monitor the build in real-time with:" followed by the tail command in a code block
+
+   **Step 2b: Start the ninja build:**
+   ```bash
+   cd build/${buildType} && ninja [target] > [log file path] 2>&1
    ```
 
    **Important:**
    - Do NOT create build directories or run `cmake` configuration
    - The build directory must already exist and be configured
+   - Use the log file path from step 2a
+   - Redirect both stdout and stderr to the log file using `> "$logfile" 2>&1`
    - Run the build in the background using `run_in_background: true`
-   - **IMMEDIATELY after starting the build**, report the output file location and provide a copiable command:
-     ```
-     Build output is being written to: /tmp/claude/.../tasks/[task_id].output
+   - **After starting the build**, report: "Build started in the background. Waiting for completion..."
 
-     Monitor build progress:
-     tail -f /tmp/claude/.../tasks/[task_id].output
-     ```
-   - Then wait for the build to complete using TaskOutput
+3. **Wait for build completion:**
+   - Use TaskOutput with `block=true` to wait for the background task to finish
+   - The log file path is already known from step 2a
+   - Pass the log file path to the Task agent in step 4
 
-3. **Report results:**
+4. **Report results:**
 
    **ALWAYS use Task tool to analyze results** (both success and failure):
    - Use Task tool with `subagent_type=general-purpose` to analyze the build output
-   - The Task agent should analyze the full output and provide:
+   - **Pass the log file path from step 2a** to the Task agent - let it read the file directly
+   - Example Task prompt: "Read and analyze the build output from: /tmp/build_clickhouse_abc123.log"
+   - The Task agent should read the file and provide:
 
      **If build succeeds:**
      - Confirm build completed successfully
@@ -98,7 +112,7 @@ Build ClickHouse in `build/${buildType}` directory (e.g., `build/Debug`, `build/
    - Do NOT return the full raw build output
 
    **After receiving the summary:**
-   - If build succeeded: Proceed to step 4 to check for running server
+   - If build succeeded: Proceed to step 5 to check for running server
    - If build failed:
      - Present the summary to the user first
      - **MANDATORY:** Use `AskUserQuestion` to prompt: "Do you want deeper analysis of this build failure?"
@@ -115,35 +129,70 @@ Build ClickHouse in `build/${buildType}` directory (e.g., `build/Debug`, `build/
          - Header errors: "Find which header file provides [missing declaration] and explain what's missing. Do NOT fix the code."
          - Template errors: "Investigate the template instantiation issue with [template name] and explain the root cause. Do NOT fix the code."
        - The subagent should only investigate and analyze, NOT edit or fix code
-       - Return ONLY the agent's analysis summary to the user
+       - **CRITICAL: Return ONLY the agent's summary of findings to the user**
+       - **DO NOT return full investigation details, raw file contents, or excessive verbose output**
+       - **Present findings in a well-organized summary format**
      - If user chooses "No, I'll fix it myself":
        - Skip deeper analysis
-     - Skip step 4 (no need to check for running server if build failed)
+     - Skip step 5 (no need to check for running server if build failed)
 
-4. **MANDATORY: Check for running server and offer to stop it (only after successful build):**
-   ```bash
-   pgrep -f "clickhouse[- ]server" | xargs -I {} ps -p {} -o pid,cmd --no-headers 2>/dev/null | grep -v "cmake\|ninja\|Building"
-   ```
+5. **MANDATORY: Check for running server and offer to stop it (only after successful build):**
 
    **IMPORTANT:** This step MUST be performed after every successful build. Do not skip this step.
 
-   - If a ClickHouse server is running:
-     - Report that a server is currently running with its PID
-     - Explain that the server is using the old binary and needs to be restarted to use the newly built version
-     - **MANDATORY:** Use `AskUserQuestion` to prompt: "A ClickHouse server is currently running. Do you want to stop it so the new build can be used?"
-       - Option 1: "Yes, stop the server" - Description: "Stop the running server (you'll need to start it manually later)"
-       - Option 2: "No, keep it running" - Description: "Keep the old server running (won't use the new build)"
-     - If user chooses "Yes, stop the server":
-       ```bash
-       pkill -f "clickhouse[- ]server"
-       ```
-       - Wait 1 second and verify the process was killed successfully
-       - Confirm to user: "Server stopped. To start the new version, run: `./build/${buildType}/programs/clickhouse server --config-file ./programs/server/config.xml`"
-     - If user chooses "No, keep it running":
-       - Inform user: "Server remains running with the old binary. You'll need to manually restart it to use the new build."
+   **Use Task tool with `subagent_type=general-purpose` to handle server checking and stopping:**
 
-   - If no server is running:
-     - No action needed, proceed normally
+   ```
+   Task tool with subagent_type=general-purpose
+   Prompt: "Check if a ClickHouse server is currently running and handle it.
+
+   Steps:
+   1. Check for running ClickHouse server:
+      pgrep -f \"clickhouse[- ]server\" | xargs -I {} ps -p {} -o pid,cmd --no-headers 2>/dev/null | grep -v \"cmake|ninja|Building\"
+
+   2. If a server is running:
+      - Report the PID and explain it's using the old binary
+      - Use AskUserQuestion to ask: \"A ClickHouse server is currently running. Do you want to stop it so the new build can be used?\"
+        - Option 1: \"Yes, stop the server\" - Description: \"Stop the running server (you'll need to start it manually later)\"
+        - Option 2: \"No, keep it running\" - Description: \"Keep the old server running (won't use the new build)\"
+      - If user chooses \"Yes, stop the server\":
+        - Run: pkill -f \"clickhouse[- ]server\"
+        - Wait 1 second: sleep 1
+        - Verify stopped: pgrep -f \"clickhouse[- ]server\" should return nothing
+        - Report: \"Server stopped. To start the new version, run: ./build/${buildType}/programs/clickhouse server --config-file ./programs/server/config.xml\"
+      - If user chooses \"No, keep it running\":
+        - Report: \"Server remains running with the old binary. You'll need to manually restart it to use the new build.\"
+
+   3. If no server is running:
+      - Report: \"No ClickHouse server is currently running.\"
+
+   Keep the response concise and only report the outcome to the user."
+   ```
+
+   - Wait for the Task agent to complete
+   - Return the Task agent's summary to the user
+
+6. **MANDATORY: Provide final summary to user:**
+
+   After completing all steps, always provide a concise final summary to the user:
+
+   **For successful builds:**
+   - Confirm the build completed successfully
+   - Report the binary location: `build/${buildType}/programs/[target]`
+   - Report the server status outcome from step 5
+
+   **For failed builds:**
+   - Already handled in step 4 with error analysis and optional investigation
+
+   **Example final summary for successful build:**
+   ```
+   Build completed successfully!
+
+   Binary: build/RelWithDebInfo/programs/clickhouse
+   Server status: No ClickHouse server is currently running.
+   ```
+
+   Keep the summary brief and clear.
 
 ## Examples
 
@@ -163,4 +212,6 @@ Build ClickHouse in `build/${buildType}` directory (e.g., `build/Debug`, `build/
 - For a clean build, the user should remove `build/${buildType}` and reconfigure manually
 - **MANDATORY:** After successful builds, this skill MUST check for running ClickHouse servers and ask the user if they want to stop them to use the new build
 - **MANDATORY:** ALL build output (success or failure) MUST be analyzed by a Task agent with `subagent_type=general-purpose`
-- **Subagents available:** Task tool is used to analyze all build output and provide concise summaries. Additional agents (Explore or general-purpose) can be used for deeper investigation of complex build errors
+- **MANDATORY:** ALWAYS provide a final summary to the user at the end of the skill execution (step 6)
+- **CRITICAL:** Build output is redirected to a unique log file created with `mktemp`. The log file path is reported to the user in a copyable format BEFORE starting the build, allowing real-time monitoring with `tail -f`. The log file path is saved from step 2a and passed to the Task agent for analysis. This keeps large build logs out of the main context.
+- **Subagents available:** Task tool is used to analyze all build output (by reading from output file) and provide concise summaries. Additional agents (Explore or general-purpose) can be used for deeper investigation of complex build errors
