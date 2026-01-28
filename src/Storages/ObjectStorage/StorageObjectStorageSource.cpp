@@ -19,6 +19,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -72,6 +73,7 @@ namespace Setting
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsBool table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
+    extern const SettingsBool use_parquet_metadata_cache;
 }
 
 namespace ErrorCodes
@@ -624,7 +626,34 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             object_info->getObjectMetadata()->size_bytes,
             object_info->getFileFormat().value_or(configuration->format));
 
-        auto input_format = FormatFactory::instance().getInput(
+        InputFormatPtr input_format;
+        if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
+            && isParquetFormat(object_info, configuration)
+            && !object_info->getObjectMetadata()->etag.empty())
+        {
+            auto cache_log = getLogger("ParquetMetadataCache");
+            LOG_DEBUG(cache_log, "setting mapping for {} -> {}", object_info->getPath(), object_info->getObjectMetadata()->etag);
+            const std::optional<RelativePathWithMetadata> metadata = object_info->relative_path_with_metadata;
+            input_format = FormatFactory::instance().getInput(
+            object_info->getFileFormat().value_or(configuration->format),
+            *read_buf,
+                initial_header,
+                context_,
+                max_block_size,
+                metadata,
+                format_settings,
+                parser_shared_resources,
+                filter_info,
+                true /* is_remote_fs */,
+                compression_method,
+                need_only_count,
+                std::nullopt /*min_block_size_bytes*/,
+                std::nullopt /*min_block_size_rows*/,
+                std::nullopt /*max_block_size_bytes*/);
+        }
+        else
+        {
+            input_format = FormatFactory::instance().getInput(
             object_info->getFileFormat().value_or(configuration->format),
             *read_buf,
             initial_header,
@@ -636,6 +665,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
+        }
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
@@ -749,9 +779,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 || object_storage->getType() == ObjectStorageType::S3);
     }
 
-    /// We need object metadata for two cases:
+    /// We need object metadata for a few use cases:
     /// 1. object size suggests whether we need to use prefetch
     /// 2. object etag suggests a cache key in case we use filesystem cache
+    /// 3. object etag as a caching key for parquet metadata caching
     if (!object_info.metadata)
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
 

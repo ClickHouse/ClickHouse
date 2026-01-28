@@ -37,12 +37,16 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     const FormatSettings & format_settings_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
-    size_t min_bytes_for_seek)
+    size_t min_bytes_for_seek,
+    ParquetMetadataCachePtr metadata_cache_,
+    const std::optional<RelativePathWithMetadata> & metadata_)
     : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , read_options(convertReadOptions(format_settings))
     , parser_shared_resources(parser_shared_resources_)
     , format_filter_info(format_filter_info_)
+    , metadata_cache(metadata_cache_)
+    , metadata(metadata_)
 {
     read_options.min_bytes_for_seek = min_bytes_for_seek;
     read_options.bytes_per_read_task = min_bytes_for_seek * 4;
@@ -94,11 +98,26 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             std::lock_guard lock(reader_mutex);
             reader.emplace();
             reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
+            auto log = getLogger("ParquetMetadataCache");
+            if (metadata_cache && metadata.has_value())
+            {
+                String file_name = metadata->getFileName();
+                String etag = metadata->metadata->etag;
+                ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
+                reader->reader.file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+                    return Parquet::Reader::readFileMetaData(reader->reader.prefetcher);
+                });
+            }
+            else
+            {
+                reader->reader.file_metadata = Parquet::Reader::readFileMetaData(reader->reader.prefetcher);
+            }
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
             reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
         }
     }
 }
+
 
 Chunk ParquetV3BlockInputFormat::read()
 {
@@ -109,8 +128,22 @@ Chunk ParquetV3BlockInputFormat::read()
 
         /// Don't init Reader and ReadManager if we only need file metadata.
         Parquet::Prefetcher temp_prefetcher;
+        parquet::format::FileMetaData file_metadata;
         temp_prefetcher.init(in, read_options, parser_shared_resources);
-        auto file_metadata = Parquet::Reader::readFileMetaData(temp_prefetcher);
+        auto log = getLogger("ParquetMetadataCache");
+        if (metadata_cache && metadata.has_value())
+        {
+            String file_name = metadata->getFileName();
+            String etag = metadata->metadata->etag;
+            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
+            file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+                return Parquet::Reader::readFileMetaData(temp_prefetcher);
+            });
+        }
+        else
+        {
+            file_metadata = Parquet::Reader::readFileMetaData(temp_prefetcher);
+        }
 
         auto chunk = getChunkForCount(size_t(file_metadata.num_rows));
         chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
@@ -155,9 +188,9 @@ void ParquetV3BlockInputFormat::resetParser()
     IInputFormat::resetParser();
 }
 
-NativeParquetSchemaReader::NativeParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings)
+NativeParquetSchemaReader::NativeParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : ISchemaReader(in_)
-    , read_options(convertReadOptions(format_settings))
+    , read_options(convertReadOptions(format_settings_))
 {
 }
 
@@ -167,6 +200,7 @@ void NativeParquetSchemaReader::initializeIfNeeded()
         return;
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
+    auto log = getLogger("ParquetMetadataCache");
     file_metadata = Parquet::Reader::readFileMetaData(prefetcher);
     initialized = true;
 }
