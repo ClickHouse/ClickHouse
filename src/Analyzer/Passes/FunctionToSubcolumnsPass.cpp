@@ -74,7 +74,7 @@ bool canOptimizeToSubcolumn(QueryTreeNodePtr column_source, const String & subco
         return {};
 
     const auto & storage_snapshot = table_node->getStorageSnapshot();
-    return storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), subcolumn_name).has_value();
+    return storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withRegularSubcolumns(), subcolumn_name).has_value();
 }
 
 void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)

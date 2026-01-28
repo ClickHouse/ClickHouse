@@ -270,7 +270,7 @@ private:
     void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
     void removeSubcolumns(const String & name_in_storage);
 
-    std::optional<NameAndTypePair> tryGetDynamicSubcolumn(const String & column_name) const;
+    std::optional<NameAndTypePair> tryGetDynamicSubcolumn(const String & column_name, const GetColumnsOptions & options) const;
 };
 
 class ASTColumnDeclaration;

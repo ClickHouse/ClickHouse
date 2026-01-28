@@ -3615,15 +3615,9 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     {
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals();
-        if (storage_snapshot->storage.supportsSubcolumns())
-        {
-            get_column_options.withSubcolumns();
-            table_expression_data.supports_subcolumns = true;
-        }
-
-        auto column_names_and_types = storage_snapshot->getColumns(get_column_options);
+        auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All));
         table_expression_data.column_names_and_types = NamesAndTypes(column_names_and_types.begin(), column_names_and_types.end());
+        table_expression_data.supports_subcolumns = storage_snapshot->storage.supportsSubcolumns();
 
         const auto & columns_description = storage_snapshot->metadata->getColumns();
 
