@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.2",
         {
-
+            {"hedged_connections_prefer_stable_pools", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {

@@ -1,3 +1,4 @@
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -14,6 +15,7 @@
 #include <Common/isLocalAddress.h>
 #include <Common/parseAddress.h>
 #include <Common/randomSeed.h>
+#include <Interpreters/Context.h>
 
 #include <span>
 #include <pcg_random.hpp>
@@ -27,6 +29,11 @@ namespace Setting
     extern const SettingsSeconds distributed_replica_error_half_life;
     extern const SettingsLoadBalancing load_balancing;
     extern const SettingsBool prefer_localhost_replica;
+}
+namespace ServerSetting
+{
+    extern const ServerSettingsSeconds distributed_min_unstable_period_for_replica;
+    extern const ServerSettingsSeconds distributed_max_unstable_period_for_replica;
 }
 
 namespace ErrorCodes
@@ -678,11 +685,14 @@ void Cluster::addShard(
         if (replica.is_local && !treat_local_as_remote)
             shard_local_addresses.push_back(replica);
     }
+    auto server_settings = Context::getGlobalContextInstance()->getServerSettings();
     ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
         all_replicas_pools,
         settings[Setting::load_balancing],
         settings[Setting::distributed_replica_error_half_life].totalSeconds(),
-        settings[Setting::distributed_replica_error_cap]);
+        settings[Setting::distributed_replica_error_cap],
+        server_settings[ServerSetting::distributed_min_unstable_period_for_replica].totalSeconds(),
+        server_settings[ServerSetting::distributed_max_unstable_period_for_replica].totalSeconds());
 
     if (weight)
         slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());

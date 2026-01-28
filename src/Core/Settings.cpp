@@ -1213,6 +1213,9 @@ Possible values:
 
     If a shard is unavailable, ClickHouse throws an exception.
 )", 0) \
+    DECLARE(Bool, hedged_connections_prefer_stable_pools, false, R"(
+Prefer using stable pools for creating connections.
+)", 0) \
     \
     DECLARE(UInt64, parallel_distributed_insert_select, 2, R"(
 Enables parallel distributed `INSERT ... SELECT` query.

@@ -54,6 +54,7 @@ public:
         bool fallback_to_stale_replicas_,
         UInt64 max_parallel_replicas_,
         bool skip_unavailable_shards_,
+        bool prefer_stable_pools_,
         std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
@@ -149,6 +150,7 @@ private:
     /// The number of failed connections (replica is considered failed after max_tries attempts to connect).
     size_t failed_pools_count= 0;
 
+
     /// The number of replicas that are in process of connection.
     size_t replicas_in_process_count = 0;
     /// The number of ready replicas (replica is considered ready when it's
@@ -161,6 +163,8 @@ private:
 
     const size_t max_parallel_replicas = 1;
     const bool skip_unavailable_shards = false;
+    bool prefer_stable_pools = false;
+    size_t stable_pools_to_try_connections = 0;
 };
 
 }

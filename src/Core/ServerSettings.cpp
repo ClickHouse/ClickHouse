@@ -1240,6 +1240,22 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     Possible values: -20 to 19.
     )", 0) \
+            DECLARE(Seconds, distributed_min_unstable_period_for_replica, 1, R"(
+    Minimal period of time when replica can be unstable. Replica can become unstable if the last connection couldn't be established. It follows exponential policy with [distributed_min_unstable_period_for_replica; distributed_max_unstable_period_for_replica] bounds.
+
+    See also:
+
+    - [hedged_connections_prefer_stable_pools](#hedged_connections_prefer_stable_pools)
+    - [distributed_max_unstable_period_for_replica](#distributed_max_unstable_period_for_replica)
+    )", 0) \
+        DECLARE(Seconds, distributed_max_unstable_period_for_replica, 600, R"(
+    Max period of time when replica can be unstable. Replica can become unstable if the last connection couldn't be established. It follows exponential policy with [distributed_min_unstable_period_for_replica; distributed_max_unstable_period_for_replica] bounds.
+
+    See also:
+
+    - [hedged_connections_prefer_stable_pools](#hedged_connections_prefer_stable_pools)
+    - [distributed_min_unstable_period_for_replica](#distributed_min_unstable_period_for_replica)
+    )", 0) \
     DECLARE(Int32, os_threads_nice_value_distributed_cache_tcp_handler, 0, R"(
     Linux nice value for the threads of distributed cache TCP handler. Lower values mean higher CPU priority.
 
