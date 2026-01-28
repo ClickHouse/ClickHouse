@@ -1,0 +1,23 @@
+=== Test 1: MV column not in source table ===
+2000-01-01	0
+=== Test 2: Aliased columns ===
+ACCESS_DENIED
+ACCESS_DENIED
+=== Test 3: Proper grants with aliases ===
+2
+=== Test 4: Computed columns ===
+ACCESS_DENIED
+3
+=== Test 5: Partial column access ===
+1
+ACCESS_DENIED
+ACCESS_DENIED
+=== Test 6: UNION queries ===
+ACCESS_DENIED
+1
+=== Test 7: JOIN queries ===
+1	100	one
+=== Test 8: CTE queries ===
+1	100	extra_data
+=== Test 9: CTE from same source table ===
+1	100	A
