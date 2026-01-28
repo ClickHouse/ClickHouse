@@ -74,14 +74,12 @@ void BlockIO::onException(bool log_as_error)
         callback(log_as_error);
 
     pipeline.cancel();
-    pipeline.reset();
 }
 
 void BlockIO::onCancelOrConnectionLoss()
 {
     releaseQuerySlot();
     pipeline.cancel();
-    pipeline.reset();
 }
 
 void BlockIO::setAllDataSent() const
