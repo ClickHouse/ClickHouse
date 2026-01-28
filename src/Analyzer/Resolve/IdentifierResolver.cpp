@@ -173,38 +173,40 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     auto current_db_info = context->getCurrentDatabase();
     const String & current_database = current_db_info.database;
 
-    StorageID storage_id(database_name, table_name);
-    storage_id = context->resolveStorageID(storage_id);
-    bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
+    StorageID storage_id = context->tryResolveStorageID(StorageID(database_name, table_name));
 
     StoragePtr storage;
     TableLockHolder storage_lock;
+    bool is_temporary_table = false;
 
-    if (is_temporary_table)
-        storage = DatabaseCatalog::instance().getTable(storage_id, context);
-    else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
+    if (storage_id)
     {
-        /// If table is the target of a refreshable materialized view, it needs additional
-        /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
-        std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
-    }
-    else
-        storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+        is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
-    if (!storage && storage_id.hasUUID())
-    {
-        // If `storage_id` has UUID, it is possible that the UUID is removed from `DatabaseCatalog` after `context->resolveStorageID(storage_id)`
-        // We try to get the table with the database name and the table name.
-        auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
-        if (database)
-            storage = database->tryGetTable(table_name, context);
+        if (is_temporary_table)
+            storage = DatabaseCatalog::instance().getTable(storage_id, context);
+        else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
+        {
+            /// If table is the target of a refreshable materialized view, it needs additional
+            /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
+            std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
+        }
+        else
+            storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+
+        if (!storage && storage_id.hasUUID())
+        {
+            // If `storage_id` has UUID, it is possible that the UUID is removed from `DatabaseCatalog` after `context->resolveStorageID(storage_id)`
+            // We try to get the table with the database name and the table name.
+            auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
+            if (database)
+                storage = database->tryGetTable(table_name, context);
+        }
     }
 
-    /// DataLakeCatalog fallback: if standard resolution failed, try datalake-specific resolution
+    /// for DataLakeCatalog databases, try fallback resolution (like "namespace.table" as table name)
     if (!storage && DatabaseCatalog::instance().isDatalakeCatalog(current_database))
-    {
         storage = tryResolveDatalakeTable(table_identifier, context, current_db_info);
-    }
 
     if (!storage)
         return {};

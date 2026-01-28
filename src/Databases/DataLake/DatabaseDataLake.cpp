@@ -438,14 +438,18 @@ StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context
 
 StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr context_, bool lightweight, bool ignore_if_not_iceberg) const
 {
+    auto parsed = DataLake::tryParseTableName(name);
+    if (!parsed)
+        return nullptr;
+
+    auto [namespace_name, table_name] = *parsed;
+
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
 
     const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
     if (!lightweight && with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
-
-    auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
         return nullptr;
