@@ -578,7 +578,7 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit()
 
 
 template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
-bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlags flags, const Args &... args) const
+bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, const AccessFlags & flags, const Args &... args) const
 {
     if (user_was_dropped)
     {
@@ -611,7 +611,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     };
 
     if (flags & AccessType::CLUSTER && !access_control->doesOnClusterQueriesRequireClusterGrant())
-        flags &= ~AccessType::CLUSTER;
+        return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(context, (flags & ~AccessType::CLUSTER), args...);
 
     if (!flags)
         return true;
@@ -647,19 +647,19 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
     if (!granted)
     {
-        auto access_denied_no_grant = [&]<typename... FmtArgs>(AccessFlags access_flags, FmtArgs && ...fmt_args)
+        auto access_denied_no_grant = [&]()
         {
-            if (grant_option && acs->isGranted(access_flags, fmt_args...))
+            if (grant_option && acs->isGranted(flags, args...))
             {
                 return access_denied(ErrorCodes::ACCESS_DENIED,
                     "{}: Not enough privileges. "
                     "The required privileges have been granted, but without grant option. "
                     "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
-                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions());
+                    AccessRightsElement{flags, args...}.toStringWithoutOptions());
             }
 
             AccessRights difference;
-            difference.grant(flags, fmt_args...);
+            difference.grant(flags, args...);
             AccessRights original_rights = difference;
             difference.makeDifference(*getAccessRights());
 
@@ -667,19 +667,19 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
             {
                 return access_denied(ErrorCodes::ACCESS_DENIED,
                     "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+                    AccessRightsElement{flags, args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
             }
 
 
             return access_denied(ErrorCodes::ACCESS_DENIED,
                 "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}. "
                 "(Missing permissions: {}){}",
-                AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
+                AccessRightsElement{flags, args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
                 difference.getElements().toStringWithoutOptions(),
                 grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
         };
 
-        return access_denied_no_grant(flags, args...);
+        return access_denied_no_grant();
     }
 
     struct PrecalculatedFlags
