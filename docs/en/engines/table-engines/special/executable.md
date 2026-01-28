@@ -40,6 +40,26 @@ Here are the relevant settings for an `Executable` table:
 - `command_write_timeout`
   - Description: Timeout for writing data to command stdin in milliseconds
   - Default value: 10000
+- `send_query_metadata`
+  - Description: Send the full query text to the executable as JSON over a dedicated file descriptor (`64`). The JSON object currently contains a single `query` field with the original query including secrets/literals.
+  - Default value: false
+
+### Receiving query metadata in your script
+
+When `send_query_metadata` is enabled (for example, `SETTINGS send_query_metadata = 1`), ClickHouse writes one JSON line with the full query text to file descriptor `64` before streaming any rows. This works for both `Executable` and `ExecutablePool` tables; in pooled mode the descriptor stays open across queries.
+
+Example (Python):
+
+```python
+import os, json
+
+# Read one line of metadata from fd 64
+with os.fdopen(64) as meta:
+    metadata = json.loads(meta.readline())
+    print("Query text:", metadata["query"])
+```
+
+Because the query string includes inlined literals and secrets, ensure your script handles it carefully (e.g., avoid logging sensitive values).
 
 Let's look at an example. The following Python script is named `my_script.py` and is saved in the `user_scripts` folder. It reads in a number `i` and prints `i` random strings, with each string preceded by a number that is separated by a tab:
 
