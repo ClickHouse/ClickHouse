@@ -1326,6 +1326,7 @@ Packet Connection::receivePacket()
 {
     try
     {
+        /// If we already disconnected.
         if (!in)
         {
             throw Exception(ErrorCodes::NETWORK_ERROR, "Connection to {} is terminated", getDescription());
