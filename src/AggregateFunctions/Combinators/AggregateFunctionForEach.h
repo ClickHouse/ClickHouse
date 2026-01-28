@@ -12,6 +12,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
+#include <Common/memory.h>
+
 #include <absl/container/inlined_vector.h>
 
 namespace DB
@@ -121,7 +123,7 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>(arguments, params_, createResultType(nested_))
         , nested_func(nested_), num_arguments(arguments.size())
     {
-        nested_size_of_data = nested_func->sizeOfData();
+        nested_size_of_data = ::Memory::alignUp(nested_func->sizeOfData(), nested_func->alignOfData());
 
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require at least one argument", getName());
@@ -156,7 +158,7 @@ public:
         const AggregateFunctionForEachData & rhs_state = data(rhs_place);
         AggregateFunctionForEachData & state = ensureAggregateData(place, rhs_state.dynamic_array_size, *arena);
 
-        const size_t rhs_nested_size_of_data = rhs_nested->sizeOfData();
+        const size_t rhs_nested_size_of_data = ::Memory::alignUp(rhs_nested->sizeOfData(), rhs_nested->alignOfData());
 
         const char * rhs_nested_state = rhs_state.array_of_aggregate_datas;
         char * nested_state = state.array_of_aggregate_datas;
