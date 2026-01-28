@@ -88,6 +88,8 @@ struct BlockIO
     /// Release query slot early to allow client to reuse it for his next query.
     void releaseQuerySlot() const;
 
+    void resetPipeline(bool cancel);
+
 private:
     void reset();
 };
