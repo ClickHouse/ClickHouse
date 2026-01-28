@@ -2505,6 +2505,27 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return true;
         }
     }
+
+    size_t key_column_num;
+    std::optional<size_t> argument_num_of_space_filling_curve;
+    DataTypePtr key_column_type;
+
+    if (isKeyPossiblyWrappedByMonotonicFunctions(
+            node, info, key_column_num, argument_num_of_space_filling_curve, key_column_type, out.monotonic_functions_chain))
+    {
+        DataTypePtr actual_type = key_column_type;
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(actual_type.get()))
+            actual_type = nullable_type->getNestedType();
+
+        if (isInteger(actual_type) || isFloat(actual_type))
+        {
+            out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+            out.range = Range(Field(static_cast<UInt64>(0)));
+            out.key_columns.push_back(key_column_num);
+            out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
+            return true;
+        }
+    }
     return false;
 }
 
