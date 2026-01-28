@@ -150,9 +150,12 @@ def _create_rep(interval):
 @pytest.fixture(scope="module", autouse=True)
 def _started_cluster():
     cluster.start()
-    ch1.query(f"CREATE DATABASE IF NOT EXISTS {TEST_DB}")
-    r1.query(f"CREATE DATABASE IF NOT EXISTS {TEST_DB}")
-    r2.query(f"CREATE DATABASE IF NOT EXISTS {TEST_DB}")
+    ch1.query(f"DROP DATABASE IF EXISTS {TEST_DB}")
+    ch1.query(f"CREATE DATABASE {TEST_DB}")
+    r1.query(f"DROP DATABASE IF EXISTS {TEST_DB}")
+    r1.query(f"CREATE DATABASE {TEST_DB}")
+    r2.query(f"DROP DATABASE IF EXISTS {TEST_DB}")
+    r2.query(f"CREATE DATABASE {TEST_DB}")
     try:
         yield
     finally:

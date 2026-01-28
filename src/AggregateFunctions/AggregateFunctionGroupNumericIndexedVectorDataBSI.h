@@ -108,7 +108,7 @@ private:
      * data_array stores all indexes and values whose value is not 0 using roaringBitmap and Bit-Sliced Index.
      */
     std::shared_ptr<Roaring> zero_indexes = std::make_shared<Roaring>();
-    std::vector<std::shared_ptr<Roaring>> data_array;
+    VectorWithMemoryTracking<std::shared_ptr<Roaring>> data_array;
 
     /// The only way NaN and Inf values can enter BSI is if user adds them as they cannot appear in BSI by any permitted operation.
     /// Do not allow user to do this as it achieves nothing and is very likely by mistake.
@@ -295,7 +295,8 @@ public:
           * - When value is a Float32/Float64, fraction_bit_num indicates how many bits are used to represent the decimal, Because the
           *   maximum value of total_bit_num(integer_bit_num + fraction_bit_num) is 64, overflow may occur.
           */
-        Int64 scaled_value = Int64(value * (1ULL << fraction_bit_num));
+        using ScaledValueType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, UInt64>;
+        Int64 scaled_value = Int64(value * static_cast<ScaledValueType>(1ULL << fraction_bit_num));
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             if (scaled_value & (1ULL << i))
@@ -625,8 +626,8 @@ public:
 
     /// Set Roaring containers to RoaringBitmapWithSmallSet
     static inline void setContainers(
-        std::vector<roaring::internal::container_t *> & ctns,
-        std::vector<UInt8> & types,
+        VectorWithMemoryTracking<roaring::internal::container_t *> & ctns,
+        VectorWithMemoryTracking<UInt8> & types,
         UInt32 container_id,
         BSINumericIndexedVector & vector)
     {
@@ -673,8 +674,8 @@ public:
                 length,
                 static_cast<UInt32>(roaring::internal::DEFAULT_MAX_SIZE));
 
-        std::vector<roaring::internal::container_t *> ctns(total_bit_num);
-        std::vector<UInt8> types(total_bit_num);
+        VectorWithMemoryTracking<roaring::internal::container_t *> ctns(total_bit_num);
+        VectorWithMemoryTracking<UInt8> types(total_bit_num);
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             ctns[i] = roaring::internal::array_container_create_given_capacity(length);
@@ -694,9 +695,9 @@ public:
         }
 
         constexpr UInt32 k_batch_size = 256;
-        std::vector<std::vector<UInt16>> bit_buffer(64, std::vector<UInt16>(k_batch_size, 0));
+        VectorWithMemoryTracking<VectorWithMemoryTracking<UInt16>> bit_buffer(64, VectorWithMemoryTracking<UInt16>(k_batch_size, 0));
         /// number of keys in each bitmap of vector.
-        std::vector<UInt16> cnt(64);
+        VectorWithMemoryTracking<UInt16> cnt(64);
 
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
         {
@@ -781,8 +782,8 @@ public:
 
         const UInt32 total_bit_num = vector.getTotalBitNum();
 
-        std::vector<roaring::internal::container_t *> ctns(total_bit_num);
-        std::vector<UInt8> types(total_bit_num);
+        VectorWithMemoryTracking<roaring::internal::container_t *> ctns(total_bit_num);
+        VectorWithMemoryTracking<UInt8> types(total_bit_num);
 
         for (size_t i = 0; i < total_bit_num; ++i)
         {
@@ -791,7 +792,7 @@ public:
         }
 
         constexpr UInt32 k_batch_size = 256;
-        std::vector<UInt32> bit_buffer(64 * k_batch_size, 0);
+        VectorWithMemoryTracking<UInt32> bit_buffer(64 * k_batch_size, 0);
         size_t cnt = 0;
         constexpr UInt64 shift = 6;
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
@@ -865,8 +866,8 @@ public:
 
         const UInt32 total_bit_num = vector.getTotalBitNum();
 
-        std::vector<roaring::internal::container_t *> ctns(total_bit_num);
-        std::vector<UInt8> types(total_bit_num);
+        VectorWithMemoryTracking<roaring::internal::container_t *> ctns(total_bit_num);
+        VectorWithMemoryTracking<UInt8> types(total_bit_num);
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             ctns[i] = array_container_create_given_capacity(roaring::internal::DEFAULT_MAX_SIZE);
@@ -874,8 +875,8 @@ public:
         }
 
         constexpr UInt32 k_batch_size = 256;
-        std::vector<std::vector<UInt16>> bit_buffer(total_bit_num, std::vector<UInt16>(k_batch_size, 0));
-        std::vector<UInt16> cnt(total_bit_num);
+        VectorWithMemoryTracking<VectorWithMemoryTracking<UInt16>> bit_buffer(total_bit_num, VectorWithMemoryTracking<UInt16>(k_batch_size, 0));
+        VectorWithMemoryTracking<UInt16> cnt(total_bit_num);
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
         {
             memset(cnt.data(), 0, sizeof(UInt16) * total_bit_num);
@@ -1022,7 +1023,7 @@ public:
                     buffer[bit_buffer[i]] |= bit_mask;
                 }
                 output[i] = static_cast<Float64>(static_cast<ValueType>(static_cast<Int64>(buffer[bit_buffer[i]])))
-                    / (1ULL << vector.fraction_bit_num);
+                    / static_cast<Float64>(1ULL << vector.fraction_bit_num);
             }
         }
         else
@@ -1032,7 +1033,7 @@ public:
                 if (bit_buffer[i] >= 65536)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "bit_buffer index out of bounds. bit_buffer[i]: {}", bit_buffer[i]);
                 output[i] = static_cast<Float64>(static_cast<ValueType>(static_cast<Int64>(buffer[bit_buffer[i]])))
-                    / (1ULL << vector.fraction_bit_num);
+                    / static_cast<Float64>(1ULL << vector.fraction_bit_num);
             }
         }
         return result_cnt;
@@ -1058,7 +1059,7 @@ public:
         PaddedPODArray<Float64> rhs_values(65536);
         PaddedPODArray<Float64> res_values(65536);
 
-        std::set<UInt16> container_ids = and_non_zero_indexes->ra_get_all_container_ids();
+        SetWithMemoryTracking<UInt16> container_ids = and_non_zero_indexes->ra_get_all_container_ids();
         for (const auto & container_id : container_ids)
         {
             UInt32 indexes_size = and_non_zero_indexes->container_to_uint32_array(container_id, container_id << 16, indexes);
@@ -1122,7 +1123,7 @@ public:
         PaddedPODArray<Float64> lhs_values(65536);
         PaddedPODArray<Float64> res_values(65536);
 
-        std::set<UInt16> container_ids = lhs_non_zero_indexes->ra_get_all_container_ids();
+        SetWithMemoryTracking<UInt16> container_ids = lhs_non_zero_indexes->ra_get_all_container_ids();
         for (const auto & container_id : container_ids)
         {
             UInt32 indexes_size = lhs_non_zero_indexes->container_to_uint32_array(container_id, container_id << 16, indexes);
@@ -1141,13 +1142,13 @@ public:
                 case multiply_op_code:
                     for (size_t i = 0; i < indexes_size; ++i)
                     {
-                        res_values[i] = lhs_values[i] * rhs;
+                        res_values[i] = lhs_values[i] * static_cast<Float64>(rhs);
                     }
                     break;
                 case divide_op_code:
                     for (size_t i = 0; i < indexes_size; ++i)
                     {
-                        res_values[i] = lhs_values[i] / rhs;
+                        res_values[i] = lhs_values[i] / static_cast<Float64>(rhs);
                     }
                     break;
                 /// If you want to add other operations such as subtraction, please pay attention to the handling of 0.
@@ -1271,7 +1272,9 @@ public:
         res_bm = lhs.getAllNonZeroIndex();
 
         UInt64 long_value = UInt64(std::floor(rhs));
-        UInt64 decimal_value = static_cast<UInt64>((rhs - long_value) * (1ULL << lhs.fraction_bit_num));
+        /// if ValueType is floating point, use ValueType for calculation, otherwise use UInt64
+        using CalculationType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, UInt64>;
+        UInt64 decimal_value = static_cast<UInt64>((rhs - static_cast<CalculationType>(long_value)) * static_cast<CalculationType>(1ULL << lhs.fraction_bit_num));
 
         size_t i = 0;
         for (; i < lhs.fraction_bit_num; ++i)
@@ -1651,7 +1654,7 @@ public:
                     integer_bit_num,
                     fraction_bit_num);
 
-            scaled_value = static_cast<Int64>(value * scaling);
+            scaled_value = static_cast<Int64>(value * static_cast<ValueType>(scaling));
         }
         else
         {
@@ -1697,7 +1700,7 @@ public:
                 scaled_value |= (1ULL << i);
             }
         }
-        return static_cast<ValueType>(scaled_value) / (1LL << fraction_bit_num);
+        return static_cast<ValueType>(scaled_value) / static_cast<ValueType>(1LL << fraction_bit_num);
     }
 
     /// sum(origin_vector(this))
@@ -1714,7 +1717,7 @@ public:
             for (size_t i = 0; i < total_bit_num; ++i)
             {
                 Float64 bit_contribution = std::pow(2.0, int(i) - int(fraction_bit_num));
-                value += getDataArrayAt(i)->size() * bit_contribution;
+                value += static_cast<Float64>(getDataArrayAt(i)->size()) * bit_contribution;
             }
         }
         else if (which.isInt() || which.isFloat())
@@ -1733,7 +1736,7 @@ public:
                 positive_indexes.rb_or(*getDataArrayAt(i));
 
                 positive_indexes.rb_andnot(negative_indexes);
-                value += positive_indexes.size() * bit_contribution;
+                value += static_cast<Float64>(positive_indexes.size()) * bit_contribution;
             }
 
             /// Handle negative indexes
@@ -1751,7 +1754,7 @@ public:
                 sum.rb_or(augend);
                 sum.rb_xor(cin);
 
-                value -= sum.size() * bit_contribution;
+                value -= static_cast<Float64>(sum.size()) * bit_contribution;
 
                 cin.rb_and(augend);
             }
@@ -1794,7 +1797,7 @@ public:
         if ((which.isUInt() or which.isInt()) and fraction_bit_num > 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "fraction_bit_num should be zero when value type is Int/UInt");
 
-        std::map<IndexType, UInt64> index2value;
+        MapWithMemoryTracking<IndexType, UInt64> index2value;
 
         PaddedPODArray<IndexType> zero_indexes_array;
         zero_indexes->rb_to_array(zero_indexes_array);
@@ -1847,7 +1850,8 @@ public:
                 else
                 {
                     values_pod.emplace_back(
-                        static_cast<ValueType>(static_cast<Int64>(value) / static_cast<Float64>(1ULL << fraction_bit_num)));
+                        static_cast<ValueType>(
+                            static_cast<Float64>(static_cast<Int64>(value)) / static_cast<Float64>(1ULL << fraction_bit_num)));
                 }
             }
         }

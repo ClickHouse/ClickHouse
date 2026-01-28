@@ -28,7 +28,7 @@ String ASTDropQuery::getID(char delim) const
 
 ASTPtr ASTDropQuery::clone() const
 {
-    auto res = std::make_shared<ASTDropQuery>(*this);
+    auto res = make_intrusive<ASTDropQuery>(*this);
     cloneOutputOptions(*res);
     cloneTableOptions(*res);
     return res;
@@ -123,12 +123,12 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
         ostr << " SYNC";
 }
 
-ASTs ASTDropQuery::getRewrittenASTsOfSingleTable()
+ASTs ASTDropQuery::getRewrittenASTsOfSingleTable(ASTPtr self) const
 {
     ASTs res;
     if (database_and_tables == nullptr)
     {
-        res.push_back(shared_from_this());
+        res.push_back(self);
         return res;
     }
 

@@ -106,7 +106,6 @@ class Runner:
             FORK_NAME="",
             PR_LABELS=[],
             EVENT_TIME="",
-            WORKFLOW_STATUS_DATA={},
             WORKFLOW_CONFIG=workflow_config,
         ).dump()
 
@@ -128,7 +127,13 @@ class Runner:
             os.environ[key] = value
             print(f"Set environment variable {key}.")
 
-        if job.name == Settings.CI_CONFIG_JOB_NAME:
+        if (
+            job.name == Settings.CI_CONFIG_JOB_NAME
+            or _workflow.jobs[0].name != Settings.CI_CONFIG_JOB_NAME
+        ):
+            # Settings.CI_CONFIG_JOB_NAME initializes the workflow environment by reading it
+            # directly from the GitHub context. For workflows without this config job, each
+            # job reads the environment from the GitHub context independently.
             print("Read GH Environment from GH context")
             env = _Environment.from_env()
         else:
@@ -304,6 +309,7 @@ class Runner:
 
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
+            workdir = f"--workdir={current_dir}"
             for setting in settings:
                 if setting.startswith("--volume"):
                     volume = setting.removeprefix("--volume=").split(":")[0]
@@ -312,6 +318,11 @@ class Runner:
                             "WARNING: Create mount dir point in advance to have the same owner"
                         )
                         Shell.check(f"mkdir -p {volume}", verbose=True, strict=True)
+                elif setting.startswith("--workdir"):
+                    print(
+                        f"NOTE: Job [{job.name}] use custom workdir - praktika won't control workdir"
+                    )
+                    workdir = ""
             Shell.check(
                 "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
                 verbose=True,
@@ -331,7 +342,7 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -514,7 +525,7 @@ class Runner:
                 file=f,
             )
 
-        if run_exit_code == 0:
+        if run_exit_code == 0 or "amd_llvm_coverage" in job.name:
             providing_artifacts = []
             if job.provides and workflow.artifacts:
                 for provides_artifact_name in job.provides:
