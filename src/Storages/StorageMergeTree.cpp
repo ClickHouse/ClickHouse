@@ -1507,25 +1507,9 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
             txn = tryGetTransactionForMutation(mutations_begin_it->second, log.load());
             if (!txn)
-            {
-                CSN mutation_csn = mutations_begin_it->second.csn;
-                if (mutation_csn == Tx::RolledBackCSN)
-                {
-                    /// Transaction was rolled back, mutation should be removed soon, skip it for now
-                    LOG_DEBUG(log, "Mutation {} was started by transaction {} that was rolled back, skipping part {}",
-                              mutations_begin_it->second.file_name, first_mutation_tid, part->name);
-                    continue;
-                }
-                if (mutation_csn == Tx::UnknownCSN)
-                {
-                    /// Transaction is not running but hasn't committed yet - this shouldn't happen
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find transaction {} that has started mutation {} "
-                                    "that is going to be applied to part {}, and mutation CSN is still unknown",
-                                    first_mutation_tid, mutations_begin_it->second.file_name, part->name);
-                }
-                /// Transaction has committed, mutation can proceed without the transaction pointer
-                /// (txn is already null, which is fine for MergeMutateSelectedEntry)
-            }
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find transaction {} that has started mutation {} "
+                                "that is going to be applied to part {}",
+                                first_mutation_tid, mutations_begin_it->second.file_name, part->name);
         }
         else
         {
