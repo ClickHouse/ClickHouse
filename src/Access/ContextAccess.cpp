@@ -57,6 +57,8 @@ namespace
         "Kafka",
         "NATS",
         "RabbitMQ",
+        "YTsaurus",
+        "ArrowFlight",
     };
 
 
