@@ -11,6 +11,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 #include <Common/BinStringDecodeHelper.h>
+#include <Common/BitHelpers.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -64,12 +66,10 @@ struct HexImpl
     {
         if (!reverse_order)
         {
-            while (pos < end)
-            {
-                writeHexByteUppercase(*pos, out);
-                ++pos;
-                out += word_size;
-            }
+            const auto raw_size = end - pos;
+            constexpr bool lower_case = false;
+            hexString<lower_case>(reinterpret_cast<UInt8*>(out), pos, raw_size);
+            out += 2 * raw_size;
         }
         else
         {
@@ -119,7 +119,7 @@ struct UnhexImpl
 
     static void decode(const char * pos, const char * end, char *& out)
     {
-        hexStringDecode(pos, end, out, word_size);
+        hexStringDecode2(pos, end, out);
     }
 };
 
