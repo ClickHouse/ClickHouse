@@ -14,6 +14,7 @@ enum class StatisticsType : UInt8
     Uniq = 1,
     CountMinSketch = 2,
     MinMax = 3,
+    UniqHLL12 = 4,
 
     Max = 63,
 };
