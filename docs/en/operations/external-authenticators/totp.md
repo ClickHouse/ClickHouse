@@ -6,9 +6,6 @@ doc_type: 'reference'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
-
-# Time-Based One-Time Password (TOTP) Authentication {#time-based-one-time-password-totp-authentication}
-
 <SelfManaged />
 
 Time-Based One-Time Password (TOTP) can be used to authenticate ClickHouse users by generating temporary access codes that are valid for a limited time.

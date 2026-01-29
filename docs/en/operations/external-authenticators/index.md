@@ -19,5 +19,5 @@ The following external authenticators and directories are supported:
 - [LDAP](/operations/external-authenticators/ldap#ldap-external-authenticator) [Authenticator](./ldap.md#ldap-external-authenticator) and [Directory](./ldap.md#ldap-external-user-directory)
 - Kerberos [Authenticator](/operations/external-authenticators/kerberos#kerberos-as-an-external-authenticator-for-existing-users)
 - [SSL X.509 authentication](/operations/external-authenticators/ssl-x509)
-- HTTP [Authenticator](./http.md)
+- HTTP [Authenticator](/operations/external-authenticators/http)
 - [Time-based one-time password](./totp.md)
