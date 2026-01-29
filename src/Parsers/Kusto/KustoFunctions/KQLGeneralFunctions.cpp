@@ -19,6 +19,11 @@
 
 #include <fmt/format.h>
 
+namespace DB::ErrorCodes
+{
+extern const int SYNTAX_ERROR;
+}
+
 namespace DB
 {
 
@@ -109,12 +114,18 @@ bool Iif::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     String predicate = getConvertedArgument(fn_name, pos);
+    if (predicate.empty())
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Number of arguments do not match in function: {}", fn_name);
 
     ++pos;
     String if_true = getConvertedArgument(fn_name, pos);
+    if (if_true.empty())
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Number of arguments do not match in function: {}", fn_name);
 
     ++pos;
     String if_false = getConvertedArgument(fn_name, pos);
+    if (if_false.empty())
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Number of arguments do not match in function: {}", fn_name);
 
     out = fmt::format("if({}, {}, {})", predicate, if_true, if_false);
     return true;
