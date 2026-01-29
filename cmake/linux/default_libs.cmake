@@ -23,6 +23,7 @@ elseif (SANITIZE STREQUAL undefined)
     string(REPLACE "builtins.a" "ubsan_standalone_cxx.a" EXTRA_BUILTINS_LIBRARY "${BUILTINS_LIBRARY}")
 endif ()
 
+option (ENABLE_LLVM_LIBC_MATH "Use math from llvm-libc instead of glibc" ON)
 if (ENABLE_LLVM_LIBC_MATH)
     include (cmake/libllvmlibc.cmake)
 
