@@ -4,6 +4,7 @@
 import argparse
 import logging
 import random
+import subprocess
 import time
 from multiprocessing import cpu_count
 from pathlib import Path
@@ -18,6 +19,15 @@ class ServerDied(Exception):
 def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     options = []
     client_options = []
+
+    if upgrade_check:
+        # Disable settings randomization for upgrade checks to prevent test failures caused by missing settings in old version
+        options.append("--no-random-settings")
+        options.append("--no-random-merge-tree-settings")
+
+    # allow constraint
+    client_options.append(f"enable_analyzer=1")
+
     if i > 0:
         options.append("--order=random")
 
@@ -105,6 +115,10 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append(
             f"query_plan_optimize_join_order_limit={random.randint(0, 64)}"
         )
+
+    if random.random() < 0.2:
+        client_options.append(f"compatibility='{random.randint(20, 26)}.{random.randint(1, 12)}'")
+
     # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
     # That is why we use it with fallback to 'greedy'.
     join_order_algorithm_combinations = ["greedy", "dpsize,greedy", "greedy,dpsize"]
@@ -137,16 +151,50 @@ def run_func_test(
         output_prefix / f"stress_test_run_{i}.txt" for i in range(num_processes)
     ]
     pipes = []
+    commands = []
+    logging.info("Smoke check")
+    for i, path in enumerate(output_paths):
+        # Validate that simple tests work across all randomizations.
+        # IF THIS FAILS, THE STRESS TESTS ARE BROKEN
+        full_command = (
+            f"{cmd} --stress-tests {get_options(i, upgrade_check, encrypted_storage)} {global_time_limit_option} "
+            f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
+        )
+        commands.append(full_command)
+        check_command = full_command + "--jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
+        logging.info(check_command)
+        try:
+            execute_bash(check_command, timeout=180)
+        except subprocess.CalledProcessError as e:
+            logging.info(e.stdout)
+
+            # Ignore fault injects, but most of the time tests should complete successfully
+            ignored_errors = ["CANNOT_SCHEDULE_TASK", "Fault injection", "Query memory tracker: fault injected"]
+            if any(err in e.stdout or err in e.stderr for err in ignored_errors):
+                logging.warning(f"Detected known transient error, ignoring: {ignored_errors}")
+                continue
+            raise
+
+    logging.info("Run stress tests")
     for i, path in enumerate(output_paths):
         with open(path, "w", encoding="utf-8") as op:
-            full_command = (
-                f"{cmd} {get_options(i, upgrade_check, encrypted_storage)} {global_time_limit_option} "
-                f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option}"
-            )
-            logging.info("Run func tests '%s'", full_command)
+            command = commands[i]
+            logging.info("Run func tests '%s'", command)
             # pylint:disable-next=consider-using-with
-            pipes.append(Popen(full_command, shell=True, stdout=op, stderr=op))
+            pipes.append(Popen(command, shell=True, stdout=op, stderr=op))
             time.sleep(0.5)
+
+    logging.info("Will wait functests to finish")
+    while True:
+        retcodes = []
+        for p in pipes:
+            if p.poll() is not None:
+                retcodes.append(p.returncode)
+        if len(retcodes) == len(pipes):
+            break
+        logging.info("Finished %s from %s processes", len(retcodes), len(pipes))
+        time.sleep(5)
+
     return pipes
 
 
@@ -158,7 +206,7 @@ def compress_stress_logs(output_path: Path, files_prefix: str) -> None:
     check_output(cmd, shell=True)
 
 
-def call_with_retry(query: str, timeout: int = 30, retry_count: int = 5) -> None:
+def call_with_retry(query: str, timeout: int|float = 30, retry_count: int = 5) -> None:
     logging.info("Running command: %s", str(query))
     for i in range(retry_count):
         code = call(query, shell=True, stderr=STDOUT, timeout=timeout)
@@ -168,6 +216,28 @@ def call_with_retry(query: str, timeout: int = 30, retry_count: int = 5) -> None
         else:
             break
 
+
+def execute_bash(full_command, timeout=120):
+    try:
+        result = subprocess.run(
+            full_command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=True
+        )
+        logging.info(result.stdout)
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        # Display output before raising the exception as requested
+        logging.info("Test failed. Captured Output:")
+        logging.info(e.stdout)
+        logging.info(e.stderr)
+        raise
+    except subprocess.TimeoutExpired as e:
+        logging.info(f"Test timed out. Partial output:\n{e.stdout}")
+        raise
 
 def make_query_command(query: str) -> str:
     return (
@@ -323,7 +393,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-folder", type=Path)
     parser.add_argument("--global-time-limit", type=int, default=1800)
-    parser.add_argument("--num-parallel", type=int, default=cpu_count())
+    parser.add_argument("--num-parallel", type=int, default=min(8, cpu_count()))
     parser.add_argument("--upgrade-check", action="store_true")
     parser.add_argument("--hung-check", action="store_true", default=False)
     # make sense only for hung check
@@ -343,7 +413,8 @@ def main():
             "--drop-databases only used in hung check (--hung-check)"
         )
 
-    func_pipes = []
+    call_with_retry(make_query_command("SELECT 1"), timeout=0.5, retry_count=20)
+
     func_pipes = run_func_test(
         args.test_cmd,
         args.output_folder,
@@ -353,17 +424,6 @@ def main():
         args.upgrade_check,
         args.encrypted_storage,
     )
-
-    logging.info("Will wait functests to finish")
-    while True:
-        retcodes = []
-        for p in func_pipes:
-            if p.poll() is not None:
-                retcodes.append(p.returncode)
-        if len(retcodes) == len(func_pipes):
-            break
-        logging.info("Finished %s from %s processes", len(retcodes), len(func_pipes))
-        time.sleep(5)
 
     logging.info("All processes finished")
 
