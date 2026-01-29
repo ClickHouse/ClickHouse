@@ -212,7 +212,7 @@ Chunk IRowInputFormat::read()
                     logError();
 
                 ++num_errors;
-                Float64 current_error_ratio = static_cast<Float64>(num_errors) / total_rows;
+                Float64 current_error_ratio = static_cast<Float64>(num_errors) / static_cast<double>(total_rows);
 
                 if (num_errors > params.allow_errors_num
                     && current_error_ratio > params.allow_errors_ratio)

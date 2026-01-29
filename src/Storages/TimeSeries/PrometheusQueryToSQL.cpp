@@ -75,7 +75,7 @@ namespace
             case Field::Types::UInt64:
                 return DecimalField<T>{field.safeGet<UInt64>() * target_scale_multiplier, target_scale};
             case Field::Types::Float64:
-                return DecimalField<T>{static_cast<Int64>(field.safeGet<Float64>() * target_scale_multiplier), target_scale};
+                return DecimalField<T>{static_cast<Int64>(field.safeGet<Float64>() * static_cast<double>(target_scale_multiplier)), target_scale};
             case Field::Types::Decimal32:
             {
                 auto x = field.safeGet<Decimal32>();
