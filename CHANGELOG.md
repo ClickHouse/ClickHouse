@@ -34,7 +34,7 @@
 * Make the `Hash` output format independent of block sizes. [#94503](https://github.com/ClickHouse/ClickHouse/pull/94503) ([Alexey Milovidov](https://github.com/alexey-milovidov)). Note that this changes the output hash values compared to previous versions.
 
 #### New Feature
-* HTTP API and embedded Web UI for ClickHouse Keeper. [#78181](https://github.com/ClickHouse/ClickHouse/pull/78181) ([pufit](https://github.com/pufit)).
+* HTTP API and embedded Web UI for ClickHouse Keeper. [#78181](https://github.com/ClickHouse/ClickHouse/pull/78181) ([pufit](https://github.com/pufit) and [speeedmaster](https://github.com/speeedmaster)).
 * Async insert deduplication now works with dependent materialized views. When collision by block_id occurs, the original block is filtered to remove rows associated with the block_id, and the remaining rows are transformed with all relevant materialized views select queries, this rebuilds original block without conflicting rows. [#89140](https://github.com/ClickHouse/ClickHouse/pull/89140) ([Sema Checherinda](https://github.com/CheSema)). It is allowed to use deduplication with async inserts when materialized views are involved. [#93957](https://github.com/ClickHouse/ClickHouse/pull/93957) ([Sema Checherinda](https://github.com/CheSema)).
 * Introduced a new syntax and framework to simplify and extend projection index feature. This follows up https://github.com/ClickHouse/ClickHouse/pull/81021. [#91844](https://github.com/ClickHouse/ClickHouse/pull/91844) ([Amos Bird](https://github.com/amosbird)).
 * Add text index support for `Array` columns. [#89895](https://github.com/ClickHouse/ClickHouse/pull/89895) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
@@ -46,7 +46,7 @@
 * Add function `reverseBySeparator` which reverses the order of substrings in a string separated by a specified separator. Close [#91463](https://github.com/ClickHouse/ClickHouse/issues/91463). [#91780](https://github.com/ClickHouse/ClickHouse/pull/91780) ([Xuewei Wang](https://github.com/Sallery-X)).
 * Adds new setting `max_insert_block_size_bytes` which control the formation of inserted blocks in finer detail. [#92833](https://github.com/ClickHouse/ClickHouse/pull/92833) ([Kirill Kopnev](https://github.com/Fgrtue)).
 * It is possible to execute DDL queries with `ON CLUSTER` clause for a Replicated database if the `ignore_on_cluster_for_replicated_database` setting is enabled. In this case, the cluster name will be ignored. [#92872](https://github.com/ClickHouse/ClickHouse/pull/92872) ([Kirill](https://github.com/kirillgarbar)).
-* Implement `mergeTreeAnalyzeIndex` function. [#92954](https://github.com/ClickHouse/ClickHouse/pull/92954) ([Azat Khuzhin](https://github.com/azat)).
+* Implement `mergeTreeAnalyzeIndexes` function. [#92954](https://github.com/ClickHouse/ClickHouse/pull/92954) ([Azat Khuzhin](https://github.com/azat)).
 * Add new setting `use_primary_key`. Set it to `false` to disable granule pruning based on the primary key. [#93319](https://github.com/ClickHouse/ClickHouse/pull/93319) ([Nihal Z. Miaji](https://github.com/nihalzp)).
 * Add `icebergLocalCluster` table function. [#93323](https://github.com/ClickHouse/ClickHouse/pull/93323) ([Anton Ivashkin](https://github.com/ianton-ru)).
 * Added `cosineDistanceTransposed` function that approximates the [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) between two points. [#93621](https://github.com/ClickHouse/ClickHouse/pull/93621) ([Raufs Dunamalijevs](https://github.com/rienath)).
@@ -55,7 +55,7 @@
 * Added the ability for ClickHouse client to override TLS SNI when connecting to the server. [#89761](https://github.com/ClickHouse/ClickHouse/pull/89761) ([Matt Klein](https://github.com/mattklein123)).
 * Support temporary tables in `joinGet` function calls. [#92973](https://github.com/ClickHouse/ClickHouse/pull/92973) ([Eduard Karacharov](https://github.com/korowa)).
 * Support deletion vectors in `DeltaLake` table engine. [#93852](https://github.com/ClickHouse/ClickHouse/pull/93852) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Support deletion vectors for deltaLakeCluster. [#94365](https://github.com/ClickHouse/ClickHouse/pull/94365) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Support deletion vectors for `deltaLakeCluster`. [#94365](https://github.com/ClickHouse/ClickHouse/pull/94365) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Google cloud storage support for data lakes. [#93866](https://github.com/ClickHouse/ClickHouse/pull/93866) ([Konstantin Vedernikov](https://github.com/scanhex12)).
 
 #### Experimental Feature
@@ -65,7 +65,6 @@
 
 #### Performance Improvement
 * Setting `use_skip_indexes_on_data_read` is now enabled by default. This setting allows filtering in a streaming fashion, at the same time as reading, improving query performance and startup time. [#93407](https://github.com/ClickHouse/ClickHouse/pull/93407) ([Shankar Iyer](https://github.com/shankar-iyer)).
-* Datalakes prewhere & multistage prewhere in Parquet reader v3. Resolves [#89101](https://github.com/ClickHouse/ClickHouse/issues/89101). [#93542](https://github.com/ClickHouse/ClickHouse/pull/93542) ([Konstantin Vedernikov](https://github.com/scanhex12)).
 * Improve performance of `DISTINCT` on `LowCardinality` columns. Closes [#5917](https://github.com/ClickHouse/ClickHouse/issues/5917). [#91639](https://github.com/ClickHouse/ClickHouse/pull/91639) ([Nihal Z. Miaji](https://github.com/nihalzp)).
 * Optimize `distinctJSONPaths` aggregate function so it reads only JSON paths from data parts and not the whole JSON column. [#92196](https://github.com/ClickHouse/ClickHouse/pull/92196) ([Pavel Kruglov](https://github.com/Avogar)).
 * More filters pushed down JOINs. [#85556](https://github.com/ClickHouse/ClickHouse/pull/85556) ([Nikita Taranov](https://github.com/nickitat)).
@@ -118,7 +117,6 @@
 * Support multiple columns as primary key in `EmbeddedRocksDB`. Closes [#32819](https://github.com/ClickHouse/ClickHouse/issues/32819). [#33917](https://github.com/ClickHouse/ClickHouse/pull/33917) ([usurai](https://github.com/usurai)).
 * It is now possible to use non-constant IN for scalars (queries like `val1 NOT IN if(cond, val2, val3)`). [#93495](https://github.com/ClickHouse/ClickHouse/pull/93495) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
 * Prevent `x-amz-server-side-encryption` headers from being propagated to `HeadObject`, `UploadPart` & `CompleteMultipartUpload` S3 requests as they're not supported. [#64577](https://github.com/ClickHouse/ClickHouse/pull/64577) ([Francisco J. Jurado Moreno](https://github.com/Beetelbrox)).
-* Added syntax `ALTER TABLE <table> ATTACH PART <part_name> FROM <directory_name>` for `ALTER` query. It allows the attachment of parts from the arbitrary subdirectory of the `detached/` directory. It can be useful for attaching parts with custom prefixes (such as `broken-on-start`, `unexpected`, etc.) that were detached by mistake and needed only to be attached back without manual intervention. Previously, manual renaming of directories on the filesystem was required. [#74816](https://github.com/ClickHouse/ClickHouse/pull/74816) ([Anton Popov](https://github.com/CurtizJ)).
 * Tracking hive partitioning for ordered mode in S3Queue. Resolves [#71161](https://github.com/ClickHouse/ClickHouse/issues/71161). [#81040](https://github.com/ClickHouse/ClickHouse/pull/81040) ([Anton Ivashkin](https://github.com/ianton-ru)).
 * Optimize space reservation in filesystem cache. `FileCache::collectCandidatesForEviction` will be executed without unique lock. [#82764](https://github.com/ClickHouse/ClickHouse/pull/82764) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Support composite rotation strategy (size + time) for server log. [#87620](https://github.com/ClickHouse/ClickHouse/pull/87620) ([Jianmei Zhang](https://github.com/zhangjmruc)).

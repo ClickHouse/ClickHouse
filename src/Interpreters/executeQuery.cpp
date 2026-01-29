@@ -1224,13 +1224,9 @@ static BlockIO executeQueryImpl(
                 catch (const Exception & e)
                 {
                     if (e.code() == ErrorCodes::SYNTAX_ERROR)
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}.\nExpected AST:\n{}\n, but got\n{}",
-                            formatted1,
-                            original_query,
-                            out_ast->dumpTree(),
-                            ast2->dumpTree());
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
+                            formatted1, original_query);
                     else
                         throw;
                 }
@@ -1241,40 +1237,73 @@ static BlockIO executeQueryImpl(
 
                 if (formatted1 != formatted2)
                 {
-                    /// Try to find the problematic part of the AST (it's not guaranteed to find it correctly though)
-                    auto bad_ast = out_ast;
-                    bool found_bad_ast;
-                    do
+                    struct ASTDifference
                     {
-                        found_bad_ast = false;
-                        for (const auto & child : bad_ast->children)
+                        enum class Type : uint8_t
                         {
-                            auto formatted_child = format_ast(child);
-                            if (formatted1.find(formatted_child) == std::string::npos)
+                            ID,
+                            FORMAT
+                        };
+
+                        ASTPtr lhs;
+                        ASTPtr rhs;
+                        Type type;
+                    };
+
+                    const auto search_difference_in_asts = [&](this const auto & self, ASTPtr lhs, ASTPtr rhs) -> std::optional<ASTDifference>
+                    {
+                        if (lhs->getID() != rhs->getID())
+                            return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::ID});
+
+                        size_t size_children = std::min(lhs->children.size(), rhs->children.size());
+                        for (size_t i = 0; i < size_children; ++i)
+                        {
+                            const auto & child_lhs = lhs->children[i];
+                            const auto & child_rhs = rhs->children[i];
+                            if (auto difference = self(child_lhs, child_rhs))
                             {
-                                /// This shouldn't happen
-                                LOG_FATAL(getLogger("executeQuery"), "Cannot find formatted child in the formatted query: {}", formatted_child);
-                                break;
-                            }
-                            if (formatted2.find(formatted_child) == std::string::npos)
-                            {
-                                /// We didn't find it - so it was formatted in a different way
-                                LOG_FATAL(getLogger("executeQuery"), "Suspicious part of the AST: {}: {}", child->getID(), formatted_child);
-                                bad_ast = child;
-                                found_bad_ast = true;
-                                break;
+                                /// In case the format strings are different, use parent nodes for a better debug output.
+                                if (difference->type == ASTDifference::Type::FORMAT)
+                                    return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::ID});
+
+                                return difference;
                             }
                         }
-                    } while (found_bad_ast);
 
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting in {}: the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
-                        bad_ast->getID(), original_query, formatted1, formatted2);
+                        if (format_ast(lhs) != format_ast(rhs))
+                            return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::FORMAT});
+
+                        return std::nullopt;
+                    };
+
+                    /// Try to find the problematic part of the AST (it's not guaranteed to find it correctly though)
+                    if (auto difference = search_difference_in_asts(out_ast, ast2))
+                    {
+                        auto [lhs, rhs, _] = difference.value();
+
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                        "Inconsistent AST formatting between '{}' and '{}' in the query:\n{}\n"
+                                        "Formatted as:\n{}\nParsed and formatted back as:\n{}\n"
+                                        "Difference formatted as:\n{}\n{}\nDifference parsed and formatted back as:\n{}\n{}",
+                                        lhs->getID(), rhs->getID(),
+                                        original_query,
+                                        formatted1, formatted2,
+                                        format_ast(lhs), lhs->dumpTree(),
+                                        format_ast(rhs), rhs->dumpTree());
+                    }
+                    else
+                    {
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                        "Inconsistent AST formatting in the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
+                                        original_query, formatted1, formatted2);
+
+                    }
+
                 }
             }
             catch (const Exception & e)
             {
-                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail inder debug build.
+                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under debug build.
                 if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                     throw;
             }
@@ -1351,8 +1380,9 @@ static BlockIO executeQueryImpl(
 
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
-    QueryMetadataCachePtr query_metadata_cache;
     BlockIO res;
+    /// May use storage that is protected by pipeline (res.pipeline), so should be destroyed first
+    QueryMetadataCachePtr query_metadata_cache;
     String query_database;
     String query_table;
 
@@ -1804,9 +1834,6 @@ static BlockIO executeQueryImpl(
         /// Hold element of process list till end of query execution.
         res.process_list_entries.push_back(process_list_entry);
 
-        /// Hold query metadata cache till end of query execution.
-        res.query_metadata_cache = std::move(query_metadata_cache);
-
         if (query_plan)
         {
             auto plan = QueryPlan::makeSets(std::move(*query_plan), context);
@@ -1825,6 +1852,9 @@ static BlockIO executeQueryImpl(
 
             res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline));
         }
+
+        /// Hold query metadata cache till end of query execution.
+        res.query_metadata_cache = std::move(query_metadata_cache);
 
         auto & pipeline = res.pipeline;
 
