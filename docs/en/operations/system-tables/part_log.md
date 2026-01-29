@@ -54,13 +54,14 @@ The `system.part_log` table contains the following columns:
 - `path_on_disk` ([String](../../sql-reference/data-types/string.md)) — Absolute path to the folder with data part files.
 - `rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of rows in the data part.
 - `size_in_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Size of the data part in bytes.
-- `merged_from` ([Array(String)](../../sql-reference/data-types/array.md)) — An array of names of the parts which the current part was made up from (after the merge).
+- `merged_from` ([Array(String)](../../sql-reference/data-types/array.md)) — An array of names of the parts which the current part was made up from (after the merge or mutations).
 - `bytes_uncompressed` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Size of uncompressed bytes.
 - `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of rows was read during the merge.
 - `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of bytes was read during the merge.
 - `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The maximum difference between the amount of allocated and freed memory in the context of this thread.
 - `error` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The code number of the occurred error.
 - `exception` ([String](../../sql-reference/data-types/string.md)) — Text message of the occurred error.
+- `mutation_ids` ([String](../../sql-reference/data-types/array.md)) — An array of mutation IDs applied to the source part (`merged_from`) for the event with type `MutatePartsStart` and `MutateParts`.
 - `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/map.md)) — ProfileEvents that measure different metrics. The description of them can be found in the table [system.events](/operations/system-tables/events).
 
 The `system.part_log` table is created after the first inserting data to the `MergeTree` table.

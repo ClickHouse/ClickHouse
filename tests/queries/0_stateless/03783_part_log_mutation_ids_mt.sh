@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -27,7 +28,7 @@ wait_for_mutation "mt" "mutation_2.txt"
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS part_log;"
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT part_name, event_type, mutation_ids \
+    SELECT part_name, event_type, merged_from, mutation_ids \
     FROM system.part_log WHERE database = '$CLICKHOUSE_DATABASE' and table = 'mt' \
     AND event_type IN ('MutatePart', 'MutatePartStart') \
     ORDER BY event_time_microseconds;
@@ -38,15 +39,16 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM STOP MERGES mt;
     ALTER TABLE mt UPDATE num = num + 2 WHERE 1;
     ALTER TABLE mt UPDATE num = num + 3 WHERE 1;
+    ALTER TABLE mt UPDATE num = num + 4 WHERE 1;
     SYSTEM START MERGES mt;
 "
 
-wait_for_mutation "mt" "mutation_4.txt"
+wait_for_mutation "mt" "mutation_5.txt"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS part_log;"
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT part_name, event_type, mutation_ids \
+    SELECT part_name, event_type, merged_from, mutation_ids \
     FROM system.part_log WHERE database = '$CLICKHOUSE_DATABASE' and table = 'mt' \
     AND event_type IN ('MutatePart', 'MutatePartStart') \
     ORDER BY event_time_microseconds;

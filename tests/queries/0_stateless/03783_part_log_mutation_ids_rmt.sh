@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-parallel-replicas
 # Tag no-parallel: Fails due to failpoint intersection
 # no-replicated-database: Fails due to additional replicas or shards
 
@@ -33,7 +33,7 @@ wait_for_mutation  "rmt" "0000000000"
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS part_log;"
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT part_name, event_type, mutation_ids \
+    SELECT part_name, event_type, merged_from, mutation_ids \
     FROM system.part_log WHERE database = '$CLICKHOUSE_DATABASE' and table = 'rmt' \
     AND event_type IN ('MutatePart', 'MutatePartStart') \
     ORDER BY event_time_microseconds;
@@ -46,15 +46,16 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
     ALTER TABLE rmt UPDATE num = num + 2 WHERE 1;
     ALTER TABLE rmt UPDATE num = num + 3 WHERE 1;
+    ALTER TABLE rmt UPDATE num = num + 4 WHERE 1;
     SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
 "
 
-wait_for_mutation  "rmt" "0000000002"
+wait_for_mutation  "rmt" "0000000003"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS part_log;"
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT part_name, event_type, mutation_ids \
+    SELECT part_name, event_type, merged_from, mutation_ids \
     FROM system.part_log WHERE database = '$CLICKHOUSE_DATABASE' and table = 'rmt' \
     AND event_type IN ('MutatePart', 'MutatePartStart') \
     ORDER BY event_time_microseconds;

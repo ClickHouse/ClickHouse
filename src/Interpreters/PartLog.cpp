@@ -153,7 +153,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"exception", std::make_shared<DataTypeString>(), "Text message of the occurred error."},
 
         /// Mutation IDs
-        {"mutation_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Mutation IDs associated with this operation. For MUTATE_PART events, contains an array of all mutation IDs that were applied."},
+        {"mutation_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of mutation IDs applied to the source part (merged_from) for the event with type MUTATE_PART_START and MUTATE_PART."},
 
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
     };
