@@ -367,7 +367,7 @@ public:
         ready_object_storage = disk->getObjectStorage();
     }
 
-    virtual bool supportsPrewhere() const
+    bool supportsPrewhere() const override
     {
 #if USE_AVRO
         return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
