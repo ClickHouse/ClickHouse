@@ -3,6 +3,7 @@
         <!-- Profile that allows only read queries. -->
         <readonly>
             <readonly>1</readonly>
+            <sync_request_timeout>10</sync_request_timeout>
         </readonly>
     </profiles>
 

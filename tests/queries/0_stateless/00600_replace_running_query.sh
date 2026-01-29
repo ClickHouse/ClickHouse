@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TEST_PREFIX="${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} -q "drop user if exists u_00600${TEST_PREFIX}"
-${CLICKHOUSE_CLIENT} -q "create user u_00600${TEST_PREFIX} settings max_execution_time=60, readonly=1, max_rows_to_read=0"
+${CLICKHOUSE_CLIENT} -q "create user u_00600${TEST_PREFIX} settings max_execution_time=60, readonly=1, max_rows_to_read=0, sync_request_timeout=10"
 ${CLICKHOUSE_CLIENT} -q "grant select on system.numbers to u_00600${TEST_PREFIX}"
 
 function wait_for_query_to_start()
