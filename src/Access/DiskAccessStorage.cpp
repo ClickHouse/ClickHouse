@@ -474,17 +474,6 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
     if (readonly)
         throwReadonlyCannotInsert(new_entity->getType(), new_entity->getName());
 
-    /// In case of name collision old file should be removed.
-    if (replace_if_exists && write_on_disk)
-    {
-        std::optional<UUID> collision_id = memory_storage.find(new_entity->getType(), new_entity->getName());
-        if (collision_id.has_value())
-        {
-            scheduleWriteLists(new_entity->getType());
-            deleteAccessEntityOnDisk(collision_id.value()); /// BAD, move after insert
-        }
-    }
-
     /// Do insertion.
     if (!memory_storage.insert(id, new_entity, replace_if_exists, throw_if_exists, conflicting_id))
         return false;
