@@ -1,3 +1,0 @@
-<clickhouse>
-    <max_access_entities_per_storage_to_throw>10</max_access_entities_per_storage_to_throw>
-</clickhouse>
