@@ -63,18 +63,43 @@ size_t AvroForIcebergDeserializer::rows() const
 
 bool AvroForIcebergDeserializer::hasPath(const std::string & path) const
 {
-    return parsed_column_data_type->hasSubcolumn(path);
+    return extractSubcolumnWithType(path).has_value();
 }
 
 TypeIndex AvroForIcebergDeserializer::getTypeForPath(const std::string & path) const
 {
-    return WhichDataType(parsed_column_data_type->getSubcolumnType(path)).idx;
+    auto & subcolumn_with_type = extractSubcolumnWithType(path);
+    if (!subcolumn_with_type.has_value())
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Cannot find column {} in manifest file {}", path, manifest_file_path);
+    return WhichDataType(subcolumn_with_type->second).idx;
 }
 
-Field AvroForIcebergDeserializer::getValueFromRowByName(size_t row_num, const std::string & path, std::optional<TypeIndex> expected_type) const
+std::optional<std::pair<ColumnPtr, DataTypePtr>> & AvroForIcebergDeserializer::extractSubcolumnWithType(const std::string & path) const
 {
-    auto current_column = parsed_column_data_type->getSubcolumn(path, parsed_column);
-    auto current_data_type = parsed_column_data_type->getSubcolumnType(path);
+    auto it = cache_extracted_subcolumns_with_types.find(path);
+    if (it != cache_extracted_subcolumns_with_types.end())
+        return it->second;
+
+    if (parsed_column_data_type->hasSubcolumn(path))
+    {
+        auto column = parsed_column_data_type->getSubcolumn(path, parsed_column);
+        auto data_type = parsed_column_data_type->getSubcolumnType(path);
+        cache_extracted_subcolumns_with_types[path] = std::make_pair(column, data_type);
+    } else
+    {
+        cache_extracted_subcolumns_with_types[path] = std::nullopt;
+    }
+    return cache_extracted_subcolumns_with_types[path];
+}
+
+Field AvroForIcebergDeserializer::getValueFromRowByName(
+    size_t row_num, const std::string & path, std::optional<TypeIndex> expected_type) const
+{
+    auto & subcolumn_with_type = extractSubcolumnWithType(path);
+    if (!subcolumn_with_type.has_value())
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Cannot find column {} in manifest file {}", path, manifest_file_path);
+
+    const auto & [current_column, current_data_type] = *subcolumn_with_type;
 
     if (expected_type && WhichDataType(current_data_type).idx != *expected_type)
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
@@ -118,11 +143,13 @@ String removeAllSlashes(const String & input)
 
 String AvroForIcebergDeserializer::getContent(size_t row_number) const
 {
+    if (!cache_parsed_columns)
+        cache_parsed_columns.emplace(ColumnsWithTypeAndName({ColumnWithTypeAndName(parsed_column, parsed_column_data_type, "")}));
     WriteBufferFromOwnString buf;
     FormatSettings settings;
     settings.write_statistics = false;
-    ColumnsWithTypeAndName columns({ColumnWithTypeAndName(parsed_column, parsed_column_data_type, "")});
-    JSONEachRowRowOutputFormat output_format = JSONEachRowRowOutputFormat(buf, std::make_shared<const Block>(columns), settings);
+    JSONEachRowRowOutputFormat output_format
+        = JSONEachRowRowOutputFormat(buf, std::make_shared<const Block>(cache_parsed_columns.value()), settings);
     output_format.writeRow({parsed_column}, row_number);
     output_format.finalize();
     auto result_json = buf.str();
