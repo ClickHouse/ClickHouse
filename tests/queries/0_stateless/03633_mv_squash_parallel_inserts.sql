@@ -1,4 +1,5 @@
--- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage, no-parallel-replicas, no-flaky-check
+-- Tags: no-debug, no-debug, no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage, no-parallel-replicas, no-flaky-check
+-- - debug build adds CheckTokenTransform
 
 SET max_threads=2;
 SET max_insert_threads=2;

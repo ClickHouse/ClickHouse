@@ -61,7 +61,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return Traits::getArgumentsThatAreAlwaysConstant(); }
-    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayShuffleImpl<Traits>>(); }
@@ -108,8 +108,7 @@ private:
 template <typename Traits>
 ColumnPtr FunctionArrayShuffleImpl<Traits>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
-    auto col = arguments[0].column->convertToFullColumnIfConst();
-    const ColumnArray * array = checkAndGetColumn<ColumnArray>(col.get());
+    const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
     if (!array)
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());

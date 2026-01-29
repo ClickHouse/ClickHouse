@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-azure-blob-storage
+# Tags: no-fasttest, long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -51,7 +51,7 @@ $MY_CLICKHOUSE_CLIENT --query "DETACH TABLE t_insert_mem"
 $MY_CLICKHOUSE_CLIENT --query "ATTACH TABLE t_insert_mem"
 
 $MY_CLICKHOUSE_CLIENT --query "INSERT INTO t_insert_mem SELECT * FROM s3(s3_conn, filename='$filename', format='JSONEachRow')"
-$MY_CLICKHOUSE_CLIENT --query "SELECT * FROM file('$filename', LineAsString) FORMAT LineAsString" | ${CLICKHOUSE_CURL} -sS --max-time 240 "${CLICKHOUSE_URL}&query=INSERT+INTO+t_insert_mem+FORMAT+JSONEachRow&enable_parsing_to_custom_serialization=1" --data-binary @-
+$MY_CLICKHOUSE_CLIENT --query "SELECT * FROM file('$filename', LineAsString) FORMAT LineAsString" | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+t_insert_mem+FORMAT+JSONEachRow&enable_parsing_to_custom_serialization=1" --data-binary @-
 
 $MY_CLICKHOUSE_CLIENT --query "
     SELECT count() FROM t_insert_mem;

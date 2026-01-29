@@ -1,7 +1,6 @@
 import sys
 from pathlib import Path
 
-from ci.praktika.gh import GH
 from ci.praktika.info import Info
 
 
@@ -34,15 +33,7 @@ def has_new_unit_tests(changed_files):
 
 
 def check():
-    # read actual PR body from GH API - fallback to workflow context if failed
-    title, body, labels = GH.get_pr_title_body_labels()
-    if body:
-        pr_body = body
-    else:
-        print("WARNING: Failed to get PR body from GH API - using workflow context")
-        pr_body = Info().pr_body
-
-    if not " Bug Fix" in pr_body:
+    if not " Bug Fix" in Info().pr_body:
         print("Not a bug fix PR - skip")
         return True
 

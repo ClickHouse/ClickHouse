@@ -4,7 +4,6 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
 
-#include <Common/checkStackSize.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/SipHash.h>
@@ -68,7 +67,7 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
     size_t column_size = column.size();
     if (column_size > 10)
     {
-        double current_avg_value_size = static_cast<double>(column.byteSize()) / static_cast<double>(column_size);
+        double current_avg_value_size = static_cast<double>(column.byteSize()) / column_size;
 
         /// Heuristic is chosen so that avg_value_size_hint increases rapidly but decreases slowly.
         if (current_avg_value_size > avg_value_size_hint)
@@ -313,8 +312,6 @@ SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) con
 
 SerializationPtr IDataType::getDefaultSerialization(SerializationPtr override_default) const
 {
-    checkStackSize();
-
     if (override_default)
         return override_default;
 

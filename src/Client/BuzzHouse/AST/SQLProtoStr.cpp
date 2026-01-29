@@ -91,20 +91,13 @@ CONV_FN(Function, func)
 
 void ClusterToString(String & ret, const bool clause, const Cluster & cl)
 {
-    if (cl.has_cluster())
+    if (clause)
     {
-        if (clause)
-        {
-            ret += " ON CLUSTER ";
-        }
-        ret += "'";
-        ret += cl.cluster();
-        ret += "'";
-        if (!clause)
-        {
-            ret += ", ";
-        }
+        ret += " ON CLUSTER ";
     }
+    ret += "'";
+    ret += cl.cluster();
+    ret += "'";
 }
 
 CONV_FN(Window, win)
@@ -1850,11 +1843,13 @@ CONV_FN(JoinConstraint, jc)
         const UsingExpr & uexpr = jc.using_expr();
 
         ret += " USING (";
-        ExprColumnToString(ret, uexpr.column());
-        for (int i = 0; i < uexpr.other_columns_size(); i++)
+        for (int i = 0; i < uexpr.columns_size(); i++)
         {
-            ret += ", ";
-            ExprColumnToString(ret, uexpr.other_columns(i));
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ExprColumnToString(ret, uexpr.columns(i));
         }
         ret += ")";
     }
@@ -1964,6 +1959,7 @@ CONV_FN(FileFunc, ff)
     if (ff.has_cluster() && ff.fname() == FileFunc_FName_fileCluster)
     {
         ClusterToString(ret, false, ff.cluster());
+        ret += ", ";
     }
     ret += "'";
     ret += ff.path();
@@ -2205,28 +2201,66 @@ CONV_FN(MongoDBFunc, mfunc)
     ret += ")";
 }
 
-CONV_FN(ObjectStoreFunc, ofunc)
+CONV_FN(S3Func, sfunc)
 {
-    ret += ObjectStoreFunc_FName_Name(ofunc.fname());
-    if (ofunc.cluster_func())
-    {
-        ret += "Cluster";
-    }
+    ret += S3Func_FName_Name(sfunc.fname());
     ret += "(";
-    if (ofunc.cluster_func() && ofunc.has_cluster())
+    if (sfunc.has_cluster() && sfunc.fname() > S3Func_FName_icebergS3)
     {
-        ClusterToString(ret, false, ofunc.cluster());
+        ClusterToString(ret, false, sfunc.cluster());
+        ret += ", ";
     }
-    ret += ofunc.credential();
-    for (int i = 0; i < ofunc.params_size(); i++)
+    ret += sfunc.credential();
+    for (int i = 0; i < sfunc.params_size(); i++)
     {
         ret += ", ";
-        KeyValuePairToString(ret, ofunc.params(i));
+        KeyValuePairToString(ret, sfunc.params(i));
     }
-    if (ofunc.has_setting_values())
+    if (sfunc.has_setting_values())
     {
         ret += ", SETTINGS ";
-        SettingValuesToString(ret, ofunc.setting_values());
+        SettingValuesToString(ret, sfunc.setting_values());
+    }
+    ret += ")";
+}
+
+CONV_FN(AzureBlobStorageFunc, azure)
+{
+    ret += AzureBlobStorageFunc_FName_Name(azure.fname());
+    ret += "(";
+    if (azure.has_cluster() && azure.fname() > AzureBlobStorageFunc_FName_icebergAzure)
+    {
+        ClusterToString(ret, false, azure.cluster());
+        ret += ", ";
+    }
+    ret += azure.credential();
+    for (int i = 0; i < azure.params_size(); i++)
+    {
+        ret += ", ";
+        KeyValuePairToString(ret, azure.params(i));
+    }
+    if (azure.has_setting_values())
+    {
+        ret += ", SETTINGS ";
+        SettingValuesToString(ret, azure.setting_values());
+    }
+    ret += ")";
+}
+
+CONV_FN(LocalFunc, local)
+{
+    ret += LocalFunc_FName_Name(local.fname());
+    ret += "(";
+    ret += local.credential();
+    for (int i = 0; i < local.params_size(); i++)
+    {
+        ret += ", ";
+        KeyValuePairToString(ret, local.params(i));
+    }
+    if (local.has_setting_values())
+    {
+        ret += ", SETTINGS ";
+        SettingValuesToString(ret, local.setting_values());
     }
     ret += ")";
 }
@@ -2238,6 +2272,7 @@ CONV_FN(URLFunc, url)
     if (url.has_cluster() && url.fname() == URLFunc_FName_urlCluster)
     {
         ClusterToString(ret, false, url.cluster());
+        ret += ", ";
     }
     ret += "'";
     ret += url.uurl();
@@ -2321,6 +2356,7 @@ CONV_FN(ClusterFunc, cluster)
     }
     ret += "(";
     ClusterToString(ret, false, cluster.cluster());
+    ret += ", ";
     TableOrFunctionToString(ret, true, tof);
     if (cluster.has_sharding_key())
     {
@@ -2354,24 +2390,6 @@ CONV_FN(MergeTreeProjectionFunc, mfunc)
     ret += ", '";
     ProjectionToString(ret, mfunc.proj());
     ret += "')";
-}
-
-CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
-{
-    ret += "mergeTreeAnalyzeIndexes(";
-    FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
-    if (mfunc.has_pred())
-    {
-        ret += ", ";
-        ExprToString(ret, mfunc.pred());
-    }
-    if (mfunc.has_part())
-    {
-        ret += ", '";
-        ret += mfunc.part();
-        ret += "'";
-    }
-    ret += ")";
 }
 
 CONV_FN(GenerateRandomFunc, grfunc)
@@ -2447,8 +2465,8 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kSqite:
             SQLiteFuncToString(ret, tf.sqite());
             break;
-        case TableFunctionType::kObjectFunc:
-            ObjectStoreFuncToString(ret, tf.object_func());
+        case TableFunctionType::kS3:
+            S3FuncToString(ret, tf.s3());
             break;
         case TableFunctionType::kMerge:
             MergeFuncToString(ret, tf.merge());
@@ -2475,6 +2493,12 @@ CONV_FN(TableFunction, tf)
             FlatExprSchemaTableToString(ret, tf.dictionary(), ".");
             ret += ")";
             break;
+        case TableFunctionType::kAzure:
+            AzureBlobStorageFuncToString(ret, tf.azure());
+            break;
+        case TableFunctionType::kLocal:
+            LocalFuncToString(ret, tf.local());
+            break;
         case TableFunctionType::kUrl:
             URLFuncToString(ret, tf.url());
             break;
@@ -2494,9 +2518,6 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kFlight:
             ArrowFlightFuncToString(ret, tf.flight());
-            break;
-        case TableFunctionType::kMtanindex:
-            MergeTreeAnalyzeIndexesFuncToString(ret, tf.mtanindex());
             break;
         case TableFunctionType::kFunc:
             SQLTableFuncCallToString(ret, tf.func());
@@ -3029,11 +3050,6 @@ CONV_FN(DatabaseEngine, deng)
         }
         ret += ")";
     }
-    if (deng.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, deng.setting_values());
-    }
 }
 
 CONV_FN(CreateDatabase, create_database)
@@ -3056,6 +3072,11 @@ CONV_FN(CreateDatabase, create_database)
     }
     ret += " ENGINE = ";
     DatabaseEngineToString(ret, create_database.dengine());
+    if (create_database.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, create_database.setting_values());
+    }
     if (create_database.has_comment())
     {
         ret += " COMMENT ";
@@ -3197,12 +3218,6 @@ CONV_FN(ProjectionDef, proj_def)
     ret += " (";
     SelectToString(ret, proj_def.select());
     ret += ")";
-    if (proj_def.has_setting_values())
-    {
-        ret += " WITH SETTINGS (";
-        SettingValuesToString(ret, proj_def.setting_values());
-        ret += ")";
-    }
 }
 
 CONV_FN(ConstraintDef, const_def)
@@ -3435,8 +3450,8 @@ CONV_FN(TableEngine, te)
 
         ret += " ENGINE = ";
         if (te.has_toption()
-            && ((teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree) || teng == TableEngineValues::Set
-                || teng == TableEngineValues::Join))
+            && ((teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
+                || teng == TableEngineValues::Set || teng == TableEngineValues::Join))
         {
             ret += TableEngineOption_Name(te.toption()).substr(1);
         }
@@ -3852,11 +3867,6 @@ CONV_FN(CheckTable, ct)
         ret += " SETTINGS ";
         SettingValuesToString(ret, ct.setting_values());
     }
-    if (ct.has_format())
-    {
-        ret += " FORMAT ";
-        ret += OutFormat_Name(ct.format()).substr(4);
-    }
 }
 
 CONV_FN(DescribeStatement, ds)
@@ -3869,9 +3879,9 @@ CONV_FN(DescribeStatement, ds)
             TableOrFunctionToString(ret, false, ds.tof());
             break;
         case DescType::kSel:
-            ret += ds.paren() ? "(" : "";
+            ret += "(";
             ExplainQueryToString(ret, ds.sel());
-            ret += ds.paren() ? ")" : "";
+            ret += ")";
             break;
         case DescType::kStf:
             SQLTableFuncCallToString(ret, ds.stf());
@@ -3883,11 +3893,6 @@ CONV_FN(DescribeStatement, ds)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, ds.setting_values());
-    }
-    if (ds.has_format())
-    {
-        ret += " FORMAT ";
-        ret += OutFormat_Name(ds.format()).substr(4);
     }
 }
 
@@ -3945,11 +3950,6 @@ CONV_FN(OptimizeTable, ot)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, ot.setting_values());
-    }
-    if (ot.has_format())
-    {
-        ret += " FORMAT ";
-        ret += OutFormat_Name(ot.format()).substr(4);
     }
 }
 
@@ -4386,13 +4386,13 @@ CONV_FN(ModifyColumnSetting, mcp)
     SettingValuesToString(ret, mcp.setting_values());
 }
 
-CONV_FN(SettingList, sl)
+CONV_FN(SettingList, pl)
 {
-    ret += sl.setting();
-    for (int i = 0; i < sl.other_settings_size(); i++)
+    ret += pl.setting();
+    for (int i = 0; i < pl.other_settings_size(); i++)
     {
         ret += ", ";
-        ret += sl.other_settings(i);
+        ret += pl.other_settings(i);
     }
 }
 
@@ -5441,12 +5441,7 @@ CONV_FN(ShowStatement, sh)
             break;
         case ShowType::kCluster:
             ret += "CLUSTER ";
-            if (sh.cluster().has_cluster())
-            {
-                ret += "'";
-                ret += sh.cluster().cluster();
-                ret += "'";
-            }
+            ClusterToString(ret, false, sh.cluster());
             break;
         case ShowType::kClusters:
             ret += "CLUSTERS";

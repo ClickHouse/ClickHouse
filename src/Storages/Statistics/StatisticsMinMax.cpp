@@ -73,12 +73,12 @@ Float64 StatisticsMinMax::estimateLess(const Field & val) const
         return 0;
 
     if (val_as_float > max)
-        return static_cast<Float64>(row_count);
+        return row_count;
 
     if (min == max)
-        return (val_as_float != max) ? 0 : static_cast<Float64>(row_count);
+        return (val_as_float != max) ? 0 : row_count;
 
-    return ((*val_as_float - min) / (max - min)) * static_cast<Float64>(row_count);
+    return ((*val_as_float - min) / (max - min)) * row_count;
 }
 
 String StatisticsMinMax::getNameForLogs() const

@@ -144,10 +144,6 @@ protected:
         {
             findURLSecretArguments();
         }
-        else if (function->name() == "redis")
-        {
-            findRedisFunctionSecretArguments();
-        }
         else if (function->name() == "ytsaurus")
         {
             findYTsaurusStorageTableEngineSecretArguments();
@@ -208,7 +204,7 @@ protected:
         result.replacement = std::move(uri);
     }
 
-    void findRedisTableEngineSecretArguments()
+    void findRedisSecretArguments()
     {
         /// Redis does not have URL/address argument,
         /// only 'host:port' and separate "password" argument.
@@ -388,19 +384,8 @@ protected:
 
     void findURLSecretArguments()
     {
-        if (isNamedCollectionName(0))
-            return;
-
-        excludeS3OrURLNestedMaps();
-
-        String uri;
-        if (tryGetStringFromArgument(0, &uri) && maskURIPassword(&uri))
-        {
-            chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
-            result.start = 0;
-            result.count = 1;
-            result.replacement = std::move(uri);
-        }
+        if (!isNamedCollectionName(0))
+            excludeS3OrURLNestedMaps();
     }
 
     bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const
@@ -569,7 +554,7 @@ protected:
         }
         else if (engine_name == "Redis")
         {
-            findRedisTableEngineSecretArguments();
+            findRedisSecretArguments();
         }
         else if (engine_name == "YTsaurus")
         {
@@ -669,12 +654,6 @@ protected:
             markSecretArgument(url_arg_idx + 4);
     }
 
-    void findRedisFunctionSecretArguments()
-    {
-        // redis(host:port, key, structure, db_index, password, pool_size)
-        markSecretArgument(4);
-    }
-
     void findYTsaurusStorageTableEngineSecretArguments()
     {
         // YTsaurus('base_uri', 'yt_path', 'auth_token')
@@ -745,9 +724,6 @@ protected:
 
     void findBackupDatabaseSecretArguments()
     {
-        if (function->arguments->size() < 2)
-            return;
-
         auto storage_arg = function->arguments->at(1);
         auto storage_function = storage_arg->getFunction();
 

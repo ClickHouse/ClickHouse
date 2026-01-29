@@ -30,11 +30,6 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
-// On illumos, <sys/regset.h> defines FS as a macro (x86 segment register).
-// Undef it to allow use of the FS:: namespace from filesystemHelpers.h.
-#ifdef FS
-#  undef FS
-#endif
 
 namespace CurrentMetrics
 {
@@ -155,7 +150,7 @@ private:
 
 ReservationPtr DiskLocal::reserve(UInt64 bytes)
 {
-    auto unreserved_space = tryReserve(bytes, std::nullopt);
+    auto unreserved_space = tryReserve(bytes);
     if (!unreserved_space.has_value())
         return {};
     return std::make_unique<DiskLocalReservation>(
@@ -163,17 +158,7 @@ ReservationPtr DiskLocal::reserve(UInt64 bytes)
         bytes, unreserved_space.value());
 }
 
-ReservationPtr DiskLocal::reserve(UInt64 bytes, const ReservationConstraints & constraints)
-{
-    auto unreserved_space = tryReserve(bytes, constraints);
-    if (!unreserved_space.has_value())
-        return {};
-    return std::make_unique<DiskLocalReservation>(
-        std::static_pointer_cast<DiskLocal>(shared_from_this()),
-        bytes, unreserved_space.value());
-}
-
-std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints)
+std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes)
 {
     std::lock_guard lock(DiskLocal::reservation_mutex);
 
@@ -182,41 +167,6 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<Re
     UInt64 unreserved_space = available_space
         ? *available_space - std::min(*available_space, reserved_bytes)
         : std::numeric_limits<UInt64>::max();
-
-    /// Check constraints if specified
-    if (constraints.has_value())
-    {
-        auto total_space = getTotalSpace();
-
-        if (available_space.has_value() && total_space.has_value())
-        {
-            /// Not enough space for reservation itself
-            if (bytes > unreserved_space)
-                return {};
-
-            UInt64 free_bytes_after = unreserved_space - bytes;
-
-            /// Check min_bytes constraint
-            if (constraints->min_bytes > 0 && free_bytes_after < constraints->min_bytes)
-            {
-                LOG_TRACE(logger, "Could not reserve {} ({} bytes) on disk {}. Free space after reservation {} bytes ({}) would be less than min_bytes {} bytes ({})",
-                    ReadableSize(bytes), bytes, backQuote(name), free_bytes_after, ReadableSize(free_bytes_after), constraints->min_bytes, ReadableSize(constraints->min_bytes));
-                return {};
-            }
-
-            /// Check min_ratio constraint
-            if (constraints->min_ratio > 0.0)
-            {
-                UInt64 min_bytes_from_ratio = static_cast<UInt64>(constraints->min_ratio * (static_cast<Float32>(*total_space)));
-                if (free_bytes_after < min_bytes_from_ratio)
-                {
-                    LOG_TRACE(logger, "Could not reserve {} ({} bytes) on disk {}. Free space after reservation {} bytes ({}) would be less than min_ratio requirement {} bytes ({}) (ratio: {}, total: {} bytes)",
-                        ReadableSize(bytes), bytes, backQuote(name), free_bytes_after, ReadableSize(free_bytes_after), min_bytes_from_ratio, ReadableSize(min_bytes_from_ratio), constraints->min_ratio, *total_space);
-                    return {};
-                }
-            }
-        }
-    }
 
     if (bytes == 0)
     {
@@ -251,6 +201,7 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<Re
     }
 
     LOG_TRACE(logger, "Could not reserve {} on local disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
+
 
     return {};
 }
@@ -813,7 +764,7 @@ void DiskLocal::chmod(const String & path, mode_t mode)
 
 ObjectStoragePtr DiskLocal::getObjectStorage()
 {
-    LocalObjectStorageSettings settings_object_storage(name, disk_path, /* read_only */false);
+    LocalObjectStorageSettings settings_object_storage(disk_path, /* read_only */false);
     return std::make_shared<LocalObjectStorage>(settings_object_storage);
 }
 

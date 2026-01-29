@@ -3,7 +3,7 @@
 
 -- Basic tests for text index stored in compact vs. wide format, respectively full vs. packed parts
 
-SET enable_full_text_index = 1;
+SET allow_experimental_full_text_index = 1;
 
 SET parallel_replicas_local_plan=1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
 

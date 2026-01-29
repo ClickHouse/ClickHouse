@@ -760,7 +760,7 @@ namespace
 
             ColumnUInt8::MutablePtr col_null_map;
             if constexpr (error_handling == ErrorHandling::Null)
-                col_null_map = ColumnUInt8::create(input_rows_count, false);
+                col_null_map = ColumnUInt8::create(input_rows_count, 0);
 
             const String format = getFormat(arguments);
             const std::vector<Instruction> instructions = parseFormat(format);

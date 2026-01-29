@@ -9,6 +9,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <unistd.h>
 #include <filesystem>
 
 

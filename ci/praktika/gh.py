@@ -556,8 +556,6 @@ class GH:
             return status
         if status in Result.Status.RUNNING:
             return Result.Status.PENDING
-        elif status in Result.Status.DROPPED:
-            return Result.Status.ERROR
         else:
             assert (
                 False

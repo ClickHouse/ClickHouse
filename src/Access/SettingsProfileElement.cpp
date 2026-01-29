@@ -83,9 +83,9 @@ bool SettingsProfileElement::isConstraint() const
     return this->writability || this->min_value || this->max_value || !this->disallowed_values.empty();
 }
 
-boost::intrusive_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
+std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
 {
-    auto ast = make_intrusive<ASTSettingsProfileElement>();
+    auto ast = std::make_shared<ASTSettingsProfileElement>();
     ast->id_mode = true;
 
     if (parent_profile)
@@ -102,9 +102,9 @@ boost::intrusive_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() 
 }
 
 
-boost::intrusive_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithNames(const AccessControl & access_control) const
+std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithNames(const AccessControl & access_control) const
 {
-    auto ast = make_intrusive<ASTSettingsProfileElement>();
+    auto ast = std::make_shared<ASTSettingsProfileElement>();
 
     if (parent_profile)
     {
@@ -141,9 +141,9 @@ SettingsProfileElements::SettingsProfileElements(const ASTSettingsProfileElement
 }
 
 
-boost::intrusive_ptr<ASTSettingsProfileElements> SettingsProfileElements::toAST() const
+std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toAST() const
 {
-    auto res = make_intrusive<ASTSettingsProfileElements>();
+    auto res = std::make_shared<ASTSettingsProfileElements>();
     for (const auto & element : *this)
     {
         auto element_ast = element.toAST();
@@ -153,9 +153,9 @@ boost::intrusive_ptr<ASTSettingsProfileElements> SettingsProfileElements::toAST(
     return res;
 }
 
-boost::intrusive_ptr<ASTSettingsProfileElements> SettingsProfileElements::toASTWithNames(const AccessControl & access_control) const
+std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toASTWithNames(const AccessControl & access_control) const
 {
-    auto res = make_intrusive<ASTSettingsProfileElements>();
+    auto res = std::make_shared<ASTSettingsProfileElements>();
     for (const auto & element : *this)
     {
         auto element_ast = element.toASTWithNames(access_control);

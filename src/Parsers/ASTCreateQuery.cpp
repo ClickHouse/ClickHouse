@@ -2,7 +2,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTWithAlias.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/CreateQueryUUIDs.h>
 #include <Common/quoteString.h>
@@ -47,7 +46,7 @@ void ASTSQLSecurity::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
 ASTPtr ASTStorage::clone() const
 {
-    auto res = make_intrusive<ASTStorage>(*this);
+    auto res = std::make_shared<ASTStorage>(*this);
     res->children.clear();
 
     if (engine)
@@ -81,34 +80,22 @@ void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     if (partition_by)
     {
         ostr << s.nl_or_ws << "PARTITION BY ";
-        auto nested_frame = modified_frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(partition_by); ast_alias && !ast_alias->tryGetAlias().empty())
-            nested_frame.need_parens = true;
-        partition_by->format(ostr, s, state, nested_frame);
+        partition_by->format(ostr, s, state, modified_frame);
     }
     if (primary_key)
     {
         ostr << s.nl_or_ws << "PRIMARY KEY ";
-        auto nested_frame = modified_frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(primary_key); ast_alias && !ast_alias->tryGetAlias().empty())
-            nested_frame.need_parens = true;
-        primary_key->format(ostr, s, state, nested_frame);
+        primary_key->format(ostr, s, state, modified_frame);
     }
     if (order_by)
     {
         ostr << s.nl_or_ws << "ORDER BY ";
-        auto nested_frame = modified_frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(order_by); ast_alias && !ast_alias->tryGetAlias().empty())
-            nested_frame.need_parens = true;
-        order_by->format(ostr, s, state, nested_frame);
+        order_by->format(ostr, s, state, modified_frame);
     }
     if (sample_by)
     {
         ostr << s.nl_or_ws << "SAMPLE BY ";
-        auto nested_frame = modified_frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(sample_by); ast_alias && !ast_alias->tryGetAlias().empty())
-            nested_frame.need_parens = true;
-        sample_by->format(ostr, s, state, nested_frame);
+        sample_by->format(ostr, s, state, modified_frame);
     }
     if (ttl_table)
     {
@@ -138,9 +125,9 @@ public:
 
     ASTPtr clone() const override;
 
-    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
+    void forEachPointerToChild(std::function<void(void**)> f) override
     {
-        f(&elem, nullptr);
+        f(reinterpret_cast<void **>(&elem));
     }
 
 protected:
@@ -149,7 +136,7 @@ protected:
 
 ASTPtr ASTColumnsElement::clone() const
 {
-    auto res = make_intrusive<ASTColumnsElement>();
+    auto res = std::make_shared<ASTColumnsElement>();
     res->prefix = prefix;
     if (elem)
         res->set(res->elem, elem->clone());
@@ -174,7 +161,7 @@ void ASTColumnsElement::formatImpl(WriteBuffer & ostr, const FormatSettings & s,
 
 ASTPtr ASTColumns::clone() const
 {
-    auto res = make_intrusive<ASTColumns>();
+    auto res = std::make_shared<ASTColumns>();
 
     if (columns)
         res->set(res->columns, columns->clone());
@@ -200,7 +187,7 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     {
         for (const auto & column : columns->children)
         {
-            auto elem = make_intrusive<ASTColumnsElement>();
+            auto elem = std::make_shared<ASTColumnsElement>();
             elem->prefix = "";
             elem->set(elem->elem, column->clone());
             list.children.push_back(elem);
@@ -210,7 +197,7 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     {
         for (const auto & index : indices->children)
         {
-            auto elem = make_intrusive<ASTColumnsElement>();
+            auto elem = std::make_shared<ASTColumnsElement>();
             elem->prefix = "INDEX";
             elem->set(elem->elem, index->clone());
             list.children.push_back(elem);
@@ -220,7 +207,7 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     {
         for (const auto & constraint : constraints->children)
         {
-            auto elem = make_intrusive<ASTColumnsElement>();
+            auto elem = std::make_shared<ASTColumnsElement>();
             elem->prefix = "CONSTRAINT";
             elem->set(elem->elem, constraint->clone());
             list.children.push_back(elem);
@@ -230,7 +217,7 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     {
         for (const auto & projection : projections->children)
         {
-            auto elem = make_intrusive<ASTColumnsElement>();
+            auto elem = std::make_shared<ASTColumnsElement>();
             elem->prefix = "PROJECTION";
             elem->set(elem->elem, projection->clone());
             list.children.push_back(elem);
@@ -249,7 +236,7 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
 
 ASTPtr ASTCreateQuery::clone() const
 {
-    auto res = make_intrusive<ASTCreateQuery>(*this);
+    auto res = std::make_shared<ASTCreateQuery>(*this);
     res->children.clear();
 
     if (columns_list)
@@ -264,12 +251,6 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->table_overrides, table_overrides->clone());
     if (targets)
         res->set(res->targets, targets->clone());
-    if (sql_security)
-        res->set(res->sql_security, sql_security->clone());
-    if (watermark_function)
-        res->set(res->watermark_function, watermark_function->clone());
-    if (lateness_function)
-        res->set(res->lateness_function, lateness_function->clone());
 
     if (dictionary)
     {
@@ -522,13 +503,13 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     if (storage)
         storage->format(ostr, settings, state, frame);
 
-    if (auto * inner_storage = getTargetInnerEngine(ViewTarget::Inner))
+    if (auto inner_storage = getTargetInnerEngine(ViewTarget::Inner))
     {
         ostr << " " << toStringView(Keyword::INNER);
         inner_storage->format(ostr, settings, state, frame);
     }
 
-    if (auto * to_storage = getTargetInnerEngine(ViewTarget::To))
+    if (auto to_storage = getTargetInnerEngine(ViewTarget::To))
         to_storage->format(ostr, settings, state, frame);
 
     if (targets)
@@ -642,7 +623,7 @@ bool ASTCreateQuery::hasInnerUUIDs() const
     return false;
 }
 
-ASTStorage * ASTCreateQuery::getTargetInnerEngine(ViewTarget::Kind target_kind) const
+std::shared_ptr<ASTStorage> ASTCreateQuery::getTargetInnerEngine(ViewTarget::Kind target_kind) const
 {
     if (targets)
         return targets->getInnerEngine(target_kind);
@@ -652,7 +633,7 @@ ASTStorage * ASTCreateQuery::getTargetInnerEngine(ViewTarget::Kind target_kind) 
 void ASTCreateQuery::setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr storage_def)
 {
     if (!targets)
-        set(targets, make_intrusive<ASTViewTargets>());
+        set(targets, std::make_shared<ASTViewTargets>());
     targets->setInnerEngine(target_kind, storage_def);
 }
 
