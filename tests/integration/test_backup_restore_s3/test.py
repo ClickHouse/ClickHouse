@@ -1006,6 +1006,9 @@ def test_backup_restore_system_tables_with_plain_rewritable_disk(cluster):
     backup_name = new_backup_name()
     backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
 
+    # Truncate query_log to limit data size, avoiding timeouts under sanitizers
+    instance.query("TRUNCATE TABLE IF EXISTS system.query_log")
+    instance.query("SELECT 1")
     instance.query("SYSTEM FLUSH LOGS")
 
     backup_query_id = uuid.uuid4().hex

@@ -180,6 +180,7 @@ ClickHouseClient
 ClickHouseMigrator
 ClickHouseNIO
 ClickHouseVapor
+ClickLens
 ClickPipes
 ClickVisual
 ClickableSquare
@@ -734,6 +735,7 @@ MergeTreePartsLoaderThreadsActive
 MergeTreeReadTaskRequestsSent
 MergeTreeSettings
 MergerMutator
+Mersenne
 MessagePack
 Metastore
 MetroHash

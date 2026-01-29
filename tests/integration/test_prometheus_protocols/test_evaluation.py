@@ -208,13 +208,6 @@ def test_up():
         1753176757.89,
         '{"resultType": "vector", "result": [{"metric": {"__name__": "up", "job": "prometheus"}, "value": [1753176757.89, "1"]}]}',
         [["[('__name__','up'),('job','prometheus')]", "2025-07-22 09:32:37.890", "1"]],
-        # FIXME: Results are different!
-        # | E   assert '{"resultType...6757, "1"]}]}' == '{"resultType...7.89, "1"]}]}'
-        # | E
-        # | E     - {"resultType": "vector", "result": [{"metric": {"__name__": "up", "job": "prometheus"}, "value": [1753176757.89, "1"]}]}
-        # | E     ?                                                                                                             ---
-        # | E     + {"resultType": "vector", "result": [{"metric": {"__name__": "up", "job": "prometheus"}, "value": [1753176757, "1"]}]}
-        False,
     )
 
 

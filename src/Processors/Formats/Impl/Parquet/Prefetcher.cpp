@@ -177,7 +177,7 @@ void Prefetcher::startPrefetch(const std::vector<PrefetchHandle *> & requests_to
 
         if (!handle->memory)
         {
-            size_t memory_usage = size_t(req->length * task->memory_amplification);
+            size_t memory_usage = static_cast<size_t>(static_cast<double>(req->length) * task->memory_amplification);
             handle->memory = MemoryUsageToken(memory_usage, diff);
         }
     }
@@ -365,7 +365,7 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
     Task & task = tasks.emplace_back();
     task.offset = start_offset;
     task.length = end_offset - task.offset;
-    task.memory_amplification = 1. * task.length / total_length_of_covered_ranges;
+    task.memory_amplification = 1. * static_cast<double>(task.length) / static_cast<double>(total_length_of_covered_ranges);
     size_t initial_refcount = end_idx - start_idx + 1;
     task.refcount.store(initial_refcount);
 

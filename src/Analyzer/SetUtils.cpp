@@ -22,12 +22,25 @@ namespace ErrorCodes
 extern const int INCORRECT_ELEMENT_OF_SET;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int UNKNOWN_ELEMENT_OF_ENUM;
-extern const int LOGICAL_ERROR;
-
 }
 
 namespace
 {
+
+/// Unwrap Nullable to get to the underlying Tuple type.
+/// Also unwrap LowCardinality for robustness, even though LowCardinality(Tuple) is not supported.
+const DataTypeTuple * getTupleType(const DataTypePtr & type)
+{
+    const IDataType * current = type.get();
+
+    if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(current))
+        current = lc_type->getDictionaryType().get();
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(current))
+        current = nullable_type->getNestedType().get();
+
+    return typeid_cast<const DataTypeTuple *>(current);
+}
 
 size_t getCompoundTypeDepth(const IDataType & type)
 {
@@ -148,15 +161,11 @@ ColumnsWithTypeAndName createBlockFromCollection(
                         lhs_tuple_element_types.size());
 
                 const DataTypePtr & rhs_element_type = rhs_types[collection_index];
-
-                const DataTypeTuple * rhs_tuple_type = nullptr;
-                if (const auto * rhs_nullable_type = typeid_cast<const DataTypeNullable *>(rhs_element_type.get()))
-                    rhs_tuple_type = typeid_cast<const DataTypeTuple *>(rhs_nullable_type->getNestedType().get());
-                else
-                    rhs_tuple_type = typeid_cast<const DataTypeTuple *>(rhs_element_type.get());
+                const DataTypeTuple * rhs_tuple_type = getTupleType(rhs_element_type);
 
                 if (!rhs_tuple_type)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Tuple or Nullable(Tuple) type");
+                    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
+                        "Invalid element type in set. Expected Tuple, got {}", rhs_element_type->getName());
 
                 const DataTypes & rhs_tuple_element_types = rhs_tuple_type->getElements();
 
@@ -241,21 +250,11 @@ ColumnsWithTypeAndName createBlockFromCollection(
         const auto & rhs_element_as_tuple = rhs_element.template safeGet<Tuple>();
 
         const DataTypePtr & rhs_element_type = rhs_types[collection_index];
-
-        const DataTypeTuple * tuple_type = nullptr;
-        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(rhs_element_type.get()))
-        {
-            /// RHS type is Nullable(Tuple(...))
-            tuple_type = typeid_cast<const DataTypeTuple *>(nullable_type->getNestedType().get());
-        }
-        else
-        {
-            /// RHS type is Tuple(...)
-            tuple_type = typeid_cast<const DataTypeTuple *>(rhs_element_type.get());
-        }
+        const DataTypeTuple * tuple_type = getTupleType(rhs_element_type);
 
         if (!tuple_type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Tuple or Nullable(Tuple) type");
+            throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
+                "Invalid element type in set. Expected Tuple, got {}", rhs_element_type->getName());
 
         const DataTypes & rhs_element_unpacked_types = tuple_type->getElements();
 
