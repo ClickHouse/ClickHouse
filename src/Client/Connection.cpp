@@ -1327,11 +1327,10 @@ Packet Connection::receivePacket()
 {
     try
     {
-        /// If we already disconnected.
+        /// We are trying to send something to already disconnected connection,
+        /// this means that we continue using Connection after exception.
         if (!in)
-        {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection to {} is terminated", getDescription());
-        }
 
         Packet res;
 
