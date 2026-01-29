@@ -1232,11 +1232,6 @@ void IcebergStorageSink::consume(Chunk & chunk)
         {
             auto [data_filename, data_filename_in_storage] = filename_generator.generateDataFileName();
             data_filenames[partition_key] = data_filename;
-            if (!statistics.contains(partition_key))
-            {
-                statistics.emplace(partition_key, current_schema->getArray(Iceberg::f_fields));
-            }
-            statistics.at(partition_key).update(part_chunk);
 
             auto buffer = object_storage->writeObject(
                 StoredObject(data_filename_in_storage), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
@@ -1251,6 +1246,12 @@ void IcebergStorageSink::consume(Chunk & chunk)
             writers[partition_key] = FormatFactory::instance().getOutputFormatParallelIfPossible(
                 configuration->format, *write_buffers[partition_key], *sample_block, context, format_settings);
         }
+
+        if (!statistics.contains(partition_key))
+        {
+            statistics.emplace(partition_key, current_schema->getArray(Iceberg::f_fields));
+        }
+        statistics.at(partition_key).update(part_chunk);
 
         writers[partition_key]->write(getHeader().cloneWithColumns(part_chunk.getColumns()));
     }
