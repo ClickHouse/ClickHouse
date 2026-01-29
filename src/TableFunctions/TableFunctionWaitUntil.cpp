@@ -20,10 +20,10 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FunctionDocumentation.h>
-#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
