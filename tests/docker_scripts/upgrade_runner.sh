@@ -284,8 +284,9 @@ cat /etc/clickhouse-server/users.d/compatibility.xml
 check_allow_list() {
     local log="/var/log/clickhouse-server/clickhouse-server.log"
     if [ -f "$log" ] && rg -q "Unknown database engine: Lazy" "$log"; then
+        # cleanup errors
         cat /test_output/test_results.tsv
-        rm -f /test_output/test_results.tsv
+        cat /dev/null > /test_output/test_results.tsv
         echo "Found allow-listed error in logs. Suppressing failure."
         # Finishing tests because following checks would fail
         exit 0
