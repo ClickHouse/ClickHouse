@@ -32,10 +32,7 @@ slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
 unstable_backward_incompatible_queries = 0
-benchmarks = {
-    "clickbench",
-    "tpch" # already fast enough, here for consistency
-}
+benchmarks = {"clickbench", "tpch"}  # already fast enough, here for consistency
 
 # max seconds to run one query by itself, not counting preparation
 # by default it's 2 seconds, but for benchmarks it's 8 seconds
@@ -587,7 +584,10 @@ if args.report == "main":
             else:
                 attrs[5] = ""
 
-            if r[0] != "Total" and float(r[4]) > get_allowed_single_run_time(r[0]) * total_runs:
+            if (
+                r[0] != "Total"
+                and float(r[4]) > get_allowed_single_run_time(r[0]) * total_runs
+            ):
                 slow_average_tests += 1
                 attrs[4] = f'style="background: {color_bad}"'
                 errors_explained.append(

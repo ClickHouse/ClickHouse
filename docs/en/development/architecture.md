@@ -179,6 +179,26 @@ Config is read from multiple files (in XML or YAML format) and merged into singl
 
 For queries and subsystems other than `Server` config is accessible using `Context::getConfigRef()` method. Every subsystem that is capable of reloading its config without server restart should register itself in reload callback in `Server::main()` method. Note that if newer config has an error, most subsystems will ignore new config, log warning messages and keep working with previously loaded config. Due to the nature of `AbstractConfiguration` it is not possible to pass reference to specific section, so `String config_prefix` is usually used instead.
 
+### Context {#context}
+
+ClickHouse manages settings through the hierarchy of contexts:
+* **Global context** - server-wide settings defined via config files
+* **Session context** - user session settings from profiles, user configuration and SET commands
+* **Query context** - query-level settings from SETTINGS clause
+* **Background context** - server-wide settings for background operations (Mutate, Merge) defined via 'background' profile
+
+When scheduling an operation (queries, mutations, etc.) server builds the specific context by merging settings in the following order (later sections override earlier ones):
+1. Global defaults
+2. Global configuration
+3. Profile settings (from `<profiles>` section)
+4. User settings (from `<users>` section)
+5. Session settings (from SET command)
+6. Query settings (from SETTINGS clause)
+
+:::note
+Background operations can be configured via global and 'background' profile settings; session and query settings have no effect in this case. If no explicit configuration given, the configuration will inherit from global context. The default profile name for such operations is 'background', which can be overridden via `background_profile` server setting.
+:::
+
 ## Threads and jobs {#threads-and-jobs}
 
 To execute queries and do side activities ClickHouse allocates threads from one of thread pools to avoid frequent thread creation and destruction. There are a few thread pools, which are selected depending on a purpose and structure of a job:
