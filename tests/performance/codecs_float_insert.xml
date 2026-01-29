@@ -13,6 +13,7 @@
                 <value>DoubleDelta</value>
                 <value>Gorilla</value>
                 <value>FPC</value>
+                <value>ALP</value>
             </values>
         </substitution>
         <substitution>
@@ -27,6 +28,7 @@
                 <value>seq</value>
                 <value>mon</value>
                 <value>rnd</value>
+                <value>rtn</value>
             </values>
         </substitution>
         <substitution>
@@ -48,6 +50,7 @@
     <query>INSERT INTO codec_seq_{type}_{codec} (n) SELECT number/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
     <query>INSERT INTO codec_mon_{type}_{codec} (n) SELECT number+sin(number) FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
     <query>INSERT INTO codec_rnd_{type}_{codec} (n) SELECT (intHash64(number) - 4294967295)/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
+    <query>INSERT INTO codec_rtn_{type}_{codec} (n) SELECT round(number/20+sin(number), 3) FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
 
     <drop_query>system start merges</drop_query>
     <drop_query>DROP TABLE IF EXISTS codec_{seq_type}_{type}_{codec}</drop_query>
