@@ -89,13 +89,11 @@ DDLWorker::DDLWorker(
     ContextPtr context_,
     const Poco::Util::AbstractConfiguration * config,
     const String & prefix,
-    const String & zookeeper_name_,
     const String & logger_name,
     const CurrentMetrics::Metric * max_entry_metric_,
     const CurrentMetrics::Metric * max_pushed_entry_metric_)
     : context(Context::createCopy(context_))
     , log(getLogger(logger_name))
-    , zookeeper_name(zookeeper_name_)
     , pool_size(pool_size_)
     , max_entry_metric(max_entry_metric_)
     , max_pushed_entry_metric(max_pushed_entry_metric_)
@@ -172,10 +170,6 @@ DDLWorker::~DDLWorker()
     DDLWorker::shutdown();
 }
 
-ZooKeeperPtr DDLWorker::getZooKeeperFromContext() const
-{
-    return context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
-}
 
 ZooKeeperPtr DDLWorker::getZooKeeper() const
 {
@@ -190,7 +184,7 @@ ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
     std::lock_guard lock(zookeeper_mutex);
 
     if (!current_zookeeper || current_zookeeper->expired())
-        current_zookeeper = getZooKeeperFromContext();
+        current_zookeeper = context->getZooKeeper();
 
     return current_zookeeper;
 }
@@ -1126,7 +1120,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &
 
 String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
 {
-    auto zookeeper = getZooKeeperFromContext();
+    auto zookeeper = context->getZooKeeper();
 
     String query_path_prefix = fs::path(queue_dir) / "query-";
     zookeeper->createAncestors(query_path_prefix);
