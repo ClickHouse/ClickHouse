@@ -20,3 +20,4 @@ The following external authenticators and directories are supported:
 - Kerberos [Authenticator](/operations/external-authenticators/kerberos#kerberos-as-an-external-authenticator-for-existing-users)
 - [SSL X.509 authentication](/operations/external-authenticators/ssl-x509)
 - HTTP [Authenticator](./http.md)
+- [Time-based one-time password](./totp.md)

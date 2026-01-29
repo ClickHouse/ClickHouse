@@ -64,6 +64,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
+    extern const int REQUIRED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
     extern const int USER_EXPIRED;
 }
@@ -377,20 +378,45 @@ try
     }
 #endif
 
-    try
+    bool asked_password = false;
+    bool asked_2fa = false;
+    for (;;)
     {
-        connect();
-    }
-    catch (const Exception & e)
-    {
-        if ((e.code() != ErrorCodes::AUTHENTICATION_FAILED && e.code() != ErrorCodes::REQUIRED_PASSWORD) ||
-            config().has("password") ||
-            config().getBool("ask-password", false) ||
-            !is_interactive)
-            throw;
+        try
+        {
+            connect();
+            break;
+        }
+        catch (const Exception & e)
+        {
+            auto code = e.code();
 
-        config().setBool("ask-password", true);
-        connect();
+            bool should_ask_password = !asked_password && is_interactive &&
+                (code == ErrorCodes::AUTHENTICATION_FAILED || code == ErrorCodes::REQUIRED_PASSWORD) &&
+                !config().has("password") && !config().getBool("ask-password", false);
+
+            if (should_ask_password)
+            {
+                asked_password = true;
+                config().setBool("ask-password", true);
+                continue;
+            }
+
+            bool should_ask_2fa = !asked_2fa && (code == ErrorCodes::REQUIRED_SECOND_FACTOR) &&
+                (config().getBool("ask-password", false) || is_interactive);
+
+            if (should_ask_2fa)
+            {
+                asked_2fa = true;
+                if (!connection_parameters.password.empty())
+                    config().setString("password", connection_parameters.password);
+                config().setBool("ask-password", false);
+                config().setBool("ask-password-2fa", true);
+                continue;
+            }
+
+            throw;
+        }
     }
 
     /// Show warnings at the beginning of connection.
