@@ -69,7 +69,6 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
@@ -98,9 +97,9 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     /// changes how many rows satisfy the predicates of the subsequent commands).
     /// But we can be sure that if count = 0, then no rows will be touched.
 
-    auto select = make_intrusive<ASTSelectQuery>();
+    auto select = std::make_shared<ASTSelectQuery>();
 
-    select->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
     auto count_func = makeASTFunction("count");
     select->select()->children.push_back(count_func);
 
@@ -289,8 +288,8 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables");
 
         partition_predicate_as_ast_func = makeASTOperator("equals",
-                    make_intrusive<ASTIdentifier>("_partition_id"),
-                    make_intrusive<ASTLiteral>(partition_id)
+                    std::make_shared<ASTIdentifier>("_partition_id"),
+                    std::make_shared<ASTLiteral>(partition_id)
         );
     }
 
@@ -367,9 +366,9 @@ bool MutationsInterpreter::Source::materializeTTLRecalculateOnly() const
     return data && (*data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
 }
 
-bool MutationsInterpreter::Source::hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const
+bool MutationsInterpreter::Source::hasSecondaryIndex(const String & name) const
 {
-    return part && part->hasSecondaryIndex(name, metadata);
+    return part && part->hasSecondaryIndex(name);
 }
 
 bool MutationsInterpreter::Source::hasProjection(const String & name) const
@@ -702,7 +701,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             return source.hasProjection(name);
 
         if (kind == ColumnDependency::SKIP_INDEX)
-            return source.hasSecondaryIndex(name, metadata_snapshot);
+            return source.hasSecondaryIndex(name);
 
         return true;
     };
@@ -711,7 +710,6 @@ void MutationsInterpreter::prepare(bool dry_run)
         dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns, has_dependency);
 
     bool need_rebuild_indexes = false;
-    bool need_rebuild_indexes_for_update_delete = false;
     bool need_rebuild_projections = false;
     std::vector<String> read_columns;
 
@@ -752,10 +750,6 @@ void MutationsInterpreter::prepare(bool dry_run)
         stage.filters.push_back(std::move(filter));
     }
 
-    const auto index_mode = source.getMergeTreeData()
-        ? (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::alter_column_secondary_index_mode]
-        : AlterColumnSecondaryIndexMode::REBUILD;
-
     /// First, break a sequence of commands into stages.
     for (const auto & command : commands)
     {
@@ -772,9 +766,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                 stages.back().filters.push_back(predicate);
             }
 
-            /// ALTER DELETE can change the number of rows in the part, so we need to rebuild indexes and projection
+            /// ALTER DELETE can changes number of rows in the part, so we need to rebuild indexes and projection
+            need_rebuild_indexes = true;
             need_rebuild_projections = true;
-            need_rebuild_indexes_for_update_delete = true;
         }
         else if (command.type == MutationCommand::UPDATE)
         {
@@ -818,13 +812,13 @@ void MutationsInterpreter::prepare(bool dry_run)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column_name);
                 }
 
-                auto type_literal = make_intrusive<ASTLiteral>(type->getName());
+                auto type_literal = std::make_shared<ASTLiteral>(type->getName());
                 ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command);
 
                 /// And new check validateNestedArraySizes for Nested subcolumns
                 if (isArray(type) && !Nested::splitName(column_name).second.empty())
                 {
-                    boost::intrusive_ptr<ASTFunction> function = nullptr;
+                    std::shared_ptr<ASTFunction> function = nullptr;
 
                     auto nested_update_exprs = getExpressionsOfUpdatedNestedSubcolumns(column_name, affected_materialized, all_columns, command.column_to_update_expression);
                     if (!nested_update_exprs)
@@ -832,7 +826,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                         function = makeASTFunction("validateNestedArraySizes",
                             condition,
                             update_expr->clone(),
-                            make_intrusive<ASTIdentifier>(column_name));
+                            std::make_shared<ASTIdentifier>(column_name));
                         condition = makeASTOperator("and", condition, function);
                     }
                     else if (nested_update_exprs->size() > 1)
@@ -850,7 +844,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                         makeASTFunction("_CAST",
                             update_expr->clone(),
                             type_literal),
-                        make_intrusive<ASTIdentifier>(column_name)),
+                        std::make_shared<ASTIdentifier>(column_name)),
                     type_literal);
 
                 stages.back().column_to_updated.emplace(column_name, updated_column);
@@ -863,7 +857,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     if (column.default_desc.kind == ColumnDefaultKind::Materialized)
                     {
-                        auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
+                        auto type_literal = std::make_shared<ASTLiteral>(column.type->getName());
 
                         ASTPtr materialized_column = makeASTFunction("_CAST",
                             column.default_desc.expression->clone(),
@@ -906,7 +900,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                     "Cannot materialize column `{}` because it doesn't have default expression", column.name);
 
             auto materialized_column = makeASTFunction(
-                "_CAST", column.default_desc.expression->clone(), make_intrusive<ASTLiteral>(column.type->getName()));
+                "_CAST", column.default_desc.expression->clone(), std::make_shared<ASTLiteral>(column.type->getName()));
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
         }
@@ -922,7 +916,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (it == std::cend(indices_desc))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown index: {}", command.index_name);
 
-            if (!source.hasSecondaryIndex(it->name, metadata_snapshot))
+            if (!source.hasSecondaryIndex(it->name))
             {
                 auto query = (*it).expression_list_ast->clone();
                 auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
@@ -1065,10 +1059,10 @@ void MutationsInterpreter::prepare(bool dry_run)
             read_columns.emplace_back(command.column_name);
             materialized_statistics.insert(command.column_name);
 
+            /// Check if the type of this column is changed and there are projections that
+            /// have this column in the primary key. We should rebuild such projections.
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
-                /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
-                /// that depend on it. We should rebuild such projections and indices
                 const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
                 if (column && command.data_type && !column->type->equals(*command.data_type))
                 {
@@ -1082,48 +1076,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                             materialized_projections.insert(projection.name);
                         }
                     }
-
-                    for (const auto & index : metadata_snapshot->getSecondaryIndices())
-                    {
-                        const auto & index_cols = index.expression->getRequiredColumns();
-                        if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
-                        {
-                            switch (index_mode)
-                            {
-                                case AlterColumnSecondaryIndexMode::THROW:
-                                case AlterColumnSecondaryIndexMode::COMPATIBILITY:
-                                    if (!index.isImplicitlyCreated())
-                                    {
-                                        /// The only way to reach this would be if the ALTER was created and then the table setting changed
-                                        throw Exception(
-                                            ErrorCodes::BAD_ARGUMENTS,
-                                            "Cannot ALTER column `{}` because index `{}` depends on it", command.column_name, index.name);
-                                    }
-                                    /// For implicit indices we don't throw, we will rebuild them
-                                    [[fallthrough]];
-                                case AlterColumnSecondaryIndexMode::REBUILD:
-                                {
-                                    for (const auto & col : index_cols)
-                                        dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
-                                    materialized_indices.insert(index.name);
-                                    break;
-                                }
-                                case AlterColumnSecondaryIndexMode::DROP:
-                                    dropped_indices.insert(index.name);
-                            }
-                        }
-                    }
                 }
-            }
-        }
-        else if (command.type == MutationCommand::DROP_COLUMN && command.clear)
-        {
-            /// When clearing a column, we need to also clear any indices that depend on it
-            for (const auto & index : metadata_snapshot->getSecondaryIndices())
-            {
-                const auto & index_cols = index.expression->getRequiredColumns();
-                if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
-                    dropped_indices.insert(index.name);
             }
         }
         /// The following mutations handled separately:
@@ -1135,10 +1088,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else
         {
-            throw Exception(
-                ErrorCodes::UNKNOWN_MUTATION_COMMAND,
-                "Unknown mutation command: {}",
-                command.ast ? command.ast->formatForLogging() : fmt::to_string(command.type));
+            throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command.type));
         }
     }
 
@@ -1146,7 +1096,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     {
         stages.emplace_back(context);
         for (auto & column_name : read_columns)
-            stages.back().column_to_updated.emplace(column_name, make_intrusive<ASTIdentifier>(column_name));
+            stages.back().column_to_updated.emplace(column_name, std::make_shared<ASTIdentifier>(column_name));
     }
 
     /// We care about affected indices and projections because we also need to rewrite them
@@ -1168,7 +1118,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             stages.emplace_back(context);
             for (const auto & column : changed_columns)
-                stages.back().column_to_updated.emplace(column, make_intrusive<ASTIdentifier>(column));
+                stages.back().column_to_updated.emplace(column, std::make_shared<ASTIdentifier>(column));
         }
 
         if (!unchanged_columns.empty())
@@ -1177,16 +1127,12 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 std::vector<Stage> stages_copy;
                 /// Copy all filled stages except index calculation stage.
-                /// We need to deep clone ASTs because prepareMutationStages may modify the ASTs in place
-                /// (e.g., replacing scalar subqueries with default values during dry_run).
                 for (const auto & stage : stages)
                 {
                     stages_copy.emplace_back(context);
-                    for (const auto & [name, ast] : stage.column_to_updated)
-                        stages_copy.back().column_to_updated.emplace(name, ast->clone());
+                    stages_copy.back().column_to_updated = stage.column_to_updated;
                     stages_copy.back().output_columns = stage.output_columns;
-                    for (const auto & filter : stage.filters)
-                        stages_copy.back().filters.push_back(filter->clone());
+                    stages_copy.back().filters = stage.filters;
                 }
 
                 prepareMutationStages(stages_copy, true);
@@ -1202,21 +1148,18 @@ void MutationsInterpreter::prepare(bool dry_run)
             stages.back().is_readonly = true;
             for (const auto & column : unchanged_columns)
                 stages.back().column_to_updated.emplace(
-                    column, make_intrusive<ASTIdentifier>(column));
+                    column, std::make_shared<ASTIdentifier>(column));
         }
     }
 
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
-        if (!source.hasSecondaryIndex(index.name, metadata_snapshot) || dropped_indices.contains(index.name))
+        if (!source.hasSecondaryIndex(index.name))
             continue;
 
-        if (need_rebuild_indexes_for_update_delete || need_rebuild_indexes)
+        if (need_rebuild_indexes)
         {
-            if (index_mode == AlterColumnSecondaryIndexMode::DROP)
-                dropped_indices.insert(index.name);
-            else
-                materialized_indices.insert(index.name);
+            materialized_indices.insert(index.name);
             continue;
         }
 
@@ -1227,12 +1170,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
 
         if (changed)
-        {
-            if (index_mode == AlterColumnSecondaryIndexMode::DROP)
-                dropped_indices.insert(index.name);
-            else
-                materialized_indices.insert(index.name);
-        }
+            materialized_indices.insert(index.name);
     }
 
     for (const auto & projection : metadata_snapshot->getProjections())
@@ -1363,7 +1301,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
     {
         auto & stage = prepared_stages[i];
 
-        ASTPtr all_asts = make_intrusive<ASTExpressionList>();
+        ASTPtr all_asts = std::make_shared<ASTExpressionList>();
 
         for (const auto & ast : stage.filters)
             all_asts->children.push_back(ast);
@@ -1373,7 +1311,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
         /// Add all output columns to prevent ExpressionAnalyzer from deleting them from source columns.
         for (const auto & column : stage.output_columns)
-            all_asts->children.push_back(make_intrusive<ASTIdentifier>(column));
+            all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
         /// Executing scalar subquery on that stage can lead to deadlock
         /// e.g. ALTER referencing the same table in scalar subquery
@@ -1499,16 +1437,16 @@ void MutationsInterpreter::Source::read(
     }
     else
     {
-        auto select = make_intrusive<ASTSelectQuery>();
+        auto select = std::make_shared<ASTSelectQuery>();
         std::shared_ptr<const ActionsDAG> filter_actions_dag;
 
-        select->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
+        select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
         for (const auto & column_name : first_stage.output_columns)
-            select->select()->children.push_back(make_intrusive<ASTIdentifier>(column_name));
+            select->select()->children.push_back(std::make_shared<ASTIdentifier>(column_name));
 
         /// Don't let select list be empty.
         if (select->select()->children.empty())
-            select->select()->children.push_back(make_intrusive<ASTLiteral>(Field(0)));
+            select->select()->children.push_back(std::make_shared<ASTLiteral>(Field(0)));
 
         if (!first_stage.filters.empty())
         {
@@ -1520,9 +1458,9 @@ void MutationsInterpreter::Source::read(
             }
             else
             {
-                auto coalesced_predicates = make_intrusive<ASTFunction>();
+                auto coalesced_predicates = std::make_shared<ASTFunction>();
                 coalesced_predicates->name = "and";
-                coalesced_predicates->arguments = make_intrusive<ASTExpressionList>();
+                coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
                 coalesced_predicates->children.push_back(coalesced_predicates->arguments);
                 coalesced_predicates->arguments->children = first_stage.filters;
                 where_expression = std::move(coalesced_predicates);

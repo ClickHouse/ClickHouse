@@ -169,7 +169,7 @@ public:
         /// => x_bin (y_bin) will be 4, which can lead to wrong vector access.
         if (y_bin == kSplit)
             --y_bin;
-        return children[y_bin + x_bin * kSplit]->find(x_ratio - static_cast<Coord>(x_bin), y_ratio - static_cast<Coord>(y_bin));
+        return children[y_bin + x_bin * kSplit]->find(x_ratio - x_bin, y_ratio - y_bin);
     }
 
     /** When a cell is split every side is split into kSplit pieces producing kSplit * kSplit equal smaller cells. */
@@ -269,7 +269,7 @@ private:
                 }
             };
             if (depth <= kMultiProcessingDepth)
-                runner.enqueueAndKeepTrack(std::move(handle_row));
+                runner(std::move(handle_row));
             else
                 handle_row();
         }

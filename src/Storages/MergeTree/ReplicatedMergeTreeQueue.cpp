@@ -409,14 +409,6 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
         addPartToMutations(virtual_part_name, part_info);
     }
 
-    if (entry->type == LogEntry::MUTATE_PART)
-    {
-        auto source_part_name = entry->source_parts.at(0);
-        auto part_info = MergeTreePartInfo::fromPartName(source_part_name, format_version);
-        auto new_part_info = MergeTreePartInfo::fromPartName(entry->new_part_name, format_version);
-        addPartInProgressToMutations(source_part_name, part_info, new_part_info);
-    }
-
     if (entry->type == LogEntry::DROP_PART)
     {
         /// DROP PART remove parts, so we remove it from virtual parts to
@@ -559,14 +551,6 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
             LOG_TRACE(log, "Finishing metadata alter with version {}", entry->alter_version);
             alter_sequence.finishMetadataAlter(entry->alter_version, state_lock);
         }
-
-        if (entry->type == LogEntry::MUTATE_PART)
-        {
-            auto source_part_name = entry->source_parts.at(0);
-            auto part_info = MergeTreePartInfo::fromPartName(source_part_name, format_version);
-            auto new_part_info = MergeTreePartInfo::fromPartName(entry->new_part_name, format_version);
-            removePartInProgressFromMutations(source_part_name, part_info, new_part_info);
-        }
     }
     else
     {
@@ -648,52 +632,6 @@ void ReplicatedMergeTreeQueue::addPartToMutations(const String & part_name, cons
         MutationStatus & status = *it->second;
         status.parts_to_do.add(part_name);
     }
-}
-
-void ReplicatedMergeTreeQueue::addPartInProgressToMutations(const String & part_name, const MergeTreePartInfo & part_info, const MergeTreePartInfo & new_part_info)
-{
-    LOG_TEST(log, "Adding part in progress {} to mutations", part_name);
-
-    auto in_partition = mutations_by_partition.find(part_info.getPartitionId());
-    if (in_partition == mutations_by_partition.end())
-        return;
-
-    auto from_it = in_partition->second.upper_bound(part_info.getDataVersion());
-    auto to_it = in_partition->second.upper_bound(new_part_info.getMutationVersion());
-    for (auto it = from_it; it != to_it; ++it)
-    {
-        MutationStatus & status = *it->second;
-        status.parts_in_progress.add(part_name);
-    }
-}
-
-void ReplicatedMergeTreeQueue::removePartInProgressFromMutations(const String & part_name, const MergeTreePartInfo & part_info, const MergeTreePartInfo & new_part_info)
-{
-    LOG_TEST(log, "Removing part in progress {} from mutations", part_name);
-
-    auto in_partition = mutations_by_partition.find(part_info.getPartitionId());
-    if (in_partition == mutations_by_partition.end())
-        return;
-
-    auto from_it = in_partition->second.upper_bound(part_info.getDataVersion());
-    auto to_it = in_partition->second.upper_bound(new_part_info.getMutationVersion());
-    for (auto it = from_it; it != to_it; ++it)
-    {
-        MutationStatus & status = *it->second;
-        status.parts_in_progress.remove(part_name);
-    }
-}
-
-void ReplicatedMergeTreeQueue::addPartsPostponeReasons(const String & part_name, const String & postpone_reason) const
-{
-    std::lock_guard lock(state_mutex);
-    current_parts_postpone_reasons[part_name] = postpone_reason;
-}
-
-void ReplicatedMergeTreeQueue::clearPartsPostponeReasons() const
-{
-    std::lock_guard lock(state_mutex);
-    current_parts_postpone_reasons.clear();
 }
 
 void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
@@ -1754,10 +1692,10 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         if (havePendingPatchPartsForMutation(entry, out_postpone_reason, committing_blocks, state_lock))
             return false;
 
-        UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS ? CompactionStatistics::getMaxSourcePartsBytesForMerge(data)
-                                                                           : CompactionStatistics::getMaxSourcePartBytesForMutation(data);
+        UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS ? CompactionStatistics::getMaxSourcePartsSizeForMerge(data)
+                                                                           : CompactionStatistics::getMaxSourcePartSizeForMutation(data);
         /** If there are enough free threads in background pool to do large merges (maximal size of merge is allowed),
-          * then ignore value returned by getMaxSourcePartsBytesForMerge() and execute merge of any size,
+          * then ignore value returned by getMaxSourcePartsSizeForMerge() and execute merge of any size,
           * because it may be ordered by OPTIMIZE or early with different settings.
           * Setting max_bytes_to_merge_at_max_space_in_pool still working for regular merges,
           * because the leader replica does not assign merges of greater size (except OPTIMIZE PARTITION and OPTIMIZE FINAL).
@@ -2617,27 +2555,6 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
         const MutationStatus & status = pair.second;
         const ReplicatedMergeTreeMutationEntry & entry = *status.entry;
         Names parts_to_mutate = status.parts_to_do.getParts();
-        Names parts_in_progress = status.parts_in_progress.getParts();
-
-        std::map<String, String> parts_postpone_reasons_map;
-        if (!status.is_done)
-        {
-            for (const auto & [part_name, postpone_reason] : current_parts_postpone_reasons)
-            {
-                if (part_name == PostponeReasons::ALL_PARTS_KEY)
-                {
-                    chassert(current_parts_postpone_reasons.size() == 1);
-                    parts_postpone_reasons_map[part_name] = postpone_reason;
-                }
-                else
-                {
-                    auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-                    auto it = entry.block_numbers.find(part_info.getPartitionId());
-                    if (it != entry.block_numbers.end() && part_info.getDataVersion() < it->second)
-                        parts_postpone_reasons_map[part_name] = postpone_reason;
-                }
-            }
-        }
 
         for (const MutationCommand & command : entry.commands)
         {
@@ -2650,9 +2567,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
                 buf.str(),
                 entry.create_time,
                 entry.block_numbers,
-                parts_in_progress,
                 parts_to_mutate,
-                parts_postpone_reasons_map,
                 status.is_done,
                 status.latest_failed_part,
                 status.latest_fail_time,

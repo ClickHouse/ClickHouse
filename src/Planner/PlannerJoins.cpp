@@ -13,8 +13,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageDictionary.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageSnapshot.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -276,15 +274,7 @@ void buildJoinClauseImpl(
     std::string function_name;
     auto * function_node = join_expression->as<FunctionNode>();
     if (function_node)
-    {
-        function_name = function_node->getFunctionName();
-        if (!function_node->isOrdinaryFunction())
-        {
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
-                function_name, function_node->formatASTForErrorMessage());
-        }
-    }
+        function_name = function_node->getFunction()->getName();
 
     auto asof_inequality = getASOFJoinInequality(function_name);
     bool is_asof_join_inequality = join_node.getStrictness() == JoinStrictness::Asof && asof_inequality != ASOFJoinInequality::None;
@@ -480,15 +470,7 @@ void buildJoinClause(
     std::string function_name;
     auto * function_node = join_expression->as<FunctionNode>();
     if (function_node)
-    {
-        function_name = function_node->getFunctionName();
-        if (!function_node->isOrdinaryFunction())
-        {
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
-                function_name, function_node->formatASTForErrorMessage());
-        }
-    }
+        function_name = function_node->getFunction()->getName();
 
     /// For 'and' function go into children
     if (function_name == "and")
@@ -697,7 +679,7 @@ std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
 
     bool has_residual_filters = false;
     JoinClauses join_clauses;
-    const auto & function_name = function_node.getFunctionName();
+    const auto & function_name = function_node.getFunction()->getName();
     if (function_name == "or")
     {
         for (const auto & child : function_node.getArguments())

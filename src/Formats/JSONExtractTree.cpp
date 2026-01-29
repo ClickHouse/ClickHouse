@@ -578,7 +578,7 @@ public:
 
     static bool tryParse(UUID & uuid, std::string_view data)
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         return tryReadUUIDText(uuid, buf) && buf.eof();
     }
 };
@@ -609,7 +609,7 @@ public:
         }
 
         auto data = element.getString();
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         UUID uuid;
         if (!tryReadUUIDText(uuid, buf) || !buf.eof())
         {
@@ -648,7 +648,7 @@ public:
         }
 
         auto data = element.getString();
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         DateType date;
         if (!tryReadDateText(date, buf) || !buf.eof())
         {
@@ -705,7 +705,7 @@ public:
 
     bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         switch (date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
@@ -770,7 +770,7 @@ public:
 
     bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         const auto & date_lut = DateLUT::instance();
 
         if (tryReadTimeText(value, buf, date_lut) && buf.eof())
@@ -913,7 +913,7 @@ public:
 
     bool tryParse(DateTime64 & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         switch (date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
@@ -995,7 +995,7 @@ public:
 
     bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         const auto & date_lut = DateLUT::instance();
 
         if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
@@ -1126,7 +1126,7 @@ public:
 
     static bool tryParse(IPv4 & value, std::string_view data)
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         return tryReadIPv4Text(value, buf) && buf.eof();
     }
 };
@@ -1169,7 +1169,7 @@ public:
 
     static bool tryParse(IPv6 & value, std::string_view data)
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         return tryReadIPv6Text(value, buf) && buf.eof();
     }
 };
@@ -1529,7 +1529,7 @@ public:
             auto & variant = column_variant.getVariantByGlobalDiscriminator(i);
             if (variant_nodes[i]->insertResultToColumn(variant, element, insert_settings, format_settings, error))
             {
-                column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(static_cast<ColumnVariant::Discriminator>(i)));
+                column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(i));
                 column_variant.getOffsets().push_back(variant.size() - 1);
                 return true;
             }
@@ -1600,7 +1600,7 @@ public:
 
                     if (it->second->insertResultToColumn(variant_column.getVariantByGlobalDiscriminator(i), element, insert_settings_with_no_type_conversion, format_settings, error))
                     {
-                        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(static_cast<ColumnVariant::Discriminator>(i)));
+                        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(i));
                         variant_column.getOffsets().push_back(variant_column.getVariantByGlobalDiscriminator(i).size() - 1);
                         return true;
                     }
@@ -1852,12 +1852,12 @@ private:
         MutableColumnPtr & tmp_dynamic_column,
         bool is_root) const
     {
-        if (shouldSkipPath(current_path, insert_settings))
+        if (shouldSkipPath(current_path))
             return true;
 
         if (element.isObject() && !typed_path_nodes.contains(current_path))
         {
-            std::unordered_map<std::string_view, std::unordered_set<JSONElementType>> visited_keys;
+            std::unordered_set<std::string_view> visited_keys;
             for (auto [key, value] : element.getObject())
             {
                 String path = current_path;
@@ -1868,34 +1868,12 @@ private:
                 else
                     path += key;
 
-                auto it = visited_keys.find(key);
-                auto value_element_type = getJSONElementType(value);
-                if (it != visited_keys.end())
+                if (!visited_keys.insert(key).second)
                 {
-                    if (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object)
-                    {
-                        /// We can't have duplicated key with the same type (literal/object).
-                        if (it->second.contains(value_element_type))
-                        {
-                            if (format_settings.json.type_json_skip_duplicated_paths)
-                                continue;
-                            error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
-                            return false;
-                        }
-
-                        it->second.insert(value_element_type);
-                    }
-                    else
-                    {
-                        if (format_settings.json.type_json_skip_duplicated_paths)
-                            continue;
-                        error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert or setting type_json_allow_duplicated_key_with_literal_and_nested_object to allow duplicated path with literal and nested object", path);
-                        return false;
-                    }
-                }
-                else
-                {
-                    visited_keys[key].insert(value_element_type);
+                    if (format_settings.json.type_json_skip_duplicated_paths)
+                        continue;
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
+                    return false;
                 }
 
                 if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, tmp_dynamic_column, false))
@@ -1921,12 +1899,8 @@ private:
             }
             else if (!typed_path_nodes.at(current_path)->insertResultToColumn(*typed_it->second, element, insert_settings, format_settings, error))
             {
-                if (!insert_settings.skip_invalid_typed_paths)
-                {
-                    error += fmt::format(" (while reading path {})", current_path);
-                    return false;
-                }
-                /// Otherwise skip this field and continue
+                error += fmt::format(" (while reading path {})", current_path);
+                return false;
             }
         }
         /// Check if we have this path in dynamic paths.
@@ -1972,25 +1946,23 @@ private:
             /// creating it every time is very slow. And so we need to always infer
             /// new type for new value and don't reuse existing variants.
             insert_settings_for_shared_data.try_existing_variants_in_dynamic_first = false;
-            if (dynamic_node->insertResultToColumn(*tmp_dynamic_column, element, insert_settings_for_shared_data, format_settings, error))
-            {
-                paths_and_values_for_shared_data.emplace_back(current_path, "");
-                WriteBufferFromString buf(paths_and_values_for_shared_data.back().second);
-                /// Use default format settings for binary serialization. Non-default settings may change
-                /// the binary representation of the values and break the future deserialization.
-                dynamic_serialization->serializeBinary(*tmp_dynamic_column, tmp_dynamic_column->size() - 1, buf, getDefaultFormatSettings());
-            }
-            else
+            if (!dynamic_node->insertResultToColumn(*tmp_dynamic_column, element, insert_settings_for_shared_data, format_settings, error))
             {
                 error += fmt::format(" (while reading path {})", current_path);
                 return false;
             }
+
+            paths_and_values_for_shared_data.emplace_back(current_path, "");
+            WriteBufferFromString buf(paths_and_values_for_shared_data.back().second);
+            /// Use default format settings for binary serialization. Non-default settings may change
+            /// the binary representation of the values and break the future deserialization.
+            dynamic_serialization->serializeBinary(*tmp_dynamic_column, tmp_dynamic_column->size() - 1, buf, getDefaultFormatSettings());
         }
 
         return true;
     }
 
-    bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
+    bool shouldSkipPath(const String & path) const
     {
         if (paths_to_skip.contains(path))
             return true;
@@ -2004,16 +1976,8 @@ private:
 
         for (const auto & regexp : path_regexps_to_skip)
         {
-            if (insert_settings.use_partial_match_to_skip_paths_by_regexp)
-            {
-                if (re2::RE2::PartialMatch(path, regexp))
-                    return true;
-            }
-            else
-            {
-                if (re2::RE2::FullMatch(path, regexp))
-                    return true;
-            }
+            if (re2::RE2::FullMatch(path, regexp))
+                return true;
         }
 
         return false;
@@ -2032,23 +1996,6 @@ private:
     std::list<re2::RE2> path_regexps_to_skip;
     std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
     std::shared_ptr<SerializationDynamic> dynamic_serialization;
-
-    enum class JSONElementType
-    {
-        LITERAL = 0,
-        OBJECT = 1,
-    };
-
-    JSONElementType getJSONElementType(const typename JSONParser::Element & element) const
-    {
-        switch (element.type())
-        {
-            case ElementType::OBJECT:
-                return JSONElementType::OBJECT;
-            default:
-                return JSONElementType::LITERAL;
-        }
-    }
 };
 
 }

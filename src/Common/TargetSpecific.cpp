@@ -1,3 +1,4 @@
+#include <base/defines.h>
 #include <Common/TargetSpecific.h>
 
 #include <Common/CPUID.h>
@@ -5,7 +6,7 @@
 namespace DB
 {
 
-UInt32 getSupportedArchs()
+static UInt32 getSupportedArchs()
 {
     UInt32 result = 0;
     if (CPU::CPUFlagsCache::have_SSE42)
@@ -35,6 +36,12 @@ UInt32 getSupportedArchs()
     if (CPU::CPUFlagsCache::have_GenuineIntel)
         result |= static_cast<UInt32>(TargetArch::GenuineIntel);
     return result;
+}
+
+bool isArchSupported(TargetArch arch)
+{
+    static UInt32 arches = getSupportedArchs();
+    return arch == TargetArch::Default || (arches & static_cast<UInt32>(arch));
 }
 
 String toString(TargetArch arch)

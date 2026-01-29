@@ -8,9 +8,6 @@
 
 #include <cstring>
 
-#ifdef OS_LINUX
-#include <sched.h>
-#endif
 
 namespace DB
 {
@@ -57,15 +54,6 @@ inline bool cpuid(UInt32 op, UInt32 * res) noexcept /// NOLINT
     memset(res, 0, 4 * sizeof(*res));
 
     return false;
-#endif
-}
-
-inline int get_cpuid()
-{
-#ifdef OS_LINUX
-    return sched_getcpu();
-#else
-    return 0;
 #endif
 }
 

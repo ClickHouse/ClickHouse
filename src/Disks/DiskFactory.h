@@ -15,7 +15,7 @@
 namespace DB
 {
 
-using DisksMap = std::map<String, DiskPtr, std::less<>>;
+using DisksMap = std::map<String, DiskPtr>;
 /**
  * Disk factory. Responsible for creating new disk objects.
  */

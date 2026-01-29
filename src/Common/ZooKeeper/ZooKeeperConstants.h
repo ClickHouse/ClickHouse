@@ -32,15 +32,9 @@ enum class OpNum : int32_t
     List = 12,
     Check = 13,
     Multi = 14,
-    Create2 = 15,
     Reconfig = 16,
-    CheckWatch = 17,
-    RemoveWatch = 18,
     MultiRead = 22,
     Auth = 100,
-    SetWatch = 101,
-    SetWatch2 = 105,
-    AddWatch = 106,
 
     // CH Keeper specific operations
     FilteredList = 500,
@@ -48,8 +42,6 @@ enum class OpNum : int32_t
     CreateIfNotExists = 502,
     RemoveRecursive = 503,
     CheckStat = 504,
-    TryRemove = 505,
-    FilteredListWithStatsAndData = 506,
 
     SessionID = 997, /// Special internal request
 };

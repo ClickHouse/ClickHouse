@@ -24,7 +24,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 SerializationObject::SerializationObject(
@@ -396,7 +395,7 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
             const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
             for (size_t i = 0; i != shared_data_paths->size(); ++i)
             {
-                auto path = shared_data_paths->getDataAt(i);
+                auto path = shared_data_paths->getDataAt(i).toView();
                 if (auto it = shared_data_paths_statistics.find(path); it != shared_data_paths_statistics.end())
                     ++it->second;
                 else if (shared_data_paths_statistics.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
@@ -865,7 +864,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         size_t end = limit == 0 || offset + limit > shared_data_offsets.size() ? shared_data_paths->size() : shared_data_offsets[offset + limit - 1];
         for (size_t i = start; i != end; ++i)
         {
-            auto path = shared_data_paths->getDataAt(i);
+            auto path = shared_data_paths->getDataAt(i).toView();
             if (auto it = object_state->statistics.shared_data_paths_statistics.find(path); it != object_state->statistics.shared_data_paths_statistics.end())
                 ++it->second;
             else if (object_state->statistics.shared_data_paths_statistics.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
@@ -1125,7 +1124,7 @@ void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, W
     {
         writeStringBinary(shared_data_paths->getDataAt(i), ostr);
         auto value = shared_data_values->getDataAt(i);
-        ostr.write(value.data(), value.size());
+        ostr.write(value.data, value.size);
     }
 }
 
@@ -1134,14 +1133,6 @@ void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, co
     Object object;
     size_t number_of_paths;
     readVarUInt(number_of_paths, istr);
-    if (settings.binary.max_object_size && number_of_paths > settings.binary.max_object_size)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-            "Too many paths in a single object: {}. The maximum is: {}. To increase the maximum, use setting "
-            "format_binary_max_object_size",
-            number_of_paths,
-            settings.binary.max_object_size);
-
     /// Read pairs (path, value).
     for (size_t i = 0; i != number_of_paths; ++i)
     {
@@ -1230,8 +1221,6 @@ void SerializationObject::restoreColumnObject(ColumnObject & column_object, size
 
 void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    updateMaxDynamicPathsLimitIfNeeded(col, settings);
-
     if (settings.binary.read_json_as_string)
     {
         String data;
@@ -1350,16 +1339,6 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
 SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB::SerializationPtr & prev, const DataTypePtr &) const
 {
     return std::make_shared<SerializationObjectTypedPath>(prev, path);
-}
-
-void SerializationObject::updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const
-{
-    if (!format_settings.json.max_dynamic_subcolumns_in_json_type_parsing || !column.empty())
-        return;
-
-    auto & column_object = assert_cast<ColumnObject &>(column);
-    if (*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing < column_object.getMaxDynamicPaths())
-        column_object.setMaxDynamicPaths(*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing);
 }
 
 }

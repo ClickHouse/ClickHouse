@@ -69,6 +69,11 @@ std::future<Result> scheduleFromThreadPoolUnsafe(T && task, ThreadPool & pool, T
 template <typename Result, typename PoolT = ThreadPool, typename Callback = std::function<Result()>>
 class ThreadPoolCallbackRunnerLocal final
 {
+    static_assert(!std::is_same_v<PoolT, GlobalThreadPool>, "Scheduling tasks directly on GlobalThreadPool is not allowed because it doesn't set up CurrentThread. Create a new ThreadPool (local or in SharedThreadPools.h) or use ThreadFromGlobalPool.");
+
+    PoolT & pool;
+    ThreadName thread_name;
+
     enum TaskState
     {
         SCHEDULED = 0,
@@ -77,21 +82,11 @@ class ThreadPoolCallbackRunnerLocal final
         CANCELLED = 3,
     };
 
-public:
     struct Task
     {
         std::future<Result> future;
         std::atomic<TaskState> state = SCHEDULED;
     };
-
-private:
-    static_assert(
-        !std::is_same_v<PoolT, GlobalThreadPool>,
-        "Scheduling tasks directly on GlobalThreadPool is not allowed because it doesn't set up CurrentThread. Create a new ThreadPool "
-        "(local or in SharedThreadPools.h) or use ThreadFromGlobalPool.");
-
-    PoolT & pool;
-    ThreadName thread_name;
 
     /// NOTE It will leak for a global object with long lifetime
     std::vector<std::shared_ptr<Task>> tasks;
@@ -163,14 +158,10 @@ public:
         waitForAllToFinish();
     }
 
-    /// Adds a new task to the pool and returns it
-    /// You are responsible for handling it from now on, checking its status and so on. You must implement your own waitForAllToFinish* equivalent
-    /// You must ensure that all returned tasks are waited upon (i.e., their futures are completed) before the ThreadPool is destroyed.
-    /// Otherwise, the task's lambda may reference a destroyed pool state, leading to undefined behavior.
-    [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
+    void operator() (Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
     {
         auto promise = std::make_shared<std::promise<Result>>();
-        auto task = std::make_shared<Task>();
+        auto & task = tasks.emplace_back(std::make_shared<Task>());
         task->future = promise->get_future();
 
         auto task_func = [this, task, thread_group = CurrentThread::getGroup(), my_callback = std::move(callback), promise]() mutable -> void
@@ -207,16 +198,9 @@ public:
             promise->set_exception(std::current_exception());
             throw;
         }
-
-        return task;
     }
 
-    void enqueueAndKeepTrack(Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
-    {
-        tasks.emplace_back(enqueueAndGiveOwnership(std::move(callback), priority, wait_microseconds));
-    }
-
-    static void waitForAllToFinish(std::vector<std::shared_ptr<Task>> & tasks)
+    void waitForAllToFinish()
     {
         for (const auto & task : tasks)
         {
@@ -229,11 +213,9 @@ public:
         }
     }
 
-    void waitForAllToFinish() { waitForAllToFinish(tasks); }
-
-    static void waitForAllToFinishAndRethrowFirstError(std::vector<std::shared_ptr<Task>> & tasks)
+    void waitForAllToFinishAndRethrowFirstError()
     {
-        waitForAllToFinish(tasks);
+        waitForAllToFinish();
 
         for (auto & task : tasks)
         {
@@ -245,8 +227,6 @@ public:
 
         tasks.clear();
     }
-
-    void waitForAllToFinishAndRethrowFirstError() { waitForAllToFinishAndRethrowFirstError(tasks); }
 };
 
 /// Has a task queue and a set of threads from ThreadPool.

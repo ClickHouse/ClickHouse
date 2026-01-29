@@ -77,7 +77,7 @@ namespace
         else
             str = fmt::format("table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
         if (first_upper)
-            str[0] = static_cast<char>(std::toupper(str[0]));
+            str[0] = std::toupper(str[0]);
         return str;
     }
 
@@ -783,7 +783,7 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         if (restore_settings.create_database == RestoreDatabaseCreationMode::kMustExist)
             return;
 
-        boost::intrusive_ptr<ASTCreateQuery> create_database_query;
+        std::shared_ptr<ASTCreateQuery> create_database_query;
         {
             std::lock_guard lock{mutex};
             const auto & database_info = database_infos.at(database_name);
@@ -792,7 +792,7 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
             if (database_info.is_predefined_database)
                 return;
 
-            create_database_query = boost::static_pointer_cast<ASTCreateQuery>(database_info.create_database_query->clone());
+            create_database_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(database_info.create_database_query->clone());
         }
 
         /// Generate a new UUID for a database.
@@ -809,7 +809,7 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
 
         if (shared_catalog && engine_name == "Replicated")
         {
-            auto engine = make_intrusive<ASTFunction>();
+            auto engine = std::make_shared<ASTFunction>();
 
             engine->name = "Shared";
             engine->no_empty_args = true;
@@ -820,9 +820,9 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         {
             // Change engine to Replicated
             auto engine = makeASTFunction("Replicated",
-                    make_intrusive<ASTLiteral>("/clickhouse/databases/{uuid}"),
-                    make_intrusive<ASTLiteral>("{shard}"),
-                    make_intrusive<ASTLiteral>("{replica}")
+                    std::make_shared<ASTLiteral>("/clickhouse/databases/{uuid}"),
+                    std::make_shared<ASTLiteral>("{shard}"),
+                    std::make_shared<ASTLiteral>("{replica}")
                 );
 
             create.storage->set(create.storage->engine, engine);
@@ -833,11 +833,6 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
 
         auto create_query_context = Context::createCopy(query_context);
         create_query_context->setSetting("allow_deprecated_database_ordinary", 1);
-
-        /// We shouldn't use the progress callback copied from the `query_context` because it was set in a protocol handler (e.g. HTTPHandler)
-        /// for the "RESTORE ASYNC" query which could have already finished (the restore process is working in the background).
-        /// TODO: Get rid of using `query_context` in class RestorerFromBackup.
-        create_query_context->setProgressCallback(nullptr);
 
 #if CLICKHOUSE_CLOUD
         if (shared_catalog && SharedDatabaseCatalog::instance().shouldRestoreDatabase(create_database_query))
@@ -1021,7 +1016,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         if (restore_settings.create_table == RestoreTableCreationMode::kMustExist)
             return;
 
-        boost::intrusive_ptr<ASTCreateQuery> create_table_query;
+        std::shared_ptr<ASTCreateQuery> create_table_query;
         DatabasePtr database;
 
         {
@@ -1032,7 +1027,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
             if (table_info.is_predefined_table)
                 return;
 
-            create_table_query = boost::static_pointer_cast<ASTCreateQuery>(table_info.create_table_query->clone());
+            create_table_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(table_info.create_table_query->clone());
             database = table_info.database;
         }
 
@@ -1051,7 +1046,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
                 boost::replace_first(storage->engine->name, "Replicated", "Shared");
             else if (create_table_query->is_materialized_view_with_inner_table())
             {
-                storage = create_table_query->targets->getInnerEngine(ViewTarget::To);
+                storage = create_table_query->targets->getInnerEngine(ViewTarget::To).get();
                 if (storage != nullptr && storage->engine != nullptr)
                     boost::replace_first(storage->engine->name, "Replicated", "Shared");
             }
@@ -1081,11 +1076,6 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         create_query_context->setSetting("keeper_max_backoff_ms", zookeeper_retries_info.max_backoff_ms);
 
         create_query_context->setUnderRestore(true);
-
-        /// We shouldn't use the progress callback copied from the `query_context` because it was set in a protocol handler (e.g. HTTPHandler)
-        /// for the "RESTORE ASYNC" query which could have already finished (the restore process is working in the background).
-        /// TODO: Get rid of using `query_context` in class RestorerFromBackup.
-        create_query_context->setProgressCallback(nullptr);
 
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).

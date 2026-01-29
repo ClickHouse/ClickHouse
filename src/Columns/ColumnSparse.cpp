@@ -131,7 +131,7 @@ UInt64 ColumnSparse::get64(size_t n) const
     return values->get64(getValueIndex(n));
 }
 
-std::string_view ColumnSparse::getDataAt(size_t n) const
+StringRef ColumnSparse::getDataAt(size_t n) const
 {
     return values->getDataAt(getValueIndex(n));
 }
@@ -159,7 +159,7 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
 }
 
-std::string_view ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     return values->serializeValueIntoArena(getValueIndex(n), arena, begin, settings);
 }
@@ -300,7 +300,7 @@ void ColumnSparse::insertManyDefaults(size_t length)
 
 void ColumnSparse::popBack(size_t n)
 {
-    assert(n <= _size);
+    assert(n < _size);
 
     auto & offsets_data = getOffsetsData();
     size_t new_size = _size - n;
@@ -357,7 +357,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 
     Filter values_filter;
     values_filter.reserve_exact(values->size());
-    values_filter.push_back(static_cast<UInt8>(1));
+    values_filter.push_back(1);
     size_t values_result_size_hint = 1;
 
     size_t res_offset = 0;
@@ -371,13 +371,13 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
             if (filt[i])
             {
                 res_offsets_data.push_back(res_offset);
-                values_filter.push_back(static_cast<UInt8>(1));
+                values_filter.push_back(1);
                 ++res_offset;
                 ++values_result_size_hint;
             }
             else
             {
-                values_filter.push_back(static_cast<UInt8>(0));
+                values_filter.push_back(0);
             }
             offset_it.increaseCurrentOffset();
         }
@@ -389,56 +389,6 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 
     auto res_values = values->filter(values_filter, values_result_size_hint);
     return create(res_values, std::move(res_offsets), res_offset);
-}
-
-void ColumnSparse::filter(const Filter & filt)
-{
-    if (_size != filt.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), _size);
-
-    if (offsets->empty())
-    {
-        _size = countBytesInFilter(filt);
-        return;
-    }
-
-    auto & res_offsets_data = getOffsetsData();
-    size_t res_offsets_pos = 0;
-
-    Filter values_filter;
-    values_filter.reserve_exact(values->size());
-    values_filter.push_back(static_cast<UInt8>(1));
-
-    size_t res_offset = 0;
-    auto offset_it = begin();
-    /// Replace the `++offset_it` with `offset_it.increaseCurrentRow()` and `offset_it.increaseCurrentOffset()`,
-    /// to remove the redundant `isDefault()` in `++` of `Interator` and reuse the following `isDefault()`.
-    for (size_t i = 0; i < _size; ++i, offset_it.increaseCurrentRow())
-    {
-        if (!offset_it.isDefault())
-        {
-            if (filt[i])
-            {
-                res_offsets_data[res_offsets_pos] = res_offset;
-                values_filter.push_back(static_cast<UInt8>(1));
-                ++res_offsets_pos;
-                ++res_offset;
-            }
-            else
-            {
-                values_filter.push_back(static_cast<UInt8>(0));
-            }
-            offset_it.increaseCurrentOffset();
-        }
-        else
-        {
-            res_offset += filt[i] != 0;
-        }
-    }
-
-    values->filter(values_filter);
-    res_offsets_data.resize_assume_reserved(res_offsets_pos);
-    _size = res_offset;
 }
 
 void ColumnSparse::expand(const Filter & mask, bool inverted)
@@ -840,7 +790,7 @@ void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t
 
 double ColumnSparse::getRatioOfDefaultRows(double) const
 {
-    return static_cast<double>(getNumberOfDefaultRows()) / static_cast<double>(_size);
+    return static_cast<double>(getNumberOfDefaultRows()) / _size;
 }
 
 UInt64 ColumnSparse::getNumberOfDefaultRows() const

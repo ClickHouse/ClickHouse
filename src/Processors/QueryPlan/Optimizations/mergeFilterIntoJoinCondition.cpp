@@ -199,7 +199,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
         rejected_conjuncts.push_back(conjunct);
     }
 
-    const auto trivial_filter = rejected_conjuncts.empty();
+    bool trivial_filter = rejected_conjuncts.empty();
     if (!result.empty())
     {
         /// There's a non-empty list of extracted condition parts.

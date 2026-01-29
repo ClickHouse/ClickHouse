@@ -11,8 +11,6 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
-
 #include <algorithm>
 #include <atomic>
 
@@ -155,17 +153,12 @@ public:
     using SharedDataPtr = std::shared_ptr<SharedData>;
 
     ConvertingAggregatedToChunksWithMergingSource(
-        AggregatingTransformParamsPtr params_,
-        ManyAggregatedDataVariantsPtr data_,
-        SharedDataPtr shared_data_,
-        Arena * arena_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+        AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, SharedDataPtr shared_data_, Arena * arena_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
         , arena(arena_)
-        , updater(std::move(updater_))
     {
     }
 
@@ -182,8 +175,7 @@ protected:
             return {};
         }
 
-        Block block = params->aggregator.mergeAndConvertOneBucketToBlock(
-            *data, arena, params->final, bucket_num, shared_data->is_cancelled, updater);
+        Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num, shared_data->is_cancelled);
         Chunk chunk = convertToChunk(block);
 
         shared_data->is_bucket_processed[bucket_num] = true;
@@ -196,7 +188,6 @@ private:
     ManyAggregatedDataVariantsPtr data;
     SharedDataPtr shared_data;
     Arena * arena;
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
 
 /// Asks Aggregator to convert accumulated aggregation state into blocks (without merging) and pushes them to later steps.
@@ -332,17 +323,12 @@ private:
 class ConvertingAggregatedToChunksTransform final : public IProcessor
 {
 public:
-    ConvertingAggregatedToChunksTransform(
-        AggregatingTransformParamsPtr params_,
-        ManyAggregatedDataVariantsPtr data_,
-        size_t num_threads_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    ConvertingAggregatedToChunksTransform(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, size_t num_threads_)
         : IProcessor({}, {params_->getHeader()})
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>())
         , num_threads(num_threads_)
-        , updater(std::move(updater_))
     {
     }
 
@@ -597,8 +583,6 @@ private:
 
     size_t num_threads;
 
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
-
     bool is_initialized = false;
     bool finished = false;
     bool parallelize_single_level_merge = false;
@@ -637,12 +621,8 @@ private:
         if (first->type == AggregatedDataVariants::Type::without_key || params->params.overflow_row)
         {
             params->aggregator.mergeWithoutKeyDataImpl(*data, shared_data->is_cancelled);
-            if (updater)
-                updater->recordAggregationStateSizes(*first, /*bucket=*/-1);
             auto block = params->aggregator.prepareBlockAndFillWithoutKey(
                 *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
-            if (updater)
-                updater->recordAggregationKeySizes(params->aggregator, block);
 
             if (block.rows() > 0)
                 single_level_chunks.emplace_back(convertToChunk(block));
@@ -673,11 +653,7 @@ private:
 
 #define M(NAME) \
     else if (first->type == AggregatedDataVariants::Type::NAME) \
-    { \
-        params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled); \
-        if (updater) \
-            updater->recordAggregationStateSizes(*first, /*bucket=*/-1); \
-    }
+        params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled);
             if (false) {} // NOLINT
             APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
@@ -687,14 +663,8 @@ private:
 
         auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
         for (auto & block : blocks)
-        {
             if (block.rows() > 0)
-            {
-                if (updater)
-                    updater->recordAggregationKeySizes(params->aggregator, block);
                 single_level_chunks.emplace_back(convertToChunk(block));
-            }
-        }
 
         finished = true;
         data.reset();
@@ -709,7 +679,7 @@ private:
         {
             /// Select Arena to avoid race conditions
             Arena * arena = first->aggregates_pools.at(thread).get();
-            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(params, data, shared_data, arena, updater);
+            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(params, data, shared_data, arena);
 
             processors.emplace_back(std::move(source));
         }
@@ -732,18 +702,16 @@ private:
     }
 };
 
-AggregatingTransform::AggregatingTransform(
-    SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+AggregatingTransform::AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_)
     : AggregatingTransform(
-          std::move(header),
-          std::move(params_),
-          std::make_unique<ManyAggregatedData>(1),
-          0,
-          1,
-          1,
-          true /* should_produce_results_in_order_of_bucket_number */,
-          false /* skip_merging */,
-          updater_)
+        std::move(header),
+        std::move(params_),
+        std::make_unique<ManyAggregatedData>(1),
+        0,
+        1,
+        1,
+        true /* should_produce_results_in_order_of_bucket_number */,
+        false /* skip_merging */)
 {
 }
 
@@ -755,8 +723,7 @@ AggregatingTransform::AggregatingTransform(
     size_t max_threads_,
     size_t temporary_data_merge_threads_,
     bool should_produce_results_in_order_of_bucket_number_,
-    bool skip_merging_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    bool skip_merging_)
     : IProcessor({std::move(header)}, {params_->getHeader()})
     , params(std::move(params_))
     , key_columns(params->params.keys_size)
@@ -767,7 +734,6 @@ AggregatingTransform::AggregatingTransform(
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , skip_merging(skip_merging_)
-    , updater(std::move(updater_))
 {
 }
 
@@ -928,8 +894,8 @@ void AggregatingTransform::initGenerate()
 
     LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({:.3f} rows/sec., {}/sec.)",
         src_rows, rows, ReadableSize(src_bytes),
-        elapsed_seconds, static_cast<double>(src_rows) / elapsed_seconds,
-        ReadableSize(static_cast<double>(src_bytes) / elapsed_seconds));
+        elapsed_seconds, src_rows / elapsed_seconds,
+        ReadableSize(src_bytes / elapsed_seconds));
 
     if (params->aggregator.hasTemporaryData())
     {
@@ -966,13 +932,10 @@ void AggregatingTransform::initGenerate()
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(
-                std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads, updater));
+                std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads));
         }
         else
         {
-            if (updater)
-                updater->markUnsupportedCase();
-
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             Pipes pipes;
             for (auto & variant : prepared_data)
@@ -1015,9 +978,6 @@ void AggregatingTransform::initGenerate()
     }
     else
     {
-        if (updater)
-            updater->markUnsupportedCase();
-
         /// If there are temporary files with partially-aggregated data on the disk,
         /// then read and merge them, spending the minimum amount of memory.
 

@@ -10,9 +10,7 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::Close),
     static_cast<int32_t>(OpNum::Error),
     static_cast<int32_t>(OpNum::Create),
-    static_cast<int32_t>(OpNum::Create2),
     static_cast<int32_t>(OpNum::Remove),
-    static_cast<int32_t>(OpNum::TryRemove),
     static_cast<int32_t>(OpNum::Exists),
     static_cast<int32_t>(OpNum::Get),
     static_cast<int32_t>(OpNum::Set),
@@ -30,15 +28,9 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::SetACL),
     static_cast<int32_t>(OpNum::GetACL),
     static_cast<int32_t>(OpNum::FilteredList),
-    static_cast<int32_t>(OpNum::FilteredListWithStatsAndData),
     static_cast<int32_t>(OpNum::CheckNotExists),
     static_cast<int32_t>(OpNum::RemoveRecursive),
     static_cast<int32_t>(OpNum::CheckStat),
-    static_cast<int32_t>(OpNum::AddWatch),
-    static_cast<int32_t>(OpNum::CheckWatch),
-    static_cast<int32_t>(OpNum::RemoveWatch),
-    static_cast<int32_t>(OpNum::SetWatch),
-    static_cast<int32_t>(OpNum::SetWatch2),
 };
 
 OpNum getOpNum(int32_t raw_op_num)
@@ -58,10 +50,8 @@ const char * toOperationTypeMetricLabel(OpNum op_num)
         case OpNum::SimpleList:
         case OpNum::List:
         case OpNum::FilteredList:
-        case OpNum::FilteredListWithStatsAndData:
         case OpNum::Check:
         case OpNum::CheckNotExists:
-        case OpNum::CheckWatch:
         case OpNum::CheckStat:
             return "readonly";
 
@@ -72,13 +62,7 @@ const char * toOperationTypeMetricLabel(OpNum op_num)
             return "multi-read";
 
         case OpNum::Create:
-        case OpNum::Create2:
         case OpNum::Remove:
-        case OpNum::TryRemove:
-        case OpNum::RemoveWatch:
-        case OpNum::SetWatch:
-        case OpNum::SetWatch2:
-        case OpNum::AddWatch:
         case OpNum::Set:
         case OpNum::SetACL:
         case OpNum::Sync:

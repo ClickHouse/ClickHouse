@@ -118,7 +118,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             "The reason for the event with type MERGE_PARTS. Can have one of the following values: "
             "NotAMerge — The current event has the type other than MERGE_PARTS, "
             "RegularMerge — Some regular merge, "
-            "TTLDeleteMerge, TTLDropMerge — Cleaning up expired data. "
+            "TTLDeleteMerge — Cleaning up expired data. "
             "TTLRecompressMerge — Recompressing data part with the. "},
         {"merge_algorithm", std::move(merge_algorithm_datatype), "Merge algorithm for the event with type MERGE_PARTS. Can have one of the following values: Undecided, Horizontal, Vertical"},
         {"event_date", std::make_shared<DataTypeDate>(), "Event date."},
@@ -236,7 +236,7 @@ bool PartLog::addNewPartsImpl(
     try
     {
         auto table_id = parts.front().part->storage.getStorageID();
-        part_log = current_context->getPartLog(); // assume parts belong to the same table
+        part_log = current_context->getPartLog(table_id.database_name); // assume parts belong to the same table
         if (!part_log)
             return false;
 

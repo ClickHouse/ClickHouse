@@ -235,9 +235,4 @@ void IOutputFormat::setProgress(Progress progress)
     statistics.progress = std::move(progress);
 }
 
-InputPort & IOutputFormat::getPort(PortKind kind)
-{
-    return *std::next(inputs.begin(), kind);
-}
-
 }
