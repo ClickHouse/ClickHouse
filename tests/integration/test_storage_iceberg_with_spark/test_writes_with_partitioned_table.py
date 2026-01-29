@@ -43,11 +43,11 @@ def test_writes_with_partitioned_table(started_cluster_iceberg_with_spark, forma
     instance.query(
         f"""
         INSERT INTO {TABLE_NAME} VALUES
-        (1, 'Alice', 10.50, DATE32 '2024-01-20', TIMESTAMP '2024-01-20 10:00:00'),
-        (2, 'Bob', 20.00, DATE32 '2024-01-21', TIMESTAMP '2024-01-21 11:00:00'),
-        (3, 'Charlie', 30.50, DATE32 '2024-01-22', TIMESTAMP '2024-01-22 12:00:00'),
-        (4, 'Diana', 40.00, DATE32 '2024-01-23', TIMESTAMP '2024-01-23 13:00:00'),
-        (5, 'Eve', 50.50, DATE32 '2024-01-24', TIMESTAMP '2024-01-24 14:00:00');
+        (1, 'Alice', 10.50, DATE '2024-01-20', TIMESTAMP '2024-01-20 10:00:00'),
+        (2, 'Bob', 20.00, DATE '2024-01-21', TIMESTAMP '2024-01-21 11:00:00'),
+        (3, 'Charlie', 30.50, DATE '2024-01-22', TIMESTAMP '2024-01-22 12:00:00'),
+        (4, 'Diana', 40.00, DATE '2024-01-23', TIMESTAMP '2024-01-23 13:00:00'),
+        (5, 'Eve', 50.50, DATE '2024-01-24', TIMESTAMP '2024-01-24 14:00:00');
         """,
         settings={"allow_experimental_insert_into_iceberg": 1}
     )
@@ -57,11 +57,11 @@ def test_writes_with_partitioned_table(started_cluster_iceberg_with_spark, forma
     instance.query(
         f"""
         INSERT INTO {TABLE_NAME} VALUES
-        (10, 'Alice', 10.50, DATE32 '2024-01-20', TIMESTAMP '2024-01-20 10:00:00'),
-        (20, 'Bob', 20.00, DATE32 '2024-01-21', TIMESTAMP '2024-01-21 11:00:00'),
-        (30, 'Charlie', 30.50, DATE32 '2024-01-22', TIMESTAMP '2024-01-22 12:00:00'),
-        (40, 'Diana', 40.00, DATE32 '2024-01-23', TIMESTAMP '2024-01-23 13:00:00'),
-        (50, 'Eve', 50.50, DATE32 '2024-01-24', TIMESTAMP '2024-01-24 14:00:00');
+        (10, 'Alice', 10.50, DATE '2024-01-20', TIMESTAMP '2024-01-20 10:00:00'),
+        (20, 'Bob', 20.00, DATE '2024-01-21', TIMESTAMP '2024-01-21 11:00:00'),
+        (30, 'Charlie', 30.50, DATE '2024-01-22', TIMESTAMP '2024-01-22 12:00:00'),
+        (40, 'Diana', 40.00, DATE '2024-01-23', TIMESTAMP '2024-01-23 13:00:00'),
+        (50, 'Eve', 50.50, DATE '2024-01-24', TIMESTAMP '2024-01-24 14:00:00');
         """,
         settings={"allow_experimental_insert_into_iceberg": 1}
     )
