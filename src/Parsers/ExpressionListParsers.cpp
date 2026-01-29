@@ -1,5 +1,4 @@
 #include <string_view>
-#include <unordered_map>
 
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
@@ -2743,6 +2742,8 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         }
         else if (pos->type == TokenType::OpeningRoundBracket)
         {
+            old_pos = pos;
+            const auto * old_max_parsed_pos = expected.max_parsed_pos;
 
             if (subquery_parser.parse(pos, tmp, expected))
             {
@@ -2750,6 +2751,17 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
                 return Action::OPERATOR;
             }
 
+            /// Subquery parser advanced beyond '(' and it may even sucessfully parsed the nested query.
+            /// However, due to a syntax error it may not end with ')' e.g. SELECT (SELECT 1 AS `a` = `a`).
+            /// In such cases we need to check if we are still in the allowed maximum parsed position.
+            if (expected.max_parsed_pos && expected.max_parsed_pos > old_pos->begin)
+            {
+                if (!old_max_parsed_pos || expected.max_parsed_pos > old_max_parsed_pos)
+                    return Action::NONE;
+            }
+
+            /// Still, the position need to be restored to the original position.
+            pos = old_pos;
             ++pos;
             layers.push_back(std::make_unique<RoundBracketsLayer>());
             return Action::OPERAND;
