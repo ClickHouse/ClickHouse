@@ -39,9 +39,12 @@ size_t QueryConditionCache::KeyHasher::operator()(const Key & key) const
 
 size_t QueryConditionCache::EntryWeight::operator()(const Entry & entry) const
 {
+    size_t memory = sizeof(Entry);
     /// Estimate the memory size of `std::vector<bool>` (it uses bit-packing internally)
-    size_t memory = (entry.matching_marks.capacity() + 7) / 8; /// round up to bytes.
-    return memory + sizeof(decltype(entry.matching_marks));
+    memory += (entry.matching_marks.capacity() + 7) / 8; /// round up to bytes
+    /// Add the size of the key's heap-allocated strings (part_name, condition)
+    memory += entry.key_size_in_bytes;
+    return memory;
 }
 
 QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
@@ -57,8 +60,9 @@ void QueryConditionCache::write(
         return; /// Issue #92863: Certain database engines provide no table UUIDs
 
     Key key = {table_id, part_name, condition_hash, condition};
+    const size_t key_size_in_bytes = sizeof(Key) + part_name.size() + condition.size();
 
-    auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
+    auto load_func = [&](){ return std::make_shared<Entry>(marks_count, key_size_in_bytes); };
     auto [entry, inserted] = cache.getOrSet(key, load_func);
 
     /// Try to avoid acquiring the RW lock below (*) by early-ing out. Matters for systems with lots of cores.
@@ -166,8 +170,9 @@ size_t QueryConditionCache::maxSizeInBytes() const
     return cache.maxSizeInBytes();
 }
 
-QueryConditionCache::Entry::Entry(size_t mark_count)
+QueryConditionCache::Entry::Entry(size_t mark_count, size_t key_size_in_bytes_)
     : matching_marks(mark_count, true) /// by default, all marks potentially are potential matches, i.e. we can't skip them
+    , key_size_in_bytes(key_size_in_bytes_)
 {
 }
 
