@@ -10,6 +10,7 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Core/Settings.h>
+#include <Core/DeduplicateInsert.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
@@ -76,7 +77,6 @@ namespace Setting
     extern const SettingsDouble async_insert_busy_timeout_increase_rate;
     extern const SettingsMilliseconds async_insert_busy_timeout_min_ms;
     extern const SettingsMilliseconds async_insert_busy_timeout_max_ms;
-    extern const SettingsBool async_insert_deduplicate;
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsUInt64 async_insert_max_query_number;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
@@ -553,7 +553,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 
         bool has_enough_bytes = data->size_in_bytes >= (*key.settings)[Setting::async_insert_max_data_size];
         bool has_enough_queries
-            = data->entries.size() >= (*key.settings)[Setting::async_insert_max_query_number] && (*key.settings)[Setting::async_insert_deduplicate];
+            = data->entries.size() >= (*key.settings)[Setting::async_insert_max_query_number] && isDeduplicationEnabledForInsert(*key.settings);
 
         auto max_busy_timeout_exceeded = [&shard, &settings, &now, &flush_time_points]() -> bool
         {
