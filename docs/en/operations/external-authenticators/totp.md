@@ -1,5 +1,8 @@
 ---
-title: "TOTP"
+description: 'Guide to configuring TOTP authentication for ClickHouse'
+slug: /operations/external-authenticators/totp
+title: 'TOTP'
+doc_type: 'reference'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
