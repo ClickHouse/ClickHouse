@@ -2,6 +2,7 @@ import pytest
 
 from helpers.iceberg_utils import (
     default_upload_directory,
+    additional_upload_directory,
     default_download_directory,
     write_iceberg_from_df,
     generate_data,
@@ -18,7 +19,7 @@ from helpers.config_cluster import minio_secret_key
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_cluster_table_function(started_cluster_iceberg_with_spark, format_version, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
@@ -49,6 +50,19 @@ def test_cluster_table_function(started_cluster_iceberg_with_spark, format_versi
         )
 
         logging.info(f"Adding another dataframe. result files: {files}")
+
+        if storage_type == "local":
+            # For local storage we need to upload data to each node
+            for node_name, replica in started_cluster_iceberg_with_spark.instances.items():
+                if node_name == "node1":
+                    continue
+                additional_upload_directory(
+                    started_cluster_iceberg_with_spark,
+                    node_name,
+                    storage_type,
+                    f"/iceberg_data/default/{TABLE_NAME}/",
+                    f"/iceberg_data/default/{TABLE_NAME}/",
+                )
 
         return files
 

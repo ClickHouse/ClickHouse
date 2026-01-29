@@ -118,7 +118,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             "The reason for the event with type MERGE_PARTS. Can have one of the following values: "
             "NotAMerge — The current event has the type other than MERGE_PARTS, "
             "RegularMerge — Some regular merge, "
-            "TTLDeleteMerge — Cleaning up expired data. "
+            "TTLDeleteMerge, TTLDropMerge — Cleaning up expired data. "
             "TTLRecompressMerge — Recompressing data part with the. "},
         {"merge_algorithm", std::move(merge_algorithm_datatype), "Merge algorithm for the event with type MERGE_PARTS. Can have one of the following values: Undecided, Horizontal, Vertical"},
         {"event_date", std::make_shared<DataTypeDate>(), "Event date."},

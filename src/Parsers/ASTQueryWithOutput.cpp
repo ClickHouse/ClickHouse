@@ -86,7 +86,7 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
         {
             if (p)
             {
-                if (auto * it = std::find(ast_with_output->children.begin(), ast_with_output->children.end(), p);
+                if (auto it = std::find(ast_with_output->children.begin(), ast_with_output->children.end(), p);
                     it != ast_with_output->children.end())
                     ast_with_output->children.erase(it);
                 p.reset();

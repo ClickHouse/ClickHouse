@@ -204,7 +204,7 @@ protected:
 
         Chunk result;
         /// source should return at least one row to start pipeline
-        result.addColumn(ColumnUInt8::create(1, 1));
+        result.addColumn(ColumnUInt8::create(1, static_cast<UInt8>(1)));
         /// actual data stored in chunk info
         result.getChunkInfos().add(std::move(current_check_task));
         return result;

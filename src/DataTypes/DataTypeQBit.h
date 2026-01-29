@@ -34,6 +34,7 @@ public:
     bool haveSubtypes() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool supportsSparseSerialization() const override { return false; }
+    bool isComparableForEquality() const override { return true; }
 
     const DataTypePtr & getElementType() const { return element_type; }
     /// Size of the vector element in bits: 16, 32, 64

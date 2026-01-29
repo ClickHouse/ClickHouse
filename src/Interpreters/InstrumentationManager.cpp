@@ -263,7 +263,7 @@ void InstrumentationManager::unpatchFunction(std::variant<UInt64, Instrumentatio
         {
             const auto it = instrumented_points.get<Id>().find(info.id);
             if (it == instrumented_points.get<Id>().end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Instrumentation point {} does not exist", it->toString());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Instrumentation point {} does not exist", info.toString());
             LOG_INFO(logger, "Removing instrumented function {}", it->toString());
             unpatchFunctionIfNeeded(it->function_id);
             instrumented_points.erase(it);
@@ -314,8 +314,11 @@ void InstrumentationManager::dispatchHandlerImpl(Int32 func_id, XRayEntryType en
 
     std::vector<InstrumentedPointInfo> func_ips;
     SharedLockGuard lock(shared_mutex);
-    for (auto it = instrumented_points.get<FunctionId>().find(func_id); it != instrumented_points.get<FunctionId>().end(); ++it)
+    auto range = instrumented_points.get<FunctionId>().equal_range(func_id);
+    for (auto it = range.first; it != range.second; ++it)
+    {
         func_ips.emplace_back(*it);
+    }
     lock.unlock();
 
     for (const auto & info : func_ips)

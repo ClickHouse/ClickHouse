@@ -9,7 +9,7 @@ if (SANITIZE STREQUAL "undefined")
 endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
-
+set(WITH_COVERAGE OFF)
 # add_contrib cmake_folder[ base_folder1[, ...base_folderN]]
 function(add_contrib cmake_folder)
     if (ARGN)
@@ -132,7 +132,7 @@ add_contrib (aws-cmake
     aws-cmake
 )
 
-add_contrib (aklomp-base64-cmake aklomp-base64)
+add_contrib (base64-cmake base64)
 add_contrib (simdjson-cmake simdjson)
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
@@ -164,7 +164,6 @@ add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
 add_contrib (idna-cmake idna)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
-add_contrib (incbin-cmake incbin)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
@@ -220,6 +219,8 @@ add_contrib (libssh-cmake libssh)
 add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
 add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
 add_contrib (antlr4-grammars-cmake antlr4-grammars)
+
+add_contrib(simdcomp-cmake simdcomp)
 
 add_contrib (numactl-cmake numactl)
 

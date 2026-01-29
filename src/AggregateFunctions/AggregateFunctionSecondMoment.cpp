@@ -15,7 +15,11 @@ Calculate the sample variance of a data set.
 
 The sample variance is calculated using the formula:
 
-$$\frac{\Sigma{(x - \bar{x})^2}}{n-1}$$
+$$
+\frac{\Sigma{(x - \bar{x})^2}}{n-1}
+$$
+
+<br/>
 
 Where:
 - $x$ is each individual data point in the data set
@@ -69,7 +73,11 @@ Calculates the population variance.
 
 The population variance is calculated using the formula:
 
-$$\frac{\Sigma{(x - \bar{x})^2}}{n}$$
+$$
+\frac{\Sigma{(x - \bar{x})^2}}{n}
+$$
+
+<br/>
 
 Where:
 - $x$ is each value in the population

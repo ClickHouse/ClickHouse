@@ -87,7 +87,7 @@ namespace
                         res_offsets[i] = res_prev_offset;
 
                         if (nullable)
-                            res_null_map->push_back(1); /// Push NULL.
+                            res_null_map->push_back(static_cast<uint8_t>(1)); /// Push NULL.
                     }
 
                     src_prev_offset = src_offsets[i];
@@ -153,7 +153,7 @@ namespace
                         res_offsets[i] = res_prev_offset;
 
                         if (nullable)
-                            res_null_map->push_back(1);
+                            res_null_map->push_back(ColumnNullable::IS_NULL_MASK);
                     }
 
                     src_prev_offset = src_offsets[i];
@@ -237,7 +237,7 @@ namespace
                     else
                     {
                         if (nullable)
-                            res_null_map->push_back(1);
+                            res_null_map->push_back(ColumnNullable::IS_NULL_MASK);
 
                         res_string_offsets.push_back(res_string_prev_offset);
 
@@ -297,7 +297,7 @@ namespace
                     res_offsets[i] = res_prev_offset;
 
                     if (nullable)
-                        res_null_map->push_back(1);
+                        res_null_map->push_back(ColumnNullable::IS_NULL_MASK);
                 }
 
                 src_prev_offset = src_offsets[i];

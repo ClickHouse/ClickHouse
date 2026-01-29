@@ -59,6 +59,7 @@ def test_kafka_sasl(kafka_cluster):
                      kafka_sasl_mechanism = 'PLAIN',
                      kafka_sasl_username = '{kafka_sasl_user}',
                      kafka_sasl_password = '{kafka_sasl_pass}',
+                     kafka_flush_interval_ms = 1000,
                      kafka_topic_list = 'topic1',
                      kafka_group_name = 'group1',
                      kafka_format = 'JSONEachRow';
@@ -74,7 +75,13 @@ def test_kafka_sasl(kafka_cluster):
     producer.send(topic="topic1", value='{"key":1, "value":"test123"}')
     producer.flush()
 
-    assert_eq_with_retry(instance, "SELECT value FROM test.messages", "test123")
+    assert_eq_with_retry(
+        instance,
+        "SELECT value FROM test.messages",
+        "test123",
+        retry_count=120,
+        sleep_time=0.5,
+    )
 
 
 def test_kafka_sasl_settings_precedence(kafka_cluster):

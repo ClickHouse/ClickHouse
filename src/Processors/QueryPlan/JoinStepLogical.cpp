@@ -58,6 +58,7 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <stack>
 #include <string_view>
@@ -563,8 +564,15 @@ bool canPushDownFromOn(const JoinOperator & join_operator, std::optional<JoinTab
     switch (join_operator.strictness)
     {
         case JoinStrictness::Any:
-            return (side == JoinTableSide::Left && join_operator.kind == JoinKind::Left)
-                || (side == JoinTableSide::Right && join_operator.kind == JoinKind::Right);
+            /// We cannot push down to either side for ANY JOIN.
+            /// Let's say we have LEFT ANY JOIN:
+            /// 1. If we push down filter to the right side,
+            /// we may filter out rows that would otherwise match the left side rows,
+            /// resulting in different join results.
+            /// 2. If we push down filter to the left side,
+            /// we may filter out rows that should be included in the join result
+            /// with defaults or NULLs.
+            return false;
         case JoinStrictness::All:
         {
             /// Filter pushdown for PASTE JOIN is *disabled* to preserve positional alignment
@@ -580,24 +588,14 @@ bool canPushDownFromOn(const JoinOperator & join_operator, std::optional<JoinTab
             /// We can push down to both sides for LEFT SEMI and RIGHT SEMI joins
             return side.has_value();
         case JoinStrictness::Anti:
-            /// We can push down to both sides for LEFT ANTI and RIGHT ANTI joins
-            return side.has_value();
+            /// We can push down to only to opposite sides for LEFT ANTI and RIGHT ANTI joins
+            /// See https://github.com/ClickHouse/ClickHouse/issues/93483
+            return (side == JoinTableSide::Left && join_operator.kind == JoinKind::Right)
+                || (side == JoinTableSide::Right && join_operator.kind == JoinKind::Left);
         default:
             /// TODO: Support RightAny strictness?
             return false;
     }
-}
-
-bool needToNegateOnCondition(const JoinOperator & join_operator, JoinTableSide side)
-{
-    if (join_operator.strictness != JoinStrictness::Anti)
-        return false;
-
-    /// If condition match ANTI JOIN condition, it should be filtered out.
-    /// This means that for LEFT ANTI JOIN we need to negate conditions pushed to LEFT side,
-    /// and for RIGHT ANTI JOIN we need to negate conditions pushed to RIGHT side.
-    return (join_operator.kind == JoinKind::Left && side == JoinTableSide::Left)
-        || (join_operator.kind == JoinKind::Right && side == JoinTableSide::Right);
 }
 
 using NameViewToNodeMapping = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
@@ -735,16 +733,10 @@ static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
 using QueryPlanNode = QueryPlan::Node;
 using QueryPlanNodePtr = QueryPlanNode *;
 
-struct ConcantConditionsParameters
-{
-    const bool negate = false;
-    const bool can_extract_everything = true;
-};
-
 JoinActionRef concatConditions(
     std::vector<JoinActionRef> & conditions,
     std::optional<JoinTableSide> side = {},
-    ConcantConditionsParameters params = {}
+    const bool can_extract_everything = true
 )
 {
     auto matching_point = std::ranges::partition(conditions,
@@ -765,22 +757,13 @@ JoinActionRef concatConditions(
         return result;
 
     /// Leave at least one condition if needed
-    if (!params.can_extract_everything && matching.size() == conditions.size())
+    if (!can_extract_everything && matching.size() == conditions.size())
         matching.pop_back(); /// TODO: Select condition depending on selectivity?
 
     if (matching.size() == 1)
         result = toBoolIfNeeded(matching.front());
     else if (matching.size() > 1)
         result = JoinActionRef::transform({matching}, JoinActionRef::AddFunction(JoinConditionOperator::And));
-
-    if (params.negate && result)
-    {
-        /// TODO: Negate nullable condition via coalesce to false or other way?
-        if (isNullableOrLowCardinalityNullable(result.getType()))
-            return JoinActionRef{nullptr};
-
-        result = JoinActionRef::transform({result}, JoinActionRef::AddFunction(FunctionFactory::instance().get("not", nullptr)));
-    }
 
     conditions.erase(conditions.begin(), matching_point.begin());
     return result;
@@ -923,12 +906,11 @@ static void addSortingForMergeJoin(
 static void constructPhysicalStep(
     QueryPlanNode & node,
     ActionsDAG left_pre_join_actions,
+    ActionsDAG right_after_join_actions,
     ActionsDAG post_join_actions,
     std::pair<String, bool> residual_filter_condition,
     JoinPtr join_ptr,
-    const QueryPlanOptimizationSettings & ,
     const JoinSettings & join_settings,
-    const SortingStep::Settings &,
     QueryPlan::Nodes & nodes)
 {
     if (!join_ptr->isFilled())
@@ -941,6 +923,9 @@ static void constructPhysicalStep(
 
     node.step = std::make_unique<FilledJoinStep>(join_left_node->step->getOutputHeader(), join_ptr, join_settings.max_block_size);
     node.step->setStepDescription("Filled JOIN");
+
+    if (!right_after_join_actions.getNodes().empty())
+        makeExpressionNodeOnTopOf(node, std::move(right_after_join_actions), nodes, makeDescription("Right Type Conversion Actions"));
 
     post_join_actions.appendInputsForUnusedColumns(*node.step->getOutputHeader());
     makeFilterNodeOnTopOf(
@@ -1315,9 +1300,24 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
     else
     {
+        ActionsDAG right_type_correction_actions;
+        if (logical_lookup && prepared_join_storage.storage_join)
+        {
+            right_type_correction_actions = JoinExpressionActions::getSubDAG(
+                actions_after_join
+                    | std::views::transform([&](const auto * action) { return JoinActionRef(action, expression_actions); })
+                    | std::views::filter([](const auto & action) { return action.fromRight() && action.getNode()->type != ActionsDAG::ActionType::INPUT; }));
+        }
+
         constructPhysicalStep(
-            node, std::move(left_dag), std::move(residual_dag), std::make_pair(residual_filter_condition_name, can_remove_residual_filter),
-            std::move(join_algorithm_ptr), optimization_settings, join_settings, sorting_settings, nodes);
+            node,
+            std::move(left_dag),
+            std::move(right_type_correction_actions),
+            std::move(residual_dag),
+            std::make_pair(residual_filter_condition_name, can_remove_residual_filter),
+            std::move(join_algorithm_ptr),
+            join_settings,
+            nodes);
     }
     return node;
 }
@@ -1386,13 +1386,11 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterAc
     if (!canPushDownFromOn(join_operator, side))
         return {};
 
-    /// Negate condition in case of ANTI JOIN
-    const bool negate_conjunction = needToNegateOnCondition(join_operator, side);
     /// Check if condition can be extracted completely
     const bool allow_join_on_const = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH);
 
     auto & join_expression = join_operator.expression;
-    if (auto filter_condition = concatConditions(join_expression, side, { .negate = negate_conjunction, .can_extract_everything = allow_join_on_const }))
+    if (auto filter_condition = concatConditions(join_expression, side, /*can_extract_everything=*/allow_join_on_const))
         return ActionsDAG::createActionsForConjunction({filter_condition.getNode()}, stream_header->getColumnsWithTypeAndName());
 
     return {};

@@ -266,7 +266,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::dropCache()
 
 void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
 {
-    if (!previous_refresh.compareAndRestart(0.001 * not_sooner_than_milliseconds))
+    if (!previous_refresh.compareAndRestart(0.001 * static_cast<double>(not_sooner_than_milliseconds)))
         return;
 
     std::unique_lock lock(load_mutex, std::defer_lock);

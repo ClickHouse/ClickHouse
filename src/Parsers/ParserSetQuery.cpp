@@ -145,7 +145,7 @@ protected:
             map.push_back(std::move(tuple));
         }
 
-        node = std::make_shared<ASTLiteral>(std::move(map));
+        node = make_intrusive<ASTLiteral>(std::move(map));
         return true;
     }
 };
@@ -298,7 +298,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
         {
             Field type_test = Settings::castValueUtil(name, true);
             if (type_test.getType() == Field::Types::Which::Bool)
-                node = std::make_shared<ASTLiteral>(Field(true));
+                node = make_intrusive<ASTLiteral>(Field(true));
             else
                 return false;
         }
@@ -355,7 +355,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             changes.push_back(std::move(setting));
     }
 
-    auto query = std::make_shared<ASTSetQuery>();
+    auto query = make_intrusive<ASTSetQuery>();
     node = query;
 
     query->is_standalone = !parse_only_internals;

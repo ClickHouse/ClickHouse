@@ -1,6 +1,5 @@
 #include <AggregateFunctions/SingleValueData.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>

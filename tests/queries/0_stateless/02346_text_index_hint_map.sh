@@ -15,8 +15,8 @@ $MY_CLICKHOUSE_CLIENT --query "
     CREATE TABLE tab
     (
         m Map(String, String),
-        INDEX idx_mk (mapKeys(m)) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 4,
-        INDEX idx_mv (mapValues(m)) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 4
+        INDEX idx_mk (mapKeys(m)) TYPE text(tokenizer = array),
+        INDEX idx_mv (mapValues(m)) TYPE text(tokenizer = array)
     ) ENGINE = MergeTree ORDER BY tuple();
 
     INSERT INTO tab SELECT (arrayMap(x -> 'k' || x, range(number % 30)), arrayMap(x -> 'v' || x, range(number % 30))) FROM numbers(100000);
@@ -42,14 +42,28 @@ run "SELECT count() FROM tab WHERE has(mapKeys(m), 'k18')"
 run "SELECT count() FROM tab WHERE has(m, 'k18')"
 run "SELECT count() FROM tab WHERE mapContains(m, 'k18')"
 run "SELECT count() FROM tab WHERE mapContainsKey(m, 'k18')"
-run "SELECT count() FROM tab WHERE mapContainsKeyLike(m, '%k18%')"
 run "SELECT count() FROM tab WHERE mapContainsValue(m, 'v18')"
-run "SELECT count() FROM tab WHERE mapContainsValueLike(m, '%v18%')"
 run "SELECT count() FROM tab WHERE m['k18'] = 'v18'"
 run "SELECT count() FROM tab WHERE m['k18'] LIKE '%v18%'"
 run "SELECT count() FROM tab WHERE notEmpty(m['k18'])"
 run "SELECT count() FROM tab WHERE empty(m['k18'])"
 run "SELECT count() FROM tab WHERE toUInt64OrZero(extract(m['k18'], '[0-9]+')) = 18"
 run "SELECT count() FROM tab WHERE toUInt64OrZero(extract(m['k18'], '[0-9]+')) = 0"
+
+$MY_CLICKHOUSE_CLIENT --query "
+    DROP TABLE tab;
+
+    CREATE TABLE tab
+    (
+        m Map(String, String),
+        INDEX idx_mk (mapKeys(m)) TYPE text(tokenizer = ngrams(3)),
+        INDEX idx_mv (mapValues(m)) TYPE text(tokenizer = ngrams(3))
+    ) ENGINE = MergeTree ORDER BY tuple();
+
+    INSERT INTO tab SELECT (arrayMap(x -> 'k' || x, range(number % 30)), arrayMap(x -> 'v' || x, range(number % 30))) FROM numbers(100000);
+"
+
+run "SELECT count() FROM tab WHERE mapContainsKeyLike(m, '%k18%')"
+run "SELECT count() FROM tab WHERE mapContainsValueLike(m, '%v18%')"
 
 $MY_CLICKHOUSE_CLIENT --query "DROP TABLE tab;"

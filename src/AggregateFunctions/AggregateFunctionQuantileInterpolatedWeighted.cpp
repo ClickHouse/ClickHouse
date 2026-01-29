@@ -36,7 +36,7 @@ struct QuantileInterpolatedWeighted
     {
         size_t operator()(Int128 x) const
         {
-            return CityHash_v1_0_2::Hash128to64({x >> 64, x & 0xffffffffffffffffll});
+            return CityHash_v1_0_2::Hash128to64({static_cast<UInt64>(x >> 64), static_cast<UInt64>(x & 0xffffffffffffffffll)});
         }
     };
 
@@ -118,7 +118,7 @@ private:
 
         /// Maintain a vector of pair of values and weights for easier sorting and for building
         /// a cumulative distribution using the provided weights.
-        std::vector<Pair> value_weight_pairs;
+        VectorWithMemoryTracking<Pair> value_weight_pairs;
         value_weight_pairs.reserve(size);
 
         /// Note: weight provided must be a 64-bit integer
@@ -130,7 +130,7 @@ private:
         Float64 sum_weight = 0;
         for (const auto & pair : map)
         {
-            sum_weight += pair.getMapped();
+            sum_weight += static_cast<Float64>(pair.getMapped());
             auto value = pair.getKey();
             auto weight = pair.getMapped();
             value_weight_pairs.push_back({value, weight});
@@ -142,7 +142,7 @@ private:
 
         /// vector for populating and storing the cumulative sum using the provided weights.
         /// example: [0,1,2,3,4,5] -> [0,1,3,6,10,15]
-        std::vector<Float64> weights_cum_sum;
+        VectorWithMemoryTracking<Float64> weights_cum_sum;
         weights_cum_sum.reserve(size);
 
         for (size_t idx = 0; idx < size; ++idx)
@@ -219,13 +219,13 @@ private:
             return;
         }
 
-        std::vector<Pair> value_weight_pairs;
+        VectorWithMemoryTracking<Pair> value_weight_pairs;
         value_weight_pairs.reserve(size);
 
         Float64 sum_weight = 0;
         for (const auto & pair : map)
         {
-            sum_weight += pair.getMapped();
+            sum_weight += static_cast<Float64>(pair.getMapped());
             auto value = pair.getKey();
             auto weight = pair.getMapped();
             value_weight_pairs.push_back({value, weight});
@@ -237,7 +237,7 @@ private:
 
         /// vector for populating and storing the cumulative sum using the provided weights.
         /// example: [0,1,2,3,4,5] -> [0,1,3,6,10,15]
-        std::vector<Float64> weights_cum_sum;
+        VectorWithMemoryTracking<Float64> weights_cum_sum;
         weights_cum_sum.reserve(size);
 
         for (size_t idx = 0; idx < size; ++idx)
@@ -315,7 +315,7 @@ private:
         percentile_diff = percentile_diff == 0 ? 1 : percentile_diff; /// to handle NaN behavior that might arise during integer division below.
 
         /// yl + (dy / dx) * (level - xl)
-        return static_cast<UnderlyingType>(lower_value + (value_diff / percentile_diff) * (level - lower_percentile));
+        return static_cast<UnderlyingType>(static_cast<Float64>(lower_value) + (static_cast<Float64>(value_diff) / percentile_diff) * (level - lower_percentile));
     }
 };
 

@@ -32,6 +32,8 @@ namespace ErrorCodes
     DECLARE(String, onelake_tenant_id, "", "Tenant id from azure", 0) \
     DECLARE(String, onelake_client_id, "", "Client id from azure", 0) \
     DECLARE(String, onelake_client_secret, "", "Client secret from azure", 0) \
+    DECLARE(String, dlf_access_key_id, "", "Access id of DLF token for Paimon REST Catalog", 0) \
+    DECLARE(String, dlf_access_key_secret, "", "Access secret of DLF token for Paimon REST Catalog", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \

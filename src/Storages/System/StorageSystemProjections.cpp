@@ -277,11 +277,7 @@ void ReadFromSystemProjections::initializePipeline(QueryPipelineBuilder & pipeli
             continue;
         if (database->isExternal())
             continue;
-
-        /// Lazy database can contain only very primitive tables, it cannot contain tables with projections.
-        /// Skip it to avoid unnecessary tables loading in the Lazy database.
-        if (database->getEngineName() != "Lazy")
-            column->insert(database_name);
+        column->insert(database_name);
     }
 
     /// Condition on "database" in a query acts like an index.

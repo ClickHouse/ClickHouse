@@ -37,6 +37,8 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     : columns(other.columns)
     , add_minmax_index_for_numeric_columns(other.add_minmax_index_for_numeric_columns)
     , add_minmax_index_for_string_columns(other.add_minmax_index_for_string_columns)
+    , add_minmax_index_for_temporal_columns(other.add_minmax_index_for_temporal_columns)
+    , escape_index_filenames(other.escape_index_filenames)
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
     , projections(other.projections.clone())
@@ -67,6 +69,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     columns = other.columns;
     add_minmax_index_for_numeric_columns = other.add_minmax_index_for_numeric_columns;
     add_minmax_index_for_string_columns = other.add_minmax_index_for_string_columns;
+    add_minmax_index_for_temporal_columns = other.add_minmax_index_for_temporal_columns;
+    escape_index_filenames = other.escape_index_filenames;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
     projections = other.projections.clone();
@@ -832,7 +836,8 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
     if (column.default_desc.kind == ColumnDefaultKind::Ephemeral)
         return;
 
-    if ((isNumber(column.type) && add_minmax_index_for_numeric_columns) || (isString(column.type) && add_minmax_index_for_string_columns))
+    if ((isNumber(column.type) && add_minmax_index_for_numeric_columns) || (isString(column.type) && add_minmax_index_for_string_columns)
+        || (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(column.type) && add_minmax_index_for_temporal_columns))
     {
         bool minmax_index_exists = false;
 
@@ -847,7 +852,7 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
 
         if (!minmax_index_exists)
         {
-            auto index = createImplicitMinMaxIndexDescription(column.name, columns, context);
+            auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
             bool valid_index = true;
             try
             {

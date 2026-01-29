@@ -131,7 +131,7 @@ int main(int, char **)
 
     std::cout << "\n";
     std::cout << std::fixed << std::setprecision(2)
-        << "Write amplification: " << static_cast<double>(sum_size_written) / sum_parts_size << "\n"
+        << "Write amplification: " << static_cast<double>(sum_size_written) / static_cast<double>(sum_parts_size) << "\n"
         << "Num merges: " << num_merges << "\n";
 
     for (const auto & part : parts)

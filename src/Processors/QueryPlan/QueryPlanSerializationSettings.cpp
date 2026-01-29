@@ -2,6 +2,16 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
+/**
+ * This file declares the concrete list of settings that are considered relevant for query plan step (de)serialization.
+ * They are defined through the PLAN_SERIALIZATION_SETTINGS macro which is consumed by BaseSettings machinery
+ * to generate traits, storage and accessor helpers.
+ *
+ * Macro structure:
+ *  DECLARE(Type, name, default, description, flags)
+ *  "flags" originate from BaseSettings (e.g. IMPORTANT) and may influence exposure or validation.
+ */
+
 namespace DB
 {
 
@@ -96,6 +106,7 @@ namespace DB
     DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, "If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, false, "When enabled, replication of columns data during ARRAY JOIN and JOIN is performed lazily", 0) \
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, "Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.", 0) \
+    DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
 
 
 // clang-format on

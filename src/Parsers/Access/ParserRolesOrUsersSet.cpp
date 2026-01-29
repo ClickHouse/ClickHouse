@@ -128,7 +128,7 @@ bool ParserRolesOrUsersSet::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (all)
         names.clear();
 
-    auto result = std::make_shared<ASTRolesOrUsersSet>();
+    auto result = make_intrusive<ASTRolesOrUsersSet>();
     result->names = std::move(names);
     result->current_user = current_user;
     result->all = all;

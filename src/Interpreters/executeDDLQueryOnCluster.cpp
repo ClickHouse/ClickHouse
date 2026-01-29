@@ -1,13 +1,9 @@
-#include <filesystem>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
@@ -18,14 +14,11 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Processors/Sinks/EmptySink.h>
-#include <QueryPipeline/Pipe.h>
 #include <base/sort.h>
-#include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 
@@ -201,6 +194,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         entry.initiator_user = context->getUserName();
         entry.initiator_user_roles = context->getAccessControl().tryReadNames(context->getCurrentRoles());
     }
+    ddl_worker.updateHostIDs(entry.hosts);
     String node_path = ddl_worker.enqueueQuery(entry, params.retries_info);
 
     return getDDLOnClusterStatus(node_path, ddl_worker.getReplicasDir(), entry, context);

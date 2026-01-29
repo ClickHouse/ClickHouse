@@ -5,8 +5,10 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <base/hex.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
@@ -44,6 +46,12 @@ namespace ProfileEvents
     extern const Event KeeperBatchMaxCount;
     extern const Event KeeperBatchMaxTotalSize;
     extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
+}
+
+namespace HistogramMetrics
+{
+    extern Metric & KeeperCurrentBatchSizeElements;
+    extern Metric & KeeperCurrentBatchSizeBytes;
 }
 
 using namespace std::chrono_literals;
@@ -106,7 +114,8 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
                     memory_delta += set_req.bytesSize();
                     break;
                 }
-                case Coordination::OpNum::Remove: {
+                case Coordination::OpNum::Remove:
+                case Coordination::OpNum::TryRemove: {
                     Coordination::ZooKeeperRemoveRequest & remove_req
                         = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
                     memory_delta -= remove_req.bytesSize();
@@ -276,6 +285,9 @@ void KeeperDispatcher::requestThread()
                         ProfileEvents::increment(ProfileEvents::KeeperBatchMaxTotalSize, 1);
 
                     LOG_TEST(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
+
+                    HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeElements, current_batch.size());
+                    HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeBytes, current_batch_bytes_size);
 
                     auto result = server->putRequestBatch(current_batch);
 
@@ -1112,7 +1124,7 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
         {
             std::unordered_set<int32_t> nodes;
             auto members = preconditions->getArray("members");
-            for (size_t i = 0; i < members->size(); ++i)
+            for (unsigned int i = 0; i < members->size(); ++i)
                 nodes.insert(members->getElement<int32_t>(i));
 
             auto servers_in_config = latest_config->get_servers();
@@ -1135,7 +1147,7 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
         {
             std::unordered_set<int32_t> leaders;
             auto leaders_array = preconditions->getArray("leaders");
-            for (size_t i = 0; i < leaders_array->size(); ++i)
+            for (unsigned int i = 0; i < leaders_array->size(); ++i)
                 leaders.insert(leaders_array->getElement<int32_t>(i));
 
             if (!server->isLeaderAlive())
@@ -1143,7 +1155,7 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
                     "Precondition failed: expected leader id {} but there is no leader currently",
                     fmt::join(leaders, ", "));
 
-            if (!leaders.contains(server->getLeaderID()))
+            if (!leaders.contains(static_cast<int32_t>(server->getLeaderID())))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Precondition failed: expected leader id {} does not match actual leader id {}",
                     fmt::join(leaders, ", "),

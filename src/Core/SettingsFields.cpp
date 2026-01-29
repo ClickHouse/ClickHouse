@@ -11,7 +11,11 @@
 #include <Common/logger_useful.h>
 
 #include <boost/algorithm/string/predicate.hpp>
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wimplicit-int-conversion"
 #include <cctz/time_zone.h>
+#pragma clang diagnostic pop
 
 #include <cmath>
 

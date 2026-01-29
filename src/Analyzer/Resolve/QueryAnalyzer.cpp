@@ -1663,7 +1663,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
 
         while (true)
         {
-            if (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(result_type.get()))
+                result_type = nullable_type->getNestedType();
+            else if (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
                 result_type = array_type->getNestedType();
             else if (const auto * map_type = typeid_cast<const DataTypeMap *>(result_type.get()))
                 result_type = map_type->getNestedType();
@@ -3351,14 +3353,11 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
 
         resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-        bool is_column_constant = interpolate_node_typed.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT;
-
         auto & interpolation_to_resolve = interpolate_node_typed.getInterpolateExpression();
         IdentifierResolveScope & interpolate_scope = createIdentifierResolveScope(interpolation_to_resolve, &scope /*parent_scope*/);
 
         auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), interpolate_node);
-        if (is_column_constant)
-            interpolate_scope.expression_argument_name_to_node.emplace(column_to_interpolate_name, fake_column_node);
+        interpolate_scope.expression_argument_name_to_node.emplace(column_to_interpolate_name, fake_column_node);
 
         resolveExpressionNode(interpolation_to_resolve, interpolate_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     }
@@ -3373,11 +3372,11 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
         resolveWindow(node, scope);
 }
 
-NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, const NameSet & interpolate_list)
+NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
 {
     ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-    auto & projection_nodes = projection_node_list->as<ListNode &>().getNodes();
+    auto projection_nodes = projection_node_list->as<ListNode &>().getNodes();
     size_t projection_nodes_size = projection_nodes.size();
 
     NamesAndTypes projection_columns;
@@ -3392,19 +3391,6 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
                 "Projection node must be constant, function, column, query or union");
 
         projection_columns.emplace_back(projection_names[i], projection_node->getResultType());
-
-        if (interpolate_list.contains(projection_names[i]))
-        {
-            if (const auto * function_node = projection_nodes[i]->as<FunctionNode>(); !function_node || function_node->getFunctionName() != "__interpolate")
-            {
-                auto f = std::make_shared<FunctionNode>("__interpolate");
-                f->getArguments().getNodes().push_back(projection_nodes[i]);
-                f->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(projection_names[i]));
-                resolveOrdinaryFunctionNodeByName(*f, f->getFunctionName(), scope.context);
-                projection_nodes[i] = f;
-                scope.expression_argument_name_to_node.emplace(projection_names[i], projection_nodes[i]);
-            }
-        }
     }
 
     return projection_columns;
@@ -3672,6 +3658,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             }
         }
 
+        table_expression_data.column_name_to_column_node = std::move(column_name_to_column_node);
         for (auto & [alias_column_to_resolve_name, alias_column_to_resolve] : alias_columns_to_resolve)
         {
             /** Alias column could be potentially resolved during resolve of other ALIAS column.
@@ -3679,10 +3666,10 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
               *
               * During resolve of alias_value_1, alias_value_2 column will be resolved.
               */
-            alias_column_to_resolve = column_name_to_column_node[alias_column_to_resolve_name];
+            alias_column_to_resolve = table_expression_data.column_name_to_column_node[alias_column_to_resolve_name];
 
             IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
-            alias_column_resolve_scope.column_name_to_column_node = std::move(column_name_to_column_node);
+            alias_column_resolve_scope.table_expression_data_for_alias_resolution = &table_expression_data;
             alias_column_resolve_scope.context = scope.context;
 
             /// Initialize aliases in alias column scope
@@ -3696,11 +3683,8 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             auto & resolved_expression = alias_column_to_resolve->getExpression();
             if (!resolved_expression->getResultType()->equals(*alias_column_to_resolve->getResultType()))
                 resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
-            column_name_to_column_node = std::move(alias_column_resolve_scope.column_name_to_column_node);
-            column_name_to_column_node[alias_column_to_resolve_name] = alias_column_to_resolve;
+            table_expression_data.column_name_to_column_node[alias_column_to_resolve_name] = alias_column_to_resolve;
         }
-
-        table_expression_data.column_name_to_column_node = std::move(column_name_to_column_node);
     }
     else if (query_node || union_node)
     {
@@ -4857,16 +4841,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     NamesAndTypes projection_columns;
 
-    NameSet interpolate_list =
-        query_node_typed.hasInterpolate() ?
-            query_node_typed.getInterpolate()->as<ListNode &>().getNodes()
-            | std::views::transform([](const QueryTreeNodePtr & node){ return node->as<InterpolateNode &>().getExpressionName(); })
-            | std::ranges::to<std::unordered_set>()
-        : NameSet{};
-
     if (!scope.group_by_use_nulls)
     {
-        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope, interpolate_list);
+        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
@@ -4961,7 +4938,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (scope.group_by_use_nulls)
     {
-        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope, interpolate_list);
+        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
@@ -4979,6 +4956,15 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     {
         auto node = node_with_duplicated_alias;
         auto node_alias = node->getAlias();
+
+        /** The alias might have already been removed by another scope's duplicate processing.
+          * This happens because when global_with_aliases is copied between scopes,
+          * the QueryTreeNodePtr smart pointers reference the same underlying nodes.
+          * If a child scope processes a duplicate and removes its alias, the parent scope's
+          * reference to the same node will also see the empty alias.
+          */
+        if (node_alias.empty())
+            continue;
 
         resolveExpressionNode(node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
