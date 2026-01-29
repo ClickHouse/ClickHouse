@@ -25,21 +25,21 @@ def started_cluster(request):
 
     # we're running keepers as standalone ClickHouse servers as we need to collect span log from them
     keeper1 = cluster.add_instance(
-        "keeper1",
+        "clickhouseKeeper1",
         main_configs=[
             "configs/keeper/keeper1.xml",
             f"configs/{xid_mode}/keeper/use_xid_64.xml",
         ],
     )
     keeper2 = cluster.add_instance(
-        "keeper2",
+        "clickhouseKeeper2",
         main_configs=[
             "configs/keeper/keeper2.xml",
             f"configs/{xid_mode}/keeper/use_xid_64.xml",
         ],
     )
     keeper3 = cluster.add_instance(
-        "keeper3",
+        "clickhouseKeeper3",
         main_configs=[
             "configs/keeper/keeper3.xml",
             f"configs/{xid_mode}/keeper/use_xid_64.xml",
@@ -64,9 +64,9 @@ def test_keeper_opentelemetry_tracing(started_cluster):
     5. For each read operation, make sure that the replica that we have session with has right spans in the right sequence and that other replicas have no spans.
     """
     clickhouse = started_cluster.instances["clickhouse"]
-    keeper1 = started_cluster.instances["keeper1"]
-    keeper2 = started_cluster.instances["keeper2"]
-    keeper3 = started_cluster.instances["keeper3"]
+    keeper1 = started_cluster.instances["clickhouseKeeper1"]
+    keeper2 = started_cluster.instances["clickhouseKeeper2"]
+    keeper3 = started_cluster.instances["clickhouseKeeper3"]
 
     db = f"test_keeper_opentelemetry_tracing_{uuid.uuid4()}_database"
     t = f"test_keeper_opentelemetry_tracing_{uuid.uuid4()}_table"
