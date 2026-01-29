@@ -104,7 +104,7 @@ public:
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;
     void createDirectories() override;
 
-    std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(WriteMode mode) const override;
+    std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(const String & txn_file_name, WriteMode mode) const override;
 
     void removeRecursive() override;
     void removeSharedRecursive(bool keep_in_remote_fs) override;

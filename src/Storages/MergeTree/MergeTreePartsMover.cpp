@@ -1,12 +1,12 @@
+#include <set>
+#include <Disks/IVolume.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include <Disks/IVolume.h>
-
-#include <set>
 
 namespace DB
 {
@@ -297,7 +297,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
             cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
     }
     cloned_part.part->loadColumnsChecksumsIndexes(true, true);
-    cloned_part.part->loadVersionMetadata();
+    cloned_part.part->version->loadAndVerifyMetadata(log);
     cloned_part.part->modification_time = cloned_part.part->getDataPartStorage().getLastModified().epochTime();
     return cloned_part;
 }

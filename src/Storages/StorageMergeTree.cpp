@@ -16,6 +16,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
@@ -958,7 +959,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
             else if (txn && !from_another_mutation)
             {
                 /// Part is locked by concurrent transaction, most likely it will never be mutated
-                TIDHash part_locked = data_part->version.removal_tid_lock.load();
+                TIDHash part_locked = data_part->version->getRemovalTIDLock();
                 if (part_locked && part_locked != mutation_entry.tid.getHash())
                 {
                     result.latest_failed_part = data_part->name;
@@ -1499,7 +1500,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
             /// It's possible that both mutation and transaction are already finished,
             /// because that part should not be mutated because it was not visible for that transaction.
-            if (!part->version.isVisible(first_mutation_tid.start_csn, first_mutation_tid))
+            if (!part->version->isVisible(first_mutation_tid.start_csn, first_mutation_tid))
             {
                 current_parts_postpone_reasons[part->name] = PostponeReasons::VERSION_NOT_VISIBLE;
                 continue;
@@ -1532,7 +1533,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             /// Mutate visible parts only (similar to mutation with transaction)
             /// NOTE Do not mutate parts in an active transaction.
             /// Mutation without transaction should wait for the transaction to commit or rollback.
-            if (!part->version.isVisible(Tx::MaxCommittedCSN, Tx::EmptyTID))
+            if (!part->version->isVisible(Tx::MaxCommittedCSN, Tx::EmptyTID))
             {
                 LOG_DEBUG(log, "Cannot mutate part {} because it's not visible (outdated, being created or removed "
                           "in an active transaction) to mutation {}.",
@@ -2463,8 +2464,8 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
         auto txn = local_context->getCurrentTransaction();
         TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
-        loaded_parts[i]->version.setCreationTID(tid, nullptr);
-        loaded_parts[i]->storeVersionMetadata();
+        loaded_parts[i]->version->setCreationTID(tid, nullptr);
+        loaded_parts[i]->version->storeMetadata(/*force=*/false);
 
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
