@@ -428,9 +428,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
     elif is_parallel:
         sequential_test_modules = []
         assert not is_sequential
-
-    parallel_test_modules = parallel_test_modules[:5]
-    sequential_test_modules = sequential_test_modules[:5]
     
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():

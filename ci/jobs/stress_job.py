@@ -43,6 +43,9 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
                     pass
 
             result = Result(name, status, duration=time)
+            assert (
+                result.is_ok() or result.is_failure or result.is_error
+            ), f"Unexpected status [{result.status}]"
             if len(line) == 4 and line[3]:
                 # The value can be emtpy, but when it's not,
                 # the 4th value is a pythonic list, e.g. ['file1', 'file2']
@@ -125,42 +128,22 @@ def process_results(
             p for p in server_log_path.iterdir() if p.is_file()
         ]
 
-    status_path = result_directory / "check_status.tsv"
-    if not status_path.exists():
-        return (
-            Result.Status.FAILED,
-            "check_status.tsv doesn't exists",
-            test_results,
-            additional_files,
-        )
-
-    logging.info("Found check_status.tsv")
-    with open(status_path, "r", encoding="utf-8") as status_file:
-        status = list(csv.reader(status_file, delimiter="\t"))
-
-    if len(status) != 1 or len(status[0]) != 2:
-        return (
-            Result.Status.ERROR,
-            "Invalid check_status.tsv",
-            test_results,
-            additional_files,
-        )
-    state, description = status[0][0], status[0][1]
-
     try:
         results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path, True)
         if len(test_results) == 0:
             raise ValueError("Empty results")
     except Exception as e:
-        return (
-            Result.Status.ERROR,
-            f"Cannot parse test_results.tsv ({e})",
-            test_results,
-            additional_files,
-        )
+        test_results = [
+            Result(
+                name="Unknown job error",
+                status=Result.Status.ERROR,
+                info=f"Cannot parse test_results.tsv ({e})",
+            )
+        ]
+        return test_results, additional_files
 
-    return state, description, test_results, additional_files
+    return test_results, additional_files
 
 
 def run_stress_test(upgrade_check: bool = False) -> None:
@@ -222,9 +205,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         )
         is_oom = is_oom or server_log_oom
 
-    _state, _description, test_results, additional_logs = process_results(
-        result_path, server_log_path
-    )
+    test_results, additional_logs = process_results(result_path, server_log_path)
 
     server_died = False
     failed_results = []
@@ -273,14 +254,12 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         r.set_status(Result.Status.SUCCESS)
         r.set_info("OOM error (allowed in stress tests)")
 
-    if r.is_ok() and exit_code != 0:
+    if r.is_ok() and exit_code != 0 and not is_oom:
         r.set_failed().set_info(
             f"Unknown error: Test script failed with exit code {exit_code}"
         )
 
-    if not r.is_ok():
-        r.set_files(additional_logs)
-    r.complete_job()
+    r.set_files(additional_logs).complete_job()
 
 
 if __name__ == "__main__":
