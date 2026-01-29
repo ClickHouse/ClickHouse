@@ -1,0 +1,31 @@
+-- { echo ON }
+
+SET use_skip_indexes_on_data_read = 1;
+SET allow_experimental_full_text_index = 1;
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab
+(
+    `i` Int64,
+    `text` String,
+    INDEX bf_text text TYPE bloom_filter(0.001) GRANULARITY 1,
+)
+ENGINE = MergeTree
+ORDER BY i
+SETTINGS index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO tab SELECT number, toString(number) FROM numbers(8194); -- The Last granule contained rows smaller than index_granularity.
+SELECT i, text FROM tab WHERE text = '8192';
+8192	8192
+DROP TABLE tab;
+CREATE TABLE tab
+(
+    `i` Int64,
+    `text` String,
+    INDEX inv_text text TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 2
+)
+ENGINE = MergeTree
+ORDER BY i
+SETTINGS index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO tab SELECT number, toString(number) FROM numbers(8193); -- The Last granule contained rows smaller than index_granularity.
+SELECT i, text FROM tab WHERE hasToken(text, '8192');
+8192	8192
+DROP TABLE tab;

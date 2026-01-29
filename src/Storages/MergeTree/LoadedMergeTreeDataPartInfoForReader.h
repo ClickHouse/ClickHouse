@@ -93,7 +93,18 @@ public:
 
     const RangesInDataPartReadHints & getReadHints() const override { return read_hints; }
 
-    size_t getRowCount() const override { return data_part->rows_count; }
+    size_t getRowsCount() const override { return data_part->rows_count; }
+
+    size_t getRowsCountForLastGranuleOrZero(size_t from_mark) const override
+    {
+        const auto & index_granularity_info = data_part->index_granularity_info;
+        const auto & index_granularity = data_part->index_granularity;
+        if (from_mark + 1 != index_granularity->getMarksCount())
+            return 0;
+        if (!index_granularity_info.index_granularity_bytes)
+            return data_part->rows_count % index_granularity_info.fixed_index_granularity;
+        return index_granularity->getLastMarkRows();
+    }
 private:
     MergeTreeData::DataPartPtr data_part;
     AlterConversionsPtr alter_conversions;
