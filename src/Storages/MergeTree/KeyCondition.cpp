@@ -1168,6 +1168,17 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     return true;
 }
 
+/// Returns true if a deterministic sub-DAG can be extracted to compute one of the key columns
+/// from a single key subexpression (`expr_name`), without depending on any other inputs.
+/// Assumes `expr_name` matches a key subexpression name (checked by the caller).
+/// This is used to "push" a constant/IN-set through deterministic key functions so that index
+/// analysis can be done in key space.
+/// For example, for `ORDER BY cityHash64(p)` and predicate `p = 'abc'`, we can extract a DAG
+/// `p -> cityHash64(p)` and apply it to the constant `'abc'` to get `cityHash64('abc')` for key analysis.
+/// Then all key marks can be compared against the computed and stored `cityHash64('abc')` directly.
+/// This is not limited to a linear function chain; the extracted sub-DAG can represent any
+/// deterministic expression over `expr_name` (e.g. nested functions or tuples), as long as it does
+/// not depend on other inputs. For example, for `ORDER BY left(key, length(key) - length(substringIndex(key, '-', -1)) - 1)`
 bool KeyCondition::extractDeterministicFunctionsDagFromKey(
     const String & expr_name,
     const BuildInfo & info,
