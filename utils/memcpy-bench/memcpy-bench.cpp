@@ -120,9 +120,6 @@ static void * memcpy_trivial(void * __restrict dst_, const void * __restrict src
     return ret;
 }
 
-extern "C" void * memcpy_jart(void * dst, const void * src, size_t size);
-extern "C" void MemCpy(void * dst, const void * src, size_t size);
-
 void * memcpy_fast_sse(void * dst, const void * src, size_t size);
 void * memcpy_fast_avx(void * dst, const void * src, size_t size);
 void * memcpy_tiny(void * dst, const void * src, size_t size);
@@ -855,7 +852,6 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
     VARIANT(2, memcpy_trivial)
     VARIANT(3, memcpy_libc_old)
     VARIANT(4, memcpy_erms)
-    VARIANT(5, MemCpy)
     VARIANT(6, memcpySSE2)
     VARIANT(7, memcpySSE2Unrolled2)
     VARIANT(8, memcpySSE2Unrolled4)
@@ -973,7 +969,7 @@ clickhouse-local --structure '
 
     /// Fill src with some pattern for validation.
     for (size_t i = 0; i < size; ++i)
-        src[i] = i;
+        src[i] = static_cast<uint8_t>(i);
 
     /// Fill dst to avoid page faults.
     memset(dst.get(), 0, size);
@@ -996,7 +992,7 @@ clickhouse-local --structure '
     else
     {
         std::cout << ": " << num_threads << " threads, " << "size: " << size << ", distribution " << generator_variant
-            << ", processed in " << (elapsed_ns / 1e9) << " sec, " << (size * iterations * 1.0 / elapsed_ns) << " GB/sec\n";
+            << ", processed in " << (static_cast<double>(elapsed_ns) / 1e9) << " sec, " << (static_cast<double>(size * iterations) / static_cast<double>(elapsed_ns)) << " GB/sec\n";
     }
 
     return 0;

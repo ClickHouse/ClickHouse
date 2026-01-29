@@ -1,5 +1,4 @@
-# memcpy_jart.S contains position dependent code
-if (ENABLE_POSITION_INDEPENDENT_BINARY OR NOT OS_LINUX OR NOT ARCH_AMD64)
+if (NOT OS_LINUX OR NOT ARCH_AMD64)
     message (STATUS "Not building memcpy-bench due to PIC enabled or not Linux or not x86")
     return ()
 endif ()
@@ -10,7 +9,6 @@ clickhouse_add_executable (memcpy-bench
     memcpy-bench.cpp
     FastMemcpy.cpp
     FastMemcpy_Avx.cpp
-    memcpy_jart.S
     glibc/memcpy-ssse3.S
     glibc/memcpy-ssse3-back.S
     glibc/memmove-sse2-unaligned-erms.S
