@@ -143,7 +143,8 @@ static struct InitFiu
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
     PAUSEABLE(database_replicated_rename_table_after_read_metadata) \
-    PAUSEABLE(database_replicated_alter_table_before_update_digest)
+    PAUSEABLE(database_replicated_alter_table_before_update_digest) \
+    ONCE(local_object_storage_network_error_during_remove)
 
 namespace FailPoints
 {

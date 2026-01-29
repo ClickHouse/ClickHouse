@@ -1099,6 +1099,9 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Double, memory_worker_purge_total_memory_threshold_ratio, 0.9, R"(
     The threshold ratio for purging jemalloc relative to the memory available to ClickHouse server. When total memory usage exceeds this ratio, the background memory worker forces purging of dirty pages. If set to 0, forced purging based on total memory is disabled.
     )", 0) \
+    DECLARE(UInt64, memory_worker_decay_adjustment_period_ms, 5000, R"(
+    Duration in milliseconds that memory pressure must persist before dynamically adjusting jemalloc's `dirty_decay_ms`. When memory usage remains above the purge threshold for this period, automatic dirty page decay is disabled (`dirty_decay_ms=0`) to aggressively reclaim memory. When usage stays below the threshold for this period, the default decay behavior is restored. Set to 0 to disable dynamic adjustment and use jemalloc's default decay settings.
+    )", 0) \
     DECLARE(Bool, memory_worker_correct_memory_tracker, 0, R"(
     Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups
     )", 0) \

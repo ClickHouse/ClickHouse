@@ -9,7 +9,7 @@ if (SANITIZE STREQUAL "undefined")
 endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
-
+set(WITH_COVERAGE OFF)
 # add_contrib cmake_folder[ base_folder1[, ...base_folderN]]
 function(add_contrib cmake_folder)
     if (ARGN)
