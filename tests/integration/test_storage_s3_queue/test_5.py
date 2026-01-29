@@ -139,6 +139,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/keeper_retries.xml",
+                "configs/s3queue_background_profile.xml",
             ],
             stay_alive=True,
         )
@@ -1480,3 +1481,137 @@ def test_deduplication(started_cluster, mode):
     )
     expected_rows = files_num * num_rows
     assert expected_rows == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+
+@pytest.mark.parametrize("mode", ["unordered"])
+def test_deduplication_with_multiple_chunks(started_cluster, mode):
+    """
+    Test deduplication when files are processed in multiple chunks.
+    Each chunk will have a deduplication token = etag + file offset.
+    """
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = f"test_deduplication_chunks_{mode}_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    format = "a Int32, b String"
+
+    # Use small max_insert_block_size to force multiple chunks per file
+    # The s3queue_chunked profile is defined in configs/s3queue_background_profile.xml
+    chunk_size = 10
+    processing_threads = 16
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 1000,
+            "use_persistent_processing_nodes": 1,
+            "persistent_processing_node_ttl_seconds": 60,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 500,
+            "polling_max_timeout_ms": 200,
+            "polling_backoff_ms": 100,
+            "processing_threads_num": processing_threads,
+            "s3queue_background_profile": "s3queue_chunked",
+        },
+    )
+    i = [0]
+
+    # Create files with more rows than chunk_size to force multiple chunks
+    num_rows = 50  # Will create 5 chunks per file (50 / 10 = 5)
+
+    def insert():
+        i[0] += 1
+        file_name = f"file_{table_name}_{i[0]}.csv"
+        s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
+        node.query(
+            f"INSERT INTO FUNCTION {s3_function} select number, toString({i[0]}) FROM numbers({num_rows})"
+        )
+
+    files_num = 5
+    for _ in range(files_num):
+        insert()
+
+    node.query(
+        f"""
+        CREATE TABLE {dst_table_name} ({format}, _path String)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table_name}', 'node')
+        ORDER BY a SETTINGS replicated_deduplication_window_seconds_for_async_inserts = 1000;
+    """
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit")
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {table_name} WHERE NOT sleepEachRow(0.5);
+        """
+    )
+
+    # Wait for commit failures due to failpoint
+    found = False
+    for _ in range(50):
+        if node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 16/16"
+        ):
+            found = True
+            break
+        time.sleep(1)
+    assert found
+
+    node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit")
+
+    # Wait for successful commit after disabling failpoint
+    found = False
+    for _ in range(50):
+        if node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Successfully committed"
+        ):
+            found = True
+            break
+        time.sleep(1)
+    assert found
+
+    assert node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Failed to process data:"
+    )
+
+    # Verify that we actually processed multiple chunks per file
+    # Look for log messages with file offsets in deduplication tokens
+    chunks_per_file = num_rows // chunk_size
+    assert chunks_per_file > 1, f"Test setup error: expected multiple chunks per file but got {chunks_per_file}"
+
+    # Check logs for evidence of chunk processing with offsets
+    # We should see deduplication tokens with format: etag_offset (e.g., hash_10, hash_20, etc.)
+    log_content = node.grep_in_log("Setting root view ID")
+    assert log_content, "No deduplication log messages found"
+
+    # Verify we have multiple unique tokens per file (indicating chunks with different offsets)
+    # Count lines that mention the same file but different offsets
+    import re
+    offset_pattern = re.compile(r'_(\d+)')
+    offsets_found = set()
+    for line in log_content.split('\n'):
+        match = offset_pattern.search(line)
+        if match:
+            offsets_found.add(int(match.group(1)))
+
+    # We should have found multiple different offsets (0, chunk_size, 2*chunk_size, etc.)
+    assert len(offsets_found) > files_num, (
+        f"Expected to find more than {files_num} unique chunk offsets "
+        f"(files_num * chunks_per_file = {files_num * chunks_per_file}), "
+        f"but only found {len(offsets_found)} unique offsets: {sorted(offsets_found)}"
+    )
+
+    # Verify correct number of rows - deduplication should ensure no duplicates
+    # even though we had retries with multiple chunks per file
+    expected_rows = files_num * num_rows
+    actual_rows = int(node.query(f"SELECT count() FROM {dst_table_name}"))
+    assert expected_rows == actual_rows, f"Expected {expected_rows} rows but got {actual_rows}"

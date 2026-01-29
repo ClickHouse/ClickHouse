@@ -20,6 +20,7 @@ namespace ErrorCodes
 }
 
 #define OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(DECLARE, ALIAS) \
+    DECLARE(String, background_profile, "", "Settings profile to apply for S3Queue background processing threads. Allows configuring settings like max_insert_block_size independently from user queries", 0) \
     DECLARE(ObjectStorageQueueMode, mode, ObjectStorageQueueMode::ORDERED, \
       "With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeepeer." \
       "With ordered mode, only the max name of the successfully consumed file stored.", \

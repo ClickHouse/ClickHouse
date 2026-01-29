@@ -81,6 +81,7 @@ namespace ServerSetting
 
 namespace ObjectStorageQueueSetting
 {
+    extern const ObjectStorageQueueSettingsString background_profile;
     extern const ObjectStorageQueueSettingsUInt32 cleanup_interval_max_ms;
     extern const ObjectStorageQueueSettingsUInt32 cleanup_interval_min_ms;
     extern const ObjectStorageQueueSettingsUInt32 enable_logging_to_queue_log;
@@ -804,6 +805,14 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
     auto queue_context = Context::createCopy(getContext());
     queue_context->makeQueryContext();
+
+    /// Apply background settings profile if configured
+    auto queue_settings = getSettings();
+    const String profile_name = queue_settings[ObjectStorageQueueSetting::background_profile];
+    if (!profile_name.empty())
+    {
+        queue_context->setCurrentProfile(profile_name);
+    }
 
     size_t min_insert_block_size_rows;
     size_t min_insert_block_size_bytes;
