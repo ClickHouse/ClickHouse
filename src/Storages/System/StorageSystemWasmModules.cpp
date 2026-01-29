@@ -67,10 +67,10 @@ public:
         size_t num_rows = chunk.getNumRows();
         for (size_t i = 0; i < num_rows; ++i)
         {
-            StringRef name = name_column->getDataAt(i);
-            StringRef code = code_column->getDataAt(i);
+            std::string_view name = name_column->getDataAt(i);
+            std::string_view code = code_column->getDataAt(i);
             UInt256 expected_hash = hash_column->getElement(i);
-            wasm_module_manager.saveModule(name.toView(), code.toView(), expected_hash);
+            wasm_module_manager.saveModule(name, code, expected_hash);
         }
     }
 
