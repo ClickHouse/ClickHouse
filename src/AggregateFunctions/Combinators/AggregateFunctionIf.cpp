@@ -384,7 +384,7 @@ public:
         ValuesWithType wrapped_arguments;
         wrapped_arguments.reserve(arguments_size);
 
-        std::vector<llvm::Value * > is_null_values;
+        VectorWithMemoryTracking<llvm::Value * > is_null_values;
 
         for (size_t i = 0; i < arguments_size; ++i)
         {

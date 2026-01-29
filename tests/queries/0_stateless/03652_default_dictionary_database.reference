@@ -1,0 +1,9 @@
+Test 1: Without setting (should fail)
+Test 2: With explicit database
+1
+Test 3: Local dictionary in current database
+1
+Test 4: With default_dictionary_database setting
+1
+Test 5: Priority test
+1

@@ -30,7 +30,7 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         }
     }
 
-    auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
 
     node = select_with_union_query;
     select_with_union_query->list_of_selects = list_node;

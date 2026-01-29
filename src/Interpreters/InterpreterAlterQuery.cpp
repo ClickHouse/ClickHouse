@@ -134,7 +134,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
-        auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
+        auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
     }
@@ -193,7 +193,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
         else if (auto mut_command = MutationCommand::parse(*command_ast))
         {
-            mut_command->ast = child;
             if (mut_command->type == MutationCommand::UPDATE || mut_command->type == MutationCommand::DELETE)
             {
                 /// TODO: add a check for result query size.
@@ -206,7 +205,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
                             command_ast->formatForErrorMessage(), rewritten_command_ast->formatForErrorMessage());
-                    mut_command->ast = rewritten_command_ast;
                 }
             }
 

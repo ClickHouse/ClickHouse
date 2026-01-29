@@ -83,7 +83,7 @@ namespace
         });
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -96,7 +96,7 @@ namespace
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 
-            roles = std::static_pointer_cast<ASTRolesOrUsersSet>(ast);
+            roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
             return true;
         });
     }
@@ -155,7 +155,7 @@ bool ParserCreateMaskingPolicy::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     String new_name;
     ASTPtr update_assignments;
     ASTPtr where_condition;
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
     Int64 priority = 0;
     bool has_priority = false;
     String storage_name;
@@ -199,14 +199,14 @@ bool ParserCreateMaskingPolicy::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     if (!roles && !alter)
     {
-        roles = std::make_shared<ASTRolesOrUsersSet>();
+        roles = make_intrusive<ASTRolesOrUsersSet>();
         roles->all = true;
     }
 
     if (!update_assignments && !alter)
         return false;
 
-    auto query = std::make_shared<ASTCreateMaskingPolicyQuery>();
+    auto query = make_intrusive<ASTCreateMaskingPolicyQuery>();
     node = query;
 
     query->alter = alter;

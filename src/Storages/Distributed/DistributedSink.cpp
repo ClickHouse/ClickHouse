@@ -124,13 +124,13 @@ static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & 
 
 static ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Names & column_names)
 {
-    auto query = std::make_shared<ASTInsertQuery>();
+    auto query = make_intrusive<ASTInsertQuery>();
     query->table_id = StorageID(database, table);
-    auto columns = std::make_shared<ASTExpressionList>();
+    auto columns = make_intrusive<ASTExpressionList>();
     query->columns = columns;
     query->children.push_back(columns);
     for (const auto & column_name : column_names)
-        columns->children.push_back(std::make_shared<ASTIdentifier>(column_name));
+        columns->children.push_back(make_intrusive<ASTIdentifier>(column_name));
     return query;
 }
 
@@ -572,7 +572,7 @@ void DistributedSink::onFinish()
     auto log_performance = [this]()
     {
         double elapsed = watch.elapsedSeconds();
-        LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
+        LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, static_cast<double>(inserted_rows) / elapsed, getCurrentStateDescription());
     };
 
     std::lock_guard lock(execution_mutex);

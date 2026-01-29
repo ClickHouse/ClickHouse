@@ -734,10 +734,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     for (const auto & ttl_entry : move_ttl_entries)
         updateTTL(context, ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
-    ReservationPtr reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
-    VolumePtr volume = data.getStoragePolicy()->getVolume(0);
-    VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
-
     const UInt64 & min_bytes_to_perform_insert =
             (*data_settings)[MergeTreeSetting::min_free_disk_bytes_to_perform_insert].changed
             ? (*data_settings)[MergeTreeSetting::min_free_disk_bytes_to_perform_insert]
@@ -750,33 +746,38 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     const bool is_system_database = (data.getStorageID().getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
 
+    VolumePtr volume = data.getStoragePolicy()->getVolume(0);
+    ReservationPtr reservation;
+
     if (!is_system_database && (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0))
     {
-        const auto & disk = data_part_volume->getDisk();
-        const UInt64 & total_disk_bytes = disk->getTotalSpace().value_or(0);
-        const UInt64 & free_disk_bytes = disk->getUnreservedSpace().value_or(0);
+        ReservationConstraints constraints(min_bytes_to_perform_insert, min_ratio_to_perform_insert);
 
-        const UInt64 & min_bytes_from_ratio = static_cast<UInt64>(min_ratio_to_perform_insert * total_disk_bytes);
-        const UInt64 & needed_free_bytes = std::max(min_bytes_to_perform_insert, min_bytes_from_ratio);
+        /// Try to reserve space on volume with constraints
+        reservation = volume->reserve(expected_size, constraints);
 
-        if (needed_free_bytes > free_disk_bytes)
+        if (!reservation)
         {
             throw Exception(
                 ErrorCodes::NOT_ENOUGH_SPACE,
                 "Could not perform insert. "
-                "The amount of free space ({}) on disk {} is less than the configured threshold ({})."
+                "None of the disks in volume '{}' have enough free space to meet the configured threshold. "
                 "The threshold can be configured either in MergeTree settings or User settings, "
                 "using the following settings: "
-                "(1) `min_free_disk_bytes_to_perform_insert` "
-                "(2) `min_free_disk_ratio_to_perform_insert`. "
-                "The total disk capacity of {} is {}",
-                formatReadableSizeWithBinarySuffix(free_disk_bytes),
-                backQuote(disk->getName()),
-                formatReadableSizeWithBinarySuffix(needed_free_bytes),
-                backQuote(disk->getName()),
-                formatReadableSizeWithBinarySuffix(total_disk_bytes));
+                "(1) `min_free_disk_bytes_to_perform_insert` = {} "
+                "(2) `min_free_disk_ratio_to_perform_insert` = {}",
+                volume->getName(),
+                min_bytes_to_perform_insert,
+                min_ratio_to_perform_insert);
         }
     }
+    else
+    {
+        /// No free space check needed, use default reservation
+        reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
+    }
+
+    VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings())
         .withPartFormat(data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr))

@@ -4,6 +4,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTWithAlias.h>
 
 
 namespace DB
@@ -40,7 +41,7 @@ ASTPtr ASTIndexDeclaration::clone() const
     if (type)
         type = type->clone();
 
-    auto res = std::make_shared<ASTIndexDeclaration>(expr, type, name);
+    auto res = make_intrusive<ASTIndexDeclaration>(expr, type, name);
     res->granularity = granularity;
 
     return res;
@@ -53,11 +54,11 @@ ASTPtr ASTIndexDeclaration::getExpression() const
     return children[expression_idx];
 }
 
-std::shared_ptr<ASTFunction> ASTIndexDeclaration::getType() const
+boost::intrusive_ptr<ASTFunction> ASTIndexDeclaration::getType() const
 {
     if (children.size() <= type_idx)
         return nullptr;
-    auto func_ast = std::dynamic_pointer_cast<ASTFunction>(children[type_idx]);
+    auto func_ast = boost::dynamic_pointer_cast<ASTFunction>(children[type_idx]);
     if (!func_ast)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration type must be a function");
     return func_ast;
@@ -67,22 +68,26 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
 {
     if (auto expr = getExpression())
     {
+        auto nested_frame = frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(expr.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+
         if (part_of_create_index_query)
         {
             if (expr->as<ASTExpressionList>())
             {
                 ostr << "(";
-                expr->format(ostr, s, state, frame);
+                expr->format(ostr, s, state, nested_frame);
                 ostr << ")";
             }
             else
-                expr->format(ostr, s, state, frame);
+                expr->format(ostr, s, state, nested_frame);
         }
         else
         {
             s.writeIdentifier(ostr, name, /*ambiguous=*/false);
             ostr << " ";
-            expr->format(ostr, s, state, frame);
+            expr->format(ostr, s, state, nested_frame);
         }
     }
 
@@ -99,7 +104,7 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     }
 }
 
-UInt64 getSecondaryIndexGranularity(const std::shared_ptr<ASTFunction> & type, const ASTPtr & granularity)
+UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & type, const ASTPtr & granularity)
 {
     /// Text index is always built for the whole part and granularity is ignored.
     if (type && type->name == "text")

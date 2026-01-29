@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <csignal>
 #include <filesystem>
-#include <variant>
 #include <unistd.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
@@ -24,7 +23,9 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DeltaMetadataLog.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -36,7 +37,6 @@
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -59,7 +59,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/ActionLock.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
@@ -70,6 +69,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -362,7 +362,7 @@ BlockIO InterpreterSystemQuery::execute()
             sync();
             break;
         }
-        case Type::DROP_DNS_CACHE:
+        case Type::CLEAR_DNS_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
             DNSResolver::instance().dropCache();
@@ -371,7 +371,7 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->reloadClusterConfig();
             break;
         }
-        case Type::DROP_CONNECTIONS_CACHE:
+        case Type::CLEAR_CONNECTIONS_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE);
             HTTPConnectionPools::instance().dropCache();
@@ -387,11 +387,11 @@ BlockIO InterpreterSystemQuery::execute()
             prewarmPrimaryIndexCache();
             break;
         }
-        case Type::DROP_MARK_CACHE:
+        case Type::CLEAR_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
             system_context->clearMarkCache();
             break;
-        case Type::DROP_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_ICEBERG_METADATA_CACHE:
 #if USE_AVRO
             getContext()->checkAccess(AccessType::SYSTEM_DROP_ICEBERG_METADATA_CACHE);
             system_context->clearIcebergMetadataFilesCache();
@@ -399,61 +399,61 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
 #endif
-        case Type::DROP_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
             break;
-        case Type::DROP_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearUncompressedCache();
             break;
-        case Type::DROP_INDEX_MARK_CACHE:
+        case Type::CLEAR_INDEX_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
             system_context->clearIndexMarkCache();
             break;
-        case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearIndexUncompressedCache();
             break;
-        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
+        case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
             system_context->clearVectorSimilarityIndexCache();
             break;
-        case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
+        case Type::CLEAR_TEXT_INDEX_DICTIONARY_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_DICTIONARY_CACHE);
             system_context->clearTextIndexDictionaryBlockCache();
             break;
-        case Type::DROP_TEXT_INDEX_HEADER_CACHE:
+        case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE);
             system_context->clearTextIndexHeaderCache();
             break;
-        case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
+        case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE);
             system_context->clearTextIndexPostingsCache();
             break;
-        case Type::DROP_TEXT_INDEX_CACHES:
+        case Type::CLEAR_TEXT_INDEX_CACHES:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_CACHES);
             system_context->clearTextIndexDictionaryBlockCache();
             system_context->clearTextIndexHeaderCache();
             system_context->clearTextIndexPostingsCache();
             break;
-        case Type::DROP_MMAP_CACHE:
+        case Type::CLEAR_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->clearMMappedFileCache();
             break;
-        case Type::DROP_QUERY_CONDITION_CACHE:
+        case Type::CLEAR_QUERY_CONDITION_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CONDITION_CACHE);
             getContext()->clearQueryConditionCache();
             break;
         }
-        case Type::DROP_QUERY_CACHE:
+        case Type::CLEAR_QUERY_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
             getContext()->clearQueryResultCache(query.query_result_cache_tag);
             break;
         }
-        case Type::DROP_COMPILED_EXPRESSION_CACHE:
+        case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
 #if USE_EMBEDDED_COMPILER
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
@@ -462,7 +462,7 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for JIT compilation");
 #endif
-        case Type::DROP_S3_CLIENT_CACHE:
+        case Type::CLEAR_S3_CLIENT_CACHE:
 #if USE_AWS_S3
             getContext()->checkAccess(AccessType::SYSTEM_DROP_S3_CLIENT_CACHE);
             S3::ClientCacheRegistry::instance().clearCacheForAll();
@@ -471,7 +471,7 @@ BlockIO InterpreterSystemQuery::execute()
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AWS S3");
 #endif
 
-        case Type::DROP_FILESYSTEM_CACHE:
+        case Type::CLEAR_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
             const auto user_id = FileCache::getCommonUser().user_id;
@@ -557,7 +557,7 @@ BlockIO InterpreterSystemQuery::execute()
             result.pipeline = QueryPipeline(std::move(source));
             break;
         }
-        case Type::DROP_DISK_METADATA_CACHE:
+        case Type::CLEAR_DISK_METADATA_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
 
@@ -567,13 +567,13 @@ BlockIO InterpreterSystemQuery::execute()
 
             break;
         }
-        case Type::DROP_PAGE_CACHE:
+        case Type::CLEAR_PAGE_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PAGE_CACHE);
             system_context->clearPageCache();
             break;
         }
-        case Type::DROP_SCHEMA_CACHE:
+        case Type::CLEAR_SCHEMA_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
             std::unordered_set<String> caches_to_drop;
@@ -600,7 +600,7 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
             break;
         }
-        case Type::DROP_FORMAT_SCHEMA_CACHE:
+        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FORMAT_SCHEMA_CACHE);
             std::unordered_set<String> caches_to_drop;
@@ -869,7 +869,10 @@ BlockIO InterpreterSystemQuery::execute()
 
             std::vector<StorageID> tables;
             for (const auto & [database, table]: query.tables)
+            {
                 tables.push_back(getContext()->resolveStorageID({database, table}, Context::ResolveOrdinary));
+                getContext()->getQueryContext()->addQueryAccessInfo(tables.back(), {});
+            }
 
             queue->flush(tables);
             break;
@@ -927,6 +930,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
             LOG_TRACE(log, "Notifying failpoint {}", query.fail_point_name);
             FailPointInjection::notifyFailPoint(query.fail_point_name);
+            LOG_TRACE(log, "Notified failpoint {}", query.fail_point_name);
             break;
         }
 #else // USE_LIBFIU
@@ -1007,6 +1011,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::JEMALLOC_FLUSH_PROFILE:
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without JEMalloc");
 #endif
+
+        case Type::RESET_DDL_WORKER:
+            getContext()->getDDLWorker().requestToResetState();
+            break;
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of SYSTEM query");
     }
@@ -1057,7 +1065,7 @@ void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
 StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
 {
     LOG_TRACE(log, "Restarting replica {}", replica);
-    auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName());
+    auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName(), nullptr);
 
     auto restart_replica_lock = DatabaseCatalog::instance().tryGetLockForRestartReplica(replica.getDatabaseName());
     if (!restart_replica_lock)
@@ -1324,9 +1332,9 @@ void InterpreterSystemQuery::dropStorageReplicasFromDatabase(const String & quer
 }
 
 DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
-    const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
+    const String & zookeeper_name, const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
 {
-    auto zookeeper = getContext()->getZooKeeper();
+    auto zookeeper = getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
 
     String metadata_path = zookeeper_path + "/metadata";
     if (!zookeeper->exists(metadata_path))
@@ -1573,7 +1581,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
+            DatabaseReplicated::dropReplica(
+                replicated, replicated->getZooKeeperName(), replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated, cannot drop replica", query.getDatabase());
@@ -1600,7 +1609,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
+            DatabaseReplicated::dropReplica(
+                replicated, replicated->getZooKeeperName(), replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
             LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
     }
@@ -1633,6 +1643,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
                 executeQuery(drop_query, drop_ctx);
             });
             auto database = restoreDatabaseFromKeeperPath(
+                /*zookeeper_name=*/query.zk_name,
                 /*zookeeper_path=*/query.replica_zk_path,
                 /*full_replica_name=*/full_replica_name,
                 /*restoring_database_name=*/restoring_database_name);
@@ -1643,8 +1654,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             }
         }
 
-        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
-        LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.replica_zk_path);
+        DatabaseReplicated::dropReplica(nullptr, query.zk_name, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
+        LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.full_replica_zk_path);
     }
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
@@ -1852,7 +1863,7 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
-    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
+    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
     if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
@@ -1974,35 +1985,35 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_SHUTDOWN);
             break;
         }
-        case Type::DROP_DNS_CACHE:
-        case Type::DROP_CONNECTIONS_CACHE:
-        case Type::DROP_MARK_CACHE:
-        case Type::DROP_ICEBERG_METADATA_CACHE:
-        case Type::DROP_PRIMARY_INDEX_CACHE:
-        case Type::DROP_MMAP_CACHE:
-        case Type::DROP_QUERY_CONDITION_CACHE:
-        case Type::DROP_QUERY_CACHE:
-        case Type::DROP_COMPILED_EXPRESSION_CACHE:
-        case Type::DROP_UNCOMPRESSED_CACHE:
-        case Type::DROP_INDEX_MARK_CACHE:
-        case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
-        case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
-        case Type::DROP_TEXT_INDEX_HEADER_CACHE:
-        case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
-        case Type::DROP_TEXT_INDEX_CACHES:
-        case Type::DROP_FILESYSTEM_CACHE:
-        case Type::DROP_DISTRIBUTED_CACHE:
+        case Type::CLEAR_DNS_CACHE:
+        case Type::CLEAR_CONNECTIONS_CACHE:
+        case Type::CLEAR_MARK_CACHE:
+        case Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_MMAP_CACHE:
+        case Type::CLEAR_QUERY_CONDITION_CACHE:
+        case Type::CLEAR_QUERY_CACHE:
+        case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
+        case Type::CLEAR_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_INDEX_MARK_CACHE:
+        case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
+        case Type::CLEAR_TEXT_INDEX_DICTIONARY_CACHE:
+        case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
+        case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
+        case Type::CLEAR_TEXT_INDEX_CACHES:
+        case Type::CLEAR_FILESYSTEM_CACHE:
+        case Type::CLEAR_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
-        case Type::DROP_PAGE_CACHE:
-        case Type::DROP_SCHEMA_CACHE:
-        case Type::DROP_FORMAT_SCHEMA_CACHE:
-        case Type::DROP_S3_CLIENT_CACHE:
+        case Type::CLEAR_PAGE_CACHE:
+        case Type::CLEAR_SCHEMA_CACHE:
+        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
+        case Type::CLEAR_S3_CLIENT_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
         }
-        case Type::DROP_DISK_METADATA_CACHE:
+        case Type::CLEAR_DISK_METADATA_CACHE:
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
         case Type::RELOAD_DICTIONARY:
         case Type::RELOAD_DICTIONARIES:
@@ -2312,6 +2323,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
         case Type::UNKNOWN:
+        case Type::RESET_DDL_WORKER:
         case Type::END: break;
     }
     return required_access;
