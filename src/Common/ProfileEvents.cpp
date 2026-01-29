@@ -1280,12 +1280,14 @@ The server successfully detected this situation and will download merged part fr
     M(AsyncLoggingErrorFileLogTotalMessages, "How many messages (accepted or dropped) have been sent to the async queue for the error file log", ValueType::Number) \
     M(AsyncLoggingSyslogTotalMessages, "How many messages (accepted or dropped) have been sent to the async queue for the syslog", ValueType::Number) \
     M(AsyncLoggingTextLogTotalMessages, "How many messages (accepted or dropped) have been sent to the async queue for the text_log", ValueType::Number) \
+    M(AsyncLoggingAuditFileLogTotalMessages, "How many messages (accepted or dropped) have been sent to the async queue for the audit file log", ValueType::Number) \
     \
     M(AsyncLoggingConsoleDroppedMessages, "How many messages have been dropped from the console log due to the async log queue being full", ValueType::Number) \
     M(AsyncLoggingFileLogDroppedMessages, "How many messages have been dropped from the file log due to the async log queue being full", ValueType::Number) \
     M(AsyncLoggingErrorFileLogDroppedMessages, "How many messages have been dropped from error file log due to the async log queue being full", ValueType::Number) \
     M(AsyncLoggingSyslogDroppedMessages, "How many messages have been dropped from the syslog due to the async log queue being full", ValueType::Number) \
     M(AsyncLoggingTextLogDroppedMessages, "How many messages have been dropped from text_log due to the async log queue being full", ValueType::Number) \
+    M(AsyncLoggingAuditFileLogDroppedMessages, "How many messages have been dropped from audit file log due to the async log queue being full", ValueType::Number) \
     \
     M(JemallocFailedAllocationSampleTracking, "Total number of times tracking of jemalloc allocation sample failed", ValueType::Number) \
     M(JemallocFailedDeallocationSampleTracking, "Total number of times tracking of jemalloc deallocation sample failed", ValueType::Number) \

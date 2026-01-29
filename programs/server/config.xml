@@ -33,6 +33,10 @@
 
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+
+        <!-- <auditlog>/var/log/clickhouse-server/clickhouse-server.audit.log</auditlog> -->
+        <!-- <auditlog_types>USER,DDL,DCL</auditlog_types> -->
+
         <!-- Rotation policy
              See https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/FileChannel.h#L54-L85
           -->
@@ -85,7 +89,7 @@
         <!-- Structured log formatting:
 
         You can specify log format(for now, JSON only).
-        It can be done either on a per-channel (log, errorlog, console, syslog) level (set `channel`, i.e. `<channel>console</channel>') or for all channels (omit `channel`).
+        It can be done either on a per-channel (log, errorlog, console, syslog, auditlog) level (set `channel`, i.e. `<channel>console</channel>') or for all channels (omit `channel`).
         The log will be printed in specified format like JSON, example:
 
         {"date_time":"1650918987.180175","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}

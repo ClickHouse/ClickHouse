@@ -163,3 +163,4 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
 #define LOG_WARNING(logger, ...) LOG_IMPL(logger, DB::LogsLevel::warning, Poco::Message::PRIO_WARNING, __VA_ARGS__)
 #define LOG_ERROR(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::error, Poco::Message::PRIO_ERROR, __VA_ARGS__)
 #define LOG_FATAL(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::error, Poco::Message::PRIO_FATAL, __VA_ARGS__)
+#define LOG_AUDIT(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::information, Poco::Message::PRIO_NOTICE, __VA_ARGS__)

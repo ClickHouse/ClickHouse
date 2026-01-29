@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/StringTokenizer.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
@@ -421,6 +422,7 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int STARTUP_SCRIPTS_ERROR;
+    extern const int UNEXPECTED_AUDIT_TYPE;
 }
 
 namespace FileCacheSetting
@@ -1847,6 +1849,52 @@ try
         const auto & user_scripts_path_setting = server_settings[ServerSetting::user_scripts_path];
         std::string user_scripts_path = user_scripts_path_setting.changed ? user_scripts_path_setting.value : String(path / "user_scripts/");
         global_context->setUserScriptsPath(user_scripts_path);
+    }
+
+    /// Audit log configuration
+    {
+        /// Audit logging is enabled only when `logger.auditlog` is non-empty.
+        const auto auditlog_path_prop = config().getString("logger.auditlog", "");
+        if (!auditlog_path_prop.empty())
+        {
+            const auto auditlog_types = config().getString("logger.auditlog_types", "");
+            std::unordered_set<Context::AuditLogTypes> types_set;
+
+            /// Default audit log type is DDL
+            if (auditlog_types.empty())
+                types_set.emplace(Context::AuditLogTypes::DDL);
+            else
+            {
+                Poco::StringTokenizer auditlog_types_tok(auditlog_types, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
+
+                for (const auto & item : auditlog_types_tok)
+                {
+                    /// Parse token
+                    if (item == "USER")
+                        types_set.emplace(Context::AuditLogTypes::USER);
+                    else if (item == "DDL")
+                        types_set.emplace(Context::AuditLogTypes::DDL);
+                    else if (item == "DML")
+                        types_set.emplace(Context::AuditLogTypes::DML);
+                    else if (item == "DCL")
+                        types_set.emplace(Context::AuditLogTypes::DCL);
+                    else if (item == "MISC")
+                        types_set.emplace(Context::AuditLogTypes::MISC);
+                    else if (item == "ALL")
+                        types_set.emplace(Context::AuditLogTypes::ALL);
+                    else
+                    {
+                        throw Exception(
+                            ErrorCodes::UNEXPECTED_AUDIT_TYPE,
+                            "Unexpected audit type: {}, expected values are USER, DDL, DML, DCL, MISC, ALL",
+                            item);
+                    }
+                }
+            }
+
+            LOG_DEBUG(log, "auditlog_types={}, types_set's size={}", auditlog_types, types_set.size());
+            global_context->setAuditTypes(types_set);
+        }
     }
 
     /// top_level_domains_lists
