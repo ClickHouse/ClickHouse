@@ -1,11 +1,15 @@
 #include <Storages/Kafka/KafkaConfigLoader.h>
 
+#include <librdkafka/rdkafka.h>
+
 #include <Access/KerberosInit.h>
+#include <Storages/Kafka/AWSMSKIAMAuth.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -32,6 +36,7 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_sasl_mechanism;
     extern const KafkaSettingsString kafka_sasl_username;
     extern const KafkaSettingsString kafka_sasl_password;
+    extern const KafkaSettingsString kafka_aws_region;
     extern const KafkaSettingsString kafka_compression_codec;
     extern const KafkaSettingsInt64 kafka_compression_level;
 }
@@ -39,6 +44,7 @@ namespace KafkaSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 template <typename TKafkaStorage>
@@ -158,6 +164,13 @@ template struct KafkaInterceptors<StorageKafka2>;
 namespace
 {
 
+/// ClickHouse internal settings that should not be passed to librdkafka
+/// These settings are read directly in ClickHouse code for internal logic
+const std::unordered_set<String> CLICKHOUSE_INTERNAL_KAFKA_SETTINGS = {
+    "use_environment_credentials",  // AWS MSK IAM: controls credential source (env vs instance profile)
+    // Add future internal settings here
+};
+
 void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & key, const String & value)
 {
     /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
@@ -270,6 +283,10 @@ void loadFromConfig(
             /// Do not load consumer/producer properties, since they should be separated by different configuration objects.
             continue;
 
+        if (CLICKHOUSE_INTERNAL_KAFKA_SETTINGS.contains(tag))
+            /// Skip ClickHouse internal settings that are read directly in code and should not be passed to librdkafka
+            continue;
+
         if (tag.starts_with(
                 KafkaConfigLoader::CONFIG_KAFKA_TOPIC_TAG)) /// multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
         {
@@ -364,7 +381,33 @@ void updateConfigurationFromConfig(
     if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty())
         kafka_config.set("security.protocol", kafka_settings[KafkaSetting::kafka_security_protocol]);
     if (!kafka_settings[KafkaSetting::kafka_sasl_mechanism].value.empty())
-        kafka_config.set("sasl.mechanism", kafka_settings[KafkaSetting::kafka_sasl_mechanism]);
+    {
+        String sasl_mechanism = kafka_settings[KafkaSetting::kafka_sasl_mechanism].value;
+
+        // AWS MSK IAM: converts to OAUTHBEARER with stateless token generation
+        if (boost::iequals(sasl_mechanism, "AWS_MSK_IAM"))
+        {
+#if USE_AWS_S3
+            String aws_region = kafka_settings[KafkaSetting::kafka_aws_region].value;
+
+            String broker_list = kafka_config.has_property("metadata.broker.list")
+                ? kafka_config.get("metadata.broker.list")
+                : "";
+
+            AWSMSKIAMAuth::setupAuthentication(
+                kafka_config, params.config, aws_region, broker_list, params.log, storage.getOAuthContext());
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "AWS MSK IAM authentication is not supported in this build. "
+                "ClickHouse must be built with USE_AWS_S3=1");
+#endif
+        }
+        else
+        {
+            // Standard SASL mechanisms
+            kafka_config.set("sasl.mechanism", sasl_mechanism);
+        }
+    }
     if (!kafka_settings[KafkaSetting::kafka_sasl_username].value.empty())
         kafka_config.set("sasl.username", kafka_settings[KafkaSetting::kafka_sasl_username]);
     if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())

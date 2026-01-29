@@ -20,6 +20,8 @@
 namespace DB
 {
 
+namespace AWSMSKIAMAuth { struct OAuthBearerTokenRefreshContext; }
+
 struct KafkaSettings;
 class ReadFromStorageKafka;
 class ThreadStatus;
@@ -98,6 +100,8 @@ public:
 
     const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
 
+    std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> & getOAuthContext() { return oauth_context; }
+
 private:
     friend class ReadFromStorageKafka;
 
@@ -117,6 +121,7 @@ private:
     const SettingsChanges settings_adjustments;
 
     std::atomic<bool> mv_attached = false;
+    std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> oauth_context;
 
     std::vector<KafkaConsumerPtr> consumers;
 
