@@ -262,7 +262,7 @@ bool DiskAccessStorage::readLists()
 
     memory_storage.removeAllExcept({});
     /// This entities are not fully loaded yet, do not send notifications to AccessChangesNotifier
-    memory_storage.setAll(ids_entities, /* notify= */ false, /* ignore_limit= */ true);
+    memory_storage.setAll(ids_entities, /* notify= */ false);
 
     return true;
 }
@@ -382,7 +382,7 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
         all_entities.emplace_back(id, entity);
     }
 
-    memory_storage.setAll(all_entities, /* notify= */ true, /* ignore_limit= */ true);
+    memory_storage.setAll(all_entities);
 
     for (auto type : collections::range(AccessEntityType::MAX))
         types_of_lists_to_write.insert(type);

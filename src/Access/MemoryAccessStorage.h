@@ -30,7 +30,7 @@ public:
     /// Sets all entities at once.
     void setAll(const std::vector<AccessEntityPtr> & all_entities);
     void setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities);
-    void setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities, bool notify, bool ignore_limit = false);
+    void setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities, bool notify);
 
     bool exists(const UUID & id) const override;
 

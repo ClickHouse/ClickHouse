@@ -82,7 +82,7 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
         for (const auto & entity : parser.parseRoles(config, role_ids_from_users_config))
             all_entities.emplace_back(UsersConfigParser::generateID(*entity), entity);
 
-        memory_storage.setAll(all_entities, /* notify= */ true, /* ignore_limit= */ true);
+        memory_storage.setAll(all_entities);
     }
     catch (Exception & e)
     {
