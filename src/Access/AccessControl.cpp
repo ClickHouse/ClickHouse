@@ -613,7 +613,7 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
 
         return auth_result;
     }
-    catch (const Exception & e)
+    catch (...)
     {
         tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed", LogsLevel::information);
 
@@ -643,8 +643,8 @@ See also /etc/clickhouse-server/users.xml on the server where ClickHouse is inst
         }
 
         /// Preserve the second factor authentication error code.
-        if (e.code() == ErrorCodes::REQUIRED_SECOND_FACTOR)
-            error_code = e.code();
+        if (getCurrentExceptionCode() == ErrorCodes::REQUIRED_SECOND_FACTOR)
+            error_code = ErrorCodes::REQUIRED_SECOND_FACTOR;
 
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons.
         /// Only the log ((*), above) will show the exact reason. Note that (*) logs at information level instead of the default error level as
