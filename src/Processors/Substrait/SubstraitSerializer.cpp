@@ -1,49 +1,49 @@
-#include <Processors/Substrait/SubstraitSerializer.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/ReadFromTableStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/IntersectOrExceptStep.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/Aggregator.h>
-#include <Interpreters/TableJoin.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeMap.h>
 #include <Core/Block.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
-#include <Functions/IFunction.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
-#include <Common/Exception.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Aggregator.h>
+#include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromTableStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/Substrait/SubstraitSerializer.h>
 #include <Storages/IStorage.h>
+#include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 
 #include <cmath>
 
-#include <substrait/plan.pb.h>
 #include <substrait/algebra.pb.h>
-#include <substrait/type.pb.h>
 #include <substrait/extensions/extensions.pb.h>
+#include <substrait/plan.pb.h>
+#include <substrait/type.pb.h>
 
 #include <google/protobuf/util/json_util.h>
 
@@ -52,8 +52,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
+extern const int LOGICAL_ERROR;
 }
 
 class SubstraitSerializer::Impl
@@ -85,8 +85,7 @@ private:
 
         switch (type_id)
         {
-            case TypeIndex::Nothing:
-            {
+            case TypeIndex::Nothing: {
                 // Nothing type is always null - emit typed null with nullable i32
                 auto * null_type = literal->mutable_null();
                 null_type->mutable_i32()->set_nullability(substrait::Type::NULLABILITY_NULLABLE);
@@ -116,8 +115,7 @@ private:
             case TypeIndex::UInt32:
                 literal->set_i64(field.safeGet<UInt32>());
                 break;
-            case TypeIndex::UInt64:
-            {
+            case TypeIndex::UInt64: {
                 UInt64 u64 = field.safeGet<UInt64>();
                 if (u64 <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
                 {
@@ -154,8 +152,7 @@ private:
             case TypeIndex::DateTime:
                 literal->set_timestamp(static_cast<Int64>(field.safeGet<UInt32>()) * 1000000LL);
                 break;
-            case TypeIndex::DateTime64:
-            {
+            case TypeIndex::DateTime64: {
                 const auto * dt64 = checkAndGetDataType<DataTypeDateTime64>(type.get());
                 if (!dt64)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected DateTime64 type");
@@ -167,7 +164,8 @@ private:
                 {
                     int diff = 6 - scale;
                     Int64 factor = 1;
-                    for (int i = 0; i < diff; ++i) factor *= 10;
+                    for (int i = 0; i < diff; ++i)
+                        factor *= 10;
                     raw *= factor;
                 }
                 else if (scale > 6)
@@ -175,7 +173,8 @@ private:
                     // Truncate sub-microsecond precision
                     int diff = scale - 6;
                     Int64 factor = 1;
-                    for (int i = 0; i < diff; ++i) factor *= 10;
+                    for (int i = 0; i < diff; ++i)
+                        factor *= 10;
                     raw /= factor;
                 }
                 literal->set_timestamp(raw);
@@ -183,8 +182,7 @@ private:
             }
             case TypeIndex::Decimal32:
             case TypeIndex::Decimal64:
-            case TypeIndex::Decimal128:
-            {
+            case TypeIndex::Decimal128: {
                 auto * decimal_literal = literal->mutable_decimal();
                 UInt32 target_scale = getDecimalScale(*type);
                 UInt32 target_precision = getDecimalPrecision(*type);
@@ -209,14 +207,13 @@ private:
                 decimal_literal->set_scale(target_scale);
                 break;
             }
-            case TypeIndex::Array:
-            {
+            case TypeIndex::Array: {
                 const auto & arr = field.safeGet<Array>();
                 auto * list_literal = literal->mutable_list();
                 const auto * array_type = checkAndGetDataType<DataTypeArray>(type.get());
                 if (!array_type)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array type");
-                
+
                 for (const auto & elem : arr)
                 {
                     auto * elem_literal = list_literal->add_values();
@@ -224,14 +221,13 @@ private:
                 }
                 break;
             }
-            case TypeIndex::Tuple:
-            {
+            case TypeIndex::Tuple: {
                 const auto & tuple = field.safeGet<Tuple>();
                 auto * struct_literal = literal->mutable_struct_();
                 const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(type.get());
                 if (!tuple_type)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Tuple type");
-                
+
                 const auto & element_types = tuple_type->getElements();
                 for (size_t i = 0; i < tuple.size(); ++i)
                 {
@@ -240,15 +236,14 @@ private:
                 }
                 break;
             }
-            case TypeIndex::Map:
-            {
+            case TypeIndex::Map: {
                 // ClickHouse Map is stored as Array of (key, value) tuples
                 const auto & map_field = field.safeGet<Map>();
                 auto * map_literal = literal->mutable_map();
                 const auto * map_type = checkAndGetDataType<DataTypeMap>(type.get());
                 if (!map_type)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Map type");
-                
+
                 for (const auto & kv : map_field)
                 {
                     const auto & kv_tuple = kv.safeGet<Tuple>();
@@ -259,8 +254,10 @@ private:
                 break;
             }
             default:
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Field type {} not yet supported for Substrait literal conversion", type->getName());
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Field type {} not yet supported for Substrait literal conversion",
+                    type->getName());
         }
     }
 
@@ -271,7 +268,7 @@ private:
         String name;
         int reference_id;
     };
-    
+
     std::vector<FunctionExtension> function_extensions_;
     std::unordered_map<String, int> function_name_to_ref_;
     int next_function_ref_ = 0;
@@ -279,10 +276,12 @@ private:
     /// Map ClickHouse function names to Substrait standard names
     static String toSubstraitFunctionName(const String & clickhouse_name)
     {
-        if (clickhouse_name == "plus") return "add";
-        if (clickhouse_name == "minus") return "subtract";
+        if (clickhouse_name == "plus")
+            return "add";
+        if (clickhouse_name == "minus")
+            return "subtract";
         // Other arithmetic types have the same name in ClickHouse and Substrait
-        
+
         return clickhouse_name;
     }
 
@@ -293,18 +292,17 @@ private:
         auto it = function_name_to_ref_.find(function_name);
         if (it != function_name_to_ref_.end())
             return it->second;
-        
+
         // Register new function
         int ref_id = next_function_ref_++;
-        
+
         // Map ClickHouse function name to Substrait standard name
         String substrait_name = toSubstraitFunctionName(function_name);
-        
+
         // Use standard Substrait function URNs (format: extension:<OWNER>:<ID>)
         String urn;
-        if (function_name == "equals" || function_name == "notEquals" || 
-            function_name == "less" || function_name == "lessOrEquals" ||
-            function_name == "greater" || function_name == "greaterOrEquals")
+        if (function_name == "equals" || function_name == "notEquals" || function_name == "less"
+            || function_name == "lessOrEquals" || function_name == "greater" || function_name == "greaterOrEquals")
         {
             urn = "extension:substrait:functions_comparison";
         }
@@ -312,13 +310,15 @@ private:
         {
             urn = "extension:substrait:functions_boolean";
         }
-        else if (function_name == "plus" || function_name == "minus" || 
-                 function_name == "multiply" || function_name == "divide")
+        else if (
+            function_name == "plus" || function_name == "minus" || function_name == "multiply"
+            || function_name == "divide")
         {
             urn = "extension:substrait:functions_arithmetic";
         }
-        else if (function_name == "sum" || function_name == "avg" || 
-                 function_name == "count" || function_name == "min" || function_name == "max")
+        else if (
+            function_name == "sum" || function_name == "avg" || function_name == "count" || function_name == "min"
+            || function_name == "max")
         {
             urn = "extension:substrait:functions_aggregate_generic";
         }
@@ -327,13 +327,13 @@ private:
             // Custom ClickHouse function
             urn = "extension:clickhouse:functions";
         }
-        
+
         function_extensions_.push_back({urn, substrait_name, ref_id});
         function_name_to_ref_[function_name] = ref_id;
-        
+
         return ref_id;
     }
-    
+
     /// Find column index by name in a Block header, throws if not found
     int findColumnIndex(const Block & header, const String & column_name, const String & context_message) const
     {
@@ -366,12 +366,12 @@ private:
     void addExtensionsToPlan(substrait::Plan & substrait_plan)
     {
         // Group functions by URN
-        std::unordered_map<String, std::vector<const FunctionExtension*>> urn_to_functions;
+        std::unordered_map<String, std::vector<const FunctionExtension *>> urn_to_functions;
         for (const auto & ext : function_extensions_)
         {
             urn_to_functions[ext.urn].push_back(&ext);
         }
-        
+
         // Create extension URN declarations using extension_urns
         std::unordered_map<String, uint32_t> urn_to_anchor;
         uint32_t anchor = 0;
@@ -383,7 +383,7 @@ private:
             urn_to_anchor[urn] = anchor;
             ++anchor;
         }
-        
+
         // Create function extension declarations
         for (const auto & ext : function_extensions_)
         {
@@ -394,7 +394,7 @@ private:
             func_ext->set_name(ext.name);
         }
     }
-    
+
 public:
     explicit Impl() = default;
 
@@ -419,7 +419,7 @@ public:
         auto * root = query_plan.getRootNode();
         if (!root)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlan has no root node");
-        
+
         // Convert QueryPlan tree to Substrait
         auto * plan_rel = substrait_plan.add_relations();
         auto * root_rel = plan_rel->mutable_root();
@@ -431,15 +431,17 @@ public:
         {
             root_rel->add_names(column.name);
         }
-        
+
         // Add all registered function extensions to the plan
         addExtensionsToPlan(substrait_plan);
     }
 
 private:
     /// Convert ClickHouse DataType to Substrait Type
-    void convertType(const DataTypePtr & ch_type, substrait::Type * substrait_type,
-                     substrait::Type::Nullability nullability = substrait::Type::NULLABILITY_REQUIRED)
+    void convertType(
+        const DataTypePtr & ch_type,
+        substrait::Type * substrait_type,
+        substrait::Type::Nullability nullability = substrait::Type::NULLABILITY_REQUIRED)
     {
         // unwrap and recurse with NULLABILITY_NULLABLE
         if (const auto * nullable = typeid_cast<const DataTypeNullable *>(ch_type.get()))
@@ -452,7 +454,7 @@ private:
             convertType(lc_type->getDictionaryType(), substrait_type, nullability);
             return;
         }
-        
+
         switch (ch_type->getTypeId())
         {
             case TypeIndex::Nothing:
@@ -501,14 +503,12 @@ private:
             case TypeIndex::BFloat16:
                 substrait_type->mutable_fp32()->set_nullability(nullability);
                 break;
-            case TypeIndex::Date:
-            {
+            case TypeIndex::Date: {
                 // Days since Unix epoch
                 substrait_type->mutable_date()->set_nullability(nullability);
                 break;
             }
-            case TypeIndex::DateTime:
-            {
+            case TypeIndex::DateTime: {
                 // ClickHouse timestamp is in seconds, Substrait's in microseconds
                 // Explicitly set precision to 6
                 auto * ts = substrait_type->mutable_precision_timestamp();
@@ -516,15 +516,12 @@ private:
                 ts->set_nullability(nullability);
                 break;
             }
-            case TypeIndex::DateTime64:
-            {
+            case TypeIndex::DateTime64: {
                 auto * ts = substrait_type->mutable_precision_timestamp();
                 const auto * dt64 = checkAndGetDataType<DataTypeDateTime64>(ch_type.get());
                 if (!dt64)
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Expected DateTime64 type but got {}",
-                        ch_type->getName());
+                        ErrorCodes::LOGICAL_ERROR, "Expected DateTime64 type but got {}", ch_type->getName());
                 ts->set_precision(dt64->getScale());
                 ts->set_nullability(nullability);
                 break;
@@ -532,16 +529,14 @@ private:
             case TypeIndex::Decimal32:
             case TypeIndex::Decimal64:
             case TypeIndex::Decimal128:
-            case TypeIndex::Decimal256:
-            {
+            case TypeIndex::Decimal256: {
                 auto * decimal_type = substrait_type->mutable_decimal();
                 decimal_type->set_nullability(nullability);
                 decimal_type->set_scale(getDecimalScale(*ch_type));
                 decimal_type->set_precision(getDecimalPrecision(*ch_type));
                 break;
             }
-            case TypeIndex::Array:
-            {
+            case TypeIndex::Array: {
                 auto * list = substrait_type->mutable_list();
                 list->set_nullability(nullability);
                 // Recursively convert the nested element type
@@ -549,8 +544,7 @@ private:
                 convertType(array_type->getNestedType(), list->mutable_type());
                 break;
             }
-            case TypeIndex::Tuple:
-            {
+            case TypeIndex::Tuple: {
                 auto * strct = substrait_type->mutable_struct_();
                 strct->set_nullability(nullability);
                 const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(ch_type.get());
@@ -561,8 +555,7 @@ private:
                 }
                 break;
             }
-            case TypeIndex::Map:
-            {
+            case TypeIndex::Map: {
                 auto * map = substrait_type->mutable_map();
                 map->set_nullability(nullability);
                 const auto * ch_map = checkAndGetDataType<DataTypeMap>(ch_type.get());
@@ -570,8 +563,7 @@ private:
                 convertType(ch_map->getValueType(), map->mutable_value());
                 break;
             }
-            case TypeIndex::AggregateFunction:
-            {
+            case TypeIndex::AggregateFunction: {
                 const auto * agg_func_type = checkAndGetDataType<DataTypeAggregateFunction>(ch_type.get());
                 if (!agg_func_type)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected AggregateFunction type");
@@ -579,8 +571,10 @@ private:
                 break;
             }
             default:
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, 
-                    "Type {} not yet supported for Substrait conversion", ch_type->getName());
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Type {} not yet supported for Substrait conversion",
+                    ch_type->getName());
         }
     }
 
@@ -588,26 +582,24 @@ private:
     substrait::Expression convertExpression(const ActionsDAG::Node * node, const Block & input_header)
     {
         substrait::Expression expr;
-        
+
         if (!node)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert null ActionsDAG node");
-        
+
         switch (node->type)
         {
-            case ActionsDAG::ActionType::INPUT:
-            {
+            case ActionsDAG::ActionType::INPUT: {
                 // Column reference - find column index in input
-                int field_index = findColumnIndex(input_header, node->result_name, 
-                    fmt::format("Column {}", node->result_name));
+                int field_index = findColumnIndex(
+                    input_header, node->result_name, fmt::format("Column {}", node->result_name));
                 buildFieldSelection(&expr, field_index);
                 break;
             }
-            
-            case ActionsDAG::ActionType::COLUMN:
-            {
+
+            case ActionsDAG::ActionType::COLUMN: {
                 // Constant value
                 auto * literal = expr.mutable_literal();
-                
+
                 if (!node->column || node->column->empty() || (*node->column)[0].isNull())
                 {
                     auto * null_type = literal->mutable_null();
@@ -620,25 +612,23 @@ private:
                 }
                 break;
             }
-            
-            case ActionsDAG::ActionType::ALIAS:
-            {
+
+            case ActionsDAG::ActionType::ALIAS: {
                 // Just pass through to the child
                 if (node->children.empty())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "ALIAS node must have a child");
                 return convertExpression(node->children[0], input_header);
             }
-            
-            case ActionsDAG::ActionType::FUNCTION:
-            {
+
+            case ActionsDAG::ActionType::FUNCTION: {
                 const String & func_name = node->function_base->getName();
                 auto * scalar_func = expr.mutable_scalar_function();
-                
+
                 int ref_id = registerFunction(func_name);
                 scalar_func->set_function_reference(ref_id);
-                
+
                 convertType(node->result_type, scalar_func->mutable_output_type());
-                
+
                 for (const auto * child : node->children)
                 {
                     auto * arg = scalar_func->add_arguments();
@@ -646,14 +636,15 @@ private:
                 }
                 break;
             }
-            
+
             case ActionsDAG::ActionType::ARRAY_JOIN:
             case ActionsDAG::ActionType::PLACEHOLDER:
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
                     "ActionsDAG node type {} not yet supported for Substrait conversion",
                     static_cast<int>(node->type));
         }
-        
+
         return expr;
     }
 
@@ -662,12 +653,12 @@ private:
     {
         if (!node || !node->step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid QueryPlan node");
-        
+
         const auto & step = *node->step;
         const String & step_name = step.getName();
-        
+
         substrait::Rel rel;
-        
+
         if (step_name.starts_with("ReadFrom"))
         {
             convertReadStep(step, &rel);
@@ -714,30 +705,30 @@ private:
         }
         else
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, 
-                "Step type '{}' not yet supported for Substrait conversion", step_name);
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "Step type '{}' not yet supported for Substrait conversion", step_name);
         }
-        
+
         return rel;
     }
 
     void convertReadStep(const IQueryPlanStep & step, substrait::Rel * rel)
     {
         auto * read_rel = rel->mutable_read();
-        
+
         // Get output header to determine schema
         const auto & header = *step.getOutputHeader();
         auto * base_schema = read_rel->mutable_base_schema();
 
         base_schema->mutable_struct_()->set_nullability(substrait::Type::NULLABILITY_REQUIRED);
-        
+
         // Convert columns to Substrait schema
         for (const auto & column : header)
         {
             base_schema->add_names(column.name);
             convertType(column.type, base_schema->mutable_struct_()->add_types());
         }
-        
+
         // Create a named table reference
         auto * named_table = read_rel->mutable_named_table();
         String table_name = "";
@@ -776,33 +767,31 @@ private:
     {
         if (node->children.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter step must have a child");
-        
+
         auto * filter_rel = rel->mutable_filter();
-        
+
         auto child_rel = convertNode(node->children[0]);
         filter_rel->mutable_input()->Swap(&child_rel);
-        
+
         // Cast to FilterStep to access the ActionsDAG
         const auto * filter_step = dynamic_cast<const FilterStep *>(node->step.get());
         if (!filter_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected FilterStep but got {}", node->step->getName());
-        
+
         // Get the filter expression from ActionsDAG
         const auto & actions_dag = filter_step->getExpression();
         const String & filter_column_name = filter_step->getFilterColumnName();
-        
+
         // Find the filter column in the DAG outputs
         const ActionsDAG::Node * filter_node = actions_dag.tryFindInOutputs(filter_column_name);
         if (!filter_node)
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Filter column {} not found in ActionsDAG outputs",
-                filter_column_name);
-        
+                ErrorCodes::LOGICAL_ERROR, "Filter column {} not found in ActionsDAG outputs", filter_column_name);
+
         // Get input header from child node
         const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
         const Block & input_header = *input_header_ptr;
-        
+
         // Convert the filter expression
         auto filter_expr = convertExpression(filter_node, input_header);
         filter_rel->mutable_condition()->Swap(&filter_expr);
@@ -812,25 +801,25 @@ private:
     {
         if (node->children.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression step must have a child");
-        
+
         // Cast to ExpressionStep to access the ActionsDAG
         const auto * expr_step = dynamic_cast<const ExpressionStep *>(node->step.get());
         if (!expr_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ExpressionStep but got {}", node->step->getName());
-        
+
         // Get the ActionsDAG containing the expressions
         const auto & actions_dag = expr_step->getExpression();
-        
+
         // Get input header from child node
         const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
         const Block & input_header = *input_header_ptr;
-        
+
         auto child_rel = convertNode(node->children[0]);
-        
+
         // ExpressionStep always produces ProjectRel
         auto * project_rel = rel->mutable_project();
         project_rel->mutable_input()->Swap(&child_rel);
-        
+
         // Convert all output expressions
         const auto & outputs = actions_dag.getOutputs();
         for (const auto * output_node : outputs)
@@ -849,56 +838,56 @@ private:
         {
             emit->add_output_mapping(static_cast<int32_t>(input_field_count + i));
         }
-    }   
+    }
 
     void convertSortingStep(const QueryPlan::Node * node, substrait::Rel * rel)
     {
         if (node->children.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Sorting step must have a child");
-        
+
         auto * sort_rel = rel->mutable_sort();
-        
+
         auto child_rel = convertNode(node->children[0]);
         sort_rel->mutable_input()->Swap(&child_rel);
-        
+
         // Cast to SortingStep to access sort description
         const auto * sorting_step = dynamic_cast<const SortingStep *>(node->step.get());
         if (!sorting_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SortingStep but got {}", node->step->getName());
-        
+
         // Get sort description
         const auto & sort_description = sorting_step->getSortDescription();
-        
+
         // Get input header to map column names to indices
         const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
         const Block & input_header = *input_header_ptr;
-        
+
         // Convert each sort column
         for (const auto & sort_col : sort_description)
         {
             auto * sort_field = sort_rel->add_sorts();
-            
-            int field_index = findColumnIndex(input_header, sort_col.column_name,
-                fmt::format("Sort column {}", sort_col.column_name));
-            
+
+            int field_index = findColumnIndex(
+                input_header, sort_col.column_name, fmt::format("Sort column {}", sort_col.column_name));
+
             buildFieldSelection(sort_field->mutable_expr(), field_index);
-            
+
             // Map sort direction and nulls handling
             // direction: 1 = ASC, -1 = DESC
             // nulls_direction: 1 = NULLS LAST (when direction=1) or NULLS FIRST (when direction=-1)
             //                 -1 = NULLS FIRST (when direction=1) or NULLS LAST (when direction=-1)
-            if (sort_col.direction == 1)  // ASC
+            if (sort_col.direction == 1) // ASC
             {
-                if (sort_col.nulls_direction == 1)  // NULLS LAST
+                if (sort_col.nulls_direction == 1) // NULLS LAST
                     sort_field->set_direction(substrait::SortField::SORT_DIRECTION_ASC_NULLS_LAST);
-                else  // NULLS FIRST
+                else // NULLS FIRST
                     sort_field->set_direction(substrait::SortField::SORT_DIRECTION_ASC_NULLS_FIRST);
             }
-            else  // DESC
+            else // DESC
             {
-                if (sort_col.nulls_direction == -1)  // NULLS LAST
+                if (sort_col.nulls_direction == -1) // NULLS LAST
                     sort_field->set_direction(substrait::SortField::SORT_DIRECTION_DESC_NULLS_LAST);
-                else  // NULLS FIRST
+                else // NULLS FIRST
                     sort_field->set_direction(substrait::SortField::SORT_DIRECTION_DESC_NULLS_FIRST);
             }
         }
@@ -908,52 +897,51 @@ private:
     {
         if (node->children.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregating step must have a child");
-        
+
         auto * agg_rel = rel->mutable_aggregate();
 
         auto child_rel = convertNode(node->children[0]);
         agg_rel->mutable_input()->Swap(&child_rel);
-        
+
         // Cast to AggregatingStep to access aggregation parameters
         const auto * agg_step = dynamic_cast<const AggregatingStep *>(node->step.get());
         if (!agg_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected AggregatingStep but got {}", node->step->getName());
-        
+
         const auto & params = agg_step->getParams();
-        
+
         // Get input header from child node
         const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
         const Block & input_header = *input_header_ptr;
-        
+
         // Convert grouping keys
         for (const auto & key : params.keys)
         {
-            int field_index = findColumnIndex(input_header, key,
-                fmt::format("Grouping key {}", key));
-            
+            int field_index = findColumnIndex(input_header, key, fmt::format("Grouping key {}", key));
+
             auto * grouping_expr = agg_rel->add_groupings()->add_grouping_expressions();
             buildFieldSelection(grouping_expr, field_index);
         }
-        
+
         // Convert aggregate functions
         for (const auto & aggregate : params.aggregates)
         {
             auto * measure = agg_rel->add_measures();
             auto * agg_func = measure->mutable_measure();
-            
+
             // Register aggregate function and get reference ID (will be added to extension_urns)
             const String & func_name = aggregate.function->getName();
             int ref_id = registerFunction(func_name);
             agg_func->set_function_reference(ref_id);
-            
+
             convertType(aggregate.function->getResultType(), agg_func->mutable_output_type());
-            
+
             // Convert aggregate arguments
             for (const auto & arg_column : aggregate.argument_names)
             {
-                int field_index = findColumnIndex(input_header, arg_column,
-                    fmt::format("Aggregate argument {}", arg_column));
-                
+                int field_index = findColumnIndex(
+                    input_header, arg_column, fmt::format("Aggregate argument {}", arg_column));
+
                 auto * arg = agg_func->add_arguments();
                 buildFieldSelection(arg->mutable_value(), field_index);
             }
@@ -1019,10 +1007,8 @@ private:
                 const auto & left_key = clause.key_names_left[i];
                 const auto & right_key = clause.key_names_right[i];
 
-                int left_idx = findColumnIndex(left_header, left_key,
-                    fmt::format("Join key {}", left_key));
-                int right_idx = findColumnIndex(right_header, right_key,
-                    fmt::format("Join key {}", right_key));
+                int left_idx = findColumnIndex(left_header, left_key, fmt::format("Join key {}", left_key));
+                int right_idx = findColumnIndex(right_header, right_key, fmt::format("Join key {}", right_key));
 
                 // Create equality expression: left_key = right_key
                 // Right fields are offset by left_fields in the joined tuple
@@ -1188,9 +1174,8 @@ private:
             // DISTINCT on specific columns
             for (const auto & col_name : columns)
             {
-                int field_index = findColumnIndex(input_header, col_name,
-                    fmt::format("Distinct column {}", col_name));
-                
+                int field_index = findColumnIndex(input_header, col_name, fmt::format("Distinct column {}", col_name));
+
                 auto * grouping_expr = grouping->add_grouping_expressions();
                 buildFieldSelection(grouping_expr, field_index);
             }
@@ -1211,9 +1196,7 @@ private:
         const auto * merging_step = dynamic_cast<const MergingAggregatedStep *>(node->step.get());
         if (!merging_step)
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Expected MergingAggregatedStep but got {}",
-                node->step->getName());
+                ErrorCodes::LOGICAL_ERROR, "Expected MergingAggregatedStep but got {}", node->step->getName());
 
         const auto & params = merging_step->getParams();
 
@@ -1223,8 +1206,7 @@ private:
         // Convert grouping keys
         for (const auto & key : params.keys)
         {
-            int field_index = findColumnIndex(input_header, key,
-                fmt::format("Grouping key {}", key));
+            int field_index = findColumnIndex(input_header, key, fmt::format("Grouping key {}", key));
 
             auto * grouping_expr = agg_rel->add_groupings()->add_grouping_expressions();
             buildFieldSelection(grouping_expr, field_index);
@@ -1242,8 +1224,8 @@ private:
 
             convertType(aggregate.function->getResultType(), agg_func->mutable_output_type());
 
-            int field_index = findColumnIndex(input_header, aggregate.column_name,
-                fmt::format("Aggregate column {}", aggregate.column_name));
+            int field_index = findColumnIndex(
+                input_header, aggregate.column_name, fmt::format("Aggregate column {}", aggregate.column_name));
 
             auto * arg = agg_func->add_arguments();
             buildFieldSelection(arg->mutable_value(), field_index);
@@ -1310,7 +1292,6 @@ private:
     }
 
 public:
-
     std::string serializeToBinary(const substrait::Plan & plan)
     {
         std::string output;
@@ -1324,22 +1305,24 @@ public:
         std::string output;
         google::protobuf::json::PrintOptions json_options;
         json_options.add_whitespace = true;
-        
+
         auto status = google::protobuf::json::MessageToJsonString(plan, &output, json_options);
         if (!status.ok())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to serialize Substrait plan to JSON: {}", 
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Failed to serialize Substrait plan to JSON: {}",
                 std::string(status.message()));
-        
+
         return output;
     }
-    
+
     std::string convertPlanToBinary(const QueryPlan & query_plan)
     {
         substrait::Plan substrait_plan;
         convertPlan(query_plan, substrait_plan);
         return serializeToBinary(substrait_plan);
     }
-    
+
     std::string convertPlanToJSON(const QueryPlan & query_plan)
     {
         substrait::Plan substrait_plan;

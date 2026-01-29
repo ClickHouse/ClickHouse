@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <string>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
