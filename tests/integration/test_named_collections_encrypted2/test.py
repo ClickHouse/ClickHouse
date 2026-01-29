@@ -296,6 +296,92 @@ def test_rbac_permissions(cluster):
     node1.query("DROP USER test_rbac_user")
 
 
+def test_grants_persist_after_restart(cluster):
+    node1 = cluster.instances["node1"]
+
+    node1.query("DROP USER IF EXISTS persist_grant_user")
+    node1.query("DROP NAMED COLLECTION IF EXISTS persist_grant_coll")
+
+    node1.query("CREATE USER persist_grant_user")
+    node1.query("GRANT SELECT ON *.* TO persist_grant_user")
+    node1.query("CREATE NAMED COLLECTION persist_grant_coll AS secret='mysecret'")
+    node1.query("GRANT SHOW NAMED COLLECTIONS ON persist_grant_coll TO persist_grant_user")
+    node1.query("GRANT ALTER NAMED COLLECTION ON persist_grant_coll TO persist_grant_user")
+
+    assert node1.query("SELECT name FROM system.named_collections", user="persist_grant_user").strip() == "persist_grant_coll"
+    node1.query("ALTER NAMED COLLECTION persist_grant_coll SET secret='modified'", user="persist_grant_user")
+    assert node1.query("SELECT collection['secret'] FROM system.named_collections WHERE name='persist_grant_coll'").strip() == "modified"
+
+    node1.restart_clickhouse()
+
+    assert node1.query("SELECT name FROM system.named_collections", user="persist_grant_user").strip() == "persist_grant_coll"
+    node1.query("ALTER NAMED COLLECTION persist_grant_coll SET secret='after_restart'", user="persist_grant_user")
+    assert node1.query("SELECT collection['secret'] FROM system.named_collections WHERE name='persist_grant_coll'").strip() == "after_restart"
+
+    node1.query("DROP NAMED COLLECTION persist_grant_coll")
+    node1.query("DROP USER persist_grant_user")
+
+
+def test_user_recreation_loses_grants(cluster):
+    node1 = cluster.instances["node1"]
+
+    node1.query("DROP USER IF EXISTS recreate_user")
+    node1.query("DROP NAMED COLLECTION IF EXISTS recreate_coll")
+
+    node1.query("CREATE USER recreate_user")
+    node1.query("GRANT SELECT ON *.* TO recreate_user")
+    node1.query("CREATE NAMED COLLECTION recreate_coll AS key='value'")
+    node1.query("GRANT SHOW NAMED COLLECTIONS ON recreate_coll TO recreate_user")
+
+    assert node1.query("SELECT name FROM system.named_collections", user="recreate_user").strip() == "recreate_coll"
+
+    node1.query("DROP USER recreate_user")
+    node1.query("CREATE USER recreate_user")
+    node1.query("GRANT SELECT ON *.* TO recreate_user")
+
+    assert node1.query("SELECT count() FROM system.named_collections", user="recreate_user").strip() == "0"
+
+    node1.query("DROP NAMED COLLECTION recreate_coll")
+    node1.query("DROP USER recreate_user")
+
+
+def test_role_grants_survive_user_recreation(cluster):
+    node1 = cluster.instances["node1"]
+
+    node1.query("DROP USER IF EXISTS role_user")
+    node1.query("DROP ROLE IF EXISTS nc_role")
+    node1.query("DROP NAMED COLLECTION IF EXISTS role_coll")
+
+    node1.query("CREATE NAMED COLLECTION role_coll AS data='important'")
+    node1.query("CREATE ROLE nc_role")
+    node1.query("GRANT SHOW NAMED COLLECTIONS ON role_coll TO nc_role")
+    node1.query("GRANT ALTER NAMED COLLECTION ON role_coll TO nc_role")
+
+    node1.query("CREATE USER role_user")
+    node1.query("GRANT SELECT ON *.* TO role_user")
+    node1.query("GRANT nc_role TO role_user")
+
+    assert node1.query("SELECT name FROM system.named_collections", user="role_user").strip() == "role_coll"
+    node1.query("ALTER NAMED COLLECTION role_coll SET data='changed'", user="role_user")
+
+    node1.query("DROP USER role_user")
+    node1.query("CREATE USER role_user")
+    node1.query("GRANT SELECT ON *.* TO role_user")
+    node1.query("GRANT nc_role TO role_user")
+
+    assert node1.query("SELECT name FROM system.named_collections", user="role_user").strip() == "role_coll"
+    node1.query("ALTER NAMED COLLECTION role_coll SET data='after_recreate'", user="role_user")
+    assert node1.query("SELECT collection['data'] FROM system.named_collections WHERE name='role_coll'").strip() == "after_recreate"
+
+    node1.restart_clickhouse()
+
+    assert node1.query("SELECT name FROM system.named_collections", user="role_user").strip() == "role_coll"
+
+    node1.query("DROP NAMED COLLECTION role_coll")
+    node1.query("DROP USER role_user")
+    node1.query("DROP ROLE nc_role")
+
+
 def test_special_characters_and_unicode(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
     zk = cluster.get_kazoo_client("zoo1")
