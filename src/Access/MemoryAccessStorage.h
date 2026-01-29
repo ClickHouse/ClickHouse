@@ -38,6 +38,7 @@ public:
 
     bool isEphemeral() const override { return true; }
 
+    UUID insertIgnoreLimit(const AccessEntityPtr & entity);
     bool insertIgnoreLimit(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists);
 
     bool entityLimitReached() const;

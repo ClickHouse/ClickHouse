@@ -289,7 +289,7 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     if (config_.has("custom_settings_prefixes"))
         setCustomSettingsPrefixes(config_.getString("custom_settings_prefixes"));
 
-    access_entities_num_limit = config_.getUInt64("max_access_entities_per_storage_to_throw", 0);
+    access_entities_num_limit = config_.getUInt64("max_access_entities_num_to_throw", 0);
 
     setImplicitNoPasswordAllowed(config_.getBool("allow_implicit_no_password", true));
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));

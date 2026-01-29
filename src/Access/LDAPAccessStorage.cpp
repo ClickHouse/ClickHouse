@@ -480,8 +480,11 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
         // TODO: if these were AlwaysAllowCredentials, then mapped external roles are not available here,
         // since without a password we can't authenticate and retrieve roles from the LDAP server.
 
+        if (memory_storage.entityLimitReached())
+            memory_storage.throwTooManyEntities();
+
         assignRolesNoLock(*new_user, external_roles);
-        id = memory_storage.insert(new_user);
+        id = memory_storage.insertIgnoreLimit(new_user);
     }
     else
     {

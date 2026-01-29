@@ -472,7 +472,8 @@
     M(DropDistributedCacheThreadsScheduled, "Number of queued or active jobs in the threadpool for drop distributed cache.") \
     \
     M(S3CachedCredentialsProviders, "Total number of cached credentials providers") \
-
+    \
+    M(AccessEntities, "The total number of all access entites (users, roles, quotas, etc.).") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
