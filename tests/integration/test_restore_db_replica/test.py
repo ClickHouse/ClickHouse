@@ -8,7 +8,7 @@ from helpers.cluster import ClickHouseCluster, ClickHouseKiller
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-configs = ["configs/remote_servers.xml"]
+configs = ["configs/remote_servers.xml", "configs/logger.xml"]
 
 node_1 = cluster.add_instance(
     name="node1",
@@ -140,6 +140,35 @@ def zk_rmr_with_retries(zk, path):
     assert False
 
 
+def count_log_message(node, db_name, msg):
+    node.query("SYSTEM FLUSH LOGS")
+    return int(
+        node.query(
+            f"SELECT count() FROM system.text_log WHERE logger_name='DatabaseReplicated ({db_name})' AND message ='{msg}'"
+        ).strip()
+    )
+
+
+def restore_database_and_wait(node, db_name: str, on_cluster):
+    log_msg = "All tables are created successfully"
+    prev_count = count_log_message(node, db_name, log_msg)
+
+    if on_cluster is not None:
+        node.query(
+            f"SYSTEM RESTORE DATABASE REPLICA ON CLUSTER `{on_cluster}` `{db_name}`"
+        )
+    else:
+        node.query(f"SYSTEM RESTORE DATABASE REPLICA `{db_name}`")
+
+    for i in range(30):
+        current_count = count_log_message(node, db_name, log_msg)
+        if current_count > prev_count:
+            return
+        time.sleep(0.5)
+
+    raise Exception(f"Creating all table timed out when restoring database {db_name}")
+
+
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -257,7 +286,7 @@ def test_query_after_restore_db_replica(
         is None
     )
 
-    node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+    restore_database_and_wait(node_1, exclusive_database_name, None)
 
     if need_restart:
         node_1.restart_clickhouse()
@@ -273,7 +302,7 @@ def test_query_after_restore_db_replica(
         is None
     )
 
-    node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+    restore_database_and_wait(node_2, exclusive_database_name, None)
     assert zk.exists(f"/clickhouse/{exclusive_database_name}/replicas/shard1|replica2")
 
     if exists_table:
@@ -344,8 +373,8 @@ def test_query_after_restore_db_replica(
         is None
     )
 
-    node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
-    node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+    restore_database_and_wait(node_1, exclusive_database_name, None)
+    restore_database_and_wait(node_2, exclusive_database_name, None)
 
     if need_restart:
         node_1.restart_clickhouse()
@@ -478,8 +507,7 @@ def test_restore_db_replica_with_diffrent_table_metadata(
         nodes.reverse()
 
     for node in nodes:
-        node.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
-        assert node.wait_for_log_line(f"{exclusive_database_name}): All tables are created successfully")
+        restore_database_and_wait(node, exclusive_database_name, None)
 
     assert node_1.query_with_retry(
         f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}",
@@ -621,8 +649,7 @@ def test_restore_db_replica_on_cluster(
     zk_rmr_with_retries(zk, f"/clickhouse/{exclusive_database_name}")
     assert zk.exists(f"/clickhouse/{exclusive_database_name}") is None
 
-    node_1.query(f"SYSTEM RESTORE DATABASE REPLICA ON CLUSTER `test_cluster` {exclusive_database_name}")
-    assert node_1.wait_for_log_line(f"{exclusive_database_name}): All tables are created successfully")
+    restore_database_and_wait(node_1, exclusive_database_name, "test_cluster")
 
     assert node_1.query(
         f"SELECT count(*) FROM system.databases WHERE name='{exclusive_database_name}'"
