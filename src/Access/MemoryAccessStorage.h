@@ -60,8 +60,6 @@ private:
     void removeAllExceptNoLock(const std::vector<UUID> & ids_to_keep);
     void removeAllExceptNoLock(const boost::container::flat_set<UUID> & ids_to_keep);
 
-    bool entityLimitWillBeReached(UInt64 result_number) const;
-
     struct Entry
     {
         UUID id;

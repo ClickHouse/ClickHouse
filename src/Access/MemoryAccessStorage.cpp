@@ -333,12 +333,7 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
 
 bool MemoryAccessStorage::entityLimitReached() const
 {
-    return entityLimitWillBeReached(CurrentMetrics::get(CurrentMetrics::AccessEntities));
-}
-
-bool MemoryAccessStorage::entityLimitWillBeReached(const UInt64 result_number) const
-{
-    return access_entities_num_limit > 0 && result_number >= access_entities_num_limit;
+    return access_entities_num_limit > 0 && CurrentMetrics::get(CurrentMetrics::AccessEntities) >= static_cast<Int64>(access_entities_num_limit);
 }
 
 void MemoryAccessStorage::throwTooManyEntities() const
