@@ -31,7 +31,7 @@ using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 /** See the description of the data structure in MergeTreeData.
   */
-class StorageMergeTree final : public MergeTreeData
+class StorageMergeTree : public MergeTreeData
 {
 public:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
@@ -43,6 +43,15 @@ public:
     StorageMergeTree(
         const StorageID & table_id_,
         const String & relative_data_path_,
+        const StorageInMemoryMetadata & metadata,
+        LoadingStrictnessLevel mode,
+        ContextMutablePtr context_,
+        const String & date_column_name,
+        const MergingParams & merging_params_,
+        std::unique_ptr<MergeTreeSettings> settings_);
+
+    StorageMergeTree(
+        const StorageID & table_id_,
         const StorageInMemoryMetadata & metadata,
         LoadingStrictnessLevel mode,
         ContextMutablePtr context_,
@@ -122,7 +131,18 @@ public:
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
+protected:
+    /// For block numbers.
+    SimpleIncrement increment;
+
+    void loadMutations();
+
+    /// Load and initialize deduplication logs. Even if deduplication setting
+    /// equals zero creates object with deduplication window equals zero.
+    void loadDeduplicationLog();
+
 private:
+    void shutdownImpl(bool is_drop);
 
     /// Mutex and condvar for synchronous mutations wait
     std::mutex mutation_wait_mutex;
@@ -132,9 +152,6 @@ private:
     MergeTreeDataMergerMutator merger_mutator;
 
     std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
-
-    /// For block numbers.
-    SimpleIncrement increment;
 
     /// For clearOldParts
     AtomicStopwatch time_after_previous_cleanup_parts;
@@ -184,12 +201,6 @@ private:
     PlainLightweightUpdatesSync lightweight_updates_sync;
 
     const bool support_transaction;
-
-    void loadMutations();
-
-    /// Load and initialize deduplication logs. Even if deduplication setting
-    /// equals zero creates object with deduplication window equals zero.
-    void loadDeduplicationLog();
 
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
