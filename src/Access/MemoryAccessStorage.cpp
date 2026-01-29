@@ -337,13 +337,14 @@ bool MemoryAccessStorage::entityLimitWillBeReached(const UInt64 result_number) c
     return access_entities_num_limit > 0 && result_number >= access_entities_num_limit;
 }
 
-void MemoryAccessStorage::throwTooManyEntities(UInt64 result_number) const
+void MemoryAccessStorage::throwTooManyEntities() const
 {
-    result_number = result_number ? result_number : CurrentMetrics::get(CurrentMetrics::AccessEntities) + 1;
+    auto current_number = CurrentMetrics::get(CurrentMetrics::AccessEntities);
+    auto result_number = current_number + 1;
     throw Exception(ErrorCodes::TOO_MANY_ACCESS_ENTITIES,
                                     "Too many access entities. "
                                     "The limit (server configuration parameter `max_access_entities_num_to_throw`) is set to {}, the current number is {}, the result number will be {}",
-                                        access_entities_num_limit, CurrentMetrics::get(CurrentMetrics::AccessEntities), result_number);
+                                        access_entities_num_limit, current_number, result_number);
 }
 
 }

@@ -43,7 +43,7 @@ public:
 
     bool entityLimitReached() const;
 
-    [[noreturn]] void throwTooManyEntities(UInt64 result_number = 0) const;
+    [[noreturn]] void throwTooManyEntities() const;
 
 private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
