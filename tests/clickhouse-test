@@ -514,7 +514,8 @@ def clickhouse_execute_http(
             if i == max_http_retries - 1:
                 raise ex
             client.close()
-            sleep(i + 1)
+            # Cap sleep time to prevent unbounded delays (max 3 seconds per retry)
+            sleep(min(i + 1, 3))
 
     if res.status != 200:
         raise HTTPError(data.decode(), res.status)
@@ -3850,8 +3851,8 @@ def do_run_tests(
 
             if server_died.is_set():
                 print("Server died, terminating all processes...")
-                # Wait for test results
-                sleep(args.timeout)
+                # Wait briefly for test results to be written
+                sleep(5)
                 for p in processes:
                     if p.is_alive():
                         p.terminate()
