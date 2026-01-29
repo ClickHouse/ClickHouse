@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-release
 -- Tag no-parallel: Messes with internal cache
 
 -- Tests that SYSTEM CLEAR QUERY CONDITION CACHE works

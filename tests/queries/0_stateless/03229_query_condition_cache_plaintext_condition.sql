@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-release
 -- Tag no-parallel: Messes with internal cache
 
 SET allow_experimental_analyzer = 1;
