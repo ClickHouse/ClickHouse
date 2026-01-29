@@ -41,7 +41,7 @@ NegativeOffsetTransform::Status NegativeOffsetTransform::prepare()
 
 /// First, our goal is to pull all the data from input ports. Once we have reached the end,
 /// then it is clear what should be part of the `offset` and what should be pushed out to the output ports.
-IProcessor::Status NegativeOffsetTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers & updated_output_ports)
+IProcessor::Status NegativeOffsetTransform::prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/)
 {
     if (allOutputsFinished())
     {
@@ -52,12 +52,6 @@ IProcessor::Status NegativeOffsetTransform::prepare(const PortNumbers & updated_
 
     if (stage == Stage::Pull)
     {
-        for (auto & port : ports_data)
-        {
-            auto & input = *port.input_port;
-            if (!input.isFinished())
-                input.setNeeded();
-        }
 
         bool has_data_need = false;
         bool has_full_port = false;
@@ -91,10 +85,7 @@ IProcessor::Status NegativeOffsetTransform::prepare(const PortNumbers & updated_
             }
         };
 
-        for (auto pos : updated_input_ports)
-            process(pos);
-
-        for (auto pos : updated_output_ports)
+        for (size_t pos = 0; pos < ports_data.size(); ++pos)
             process(pos);
 
         if (has_data_need)

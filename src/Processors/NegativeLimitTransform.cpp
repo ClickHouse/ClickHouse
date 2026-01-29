@@ -34,7 +34,7 @@ NegativeLimitTransform::NegativeLimitTransform(SharedHeader header_, UInt64 limi
 
 /// First, our goal is to pull all the data from input ports. Once we have reached the end,
 /// then it is clear what should be part of the `limit`, `offset` and what should be pushed out to the output ports.
-IProcessor::Status NegativeLimitTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers & updated_output_ports)
+IProcessor::Status NegativeLimitTransform::prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/)
 {
     if (allOutputsFinished())
     {
@@ -45,13 +45,6 @@ IProcessor::Status NegativeLimitTransform::prepare(const PortNumbers & updated_i
 
     if (stage == Stage::Pull)
     {
-        for (auto & port : ports_data)
-        {
-            auto & input = *port.input_port;
-            if (!input.isFinished())
-                input.setNeeded();
-        }
-
         bool has_data_need = false;
 
         auto process = [&](size_t pos)
@@ -79,10 +72,7 @@ IProcessor::Status NegativeLimitTransform::prepare(const PortNumbers & updated_i
             }
         };
 
-        for (auto pos : updated_input_ports)
-            process(pos);
-
-        for (auto pos : updated_output_ports)
+        for (size_t pos = 0; pos < ports_data.size(); ++pos)
             process(pos);
 
         if (has_data_need)
