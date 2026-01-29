@@ -4,7 +4,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Functions/FunctionFactory.h>
@@ -161,73 +160,32 @@ QueryTreeNodePtr createArrayElementFunction(const ContextPtr & context, QueryTre
     return createResolvedFunction(context, "arrayElement", {argument, std::make_shared<ConstantNode>(index)});
 }
 
-QueryTreeNodePtr createIfNullZeroFunction(const ContextPtr & context, QueryTreeNodePtr argument, const DataTypePtr & result_type)
-{
-    return createResolvedFunction(context, "ifNull", {std::move(argument), std::make_shared<ConstantNode>(Field(0), result_type)});
-}
-
 void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_count_node, ContextPtr context)
 {
-    bool sum_count_is_nullable = false;
-    DataTypePtr sum_count_result_type = sum_count_node->getResultType();
-
-    if (auto nullable_type = std::dynamic_pointer_cast<const DataTypeNullable>(sum_count_result_type))
-    {
-        sum_count_is_nullable = true;
-        sum_count_result_type = nullable_type->getNestedType();
-    }
-
-    auto sum_count_tuple_type = std::dynamic_pointer_cast<const DataTypeTuple>(sum_count_result_type);
-    if (!sum_count_tuple_type || sum_count_tuple_type->getElements().size() != 2)
+    auto sum_count_result_type = std::dynamic_pointer_cast<const DataTypeTuple>(sum_count_node->getResultType());
+    if (!sum_count_result_type || sum_count_result_type->getElements().size() != 2)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Unexpected return type '{}' of function '{}', should be tuple of two elements or Nullable(tuple of two elements)",
+            "Unexpected return type '{}' of function '{}', should be tuple of two elements",
             sum_count_node->getResultType(), sum_count_node->getFunctionName());
     }
 
     String function_name = node->as<const FunctionNode &>().getFunctionName();
 
-    /// FuseFunctionsVisitor filters out nodes with Nullable result type, so the original sum/count/avg here
-    /// is non-Nullable. If sumCount(x) is Nullable(Tuple(...)), then tupleElement(sumCount(x), i) becomes
-    /// Nullable(Ti), and we coalesce NULL to 0 to preserve the original return type/semantics.
     if (function_name == "sum")
     {
-        auto expected_result_type = node->getResultType();
-        assert(!expected_result_type->isNullable());
-        assert(expected_result_type->equals(*sum_count_tuple_type->getElement(0)));
-
-        auto result = createTupleElementFunction(context, sum_count_node, 1);
-
-        if (sum_count_is_nullable)
-            result = createIfNullZeroFunction(context, result, expected_result_type);
-
-        node = std::move(result);
+        assert(node->getResultType()->equals(*sum_count_result_type->getElement(0)));
+        node = createTupleElementFunction(context, sum_count_node, 1);
     }
     else if (function_name == "count")
     {
-        auto expected_result_type = node->getResultType();
-        assert(!expected_result_type->isNullable());
-        assert(expected_result_type->equals(*sum_count_tuple_type->getElement(1)));
-
-        auto result = createTupleElementFunction(context, sum_count_node, 2);
-
-        if (sum_count_is_nullable)
-            result = createIfNullZeroFunction(context, result, expected_result_type);
-
-        node = std::move(result);
+        assert(node->getResultType()->equals(*sum_count_result_type->getElement(1)));
+        node = createTupleElementFunction(context, sum_count_node, 2);
     }
     else if (function_name == "avg")
     {
-        assert(!node->getResultType()->isNullable());
         auto sum_result = createTupleElementFunction(context, sum_count_node, 1);
         auto count_result = createTupleElementFunction(context, sum_count_node, 2);
-
-        if (sum_count_is_nullable)
-        {
-            sum_result = createIfNullZeroFunction(context, sum_result, sum_count_tuple_type->getElement(0));
-            count_result = createIfNullZeroFunction(context, count_result, sum_count_tuple_type->getElement(1));
-        }
-
         /// To avoid integer division by zero
         auto count_float_result = createResolvedFunction(context, "toFloat64", {count_result});
         node = createResolvedFunction(context, "divide", {sum_result, count_float_result});
