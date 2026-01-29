@@ -1,4 +1,4 @@
-SET enable_qbit_type = 1, enable_analyzer = 1;
+SET enable_analyzer = 1;
 
 -- Check if [L2/cosine/...]DistanceTransposed(vec, reference_vec, N) partial reads are achieved with optimize_qbit_distance_function_reads
 

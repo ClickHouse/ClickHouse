@@ -1,10 +1,12 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTEnumDataType.h>
+#include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
@@ -26,6 +28,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
@@ -67,6 +70,36 @@ static DataTypePtr createEnumFromValues(const String & type_name, const std::vec
             enum_values.emplace_back(name, static_cast<Int8>(value));
         return std::make_shared<DataTypeEnum8>(enum_values);
     }
+}
+
+/// Helper to create Tuple data type from ASTTupleDataType
+static DataTypePtr createTupleFromAST(const ASTTupleDataType * tuple_ast)
+{
+    const auto arguments = tuple_ast->getArguments();
+    if (!arguments || arguments->children.empty())
+        return std::make_shared<DataTypeTuple>(DataTypes{});
+
+    DataTypes nested_types;
+    nested_types.reserve(arguments->children.size());
+
+    for (const auto & child : arguments->children)
+        nested_types.emplace_back(DataTypeFactory::instance().get(child));
+
+    /// If element_names is empty, it's an unnamed tuple
+    if (tuple_ast->element_names.empty())
+        return std::make_shared<DataTypeTuple>(nested_types);
+
+    /// Named tuple - validate all elements have names (no mixed named/unnamed)
+    for (const auto & elem_name : tuple_ast->element_names)
+    {
+        if (elem_name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Names are specified not for all elements of Tuple type");
+    }
+
+    if (tuple_ast->element_names.size() != nested_types.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Names are specified not for all elements of Tuple type");
+
+    return std::make_shared<DataTypeTuple>(nested_types, tuple_ast->element_names);
 }
 
 DataTypePtr DataTypeFactory::get(const String & full_name) const
@@ -128,6 +161,10 @@ DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
     /// Handle specialized ASTEnumDataType directly
     if (const auto * enum_type = ast->as<ASTEnumDataType>())
         return createEnumFromValues(enum_type->name, enum_type->values);
+
+    /// Handle specialized ASTTupleDataType directly
+    if (const auto * tuple_type = ast->as<ASTTupleDataType>())
+        return createTupleFromAST(tuple_type);
 
     if (const auto * type = ast->as<ASTDataType>())
     {
