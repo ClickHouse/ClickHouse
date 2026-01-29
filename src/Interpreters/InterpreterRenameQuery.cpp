@@ -74,7 +74,7 @@ BlockIO InterpreterRenameQuery::execute()
 
     /// Must do it in consistent order.
     for (auto & table_guard : table_guards)
-        table_guard.second = database_catalog.getDDLGuard(table_guard.first.database_name, table_guard.first.table_name);
+        table_guard.second = database_catalog.getDDLGuard(table_guard.first.database_name, table_guard.first.table_name, nullptr);
 
     if (rename.database)
         return executeToDatabase(rename, descriptions);
