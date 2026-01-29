@@ -307,6 +307,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
         result.sample_block.erase("_part_offset");
         result.sample_block.insert(std::move(new_column));
         result.with_parent_part_offset = true;
+        std::erase_if(result.required_columns, [](const String & s) { return s.contains("_part_offset"); });
     }
 
     auto block = result.sample_block;
@@ -436,7 +437,8 @@ void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription &
     *this = getProjectionFromAST(definition_ast, new_columns, query_context);
 }
 
-Block ProjectionDescription::calculate(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr) const
+Block ProjectionDescription::calculate(
+    const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr) const
 {
     auto mut_context = Context::createCopy(context);
     /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
@@ -458,31 +460,34 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
             makeASTFunction("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
     }
 
-    /// Create "_part_offset" column when needed for projection with parent part offsets
+    /// Only keep required columns
     Block source_block = block;
+    for (const auto & column : required_columns)
+        source_block.insert(block.getByName(column));
+
+    /// Create "_part_offset" column when needed for projection with parent part offsets
     if (with_parent_part_offset)
     {
         chassert(sample_block.has("_parent_part_offset"));
-
-        /// Add "_part_offset" column if not present (needed for insertions but not mutations - materialize projections)
-        if (!source_block.has("_part_offset"))
+        chassert(!source_block.has("_part_offset"));
+        auto uint64 = std::make_shared<DataTypeUInt64>();
+        auto column = uint64->createColumn();
+        auto & offset = assert_cast<ColumnUInt64 &>(*column).getData();
+        offset.resize_exact(block.rows());
+        if (perm_ptr)
         {
-            auto uint64 = std::make_shared<DataTypeUInt64>();
-            auto column = uint64->createColumn();
-            auto & offset = assert_cast<ColumnUInt64 &>(*column).getData();
-            offset.resize_exact(block.rows());
-            if (perm_ptr)
-            {
-                for (size_t i = 0; i < block.rows(); ++i)
-                    offset[(*perm_ptr)[i]] = i;
-            }
-            else
-            {
-                iota(offset.data(), offset.size(), UInt64(0));
-            }
-
-            source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
+            /// Insertion path
+            chassert(starting_offset == 0);
+            for (size_t i = 0; i < block.rows(); ++i)
+                offset[(*perm_ptr)[i]] = i;
         }
+        else
+        {
+            /// Rebuilding path
+            iota(offset.data(), offset.size(), starting_offset);
+        }
+
+        source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
     }
 
     auto builder = InterpreterSelectQuery(
