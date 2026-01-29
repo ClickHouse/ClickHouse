@@ -121,7 +121,7 @@ TRAP(mblen)
 TRAP(mbrlen)
 TRAP(mbrtowc)
 TRAP(mbsnrtowcs)
-TRAP(mbsrtowcs)
+// TRAP(mbsrtowcs)
 //TRAP(mbtowc) // Used by Standard C++ library
 TRAP(mcheck)
 TRAP(mprobe)

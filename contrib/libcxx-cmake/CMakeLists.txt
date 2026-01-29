@@ -88,6 +88,14 @@ target_compile_definitions(cxx PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
 
 if (USE_MUSL)
     target_compile_definitions(cxx PUBLIC -D_LIBCPP_HAS_MUSL_LIBC=1)
+    # When building with musl, we need to wait for musl headers to be generated
+    add_dependencies(cxx musl-headers)
+    # Add musl arch include paths for bits/*.h headers
+    # These are added here (not in toolchain) to avoid include order issues in musl's own build
+    target_include_directories(cxx SYSTEM BEFORE PRIVATE
+        "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/${MUSL_ARCH}"
+        "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/generic"
+    )
 endif ()
 
 target_compile_options(cxx PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>)

@@ -505,7 +505,11 @@ macro (clickhouse_add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
     # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
-    if (ARCH_AMD64 AND GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
+    # When USE_MUSL is set, we also include musl CRT objects (crt1, crti, crtn) since we use -nostartfiles
+    # to avoid glibc's CRT objects from the sysroot.
+    if (USE_MUSL)
+        add_executable (${ARGV} $<TARGET_OBJECTS:musl-crt1> $<TARGET_OBJECTS:musl-crti> $<TARGET_OBJECTS:musl-crtn> $<TARGET_OBJECTS:clickhouse_malloc>)
+    elseif (ARCH_AMD64 AND GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
     else ()
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
@@ -648,12 +652,19 @@ endif()
 
 # Build native targets if necessary
 get_property(NATIVE_BUILD_TARGETS GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
-if (NATIVE_BUILD_TARGETS
-    AND NOT(
-        CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
-        AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
-    )
-)
+# Native builds are needed when:
+# 1. Cross-compiling (host system/processor differs from target), OR
+# 2. Using musl (build tools need to run without -nostartfiles and musl CRT)
+set(NEED_NATIVE_BUILD OFF)
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME)
+    set(NEED_NATIVE_BUILD ON)
+elseif (NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
+    set(NEED_NATIVE_BUILD ON)
+elseif (USE_MUSL)
+    set(NEED_NATIVE_BUILD ON)
+endif()
+
+if (NATIVE_BUILD_TARGETS AND NEED_NATIVE_BUILD)
     message (STATUS "Building native targets: ${NATIVE_BUILD_TARGETS}")
 
     set (NATIVE_BUILD_DIR "${PROJECT_BINARY_DIR}/native")

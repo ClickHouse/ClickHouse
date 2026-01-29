@@ -5,10 +5,14 @@ set(SRCS
 )
 
 set(SRCS_MATH
+"${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/acos.cpp"
 "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/acosf.cpp"
 "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/acoshf.cpp"
+"${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asin.cpp"
 "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asinf.cpp"
 "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asinhf.cpp"
+"${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/atan.cpp"
+"${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/atan2.cpp"
 "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/atan2f.cpp"
 "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/atanf.cpp"
 "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/atanhf.cpp"
@@ -157,6 +161,7 @@ set(SRCS_MATH
 "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/nextup.cpp"
 "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/nextupf.cpp"
 "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/nextupl.cpp"
+"${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/pow.cpp"
 "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/powf.cpp"
 "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/remainder.cpp"
 "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/remainderf.cpp"

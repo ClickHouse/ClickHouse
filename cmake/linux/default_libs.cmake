@@ -33,7 +33,10 @@ if (OS_ANDROID)
     # pthread and rt are included in libc
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -ldl")
 elseif (USE_MUSL)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -lc")
+    # musl is linked via target_link_libraries in cmake/musl.cmake
+    # Use -nostartfiles to prevent linker from using glibc's crt*.o from sysroot
+    # We will provide musl's CRT objects explicitly via cmake/musl.cmake
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -nostartfiles")
 else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
 endif ()
@@ -49,10 +52,42 @@ set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
 add_library(Threads::Threads INTERFACE IMPORTED)
-set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
+if (USE_MUSL)
+    # musl includes pthread implementation in libmusl.a, no separate library needed
+    # Just link to musl target which is already set up
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES musl)
+else ()
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
+endif ()
+
+# Set MUSL_ARCH early, BEFORE including cxx.cmake which needs it for libcxx/libcxxabi includes
+# This must be done before the cxx.cmake include because libcxxabi-cmake/CMakeLists.txt uses MUSL_ARCH
+if (USE_MUSL)
+    if (ARCH_AMD64)
+        set(MUSL_ARCH "x86_64" CACHE INTERNAL "Musl architecture")
+    elseif (ARCH_AARCH64)
+        set(MUSL_ARCH "aarch64" CACHE INTERNAL "Musl architecture")
+    elseif (ARCH_PPC64LE)
+        set(MUSL_ARCH "powerpc64" CACHE INTERNAL "Musl architecture")
+    elseif (ARCH_S390X)
+        set(MUSL_ARCH "s390x" CACHE INTERNAL "Musl architecture")
+    elseif (ARCH_RISCV64)
+        set(MUSL_ARCH "riscv64" CACHE INTERNAL "Musl architecture")
+    elseif (ARCH_LOONGARCH64)
+        set(MUSL_ARCH "loongarch64" CACHE INTERNAL "Musl architecture")
+    else()
+        message(FATAL_ERROR "Unsupported architecture for musl: ${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+    message(STATUS "MUSL_ARCH set early to: ${MUSL_ARCH}")
+endif()
 
 include (cmake/unwind.cmake)
 include (cmake/cxx.cmake)
+
+# Include musl build and link configuration
+if (USE_MUSL)
+    include (cmake/musl.cmake)
+endif()
 
 if (NOT OS_ANDROID)
     if (NOT USE_MUSL)
