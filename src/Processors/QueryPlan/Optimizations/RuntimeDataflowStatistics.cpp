@@ -116,7 +116,7 @@ bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & stati
     if (!block_rows)
         return false;
     const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
-    return counter % 5 == 0 && counter < 15;
+    return counter % 5 == 0 && counter < 25;
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
