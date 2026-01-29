@@ -45,6 +45,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
+#include <base/sleep.h>
 #include <fmt/core.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -127,6 +128,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY;
     extern const int TOO_MANY_PARTS;
     extern const int PART_IS_LOCKED;
+    extern const int PART_IS_TEMPORARILY_LOCKED;
 }
 
 namespace ActionLocks
@@ -2190,22 +2192,50 @@ std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> cr
 void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction)
 {
     DataPartsVector covered_parts;
+    size_t next_part_index = 0;
 
+    auto timeout_ms = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds();
+    Stopwatch watch;
+    do
     {
-        auto part_lock = lockParts();
-        for (auto & part : new_parts)
+        try
         {
-            DataPartsVector covered_parts_by_one_part = renameTempPartAndReplaceUnlocked(part, part_lock, transaction, /*rename_in_transaction=*/ true);
+            auto part_lock = lockParts();
+            while (next_part_index < new_parts.size())
+            {
+                auto & part = new_parts.at(next_part_index);
+                DataPartsVector covered_parts_by_one_part
+                    = renameTempPartAndReplaceUnlocked(part, part_lock, transaction, /*rename_in_transaction=*/true);
 
-            if (covered_parts_by_one_part.size() > 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Part {} expected to cover not more then 1 part. "
-                                "{} covered parts have been found. This is a bug.",
-                                part->name, covered_parts_by_one_part.size());
+                if (covered_parts_by_one_part.size() > 1)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Part {} expected to cover not more than 1 part. "
+                        "{} covered parts have been found. This is a bug.",
+                        part->name,
+                        covered_parts_by_one_part.size());
 
-            std::move(covered_parts_by_one_part.begin(), covered_parts_by_one_part.end(), std::back_inserter(covered_parts));
+                std::move(covered_parts_by_one_part.begin(), covered_parts_by_one_part.end(), std::back_inserter(covered_parts));
+                ++next_part_index;
+            }
+            break;
         }
-    }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
+                throw;
+
+            if (Int64(watch.elapsedMilliseconds()) >= timeout_ms)
+                throw;
+
+            auto & part = new_parts[next_part_index];
+            LOG_INFO(log, "Part {} is temporarily locked, will clear old parts and retry.", part->name);
+        }
+
+        clearOldPartsFromFilesystem();
+        sleepForMilliseconds(200);
+    } while (true);
+
     LOG_INFO(log, "Remove {} parts by covering them with empty {} parts. With txn {}.",
              covered_parts.size(), new_parts.size(), transaction.getTID());
 
