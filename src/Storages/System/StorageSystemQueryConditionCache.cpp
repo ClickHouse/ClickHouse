@@ -1,7 +1,7 @@
+#include <DataTypes/DataTypeUUID.h>
 #include <Storages/System/StorageSystemQueryConditionCache.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -16,10 +16,13 @@ ColumnsDescription StorageSystemQueryConditionCache::getColumnsDescription()
 {
     return ColumnsDescription
     {
+        {"key_hash", std::make_shared<DataTypeUInt128>(), "Hash of (table_uuid, part_name, condition_hash)."},
+#ifndef NDEBUG
         {"table_uuid", std::make_shared<DataTypeUUID>(), "The table UUID."},
         {"part_name", std::make_shared<DataTypeString>(), "The part name."},
         {"condition", std::make_shared<DataTypeString>(), "The hashed filter condition. Only set if setting query_condition_cache_store_conditions_as_plaintext = true."},
         {"condition_hash", std::make_shared<DataTypeUInt64>(), "The hash of the filter condition."},
+#endif
         {"entry_size", std::make_shared<DataTypeUInt64>(), "The size of the entry in bytes."},
         {"matching_marks", std::make_shared<DataTypeString>(), "Matching marks."}
     };
@@ -49,14 +52,17 @@ void StorageSystemQueryConditionCache::fillData(MutableColumns & res_columns, Co
 
     for (const auto & [key, entry] : content)
     {
-        res_columns[0]->insert(key.table_id);
-        res_columns[1]->insert(key.part_name);
-        res_columns[2]->insert(key.condition);
-        res_columns[3]->insert(key.condition_hash);
+        res_columns[0]->insert(key);
+#ifndef NDEBUG
+        res_columns[0]->insert(entry->table_id);
+        res_columns[1]->insert(entry->part_name);
+        res_columns[2]->insert(entry->condition);
+        res_columns[3]->insert(entry->condition_hash);
+#endif
         res_columns[4]->insert(QueryConditionCache::EntryWeight()(*entry));
 
         std::shared_lock lock(entry->mutex);
-        res_columns[5]->insert(to_string(entry->matching_marks));
+        res_columns[2]->insert(to_string(entry->matching_marks));
     }
 }
 
