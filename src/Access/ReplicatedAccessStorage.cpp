@@ -29,7 +29,9 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
     zkutil::GetZooKeeper get_zookeeper_,
     AccessChangesNotifier & changes_notifier_,
     bool allow_backup_,
-    bool throw_on_invalid_entities_)
+    bool throw_on_invalid_entities_,
+    UInt64 access_entities_num_limit_
+)
     : IAccessStorage(storage_name_)
     , memory_storage(storage_name_, changes_notifier_, false, access_entities_num_limit_)
     , replicator(storage_name_, zookeeper_path_, get_zookeeper_, changes_notifier_, memory_storage, throw_on_invalid_entities_)
