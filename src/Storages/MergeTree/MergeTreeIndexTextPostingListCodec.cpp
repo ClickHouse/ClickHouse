@@ -28,10 +28,6 @@ uint8_t readByte(std::span<const std::byte> & in)
 }
 }
 
-/// ============================================================================
-/// PostingListCodecBlockImpl - Template implementation
-/// ============================================================================
-
 template <typename BlockCodec, IPostingListCodec::Type codec_type>
 PostingListCodecBlockImpl<BlockCodec, codec_type>::PostingListCodecBlockImpl(size_t postings_list_block_size)
     : max_rowids_in_segment((postings_list_block_size + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1))
