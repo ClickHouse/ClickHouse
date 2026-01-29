@@ -973,7 +973,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
                 startup_context->setCurrentQueryId("");
 
                 {
-                    CurrentThread::QueryScope query_scope(startup_context);
+                    auto query_scope = CurrentThread::QueryScope::create(startup_context);
                     executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
                 }
 
@@ -1006,7 +1006,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             startup_context->setCurrentQueryId("");
 
-            CurrentThread::QueryScope query_scope(startup_context);
+            auto query_scope = CurrentThread::QueryScope::create(startup_context);
 
             executeQuery(read_buffer, write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
@@ -1310,18 +1310,7 @@ try
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
 #endif
 
-    bool has_trace_collector = false;
-    /// Disable it if we collect test coverage information, because it will work extremely slow.
-#if !WITH_COVERAGE
-    /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
-    has_trace_collector = hasPHDRCache() && config().has("trace_log");
-#endif
-
-    /// Describe multiple reasons when query profiler cannot work.
-
-#if WITH_COVERAGE
-    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they work extremely slow with test coverage.");
-#endif
+    bool has_trace_collector = hasPHDRCache() && config().has("trace_log");
 
 #if defined(SANITIZER)
     LOG_INFO(log, "Query Profiler is disabled because it cannot work under sanitizers"
@@ -2938,6 +2927,7 @@ try
                     global_context,
                     &config(),
                     "distributed_ddl",
+                    "default",
                     "DDLWorker",
                     &CurrentMetrics::MaxDDLEntryID,
                     &CurrentMetrics::MaxPushedDDLEntryID),
