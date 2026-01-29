@@ -84,7 +84,12 @@ def common_restore_failed_connection_without_losses(rabbitmq_cluster, messages_n
         if number == messages_num:
             pytest.fail("All RabbitMQ messages have been consumed before resuming the RabbitMQ server")
 
-    check_expected_result_polling(messages_num, f"SELECT count(DISTINCT key) FROM {table_dst}", instance=instance, timeout=CLICKHOUSE_VIEW_TIMEOUT_SEC)
+    check_expected_result_polling(
+        messages_num,
+        f"SELECT count(DISTINCT key) FROM {table_dst}",
+        instance=instance,
+        timeout=CLICKHOUSE_VIEW_TIMEOUT_SEC,
+    )
 
 
 def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
