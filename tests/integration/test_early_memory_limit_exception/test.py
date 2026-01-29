@@ -18,7 +18,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_enabling_access_management():
+def test_early_memory_limit():
     instance.query("DROP USER IF EXISTS Alex")
     instance.query("DROP USER IF EXISTS Bob")
     instance.query("CREATE USER Alex", user="default")
