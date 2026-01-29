@@ -279,10 +279,13 @@ echo "<clickhouse>
 cat /etc/clickhouse-server/users.d/compatibility.xml
 
 # List of allowed reasons why the server cannot start up
+# ADD ENTRIES HERE ONLY IF YOU ARE CERTAIN THEY DO NOT INTRODUCE BACKWARD-INCOMPATIBLE CHANGES
 # 1. Lazy database engine has been removed in a backward-incompatible manner
 check_allow_list() {
     local log="/var/log/clickhouse-server/clickhouse-server.log"
     if [ -f "$log" ] && rg -q "Unknown database engine: Lazy" "$log"; then
+        cat /test_output/test_results.tsv
+        rm -f /test_output/test_results.tsv
         echo "Found allow-listed error in logs. Suppressing failure."
         # Finishing tests because following checks would fail
         exit 0
