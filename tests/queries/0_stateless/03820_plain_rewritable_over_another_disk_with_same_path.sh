@@ -5,10 +5,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+settings=(
+    # Not compatible with DC
+    --write_through_distributed_cache=0
+    --read_through_distributed_cache=0
+)
+
 echo "cache_on_write_operations=0"
 endpoint="http://localhost:11111/test/s3_plain_rewritable_${CLICKHOUSE_DATABASE}_cache_on_write_operations_0"
 cache_path="${CLICKHOUSE_DATABASE}_cache_disk_cache_on_write_operations_0"
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT "${settings[@]}" -nm -q "
 drop table if exists mt1;
 drop table if exists mt1;
 drop table if exists mt3;
@@ -31,7 +37,7 @@ drop table mt4;
 echo "cache_on_write_operations=1"
 endpoint="http://localhost:11111/test/s3_plain_rewritable_${CLICKHOUSE_DATABASE}_cache_on_write_operations_1"
 cache_path="${CLICKHOUSE_DATABASE}_cache_disk_cache_on_write_operations_1"
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT "${settings[@]}" -nm -q "
 drop table if exists mt1;
 drop table if exists mt1;
 drop table if exists mt3;
