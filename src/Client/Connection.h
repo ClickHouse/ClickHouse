@@ -307,17 +307,17 @@ private:
     std::optional<FormatSettings> format_settings;
 
     void connect(const ConnectionTimeouts & timeouts);
-    void sendHello(const Poco::Timespan & handshake_timeout);
+    void sendHello();
 
     void cancel() noexcept;
     void reset() noexcept;
 
 #if USE_SSH
-    void performHandshakeForSSHAuth(const Poco::Timespan & handshake_timeout);
+    void performHandshakeForSSHAuth();
 #endif
 
     void sendAddendum();
-    void receiveHello(const Poco::Timespan & handshake_timeout);
+    void receiveHello();
 
 #if USE_SSL
     void sendClusterNameAndSalt();
@@ -342,7 +342,7 @@ private:
     void initBlockLogsInput();
     void initBlockProfileEventsInput();
 
-    [[noreturn]] void throwUnexpectedPacket(TimeoutSetter & timeout_setter, UInt64 packet_type, const char * expected);
+    [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected, TimeoutSetter * timeout_setter = nullptr);
 };
 
 template <typename Conn>

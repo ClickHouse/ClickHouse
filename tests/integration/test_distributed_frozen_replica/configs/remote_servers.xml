@@ -24,5 +24,33 @@
                 </replica>
             </shard>
         </test_cluster>
+        <test_cluster_secure>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node1</host>
+                    <port>9440</port>
+                    <secure>1</secure>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9440</port>
+                    <secure>1</secure>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node3</host>
+                    <port>9440</port>
+                    <secure>1</secure>
+                </replica>
+                <replica>
+                    <host>node4</host>
+                    <port>9440</port>
+                    <secure>1</secure>
+                </replica>
+            </shard>
+        </test_cluster_secure>
     </remote_servers>
 </clickhouse>
