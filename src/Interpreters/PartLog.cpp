@@ -152,6 +152,9 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"error", std::make_shared<DataTypeUInt16>(), "The error code of the occurred exception."},
         {"exception", std::make_shared<DataTypeString>(), "Text message of the occurred error."},
 
+        /// Mutation IDs
+        {"mutation_ids", std::make_shared<DataTypeString>(), "Mutation IDs associated with this operation. For MUTATE_PART events, contains the mutation IDs that were applied (can be a single ID or range like '0000001..0000005')."},
+
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
     };
 }
@@ -213,6 +216,8 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(error);
     columns[i++]->insert(exception);
+
+    columns[i++]->insert(mutation_ids);
 
     if (profile_counters)
     {
