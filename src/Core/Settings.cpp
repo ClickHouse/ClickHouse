@@ -6992,7 +6992,7 @@ Allow usage of materialized views with parallel replicas
 )", 0) \
     DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
 Allow pushing down filters to part of query which parallel replicas choose to execute
-)", 0) \
+)", BETA) \
     DECLARE(Bool, distributed_index_analysis, false, R"(
 Index analysis will be distributed across replicas.
 Beneficial for shared storage and huge amount of data in cluster.
