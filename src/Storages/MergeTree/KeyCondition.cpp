@@ -1274,6 +1274,30 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 }
 
 
+/// Applies a deterministic key-transform DAG to `in_column` and writes the transformed column/type to
+/// `out_column`/`out_type`.
+/// Intended for transforming constants (or IN-set elements) into "key space", so that the transformed
+/// values can be compared against key marks directly.
+///
+/// The function is intentionally conservative and returns false if the transformation cannot be proven
+/// safe for all values in `in_column`. In particular, it will fail if:
+/// - A required type conversion cannot be applied accurately for all values (casts that would produce NULLs).
+/// - Executing the DAG throws for some value from `in_column`.
+/// - The output contains NULLs (Nullable output is allowed only if it contains no NULLs; it is then unwrapped).
+///
+/// If `in_type` differs from `dag.input_type`, we normally cast `in_column` to `dag.input_type` (without
+/// introducing NULLs) and then execute the DAG. However, if the extracted DAG is just a single CAST applied
+/// directly to the input, casting to `dag.input_type` first can be redundant or even unsafe. In this case,
+/// we try to apply the CAST directly to the input column to avoid a lossy round-trip through `dag.input_type`
+/// (e.g. String -> Dynamic -> String).
+///
+/// Examples:
+/// - DAG `p -> cityHash64(p)`:
+///   input:  `['abc']`  type `String`
+///   output: `[cityHash64('abc')]`  type `UInt64`
+/// - DAG `p -> CAST(p, 'UInt8')`:
+///   input:  `['123']`  type `String`
+///   output: `[123]`  type `UInt8`
 bool applyDeterministicDagToColumn(
     const ColumnPtr & in_column,
     const DataTypePtr & in_type,
