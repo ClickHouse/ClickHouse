@@ -13,7 +13,8 @@ def wait_for_value(node, collection, key, expected, timeout=10):
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            result = node.query(f"SELECT collection['{key}'] FROM system.named_collections WHERE name = '{collection}'").strip()
+            result = node.query(
+                f"SELECT collection['{key}'] FROM system.named_collections WHERE name = '{collection}'").strip()
             if result == expected:
                 return True
         except Exception:
@@ -26,7 +27,8 @@ def wait_for_keys(node, collection, expected_keys, timeout=10):
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            result = node.query(f"SELECT mapKeys(collection) FROM system.named_collections WHERE name = '{collection}'").strip()
+            result = node.query(
+                f"SELECT mapKeys(collection) FROM system.named_collections WHERE name = '{collection}'").strip()
             if result == expected_keys:
                 return True
         except Exception:
@@ -118,30 +120,49 @@ def stopped_node3(cluster_with_node3):
         pass
 
 
+@pytest.fixture(autouse=True)
+def cleanup_named_collections(request):
+    """Drop all named collections before each test."""
+    cluster = None
+    if 'cluster' in request.fixturenames:
+        cluster = request.getfixturevalue('cluster')
+    elif 'stopped_node3' in request.fixturenames:
+        cluster = request.getfixturevalue('stopped_node3')
+
+    if cluster is not None:
+        for instance in cluster.instances.values():
+            try:
+                collections = instance.query("SELECT name FROM system.named_collections").strip()
+                if collections:
+                    for coll in collections.split('\n'):
+                        if coll:
+                            instance.query(f"DROP NAMED COLLECTION IF EXISTS {coll}")
+            except Exception:
+                pass  # Instance might not be running
+    yield
+
+
 def test_zookeeper_encrypted_storage(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
     zk = cluster.get_kazoo_client("zoo1")
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS enc_test")
     node1.query("CREATE NAMED COLLECTION enc_test AS key1=1234, secret='my_secret'")
 
     assert wait_for_value(node2, "enc_test", "key1", "1234")
 
     for node in [node1, node2]:
-        assert node.query("SELECT collection['secret'] FROM system.named_collections WHERE name='enc_test'").strip() == "my_secret"
+        assert node.query(
+            "SELECT collection['secret'] FROM system.named_collections WHERE name='enc_test'").strip() == "my_secret"
 
     content = check_encrypted(zk, "enc_test")
     assert b"my_secret" not in content
     assert b"1234" not in content
-
-    node1.query("DROP NAMED COLLECTION enc_test")
 
 
 def test_encryption_persists_after_restart(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
     zk = cluster.get_kazoo_client("zoo1")
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS persist_test")
     node1.query("CREATE NAMED COLLECTION persist_test AS password='super_secret', host='myhost'")
     assert wait_for_value(node2, "persist_test", "password", "super_secret")
 
@@ -149,51 +170,43 @@ def test_encryption_persists_after_restart(cluster):
     node2.restart_clickhouse()
 
     for node in [node1, node2]:
-        assert node.query("SELECT collection['password'] FROM system.named_collections WHERE name='persist_test'").strip() == "super_secret"
+        assert node.query(
+            "SELECT collection['password'] FROM system.named_collections WHERE name='persist_test'").strip() == "super_secret"
 
     content = check_encrypted(zk, "persist_test")
     assert b"super_secret" not in content
-
-    node1.query("DROP NAMED COLLECTION persist_test")
 
 
 def test_create_visible_across_nodes(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS create_test")
     node1.query("CREATE NAMED COLLECTION create_test AS key1='val1', key2=42")
     assert wait_for_value(node2, "create_test", "key1", "val1")
-    assert node2.query("SELECT collection['key2'] FROM system.named_collections WHERE name='create_test'").strip() == "42"
+    assert node2.query(
+        "SELECT collection['key2'] FROM system.named_collections WHERE name='create_test'").strip() == "42"
 
-    node2.query("DROP NAMED COLLECTION IF EXISTS create_test2")
     node2.query("CREATE NAMED COLLECTION create_test2 AS host='127.0.0.1'")
     assert wait_for_value(node1, "create_test2", "host", "127.0.0.1")
-
-    node1.query("DROP NAMED COLLECTION create_test")
-    node2.query("DROP NAMED COLLECTION create_test2")
 
 
 def test_create_if_not_exists_and_duplicate(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS dup_test")
     node1.query("CREATE NAMED COLLECTION dup_test AS key='original'")
     assert wait_exists(node2, "dup_test")
 
     node2.query("CREATE NAMED COLLECTION IF NOT EXISTS dup_test AS key='modified'")
-    assert node1.query("SELECT collection['key'] FROM system.named_collections WHERE name='dup_test'").strip() == "original"
+    assert node1.query(
+        "SELECT collection['key'] FROM system.named_collections WHERE name='dup_test'").strip() == "original"
 
     with pytest.raises(QueryRuntimeException) as exc:
         node2.query("CREATE NAMED COLLECTION dup_test AS key='fail'")
     assert "already exists" in str(exc.value).lower() or "NAMED_COLLECTION_ALREADY_EXISTS" in str(exc.value)
 
-    node1.query("DROP NAMED COLLECTION dup_test")
-
 
 def test_alter_operations(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS alter_test")
     node1.query("CREATE NAMED COLLECTION alter_test AS key1='v1', key2='v2', key3='v3'")
     assert wait_for_value(node2, "alter_test", "key1", "v1")
 
@@ -210,8 +223,6 @@ def test_alter_operations(cluster):
     assert wait_for_keys(node1, "alter_test", "['key1','key4','key5']")
     assert wait_for_value(node1, "alter_test", "key1", "final")
 
-    node1.query("DROP NAMED COLLECTION alter_test")
-
 
 def test_alter_if_exists_and_nonexistent(cluster):
     node1 = cluster.instances["node1"]
@@ -224,7 +235,6 @@ def test_alter_if_exists_and_nonexistent(cluster):
 def test_drop_operations(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS drop_test")
     node1.query("CREATE NAMED COLLECTION drop_test AS key='val'")
     assert wait_exists(node2, "drop_test")
 
@@ -241,7 +251,6 @@ def test_drop_operations(cluster):
 def test_cannot_delete_last_key(cluster):
     node1 = cluster.instances["node1"]
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS last_key_test")
     node1.query("CREATE NAMED COLLECTION last_key_test AS key1='v1', key2='v2'")
 
     node1.query("ALTER NAMED COLLECTION last_key_test DELETE key1")
@@ -253,28 +262,23 @@ def test_cannot_delete_last_key(cluster):
     node1.query("ALTER NAMED COLLECTION last_key_test SET key3='v3'")
     node1.query("ALTER NAMED COLLECTION last_key_test DELETE key2")
 
-    node1.query("DROP NAMED COLLECTION last_key_test")
-
 
 def test_overridable_keys(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS override_test")
     node1.query("""
         CREATE NAMED COLLECTION override_test AS
         public='pub' OVERRIDABLE, secret='sec' NOT OVERRIDABLE, normal='norm'
     """)
     assert wait_for_value(node2, "override_test", "public", "pub")
-    assert node2.query("SELECT collection['secret'] FROM system.named_collections WHERE name='override_test'").strip() == "sec"
-
-    node1.query("DROP NAMED COLLECTION override_test")
+    assert node2.query(
+        "SELECT collection['secret'] FROM system.named_collections WHERE name='override_test'").strip() == "sec"
 
 
 def test_rbac_permissions(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
 
     node1.query("DROP USER IF EXISTS test_rbac_user")
-    node1.query("DROP NAMED COLLECTION IF EXISTS rbac_coll")
     node1.query("CREATE USER test_rbac_user")
     node1.query("GRANT SELECT ON *.* TO test_rbac_user")
     node1.query("CREATE NAMED COLLECTION rbac_coll AS key='secret'")
@@ -292,15 +296,61 @@ def test_rbac_permissions(cluster):
     node1.query("ALTER NAMED COLLECTION rbac_coll SET key='modified'", user="test_rbac_user")
     assert wait_for_value(node2, "rbac_coll", "key", "modified")
 
-    node1.query("DROP NAMED COLLECTION rbac_coll")
     node1.query("DROP USER test_rbac_user")
+
+
+def test_named_collection_grants_visibility_in_system_grants(cluster):
+    node1 = cluster.instances["node1"]
+
+    node1.query("DROP USER IF EXISTS grants_vis_user")
+
+    node1.query("CREATE USER grants_vis_user")
+    node1.query("GRANT SELECT ON system.named_collections TO grants_vis_user")
+    node1.query("CREATE NAMED COLLECTION foobar AS a='1', b='2'")
+    node1.query("CREATE NAMED COLLECTION barfoo AS c='3', d='4'")
+
+    node1.query("GRANT SHOW NAMED COLLECTIONS ON foobar TO grants_vis_user")
+    node1.query("GRANT SHOW NAMED COLLECTIONS ON barfoo TO grants_vis_user")
+    node1.query("GRANT ALTER NAMED COLLECTION ON foobar TO grants_vis_user")
+
+    grants = node1.query(
+        """
+        SELECT access_type, database, table, column
+        FROM system.grants
+        WHERE user_name = 'grants_vis_user'
+        ORDER BY access_type
+        """).strip()
+
+    grant_count = node1.query(
+        """
+        SELECT count()
+        FROM system.grants
+        WHERE user_name = 'grants_vis_user'
+        """).strip()
+    assert int(grant_count) >= 3
+
+    visible = node1.query("SELECT name FROM system.named_collections ORDER BY name", user="grants_vis_user").strip()
+    assert "foobar" in visible
+    assert "barfoo" in visible
+
+    node1.query("ALTER NAMED COLLECTION foobar SET a='modified'", user="grants_vis_user")
+    assert node1.query("SELECT collection['a'] FROM system.named_collections WHERE name='foobar'").strip() == "modified"
+
+    with pytest.raises(QueryRuntimeException):
+        node1.query("ALTER NAMED COLLECTION barfoo SET c='should_fail'", user="grants_vis_user")
+
+    node1.query("REVOKE SHOW NAMED COLLECTIONS ON foobar FROM grants_vis_user")
+    visible_after = node1.query("SELECT name FROM system.named_collections", user="grants_vis_user").strip()
+    assert "barfoo" in visible_after
+    assert "foobar" not in visible_after
+
+    node1.query("DROP USER grants_vis_user")
 
 
 def test_grants_persist_after_restart(cluster):
     node1 = cluster.instances["node1"]
 
     node1.query("DROP USER IF EXISTS persist_grant_user")
-    node1.query("DROP NAMED COLLECTION IF EXISTS persist_grant_coll")
 
     node1.query("CREATE USER persist_grant_user")
     node1.query("GRANT SELECT ON *.* TO persist_grant_user")
@@ -308,17 +358,20 @@ def test_grants_persist_after_restart(cluster):
     node1.query("GRANT SHOW NAMED COLLECTIONS ON persist_grant_coll TO persist_grant_user")
     node1.query("GRANT ALTER NAMED COLLECTION ON persist_grant_coll TO persist_grant_user")
 
-    assert node1.query("SELECT name FROM system.named_collections", user="persist_grant_user").strip() == "persist_grant_coll"
+    assert node1.query("SELECT name FROM system.named_collections",
+                       user="persist_grant_user").strip() == "persist_grant_coll"
     node1.query("ALTER NAMED COLLECTION persist_grant_coll SET secret='modified'", user="persist_grant_user")
-    assert node1.query("SELECT collection['secret'] FROM system.named_collections WHERE name='persist_grant_coll'").strip() == "modified"
+    assert node1.query(
+        "SELECT collection['secret'] FROM system.named_collections WHERE name='persist_grant_coll'").strip() == "modified"
 
     node1.restart_clickhouse()
 
-    assert node1.query("SELECT name FROM system.named_collections", user="persist_grant_user").strip() == "persist_grant_coll"
+    assert node1.query("SELECT name FROM system.named_collections",
+                       user="persist_grant_user").strip() == "persist_grant_coll"
     node1.query("ALTER NAMED COLLECTION persist_grant_coll SET secret='after_restart'", user="persist_grant_user")
-    assert node1.query("SELECT collection['secret'] FROM system.named_collections WHERE name='persist_grant_coll'").strip() == "after_restart"
+    assert node1.query(
+        "SELECT collection['secret'] FROM system.named_collections WHERE name='persist_grant_coll'").strip() == "after_restart"
 
-    node1.query("DROP NAMED COLLECTION persist_grant_coll")
     node1.query("DROP USER persist_grant_user")
 
 
@@ -326,7 +379,6 @@ def test_user_recreation_loses_grants(cluster):
     node1 = cluster.instances["node1"]
 
     node1.query("DROP USER IF EXISTS recreate_user")
-    node1.query("DROP NAMED COLLECTION IF EXISTS recreate_coll")
 
     node1.query("CREATE USER recreate_user")
     node1.query("GRANT SELECT ON *.* TO recreate_user")
@@ -343,7 +395,6 @@ def test_user_recreation_loses_grants(cluster):
     node1.query("GRANT SHOW NAMED COLLECTIONS ON recreate_coll TO recreate_user")
     assert node1.query("SELECT count() FROM system.named_collections", user="recreate_user").strip() == "1"
 
-    node1.query("DROP NAMED COLLECTION recreate_coll")
     node1.query("DROP USER recreate_user")
 
 
@@ -352,7 +403,6 @@ def test_role_grants_survive_user_recreation(cluster):
 
     node1.query("DROP USER IF EXISTS role_user")
     node1.query("DROP ROLE IF EXISTS nc_role")
-    node1.query("DROP NAMED COLLECTION IF EXISTS role_coll")
 
     node1.query("CREATE NAMED COLLECTION role_coll AS data='important'")
     node1.query("CREATE ROLE nc_role")
@@ -373,13 +423,13 @@ def test_role_grants_survive_user_recreation(cluster):
 
     assert node1.query("SELECT name FROM system.named_collections", user="role_user").strip() == "role_coll"
     node1.query("ALTER NAMED COLLECTION role_coll SET data='after_recreate'", user="role_user")
-    assert node1.query("SELECT collection['data'] FROM system.named_collections WHERE name='role_coll'").strip() == "after_recreate"
+    assert node1.query(
+        "SELECT collection['data'] FROM system.named_collections WHERE name='role_coll'").strip() == "after_recreate"
 
     node1.restart_clickhouse()
 
     assert node1.query("SELECT name FROM system.named_collections", user="role_user").strip() == "role_coll"
 
-    node1.query("DROP NAMED COLLECTION role_coll")
     node1.query("DROP USER role_user")
     node1.query("DROP ROLE nc_role")
 
@@ -388,104 +438,92 @@ def test_special_characters_and_unicode(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
     zk = cluster.get_kazoo_client("zoo1")
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS special_test")
     special = "p@ss!#$%^&*()_+-=[]{}|;:,./<>?"
     unicode_val = "こんにちは世界"
 
     node1.query(f"CREATE NAMED COLLECTION special_test AS special='{special}', unicode='{unicode_val}'")
     assert wait_for_value(node2, "special_test", "special", special)
-    assert node2.query("SELECT collection['unicode'] FROM system.named_collections WHERE name='special_test'").strip() == unicode_val
+    assert node2.query(
+        "SELECT collection['unicode'] FROM system.named_collections WHERE name='special_test'").strip() == unicode_val
 
     content = check_encrypted(zk, "special_test")
     assert special.encode() not in content
-
-    node1.query("DROP NAMED COLLECTION special_test")
 
 
 def test_empty_and_long_values(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS length_test")
     long_val = "x" * 10000
 
     node1.query(f"CREATE NAMED COLLECTION length_test AS empty='', long='{long_val}'")
     assert wait_exists(node2, "length_test")
 
-    assert node1.query("SELECT collection['empty'] FROM system.named_collections WHERE name='length_test'").strip() == ""
-    assert node1.query("SELECT length(collection['long']) FROM system.named_collections WHERE name='length_test'").strip() == "10000"
-
-    node1.query("DROP NAMED COLLECTION length_test")
+    assert node1.query(
+        "SELECT collection['empty'] FROM system.named_collections WHERE name='length_test'").strip() == ""
+    assert node1.query(
+        "SELECT length(collection['long']) FROM system.named_collections WHERE name='length_test'").strip() == "10000"
 
 
 def test_numeric_values(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS num_test")
-    node1.query("CREATE NAMED COLLECTION num_test AS int_val=12345, neg=-9999, float_val=3.14, zero=0, large=9999999999999")
+    node1.query(
+        "CREATE NAMED COLLECTION num_test AS int_val=12345, neg=-9999, float_val=3.14, zero=0, large=9999999999999")
 
     assert wait_for_value(node2, "num_test", "int_val", "12345")
-    assert node1.query("SELECT collection['neg'] FROM system.named_collections WHERE name='num_test'").strip() == "-9999"
-    assert node1.query("SELECT collection['float_val'] FROM system.named_collections WHERE name='num_test'").strip() == "3.14"
-
-    node1.query("DROP NAMED COLLECTION num_test")
+    assert node1.query(
+        "SELECT collection['neg'] FROM system.named_collections WHERE name='num_test'").strip() == "-9999"
+    assert node1.query(
+        "SELECT collection['float_val'] FROM system.named_collections WHERE name='num_test'").strip() == "3.14"
 
 
 def test_many_keys(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
     zk = cluster.get_kazoo_client("zoo1")
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS many_keys_test")
     keys_values = ", ".join([f"key{i}='val{i}'" for i in range(100)])
     node1.query(f"CREATE NAMED COLLECTION many_keys_test AS {keys_values}")
 
-    assert node1.query("SELECT length(mapKeys(collection)) FROM system.named_collections WHERE name='many_keys_test'").strip() == "100"
+    assert node1.query(
+        "SELECT length(mapKeys(collection)) FROM system.named_collections WHERE name='many_keys_test'").strip() == "100"
     assert wait_for_value(node2, "many_keys_test", "key99", "val99")
 
     content = check_encrypted(zk, "many_keys_test")
     assert b"val50" not in content
 
-    node1.query("DROP NAMED COLLECTION many_keys_test")
-
 
 def test_ddl_collection_basic(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS ddl_coll1")
     node1.query("CREATE NAMED COLLECTION ddl_coll1 AS key1 = 'value1', key2 = 'value2'")
 
     for node in [node1, node2]:
         assert wait_exists(node, "ddl_coll1")
-        assert node.query("SELECT collection['key1'] FROM system.named_collections WHERE name='ddl_coll1'").strip() == "value1"
+        assert node.query(
+            "SELECT collection['key1'] FROM system.named_collections WHERE name='ddl_coll1'").strip() == "value1"
         assert node.query("SELECT source FROM system.named_collections WHERE name='ddl_coll1'").strip() == "SQL"
 
     node1.query("ALTER NAMED COLLECTION ddl_coll1 SET key2 = 'modified'")
     assert wait_for_value(node2, "ddl_coll1", "key2", "modified")
 
-    node1.query("DROP NAMED COLLECTION ddl_coll1")
-    assert wait_not_exists(node1, "ddl_coll1")
-    assert wait_not_exists(node2, "ddl_coll1")
-
 
 def test_secrets_hidden_in_logs(cluster):
     node1 = cluster.instances["node1"]
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS log_test")
     qid = f"q_{uuid.uuid4()}"
     node1.query("CREATE NAMED COLLECTION log_test AS password='super_secret'", query_id=qid)
     node1.query("SYSTEM FLUSH LOGS")
 
-    query_text = node1.query(f"SELECT query FROM system.query_log WHERE query_id='{qid}' AND type='QueryFinish' LIMIT 1").strip()
+    query_text = node1.query(
+        f"SELECT query FROM system.query_log WHERE query_id='{qid}' AND type='QueryFinish' LIMIT 1").strip()
     assert "super_secret" not in query_text
     assert "[HIDDEN]" in query_text
-
-    node1.query("DROP NAMED COLLECTION log_test")
 
 
 def test_zk_node_lifecycle(cluster):
     node1 = cluster.instances["node1"]
     zk = cluster.get_kazoo_client("zoo1")
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS zk_test")
     node1.query("CREATE NAMED COLLECTION zk_test AS key='val'")
 
     assert "zk_test.sql" in zk.get_children(ZK_PATH)
@@ -502,8 +540,8 @@ def test_remote_select_insert(cluster):
     node2.query("CREATE TABLE remote_test_table (id UInt64, val String) ENGINE=MergeTree() ORDER BY id")
     node2.query("INSERT INTO remote_test_table VALUES (1,'a'), (2,'b'), (3,'c')")
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS remote_coll")
-    node1.query("CREATE NAMED COLLECTION remote_coll AS host='node2', port=9000, user='default', password='', database='default'")
+    node1.query(
+        "CREATE NAMED COLLECTION remote_coll AS host='node2', port=9000, user='default', password='', database='default'")
     assert wait_exists(node2, "remote_coll")
 
     result = node1.query("SELECT count() FROM remote(remote_coll, table='remote_test_table')").strip()
@@ -513,7 +551,6 @@ def test_remote_select_insert(cluster):
     assert node2.query("SELECT count() FROM remote_test_table").strip() == "4"
 
     node2.query("DROP TABLE remote_test_table")
-    node1.query("DROP NAMED COLLECTION remote_coll")
 
 
 def test_dictionary_with_named_collection(cluster):
@@ -523,8 +560,8 @@ def test_dictionary_with_named_collection(cluster):
     node2.query("CREATE TABLE dict_source (id UInt64, name String) ENGINE=MergeTree() ORDER BY id")
     node2.query("INSERT INTO dict_source VALUES (1,'one'), (2,'two'), (3,'three')")
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS dict_coll")
-    node1.query("CREATE NAMED COLLECTION dict_coll AS host='node2', port=9000, user='default', password='', db='default', table='dict_source'")
+    node1.query(
+        "CREATE NAMED COLLECTION dict_coll AS host='node2', port=9000, user='default', password='', db='default', table='dict_source'")
 
     node1.query("DROP DICTIONARY IF EXISTS test_dict")
     node1.query("""
@@ -535,15 +572,11 @@ def test_dictionary_with_named_collection(cluster):
     assert node1.query("SELECT dictGet('test_dict', 'name', toUInt64(2))").strip() == "two"
 
     node1.query("DROP DICTIONARY test_dict")
-    node1.query("DROP NAMED COLLECTION dict_coll")
     node2.query("DROP TABLE dict_source")
 
 
 def test_concurrent_creates(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
-
-    node1.query("DROP NAMED COLLECTION IF EXISTS conc1")
-    node1.query("DROP NAMED COLLECTION IF EXISTS conc2")
 
     node1.query("CREATE NAMED COLLECTION conc1 AS from='node1'")
     node2.query("CREATE NAMED COLLECTION conc2 AS from='node2'")
@@ -551,30 +584,24 @@ def test_concurrent_creates(cluster):
     assert wait_exists(node2, "conc1")
     assert wait_exists(node1, "conc2")
 
-    node1.query("DROP NAMED COLLECTION conc1")
-    node1.query("DROP NAMED COLLECTION conc2")
-
 
 def test_rapid_alters(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS rapid_alter")
     node1.query("CREATE NAMED COLLECTION rapid_alter AS counter='0'")
 
     for i in range(1, 11):
         node1.query(f"ALTER NAMED COLLECTION rapid_alter SET counter='{i}'")
 
-    assert node1.query("SELECT collection['counter'] FROM system.named_collections WHERE name='rapid_alter'").strip() == "10"
+    assert node1.query(
+        "SELECT collection['counter'] FROM system.named_collections WHERE name='rapid_alter'").strip() == "10"
     assert wait_for_value(node2, "rapid_alter", "counter", "10")
-
-    node1.query("DROP NAMED COLLECTION rapid_alter")
 
 
 def test_survives_restart(cluster):
     node1, node2 = cluster.instances["node1"], cluster.instances["node2"]
     zk = cluster.get_kazoo_client("zoo1")
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS restart_test")
     node1.query("CREATE NAMED COLLECTION restart_test AS key='persistent'")
     assert wait_for_value(node2, "restart_test", "key", "persistent")
 
@@ -582,20 +609,16 @@ def test_survives_restart(cluster):
     node2.restart_clickhouse()
 
     for node in [node1, node2]:
-        assert node.query("SELECT collection['key'] FROM system.named_collections WHERE name='restart_test'").strip() == "persistent"
+        assert node.query(
+            "SELECT collection['key'] FROM system.named_collections WHERE name='restart_test'").strip() == "persistent"
 
     content = check_encrypted(zk, "restart_test")
     assert b"persistent" not in content
-
-    node1.query("DROP NAMED COLLECTION restart_test")
 
 
 def test_new_replica_sees_existing_collections(stopped_node3):
     cluster = stopped_node3
     node1, node2, node3 = cluster.instances["node1"], cluster.instances["node2"], cluster.instances["node3"]
-
-    node1.query("DROP NAMED COLLECTION IF EXISTS existing_coll_1")
-    node1.query("DROP NAMED COLLECTION IF EXISTS existing_coll_2")
 
     node1.query("CREATE NAMED COLLECTION existing_coll_1 AS host='server1', secret='abc'")
     node2.query("CREATE NAMED COLLECTION existing_coll_2 AS endpoint='http://api.com', token='xyz'")
@@ -609,20 +632,17 @@ def test_new_replica_sees_existing_collections(stopped_node3):
     assert wait_for_value(node3, "existing_coll_1", "secret", "abc", timeout=30)
     assert wait_for_value(node3, "existing_coll_2", "token", "xyz", timeout=30)
 
-    node1.query("DROP NAMED COLLECTION existing_coll_1")
-    node1.query("DROP NAMED COLLECTION existing_coll_2")
-
 
 def test_new_replica_executes_remote_queries(stopped_node3):
     cluster = stopped_node3
     node1, node2, node3 = cluster.instances["node1"], cluster.instances["node2"], cluster.instances["node3"]
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS query_coll")
     node2.query("DROP TABLE IF EXISTS query_test_data")
 
     node2.query("CREATE TABLE query_test_data (id UInt64, val String, score Int32) ENGINE=MergeTree() ORDER BY id")
     node2.query("INSERT INTO query_test_data VALUES (1,'alpha',100), (2,'beta',200), (3,'gamma',300)")
-    node1.query("CREATE NAMED COLLECTION query_coll AS host='node2', port=9000, user='default', password='', database='default', table='query_test_data'")
+    node1.query(
+        "CREATE NAMED COLLECTION query_coll AS host='node2', port=9000, user='default', password='', database='default', table='query_test_data'")
 
     assert node1.query("SELECT count() FROM remote(query_coll)").strip() == "3"
 
@@ -632,15 +652,12 @@ def test_new_replica_executes_remote_queries(stopped_node3):
     assert node3.query("SELECT count() FROM remote(query_coll)").strip() == "3"
     assert node3.query("SELECT sum(score) FROM remote(query_coll)").strip() == "600"
 
-    node1.query("DROP NAMED COLLECTION query_coll")
     node2.query("DROP TABLE query_test_data")
 
 
 def test_new_replica_sees_final_state_after_alterations(stopped_node3):
     cluster = stopped_node3
     node1, node3 = cluster.instances["node1"], cluster.instances["node3"]
-
-    node1.query("DROP NAMED COLLECTION IF EXISTS altered_coll")
 
     node1.query("CREATE NAMED COLLECTION altered_coll AS a='1', b='2', c='3'")
     node1.query("ALTER NAMED COLLECTION altered_coll SET a='modified_a'")
@@ -655,15 +672,10 @@ def test_new_replica_sees_final_state_after_alterations(stopped_node3):
     keys = node3.query("SELECT mapKeys(collection) FROM system.named_collections WHERE name='altered_coll'").strip()
     assert "b" not in keys
 
-    node1.query("DROP NAMED COLLECTION altered_coll")
-
 
 def test_new_replica_can_create_new_collections(stopped_node3):
     cluster = stopped_node3
     node1, node2, node3 = cluster.instances["node1"], cluster.instances["node2"], cluster.instances["node3"]
-
-    node1.query("DROP NAMED COLLECTION IF EXISTS new_from_replica")
-    node1.query("DROP NAMED COLLECTION IF EXISTS pre_existing_coll")
 
     node1.query("CREATE NAMED COLLECTION pre_existing_coll AS key1 = 'value1'")
     assert wait_exists(node2, "pre_existing_coll")
@@ -677,15 +689,11 @@ def test_new_replica_can_create_new_collections(stopped_node3):
     assert wait_exists(node2, "new_from_replica")
     assert wait_for_value(node1, "new_from_replica", "created_by", "node3")
 
-    node1.query("DROP NAMED COLLECTION new_from_replica")
-    node1.query("DROP NAMED COLLECTION pre_existing_coll")
-
 
 def test_new_replica_can_drop_collections(stopped_node3):
     cluster = stopped_node3
     node1, node2, node3 = cluster.instances["node1"], cluster.instances["node2"], cluster.instances["node3"]
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS to_be_dropped")
     node1.query("CREATE NAMED COLLECTION to_be_dropped AS key='value'")
     assert wait_exists(node2, "to_be_dropped")
 
@@ -703,7 +711,6 @@ def test_new_replica_encrypted_data_integrity(stopped_node3):
     node1, node3 = cluster.instances["node1"], cluster.instances["node3"]
     zk = cluster.get_kazoo_client("zoo1")
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS encrypted_coll")
     node1.query("""
         CREATE NAMED COLLECTION encrypted_coll AS
         api_key='super_secret_api_key_12345',
@@ -719,15 +726,10 @@ def test_new_replica_encrypted_data_integrity(stopped_node3):
     assert wait_for_value(node3, "encrypted_coll", "api_key", "super_secret_api_key_12345", timeout=30)
     assert wait_for_value(node3, "encrypted_coll", "password", "P@ssw0rd!Complex#123", timeout=30)
 
-    node1.query("DROP NAMED COLLECTION encrypted_coll")
-
 
 def test_new_replica_with_many_collections(stopped_node3):
     cluster = stopped_node3
     node1, node2, node3 = cluster.instances["node1"], cluster.instances["node2"], cluster.instances["node3"]
-
-    for i in range(20):
-        node1.query(f"DROP NAMED COLLECTION IF EXISTS batch_coll_{i}")
 
     for i in range(20):
         node = node1 if i % 2 == 0 else node2
@@ -741,15 +743,11 @@ def test_new_replica_with_many_collections(stopped_node3):
     count = int(node3.query("SELECT count() FROM system.named_collections WHERE name LIKE 'batch_coll_%'").strip())
     assert count == 20
 
-    for i in range(20):
-        node1.query(f"DROP NAMED COLLECTION batch_coll_{i}")
-
 
 def test_new_replica_join_leave_rejoin(stopped_node3):
     cluster = stopped_node3
     node1, node3 = cluster.instances["node1"], cluster.instances["node3"]
 
-    node1.query("DROP NAMED COLLECTION IF EXISTS rejoin_coll")
     node1.query("CREATE NAMED COLLECTION rejoin_coll AS version='1'")
 
     node3.start_clickhouse()
@@ -761,5 +759,3 @@ def test_new_replica_join_leave_rejoin(stopped_node3):
     node3.start_clickhouse()
     assert wait_for_value(node3, "rejoin_coll", "version", "2", timeout=30)
     assert wait_for_value(node3, "rejoin_coll", "extra", "added", timeout=30)
-
-    node1.query("DROP NAMED COLLECTION rejoin_coll")

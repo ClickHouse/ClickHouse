@@ -1,5 +1,4 @@
 import io
-import json
 import logging
 import time
 import uuid
@@ -25,6 +24,7 @@ def cluster():
             stay_alive=True,
             with_zookeeper=True,
             with_minio=True,
+            with_nginx=True,
         )
         logging.info("Starting cluster...")
         cluster.start()
@@ -33,8 +33,19 @@ def cluster():
         cluster.shutdown()
 
 
+@pytest.fixture(autouse=True)
+def cleanup_named_collections(cluster):
+    """Drop all named collections before each test."""
+    node = cluster.instances["s3_node"]
+    collections = node.query("SELECT name FROM system.named_collections").strip()
+    if collections:
+        for coll in collections.split('\n'):
+            if coll:
+                node.query(f"DROP NAMED COLLECTION IF EXISTS {coll}")
+    yield
+
+
 def create_s3_collection(node, name, minio_host, bucket, path="", extra_params=""):
-    node.query(f"DROP NAMED COLLECTION IF EXISTS {name}")
     url = f"http://{minio_host}:{MINIO_INTERNAL_PORT}/{bucket}/{path}"
     node.query(f"""
         CREATE NAMED COLLECTION {name} AS
@@ -47,7 +58,6 @@ def create_s3_collection(node, name, minio_host, bucket, path="", extra_params="
 
 def test_s3_table_function_with_overrides(cluster):
     node = cluster.instances["s3_node"]
-    node.query("DROP NAMED COLLECTION IF EXISTS s3_override")
     node.query(f"""
         CREATE NAMED COLLECTION s3_override AS
         url = 'http://{cluster.minio_host}:{MINIO_INTERNAL_PORT}/{cluster.minio_bucket}/',
@@ -56,17 +66,19 @@ def test_s3_table_function_with_overrides(cluster):
         format = 'CSV'
     """)
 
-    node.query("""
-        INSERT INTO FUNCTION s3(s3_override, filename='override_test.csv', structure='x UInt32, y UInt32')
-        VALUES (10, 20), (30, 40)
-    """)
+    node.query(
+        """
+        INSERT INTO FUNCTION s3(s3_override, filename = 'override_test.csv', structure = 'x UInt32, y UInt32')
+        VALUES (10, 20),
+               (30, 40)
+        """)
 
-    result = node.query("""
-        SELECT sum(x), sum(y) FROM s3(s3_override, filename='override_test.csv', structure='x UInt32, y UInt32')
-    """).strip()
+    result = node.query(
+        """
+        SELECT sum(x), sum(y)
+        FROM s3(s3_override, filename = 'override_test.csv', structure = 'x UInt32, y UInt32')
+        """).strip()
     assert result == "40\t60"
-
-    node.query("DROP NAMED COLLECTION s3_override")
 
 
 def test_s3_multiple_formats(cluster):
@@ -74,7 +86,6 @@ def test_s3_multiple_formats(cluster):
 
     for format_name, ext in [("CSV", "csv"), ("JSONEachRow", "json"), ("TabSeparated", "tsv")]:
         coll_name = f"s3_{ext}"
-        node.query(f"DROP NAMED COLLECTION IF EXISTS {coll_name}")
         node.query(f"""
             CREATE NAMED COLLECTION {coll_name} AS
             url = 'http://{cluster.minio_host}:{MINIO_INTERNAL_PORT}/{cluster.minio_bucket}/format_test/',
@@ -88,17 +99,15 @@ def test_s3_multiple_formats(cluster):
             VALUES (100), (200), (300)
         """)
 
-        result = node.query(f"SELECT sum(num) FROM s3({coll_name}, filename='test.{ext}', structure='num UInt32')").strip()
+        result = node.query(
+            f"SELECT sum(num) FROM s3({coll_name}, filename='test.{ext}', structure='num UInt32')").strip()
         assert result == "600", f"Failed for {format_name}"
-
-        node.query(f"DROP NAMED COLLECTION {coll_name}")
 
 
 def test_s3cluster_with_full_collection(cluster):
     node = cluster.instances["s3_node"]
     test_path = f"s3cluster_full_{uuid.uuid4().hex[:8]}"
 
-    node.query("DROP NAMED COLLECTION IF EXISTS s3_full")
     node.query(f"""
         CREATE NAMED COLLECTION s3_full AS
         url = 'http://{cluster.minio_host}:{MINIO_INTERNAL_PORT}/{cluster.minio_bucket}/{test_path}/',
@@ -107,25 +116,32 @@ def test_s3cluster_with_full_collection(cluster):
         format = 'JSONEachRow'
     """)
 
-    node.query("""
-        INSERT INTO FUNCTION s3(s3_full, filename='users.json', structure='id UInt64, name String, score Float64')
-        VALUES (1, 'Alice', 95.5), (2, 'Bob', 87.3), (3, 'Charlie', 92.1)
-    """)
+    node.query(
+        """
+        INSERT INTO FUNCTION s3(s3_full, filename = 'users.json',
+                                structure = 'id UInt64, name String, score Float64')
+        VALUES (1, 'Alice', 95.5),
+               (2, 'Bob', 87.3),
+               (3, 'Charlie', 92.1)
+        """)
 
-    result = node.query("""
-        SELECT count(*) FROM s3Cluster('cluster_simple', s3_full,
-            filename = 'users.json', structure = 'id UInt64, name String, score Float64')
-    """).strip()
+    result = node.query(
+        """
+        SELECT count(*)
+        FROM s3Cluster('cluster_simple', s3_full,
+                       filename = 'users.json', structure = 'id UInt64, name String, score Float64')
+        """).strip()
     assert result == "3"
 
-    result = node.query("""
-        SELECT name FROM s3Cluster('cluster_simple', s3_full,
-            filename = 'users.json', structure = 'id UInt64, name String, score Float64')
-        WHERE score > 90 ORDER BY name
-    """).strip()
+    result = node.query(
+        """
+        SELECT name
+        FROM s3Cluster('cluster_simple', s3_full,
+                       filename = 'users.json', structure = 'id UInt64, name String, score Float64')
+        WHERE score > 90
+        ORDER BY name
+        """).strip()
     assert "Alice" in result and "Charlie" in result and "Bob" not in result
-
-    node.query("DROP NAMED COLLECTION s3_full")
 
 
 def test_s3cluster_glob_pattern(cluster):
@@ -141,12 +157,11 @@ def test_s3cluster_glob_pattern(cluster):
         """)
 
     result = node.query("""
-        SELECT sum(x) FROM s3Cluster('cluster_simple', s3_glob,
-            filename = 'part_*.csv', format = 'CSV', structure = 'x UInt32')
-    """).strip()
+                        SELECT sum(x)
+                        FROM s3Cluster('cluster_simple', s3_glob,
+                                       filename = 'part_*.csv', format = 'CSV', structure = 'x UInt32')
+                        """).strip()
     assert result == "99"
-
-    node.query("DROP NAMED COLLECTION s3_glob")
 
 
 def test_s3_backup_restore(cluster):
@@ -167,7 +182,6 @@ def test_s3_backup_restore(cluster):
     assert node.query("SELECT data FROM backup_src WHERE id = 50").strip() == "500"
 
     node.query("DROP TABLE backup_src")
-    node.query("DROP NAMED COLLECTION s3_backup")
 
 
 def test_s3_incremental_backup(cluster):
@@ -196,7 +210,6 @@ def test_s3_incremental_backup(cluster):
     assert node.query("SELECT count() FROM inc_backup_test").strip() == "3"
 
     node.query("DROP TABLE inc_backup_test")
-    node.query("DROP NAMED COLLECTION s3_inc")
 
 
 def test_s3queue_after_processing_delete(cluster):
@@ -237,13 +250,11 @@ def test_s3queue_after_processing_delete(cluster):
     node.query("DROP TABLE IF EXISTS s3queue_del_mv")
     node.query("DROP TABLE IF EXISTS s3queue_del_src")
     node.query("DROP TABLE IF EXISTS s3queue_del_dst")
-    node.query("DROP NAMED COLLECTION s3queue_del")
 
 
 def test_s3_with_compression(cluster):
     node = cluster.instances["s3_node"]
 
-    node.query("DROP NAMED COLLECTION IF EXISTS s3_gzip")
     node.query(f"""
         CREATE NAMED COLLECTION s3_gzip AS
         url = 'http://{cluster.minio_host}:{MINIO_INTERNAL_PORT}/{cluster.minio_bucket}/compressed/',
@@ -253,18 +264,16 @@ def test_s3_with_compression(cluster):
         compression = 'gzip'
     """)
 
-    node.query("INSERT INTO FUNCTION s3(s3_gzip, filename='data.csv.gz', structure='val UInt64') SELECT number FROM numbers(1000)")
+    node.query(
+        "INSERT INTO FUNCTION s3(s3_gzip, filename='data.csv.gz', structure='val UInt64') SELECT number FROM numbers(1000)")
 
     result = node.query("SELECT sum(val) FROM s3(s3_gzip, filename='data.csv.gz', structure='val UInt64')").strip()
     assert result == "499500"
-
-    node.query("DROP NAMED COLLECTION s3_gzip")
 
 
 def test_s3_with_schema_in_collection(cluster):
     node = cluster.instances["s3_node"]
 
-    node.query("DROP NAMED COLLECTION IF EXISTS s3_schema")
     node.query(f"""
         CREATE NAMED COLLECTION s3_schema AS
         url = 'http://{cluster.minio_host}:{MINIO_INTERNAL_PORT}/{cluster.minio_bucket}/schema_test/',
@@ -274,19 +283,16 @@ def test_s3_with_schema_in_collection(cluster):
         structure = 'id UInt64, name String, score Float32'
     """)
 
-    node.query("INSERT INTO FUNCTION s3(s3_schema, filename='scores.tsv') VALUES (1, 'Alice', 95.5), (2, 'Bob', 87.3), (3, 'Charlie', 92.1)")
+    node.query(
+        "INSERT INTO FUNCTION s3(s3_schema, filename='scores.tsv') VALUES (1, 'Alice', 95.5), (2, 'Bob', 87.3), (3, 'Charlie', 92.1)")
 
     result = float(node.query("SELECT avg(score) FROM s3(s3_schema, filename='scores.tsv')").strip())
     assert abs(result - 91.63) < 0.1
 
-    node.query("DROP NAMED COLLECTION s3_schema")
 
-
-# Multiple tables sharing same S3 credentials
 def test_shared_credentials_multiple_tables(cluster):
     node = cluster.instances["s3_node"]
 
-    node.query("DROP NAMED COLLECTION IF EXISTS shared_s3")
     node.query(f"""
         CREATE NAMED COLLECTION shared_s3 AS
         url = 'http://{cluster.minio_host}:{MINIO_INTERNAL_PORT}/{cluster.minio_bucket}/shared/',
@@ -294,7 +300,7 @@ def test_shared_credentials_multiple_tables(cluster):
         secret_access_key = '{minio_secret_key}' NOT OVERRIDABLE
     """)
 
-    # Create multiple tables using same credentials
+    # create multiple tables using same credentials
     for name in ["users", "orders", "products"]:
         node.query(f"DROP TABLE IF EXISTS {name}_s3")
         node.query(f"""
@@ -303,11 +309,186 @@ def test_shared_credentials_multiple_tables(cluster):
         """)
         node.query(f"INSERT INTO {name}_s3 VALUES (1, '{name}_data')")
 
-    # Verify all tables work
     assert node.query("SELECT data FROM users_s3").strip() == "users_data"
     assert node.query("SELECT data FROM orders_s3").strip() == "orders_data"
     assert node.query("SELECT data FROM products_s3").strip() == "products_data"
 
     for name in ["users", "orders", "products"]:
         node.query(f"DROP TABLE {name}_s3")
-    node.query("DROP NAMED COLLECTION shared_s3")
+
+
+@pytest.mark.skip(reason="""https://github.com/ClickHouse/ClickHouse/issues/77366""")
+def test_server_starts_with_dropped_collection_table(cluster):
+    from helpers.client import QueryRuntimeException
+
+    node = cluster.instances["s3_node"]
+    bucket = cluster.minio_bucket
+
+    node.query("DROP TABLE IF EXISTS orphan_table")
+
+    node.query(f"""
+        CREATE NAMED COLLECTION orphan_coll AS
+        url = 'http://{cluster.minio_host}:{MINIO_INTERNAL_PORT}/{bucket}/orphan_data.csv',
+        access_key_id = 'minio',
+        secret_access_key = '{minio_secret_key}',
+        format = 'CSV'
+    """)
+
+    node.query("""
+               CREATE TABLE orphan_table
+               (
+                   x Int32,
+                   y Int32
+               )
+                   ENGINE = S3(orphan_coll)
+               """)
+
+    node.query("""
+               INSERT INTO FUNCTION s3(orphan_coll, structure = 'x Int32, y Int32')
+               VALUES (1, 10),
+                      (2, 20)
+               """)
+    assert node.query("SELECT sum(y) FROM orphan_table").strip() == "30"
+
+    node.query("DROP NAMED COLLECTION orphan_coll")
+    assert "orphan_coll" not in node.query("SELECT name FROM system.named_collections")
+
+    node.restart_clickhouse()
+
+    assert node.query("SELECT 1").strip() == "1"
+
+    try:
+        node.query("SELECT * FROM orphan_table")
+    except QueryRuntimeException as e:
+        assert "orphan_coll" in str(e) or "NAMED_COLLECTION_DOESNT_EXIST" in str(e)
+
+    node.query("DROP TABLE IF EXISTS orphan_table")
+
+
+def test_url_function_with_named_collection(cluster):
+    node = cluster.instances["s3_node"]
+
+    node.query("""
+        CREATE NAMED COLLECTION url_write_nc AS
+        url = 'http://nginx:80/url_nc_test.tsv',
+        format = 'TSV',
+        structure = 'id UInt32, name String, value Float32',
+        method = 'PUT'
+    """)
+
+    node.query("""
+               INSERT INTO FUNCTION url(url_write_nc)
+               VALUES (1, 'alice', 10.5),
+                      (2, 'bob', 20.3),
+                      (3, 'charlie', 30.7)
+               """)
+
+    node.query("""
+        CREATE NAMED COLLECTION url_read_nc AS
+        url = 'http://nginx:80/url_nc_test.tsv',
+        format = 'TSV',
+        structure = 'id UInt32, name String, value Float32'
+    """)
+
+    result = node.query("SELECT count() FROM url(url_read_nc)").strip()
+    assert result == "3"
+
+
+def test_url_table_engine_with_named_collection(cluster):
+    node = cluster.instances["s3_node"]
+
+    node.query("DROP TABLE IF EXISTS url_table_nc")
+
+    node.query("""
+        CREATE NAMED COLLECTION url_engine_write_nc AS
+        url = 'http://nginx:80/url_engine_test.csv',
+        format = 'CSV',
+        structure = 'x Int32, y Int32, z Int32',
+        method = 'PUT'
+    """)
+
+    node.query(
+        """
+        INSERT INTO FUNCTION url(url_engine_write_nc)
+        VALUES (10, 20, 30),
+               (40, 50, 60),
+               (70, 80, 90)
+        """)
+
+    node.query("""
+        CREATE NAMED COLLECTION url_engine_read_nc AS
+        url = 'http://nginx:80/url_engine_test.csv',
+        format = 'CSV'
+    """)
+
+    node.query(
+        """
+        CREATE TABLE url_table_nc
+        (
+            x Int32,
+            y Int32,
+            z Int32
+        )
+            ENGINE = URL(url_engine_read_nc)
+        """)
+
+    result = node.query("SELECT count() FROM url_table_nc").strip()
+    assert result == "3"
+
+    show_create = node.query("SHOW CREATE TABLE url_table_nc")
+    assert "url_engine_read_nc" in show_create
+
+    node.query("DROP TABLE url_table_nc")
+
+
+def test_url_with_overridable_params(cluster):
+    node = cluster.instances["s3_node"]
+
+    node.query("""
+        CREATE NAMED COLLECTION url_override_write_nc AS
+        url = 'http://nginx:80/url_override_1.json' OVERRIDABLE,
+        format = 'JSONEachRow',
+        structure = 'a UInt32, b String',
+        method = 'PUT'
+    """)
+
+    node.query("INSERT INTO FUNCTION url(url_override_write_nc) VALUES (100, 'first')")
+    node.query(
+        "INSERT INTO FUNCTION url(url_override_write_nc, url='http://nginx:80/url_override_2.json') VALUES (200, 'second')")
+
+    node.query("""
+        CREATE NAMED COLLECTION url_override_read_nc AS
+        url = 'http://nginx:80/url_override_1.json' OVERRIDABLE,
+        format = 'JSONEachRow',
+        structure = 'a UInt32, b String'
+    """)
+
+    result = node.query("SELECT b FROM url(url_override_read_nc)").strip()
+    assert result == "first"
+
+    result = node.query("SELECT b FROM url(url_override_read_nc, url='http://nginx:80/url_override_2.json')").strip()
+    assert result == "second"
+
+
+def test_url_cluster_with_named_collection(cluster):
+    node = cluster.instances["s3_node"]
+
+    node.query("""
+        CREATE NAMED COLLECTION url_cluster_write_nc AS
+        url = 'http://nginx:80/url_cluster_test.csv',
+        format = 'CSV',
+        structure = 'key String, val UInt32',
+        method = 'PUT'
+    """)
+
+    node.query("INSERT INTO FUNCTION url(url_cluster_write_nc) VALUES ('alpha', 1), ('beta', 2), ('gamma', 3)")
+
+    node.query("""
+        CREATE NAMED COLLECTION url_cluster_read_nc AS
+        url = 'http://nginx:80/url_cluster_test.csv',
+        format = 'CSV',
+        structure = 'key String, val UInt32'
+    """)
+
+    result = node.query("SELECT sum(val) FROM urlCluster('cluster_simple', url_cluster_read_nc)").strip()
+    assert result == "6"
