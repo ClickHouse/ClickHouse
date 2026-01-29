@@ -44,6 +44,7 @@ namespace Setting
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
+    extern const SettingsSeconds lock_acquire_timeout;
 }
 
 namespace ErrorCodes
@@ -186,6 +187,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         select_query_info.table_expression_modifiers = reading_from_table_function->getTableExpressionModifiers();
     }
 
+    auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
     ASTPtr query;
     bool is_storage_merge = typeid_cast<const StorageMerge *>(storage.get());
     if (storage->isRemote() || is_storage_merge)
@@ -255,6 +258,10 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
     node.step = std::make_unique<ExpressionStep>(reading_plan.getCurrentHeader(), std::move(converting_actions));
     node.children = {reading_plan.getRootNode()};
+
+    reading_plan.addInterpreterContext(context);
+    reading_plan.addStorageHolder(std::move(storage));
+    reading_plan.addTableLock(std::move(table_lock));
 
     auto nodes_and_resource = QueryPlan::detachNodesAndResources(std::move(reading_plan));
 
