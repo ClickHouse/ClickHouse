@@ -60,7 +60,7 @@ void QueryConditionCache::write(
         return; /// Issue #92863: Certain database engines provide no table UUIDs
 
     Key key = {table_id, part_name, condition_hash, condition};
-    const size_t key_size_in_bytes = sizeof(Key) + part_name.size() + condition.size();
+    const size_t key_size_in_bytes = sizeof(Key) + part_name.capacity() + condition.capacity();
 
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count, key_size_in_bytes); };
     auto [entry, inserted] = cache.getOrSet(key, load_func);
