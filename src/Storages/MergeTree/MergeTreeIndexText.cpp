@@ -1380,6 +1380,13 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     static std::vector<String> allowed_codecs
         = { PostingListCodecNone::getName(),
             PostingListCodecBitpacking::getName(),
+#if USE_FASTPFOR
+            PostingListCodecFastPFor::getName(),
+            PostingListCodecBinaryPacking::getName(),
+            PostingListCodecSimple8b::getName(),
+            PostingListCodecStreamVByte::getName(),
+            PostingListCodecOptPFor::getName(),
+#endif
         };
     auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, allowed_codecs, index.name);
 
@@ -1415,7 +1422,19 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (posting_list_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
 
-    extractOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
+    String posting_list_codec_name = extractOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
+    static std::vector<String> allowed_codecs
+        = { PostingListCodecNone::getName(),
+            PostingListCodecBitpacking::getName(),
+#if USE_FASTPFOR
+            PostingListCodecFastPFor::getName(),
+            PostingListCodecBinaryPacking::getName(),
+            PostingListCodecSimple8b::getName(),
+            PostingListCodecStreamVByte::getName(),
+            PostingListCodecOptPFor::getName(),
+#endif
+        };
+    PostingListCodecFactory::isAllowedCodec(posting_list_codec_name, allowed_codecs, index.name);
 
     auto preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false);
 

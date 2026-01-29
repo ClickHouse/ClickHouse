@@ -1,3 +1,4 @@
+#include <config.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <IO/Operators.h>
@@ -42,6 +43,23 @@ std::unique_ptr<IPostingListCodec> PostingListCodecFactory::createPostingListCod
 
     if (codec_name == PostingListCodecBitpacking::getName())
         return std::make_unique<PostingListCodecBitpacking>();
+
+#if USE_FASTPFOR
+    if (codec_name == PostingListCodecFastPFor::getName())
+        return std::make_unique<PostingListCodecFastPFor>();
+
+    if (codec_name == PostingListCodecBinaryPacking::getName())
+        return std::make_unique<PostingListCodecBinaryPacking>();
+
+    if (codec_name == PostingListCodecSimple8b::getName())
+        return std::make_unique<PostingListCodecSimple8b>();
+
+    if (codec_name == PostingListCodecStreamVByte::getName())
+        return std::make_unique<PostingListCodecStreamVByte>();
+
+    if (codec_name == PostingListCodecOptPFor::getName())
+        return std::make_unique<PostingListCodecOptPFor>();
+#endif
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown posting list codec: '{}' for index '{}'", codec_name, caller_name);
 }

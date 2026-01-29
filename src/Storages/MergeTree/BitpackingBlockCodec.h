@@ -33,6 +33,11 @@ static constexpr bool has_simdcomp = true;
 template<>
 struct BitpackingBlockCodecImpl<true>
 {
+    static constexpr const char * NAME = "bitpacking";
+
+    /// Returns the codec name for identification.
+    static constexpr const char * name() noexcept { return NAME; }
+
     static size_t bitpackingCompressedBytes(size_t count, uint32_t bits) noexcept
     {
         /// Type cast is required by simdcomp function signature (expects int).
@@ -86,6 +91,10 @@ static constexpr bool has_simdcomp = false;
 template<>
 struct BitpackingBlockCodecImpl<false>
 {
+    static constexpr const char * NAME = "bitpacking";
+
+    /// Returns the codec name for identification.
+    static constexpr const char * name() noexcept { return NAME; }
     /// Non-SSE version: equivalent to SIMDComp maxbits_length.
     /// It OR-reduces all values to compute required bit width.
     [[maybe_unused]] static uint32_t maxbitsLength(const std::span<uint32_t> & in) noexcept

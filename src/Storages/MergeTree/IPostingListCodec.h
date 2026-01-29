@@ -24,6 +24,11 @@ public:
     {
         None,
         Bitpacking,
+        FastPFor,           /// FastPFor SIMD-accelerated codec (requires USE_FASTPFOR)
+        BinaryPacking,      /// SIMD Binary Packing - fastest decode speed
+        Simple8b,           /// Simple8b - high compression for small deltas
+        StreamVByte,        /// StreamVByte - fast streaming decode with good random access
+        OptPFor,            /// OptPFor - highest compression ratio
     };
 
     IPostingListCodec() = default;
