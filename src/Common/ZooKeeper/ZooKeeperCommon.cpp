@@ -509,6 +509,38 @@ std::string ZooKeeperFilteredListRequest::toStringImpl(bool /*short_format*/) co
             list_request_type);
 }
 
+void ZooKeeperFilteredListWithStatsAndDataRequest::writeImpl(WriteBuffer & out) const
+{
+    ZooKeeperFilteredListRequest::writeImpl(out);
+    Coordination::write(with_stat, out);
+    Coordination::write(with_data, out);
+}
+
+size_t ZooKeeperFilteredListWithStatsAndDataRequest::sizeImpl() const
+{
+    return ZooKeeperFilteredListRequest::sizeImpl() + Coordination::size(with_stat) + Coordination::size(with_data);
+}
+
+void ZooKeeperFilteredListWithStatsAndDataRequest::readImpl(ReadBuffer & in)
+{
+    ZooKeeperFilteredListRequest::readImpl(in);
+    Coordination::read(with_stat, in);
+    Coordination::read(with_data, in);
+}
+
+std::string ZooKeeperFilteredListWithStatsAndDataRequest::toStringImpl(bool /*short_format*/) const
+{
+    return fmt::format(
+            "path = {}\n"
+            "list_request_type = {}\n"
+            "with_stat = {}\n"
+            "with_data = {}",
+            path,
+            list_request_type,
+            with_stat,
+            with_data);
+}
+
 void ZooKeeperListResponse::readImpl(ReadBuffer & in)
 {
     Coordination::read(names, in);
@@ -524,6 +556,39 @@ void ZooKeeperListResponse::writeImpl(WriteBuffer & out) const
 size_t ZooKeeperListResponse::sizeImpl() const
 {
     return Coordination::size(names) + Coordination::size(stat);
+}
+
+void ZooKeeperFilteredListWithStatsAndDataResponse::readImpl(ReadBuffer & in)
+{
+    /// Read base fields
+    Coordination::read(names, in);
+    Coordination::read(stat, in);
+
+    /// Optional fields for LIST_WITH_STAT_AND_DATA feature
+    Coordination::read(stats, in);
+    Coordination::read(data, in);
+}
+
+void ZooKeeperFilteredListWithStatsAndDataResponse::writeImpl(WriteBuffer & out) const
+{
+    /// Write base fields
+    Coordination::write(names, out);
+    Coordination::write(stat, out);
+
+    /// Optional fields for LIST_WITH_STAT_AND_DATA feature
+    Coordination::write(stats, out);
+    Coordination::write(data, out);
+}
+
+size_t ZooKeeperFilteredListWithStatsAndDataResponse::sizeImpl() const
+{
+    size_t size = Coordination::size(names) + Coordination::size(stat);
+
+    /// Optional fields
+    size += Coordination::size(stats);
+    size += Coordination::size(data);
+
+    return size;
 }
 
 void ZooKeeperSimpleListResponse::readImpl(ReadBuffer & in)
@@ -1006,7 +1071,10 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(std::span<const Coordination::Reque
         else if (const auto * concrete_request_list = dynamic_cast<const ZooKeeperFilteredListRequest *>(generic_request.get()))
         {
             checkOperationType(Read);
-            requests.push_back(std::make_shared<ZooKeeperFilteredListRequest>(*concrete_request_list));
+            if (const auto * with_stats = dynamic_cast<const ZooKeeperFilteredListWithStatsAndDataRequest *>(concrete_request_list))
+                requests.push_back(std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>(*with_stats));
+            else
+                requests.push_back(std::make_shared<ZooKeeperFilteredListRequest>(*concrete_request_list));
         }
         else
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
@@ -1247,6 +1315,11 @@ ZooKeeperResponsePtr ZooKeeperReconfigRequest::makeResponse() const { return std
 ZooKeeperResponsePtr ZooKeeperListRequest::makeResponse() const { return std::make_shared<ZooKeeperListResponse>(); }
 ZooKeeperResponsePtr ZooKeeperSimpleListRequest::makeResponse() const { return std::make_shared<ZooKeeperSimpleListResponse>(); }
 
+ZooKeeperResponsePtr ZooKeeperFilteredListWithStatsAndDataRequest::makeResponse() const
+{
+    return std::make_shared<ZooKeeperFilteredListWithStatsAndDataResponse>();
+}
+
 ZooKeeperResponsePtr ZooKeeperRemoveRequest::makeResponse() const
 {
     if (try_remove)
@@ -1400,8 +1473,10 @@ void ZooKeeperResponse::fillLogElements(LogElements & elems, size_t idx) const
     elem.xid = xid;
     int32_t response_op = tryGetOpNum();
 
-    [[maybe_unused]] const bool is_filtered_list = elem.op_num == static_cast<int32_t>(Coordination::OpNum::FilteredList)
-        && response_op == static_cast<int32_t>(Coordination::OpNum::List);
+    [[maybe_unused]] const bool is_filtered_list = (elem.op_num == static_cast<int32_t>(Coordination::OpNum::FilteredList)
+        && response_op == static_cast<int32_t>(Coordination::OpNum::List))
+        || (elem.op_num == static_cast<int32_t>(Coordination::OpNum::FilteredListWithStatsAndData)
+        && response_op == static_cast<int32_t>(Coordination::OpNum::FilteredListWithStatsAndData));
     assert(!elem.op_num || elem.op_num == response_op || is_filtered_list || response_op < 0);
     elem.op_num = response_op;
 
@@ -1565,6 +1640,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::GetACL, ZooKeeperGetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::SetACL, ZooKeeperSetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::FilteredList, ZooKeeperFilteredListRequest>(*this);
+    registerZooKeeperRequest<OpNum::FilteredListWithStatsAndData, ZooKeeperFilteredListWithStatsAndDataRequest>(*this);
     registerZooKeeperRequest<OpNum::RemoveRecursive, ZooKeeperRemoveRecursiveRequest>(*this);
     registerZooKeeperRequest<OpNum::AddWatch, ZooKeeperAddWatchRequest>(*this);
     registerZooKeeperRequest<OpNum::CheckWatch, ZooKeeperCheckWatchRequest>(*this);
