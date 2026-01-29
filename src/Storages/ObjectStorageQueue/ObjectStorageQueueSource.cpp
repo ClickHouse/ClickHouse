@@ -1190,7 +1190,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             const auto & object_metadata = reader.getObjectInfo()->getObjectMetadata();
             const auto row_offset = file_status->processed_rows.load();
             /// Create unique token per chunk: etag + row offset
-            const auto dedup_token = fmt::format("{}:{}", object_metadata->etag, row_offset);                                                                                                                                                                                                   
+            const auto dedup_token = fmt::format("{}:{}", object_metadata->etag, row_offset);
 
             auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
             deduplication_info->setUserToken(dedup_token, chunk.getNumRows());
