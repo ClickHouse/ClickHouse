@@ -102,6 +102,8 @@ public:
     void markUnsupportedCase() { unsupported_case.store(true, std::memory_order_relaxed); }
 
 private:
+    bool shouldSampleBlock(Statistics & statistics, size_t block_rows) const;
+
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
 

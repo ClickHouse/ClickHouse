@@ -110,6 +110,15 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
+bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & statistics, size_t block_rows) const
+{
+    // Empty blocks produced during planning, when we calculate output headers. Skip them.
+    if (!block_rows)
+        return false;
+    const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
+    return counter % 5 == 0 && counter < 15;
+}
+
 void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
 {
     Stopwatch watch;
@@ -117,8 +126,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chun
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
     auto & statistics = output_bytes_statistics[OutputStatisticsType::OutputChunk];
-    const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
-    if (chunk.hasRows() && counter % 50 == 0 && counter < 150)
+    if (shouldSampleBlock(statistics, chunk.getNumRows()))
     {
         chassert(chunk.getNumColumns() == header.columns());
         for (size_t i = 0; i < chunk.getNumColumns(); ++i)
@@ -194,8 +202,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
     auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationKeys];
-    const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
-    if (block.rows() && counter % 50 == 0 && counter < 150)
+    if (shouldSampleBlock(statistics, block.rows()))
         std::tie(sample_bytes, compressed_bytes) = get_key_column_sizes(/*compressed=*/true);
 
     std::lock_guard lock(statistics.mutex);
@@ -226,7 +233,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
     auto & statistics = input_bytes_statistics[type];
-    if (read_bytes && !input_columns.empty() && !input_columns[0].column->empty())
+    if (read_bytes && !input_columns.empty())
     {
         if (!column_sizes.empty())
         {
@@ -246,8 +253,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
         else
         {
             // We don't have individual column size info, likely because it is a compact part. Let's try to estimate it.
-            const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
-            if (counter % 50 == 0 && counter < 150)
+            if (shouldSampleBlock(statistics, input_columns[0].column->size()))
             {
                 for (const auto & column : input_columns)
                 {
