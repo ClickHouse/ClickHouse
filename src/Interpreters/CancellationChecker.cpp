@@ -63,18 +63,6 @@ void CancellationChecker::terminateThread()
     cond_var.notify_all();
 }
 
-bool CancellationChecker::removeQueryFromSet(QueryStatusPtr query)
-{
-    auto it = std::ranges::find(query_set, query, &QueryToTrack::query);
-
-    if (it == query_set.end())
-        return false;
-
-    LOG_TEST(log, "Removing query {} from done tasks", query->getClientInfo().current_query_id);
-    query_set.erase(it);
-    return true;
-}
-
 void CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 timeout, OverflowMode overflow_mode)
 {
     if (timeout <= 0) // Avoid cases when the timeout is less or equal zero
@@ -86,15 +74,25 @@ void CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 t
     LOG_TEST(log, "Added to set. query: {}, timeout: {} milliseconds", query->getInfo().query, timeout);
     const auto now = std::chrono::steady_clock::now();
     const UInt64 end_time = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() + timeout;
-    query_set.emplace(query, timeout, end_time, overflow_mode);
-    cond_var.notify_all();
+    auto iter = query_set.emplace(query, timeout, end_time, overflow_mode);
+    if (iter == query_set.begin()) // Only notify if the new task is the earliest one
+        cond_var.notify_all();
 }
 
 void CancellationChecker::appendDoneTasks(const QueryStatusPtr & query)
 {
     std::unique_lock<std::mutex> lock(m);
-    removeQueryFromSet(query);
-    cond_var.notify_all();
+
+    auto it = std::ranges::find(query_set, query, &QueryToTrack::query);
+    if (it == query_set.end())
+        return;
+
+    LOG_TEST(log, "Removing query {} from done tasks", query->getClientInfo().current_query_id);
+    query_set.erase(it);
+
+    // Note that there is no need to notify the worker thread here. Even if we have just removed the earliest task,
+    // it will wake up before the next task anyway and fix its timeout to a proper value on wake-up.
+    // This optimization avoids unnecessary contention on the mutex.
 }
 
 void CancellationChecker::workerFunction()
