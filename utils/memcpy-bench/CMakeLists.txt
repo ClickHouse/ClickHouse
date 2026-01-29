@@ -30,5 +30,5 @@ set_source_files_properties(FastMemcpy_Avx.cpp PROPERTIES COMPILE_FLAGS "-mavx -
 set_source_files_properties(memcpy-bench.cpp PROPERTIES COMPILE_FLAGS "-Wno-used-but-marked-unused")
 
 target_include_directories(memcpy-bench PRIVATE .)
-target_link_libraries(memcpy-bench PRIVATE dbms clickhouse_functions boost::program_options ch_contrib::stringzilla)
+target_link_libraries(memcpy-bench PRIVATE clickhouse_common_io boost::program_options ch_contrib::stringzilla)
 
