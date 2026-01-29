@@ -52,17 +52,18 @@ void StorageSystemQueryConditionCache::fillData(MutableColumns & res_columns, Co
 
     for (const auto & [key, entry] : content)
     {
-        res_columns[0]->insert(key);
+        ssize_t i = -1;
+        res_columns[++i]->insert(key);
 #if defined(DEBUG) || defined(SANITIZER)
-        res_columns[0]->insert(entry->table_id);
-        res_columns[1]->insert(entry->part_name);
-        res_columns[2]->insert(entry->condition);
-        res_columns[3]->insert(entry->condition_hash);
+        res_columns[++i]->insert(entry->table_id);
+        res_columns[++i]->insert(entry->part_name);
+        res_columns[++i]->insert(entry->condition);
+        res_columns[++i]->insert(entry->condition_hash);
 #endif
-        res_columns[4]->insert(QueryConditionCache::EntryWeight()(*entry));
+        res_columns[++i]->insert(QueryConditionCache::EntryWeight()(*entry));
 
         std::shared_lock lock(entry->mutex);
-        res_columns[2]->insert(to_string(entry->matching_marks));
+        res_columns[++i]->insert(to_string(entry->matching_marks));
     }
 }
 
