@@ -1014,15 +1014,24 @@ std::vector<StorageID> DatabaseCatalog::getDependentViews(const StorageID & sour
     return view_dependencies.getDependencies(source_table_id);
 }
 
-DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table)
+DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table, const IDatabase * expected_database)
 {
     if (database.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot obtain lock for empty database");
-    std::unique_lock lock(ddl_guards_mutex);
-    /// TSA does not support unique_lock
-    auto db_guard_iter = TSA_SUPPRESS_WARNING_FOR_WRITE(ddl_guards).try_emplace(database).first;
-    DatabaseGuard & db_guard = db_guard_iter->second;
-    return std::make_unique<DDLGuard>(db_guard.table_guards, db_guard.database_ddl_mutex, std::move(lock), table, database);
+
+    DDLGuardPtr guard;
+    {
+        std::unique_lock lock(ddl_guards_mutex);
+        /// TSA does not support unique_lock
+        auto db_guard_iter = TSA_SUPPRESS_WARNING_FOR_WRITE(ddl_guards).try_emplace(database).first;
+        DatabaseGuard & db_guard = db_guard_iter->second;
+        guard = std::make_unique<DDLGuard>(db_guard.table_guards, db_guard.database_ddl_mutex, std::move(lock), table, database);
+    }
+
+    if (expected_database && expected_database != tryGetDatabase(database).get())
+        throw Exception(ErrorCodes::UNFINISHED, "The database {} was dropped or renamed concurrently", database);
+
+    return guard;
 }
 
 DatabaseCatalog::DatabaseGuard & DatabaseCatalog::getDatabaseGuard(const String & database)

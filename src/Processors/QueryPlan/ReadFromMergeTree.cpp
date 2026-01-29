@@ -208,6 +208,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_concurrent_queries;
     extern const MergeTreeSettingsInt64 max_partitions_to_read;
     extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
+    extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_parts_to_activate;
+    extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_indexes_size_to_activate;
 }
 
 namespace ErrorCodes
@@ -2241,11 +2243,24 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     {
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
-        bool final_second_pass = indexes->use_skip_indexes_if_final_exact_mode;
+        auto get_indexes_size = [&](const MergeTreeData & data_) -> size_t
+        {
+            size_t res = 0;
+            for (const auto & [_, size] : data_.getSecondaryIndexSizes())
+                res += size.data_uncompressed;
+            res += data_.getPrimaryIndexSize().data_uncompressed;
+            return res;
+        };
+
         /// Note, use_skip_indexes_if_final_exact_mode requires complete PK, so we cannot apply distributed_index_analysis with it
-        bool distributed_index_analysis_enabled = settings[Setting::distributed_index_analysis]
+        bool final_second_pass = indexes->use_skip_indexes_if_final_exact_mode;
+        UInt64 distributed_index_analysis_min_parts_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_parts_to_activate];
+        UInt64 distributed_index_analysis_min_indexes_size_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_indexes_size_to_activate];
+        bool distributed_index_analysis_enabled = !final_second_pass
+            && settings[Setting::distributed_index_analysis]
             && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
-            && !final_second_pass;
+            && (total_parts >= distributed_index_analysis_min_parts_to_activate)
+            && (!distributed_index_analysis_min_indexes_size_to_activate || get_indexes_size(data) >= distributed_index_analysis_min_indexes_size_to_activate);
 
         if (!distributed_index_analysis_enabled)
         {

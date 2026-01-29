@@ -191,7 +191,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
     String database_name = create.getDatabase();
 
-    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
+    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
 
     /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
     if (DatabaseCatalog::instance().isDatabaseExist(database_name))
@@ -1523,7 +1523,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
         if (database && database->shouldReplicateQuery(getContext(), query_ptr))
         {
-            auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
+            auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable(), database.get());
             create.setDatabase(database_name);
             guard->releaseTableLock();
             return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags{ .internal = internal, .distributed_backup_restore = is_restore_from_backup });
@@ -1538,7 +1538,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// For short syntax of ATTACH query we have to lock table name here, before reading metadata
         /// and hold it until table is attached
         if (likely(need_ddl_guard))
-            ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
+            ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable(), database.get());
 
         bool if_not_exists = create.if_not_exists;
 
@@ -1716,7 +1716,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
         chassert(!ddl_guard);
-        auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
+        auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), database.get());
         assertOrSetUUID(create, database);
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags{ .internal = internal, .distributed_backup_restore = is_restore_from_backup });
@@ -1840,7 +1840,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     if (!ddl_guard && likely(need_ddl_guard))
-        ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
+        ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), nullptr);
 
     String data_path;
     DatabasePtr database;
