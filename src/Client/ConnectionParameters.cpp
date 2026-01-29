@@ -133,7 +133,13 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
                 password = result;
         }
 
-        if (config.getBool("ask-password-2fa", false))
+        if (config.has("one-time-password"))
+        {
+            if (!password.empty())
+                password += "+";
+            password += config.getString("one-time-password");
+        }
+        else if (config.getBool("ask-password-2fa", false))
         {
             std::string prompt{"TOTP for user (" + user + "): "};
             char buf[1000] = {};

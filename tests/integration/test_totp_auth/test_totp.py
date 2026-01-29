@@ -149,6 +149,14 @@ def test_interactive_totp_authentication(started_cluster):
         c.expect("totuser42")
         c.expect(prompt)
 
+    with client(
+        command=f"{client_command} --password aa+bb --one-time-password {get_totp_for_config()}"
+    ) as c:
+        c.expect(prompt)
+        c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
+        c.expect("totuser42")
+        c.expect(prompt)
+
     # No password provided in command line arguments
     with client(command=f"{client_command}") as c:
         # Enter password + TOTP when prompted
@@ -160,7 +168,7 @@ def test_interactive_totp_authentication(started_cluster):
         c.expect(prompt)
 
     with client(command=f"{client_command}") as c:
-        # Enter only password when prompted first
+        # Enter password when prompted first
         c.expect("Password.*:")
         c.send(f"aa+bb", eol="\r")
 
@@ -176,6 +184,17 @@ def test_interactive_totp_authentication(started_cluster):
     with client(command=f"{client_command} --password aa+bb") as c:
         c.expect("TOTP.*:")
         c.send(get_totp_for_config(), eol="\r")
+        c.expect(prompt)
+        c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
+        c.expect("totuser42")
+        c.expect(prompt)
+
+    with client(
+        command=f"{client_command} --one-time-password {get_totp_for_config()}"
+    ) as c:
+        # Enter only password, TOTP is provided in command line arguments
+        c.expect("Password.*:")
+        c.send(f"aa+bb", eol="\r")
         c.expect(prompt)
         c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
         c.expect("totuser42")
@@ -223,6 +242,17 @@ def test_one_time_only_no_password(started_cluster):
         c.expect("TOTP.*:")
         c.send(get_otp(), eol="\r")
         c.expect(prompt)
+        c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
+        c.expect("totuser_no_password42")
+        c.expect(prompt)
+
+    # When main password is empty TOTP works in both places:
+    with client(command=f"{client_command} --password {get_otp()}") as c:
+        c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
+        c.expect("totuser_no_password42")
+        c.expect(prompt)
+
+    with client(command=f"{client_command} --one-time-password {get_otp()}") as c:
         c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
         c.expect("totuser_no_password42")
         c.expect(prompt)
