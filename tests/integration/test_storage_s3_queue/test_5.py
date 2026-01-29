@@ -1442,7 +1442,7 @@ def test_deduplication(started_cluster, mode):
         f"""
         CREATE TABLE {dst_table_name} ({format}, _path String)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table_name}', 'node')
-        ORDER BY a;
+        ORDER BY a SETTINGS replicated_deduplication_window_seconds_for_async_inserts = 1000;
     """
     )
 
