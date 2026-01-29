@@ -704,11 +704,16 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
             const auto & order_by_element
                 = column_ast->as<ASTOrderByElement &>();
             // Ignore collation for now.
+            FillColumnDescription empty_description;
             desc.order_by.push_back(
                 SortColumnDescription(
                     order_by_element.children.front()->getColumnName(),
                     order_by_element.direction,
-                    order_by_element.nulls_direction));
+                    order_by_element.nulls_direction,
+                    {},  // collator
+                    false,  // with_fill
+                    empty_description,
+                    order_by_element.is_natural));
 
             auto actions_dag = std::make_unique<ActionsDAG>(aggregated_columns);
             getRootActions(column_ast, false, *actions_dag);

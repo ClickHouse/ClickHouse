@@ -841,6 +841,7 @@ void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const Tabl
         elem->direction = all_elem->direction;
         elem->nulls_direction = all_elem->nulls_direction;
         elem->nulls_direction_was_explicitly_specified = all_elem->nulls_direction_was_explicitly_specified;
+        elem->is_natural = all_elem->is_natural;
         elem->children.push_back(expr);
         order_expression_list->children.push_back(elem);
     }
