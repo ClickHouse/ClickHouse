@@ -188,9 +188,9 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 
     LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, doubleQuoteString(publication_name));
 
-    startup_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
-    consumer_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
-    cleanup_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
+    startup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
+    consumer_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
+    cleanup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
 }
 
 
@@ -476,8 +476,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
         /// We should not use columns list from getTableAllowedColumns because it may have broken columns order
         Strings allowed_columns;
         for (const auto & column : table_structure->physical_columns->columns)
-            allowed_columns.push_back(doubleQuoteString(column.name));
-
+            allowed_columns.push_back(column.name);
         query_str = fmt::format("SELECT {} FROM ONLY {}", boost::algorithm::join(allowed_columns, ","), quoted_name);
     }
 

@@ -93,7 +93,7 @@ ArgumentExtractor::CharArgument ArgumentExtractor::extractSingleCharacter(const 
 
     validateColumnType(type, parameter_name);
 
-    auto view = column->getDataAt(0);
+    auto view = column->getDataAt(0).toView();
 
     if (view.empty())
     {
@@ -124,7 +124,7 @@ ArgumentExtractor::VectorArgument ArgumentExtractor::extractVector(const ColumnW
 
     validateColumnType(type, parameter_name);
 
-    auto view = column->getDataAt(0);
+    auto view = column->getDataAt(0).toView();
 
     return {view.begin(), view.end()};
 }

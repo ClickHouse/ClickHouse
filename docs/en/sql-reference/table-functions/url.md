@@ -4,7 +4,6 @@ sidebar_label: 'url'
 sidebar_position: 200
 slug: /sql-reference/table-functions/url
 title: 'url'
-doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -37,7 +36,7 @@ A table with the specified format and structure and with data from the defined `
 
 ## Examples {#examples}
 
-Getting the first 3 lines of a table that contains columns of `String` and [UInt32](../../sql-reference/data-types/int-uint.md) type from HTTP-server which answers in [CSV](/interfaces/formats/CSV) format.
+Getting the first 3 lines of a table that contains columns of `String` and [UInt32](../../sql-reference/data-types/int-uint.md) type from HTTP-server which answers in [CSV](../../interfaces/formats.md#csv) format.
 
 ```sql
 SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32', headers('Accept'='text/csv; charset=utf-8')) LIMIT 3;

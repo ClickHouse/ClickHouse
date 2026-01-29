@@ -4,7 +4,6 @@ sidebar_label: 'clickhouse-local'
 sidebar_position: 60
 slug: /operations/utilities/clickhouse-local
 title: 'clickhouse-local'
-doc_type: 'reference'
 ---
 
 # clickhouse-local

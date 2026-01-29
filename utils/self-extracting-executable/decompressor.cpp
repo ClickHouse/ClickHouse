@@ -1,6 +1,10 @@
 #include <zstd.h>
 #include <sys/mman.h>
-#include <sys/statvfs.h>
+#if defined(OS_DARWIN) || defined(OS_FREEBSD)
+#   include <sys/mount.h>
+#else
+#   include <sys/statfs.h>
+#endif
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -212,18 +216,17 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     }
 
     /// Check free space
-    struct statvfs fs_info;
-    if (0 != fstatvfs(input_fd, &fs_info))
+    struct statfs fs_info;
+    if (0 != fstatfs(input_fd, &fs_info))
     {
-        perror("fstatvfs");
+        perror("fstatfs");
         if (0 != munmap(input, info_in.st_size))
                 perror("munmap");
         return 1;
     }
-    /// Available space in bytes = free blocks * block size
-    if (fs_info.f_bavail * fs_info.f_frsize < decompressed_full_size)
+    if (fs_info.f_blocks * info_in.st_blksize < decompressed_full_size)
     {
-        std::cerr << "Not enough space for decompression. Have " << fs_info.f_bavail * fs_info.f_frsize << ", need " << decompressed_full_size << std::endl;
+        std::cerr << "Not enough space for decompression. Have " << fs_info.f_blocks * info_in.st_blksize << ", need " << decompressed_full_size << std::endl;
         return 1;
     }
 

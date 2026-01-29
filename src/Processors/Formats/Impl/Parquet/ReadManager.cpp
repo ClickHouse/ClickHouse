@@ -4,11 +4,8 @@
 #include <Common/ProfileEvents.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
-#include <Processors/Formats/IInputFormat.h>
 
-#include <mutex>
 #include <shared_mutex>
-#include <unordered_set>
 
 namespace DB::ErrorCodes
 {
@@ -20,8 +17,6 @@ namespace ProfileEvents
 {
     extern const Event ParquetDecodingTasks;
     extern const Event ParquetDecodingTaskBatches;
-    extern const Event ParquetReadRowGroups;
-    extern const Event ParquetPrunedRowGroups;
 }
 
 namespace DB::Parquet
@@ -43,22 +38,12 @@ std::optional<size_t> AtomicBitSet::findFirst()
     return std::nullopt;
 }
 
-void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_)
+void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_)
 {
     parser_shared_resources = parser_shared_resources_;
     reader.file_metadata = Reader::readFileMetaData(reader.prefetcher);
-
-    if (buckets_to_read_)
-    {
-        row_groups_to_read = std::unordered_set<UInt64>{};
-        for (auto rg : *buckets_to_read_)
-            row_groups_to_read->insert(rg);
-    }
-    reader.prefilterAndInitRowGroups(row_groups_to_read);
+    reader.prefilterAndInitRowGroups();
     reader.preparePrewhere();
-
-    ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups, reader.row_groups.size());
-    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, reader.file_metadata.row_groups.size() - reader.row_groups.size());
 
     size_t num_row_groups = reader.row_groups.size();
     for (size_t i = size_t(ReadStage::NotStarted) + 1; i < size_t(ReadStage::Deliver); ++i)
@@ -73,7 +58,7 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     /// eat all memory, and MainData would have to execute in one thread to minimize memory usage.
     double sum = 0;
     stages[size_t(ReadStage::MainData)].memory_target_fraction *= 10;
-    if (reader.format_filter_info->prewhere_info || reader.format_filter_info->row_level_filter)
+    if (reader.format_filter_info->prewhere_info)
         stages[size_t(ReadStage::PrewhereData)].memory_target_fraction *= 5;
     else
     {
@@ -217,10 +202,9 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
             {
                 diff.scheduleAllStages();
 
-                /// Notify read() if everything is done or if it's relying on
-                /// first_incomplete_row_group to deliver chunks in order.
-                if (i + 1 == reader.row_groups.size() || reader.options.format.parquet.preserve_order)
+                if (i + 1 == reader.row_groups.size())
                 {
+                    /// Notify read() that everything is done.
                     {
                         /// Lock and unlock to avoid race condition on condition variable.
                         /// (Otherwise the notify_all() may happen after read() saw the old
@@ -245,7 +229,7 @@ void ReadManager::setTasksToSchedule(size_t row_group_idx, ReadStage stage, std:
     auto & tasks = stage_state.row_group_tasks_to_schedule.at(row_group_idx);
     chassert(tasks.empty());
     tasks = std::move(add_tasks);
-    bool changed = stage_state.schedulable_row_groups.set(row_group_idx, std::memory_order_release);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    bool changed = stage_state.schedulable_row_groups.set(row_group_idx, std::memory_order_release);
     chassert(changed);
     diff.scheduleStage(stage);
 }
@@ -308,7 +292,7 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
                 .row_subgroup_idx = row_subgroup_idx,
                 .column_idx = UINT64_MAX});
 
-        ReadStage prev_stage = row_subgroup.stage.exchange(stage, std::memory_order_relaxed);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+        ReadStage prev_stage = row_subgroup.stage.exchange(stage, std::memory_order_relaxed);
         chassert(prev_stage <= stage);
         row_subgroup.stage_tasks_remaining.store(add_tasks.size(), std::memory_order_relaxed);
         setTasksToSchedule(row_group_idx, stage, std::move(add_tasks), diff);
@@ -346,8 +330,8 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         case ReadStage::PrewhereData:
         {
             chassert(!reader.prewhere_steps.empty());
-            reader.applyPrewhere(row_subgroup, row_group);
-            size_t prev = row_group.prewhere_ptr.exchange(row_subgroup_idx + 1);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+            reader.applyPrewhere(row_subgroup);
+            size_t prev = row_group.prewhere_ptr.exchange(row_subgroup_idx + 1);
             chassert(prev == row_subgroup_idx);
             if (row_subgroup_idx + 1 < row_group.subgroups.size())
             {
@@ -365,20 +349,14 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         }
         case ReadStage::MainData:
         {
+            size_t prev = row_group.read_ptr.exchange(row_subgroup_idx + 1);
+            chassert(prev == row_subgroup_idx);
+            advanced_read_ptr = prev + 1;
             row_subgroup.stage.store(ReadStage::Deliver, std::memory_order::relaxed);
-
-            /// Must add to delivery_queue before advancing read_ptr to deliver subgroups in order.
-            /// (If we advanced read_ptr first, another thread could start and finish reading the
-            ///  next subgroup before we add this one to delivery_queue, and ReadManager::read could
-            ///  pick up the later subgroup before we add this one.)
             {
                 std::lock_guard lock(delivery_mutex);
                 delivery_queue.push(Task {.stage = ReadStage::Deliver, .row_group_idx = row_group_idx, .row_subgroup_idx = row_subgroup_idx});
             }
-
-            size_t prev = row_group.read_ptr.exchange(row_subgroup_idx + 1);
-            chassert(prev == row_subgroup_idx);
-            advanced_read_ptr = prev + 1;
             delivery_cv.notify_one();
             break; // proceed to advancing read_ptr
         }
@@ -422,7 +400,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
 
         /// Skip subgroup that was filtered out by prewhere.
 
-        size_t prev = row_group.read_ptr.exchange(read_ptr + 1);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+        size_t prev = row_group.read_ptr.exchange(read_ptr + 1);
         chassert(prev == read_ptr);
         read_ptr += 1;
         advanced_read_ptr = read_ptr;
@@ -748,7 +726,7 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
             case ReadStage::BloomFilterBlocksOrDictionary:
                 if (column.use_dictionary_filter)
                 {
-                    bool ok = reader.decodeDictionaryPage(column, column_info);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+                    bool ok = reader.decodeDictionaryPage(column, column_info);
                     chassert(ok);
                 }
                 break;
@@ -794,7 +772,7 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
     if (last_in_batch)
     {
         /// Decrement it before scheduling more tasks.
-        size_t prev_batches_in_progress = stages.at(size_t(task.stage)).batches_in_progress.fetch_sub(1, std::memory_order_relaxed);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+        size_t prev_batches_in_progress = stages.at(size_t(task.stage)).batches_in_progress.fetch_sub(1, std::memory_order_relaxed);
         chassert(prev_batches_in_progress > 0);
         diff.scheduleStage(task.stage);
     }
@@ -838,13 +816,13 @@ void ReadManager::clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff)
 
 void ReadManager::clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff & diff)
 {
-    row_subgroup.filter.clear(&diff);
+    row_subgroup.filter.memory.reset(&diff);
     row_subgroup.output.clear();
     for (ColumnSubchunk & col : row_subgroup.columns)
         col.column_and_offsets_memory.reset(&diff);
 }
 
-ReadManager::ReadResult ReadManager::read()
+std::tuple<Chunk, BlockMissingValues> ReadManager::read()
 {
     Task task;
     {
@@ -855,17 +833,11 @@ ReadManager::ReadResult ReadManager::read()
             bool thread_pool_was_idle = parser_shared_resources->parsing_runner.isIdle();
 
             if (exception)
-                std::rethrow_exception(copyMutableException(exception));
+                std::rethrow_exception(exception);
 
-            /// If `preserve_order`, only deliver chunks from `first_incomplete_row_group`.
-            /// This ensures that row groups are delivered in order. Within a row group, row
-            /// subgroups are read and added to `delivery_queue` in order.
-            if (!delivery_queue.empty() &&
-                (!reader.options.format.parquet.preserve_order ||
-                 delivery_queue.top().row_group_idx ==
-                    first_incomplete_row_group.load(std::memory_order_relaxed)))
+            if (!delivery_queue.empty())
             {
-                task = delivery_queue.top();
+                task = delivery_queue.front();
                 delivery_queue.pop();
                 break;
             }
@@ -874,10 +846,7 @@ ReadManager::ReadResult ReadManager::read()
             {
                 /// All done. Check for memory accounting leaks.
                 /// First join the threads because they might still be decrementing memory_usage.
-                lock.unlock();
                 shutdown->shutdown();
-                lock.lock();
-
                 for (const RowGroup & row_group : reader.row_groups)
                 {
                     chassert(row_group.stage.load(std::memory_order_relaxed) == ReadStage::Deallocated);
@@ -904,10 +873,7 @@ ReadManager::ReadResult ReadManager::read()
             {
                 /// Pump the manual executor.
                 lock.unlock();
-                /// Note: the executor can be shared among multiple files, so we may execute someone
-                /// else's task, and someone else may execute our task.
-                /// Hence the thread_pool_was_idle check.
-                if (!parser_shared_resources->parsing_runner.runTaskInline() && thread_pool_was_idle)
+                if (!parser_shared_resources->parsing_runner.runTaskInline())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (single-threaded)");
                 lock.lock();
             }
@@ -926,53 +892,32 @@ ReadManager::ReadResult ReadManager::read()
         }
     }
 
-    RowGroup & row_group = reader.row_groups.at(task.row_group_idx);
-    RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
+    auto & row_subgroup = reader.row_groups.at(task.row_group_idx).subgroups.at(task.row_subgroup_idx);
     chassert(row_subgroup.stage == ReadStage::Deliver);
-    Columns output_columns(reader.sample_block->columns());
-    for (size_t i = 0; i < output_columns.size(); ++i)
-        output_columns[i] = std::move(reader.getOrFormOutputColumn(row_subgroup, i));
-    Chunk chunk(std::move(output_columns), row_subgroup.filter.rows_pass);
-    BlockMissingValues block_missing_values = std::move(row_subgroup.block_missing_values);
-
-    auto row_numbers_info = std::make_shared<ChunkInfoRowNumbers>(
-        row_subgroup.start_row_idx + row_group.start_global_row_idx);
-    if (row_subgroup.filter.rows_pass != row_subgroup.filter.rows_total)
+    size_t num_final_columns = reader.sample_block->columns();
+    for (size_t i = 0; i < reader.output_columns.size(); ++i)
     {
-        chassert(row_subgroup.filter.rows_pass > 0);
-        chassert(!row_subgroup.filter.filter.empty());
-        chassert(std::accumulate(row_subgroup.filter.filter.begin(), row_subgroup.filter.filter.end(), size_t(0)) == chunk.getNumRows());
-
-        row_numbers_info->applied_filter = std::move(row_subgroup.filter.filter);
+        const auto & idx_in_output_block = reader.output_columns[i].idx_in_output_block;
+        if (!idx_in_output_block.has_value() || idx_in_output_block.value() >= num_final_columns)
+            continue;
+        bool already_formed = row_subgroup.output.at(*idx_in_output_block) != nullptr;
+        chassert(already_formed == reader.output_columns[i].use_prewhere);
+        if (already_formed)
+            continue;
+        row_subgroup.output.at(*idx_in_output_block) =
+            reader.formOutputColumn(row_subgroup, i, row_subgroup.filter.rows_pass);
     }
-    chunk.getChunkInfos().add(std::move(row_numbers_info));
-
-    /// This is a terrible hack to make progress indication kind of work.
-    ///
-    /// TODO: Fix progress bar in many ways:
-    ///        1. use number of rows instead of bytes;
-    ///           don't lie about number of bytes read (getApproxBytesReadForChunk()),
-    ///        2. estimate total rows to read after filtering row groups;
-    ///           for rows filtered out by PREWHERE, either report them as read or reduce the
-    ///           estimate of number of rows to read (make it signed),
-    ///        3. report uncompressed deserialized IColumn bytes instead of file bytes, for
-    ///           consistency with MergeTree reads,
-    ///        4. correctly extrapolate progress when reading many files in sequence, e.g.
-    ///           file('part{1..1000}.parquet'),
-    ///        5. correctly merge progress info when a query reads both from MergeTree and files, or
-    ///           parquet and text files.
-    ///       Probably get rid of getApproxBytesReadForChunk() and use the existing
-    ///       ISource::progress()/addTotalRowsApprox instead.
-    ///       For (4) and (5), either add things to struct Progress or make progress bar use
-    ///       ProfileEvents instead of Progress.
-    size_t virtual_bytes_read = size_t(row_group.meta->total_compressed_size) * row_subgroup.filter.rows_total / std::max(size_t(1), size_t(row_group.meta->num_rows));
+    row_subgroup.output.resize(num_final_columns); // remove prewhere-only columns
+    chassert(row_subgroup.filter.rows_pass > 0);
+    Chunk chunk(std::move(row_subgroup.output), row_subgroup.filter.rows_pass);
+    BlockMissingValues block_missing_values = std::move(row_subgroup.block_missing_values);
 
     /// This updates `memory_usage` of previous stages, which may allow more tasks to be scheduled.
     MemoryUsageDiff diff(ReadStage::Deliver);
     finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, ReadStage::Deliver, diff);
     flushMemoryUsageDiff(std::move(diff));
 
-    return {std::move(chunk), std::move(block_missing_values), virtual_bytes_read};
+    return {std::move(chunk), std::move(block_missing_values)};
 }
 
 }

@@ -11,8 +11,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class ZooKeeperWithFaultInjection;
-
 /// A base class to work with single file metadata in keeper.
 /// Metadata can have type Ordered or Unordered.
 class ObjectStorageQueueIFileMetadata
@@ -54,38 +52,6 @@ public:
     };
     using FileStatusPtr = std::shared_ptr<FileStatus>;
 
-    /// Helper structure for storing the flag of presence or absence of a node in the keeper.
-    struct HiveLastProcessedFileInfo
-    {
-        /// Flag if node exists. For existing node need to call `set`, for non-existing - `create`.
-        bool exists;
-        /// Last processed path for some hive partition.
-        std::string file_path;
-    };
-
-    /// An auxiliary structure to properly create or rewrite node in keeper.
-    /// Instead, a more current value replaces the previously saved one in the `request` list.
-    /// Needed when queue processed in several threads, some threads can process different files
-    /// with the same hive partition.
-    /// Key is a path in keeper.
-    using HiveLastProcessedFileInfoMap = std::unordered_map<std::string, HiveLastProcessedFileInfo>;
-
-    struct LastProcessedFileInfo
-    {
-        /// Last processed path for some hive partition.
-        std::string file_path;
-        /// Position of record in `requests` list with keeper commands.
-        /// Used to avoid double creation of Keeper node with same path.
-        /// Instead more actual record overrides old one in the `requests` list.
-        size_t index;
-    };
-
-    /// An auxiliary structure to avoid rewriting the same node in Keeper several times with different values.
-    /// Instead, a more current value replaces the previously saved one in the `request` list.
-    /// Key is a path in keeper.
-    using LastProcessedFileInfoMap = std::unordered_map<std::string, LastProcessedFileInfo>;
-    using LastProcessedFileInfoMapPtr = std::shared_ptr<LastProcessedFileInfoMap>;
-
     explicit ObjectStorageQueueIFileMetadata(
         const std::string & path_,
         const std::string & processing_node_path_,
@@ -108,11 +74,6 @@ public:
     /// number of processed rows, processing time, exception, etc.
     FileStatusPtr getFileStatus() { return file_status; }
 
-    const std::string & getProcessingPath() const { return processing_node_path; }
-    const std::string & getProcessorInfo() const { return processor_info; }
-
-    static std::string generateProcessingID();
-
     virtual bool useBucketsForProcessing() const { return false; }
     virtual size_t getBucket() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets are not supported"); }
 
@@ -124,31 +85,21 @@ public:
     void resetProcessing();
 
     /// Prepare keeper requests, required to set file as Processed.
-    /// `created_nodes` is a helper index for hive partitioning case,
-    /// keeps values and indexes of already inserted commands
-    /// to avoid double creation with the same path.
-    void prepareProcessedRequests(Coordination::Requests & requests,
-        LastProcessedFileInfoMapPtr created_nodes = nullptr);
+    void prepareProcessedRequests(Coordination::Requests & requests);
     /// Prepare keeper requests, required to set file as Failed.
     void prepareFailedRequests(
         Coordination::Requests & requests,
         const std::string & exception_message,
         bool reduce_retry_count);
 
-    /// Prepare keeper requests to save hive last processed files.
-    virtual void prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & /* file_map */) {}
-
     struct SetProcessingResponseIndexes
     {
         size_t processed_path_doesnt_exist_idx = 0;
         size_t failed_path_doesnt_exist_idx = 0;
         size_t create_processing_node_idx = 0;
+        size_t set_processing_id_node_idx = 0;
     };
-    /// Prepare requests, required to set file as processing.
-    std::optional<SetProcessingResponseIndexes> prepareSetProcessingRequests(
-        Coordination::Requests & requests,
-        const std::string & processing_id);
-    /// Prepare requests, required to reset file's processing state.
+    std::optional<SetProcessingResponseIndexes> prepareSetProcessingRequests(Coordination::Requests & requests);
     void prepareResetProcessingRequests(Coordination::Requests & requests);
 
     /// Do some work after prepared requests to set file as Processed succeeded.
@@ -156,29 +107,36 @@ public:
     /// Do some work after prepared requests to set file as Failed succeeded.
     void finalizeFailed(const std::string & exception_message);
     /// Do some work after prepared requests to set file as Processing succeeded.
-    /// `file_state` is a file state,
-    /// which we find out after unsuccessfully attempting to set file as processing.
-    void afterSetProcessing(bool success, std::optional<FileStatus::State> file_state);
+    void finalizeProcessing(int processing_id_version_);
+
+    /// Set a starting point for processing.
+    /// Done on table creation, when we want to tell the table
+    /// that processing must be started from certain point,
+    /// instead of from scratch.
+    virtual void prepareProcessedAtStartRequests(
+        Coordination::Requests & requests,
+        const zkutil::ZooKeeperPtr & zk_client) = 0;
 
     /// A struct, representing information stored in keeper for a single file.
     struct NodeMetadata
     {
-        std::string file_path; /// Ignored in hive partitioning case, subnodes hive_path=>file_name used instead.
+        std::string file_path;
         UInt64 last_processed_timestamp = 0;
         std::string last_exception;
         UInt64 retries = 0;
+        std::string processing_id; /// For ephemeral processing node.
 
         std::string toString() const;
         static NodeMetadata fromString(const std::string & metadata_str);
     };
 
+    static std::string getProcessingNodesPath(bool use_persistent_processing_nodes);
+
 protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
-    virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests,
-        LastProcessedFileInfoMapPtr created_nodes) = 0;
+    virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests) = 0;
 
-    virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &,
-        const std::string &)
+    virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method prepareProcesingRequestsImpl is not implemented");
     }
@@ -198,13 +156,18 @@ protected:
     NodeMetadata node_metadata;
     LoggerPtr log;
 
-    /// Whether processing node was created by us.
-    bool created_processing_node = false;
-    /// Id of the processor, which is put into processing node.
-    /// Can be used to check if processing node was created by us or by someone else.
-    std::string processor_info;
-
-    bool checkProcessingOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
+    /// processing node is ephemeral, so we cannot verify with it if
+    /// this node was created by a certain processor on a previous processing stage,
+    /// because we could get a session expired in between the stages
+    /// and someone else could just create this processing node.
+    /// Therefore we also create a persistent processing node
+    /// which is updated on each creation of ephemeral processing node.
+    /// We use the version of this node to verify the version of the processing ephemeral node.
+    const std::string processing_node_id_path;
+    /// Id of the processor.
+    std::optional<std::string> processing_id;
+    /// Version of the processing id persistent node.
+    std::optional<int> processing_id_version;
 
     static std::string getNodeName(const std::string & path);
 

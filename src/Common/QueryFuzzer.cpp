@@ -387,7 +387,7 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast, const size_t nproj)
     if (fuzz_rand() % 50 == 0)
     {
         /// Order by one of the projections, starting from position 1
-        auto pos = list->children.empty() ? list->children.begin() : list->children.begin() + fuzz_rand() % list->children.size();
+        auto * pos = list->children.empty() ? list->children.begin() : list->children.begin() + fuzz_rand() % list->children.size();
         const auto col = nproj && (fuzz_rand() % 4 == 0) ? std::make_shared<ASTLiteral>((fuzz_rand() % nproj) + 1) : getRandomColumnLike();
         if (col)
         {
@@ -439,7 +439,7 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     // Add element
     if (fuzz_rand() % 50 == 0)
     {
-        auto pos = impl->children.empty() ? impl->children.begin() : impl->children.begin() + fuzz_rand() % impl->children.size();
+        auto * pos = impl->children.empty() ? impl->children.begin() : impl->children.begin() + fuzz_rand() % impl->children.size();
         auto col = getRandomColumnLike();
         if (col)
             impl->children.insert(pos, col);
@@ -1178,34 +1178,34 @@ ASTPtr QueryFuzzer::generatePredicate()
                 /// Pick a random identifier
                 auto rand_col1 = colids.begin();
                 std::advance(rand_col1, fuzz_rand() % colids.size());
-                ASTPtr expression_1 = rand_col1->second->clone();
+                ASTPtr exp1 = rand_col1->second->clone();
 
-                expression_1 = setIdentifierAliasOrNot(expression_1);
+                exp1 = setIdentifierAliasOrNot(exp1);
                 if (nprob == 0)
                 {
-                    next_condition = makeASTFunction(fuzz_rand() % 2 == 0 ? "isNull" : "isNotNull", expression_1);
+                    next_condition = makeASTFunction(fuzz_rand() % 2 == 0 ? "isNull" : "isNotNull", exp1);
                 }
                 else
                 {
                     /// Pick any other column reference
                     auto rand_col2 = column_like.begin();
                     std::advance(rand_col2, fuzz_rand() % column_like.size());
-                    ASTPtr expression_2 = rand_col2->second->clone();
+                    ASTPtr exp2 = rand_col2->second->clone();
 
-                    expression_2 = setIdentifierAliasOrNot(expression_2);
+                    exp2 = setIdentifierAliasOrNot(exp2);
                     if (fuzz_rand() % 3 == 0)
                     {
                         /// Swap sides
-                        auto expression_3 = expression_1;
-                        expression_1 = expression_2;
-                        expression_2 = expression_3;
+                        auto exp3 = exp1;
+                        exp1 = exp2;
+                        exp2 = exp3;
                     }
                     /// Run mostly equality conditions
                     /// No isNotDistinctFrom outside join conditions
                     next_condition = makeASTFunction(
                         comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % (comparison_comparators.size() - 1)) : 0],
-                        expression_1,
-                        expression_2);
+                        exp1,
+                        exp2);
                 }
                 next_condition = tryNegateNextPredicate(next_condition, 30);
                 /// Sometimes use multiple conditions
@@ -1467,20 +1467,20 @@ ASTPtr QueryFuzzer::addJoinClause()
 
             const String id1_alias = id1->tryGetAlias();
             const String & nidentifier = (id1_alias.empty() || (fuzz_rand() % 2 == 0)) ? id1->shortName() : id1_alias;
-            ASTPtr expression_1 = std::make_shared<ASTIdentifier>(Strings{next_alias, nidentifier});
-            ASTPtr expression_2 = rand_col2->second->clone();
+            ASTPtr exp1 = std::make_shared<ASTIdentifier>(Strings{next_alias, nidentifier});
+            ASTPtr exp2 = rand_col2->second->clone();
 
-            expression_2 = setIdentifierAliasOrNot(expression_2);
+            exp2 = setIdentifierAliasOrNot(exp2);
             if (fuzz_rand() % 3 == 0)
             {
                 /// Swap sides
-                auto expression_e = expression_1;
-                expression_1 = expression_2;
-                expression_2 = expression_e;
+                auto exp3 = exp1;
+                exp1 = exp2;
+                exp2 = exp3;
             }
             /// Run mostly equi-joins
             ASTPtr next_condition = makeASTFunction(
-                comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % comparison_comparators.size()) : 0], expression_1, expression_2);
+                comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % comparison_comparators.size()) : 0], exp1, exp2);
             next_condition = tryNegateNextPredicate(next_condition, 30);
 
             /// Sometimes use multiple conditions

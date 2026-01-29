@@ -2,11 +2,10 @@
 #include <Parsers/IAST.h>
 #include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
-#include <Poco/String.h>
 #include <Common/quoteString.h>
-#include <Interpreters/InstrumentationManager.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
+
 
 namespace DB
 {
@@ -425,26 +424,10 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
-        case Type::NOTIFY_FAILPOINT:
-        {
-            ostr << ' ';
-            print_identifier(fail_point_name);
-            break;
-        }
         case Type::WAIT_FAILPOINT:
         {
             ostr << ' ';
             print_identifier(fail_point_name);
-            if (fail_point_action == FailPointAction::PAUSE)
-            {
-                ostr << ' ';
-                print_keyword("PAUSE");
-            }
-            else if (fail_point_action == FailPointAction::RESUME)
-            {
-                ostr << ' ';
-                print_keyword("RESUME");
-            }
             break;
         }
         case Type::REFRESH_VIEW:
@@ -477,85 +460,20 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
-        case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::FLUSH_LOGS:
         {
             bool comma = false;
-            for (const auto & cur_log : tables)
+            for (const auto & cur_log : logs)
             {
                 if (comma)
                     ostr << ',';
                 else
                     comma = true;
                 ostr << ' ';
-
-                if (!cur_log.first.empty())
-                    print_identifier(cur_log.first) << ".";
-                print_identifier(cur_log.second);
+                print_identifier(cur_log);
             }
             break;
         }
-
-#if USE_XRAY
-        case Type::INSTRUMENT_ADD:
-        {
-            if (!instrumentation_function_name.empty())
-                ostr << ' ' << quoteString(instrumentation_function_name);
-
-            if (!instrumentation_handler_name.empty())
-            {
-                ostr << ' ';
-                print_identifier(Poco::toUpper(instrumentation_handler_name));
-            }
-
-            switch (instrumentation_entry_type)
-            {
-                case Instrumentation::EntryType::ENTRY:
-                    ostr << " ENTRY"; break;
-                case Instrumentation::EntryType::EXIT:
-                    ostr << " EXIT"; break;
-                case Instrumentation::EntryType::ENTRY_AND_EXIT:
-                    break;
-            }
-
-            bool whitespace = false;
-            for (const auto & param : instrumentation_parameters)
-            {
-                if (!whitespace)
-                    ostr << ' ';
-                else
-                    whitespace = true;
-                std::visit([&](const auto & value)
-                {
-                    using T = std::decay_t<decltype(value)>;
-                    if constexpr (std::is_same_v<T, String>)
-                        ostr << ' ' << quoteString(value);
-                    else
-                        ostr << ' ' << value;
-                }, param);
-            }
-            break;
-        }
-        case Type::INSTRUMENT_REMOVE:
-        {
-            if (!instrumentation_subquery.empty())
-                ostr << " (" << instrumentation_subquery << ')';
-            else if (instrumentation_point)
-            {
-                if (std::holds_alternative<Instrumentation::All>(instrumentation_point.value()))
-                    ostr << " ALL";
-                else if (std::holds_alternative<String>(instrumentation_point.value()))
-                    ostr << ' ' << quoteString(std::get<String>(instrumentation_point.value()));
-                else
-                    ostr << ' ' << std::get<UInt64>(instrumentation_point.value());
-            }
-            break;
-        }
-#else
-        case Type::INSTRUMENT_ADD:
-        case Type::INSTRUMENT_REMOVE:
-#endif
-
         case Type::KILL:
         case Type::SHUTDOWN:
         case Type::DROP_DNS_CACHE:
@@ -569,19 +487,15 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
-        case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
-        case Type::DROP_TEXT_INDEX_HEADER_CACHE:
-        case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
-        case Type::DROP_TEXT_INDEX_CACHES:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_S3_CLIENT_CACHE:
         case Type::DROP_ICEBERG_METADATA_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
         case Type::JEMALLOC_PURGE:
-        case Type::JEMALLOC_FLUSH_PROFILE:
         case Type::JEMALLOC_ENABLE_PROFILE:
         case Type::JEMALLOC_DISABLE_PROFILE:
+        case Type::JEMALLOC_FLUSH_PROFILE:
         case Type::SYNC_TRANSACTION_LOG:
         case Type::SYNC_FILE_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
@@ -594,6 +508,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RELOAD_CONFIG:
         case Type::RELOAD_USERS:
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::START_THREAD_FUZZER:
         case Type::STOP_THREAD_FUZZER:
         case Type::START_VIEWS:
@@ -601,7 +516,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_PAGE_CACHE:
         case Type::STOP_REPLICATED_DDL_QUERIES:
         case Type::START_REPLICATED_DDL_QUERIES:
-        case Type::RECONNECT_ZOOKEEPER:
             break;
         case Type::UNKNOWN:
         case Type::END:

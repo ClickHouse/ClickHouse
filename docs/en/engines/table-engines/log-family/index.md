@@ -1,17 +1,12 @@
 ---
-description: 'Documentation for the Log engine family'
-sidebar_label: 'Log family'
+description: 'Documentation for Log Engine Family'
+sidebar_label: 'Log Family'
 sidebar_position: 20
 slug: /engines/table-engines/log-family/
-title: 'Log engine family'
-doc_type: 'guide'
+title: 'Log Engine Family'
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-# Log table engine family
-
-<CloudNotSupportedBadge/>
+# Log engine family
 
 These engines were developed for scenarios when you need to quickly write many small tables (up to about 1 million rows) and read them later as a whole.
 

@@ -157,7 +157,7 @@ private:
         ColumnArray::Offset prev_to_offset = 0;
         const auto extract_array = [](const N * data, size_t prev_offset, size_t count)
         {
-            std::vector<std::string_view> temp;
+            std::vector<StringRef> temp;
             temp.reserve(count);
             for (size_t j = 0; j < count; ++j) { temp.emplace_back(data->getDataAt(prev_offset + j)); }
             return temp;
@@ -167,11 +167,11 @@ private:
         {
             const size_t m = from_offsets[row] - prev_from_offset;
             const size_t n = to_offsets[row] - prev_to_offset;
-            const std::vector<std::string_view> from = extract_array(from_data, prev_from_offset, m);
-            const std::vector<std::string_view> to = extract_array(to_data, prev_to_offset, n);
+            const std::vector<StringRef> from = extract_array(from_data, prev_from_offset, m);
+            const std::vector<StringRef> to = extract_array(to_data, prev_to_offset, n);
             prev_from_offset = from_offsets[row];
             prev_to_offset = to_offsets[row];
-            res_values[row] = levenshteinDistance<std::string_view>(from, to);
+            res_values[row] = levenshteinDistance<StringRef>(from, to);
         }
         return true;
     }
@@ -304,7 +304,7 @@ private:
 
         const auto extract_array = [](const N * data, size_t prev_offset, size_t count)
         {
-            std::vector<std::string_view> temp;
+            std::vector<StringRef> temp;
             temp.reserve(count);
             for (size_t j = 0; j < count; ++j) { temp.emplace_back(data->getDataAt(prev_offset + j)); }
             return temp;
@@ -314,8 +314,8 @@ private:
         {
             const size_t m = from_offsets[row] - prev_from_offset;
             const size_t n = to_offsets[row] - prev_to_offset;
-            const std::vector<std::string_view> from = extract_array(from_data, prev_from_offset, m);
-            const std::vector<std::string_view> to = extract_array(to_data, prev_to_offset, n);
+            const std::vector<StringRef> from = extract_array(from_data, prev_from_offset, m);
+            const std::vector<StringRef> to = extract_array(to_data, prev_to_offset, n);
             prev_from_offset = from_offsets[row];
             prev_to_offset = to_offsets[row];
 
@@ -324,7 +324,7 @@ private:
             std::span<const W> to_weights(column_to_weights->getData().begin() + prev_to_weights_offset, to_weights_offsets[row] - prev_to_weights_offset);
             prev_to_weights_offset = to_weights_offsets[row];
 
-            res_values[row] = static_cast<Float64>(DB::levenshteinDistanceWeighted<std::string_view, W>(from, to, from_weights, to_weights));
+            res_values[row] = static_cast<Float64>(DB::levenshteinDistanceWeighted<StringRef, W>(from, to, from_weights, to_weights));
         }
         return true;
     }
@@ -588,7 +588,15 @@ REGISTER_FUNCTION(ArrayLevenshtein)
     };
     FunctionDocumentation::IntroducedIn introduced_in_arrayLevDis = {25, 4};
     FunctionDocumentation::Category category_arrayLevDis = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_arrayLevDis = {description_arrayLevDis, syntax_arrayLevDis, arguments_arrayLevDis, {}, returned_value_arrayLevDis, example_arrayLevDis, introduced_in_arrayLevDis, category_arrayLevDis};
+    FunctionDocumentation documentation_arrayLevDis = {
+        description_arrayLevDis,
+        syntax_arrayLevDis,
+        arguments_arrayLevDis,
+        returned_value_arrayLevDis,
+        example_arrayLevDis,
+        introduced_in_arrayLevDis,
+        category_arrayLevDis
+    };
 
     factory.registerFunction<FunctionArrayLevenshtein<SimpleLevenshtein>>(documentation_arrayLevDis);
 
@@ -613,7 +621,15 @@ The number of elements for the array and its weights should match.
         }
     };
     FunctionDocumentation::Category category_arrayLevDisW = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_arrayLevDisW = {description_arrayLevDisW, syntax_arrayLevDisW, arguments_arrayLevDisW, {}, returned_value_arrayLevDisW, examples_arrayLevDisW, introduced_in_arrayLevDisW, category_arrayLevDisW};
+    FunctionDocumentation documentation_arrayLevDisW = {
+        description_arrayLevDisW,
+        syntax_arrayLevDisW,
+        arguments_arrayLevDisW,
+        returned_value_arrayLevDisW,
+        examples_arrayLevDisW,
+        introduced_in_arrayLevDisW,
+        category_arrayLevDisW
+    };
 
     factory.registerFunction<FunctionArrayLevenshtein<Weighted>>(documentation_arrayLevDisW);
 
@@ -638,7 +654,15 @@ Calculates the similarity of two arrays from `0` to `1` based on weighted Levens
     };
     FunctionDocumentation::IntroducedIn introduced_in_arraySim = {25, 4};
     FunctionDocumentation::Category category_arraySim = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_arraySim = {description_arraySim, syntax_arraySim, arguments_arraySim, {}, returned_value_arraySim, examples_arraySim, introduced_in_arraySim, category_arraySim};
+    FunctionDocumentation documentation_arraySim = {
+        description_arraySim,
+        syntax_arraySim,
+        arguments_arraySim,
+        returned_value_arraySim,
+        examples_arraySim,
+        introduced_in_arraySim,
+        category_arraySim
+    };
 
     factory.registerFunction<FunctionArrayLevenshtein<Similarity>>(documentation_arraySim);
 }

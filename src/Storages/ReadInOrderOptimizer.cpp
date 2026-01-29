@@ -72,7 +72,7 @@ NameSet getFixedSortingColumns(
 {
     ASTPtr condition;
     if (query.where() && query.prewhere())
-        condition = makeASTOperator("and", query.where(), query.prewhere());
+        condition = makeASTFunction("and", query.where(), query.prewhere());
     else if (query.where())
         condition = query.where();
     else if (query.prewhere())

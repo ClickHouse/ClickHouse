@@ -41,14 +41,8 @@ LimitStep::LimitStep(
 void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto transform = std::make_shared<LimitTransform>(
-        pipeline.getSharedHeader(),
-        limit,
-        offset,
-        pipeline.getNumStreams(),
-        always_read_till_end,
-        with_ties,
-        description,
-        dataflow_cache_updater);
+        pipeline.getSharedHeader(), limit, offset, pipeline.getNumStreams(), always_read_till_end, with_ties, description);
+
     pipeline.addTransform(std::move(transform));
 }
 
