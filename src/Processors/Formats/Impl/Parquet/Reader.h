@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <Columns/IColumn.h>
@@ -174,7 +175,7 @@ struct Reader
 
         bool use_bloom_filter = false;
         const KeyCondition * column_index_condition = nullptr;
-        std::unordered_set<size_t> steps_to_calculate;
+        size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
         bool used_by_key_condition = false;
@@ -416,7 +417,7 @@ struct Reader
 
 
         /// Fields below are used only by ReadManager.
-        std::vector<std::atomic<size_t>> next_subgroup_for_step;
+        std::atomic<size_t> read_ptr {0};
 
         std::atomic<size_t> delivery_ptr {0};
 

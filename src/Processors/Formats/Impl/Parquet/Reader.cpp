@@ -690,8 +690,8 @@ void Reader::preparePrewhere()
 
                 for (size_t primitive_idx = output_info.primitive_start; primitive_idx < output_info.primitive_end; ++primitive_idx)
                 {
-                    //primitive_columns[primitive_idx].use_prewhere = true;
-                    primitive_columns[primitive_idx].steps_to_calculate.insert(steps.size() + 1);
+                    if (primitive_columns[primitive_idx].first_step_to_calculate == 0)
+                        primitive_columns[primitive_idx].first_step_to_calculate = steps.size() + 1;
                     primitive_columns[primitive_idx].only_for_prewhere = only_for_prewhere;
                 }
             }
@@ -726,6 +726,7 @@ void Reader::preparePrewhere()
         auto prewhere_info_patched = std::make_shared<PrewhereInfo>(dag.clone(), filter_column_name);
         prewhere_info_patched->need_filter = needs_filter;
         PrewhereExprInfo prewhere_expr_info;
+
         bool success = tryBuildPrewhereSteps(
             prewhere_info_patched,
             *actions_settings,
@@ -1118,7 +1119,6 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         }
     }
     row_group.intersected_row_ranges_after_column_index = std::move(row_ranges);
-    row_group.next_subgroup_for_step = std::vector<std::atomic<size_t>>(steps.size() + 1);
 }
 
 void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
@@ -2136,12 +2136,6 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         filter_column = FilterDescription::preprocessFilterColumn(std::move(filter_column));
         const IColumnFilter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
         chassert(filter.size() == row_subgroup.filter.rows_pass);
-
-        for (size_t i = 0; i < filter_column->size(); ++i)
-        {
-            Field field;
-            filter_column->get(i, field);
-        }
         size_t rows_pass = countBytesInFilter(filter.data(), 0, filter.size());
         if (rows_pass == 0 || !row_group.need_to_process)
         {
