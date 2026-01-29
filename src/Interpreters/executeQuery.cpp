@@ -1351,8 +1351,9 @@ static BlockIO executeQueryImpl(
 
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
-    QueryMetadataCachePtr query_metadata_cache;
     BlockIO res;
+    /// May use storage that is protected by pipeline (res.pipeline), so should be destroyed first
+    QueryMetadataCachePtr query_metadata_cache;
     String query_database;
     String query_table;
 
