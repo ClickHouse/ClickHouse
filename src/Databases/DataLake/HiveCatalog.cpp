@@ -121,13 +121,21 @@ bool HiveCatalog::existsTable(const std::string & namespace_name, const std::str
     return true;
 }
 
-void HiveCatalog::getTableMetadata(const std::string & namespace_name, const std::string & table_name, TableMetadata & result) const
+void HiveCatalog::getTableMetadata(
+    const std::string & namespace_name,
+    const std::string & table_name,
+    DB::ContextPtr context_,
+    TableMetadata & result) const
 {
-    if (!tryGetTableMetadata(namespace_name, table_name, result))
+    if (!tryGetTableMetadata(namespace_name, table_name, context_, result))
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from iceberg catalog");
 }
 
-bool HiveCatalog::tryGetTableMetadata(const std::string & namespace_name, const std::string & table_name, TableMetadata & result) const
+bool HiveCatalog::tryGetTableMetadata(
+    const std::string & namespace_name,
+    const std::string & table_name,
+    DB::ContextPtr context_,
+    TableMetadata & result) const
 {
     Apache::Hadoop::Hive::Table table;
 
@@ -155,7 +163,7 @@ bool HiveCatalog::tryGetTableMetadata(const std::string & namespace_name, const 
         auto columns = table.sd.cols;
         for (const auto & column : columns)
         {
-            schema.push_back({column.name, getType(column.type, true)});
+            schema.push_back({column.name, getType(column.type, true, context_)});
         }
         result.setSchema(schema);
     }
