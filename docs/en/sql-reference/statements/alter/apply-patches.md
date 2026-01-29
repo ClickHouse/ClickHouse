@@ -61,7 +61,7 @@ SELECT * FROM system.mutations
 WHERE table = 'my_table' AND command LIKE '%APPLY PATCHES%';
 ```
 
-## See also {see-also}
+## See also {#see-also}
 
 - [Lightweight `UPDATE`](/sql-reference/statements/update) - Create patch parts with lightweight updates
 - [`apply_patches_on_merge` setting](/operations/settings/merge-tree-settings#apply_patches_on_merge) - Control automatic patch application during merges
