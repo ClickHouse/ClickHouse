@@ -71,7 +71,7 @@ public:
         const ContextPtr & local_context);
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override;
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr context_, ObjectInfoPtr object_info) const override;
 
     static Int32 parseTableSchema(
         const Poco::JSON::Object::Ptr & metadata_object,
