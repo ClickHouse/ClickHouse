@@ -343,6 +343,9 @@ SerializationPtr IDataType::getSerialization(const SerializationInfo & info) con
 
 SerializationPtr IDataType::getSerialization(const SerializationInfoSettings & settings) const
 {
+    if (custom_serialization)
+        return custom_serialization;
+
     return doGetSerialization(settings);
 }
 

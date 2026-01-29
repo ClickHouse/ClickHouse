@@ -359,7 +359,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
         return res;
     }
 
-    const auto & object_serialization = assert_cast<const SerializationObject &>(*data.serialization);
+    const auto & object_serialization = dynamic_cast<const SerializationObject &>(*data.serialization);
     const auto & typed_paths_serializations = object_serialization.getTypedPathsSerializations();
     const auto & dynamic_path_serialization = object_serialization.getDynamicPathSerialization();
 
