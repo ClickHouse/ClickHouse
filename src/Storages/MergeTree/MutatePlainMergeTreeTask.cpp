@@ -46,19 +46,13 @@ void MutatePlainMergeTreeTask::prepare()
     stopwatch = std::make_unique<Stopwatch>();
 
     const auto & mutation_ids = merge_mutate_entry->mutation_ids;
-
-    String mutation_ids_for_log;
     chassert(!mutation_ids.empty());
-    if (mutation_ids.size() == 1)
-        mutation_ids_for_log = mutation_ids.front();
-    else if (mutation_ids.size() > 1)
-        mutation_ids_for_log = fmt::format("{}..{}", mutation_ids.front(), mutation_ids.back());
 
     storage.writePartLog(
         PartLogElement::MUTATE_PART_START, {}, 0,
-        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {}, mutation_ids_for_log);
+        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {}, mutation_ids);
 
-    write_part_log = [this, mutation_ids_for_log] (const ExecutionStatus & execution_status)
+    write_part_log = [this, mutation_ids] (const ExecutionStatus & execution_status)
     {
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
@@ -70,7 +64,7 @@ void MutatePlainMergeTreeTask::prepare()
             future_part->parts,
             merge_list_entry.get(),
             std::move(profile_counters_snapshot),
-            mutation_ids_for_log);
+            mutation_ids);
     };
 
     if (task_context->getSettingsRef()[Setting::enable_sharing_sets_for_mutations])

@@ -172,10 +172,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
               entry.new_part_name, commands->size(), fmt::join(mutation_ids, ", "), commands->toString(true));
 
     /// mutation_ids can be empty here.
-    if (mutation_ids.size() == 1)
-        mutation_ids_for_log = mutation_ids.front();
-    else if (mutation_ids.size() > 1)
-        mutation_ids_for_log = fmt::format("{}..{}", mutation_ids.front(), mutation_ids.back());
+    mutation_ids_for_log = mutation_ids;
 
     auto part_log_writer = [this](const ExecutionStatus & execution_status)
     {

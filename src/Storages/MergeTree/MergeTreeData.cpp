@@ -9146,7 +9146,7 @@ void MergeTreeData::writePartLog(
     const DataPartsVector & source_parts,
     const MergeListEntry * merge_entry,
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters,
-    const String & mutation_ids)
+    const Strings & mutation_ids)
 try
 {
     auto table_id = getStorageID();
