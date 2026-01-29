@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.2",
         {
             {"default_dictionary_database", "", "", "New setting"},
+            {"parallel_replicas_filter_pushdown", true, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
