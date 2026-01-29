@@ -6,6 +6,7 @@ import json
 import os
 import random
 import sys
+import textwrap
 import time
 import traceback
 from pathlib import Path
@@ -407,6 +408,10 @@ class Result(MetaClasses.Serializable):
         Returns:
             Result: A Result object with test cases as sub-Results
         """
+        import textwrap #REMOVEME
+        wrapped = textwrap.fill(f"pytest command: [{command}]", width=80)
+        print(wrapped)
+
         sw = Utils.Stopwatch()
         files = []
         if pytest_report_file:

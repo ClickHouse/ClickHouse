@@ -409,7 +409,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     failed_test_cases = []
 
-    print("1 session_timeout:", session_timeout) #REMOVEME
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
