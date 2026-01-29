@@ -81,5 +81,6 @@
 #cmakedefine01 USE_XRAY
 #cmakedefine01 USE_YTSAURUS
 #cmakedefine01 USE_CLIENT_AI
+#cmakedefine01 USE_LIBCOTP
 #cmakedefine01 WITH_COVERAGE
 

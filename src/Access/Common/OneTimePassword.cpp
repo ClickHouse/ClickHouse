@@ -8,7 +8,7 @@
 
 #include "config.h"
 
-#if USE_SSL
+#if USE_SSL && USE_LIBCOTP
 
 #include <cotp.h>
 
@@ -127,7 +127,7 @@ struct CStringDeleter { void operator()(char * ptr) const { std::free(ptr); } };
 
 String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTimePasswordParams & config [[ maybe_unused ]], UInt64 current_time [[ maybe_unused ]])
 {
-#if USE_SSL
+#if USE_SSL && USE_LIBCOTP
     int sha_algo = config.algorithm == OneTimePasswordParams::Algorithm::SHA512 ? TOTP_SHA512
                  : config.algorithm == OneTimePasswordParams::Algorithm::SHA256 ? TOTP_SHA256
                  : TOTP_SHA1;
