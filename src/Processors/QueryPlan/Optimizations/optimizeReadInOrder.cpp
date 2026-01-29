@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
@@ -8,6 +9,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -31,7 +33,11 @@
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Core/Settings.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Parsers/makeASTForLogicalFunction.h>
 
 #include <stack>
 
@@ -432,6 +438,134 @@ struct SortingInputOrder
     std::optional<ActionsDAG> virtual_row_conversion{};
 };
 
+/// Find fixed columns from QueryTree condition, filtering by table alias.
+/// Only considers columns that belong to the specified table (by alias).
+/// This handles JOINs correctly by not matching columns from different tables.
+NameSet getFixedColumnsFromQueryTree(
+    const QueryTreeNodePtr & condition,
+    const String & table_alias,
+    const NameSet & sorting_key_columns_set)
+{
+    NameSet fixed_columns;
+    if (!condition || table_alias.empty())
+        return fixed_columns;
+
+    std::vector<QueryTreeNodePtr> nodes_to_process;
+    nodes_to_process.push_back(condition);
+
+    while (!nodes_to_process.empty())
+    {
+        auto node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        const auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            continue;
+
+        const auto & function_name = function_node->getFunctionName();
+
+        if (function_name == "and")
+        {
+            for (const auto & arg : function_node->getArguments())
+                nodes_to_process.push_back(arg);
+            continue;
+        }
+
+        if (function_name == "equals")
+        {
+            const auto & args = function_node->getArguments().getNodes();
+            if (args.size() != 2)
+                continue;
+
+            const ColumnNode * column_node = nullptr;
+            if (args[0]->as<ColumnNode>() && args[1]->as<ConstantNode>())
+                column_node = args[0]->as<ColumnNode>();
+            else if (args[1]->as<ColumnNode>() && args[0]->as<ConstantNode>())
+                column_node = args[1]->as<ColumnNode>();
+
+            if (column_node)
+            {
+                auto column_source = column_node->getColumnSourceOrNull();
+                if (column_source && column_source->getAlias() == table_alias)
+                {
+                    const auto & column_name = column_node->getColumnName();
+                    if (sorting_key_columns_set.contains(column_name))
+                        fixed_columns.insert(column_name);
+                }
+            }
+        }
+    }
+
+    return fixed_columns;
+}
+
+/// Check if a column is fixed (constant) for read-in-order optimization.
+/// For parallel replicas, uses QueryTree-based detection for deterministic results.
+/// Uses table_expression to correctly handle JOINs by filtering columns by table alias.
+/// Otherwise uses DAG-based detection for full optimization.
+bool isFixedColumnForReadInOrder(
+    const ActionsDAG::Node * sort_node,
+    const SortColumnDescription & sort_column_description,
+    const FixedColumns & fixed_columns,
+    const KeyDescription & sorting_key,
+    const ReadFromMergeTree * reading)
+{
+    /// For parallel replicas, use QueryTree-based fixed column detection for deterministic results.
+    /// DAG-based detection can differ between replicas due to non-deterministic DAG structures.
+    if (reading)
+    {
+        const auto & context = reading->getContext();
+        if (reading->isParallelReadingFromReplicas() || context->canUseParallelReplicasOnInitiator())
+        {
+            const auto & query_info = reading->getQueryInfo();
+
+            if (query_info.query_tree)
+            {
+                if (const auto * query_node = query_info.query_tree->as<QueryNode>())
+                {
+                    /// Get the table alias for the current table being read.
+                    /// This is deterministic and consistent across replicas.
+                    String table_alias;
+                    if (query_info.table_expression)
+                        table_alias = query_info.table_expression->getAlias();
+
+                    /// Extract the column name from sort_column_description
+                    /// (e.g., "tenant" from "__table1.tenant")
+                    String column_name = sort_column_description.column_name;
+                    if (auto dot_pos = column_name.rfind('.'); dot_pos != String::npos)
+                        column_name = column_name.substr(dot_pos + 1);
+
+                    /// Combine WHERE and PREWHERE conditions
+                    QueryTreeNodePtr condition;
+                    if (query_node->hasWhere() && query_node->hasPrewhere())
+                    {
+                        auto and_function = std::make_shared<FunctionNode>("and");
+                        and_function->getArguments().getNodes().push_back(query_node->getWhere());
+                        and_function->getArguments().getNodes().push_back(query_node->getPrewhere());
+                        condition = and_function;
+                    }
+                    else if (query_node->hasWhere())
+                        condition = query_node->getWhere();
+                    else if (query_node->hasPrewhere())
+                        condition = query_node->getPrewhere();
+
+                    if (condition)
+                    {
+                        /// Use QueryTree-based detection which preserves table context
+                        /// This correctly handles JOINs by only matching columns from our table
+                        NameSet sorting_key_set(sorting_key.column_names.begin(), sorting_key.column_names.end());
+                        auto fixed_names = getFixedColumnsFromQueryTree(condition, table_alias, sorting_key_set);
+                        return fixed_names.contains(column_name);
+                    }
+                    return false;
+                }
+            }
+        }
+    }
+    /// Use DAG-based detection for full optimization in non-parallel scenarios
+    return fixed_columns.contains(sort_node);
+}
+
 /// For the case when the order of keys is important (ORDER BY keys).
 SortingInputOrder buildInputOrderFromSortDescription(
     const FixedColumns & fixed_columns,
@@ -439,7 +573,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
     const SortDescription & description,
     const KeyDescription & sorting_key,
     const Names & pk_column_names,
-    size_t limit)
+    size_t limit,
+    const ReadFromMergeTree * reading = nullptr)
 {
     //std::cerr << "------- buildInputOrderInfo " << std::endl;
     SortDescription order_key_prefix_descr;
@@ -556,7 +691,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 /// don't let it determine read direction - skip to next columns.
                 /// Example: ORDER BY tenant, event_time DESC with WHERE tenant='42'
                 /// tenant is constant, so read direction should come from event_time DESC.
-                if (fixed_columns.contains(sort_node))
+                if (isFixedColumnForReadInOrder(sort_node, sort_column_description, fixed_columns, sorting_key, reading))
                 {
                     /// Virtual row for fixed column from order by is not supported now.
                     can_optimize_virtual_row = false;
@@ -608,7 +743,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
             else
             {
                 //std::cerr << "====== Check for fixed const : " << bool(sort_node->column) << " fixed : " << fixed_columns.contains(sort_node) << std::endl;
-                bool is_fixed_column = sort_node->column || fixed_columns.contains(sort_node);
+                bool is_fixed_column = static_cast<bool>(sort_node->column)
+                    || isFixedColumnForReadInOrder(sort_node, sort_column_description, fixed_columns, sorting_key, reading);
                 if (!is_fixed_column)
                     break;
 
@@ -923,7 +1059,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
         dag, description,
         sorting_key,
         pk_column_names,
-        limit);
+        limit,
+        reading);
 }
 
 SortingInputOrder buildInputOrderFromSortDescription(
