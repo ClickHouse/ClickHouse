@@ -49,6 +49,7 @@
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
+#include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
@@ -243,6 +244,8 @@ namespace FailPoints
     extern const char zero_copy_unlock_zk_fail_after_op[];
     extern const char rmt_lightweight_update_sleep_after_block_allocation[];
     extern const char rmt_merge_selecting_task_pause_when_scheduled[];
+    extern const char rmt_merge_selecting_task_no_free_threads[];
+    extern const char rmt_merge_selecting_task_max_part_size[];
     extern const char rmt_delay_execute_drop_range[];
 }
 
@@ -563,9 +566,12 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         size_t max_parts_in_partition = getMaxPartsCountAndSizeForPartition().first;
         if ((*settings)[MergeTreeSetting::parts_to_delay_insert] && max_parts_in_partition < (*settings)[MergeTreeSetting::parts_to_delay_insert])
         {
-            Float64 ratio = 1.0 - static_cast<Float64>(max_parts_in_partition) / (*settings)[MergeTreeSetting::parts_to_delay_insert];
-            merge_selecting_sleep_ms = static_cast<UInt64>(interpolateLinear((*settings)[MergeTreeSetting::merge_selecting_sleep_ms],
-                                                                             (*settings)[MergeTreeSetting::max_merge_selecting_sleep_ms], ratio));
+            Float64 ratio = 1.0
+                - static_cast<Float64>(max_parts_in_partition) / static_cast<Float64>((*settings)[MergeTreeSetting::parts_to_delay_insert]);
+            merge_selecting_sleep_ms = static_cast<UInt64>(interpolateLinear(
+                static_cast<double>((*settings)[MergeTreeSetting::merge_selecting_sleep_ms]),
+                static_cast<double>((*settings)[MergeTreeSetting::max_merge_selecting_sleep_ms]),
+                ratio));
         }
     }
 
@@ -1952,7 +1958,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
         total_rows_on_filesystem += part.part->rows_count;
 
     const auto storage_settings_ptr = getSettings();
-    bool insane = uncovered_unexpected_parts_rows > total_rows_on_filesystem * (*storage_settings_ptr)[MergeTreeSetting::replicated_max_ratio_of_wrong_parts];
+    bool insane = static_cast<double>(uncovered_unexpected_parts_rows) > static_cast<double>(total_rows_on_filesystem) * (*storage_settings_ptr)[MergeTreeSetting::replicated_max_ratio_of_wrong_parts];
 
     constexpr auto sanity_report_fmt = "The local set of parts of table {} doesn't look like the set of parts in ZooKeeper: "
         "{} rows of {} total rows in filesystem are suspicious. "
@@ -4101,6 +4107,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         CannotSelect,
     };
 
+    queue.clearPartsPostponeReasons();
+
     auto try_assign_merge = [&]() -> AttemptStatus
     {
         /// We must select parts for merge under merge_selecting_mutex because other threads
@@ -4132,6 +4140,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 "Current background tasks memory usage: {}.",
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()),
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.get()));
+            queue.addPartsPostponeReasons(PostponeReasons::ALL_PARTS_KEY, PostponeReasons::REACH_MEMORY_LIMIT);
             return AttemptStatus::Limited;
         }
 
@@ -4142,6 +4151,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 merges_and_mutations_queued.merges,
                 merges_and_mutations_queued.mutations,
                 (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_in_queue].value);
+            queue.addPartsPostponeReasons(PostponeReasons::ALL_PARTS_KEY, PostponeReasons::EXCEED_MAX_QUEUED_MERGES);
             return AttemptStatus::Limited;
         }
 
@@ -4237,6 +4247,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             }
         }
 
+        fiu_do_on(FailPoints::rmt_merge_selecting_task_no_free_threads, { max_source_part_bytes_for_mutation = 0; });
         /// If there are many mutations in queue, it may happen, that we cannot enqueue enough merges to merge all new parts
         if (max_source_part_bytes_for_mutation == 0 || merges_and_mutations_queued.mutations >= (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue])
         {
@@ -4248,6 +4259,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 merges_and_mutations_queued.mutations,
                 (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue].value,
                 max_source_part_bytes_for_mutation_log_comment);
+            queue.addPartsPostponeReasons(PostponeReasons::ALL_PARTS_KEY, PostponeReasons::NO_FREE_THREADS);
             return AttemptStatus::Limited;
         }
 
@@ -4261,8 +4273,12 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
             for (const auto & part : data_parts)
             {
+                fiu_do_on(FailPoints::rmt_merge_selecting_task_max_part_size, { max_source_part_bytes_for_mutation = 1; });
                 if (part->getBytesOnDisk() > max_source_part_bytes_for_mutation)
+                {
+                    queue.addPartsPostponeReasons(part->name, PostponeReasons::EXCEED_MAX_PART_SIZE);
                     continue;
+                }
 
                 auto expected = merge_predicate->getExpectedMutationVersion(part);
                 if (!expected)
@@ -4296,7 +4312,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
     }
 
 
-    Float32 new_sleep_ms = merge_selecting_sleep_ms;
+    Float32 new_sleep_ms = static_cast<Float32>(merge_selecting_sleep_ms);
     if (result == AttemptStatus::EntryCreated || result == AttemptStatus::NeedRetry)
         new_sleep_ms /= (*storage_settings_ptr)[MergeTreeSetting::merge_selecting_sleep_slowdown_factor];
     else if (result == AttemptStatus::CannotSelect)
@@ -7286,7 +7302,7 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
     const auto & stop_waiting = [&]()
     {
         bool stop_waiting_itself = waiting_itself && (partial_shutdown_called || shutdown_prepared_called || shutdown_called);
-        bool timeout_exceeded = check_timeout && wait_for_inactive_timeout < time_waiting.elapsedSeconds();
+        bool timeout_exceeded = check_timeout && static_cast<double>(wait_for_inactive_timeout) < time_waiting.elapsedSeconds();
         bool stop_waiting_inactive = (!wait_for_inactive || timeout_exceeded)
             && !getZooKeeper()->exists(fs::path(table_zookeeper_path) / "replicas" / replica / "is_active");
         return is_dropped || stop_waiting_itself || stop_waiting_inactive;
@@ -10807,6 +10823,12 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & p
 
 bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name)
 {
+    if (is_readonly)
+    {
+        LOG_WARNING(log, "Cannot replace lost part {} with empty part because replica is readonly", lost_part_name);
+        return false;
+    }
+
     LOG_INFO(log, "Going to replace lost part {} with empty part", lost_part_name);
 
     auto new_part_info = MergeTreePartInfo::fromPartName(lost_part_name, format_version);
@@ -10869,6 +10891,14 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
         {
             if (shutdown_called || partial_shutdown_called)
                 throw Exception(ErrorCodes::ABORTED, "Cannot create an empty part because shutdown called");
+
+            /// Replica may become readonly during the operation due to ZooKeeper issues.
+            /// In this case, we should not try to create an empty part.
+            if (is_readonly)
+            {
+                LOG_WARNING(log, "Cannot replace lost part {} with empty part because replica became readonly", lost_part_name);
+                return false;
+            }
 
             /// We should be careful when creating an empty part, because we are not sure that this part is still needed.
             /// For example, it's possible that part (or partition) was dropped (or replaced) concurrently.

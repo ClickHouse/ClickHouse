@@ -23,6 +23,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 
 #include <Storages/StorageMerge.h>
 
@@ -786,8 +787,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Union does not change header.
         /// We can push down filter and update header.
         auto union_input_headers = child->getInputHeaders();
+        auto expected_output = filter->getOutputHeader();
+
         for (auto & input_header : union_input_headers)
-            input_header = filter->getOutputHeader();
+            input_header = expected_output;
 
         ///                - Something
         /// Filter - Union - Something
