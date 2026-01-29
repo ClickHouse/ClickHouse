@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-release
 -- Tag no-parallel: Messes with internal cache
 
 -- Tests system table 'system.query_condition_cache'
