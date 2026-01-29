@@ -1,7 +1,11 @@
+-- { echo }
+
 SET optimize_syntax_fuse_functions = 1;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (`a` Float64, `b` Nullable(Int8)) ENGINE = Log;
+
+SELECT count(b) * count(b) IGNORE NULLS FROM (SELECT b FROM test);
 
 SELECT avg(b) * 3, (sum(b) + 1) + count(b), count(b) * count(b), count() IGNORE NULLS FROM (SELECT b FROM test);
 
@@ -18,3 +22,21 @@ INSERT INTO test (a, b) VALUES
     (-Inf, -7);
 
 SELECT avg(b) * 3, (sum(b) + 1) + count(b), count(b) * count(b), count() IGNORE NULLS FROM (SELECT b FROM test);
+
+SELECT sum(b), count(b), sum(a), count(a) FROM (SELECT a, b FROM test);
+
+SELECT sum(a), count(a) FROM ( SELECT CAST(materialize(1), 'Nullable(Int32)') AS a) t;
+
+SET enable_analyzer = 1;
+
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count(b) * count(b) IGNORE NULLS FROM (SELECT b FROM test);
+
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT avg(b) * 3, (sum(b) + 1) + count(b), count(b) * count(b), count() IGNORE NULLS FROM (SELECT b FROM test);
+
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT sum(b), count(b), sum(a), count(a) FROM (SELECT a, b FROM test);
+
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT sum(a), count(a) FROM ( SELECT CAST(materialize(1), 'Nullable(Int32)') AS a) t;
