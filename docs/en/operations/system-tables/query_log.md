@@ -76,6 +76,8 @@ You can use the [log_formatted_queries](/operations/settings/settings#log_format
 - `is_initial_query` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Query type. Possible values:
   - 1 — Query was initiated by the client.
   - 0 — Query was initiated by another query as part of distributed query execution.
+- `connection_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — The client IP address from which connection was made.
+- `connection_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port from which connection was made.
 - `user` ([String](../../sql-reference/data-types/string.md)) — Name of the user who initiated the current query.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the query.
 - `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address that was used to make the query.
