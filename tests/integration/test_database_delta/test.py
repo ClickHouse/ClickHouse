@@ -24,6 +24,9 @@ import uuid
 from helpers.test_tools import TSV
 
 
+CATALOG_NAME = "unity_catalog_test_db"
+
+
 def start_unity_catalog(node):
     node.exec_in_container(
         [
@@ -661,3 +664,42 @@ FROM {db_name}.`{schema_name}.{table_name}`
             },
         ).strip()
     )
+
+
+def test_namespace_filter(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    # Use the same table name in all namespaces
+    table_name = f"table_{uuid.uuid4()}".replace("-", "_")
+    namespace_prefix = f"namespace_{uuid.uuid4()}_".replace("-", "_")
+
+
+    def create_namespace(suffix):
+        namespace = f"{namespace_prefix}{suffix}"
+        execute_spark_query(
+            node, f"CREATE SCHEMA {namespace}"
+        )
+        execute_spark_query(
+            node, f"CREATE TABLE {namespace}.{table_name} (col1 int, col2 double) using Delta location '/var/lib/clickhouse/user_files/tmp/{namespace}/{table_name}'"
+        )
+
+    create_namespace("alpha");
+    create_namespace("bravo");
+
+    node.query(
+        f"""
+        drop database if exists {CATALOG_NAME};
+        create database {CATALOG_NAME}
+        engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
+        settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, namespaces = '{namespace_prefix}alpha'
+        """,
+        settings={"allow_database_unity_catalog": "1"},
+    )
+
+    assert node.query(f"SELECT name FROM system.tables WHERE database='{CATALOG_NAME}' ORDER BY name", settings={"show_data_lake_catalogs_in_system_tables": 1}) == TSV(
+        [
+            [f"{namespace_prefix}alpha.{table_name}"],
+        ])
+
+    assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}alpha.{table_name}`") == "0\n"
+    assert "is filtered by `namespaces` database parameter." in node.query_and_get_error(f"SELECT count() FROM {CATALOG_NAME}.`{namespace_prefix}bravo.{table_name}`")
