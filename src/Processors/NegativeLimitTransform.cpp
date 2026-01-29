@@ -45,6 +45,13 @@ IProcessor::Status NegativeLimitTransform::prepare(const PortNumbers & updated_i
 
     if (stage == Stage::Pull)
     {
+        for (auto & port : ports_data)
+        {
+            auto & input = *port.input_port;
+            if (!input.isFinished())
+                input.setNeeded();
+        }
+
         bool has_data_need = false;
 
         auto process = [&](size_t pos)

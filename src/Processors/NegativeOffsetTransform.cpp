@@ -52,6 +52,13 @@ IProcessor::Status NegativeOffsetTransform::prepare(const PortNumbers & updated_
 
     if (stage == Stage::Pull)
     {
+        for (auto & port : ports_data)
+        {
+            auto & input = *port.input_port;
+            if (!input.isFinished())
+                input.setNeeded();
+        }
+
         bool has_data_need = false;
         bool has_full_port = false;
 
