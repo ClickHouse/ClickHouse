@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.2",
         {
             {"default_dictionary_database", "", "", "New setting"},
+            {"sync_request_timeout", DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, "Make sync_request_timeout configurable."},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
