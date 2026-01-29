@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Core/Types.h>
+#include <optional>
 
 namespace DB
 {

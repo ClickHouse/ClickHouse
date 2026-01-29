@@ -99,7 +99,7 @@ PaimonTableClient::PaimonTableClient(ObjectStoragePtr object_storage_, const Str
     , log(getLogger("PaimonTableClient"))
 {}
 
-std::pair<Int32, String> PaimonTableClient::getLastestTableSchemaInfo()
+std::pair<Int32, String> PaimonTableClient::getLatestTableSchemaInfo()
 {
     /// list all schema files
     const auto schema_files = listFiles(
@@ -137,6 +137,13 @@ std::pair<Int32, String> PaimonTableClient::getLastestTableSchemaInfo()
         schema_files_with_versions.emplace_back(std::make_pair(parse_version(path), path));
     }
     return *std::max_element(schema_files_with_versions.begin(), schema_files_with_versions.end());
+}
+
+std::pair<Int32, String> PaimonTableClient::getTableSchemaInfoById(Int32 schema_id) const
+{
+    std::filesystem::path schema_path
+        = std::filesystem::path(table_location) / PAIMON_SCHEMA_DIR / fmt::format("{}{}", PAIMON_SCHEMA_PREFIX, schema_id);
+    return {schema_id, schema_path};
 }
 
 /// schema

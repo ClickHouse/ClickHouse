@@ -17,6 +17,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <optional>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -85,7 +86,10 @@ public:
     }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
-    void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before) override
+    void update(
+        ObjectStoragePtr object_storage,
+        ContextPtr local_context,
+        bool if_not_updated_before) override
     {
         const bool updated_before = current_metadata != nullptr;
         if (updated_before && if_not_updated_before)
