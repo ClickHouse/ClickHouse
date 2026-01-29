@@ -325,21 +325,6 @@ using PostingListCodecFastPFor = PostingListCodecGeneric<SIMDFastPForBlockCodec,
 /// Trade-off: Sacrifices some compression ratio for maximum decode throughput.
 using PostingListCodecBinaryPacking = PostingListCodecGeneric<SIMDBinaryPackingBlockCodec, IPostingListCodec::Type::BinaryPacking>;
 
-/// Simple8b codec for posting list compression.
-///
-/// Packs multiple small integers into 64-bit words using a selector-based scheme.
-/// Each 64-bit word contains a 4-bit selector (indicating how many integers and their bit-width)
-/// followed by 60 bits of packed data.
-///
-/// Characteristics:
-/// - Compression ratio: High for small deltas (can pack up to 60 1-bit values per word)
-/// - Encode speed: Medium (selector computation overhead)
-/// - Decode speed: Medium (selector-based branching)
-/// - Best for: Posting lists with many consecutive small deltas (dense documents)
-///
-/// Template parameter `true` enables RLE (Run-Length Encoding) optimization for repeated values.
-using PostingListCodecSimple8b = PostingListCodecGeneric<Simple8bBlockCodec, IPostingListCodec::Type::Simple8b>;
-
 /// StreamVByte codec for posting list compression.
 ///
 /// A byte-aligned variable-byte encoding with SIMD-accelerated decoding.

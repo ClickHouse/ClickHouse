@@ -47,7 +47,7 @@ CREATE TABLE tab
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' | 'fastpfor' | 'binarypacking' | 'simple8b' | 'streamvbyte' | 'optpfor' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'fastpfor' | 'binarypacking' | 'streamvbyte' | 'optpfor' ]
                             )
 )
 ENGINE = MergeTree
@@ -189,12 +189,11 @@ Optional parameter `posting_list_codec` (default: `bitpacking`) specifies the co
 - `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size).
 - `fastpfor` - FastPFor (Fast Patched Frame-of-Reference) with SIMD acceleration. High compression ratio with very fast decode speed. Recommended for general-purpose posting lists.
 - `binarypacking` - SIMD Binary Packing. Medium compression but fastest decode speed. Ideal for query latency-critical scenarios.
-- `simple8b` - Packs multiple small integers into 64-bit words. High compression for posting lists with many small deltas (dense documents).
 - `streamvbyte` - Byte-aligned variable-byte encoding with SIMD. Lower compression but predictable performance with good random access.
 - `optpfor` - Optimized Patched Frame-of-Reference. Highest compression ratio among all codecs. Best for storage-constrained scenarios.
 
 :::note
-The `fastpfor`, `binarypacking`, `simple8b`, `streamvbyte`, and `optpfor` codecs require the FastPFor library and are not available in fasttest builds. All these codecs use SIMD acceleration (SSE/AVX on x86_64, SIMDE on ARM64) for optimal performance.
+The `fastpfor`, `binarypacking`, `streamvbyte`, and `optpfor` codecs require the FastPFor library and are not available in fasttest builds. All these codecs use SIMD acceleration (SSE/AVX on x86_64, SIMDE on ARM64) for optimal performance.
 :::
 
 </details>

@@ -18,7 +18,6 @@ DROP TABLE IF EXISTS tab_uncompressed;
 DROP TABLE IF EXISTS tab_bitpacking;
 DROP TABLE IF EXISTS tab_fastpfor;
 DROP TABLE IF EXISTS tab_binarypacking;
-DROP TABLE IF EXISTS tab_simple8b;
 DROP TABLE IF EXISTS tab_streamvbyte;
 DROP TABLE IF EXISTS tab_optpfor;
 
@@ -130,33 +129,6 @@ SETTINGS
    serialization_info_version = 'basic',
    auto_statistics_types = 'minmax';
 
-CREATE TABLE tab_simple8b
-(
-    ts DateTime CODEC(LZ4),
-    str String CODEC(LZ4),
-    INDEX inv_idx str TYPE text(
-        tokenizer = 'splitByNonAlpha',
-        posting_list_codec = 'simple8b'
-    )
-)
-ENGINE = MergeTree
-ORDER BY ts
-SETTINGS
-   min_rows_for_wide_part = 0,
-   min_bytes_for_wide_part = 0,
-   index_granularity = 8192,
-   index_granularity_bytes = 0,
-   enable_block_offset_column = 0,
-   enable_block_number_column = 0,
-   string_serialization_version = 'with_size_stream',
-   primary_key_compress_block_size = 65536,
-   marks_compress_block_size = 65536,
-   min_compress_block_size = 65536,
-   max_compress_block_size = 1048576,
-   ratio_of_defaults_for_sparse_serialization = 0.95,
-   serialization_info_version = 'basic',
-   auto_statistics_types = 'minmax';
-
 CREATE TABLE tab_streamvbyte
 (
     ts DateTime CODEC(LZ4),
@@ -218,7 +190,6 @@ INSERT INTO tab_uncompressed SELECT '2026-01-09 10:00:00', multiIf(number % 3 = 
 INSERT INTO tab_bitpacking SELECT '2026-01-09 10:00:00', multiIf(number % 3 = 0, 'aa', number % 3 = 1, 'bb', 'cc') FROM numbers(1024000);
 INSERT INTO tab_fastpfor SELECT '2026-01-09 10:00:00', multiIf(number % 3 = 0, 'aa', number % 3 = 1, 'bb', 'cc') FROM numbers(1024000);
 INSERT INTO tab_binarypacking SELECT '2026-01-09 10:00:00', multiIf(number % 3 = 0, 'aa', number % 3 = 1, 'bb', 'cc') FROM numbers(1024000);
-INSERT INTO tab_simple8b SELECT '2026-01-09 10:00:00', multiIf(number % 3 = 0, 'aa', number % 3 = 1, 'bb', 'cc') FROM numbers(1024000);
 INSERT INTO tab_streamvbyte SELECT '2026-01-09 10:00:00', multiIf(number % 3 = 0, 'aa', number % 3 = 1, 'bb', 'cc') FROM numbers(1024000);
 INSERT INTO tab_optpfor SELECT '2026-01-09 10:00:00', multiIf(number % 3 = 0, 'aa', number % 3 = 1, 'bb', 'cc') FROM numbers(1024000);
 
@@ -227,7 +198,6 @@ INSERT INTO tab_uncompressed SELECT '2026-01-09 12:00:00', multiIf(number < 129,
 INSERT INTO tab_bitpacking SELECT '2026-01-09 12:00:00', multiIf(number < 129, 'tail129', number = 129, 'single', 'noise') FROM numbers(512);
 INSERT INTO tab_fastpfor SELECT '2026-01-09 12:00:00', multiIf(number < 129, 'tail129', number = 129, 'single', 'noise') FROM numbers(512);
 INSERT INTO tab_binarypacking SELECT '2026-01-09 12:00:00', multiIf(number < 129, 'tail129', number = 129, 'single', 'noise') FROM numbers(512);
-INSERT INTO tab_simple8b SELECT '2026-01-09 12:00:00', multiIf(number < 129, 'tail129', number = 129, 'single', 'noise') FROM numbers(512);
 INSERT INTO tab_streamvbyte SELECT '2026-01-09 12:00:00', multiIf(number < 129, 'tail129', number = 129, 'single', 'noise') FROM numbers(512);
 INSERT INTO tab_optpfor SELECT '2026-01-09 12:00:00', multiIf(number < 129, 'tail129', number = 129, 'single', 'noise') FROM numbers(512);
 
@@ -236,7 +206,6 @@ INSERT INTO tab_uncompressed SELECT '2026-01-09 14:00:00', if(number < 1003, 'mi
 INSERT INTO tab_bitpacking SELECT '2026-01-09 14:00:00', if(number < 1003, 'mid1003', 'noise') FROM numbers(1500);
 INSERT INTO tab_fastpfor SELECT '2026-01-09 14:00:00', if(number < 1003, 'mid1003', 'noise') FROM numbers(1500);
 INSERT INTO tab_binarypacking SELECT '2026-01-09 14:00:00', if(number < 1003, 'mid1003', 'noise') FROM numbers(1500);
-INSERT INTO tab_simple8b SELECT '2026-01-09 14:00:00', if(number < 1003, 'mid1003', 'noise') FROM numbers(1500);
 INSERT INTO tab_streamvbyte SELECT '2026-01-09 14:00:00', if(number < 1003, 'mid1003', 'noise') FROM numbers(1500);
 INSERT INTO tab_optpfor SELECT '2026-01-09 14:00:00', if(number < 1003, 'mid1003', 'noise') FROM numbers(1500);
 
@@ -245,7 +214,6 @@ INSERT INTO tab_uncompressed SELECT '2026-01-09 16:00:00', multiIf(number IN (0,
 INSERT INTO tab_bitpacking SELECT '2026-01-09 16:00:00', multiIf(number IN (0, 777), 'rare2', number IN (1, 2, 3, 4, 5), 'rare5', 'noise') FROM numbers(2000);
 INSERT INTO tab_fastpfor SELECT '2026-01-09 16:00:00', multiIf(number IN (0, 777), 'rare2', number IN (1, 2, 3, 4, 5), 'rare5', 'noise') FROM numbers(2000);
 INSERT INTO tab_binarypacking SELECT '2026-01-09 16:00:00', multiIf(number IN (0, 777), 'rare2', number IN (1, 2, 3, 4, 5), 'rare5', 'noise') FROM numbers(2000);
-INSERT INTO tab_simple8b SELECT '2026-01-09 16:00:00', multiIf(number IN (0, 777), 'rare2', number IN (1, 2, 3, 4, 5), 'rare5', 'noise') FROM numbers(2000);
 INSERT INTO tab_streamvbyte SELECT '2026-01-09 16:00:00', multiIf(number IN (0, 777), 'rare2', number IN (1, 2, 3, 4, 5), 'rare5', 'noise') FROM numbers(2000);
 INSERT INTO tab_optpfor SELECT '2026-01-09 16:00:00', multiIf(number IN (0, 777), 'rare2', number IN (1, 2, 3, 4, 5), 'rare5', 'noise') FROM numbers(2000);
 
@@ -254,7 +222,6 @@ OPTIMIZE TABLE tab_uncompressed FINAL;
 OPTIMIZE TABLE tab_bitpacking FINAL;
 OPTIMIZE TABLE tab_fastpfor FINAL;
 OPTIMIZE TABLE tab_binarypacking FINAL;
-OPTIMIZE TABLE tab_simple8b FINAL;
 OPTIMIZE TABLE tab_streamvbyte FINAL;
 OPTIMIZE TABLE tab_optpfor FINAL;
 
@@ -264,7 +231,7 @@ SELECT
     sum(rows),
     sum(secondary_indices_compressed_bytes)
 FROM system.parts
-WHERE database = currentDatabase() AND active AND table IN ('tab_uncompressed', 'tab_bitpacking', 'tab_fastpfor', 'tab_binarypacking', 'tab_simple8b', 'tab_streamvbyte', 'tab_optpfor')
+WHERE database = currentDatabase() AND active AND table IN ('tab_uncompressed', 'tab_bitpacking', 'tab_fastpfor', 'tab_binarypacking', 'tab_streamvbyte', 'tab_optpfor')
 GROUP BY table
 ORDER BY table;
 
@@ -273,6 +240,5 @@ DROP TABLE tab_uncompressed;
 DROP TABLE tab_bitpacking;
 DROP TABLE tab_fastpfor;
 DROP TABLE tab_binarypacking;
-DROP TABLE tab_simple8b;
 DROP TABLE tab_streamvbyte;
 DROP TABLE tab_optpfor;

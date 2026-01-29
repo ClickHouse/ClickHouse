@@ -26,7 +26,6 @@
 #include <simdfastpfor.h>
 #include <simdoptpfor.h>
 #include <simdbinarypacking.h>
-#include <simple8b.h>
 #include <streamvariablebyte.h>
 
 namespace DB
@@ -183,16 +182,6 @@ struct SIMDBinaryPackingBlockCodec : impl::FastPForCodecBase<
     SIMDBinaryPackingBlockCodec>
 {
     static constexpr const char * NAME = "binarypacking";
-};
-
-/// Simple8b: Packs multiple small integers into 64-bit words.
-/// High compression for small delta values, medium decode speed.
-/// Template parameter `true` enables RLE optimization.
-struct Simple8bBlockCodec : impl::FastPForCodecBase<
-    FastPForLib::Simple8b<true>,
-    Simple8bBlockCodec>
-{
-    static constexpr const char * NAME = "simple8b";
 };
 
 /// StreamVByte: Byte-aligned variable-byte encoding with SIMD.

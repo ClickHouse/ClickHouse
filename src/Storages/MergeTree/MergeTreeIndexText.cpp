@@ -1383,7 +1383,6 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
 #if USE_FASTPFOR
             PostingListCodecFastPFor::getName(),
             PostingListCodecBinaryPacking::getName(),
-            PostingListCodecSimple8b::getName(),
             PostingListCodecStreamVByte::getName(),
             PostingListCodecOptPFor::getName(),
 #endif
@@ -1429,7 +1428,6 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 #if USE_FASTPFOR
             PostingListCodecFastPFor::getName(),
             PostingListCodecBinaryPacking::getName(),
-            PostingListCodecSimple8b::getName(),
             PostingListCodecStreamVByte::getName(),
             PostingListCodecOptPFor::getName(),
 #endif
