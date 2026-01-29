@@ -1,7 +1,5 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
-#include <Processors/QueryPlan/ReadFromLocalReplica.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
