@@ -21,12 +21,13 @@
 
 #include <absl/container/inlined_vector.h>
 
-#include <wasmedge/wasmedge.h>
-
 #include <filesystem>
 #include <list>
 #include <ranges>
+#include <string>
 #include <fmt/ranges.h>
+
+#include <wasmedge/wasmedge.h>
 
 namespace ProfileEvents
 {
@@ -86,8 +87,9 @@ WasmEdge_Value toWasmEdgeValue(WasmVal val)
     #define M(T) \
     { \
         constexpr auto Index = std::to_underlying(WasmValKind::T); \
+        using WasmEdgeNativeType = decltype(WasmEdge_ValueGet##T(std::declval<WasmEdge_Value>())); \
         if (val.index() == Index) \
-            return WasmEdge_ValueGen##T(std::get<Index>(val)); \
+            return WasmEdge_ValueGen##T(WasmEdgeNativeType(std::get<Index>(val))); \
     }
 
     APPLY_FOR_WASM_TYPES(M)

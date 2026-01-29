@@ -4,6 +4,7 @@
 #include <optional>
 #include <vector>
 #include <string>
+#include <memory>
 
 #include <base/extended_types.h>
 

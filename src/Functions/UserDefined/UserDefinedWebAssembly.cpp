@@ -22,7 +22,7 @@
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/WriteBufferFromTrackedString.h>
+#include <IO/WriteBufferFromStringWithMemoryTracking.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -323,7 +323,7 @@ public:
         if (!block.empty())
         {
             ProfileEventTimeIncrement<Microseconds> timer_serialize(ProfileEvents::WasmSerializationMicroseconds);
-            TrackedString input_data;
+            StringWithMemoryTracking input_data;
 
             std::vector<const ColumnString *> string_columns;
             for (const auto & col : block)
@@ -336,7 +336,7 @@ public:
             }
 
             {
-                WriteBufferFromTrackedString buf(input_data);
+                WriteBufferFromStringWithMemoryTracking buf(input_data);
                 auto out = context->getOutputFormat(format_name, buf, block.cloneEmpty());
                 formatBlock(out, block);
             }

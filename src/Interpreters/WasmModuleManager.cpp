@@ -21,6 +21,7 @@
 #include <Common/UniqueLock.h>
 #include <Common/SharedLockGuard.h>
 
+#include <ranges>
 #include <expected>
 
 namespace DB

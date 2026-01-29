@@ -95,7 +95,7 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
         if (lang_literal->as<ASTIdentifier>()->name() != "WASM")
             return false;
 
-        auto create_function_query = std::make_shared<ASTCreateWasmFunctionQuery>();
+        auto create_function_query = make_intrusive<ASTCreateWasmFunctionQuery>();
         create_function_query->or_replace = or_replace;
         create_function_query->if_not_exists = if_not_exists;
         create_function_query->cluster = std::move(cluster_str);
@@ -135,7 +135,7 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
                 if (s_rparen.ignore(pos, expected))
                 {
                     /// Empty argument list
-                    create_function_query->setArguments(std::make_shared<ASTExpressionList>());
+                    create_function_query->setArguments(make_intrusive<ASTExpressionList>());
                 }
                 else if (ParserNameTypePairList{}.parse(pos, arguments_ast, expected)
                      || ParserTypeList{}.parse(pos, arguments_ast, expected))

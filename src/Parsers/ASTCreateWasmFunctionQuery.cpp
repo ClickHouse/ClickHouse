@@ -28,7 +28,7 @@ String ASTCreateWasmFunctionQuery::getID(char delim) const
 
 ASTPtr ASTCreateWasmFunctionQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateWasmFunctionQuery>(*this);
+    auto res = make_intrusive<ASTCreateWasmFunctionQuery>(*this);
     res->children.clear();
 
     res->setName(function_name_ast->clone());
@@ -103,7 +103,7 @@ void ASTCreateWasmFunctionQuery::formatImpl(WriteBuffer & ostr, const FormatSett
     {
         ostr << " SETTINGS ";
 
-        auto settings_changes_ast = std::make_shared<ASTSetQuery>();
+        auto settings_changes_ast = make_intrusive<ASTSetQuery>();
         settings_changes_ast->changes = function_settings;
         settings_changes_ast->is_standalone = false;
         settings_changes_ast->format(ostr, settings, state, frame);
@@ -124,7 +124,7 @@ static String getAstAsStringLiteral(const ASTPtr & ast)
 
 void ASTCreateWasmFunctionQuery::setModuleHash(String hash_str)
 {
-    module_hash_ast = std::make_shared<ASTLiteral>(hash_str);
+    module_hash_ast = make_intrusive<ASTLiteral>(hash_str);
 }
 
 ASTCreateWasmFunctionQuery::Definition ASTCreateWasmFunctionQuery::validateAndGetDefinition() const
