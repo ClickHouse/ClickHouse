@@ -6,6 +6,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/executeQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -22,6 +23,7 @@
 #include <base/sleep.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -38,12 +40,15 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-struct WaitArgs
+namespace
 {
-    ASTPtr condition;
-    UInt64 max_tries = 10;
-    UInt64 sleep_microseconds = 1000000;
-};
+    struct WaitArgs
+    {
+        ASTPtr condition;
+        UInt64 max_tries = 10;
+        UInt64 sleep_microseconds = 1000000;
+    };
+}
 
 class WaitSource final : public ISource
 {
@@ -62,17 +67,21 @@ public:
         if (generated)
             return {};
 
+        const String condition_query = wait_args.condition->formatWithSecretsOneLine();
         bool satisfied = false;
         for (size_t i = 0; i < wait_args.max_tries; ++i)
         {
             ContextMutablePtr local_context = Context::createCopy(context);
+            local_context->makeQueryContext();
+            /// max_threads = 1 is used to avoid consuming excessive CPU resources.
             local_context->setSetting("max_threads", 1);
             local_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
             local_context->setQueryKindInitial();
             local_context->setCurrentQueryId("");
-            auto interpreter = InterpreterSelectWithUnionQuery(wait_args.condition, local_context, SelectQueryOptions().subquery());
 
-            BlockIO block_io = interpreter.execute();
+            auto block_io = executeQuery(condition_query, local_context, QueryFlags{.internal = true}, QueryProcessingStage::Complete).second;
+            SCOPE_EXIT({ block_io.onFinish(); });
+
             QueryPipeline & pipeline = block_io.pipeline;
             PullingPipelineExecutor executor(pipeline);
             Chunk chunk;
@@ -130,12 +139,6 @@ public:
     }
 
     std::string getName() const override { return "Wait"; }
-
-    QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override
-    {
-        return QueryProcessingStage::Enum::FetchColumns;
-    }
 
     Pipe read(
         const Names & /*column_names*/,
@@ -269,6 +272,11 @@ public:
         return ColumnsDescription();
     }
 
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const override
+    {
+        return {0};
+    }
+
 private:
     WaitArgs wait_args;
 
@@ -322,8 +330,11 @@ private:
         /// sleep_microseconds
         if (args.size() == 3)
         {
-            const auto sleep_seconds = parseLiteralAsFloat64(args[2]);
-            wait_args.sleep_microseconds = static_cast<UInt64>(sleep_seconds * 1e6);
+            const auto seconds = parseLiteralAsFloat64(args[2]);
+            if (seconds < 0 || !std::isfinite(seconds) || seconds > static_cast<Float64>(std::numeric_limits<UInt32>::max()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot sleep infinite, very large or negative amount of time (not implemented)");
+
+            wait_args.sleep_microseconds = static_cast<UInt64>(seconds * 1e6);
 
             const UInt64 sleep_max_microseconds = context->getSettingsRef()[Setting::function_sleep_max_microseconds_per_block];
             if (wait_args.sleep_microseconds > sleep_max_microseconds)
