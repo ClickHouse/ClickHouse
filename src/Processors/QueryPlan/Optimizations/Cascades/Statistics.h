@@ -19,7 +19,7 @@ struct ExpressionStatistics
     /// Proven minimum number of rows
     Float64 min_row_count = 0;
     /// Proven maximum number of rows. E.g. after LIMIT step
-    Float64 max_row_count = std::numeric_limits<UInt64>::max();
+    Float64 max_row_count = Float64(std::numeric_limits<UInt64>::max());
 
     /// Statistics for output columns of the expression
     std::unordered_map<String, ColumnStats> column_statistics;

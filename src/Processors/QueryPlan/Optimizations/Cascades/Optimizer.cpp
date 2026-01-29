@@ -401,7 +401,7 @@ void CascadesOptimizer::optimize()
     LOG_TEST(optimizer_context.log, "Initial memo:\n{}", optimizer_context.memo.dump());
 
     /// Add task to optimize root group
-    CostLimit initial_cost_limit = std::numeric_limits<Int64>::max();
+    CostLimit initial_cost_limit = CostLimit(std::numeric_limits<Int64>::max());
     optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(root_group_id, ExpressionProperties{}, initial_cost_limit));
 
     /// Limit the time in terms of optimization tasks instead of wall clock time. This is done for stability of generated plans regardless of system load.
