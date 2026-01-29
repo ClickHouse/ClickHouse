@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.2",
         {
             {"default_dictionary_database", "", "", "New setting"},
+            {"opentelemetry_keeper_spans_probability", 0.0, 0.0, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {

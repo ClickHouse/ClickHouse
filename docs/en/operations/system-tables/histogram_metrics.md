@@ -39,6 +39,33 @@ FORMAT Prometheus
 ### keeper_response_time_ms_bucket {#keeper_response_time_ms_bucket}
 The response time of Keeper, in milliseconds.
 
+### keeper_client_queue_duration_milliseconds_bucket {#keeper_client_queue_duration_milliseconds_bucket}
+Time requests spend waiting to be enqueued and waiting in the queue before being processed by the Keeper client, in milliseconds.
+
+### keeper_receive_request_time_milliseconds_bucket {#keeper_receive_request_time_milliseconds_bucket}
+Time to receive and parse a request from the client in the Keeper TCP handler, in milliseconds.
+
+### keeper_dispatcher_requests_queue_time_milliseconds_bucket {#keeper_dispatcher_requests_queue_time_milliseconds_bucket}
+Time a request spends in the Keeper dispatcher requests queue, in milliseconds.
+
+### keeper_write_pre_commit_time_milliseconds_bucket {#keeper_write_pre_commit_time_milliseconds_bucket}
+Time to preprocess a write request before Raft commit, in milliseconds.
+
+### keeper_write_commit_time_milliseconds_bucket {#keeper_write_commit_time_milliseconds_bucket}
+Time to process a write request after Raft commit, in milliseconds.
+
+### keeper_dispatcher_responses_queue_time_milliseconds_bucket {#keeper_dispatcher_responses_queue_time_milliseconds_bucket}
+Time a response spends in the Keeper dispatcher responses queue, in milliseconds.
+
+### keeper_send_response_time_milliseconds_bucket {#keeper_send_response_time_milliseconds_bucket}
+Time to send a response to the client in the Keeper TCP handler (includes queueing and writing to socket), in milliseconds.
+
+### keeper_read_wait_for_write_time_milliseconds_bucket {#keeper_read_wait_for_write_time_milliseconds_bucket}
+Time a read request waits for the write request it depends on to complete, in milliseconds.
+
+### keeper_read_process_time_milliseconds_bucket {#keeper_read_process_time_milliseconds_bucket}
+Time to process a read request in Keeper, in milliseconds.
+
 ### keeper_batch_size_elements_bucket {#keeper_batch_size_elements_bucket}
 Batch size sent to Raft, in elements.
 
