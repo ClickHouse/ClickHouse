@@ -31,7 +31,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTWindowDefinition.h>
-#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSetQuery.h>
