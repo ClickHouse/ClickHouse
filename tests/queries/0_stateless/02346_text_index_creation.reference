@@ -23,6 +23,12 @@ Test dictionary_block_frontcoding_compression argument.
 Test posting_list_codec argument.
 -- posting_list_codec must be a string.
 -- posting_list_codec must be none or bitpacking.
+Test posting_list_apply_mode argument.
+-- posting_list_apply_mode must be a string.
+-- posting_list_apply_mode must be lazy or materialize.
+-- posting_list_apply_mode = materialize is valid for any codec.
+-- posting_list_apply_mode = lazy requires posting_list_codec to be set (not none).
+-- posting_list_apply_mode = lazy is valid with compressed codec.
 Types are incorrect.
 Same argument appears >1 times.
 Non-existing argument.
