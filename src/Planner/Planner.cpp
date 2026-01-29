@@ -529,6 +529,8 @@ ALWAYS_INLINE void addFilterStep(
     const char (&step_description)[size],
     UsefulSets & useful_sets)
 {
+    LOG_DEBUG(getLogger(__func__), "filter analysis result:\nDAG\n{}", filter_analysis_result.filter_actions->dag.dumpDAG());
+
     for (const auto & correlated_subquery : filter_analysis_result.correlated_subtrees.subqueries)
     {
         buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
@@ -2001,6 +2003,12 @@ void Planner::buildPlanForQueryNode()
                         useful_sets);
                 }
             }
+        }
+        else
+        {
+            if (query_processing_info.getToStage() == QueryProcessingStage::WithMergeableState && expression_analysis_result.hasHaving())
+                addFilterStep(
+                    planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);
         }
 
         addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
