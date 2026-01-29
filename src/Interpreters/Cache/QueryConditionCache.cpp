@@ -36,6 +36,9 @@ size_t QueryConditionCache::EntryWeight::operator()(const Entry & entry) const
     /// Estimate the memory size of `std::vector<bool>` (it uses bit-packing internally)
     /// Round up to bytes.
     memory += (entry.matching_marks.capacity() + 7) / 8;
+#ifndef NDEBUG
+    memory += entry.part_name.capacity() + entry.condition.capacity();
+#endif
     return memory;
 }
 
