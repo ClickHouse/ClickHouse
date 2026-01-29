@@ -20,6 +20,8 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
+    Operator getOperator() const { return current_operator; }
+
 private:
     void updateOutputHeader() override;
 
