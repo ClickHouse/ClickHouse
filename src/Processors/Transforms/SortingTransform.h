@@ -24,7 +24,7 @@ private:
     SortDescription description;
     size_t max_merged_block_size;
     UInt64 limit;
-    SortQueueVariants queue_variants;
+    SortQueueVariants<QueueImplType::LoserTree> queue_variants;
     size_t total_merged_rows = 0;
 
     SortCursorImpls cursors;
