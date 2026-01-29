@@ -85,7 +85,8 @@ IntervalKind extractIntervalKind(const ColumnWithTypeAndName & argument)
     return extractIntervalKind(argument.type.get());
 }
 
-bool isIntervalDate(IntervalKind kind) {
+bool isIntervalDate(IntervalKind kind)
+{
     return kind == IntervalKind::Kind::Year || kind == IntervalKind::Kind::Quarter || kind == IntervalKind::Kind::Month || kind == IntervalKind::Kind::Week;
 }
 
