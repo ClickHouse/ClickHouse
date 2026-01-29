@@ -29,6 +29,7 @@ public:
     using MatchingMarks = std::vector<bool>;
 
 private:
+    /// A hash of the table id, part name and condition id.
     /// CityHash128 is enough to use for practical applications as the probability of collisions is very low.
     /// https://github.com/ClickHouse/ClickHouse/issues/9506
     using Key = UInt128;
@@ -36,12 +37,11 @@ private:
     struct Entry
     {
 #if defined(DEBUG) || defined(SANITIZER)
+        /// Store extended information only in Debug builds.
+        /// Having them in release builds is too costly.
         const UUID table_id;
         const String part_name;
         const UInt64 condition_hash = 42;
-
-        /// -- Additional members, conceptually not part of the key. Only included for pretty-printing
-        ///    in system.query_condition_cache:
         const String condition;
 #endif
 
@@ -51,13 +51,7 @@ private:
         explicit Entry(size_t mark_count); /// (**)
 
 #if defined(DEBUG) || defined(SANITIZER)
-        Entry(size_t mark_count_, const UUID & table_id_, const String & part_name_, const UInt64 condition_hash_, const String & condition_)
-            : table_id(table_id_)
-            , part_name(part_name_)
-            , condition_hash(condition_hash_)
-            , condition(condition_)
-            , matching_marks(mark_count_, true)
-        {}
+        Entry(size_t mark_count_, const UUID & table_id_, const String & part_name_, const UInt64 condition_hash_, const String & condition_);
 #endif
 
         /// (*) You might wonder why Entry has its own mutex considering that CacheBase locks internally already. The reason is that

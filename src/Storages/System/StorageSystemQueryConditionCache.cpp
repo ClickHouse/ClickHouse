@@ -18,10 +18,10 @@ ColumnsDescription StorageSystemQueryConditionCache::getColumnsDescription()
     {
         {"key_hash", std::make_shared<DataTypeUInt128>(), "Hash of (table_uuid, part_name, condition_hash)."},
 #if defined(DEBUG) || defined(SANITIZER)
-        {"table_uuid", std::make_shared<DataTypeUUID>(), "The table UUID."},
-        {"part_name", std::make_shared<DataTypeString>(), "The part name."},
-        {"condition", std::make_shared<DataTypeString>(), "The hashed filter condition. Only set if setting query_condition_cache_store_conditions_as_plaintext = true."},
-        {"condition_hash", std::make_shared<DataTypeUInt64>(), "The hash of the filter condition."},
+        {"table_uuid", std::make_shared<DataTypeUUID>(), "The table UUID. (debug and sanitizerbuilds only)"},
+        {"part_name", std::make_shared<DataTypeString>(), "The part name. (debug and sanitizerbuilds only)"},
+        {"condition", std::make_shared<DataTypeString>(), "The hashed filter condition. (debug and sanitizerbuilds only)"},
+        {"condition_hash", std::make_shared<DataTypeUInt64>(), "The hash of the filter condition. (debug and sanitizerbuilds only)"},
 #endif
         {"entry_size", std::make_shared<DataTypeUInt64>(), "The size of the entry in bytes."},
         {"matching_marks", std::make_shared<DataTypeString>(), "Matching marks."}
