@@ -254,7 +254,7 @@ ExpressionStatistics CostEstimator::fillJoinStatistics(const JoinStepLogical & j
 
         /// Estimate JOIN equality predicate selectivity as 1 / max(NDV(A), NDV(B)) based on assumption that distinct values have equal probabilities
         UInt64 max_number_of_distinct_values = std::max(left_number_of_distinct_values, right_number_of_distinct_values);
-        Float64 predicate_selectivity = 1.0 / max_number_of_distinct_values;
+        Float64 predicate_selectivity = 1.0 / Float64(max_number_of_distinct_values);
 
         /// NDV for join predicate columns can decrease if the other column has smaller NDV
         statistics.column_statistics[left_column].num_distinct_values = min_number_of_distinct_values;
@@ -284,14 +284,14 @@ ExpressionStatistics CostEstimator::fillReadStatistics(const ReadFromMergeTree &
     const auto & table_name = read_step.getStorageID().getTableName();
 
     statistics.min_row_count = 0;
-    statistics.max_row_count = read_step.getStorageSnapshot()->storage.totalRows(nullptr).value_or(std::numeric_limits<UInt64>::max());
+    statistics.max_row_count = Float64(read_step.getStorageSnapshot()->storage.totalRows(nullptr).value_or(std::numeric_limits<UInt64>::max()));
 
     ReadFromMergeTree::AnalysisResultPtr analyzed_result = read_step.getAnalyzedResult();
     analyzed_result = analyzed_result ? analyzed_result : read_step.selectRangesToRead();
     if (analyzed_result)
     {
-        statistics.estimated_row_count = analyzed_result->selected_rows;
-        statistics.max_row_count = analyzed_result->selected_rows;
+        statistics.estimated_row_count = Float64(analyzed_result->selected_rows);
+        statistics.max_row_count = Float64(analyzed_result->selected_rows);
     }
     else
         statistics.estimated_row_count = 1000000;
@@ -307,7 +307,7 @@ ExpressionStatistics CostEstimator::fillReadStatistics(const ReadFromMergeTree &
                 : nullptr;
             auto relation_profile = estimator->estimateRelationProfile(nullptr, nullptr, prewhere_node);
 
-            statistics.estimated_row_count = relation_profile.rows;
+            statistics.estimated_row_count = Float64(relation_profile.rows);
             statistics.max_row_count = std::max<Float64>(statistics.max_row_count, statistics.estimated_row_count);
             for (const auto & [column_name, column_stats] : relation_profile.column_stats)
                 statistics.column_statistics[column_name].num_distinct_values = column_stats.num_distinct_values;
@@ -326,7 +326,7 @@ ExpressionStatistics CostEstimator::fillReadStatistics(const ReadFromMergeTree &
 
     auto cardinality_hint = statistics_lookup.getCardinality(table_name);
     if (cardinality_hint)
-        statistics.estimated_row_count = std::min<Float64>(statistics.estimated_row_count, *cardinality_hint);
+        statistics.estimated_row_count = std::min<Float64>(statistics.estimated_row_count, Float64(*cardinality_hint));
 
     return statistics;
 }
@@ -364,7 +364,7 @@ ExpressionStatistics CostEstimator::fillAggregatingStatistics(const AggregatingS
         auto key_stats = input_statistics.column_statistics.find(key);
         if (key_stats != input_statistics.column_statistics.end())
         {
-            key_number_of_distinct_values = key_stats->second.num_distinct_values;
+            key_number_of_distinct_values = Float64(key_stats->second.num_distinct_values);
             key_number_of_distinct_values = std::min(key_number_of_distinct_values, input_statistics.max_row_count);
         }
 
