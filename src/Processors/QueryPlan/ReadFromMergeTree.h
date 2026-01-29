@@ -100,6 +100,7 @@ public:
         PrimaryKey,
         Skip,
         PrimaryKeyExpand,
+        Statistics
     };
 
     struct DistributedIndexStat

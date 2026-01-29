@@ -6,7 +6,7 @@ Expression ((Project names + Projection))
   Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test)
     Indexes:
-      MinMax
+      Partition Min-Max
         Keys:
           json.d
         Condition: (json.d in [18262, 18262])

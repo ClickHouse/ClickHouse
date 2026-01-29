@@ -146,6 +146,8 @@ private:
         size_t num_granules_after_minmax = 0;
         size_t num_parts_after_partition_pruner = 0;
         size_t num_granules_after_partition_pruner = 0;
+        size_t num_parts_after_statistics_pruner = 0;
+        size_t num_granules_after_statistics_pruner = 0;
     };
 
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
@@ -214,6 +216,17 @@ public:
         const MergeTreeData & data,
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        LoggerPtr log,
+        ReadFromMergeTree::IndexStats & index_stats);
+
+    /// Filter parts using column statistics.
+    /// Returns filtered parts and updates index_stats with statistics pruning info.
+    static RangesInDataParts filterPartsByStatistics(
+        const RangesInDataParts & parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context,
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 
