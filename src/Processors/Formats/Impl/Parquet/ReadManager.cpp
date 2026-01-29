@@ -358,6 +358,8 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         }
         case ReadStage::ColumnData:
         {
+            if (row_subgroup.filter.rows_pass == 0)
+                break;
             if (step_idx > 0 && step_idx <= reader.steps.size())
             {
                 const auto & step = reader.steps[step_idx - 1];
@@ -382,8 +384,6 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
             }
             else if (step_idx == 0)
             {
-                if (row_subgroup.filter.rows_pass == 0)
-                    break;
                 /// Main step finished. Move to Deliver.
                 LOG_DEBUG(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} sg={} main step finished, moving to Deliver, advancing next_subgroup_for_step[0]",
                           row_group_idx, row_subgroup_idx);

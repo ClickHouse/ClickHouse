@@ -2136,12 +2136,6 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         filter_column = FilterDescription::preprocessFilterColumn(std::move(filter_column));
         const IColumnFilter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
         chassert(filter.size() == row_subgroup.filter.rows_pass);
-
-        for (size_t i = 0; i < filter_column->size(); ++i)
-        {
-            Field field;
-            filter_column->get(i, field);
-        }
         size_t rows_pass = countBytesInFilter(filter.data(), 0, filter.size());
         if (rows_pass == 0 || !row_group.need_to_process)
         {
