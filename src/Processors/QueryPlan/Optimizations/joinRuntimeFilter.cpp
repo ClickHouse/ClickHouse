@@ -60,7 +60,8 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
     /// Runtime filter can only be applied to join algorithms that first read the right side and only after that read the left side.
     return
         join_algorithm == JoinAlgorithm::HASH ||
-        join_algorithm == JoinAlgorithm::PARALLEL_HASH;
+        join_algorithm == JoinAlgorithm::PARALLEL_HASH ||
+        join_algorithm == JoinAlgorithm::GRACE_HASH;
 }
 
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)

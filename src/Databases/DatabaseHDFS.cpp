@@ -129,7 +129,7 @@ StoragePtr DatabaseHDFS::getTableImpl(const String & name, ContextPtr context_) 
 
     checkUrl(url, context_, true);
 
-    auto args = makeASTFunction("hdfs", std::make_shared<ASTLiteral>(url));
+    auto args = makeASTFunction("hdfs", make_intrusive<ASTLiteral>(url));
 
     auto table_function = TableFunctionFactory::instance().get(args, context_);
     if (!table_function)
@@ -198,7 +198,7 @@ ASTPtr DatabaseHDFS::getCreateDatabaseQueryImpl() const
     if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
+        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
     }
 
     return ast;

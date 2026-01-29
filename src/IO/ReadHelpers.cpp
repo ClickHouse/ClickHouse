@@ -1459,6 +1459,7 @@ template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &, const char *
 
 
 template <typename ReturnType, bool dt64_mode>
+NO_SANITIZE_UNDEFINED
 ReturnType readDateTimeTextFallback(
     time_t & datetime,
     ReadBuffer & buf,
@@ -1623,6 +1624,7 @@ ReturnType readDateTimeTextFallback(
                     if (!isNumericASCII(*digit_pos))
                         return false;
                 }
+
                 datetime = datetime * 10 + *digit_pos - '0';
             }
         }
@@ -1647,6 +1649,7 @@ template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, cons
 template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool);
 
 template <typename ReturnType, bool t64_mode>
+NO_SANITIZE_UNDEFINED
 ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters, const char * allowed_time_delimiters)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -1737,6 +1740,7 @@ ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTIm
                     if (!isNumericASCII(*digit_pos))
                         return false;
                 }
+
                 time = time * 10 + *digit_pos - '0';
             }
         }

@@ -72,6 +72,8 @@ public:
 
     std::optional<size_t> tryGetFileSize() override;
 
+    size_t getFileSize();
+
 private:
     using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
 

@@ -181,6 +181,7 @@ namespace Setting
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsUInt64Auto insert_quorum;
+    extern const SettingsBool insert_quorum_parallel;
 }
 
 namespace ServerSetting
@@ -204,6 +205,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int ABORTED;
+    extern const int UNSUPPORTED_PARAMETER;
 }
 
 namespace FailPoints
@@ -681,6 +683,7 @@ void logQueryFinishImpl(
         {
             double elapsed_seconds = static_cast<double>(info.elapsed_microseconds) / 1000000.0;
             double rows_per_second = static_cast<double>(elem.read_rows) / elapsed_seconds;
+            double bytes_per_second = static_cast<double>(elem.read_bytes) / elapsed_seconds;
             LOG_DEBUG(
                 getLogger("executeQuery"),
                 "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
@@ -688,7 +691,7 @@ void logQueryFinishImpl(
                 ReadableSize(elem.read_bytes),
                 elapsed_seconds,
                 rows_per_second,
-                ReadableSize(elem.read_bytes / elapsed_seconds));
+                ReadableSize(bytes_per_second));
         }
 
         context->getRuntimeFilterLookup()->logStats();
@@ -1034,7 +1037,7 @@ class ImplicitTransactionControlExecutor
 public:
     void begin(const ContextMutablePtr & query_context)
     {
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(ASTTransactionControl::BEGIN);
+        ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::BEGIN);
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
         auto txn = query_context->getCurrentTransaction();
@@ -1053,7 +1056,7 @@ public:
 
         SCOPE_EXIT({ transaction_running = false; });
 
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(ASTTransactionControl::COMMIT);
+        ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::COMMIT);
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
     }
@@ -1068,7 +1071,7 @@ public:
 
         SCOPE_EXIT({ transaction_running = false; });
 
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(ASTTransactionControl::ROLLBACK);
+        ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::ROLLBACK);
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
     }
@@ -1234,40 +1237,73 @@ static BlockIO executeQueryImpl(
 
                 if (formatted1 != formatted2)
                 {
-                    /// Try to find the problematic part of the AST (it's not guaranteed to find it correctly though)
-                    auto bad_ast = out_ast;
-                    bool found_bad_ast;
-                    do
+                    struct ASTDifference
                     {
-                        found_bad_ast = false;
-                        for (const auto & child : bad_ast->children)
+                        enum class Type : uint8_t
                         {
-                            auto formatted_child = format_ast(child);
-                            if (formatted1.find(formatted_child) == std::string::npos)
+                            ID,
+                            FORMAT
+                        };
+
+                        ASTPtr lhs;
+                        ASTPtr rhs;
+                        Type type;
+                    };
+
+                    const auto search_difference_in_asts = [&](this const auto & self, ASTPtr lhs, ASTPtr rhs) -> std::optional<ASTDifference>
+                    {
+                        if (lhs->getID() != rhs->getID())
+                            return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::ID});
+
+                        size_t size_children = std::min(lhs->children.size(), rhs->children.size());
+                        for (size_t i = 0; i < size_children; ++i)
+                        {
+                            const auto & child_lhs = lhs->children[i];
+                            const auto & child_rhs = rhs->children[i];
+                            if (auto difference = self(child_lhs, child_rhs))
                             {
-                                /// This shouldn't happen
-                                LOG_FATAL(getLogger("executeQuery"), "Cannot find formatted child in the formatted query: {}", formatted_child);
-                                break;
-                            }
-                            if (formatted2.find(formatted_child) == std::string::npos)
-                            {
-                                /// We didn't find it - so it was formatted in a different way
-                                LOG_FATAL(getLogger("executeQuery"), "Suspicious part of the AST: {}: {}", child->getID(), formatted_child);
-                                bad_ast = child;
-                                found_bad_ast = true;
-                                break;
+                                /// In case the format strings are different, use parent nodes for a better debug output.
+                                if (difference->type == ASTDifference::Type::FORMAT)
+                                    return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::ID});
+
+                                return difference;
                             }
                         }
-                    } while (found_bad_ast);
 
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting in {}: the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
-                        bad_ast->getID(), original_query, formatted1, formatted2);
+                        if (format_ast(lhs) != format_ast(rhs))
+                            return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::FORMAT});
+
+                        return std::nullopt;
+                    };
+
+                    /// Try to find the problematic part of the AST (it's not guaranteed to find it correctly though)
+                    if (auto difference = search_difference_in_asts(out_ast, ast2))
+                    {
+                        auto [lhs, rhs, _] = difference.value();
+
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                        "Inconsistent AST formatting between '{}' and '{}' in the query:\n{}\n"
+                                        "Formatted as:\n{}\nParsed and formatted back as:\n{}\n"
+                                        "Difference formatted as:\n{}\n{}\nDifference parsed and formatted back as:\n{}\n{}",
+                                        lhs->getID(), rhs->getID(),
+                                        original_query,
+                                        formatted1, formatted2,
+                                        format_ast(lhs), lhs->dumpTree(),
+                                        format_ast(rhs), rhs->dumpTree());
+                    }
+                    else
+                    {
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                        "Inconsistent AST formatting in the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
+                                        original_query, formatted1, formatted2);
+
+                    }
+
                 }
             }
             catch (const Exception & e)
             {
-                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail inder debug build.
+                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under debug build.
                 if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                     throw;
             }
@@ -1514,10 +1550,11 @@ static BlockIO executeQueryImpl(
             if (settings[Setting::implicit_transaction] && settings[Setting::throw_on_unsupported_query_inside_transaction])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
 
-            if (settings[Setting::insert_quorum].valueOr(0) > 0)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Insert quorum cannot be used together with async inserts. " \
-                    "Please disable either `insert_quorum` or `async_insert` setting.");
+            auto quorum_is_enabled = settings[Setting::insert_quorum].valueOr(0) > 1 || settings[Setting::insert_quorum].is_auto;
+            if (quorum_is_enabled && !settings[Setting::insert_quorum_parallel])
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_PARAMETER,
+                    "Async inserts with quorum only make sense with enabled insert_quorum_parallel setting, either disable quorum or set insert_quorum_parallel=1 or do not use async inserts");
 
             quota = context->getQuota();
             if (quota)
