@@ -36,8 +36,6 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
-    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
-
     std::optional<UInt64> getTotalSpace() const override;
     std::optional<UInt64> getAvailableSpace() const override;
     std::optional<UInt64> getUnreservedSpace() const override;
@@ -161,7 +159,7 @@ protected:
     void checkAccessImpl(const String & path) override;
 
 private:
-    std::optional<UInt64> tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints = std::nullopt);
+    std::optional<UInt64> tryReserve(UInt64 bytes);
 
     /// Setup disk for healthy check.
     /// Throw exception if it's not possible to setup necessary files and directories.

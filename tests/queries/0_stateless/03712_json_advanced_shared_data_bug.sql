@@ -1,5 +1,3 @@
-SET optimize_if_transform_strings_to_enum=0;
-
 DROP TABLE IF EXISTS t0;
 CREATE TABLE t0 (c0 JSON(max_dynamic_paths = 0)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 1, object_serialization_version = 'v3', object_shared_data_serialization_version_for_zero_level_parts = 'advanced', object_shared_data_buckets_for_wide_part = 1, index_granularity=2;
 

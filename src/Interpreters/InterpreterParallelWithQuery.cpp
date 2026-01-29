@@ -2,7 +2,6 @@
 
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/executeQuery.h>
@@ -53,7 +52,7 @@ BlockIO InterpreterParallelWithQuery::execute()
                                                    CurrentMetrics::ParallelWithQueryActiveThreads,
                                                    CurrentMetrics::ParallelWithQueryScheduledThreads,
                                                    max_threads);
-        runner = std::make_unique<ThreadPoolCallbackRunnerLocal<void>>(*thread_pool, ThreadName::PARALLEL_WITH_QUERY);
+        runner = std::make_unique<ThreadPoolCallbackRunnerLocal<void>>(*thread_pool, "ParallelWithQry");
     }
 
     /// Call the interpreters of all the subqueries - it may produce some pipelines which we combine together into
@@ -106,7 +105,7 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
             };
 
             if (runner)
-                runner->enqueueAndKeepTrack(callback);
+                (*runner)(callback);
             else
                 callback();
         }
@@ -122,7 +121,6 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
 void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutablePtr subquery_context)
 {
     auto query_io = executeQuery(subquery->formatWithSecretsOneLine(), subquery_context, QueryFlags{ .internal = true }).second;
-
     auto & pipeline = query_io.pipeline;
 
     if (!pipeline.initialized())
@@ -153,9 +151,7 @@ void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutab
 
     chassert(pipeline.completed());
     std::lock_guard lock{mutex};
-    combined_pipeline.addCompletedPipeline(pipeline);
-
-    io_holders.push_back(std::move(query_io));
+    combined_pipeline.addCompletedPipeline(std::move(pipeline));
 
     /// TODO: Special processing for ON CLUSTER queries and also for queries related to a replicated database is required.
 }
@@ -167,24 +163,8 @@ void InterpreterParallelWithQuery::executeCombinedPipeline()
     if (!combined_pipeline.initialized())
         return; /// `combined_pipeline` is empty, skipping
 
-    try
-    {
-        CompletedPipelineExecutor executor(combined_pipeline);
-        executor.execute();
-    }
-    catch (...)
-    {
-        for (auto & io : io_holders)
-        {
-            io.onException();
-        }
-        throw;
-    }
-
-    for (auto & io : io_holders)
-    {
-        io.onFinish();
-    }
+    CompletedPipelineExecutor executor(combined_pipeline);
+    executor.execute();
 }
 
 

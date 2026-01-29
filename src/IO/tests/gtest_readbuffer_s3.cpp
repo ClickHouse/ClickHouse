@@ -10,7 +10,7 @@
 #include <Poco/Net/HTTPBasicStreamBuf.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Interpreters/Cache/FileCache.h>
@@ -126,7 +126,8 @@ struct ClientFake : DB::S3::Client
                   true,
                   false,
                   {},
-                  /* request_throttler = */ {},
+                  {},
+                  {},
                   "http"),
               Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
               DB::S3::ClientSettings())
@@ -259,7 +260,7 @@ TEST_F(ReadBufferFromS3Test, HavingZeroBytes)
     uri.bucket = "test_bucket";
     DB::S3Capabilities cap;
     String disk_name = "s3";
-    DB::ObjectStorageKeyGeneratorPtr gen;
+    DB::ObjectStorageKeysGeneratorPtr gen;
     auto object_storage = std::make_shared<DB::S3ObjectStorage>(
         std::move(client), std::make_unique<DB::S3Settings>(), std::move(uri), cap, gen, disk_name);
 
@@ -268,8 +269,8 @@ TEST_F(ReadBufferFromS3Test, HavingZeroBytes)
     std::string data = "12345678901234567890";
     object_metadata.size_bytes = data.size();
     object_metadata.etag = "tag1";
-    DB::RelativePathWithMetadata relative_path_with_metadata("test_key", object_metadata);
-    auto buf = DB::createReadBuffer(relative_path_with_metadata, object_storage, query_context, log);
+    DB::ObjectInfo object("test_key", object_metadata);
+    auto buf = DB::createReadBuffer(object, object_storage, query_context, log);
 
     auto session = std::make_shared<CountedSession>();
     const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>(data);

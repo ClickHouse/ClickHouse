@@ -367,16 +367,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage, "Peak memory usage for queries, in bytes." };
     }
 
-    new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID the ZooKeeper client has seen."};
-
-    {
-        Float64 max_merge_elapsed = 0;
-        for (const auto & merge : getContext()->getMergeList().get())
-            max_merge_elapsed = std::max(merge.elapsed, max_merge_elapsed);
-        new_values["LongestRunningMerge"]
-            = {max_merge_elapsed, "Elapsed time in seconds of the longest currently running background merge."};
-    }
-
 #if USE_NURAFT
     {
         auto keeper_dispatcher = getContext()->tryGetKeeperDispatcher();
@@ -465,9 +455,9 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     {
         heavy_metric_previous_update_time = update_time;
         if (first_run)
-            heavy_update_interval = static_cast<double>(heavy_metric_update_period.count());
+            heavy_update_interval = heavy_metric_update_period.count();
         else
-            heavy_update_interval = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count()) / 1e6;
+            heavy_update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count() / 1e6;
 
         /// Test shows that listing 100000 entries consuming around 0.15 sec.
         updateMutationAndDetachedPartsStats();
@@ -477,9 +467,9 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
         /// Normally heavy metrics don't delay the rest of the metrics calculation
         /// otherwise log the warning message
         auto log_level = std::make_pair(DB::LogsLevel::trace, Poco::Message::PRIO_TRACE);
-        if (watch.elapsedSeconds() > (static_cast<double>(update_period.count()) / 2.))
+        if (watch.elapsedSeconds() > (update_period.count() / 2.))
             log_level = std::make_pair(DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG);
-        else if (watch.elapsedSeconds() > (static_cast<double>(update_period.count()) / 4. * 3))
+        else if (watch.elapsedSeconds() > (update_period.count() / 4. * 3))
             log_level = std::make_pair(DB::LogsLevel::warning, Poco::Message::PRIO_WARNING);
         LOG_IMPL(log, log_level.first, log_level.second,
                  "Update heavy metrics. "

@@ -1,9 +1,9 @@
 #include <Storages/HivePartitioningUtils.h>
 
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
 #include <Functions/keyvaluepair/impl/DuplicateKeyFoundException.h>
 #include <Formats/EscapingRuleUtils.h>
@@ -123,8 +123,8 @@ void addPartitionColumnsToChunk(
         {
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
-                "Expected to find hive partitioning column {} in the path {}. "
-                "Try it with hive partitioning disabled (partition_strategy = 'wildcard' and/or use_hive_partitioning = 0",
+                "Expected to find hive partitioning column {} in the path {}."
+                "Try it with hive partitioning disabled (partition_strategy='wildcard' and/or use_hive_partitioning=0",
                 column_name,
                 path);
         }
@@ -154,11 +154,7 @@ void sanityCheckSchemaAndHivePartitionColumns(
         }
     }
 
-    /// Check by names, not just by sized, because if table structure
-    /// was manually specified and check_contained_in_schema == false,
-    /// then partition columns might not be fully contained in schema (storage_columns)
-    /// (which we allow for compatibility).
-    if (storage_columns.getOrdinary().getNameSet() == hive_partition_columns_to_read_from_file_path.getNameSet())
+    if (storage_columns.size() == hive_partition_columns_to_read_from_file_path.size())
     {
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -167,17 +163,17 @@ void sanityCheckSchemaAndHivePartitionColumns(
     }
 }
 
-NamesAndTypesList extractPartitionColumnsFromPathAndEnrichStorageColumns(
+void extractPartitionColumnsFromPathAndEnrichStorageColumns(
     ColumnsDescription & storage_columns,
+    NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
     const std::string & path,
     bool inferred_schema,
     std::optional<FormatSettings> format_settings,
     ContextPtr context)
 {
-    auto hive_partition_columns_to_read_from_file_path = extractHivePartitionColumnsFromPath(storage_columns, path, format_settings, context);
+    hive_partition_columns_to_read_from_file_path = extractHivePartitionColumnsFromPath(storage_columns, path, format_settings, context);
 
-    /// If the structure was inferred (not present in `columns_`),
-    /// then we might need to enrich the schema with partition columns.
+    /// If the structure was inferred (not present in `columns_`), then we might need to enrich the schema with partition columns
     /// Because they might not be present in the data and exist only in the path
     if (inferred_schema)
     {
@@ -189,7 +185,6 @@ NamesAndTypesList extractPartitionColumnsFromPathAndEnrichStorageColumns(
             }
         }
     }
-    return hive_partition_columns_to_read_from_file_path;
 }
 
 HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
@@ -217,8 +212,9 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
     }
     else if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        hive_partition_columns_to_read_from_file_path = extractPartitionColumnsFromPathAndEnrichStorageColumns(
+        extractPartitionColumnsFromPathAndEnrichStorageColumns(
             columns,
+            hive_partition_columns_to_read_from_file_path,
             sample_path,
             inferred_schema,
             format_settings,
@@ -263,8 +259,9 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForFileURLLikeStora
 
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        hive_partition_columns_to_read_from_file_path = extractPartitionColumnsFromPathAndEnrichStorageColumns(
+        extractPartitionColumnsFromPathAndEnrichStorageColumns(
             columns,
+            hive_partition_columns_to_read_from_file_path,
             sample_path,
             inferred_schema,
             format_settings,

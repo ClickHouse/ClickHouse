@@ -182,13 +182,6 @@ class Validator:
                     workflow_name=workflow.name,
                 )
 
-            if workflow.enable_open_issues_check:
-                cls.evaluate_check(
-                    workflow.enable_report,
-                    f".enable_open_issues_check workflow setting is applicable with .enable_report=True",
-                    workflow_name=workflow.name,
-                )
-
             if workflow.enable_report:
                 assert (
                     Settings.HTML_S3_PATH
@@ -218,10 +211,10 @@ class Validator:
                     Settings.DOCKERHUB_SECRET
                 ), f"Secret [{Settings.DOCKERHUB_SECRET}] must have configuration in workflow.secrets, workflow [{workflow.name}]"
 
-            if workflow.enable_open_issues_check:
+            if workflow.enable_flaky_tests_catalog:
                 cls.evaluate_check(
                     workflow.enable_merge_ready_status,
-                    f".enable_open_issues_check workflow setting is applicable with .enable_merge_ready_status=True",
+                    f".enable_flaky_tests_catalog workflow setting is applicable with .enable_merge_ready_status=True",
                     workflow_name=workflow.name,
                 )
 

@@ -4,7 +4,6 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/convertFieldToType.h>
@@ -28,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
     extern const int ILLEGAL_STATISTICS;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
@@ -37,7 +37,6 @@ namespace ErrorCodes
 enum StatisticsFileVersion : UInt16
 {
     V0 = 0,
-    V1 = 1, /// modify the format of uniq, https://github.com/ClickHouse/ClickHouse/pull/90311
 };
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
@@ -45,14 +44,19 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value,
     if (!data_type->isValueRepresentedByNumber())
         return {};
 
-    auto column = data_type->createColumn();
-    column->insert(value);
-    ColumnsWithTypeAndName arguments({ColumnWithTypeAndName(std::move(column), data_type, "stats_const")});
+    Field value_converted;
+    if (isInteger(data_type) && !isBool(data_type))
+        /// For case val_int32 < 10.5 or val_int32 < '10.5' we should convert 10.5 to Float64.
+        value_converted = convertFieldToType(value, DataTypeFloat64());
+    else
+        /// We should convert value to the real column data type and then translate it to Float64.
+        /// For example for expression col_date > '2024-08-07', if we directly convert '2024-08-07' to Float64, we will get null.
+        value_converted = convertFieldToType(value, *data_type);
 
-    auto cast_resolver = FunctionFactory::instance().get("toFloat64", nullptr);
-    auto cast_function = cast_resolver->build(arguments);
-    ColumnPtr result = cast_function->execute(arguments, std::make_shared<DataTypeFloat64>(), 1, false);
-    return result->getFloat64(0);
+    if (value_converted.isNull())
+        return {};
+
+    return applyVisitor(FieldVisitorConvertToNumber<Float64>(), value_converted);
 }
 
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
@@ -60,8 +64,8 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
-ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_, DataTypePtr data_type_)
-    : stats_desc(stats_desc_), column_name(column_name_), data_type(data_type_)
+ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_)
+    : stats_desc(stats_desc_), column_name(column_name_)
 {
 }
 
@@ -129,12 +133,12 @@ Float64 ColumnStatistics::estimateLess(const Field & val) const
         return stats.at(StatisticsType::TDigest)->estimateLess(val);
     if (stats.contains(StatisticsType::MinMax))
         return stats.at(StatisticsType::MinMax)->estimateLess(val);
-    return static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cond_range_factor;
+    return rows * ConditionSelectivityEstimator::default_cond_range_factor;
 }
 
 Float64 ColumnStatistics::estimateGreater(const Field & val) const
 {
-    return static_cast<Float64>(rows) - estimateLess(val);
+    return rows - estimateLess(val);
 }
 
 Float64 ColumnStatistics::estimateEqual(const Field & val) const
@@ -158,10 +162,10 @@ Float64 ColumnStatistics::estimateEqual(const Field & val) const
         UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
         if (cardinality == 0 || rows == 0)
             return 0;
-        return static_cast<Float64>(rows) / static_cast<Float64>(cardinality); /// assume uniform distribution
+        return Float64(rows) / cardinality; /// assume uniform distribution
     }
 
-    return static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cond_equal_factor;
+    return rows * ConditionSelectivityEstimator::default_cond_equal_factor;
 }
 
 Float64 ColumnStatistics::estimateRange(const Range & range) const
@@ -173,7 +177,7 @@ Float64 ColumnStatistics::estimateRange(const Range & range) const
 
     if (range.isInfinite())
     {
-        return static_cast<Float64>(rows);
+        return rows;
     }
 
     if (range.left == range.right)
@@ -203,7 +207,7 @@ UInt64 ColumnStatistics::estimateCardinality() const
         return stats.at(StatisticsType::Uniq)->estimateCardinality();
     }
     /// if we don't have uniq statistics, we use a mock one, assuming there are 90% different unique values.
-    return UInt64(static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cardinality_ratio);
+    return UInt64(rows * ConditionSelectivityEstimator::default_cardinality_ratio);
 }
 
 Estimate ColumnStatistics::getEstimate() const
@@ -231,7 +235,7 @@ Estimate ColumnStatistics::getEstimate() const
 
 void ColumnStatistics::serialize(WriteBuffer & buf)
 {
-    writeIntBinary(V1, buf);
+    writeIntBinary(V0, buf);
 
     UInt64 stat_types_mask = 0;
     for (const auto & [type, _]: stats)
@@ -250,33 +254,13 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
 {
     UInt16 version;
     readIntBinary(version, buf);
-    /// TODO: we should check the version of statistics format when we start clickhouse server, and do materialize statistics automatically.
-    if (version != V1)
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "We try to read stale file format version: {}. Please run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics", version);
+    if (version != V0)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown file format version: {}", version);
 
     UInt64 stat_types_mask = 0;
     readIntBinary(stat_types_mask, buf);
 
     readIntBinary(rows, buf);
-
-    for (UInt8 i = 0; i < static_cast<UInt8>(StatisticsType::Max); i++)
-    {
-        if (stat_types_mask & 1LL << i)
-        {
-            StatisticsType cur_type = static_cast<StatisticsType>(i);
-            auto it = stats.find(cur_type);
-            if (it == stats.end())
-            {
-                /// we found a statistics dropped already, but we still need to read it to skip it
-                auto mock_stats = MergeTreeStatisticsFactory::instance().getSingleStats(SingleStatisticsDescription(cur_type, nullptr, false), data_type);
-                mock_stats->deserialize(buf);
-            }
-            else
-            {
-                it->second->deserialize(buf);
-            }
-        }
-    }
 
     for (auto it = stats.begin(); it != stats.end();)
     {
@@ -285,7 +269,10 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
             stats.erase(it++);
         }
         else
-            it++;
+        {
+            it->second->deserialize(buf);
+            ++it;
+        }
     }
 }
 
@@ -384,7 +371,7 @@ ColumnStatisticsDescription MergeTreeStatisticsFactory::cloneWithSupportedStatis
 
 ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
 {
-    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(column_desc.statistics, column_desc.name, column_desc.type);
+    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(column_desc.statistics, column_desc.name);
     for (const auto & [type, desc] : column_desc.statistics.types_to_desc)
     {
         auto it = creators.find(type);
@@ -403,14 +390,6 @@ ColumnsStatistics MergeTreeStatisticsFactory::getMany(const ColumnsDescription &
         if (!col.statistics.empty())
             result.push_back(get(col));
     return result;
-}
-
-StatisticsPtr MergeTreeStatisticsFactory::getSingleStats(const SingleStatisticsDescription & desc, DataTypePtr data_type) const
-{
-    auto it = creators.find(desc.type);
-    if (it == creators.end())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'tdigest' and 'uniq'", desc.type);
-    return (it->second)(desc, data_type);
 }
 
 static ColumnStatisticsDescription::StatisticsTypeDescMap parseColumnStatisticsFromString(const String & str)

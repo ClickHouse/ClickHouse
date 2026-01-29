@@ -96,7 +96,6 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         num_streams = 1;
     }
 
-    // here create for node -> query -> level thread pool
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
@@ -147,9 +146,7 @@ void ReadFromObjectStorageStep::createIterator()
 
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,
-        context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr,
-        context->getFileProgressCallback(),
-        /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
+        context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback());
 }
 
 static bool isPrefixInputOrder(InputOrderInfoPtr small_input_order, InputOrderInfoPtr big_input_order)
@@ -183,7 +180,7 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
 
 bool ReadFromObjectStorageStep::requestReadingInOrder(InputOrderInfoPtr order_info_) const
 {
-    return isPrefixInputOrder(order_info_, getDataOrder()) && configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
+    return isPrefixInputOrder(order_info_, getDataOrder());
 }
 
 InputOrderInfoPtr ReadFromObjectStorageStep::getDataOrder() const

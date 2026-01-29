@@ -1,5 +1,6 @@
 ---
 description: 'Documentation for Syntax'
+displayed_sidebar: 'sqlreference'
 sidebar_label: 'Syntax'
 sidebar_position: 2
 slug: /sql-reference/syntax
@@ -44,7 +45,7 @@ When a query is received, the server calculates no more than [max_query_size](..
 (by default, 1 MB), and the rest is stream parsed.
 This is to allow for avoiding issues with large `INSERT` queries, which is the recommended way to insert your data in ClickHouse.
 
-When using the [`Values`](/interfaces/formats/Values) format in an `INSERT` query, 
+When using the [`Values`](../interfaces/formats.md/#data-format-values) format in an `INSERT` query, 
 it may appear that data is parsed the same as for expressions in a `SELECT` query however this is not the case. 
 The `Values` format is much more limited.
 
@@ -412,7 +413,7 @@ The parts of the syntax above are explained below.
 
 | Part of syntax | Description                                                                                                                                      | Example                                                                 | Notes                                                                                                                                                |
 |----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `AS`           | The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.| `SELECT table_name_alias.column_name FROM table_name table_name_alias`. | In the [CAST](/sql-reference/functions/type-conversion-functions#CAST) function, the `AS` keyword has another meaning. See the description of the function. |
+| `AS`           | The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.| `SELECT table_name_alias.column_name FROM table_name table_name_alias`. | In the [CAST](/sql-reference/functions/type-conversion-functions#cast) function, the `AS` keyword has another meaning. See the description of the function. |
 | `expr`         | Any expression supported by ClickHouse.                                                                                                          | `SELECT column_name * 2 AS double FROM some_table`                      |                                                                                                                                                      |
 | `alias`        | Name for `expr`. Aliases should comply with the [identifiers](#identifiers) syntax.                                                                       | `SELECT "table t".column_name FROM table_name AS "table t"`.            |                                                                                                                                                      |
 

@@ -134,7 +134,7 @@ bool ClientEmbedded::isEmbeeddedClient() const
 int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_query)
 try
 {
-    DB::setThreadName(ThreadName::LOCAL_SERVER_PTY);
+    setThreadName("LocalServerPty");
 
     output_stream << std::fixed << std::setprecision(3);
     error_stream << std::fixed << std::setprecision(3);
@@ -164,14 +164,14 @@ try
     po::store(parsed, options);
     po::notify(options);
 
-    if (options.contains("version") || options.contains("V"))
+    if (options.count("version") || options.count("V"))
     {
         showClientVersion();
         cleanup();
         return 0;
     }
 
-    if (options.contains("help"))
+    if (options.count("help"))
     {
         printHelpMessage(options_description);
         cleanup();

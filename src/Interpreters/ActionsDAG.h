@@ -45,13 +45,6 @@ class SortDescription;
 struct SerializedSetsRegistry;
 struct DeserializedSetsRegistry;
 
-struct PartialEvaluationParameters
-{
-    bool throw_on_error = false;
-    bool skip_materialize = false;
-    bool allow_unknown_function_arguments = false;
-};
-
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
 /// Node of DAG describe calculation of a single column with known type, name, and constant value (if applicable).
@@ -154,11 +147,9 @@ public:
     void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
     static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context);
 
-    static Node createAlias(const Node & child, std::string alias);
-
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
-    const Node & addColumn(ColumnWithTypeAndName column, bool is_deterministic_constant = true);
+    const Node & addColumn(ColumnWithTypeAndName column);
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
     const Node & addFunction(
@@ -173,7 +164,7 @@ public:
         const FunctionBasePtr & function_base,
         NodeRawConstPtrs children,
         std::string result_name);
-    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
+    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name);
     const Node & addPlaceholder(std::string name, DataTypePtr type);
 
     /// Find first column by name in output nodes. This search is linear.
@@ -184,15 +175,6 @@ public:
 
     /// Same, but for the list of names.
     NodeRawConstPtrs findInOutputs(const Names & names) const;
-
-    struct SplitPossibleOutputNamesResult
-    {
-        NameMultiSet output_names;
-        Names not_output_names;
-    };
-
-    /// Returns the names from possible_output_names that are among the outputs.
-    SplitPossibleOutputNamesResult splitPossibleOutputNames(NameMultiSet possible_output_names) const;
 
     /// Find first node with the same name in output nodes and replace it.
     /// If was not found, add node to outputs end.
@@ -220,25 +202,17 @@ public:
     /// Do not remove any inputs.
     void removeFromOutputs(const std::string & node_name);
 
-    /// Remove actions that are not needed to compute output nodes.
-    /// Returns true if any of the actions were removed.
-    /// Outputs remain unchanged.
-    bool removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
+    /// Remove actions that are not needed to compute output nodes
+    void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
     /// Remove actions that are not needed to compute output nodes. Keep inputs from used_inputs.
-    /// Returns true if any of the actions were removed.
-    /// Outputs remain unchanged.
-    bool removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding = true);
+    void removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding = true);
 
-    /// Remove actions that are not needed to compute output nodes with required names.
-    /// Returns true if any of the actions were removed or if the outputs are changed.
-    /// The order of outputs might be changed even if actions are not removed.
-    bool removeUnusedActions(const Names & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
+    /// Remove actions that are not needed to compute output nodes with required names
+    void removeUnusedActions(const Names & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
-    /// Remove actions that are not needed to compute output nodes with required names.
-    /// Returns true if any of the actions were removed or if the outputs are changed.
-    /// The order of outputs might be changed even if actions are not removed.
-    bool removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
+    /// Remove actions that are not needed to compute output nodes with required names
+    void removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
     void removeAliasesForFilter(const std::string & filter_name);
 
@@ -317,11 +291,6 @@ public:
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping & copy_map, bool remove_aliases);
 
-    /// Clone the DAG, retaining only the subgraph computable from the specified available input columns.
-    /// Special handling for logical AND: non-computable children are replaced with constant true.
-    /// Useful for evaluating boolean filters in projection indices when some input columns are missing.
-    ActionsDAG restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const;
-
     /// Execute actions for header. Input block must have empty columns.
     /// Result should be equal to the execution of ExpressionActions built from this DAG.
     /// Actions are not changed, no expressions are compiled.
@@ -335,7 +304,8 @@ public:
         IntermediateExecutionResult & node_to_column,
         const NodeRawConstPtrs & outputs,
         size_t input_rows_count,
-        PartialEvaluationParameters params = {}
+        bool throw_on_error,
+        bool skip_materialize = false
     );
 
     /// Replace all PLACEHOLDER nodes with INPUT nodes
@@ -345,9 +315,7 @@ public:
     /// Also add aliases so the result names remain unchanged.
     void addMaterializingOutputActions(bool materialize_sparse);
 
-    /// Apply materialize() function to node. Unlike for materializeNode, result node name can be arbitrary.
-    const Node & materializeNodeWithoutRename(const Node & node, bool materialize_sparse = true);
-    /// Apply materialize() function to node. Unlike for materializeNodeWithoutRename, result node has the same name.
+    /// Apply materialize() function to node. Result node has the same name.
     const Node & materializeNode(const Node & node, bool materialize_sparse = true);
 
     enum class MatchColumnsMode : uint8_t
@@ -367,11 +335,10 @@ public:
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
-        ContextPtr context,
         bool ignore_constant_values = false,
         bool add_cast_columns = false,
-        NameToNameMap * new_names = nullptr,
-        NameSet * columns_contain_compiled_function = nullptr);
+        NameToNameMap * new_names = nullptr);
+
     /// Create expression which add const column and then materialize it.
     static ActionsDAG makeAddingColumnActions(ColumnWithTypeAndName column);
 
@@ -548,7 +515,7 @@ private:
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    bool removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
+    void removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
 };
 
 struct ActionsDAG::SplitResult
@@ -563,8 +530,6 @@ struct ActionsDAG::ActionsForFilterPushDown
     ActionsDAG dag;
     size_t filter_pos;
     bool remove_filter;
-    /// Whether the filter becomes const after pushing down expressions
-    bool is_filter_const_after_push_down;
 };
 
 struct ActionsDAG::ActionsForJOINFilterPushDown
@@ -573,8 +538,6 @@ struct ActionsDAG::ActionsForJOINFilterPushDown
     bool left_stream_filter_removes_filter;
     std::optional<ActionsDAG> right_stream_filter_to_push_down;
     bool right_stream_filter_removes_filter;
-    /// Whether the filter becomes const after pushing down all expressions
-    bool is_filter_const_after_all_push_downs;
 };
 
 class FindOriginalNodeForOutputName
@@ -605,13 +568,5 @@ struct ActionsAndProjectInputsFlag
 };
 
 using ActionsAndProjectInputsFlagPtr = std::shared_ptr<ActionsAndProjectInputsFlag>;
-
-/// required_outputs must contain only output names from actions_dag
-/// Returns the output names in their order in the output of the actions dag.
-Names getRequiredOutputNamesInOrder(NameMultiSet required_outputs, const ActionsDAG & actions_dag);
-
-bool hasDuplicatedNames(const ActionsDAG::NodeRawConstPtrs & nodes);
-
-bool hasDuplicatedNamesInInputOrOutputs(const ActionsDAG & actions_dag);
 
 }

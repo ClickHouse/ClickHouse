@@ -11,10 +11,10 @@ namespace DB
 class FieldVisitorScale : public StaticVisitor<void>
 {
 private:
-    Int64 rhs;
+    Int32 rhs;
 
 public:
-    explicit FieldVisitorScale(Int64 rhs_);
+    explicit FieldVisitorScale(Int32 rhs_);
 
     void operator() (Int64 & x) const;
     void operator() (UInt64 & x) const;
@@ -34,7 +34,6 @@ public:
 
     template <typename T>
     void operator() (DecimalField<T> & x) const { x = DecimalField<T>(x.getValue() * T(rhs), x.getScale()); }
-    void operator() (DecimalField<Decimal32> & x) const { x = DecimalField<Decimal32>(x.getValue() * Decimal32(static_cast<int32_t>(rhs)), x.getScale()); }
 
     template <typename T>
     requires is_big_int_v<T>

@@ -3,7 +3,7 @@
 #include <Disks/DiskFactory.h>
 #include <Disks/registerDisks.h>
 #include <Disks/IDiskTransaction.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -12,7 +12,9 @@
 
 #include "Common/Exception.h"
 #include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/ConfigHelper.h>
 #include <Common/FailPoint.h>
 #include <Core/Defines.h>
 

@@ -1,9 +1,9 @@
 ---
-description: 'Page describing usage recommendations for open-source ClickHouse'
-sidebar_label: 'OSS usage recommendations'
+description: 'Documentation for http://hadoop.apache.org/zookeeper/docs/current/zookeeperAdmin.html'
+sidebar_label: 'Usage Recommendations'
 sidebar_position: 58
 slug: /operations/tips
-title: 'OSS usage recommendations'
+title: 'Usage Recommendations'
 doc_type: 'guide'
 ---
 

@@ -21,8 +21,6 @@ from helpers.test_tools import exec_query_with_retry
 from helpers.config_cluster import minio_secret_key
 from helpers.s3_queue_common import generate_random_string
 
-from minio.commonconfig import Tags
-
 MINIO_INTERNAL_PORT = 9001
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -1244,24 +1242,17 @@ def test_url_reconnect_in_the_middle(started_cluster):
 
     with PartitionManager() as pm:
         pm_rule_reject = {
-            "instance": instance,
-            "chain": "INPUT",
             "probability": 0.02,
             "destination": instance.ip_address,
             "source_port": started_cluster.minio_port,
             "action": "REJECT --reject-with tcp-reset",
-            "protocol": "tcp",
         }
         pm_rule_drop_all = {
-            "instance": instance,
-            "chain": "INPUT",
             "destination": instance.ip_address,
             "source_port": started_cluster.minio_port,
             "action": "DROP",
-            "protocol": "tcp",
         }
-
-        pm.add_rule(pm_rule_reject)
+        pm._add_rule(pm_rule_reject)
 
         def select():
             global result
@@ -1275,11 +1266,11 @@ def test_url_reconnect_in_the_middle(started_cluster):
         thread = threading.Thread(target=select)
         thread.start()
         time.sleep(4)
-        pm.add_rule(pm_rule_drop_all)
+        pm._add_rule(pm_rule_drop_all)
 
         time.sleep(2)
-        pm.delete_rule(pm_rule_drop_all)
-        pm.delete_rule(pm_rule_reject)
+        pm._delete_rule(pm_rule_drop_all)
+        pm._delete_rule(pm_rule_reject)
 
         thread.join()
 
@@ -2961,7 +2952,6 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
     node_old.restart_clickhouse()
 
 
-
 def test_partition_by_without_wildcard(started_cluster):
     node = started_cluster.instances["dummy"]
     table_name = f"test_partition_by_without_wildcard_{generate_random_string()}"
@@ -2976,154 +2966,6 @@ CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', form
 PARTITION BY (b, c)
 """
     )
-
-
-def test_object_tags(started_cluster):
-    bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]
-    table_name_with_tags = f"test_object_tags_{uuid.uuid4()}"
-    table_name_without_tags = f"test_object_no_tags_{uuid.uuid4()}"
-
-    instance.query(f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name_with_tags}.tsv', auto, 'x UInt64') select 1 SETTINGS s3_truncate_on_insert=1")
-    instance.query(f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name_without_tags}.tsv', auto, 'x UInt64') select 1 SETTINGS s3_truncate_on_insert=1")
-
-    tags = Tags(for_object=True)
-    tags["Database"] = "ClickHouse"
-    tags["Team"] = "Core"
-    tags["Ping"] = "Pong"
-
-    started_cluster.minio_client.set_object_tags(bucket, f"{table_name_with_tags}.tsv", tags)
-    read_tags = started_cluster.minio_client.get_object_tags(bucket, f"{table_name_with_tags}.tsv")
-
-    assert read_tags == tags
-
-    def read_without_s3_tags(file_or_glob, *args, **kwargs):
-        return instance.query(f"select _file, _path, x from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_or_glob}', auto, 'x UInt64')", *args, **kwargs)
-    def read_s3_tags(file_or_glob, *args, **kwargs):
-        return instance.query(f"select _tags, _file, _path, x from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_or_glob}', auto, 'x UInt64')", *args, **kwargs)
-    def read_s3_tags_events(query_id):
-        events = instance.query(f"""
-            system flush logs;
-
-            select ProfileEvents['DiskS3GetObjectTagging'] DiskS3GetObjectTagging, ProfileEvents['S3GetObjectTagging'] S3GetObjectTagging
-            from system.query_log
-            where query_id = '{query_id}'
-            and type != 'QueryStart';
-        """, parse=True)
-        assert len(events) == 1
-        return (events['DiskS3GetObjectTagging'][0], events['S3GetObjectTagging'][0])
-
-    expected_with_tags = f"{{'Database':'ClickHouse','Ping':'Pong','Team':'Core'}}\t{table_name_with_tags}.tsv\troot/{table_name_with_tags}.tsv\t1\n"
-    expected_without_tags = f"{table_name_with_tags}.tsv\troot/{table_name_with_tags}.tsv\t1\n"
-
-    # ClickHouse has separate code path for handling globs
-    for file in [f'{table_name_with_tags}.tsv', f'{table_name_with_tags}.*']:
-        # ClickHouse has separate code path for handling s3_ignore_file_doesnt_exist=1
-        for s3_ignore_file_doesnt_exist in [0, 1]:
-            query_id = uuid.uuid4().hex
-            assert read_s3_tags(file, query_id=query_id, settings={"s3_ignore_file_doesnt_exist": s3_ignore_file_doesnt_exist}) == expected_with_tags
-            assert read_s3_tags_events(query_id) == (0, 1)
-
-            query_id = uuid.uuid4().hex
-            assert read_without_s3_tags(file, query_id=query_id) == expected_without_tags
-            assert read_s3_tags_events(query_id) == (0, 0)
-
-    # Make sure that we do not do GetObjectTagging if there are no tags (HeadObject containt number of tags, so we known this in advance)
-    query_id = uuid.uuid4().hex
-    expected_with_empty_tags = f"{{}}\t{table_name_without_tags}.tsv\troot/{table_name_without_tags}.tsv\t1\n"
-    assert read_s3_tags(f'{table_name_without_tags}.tsv', query_id=query_id) == expected_with_empty_tags
-    assert read_s3_tags_events(query_id) == (0, 0)
-
-    # Just in case make sure that virtual columns not requested via 'SELECT *'
-    # (it should be always like that, but, who knows what "workarounds" we can
-    # have)
-    query_id = uuid.uuid4().hex
-    instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name_with_tags}.tsv', auto, 'x UInt64')", query_id=query_id)
-    assert read_s3_tags_events(query_id) == (0, 0)
-
-
-def test_file_pruning_with_hive_style_partitioning_2(started_cluster):
-    node = started_cluster.instances["dummy"]
-    table_name = f"test_pruning_with_hive_style_partitioning_{generate_random_string()}"
-    bucket = started_cluster.minio_bucket
-    minio = started_cluster.minio_client
-
-    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}"
-    node.query(
-        f"""
-    CREATE TABLE {table_name} (a Int32, b Int32, c String, d Int32) ENGINE = S3('{url}', format = 'Parquet', partition_strategy = 'hive')
-    PARTITION BY (b, c)
-    """
-    )
-    node.query(
-        f"INSERT INTO {table_name} SELECT number, number % 5, toString(number % 2), number FROM numbers(20)",
-        settings={"use_hive_partitioning": True},
-    )
-
-    objects = []
-    for obj in list(
-        minio.list_objects(
-            started_cluster.minio_bucket,
-            prefix=table_name,
-            recursive=True,
-        )
-    ):
-        objects.append(obj.object_name)
-
-    objects.sort()
-    assert len(objects) == 10
-
-    prefixes = []
-    for object in objects:
-        assert object.endswith(".parquet")
-        path = Path(object)
-        prefixes.append(str(path.parent))
-
-    assert len(prefixes) == 10
-    assert prefixes == [
-        f"{table_name}/b=0/c=0",
-        f"{table_name}/b=0/c=1",
-        f"{table_name}/b=1/c=0",
-        f"{table_name}/b=1/c=1",
-        f"{table_name}/b=2/c=0",
-        f"{table_name}/b=2/c=1",
-        f"{table_name}/b=3/c=0",
-        f"{table_name}/b=3/c=1",
-        f"{table_name}/b=4/c=0",
-        f"{table_name}/b=4/c=1",
-    ]
-
-    def check_read_files(expected, query_id, current_node):
-        current_node.query("SYSTEM FLUSH LOGS")
-        assert expected == int(
-            current_node.query(
-                f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id = '{query_id}' AND type='QueryFinish'"
-            )
-        )
-
-    node_old = started_cluster.instances["dummy_old"]
-    if "25.3" not in node_old.query("SELECT version()"):
-        node_old.restart_with_original_version(clear_data_dir=True)
-
-    node_old.query(
-        f"""
-    CREATE TABLE {table_name}_1 (a Int32, d Int32) ENGINE = S3('{url}/**', 'Parquet')
-    """
-    )
-    query_id = f"{table_name}_query_1"
-    assert 5 == int(
-        node_old.query(f"SELECT uniqExact(_path) FROM {table_name}_1 WHERE c == '0'", settings={"use_hive_partitioning": 1}, query_id=query_id)
-    )
-    check_read_files(5, query_id, node_old)
-
-    node_old.restart_with_latest_version()
-    query_id = f"{table_name}_query_2"
-    assert 5 == int(
-        node_old.query(f"SELECT uniqExact(_path) FROM {table_name}_1 WHERE c == '0'", settings={"use_hive_partitioning": 1}, query_id=query_id)
-    )
-    check_read_files(5, query_id, node_old)
-    node_old.restart_clickhouse()
-
 
 def test_schema_inference_cache_multi_path(started_cluster):
     bucket = started_cluster.minio_bucket

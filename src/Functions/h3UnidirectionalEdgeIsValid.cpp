@@ -2,11 +2,16 @@
 
 #if USE_H3
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
+#include <base/range.h>
+#include <constants.h>
 #include <h3api.h>
 
 
@@ -77,7 +82,7 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 edge = data_hindex_edge[row];
-            const auto res = static_cast<UInt8>(isValidDirectedEdge(edge));
+            const UInt8 res = isValidDirectedEdge(edge);
             dst_data[row] = res;
         }
 
@@ -113,7 +118,7 @@ Determines if the provided [H3](#h3-index) is a valid unidirectional edge index.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3UnidirectionalEdgeIsValid>(documentation);
 }
 

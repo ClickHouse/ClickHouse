@@ -16,7 +16,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 
 
 namespace CurrentMetrics
@@ -242,9 +241,9 @@ private:
     static constexpr auto get_thread_name()
     {
         if constexpr (std::is_same_v<TBaseHolder, IDatabase>)
-            return ThreadName::DATABASE_REPLICAS;
+            return "DBReplicas";
         else
-            return ThreadName::SYSTEM_REPLICAS;
+            return "SystemReplicas";
     }
 
     static std::string get_holder_name(const TBaseHolderPtr & base_holder)

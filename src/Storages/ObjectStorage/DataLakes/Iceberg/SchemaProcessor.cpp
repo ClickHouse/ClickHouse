@@ -234,7 +234,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
     if (type_name == f_double)
         return std::make_shared<DataTypeFloat64>();
     if (type_name == f_date)
-        return std::make_shared<DataTypeDate32>();
+        return std::make_shared<DataTypeDate>();
     if (type_name == f_time)
         return std::make_shared<DataTypeInt64>();
     if (type_name == f_timestamp)
@@ -423,7 +423,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 }
                 else if (allowPrimitiveTypeConversion(old_type, new_type))
                 {
-                    node = &dag->addCast(*old_node, getFieldType(field, f_type, required), name, nullptr);
+                    node = &dag->addCast(*old_node, getFieldType(field, f_type, required), name);
                 }
                 outputs.push_back(node);
             }

@@ -4,6 +4,10 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsRandom.h>
+#include <Functions/PerformanceAdaptors.h>
+#include <pcg_random.hpp>
+#include <Common/randomSeed.h>
+#include <base/unaligned.h>
 
 
 namespace DB
@@ -139,7 +143,7 @@ The returned characters are not necessarily ASCII characters, i.e. they may not 
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRandomString>(documentation);
 }

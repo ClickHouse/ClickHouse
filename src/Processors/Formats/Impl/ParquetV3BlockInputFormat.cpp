@@ -1,24 +1,15 @@
-#include <memory>
-#include <optional>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 
 #if USE_PARQUET
 
 #include <Common/ThreadPool.h>
-#include <Common/setThreadName.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/SharedThreadPools.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
 {
@@ -68,7 +59,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             {
                 if (format_settings.parquet.enable_row_group_prefetch && parser_shared_resources->max_io_threads > 0)
                     parser_shared_resources->io_runner.initThreadPool(
-                        getFormatParsingThreadPool().get(), parser_shared_resources->max_io_threads, ThreadName::PARQUET_PREFETCH, CurrentThread::getGroup());
+                        getFormatParsingThreadPool().get(), parser_shared_resources->max_io_threads, "ParquetPrefetch", CurrentThread::getGroup());
 
                 /// Unfortunately max_parsing_threads setting doesn't have a value for
                 /// "do parsing in the same thread as the rest of query processing
@@ -81,7 +72,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                     parser_shared_resources->parsing_runner.initManual();
                 else
                     parser_shared_resources->parsing_runner.initThreadPool(
-                        getFormatParsingThreadPool().get(), parser_shared_resources->max_parsing_threads, ThreadName::PARQUET_DECODER, CurrentThread::getGroup());
+                        getFormatParsingThreadPool().get(), parser_shared_resources->max_parsing_threads, "ParquetDecoder", CurrentThread::getGroup());
 
                 auto ext = std::make_shared<Parquet::SharedResourcesExt>();
 
@@ -90,13 +81,10 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 parser_shared_resources->opaque = ext;
             });
 
-        {
-            std::lock_guard lock(reader_mutex);
-            reader.emplace();
-            reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
-            reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
-            reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
-        }
+        reader.emplace();
+        reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
+        reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
+        reader->init(parser_shared_resources);
     }
 }
 
@@ -126,13 +114,6 @@ Chunk ParquetV3BlockInputFormat::read()
     return std::move(res.chunk);
 }
 
-void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
-{
-    if (reader)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Reader already initialized");
-    buckets_to_read = std::static_pointer_cast<ParquetFileBucketInfo>(buckets_to_read_);
-}
-
 const BlockMissingValues * ParquetV3BlockInputFormat::getMissingValues() const
 {
     return &previous_block_missing_values;
@@ -140,17 +121,13 @@ const BlockMissingValues * ParquetV3BlockInputFormat::getMissingValues() const
 
 void ParquetV3BlockInputFormat::onCancel() noexcept
 {
-    std::lock_guard lock(reader_mutex);
     if (reader)
         reader->cancel();
 }
 
 void ParquetV3BlockInputFormat::resetParser()
 {
-    {
-        std::lock_guard lock(reader_mutex);
-        reader.reset();
-    }
+    reader.reset();
     previous_block_missing_values.clear();
     IInputFormat::resetParser();
 }

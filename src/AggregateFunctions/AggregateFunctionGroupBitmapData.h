@@ -6,15 +6,14 @@
 #include <base/sort.h>
 #include <boost/noncopyable.hpp>
 #include <Common/HashTable/SmallTable.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/PODArray.h>
 
 // Include this header last, because it is an auto-generated dump of questionable
 // garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).
 // TODO: find out what it is. On github, they have proper interface headers like
 // this one: https://github.com/RoaringBitmap/CRoaring/blob/master/include/roaring/roaring.h
-#include <roaring/roaring.hh>
-#include <roaring/roaring64map.hh>
+#include <roaring.hh>
+#include <roaring64map.hh>
 
 
 namespace DB
@@ -47,7 +46,7 @@ class RoaringBitmapWithSmallSet : private boost::noncopyable
 private:
     using UnsignedT = std::make_unsigned_t<T>;
     SmallSet<T, small_set_size> small;
-    using ValueBuffer = VectorWithMemoryTracking<T>;
+    using ValueBuffer = std::vector<T>;
     using RoaringBitmap = std::conditional_t<sizeof(T) >= 8, roaring::Roaring64Map, roaring::Roaring>;
     using Value = std::conditional_t<sizeof(T) >= 8, UInt64, UInt32>;
     std::shared_ptr<RoaringBitmap> roaring_bitmap;
@@ -477,7 +476,7 @@ public:
         {
             for (auto it = roaring_bitmap->begin(); it != roaring_bitmap->end(); ++it)
             {
-                res.emplace_back(static_cast<Element>(*it));
+                res.emplace_back(*it);
                 ++count;
             }
         }
@@ -514,7 +513,7 @@ public:
 
                 if (*it < range_end)
                 {
-                    r1.add(static_cast<T>(*it));
+                    r1.add(*it);
                     ++count;
                 }
                 else
@@ -535,7 +534,7 @@ public:
 
         if (isSmall())
         {
-            VectorWithMemoryTracking<T> answer;
+            std::vector<T> answer;
             for (const auto & x : small)
             {
                 T val = x.getValue();
@@ -563,7 +562,7 @@ public:
 
             if (count < limit)
             {
-                r1.add(static_cast<T>(*it));
+                r1.add(*it);
                 ++count;
             }
             else
@@ -597,7 +596,7 @@ public:
             ++offset_count;
 
         for (; it != roaring_bitmap->end() && count < limit; ++it, ++count)
-            r1.add(static_cast<T>(*it));
+            r1.add(*it);
         return count;
     }
 
@@ -672,7 +671,7 @@ public:
         }
         if (isSmall())
         {
-            SetWithMemoryTracking<UInt32> values;
+            std::set<UInt32> values;
             for (const auto & x : small)
                 if ((static_cast<UInt32>(x.getValue()) >> 16) == container_id)
                     values.insert((static_cast<UInt32>(x.getValue()) & 0xFFFFu) + base);
@@ -690,7 +689,7 @@ public:
             int idx = roaring::internal::ra_get_index(ra, container_id);
             if (idx < 0)
                 return 0;
-            return static_cast<UInt16>(roaring::internal::container_to_uint32_array(res.data(), ra->containers[idx], ra->typecodes[idx], base));
+            return roaring::internal::container_to_uint32_array(res.data(), ra->containers[idx], ra->typecodes[idx], base);
         }
     }
 
@@ -711,7 +710,7 @@ public:
                 if (static_cast<UInt32>(x.getValue()) >> 16 == container_id)
                     num_added++;
             }
-            return static_cast<UInt16>(num_added);
+            return num_added;
         }
         else
         {
@@ -720,7 +719,7 @@ public:
             int idx = roaring::internal::ra_get_index(ra, container_id);
             if (idx < 0)
                 return 0;
-            return static_cast<UInt16>(roaring::internal::container_get_cardinality(ra->containers[idx], ra->typecodes[idx]));
+            return roaring::internal::container_get_cardinality(ra->containers[idx], ra->typecodes[idx]);
         }
     }
 
@@ -730,13 +729,13 @@ public:
      *  For larger ones, extracts from Roaring bitmap keys.
      * Returns sorted containers' ID.
      */
-    inline SetWithMemoryTracking<UInt16> ra_get_all_container_ids() /// NOLINT
+    inline std::set<UInt16> ra_get_all_container_ids() /// NOLINT
     {
         if (sizeof(T) >= 8)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported Roaring64Map");
         }
-        SetWithMemoryTracking<UInt16> container_ids;
+        std::set<UInt16> container_ids;
         if (isSmall())
         {
             for (const auto & x : small)
@@ -775,7 +774,7 @@ public:
             int idx = roaring::internal::ra_get_index(ra, container_id);
             if (idx < 0)
                 return nullptr;
-            return roaring::internal::ra_get_container_at_index(ra, static_cast<uint16_t>(idx), typecode);
+            return roaring::internal::ra_get_container_at_index(ra, idx, typecode);
         }
     }
 
@@ -821,7 +820,7 @@ public:
         if (lhs_small && rhs_small)
         {
             /// Case 1: Both are small sets
-            SetWithMemoryTracking<T> lhs_values;
+            std::set<T> lhs_values;
             for (const auto & lhs_value : small)
                 lhs_values.insert(lhs_value.getValue());
             UInt32 num_added = 0;
@@ -830,7 +829,7 @@ public:
                 if (static_cast<UInt32>(rhs_value.getValue()) >> 16 == container_id and lhs_values.count(rhs_value.getValue()) > 0)
                     (*output)[num_added++] = (static_cast<UInt32>(rhs_value.getValue()) & 0xFFFFu) + base;
             }
-            return static_cast<UInt16>(num_added);
+            return num_added;
         }
         else if (lhs_small || rhs_small)
         {
@@ -849,10 +848,10 @@ public:
                 if ((value >> 16) != container_id)
                     continue;
                 UInt32 low_16bits = value & 0xFFFFu;
-                if (roaring::internal::container_contains(large_bm_c, static_cast<uint16_t>(low_16bits), large_bm_c_typecode))
+                if (roaring::internal::container_contains(large_bm_c, low_16bits, large_bm_c_typecode))
                     (*output)[num_added++] = low_16bits + base;
             }
-            return static_cast<UInt16>(num_added);
+            return num_added;
         }
         else
         {
@@ -861,7 +860,7 @@ public:
             roaring::internal::container_t * c = this->container_and(rhs, container_id, &result_type);
             if (!c)
                 return 0;
-            UInt16 result_size = static_cast<UInt16>(roaring::internal::container_to_uint32_array(output->data(), c, result_type, base));
+            UInt16 result_size = roaring::internal::container_to_uint32_array(output->data(), c, result_type, base);
             roaring::internal::container_free(c, result_type);
             return result_size;
         }
@@ -898,7 +897,7 @@ public:
         if (ctn_idx >= 0)
         {
             uint8_t old_type = 0;
-            auto * c = roaring::internal::ra_get_container_at_index(&rb32->roaring.high_low_container, static_cast<uint16_t>(ctn_idx), &old_type);
+            auto * c = roaring::internal::ra_get_container_at_index(&rb32->roaring.high_low_container, ctn_idx, &old_type);
             roaring::internal::container_free(c, old_type);
             roaring::internal::ra_set_container_at_index(&rb32->roaring.high_low_container, ctn_idx, ctn, type);
             return;

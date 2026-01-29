@@ -410,7 +410,7 @@ def main():
             f"cp ./tests/performance/scripts/config/config.d/*xml {perf_right_config}/config.d/",
             f"cp -r ./tests/performance/scripts/config/users.d {perf_right_config}/users.d",
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
-            f"rm {perf_right_config}/config.d/storage_conf_local.xml",  # Avoid conflicts on the filesystem cache dirs
+            # f"cp -r ./tests/performance {perf_right}",
             f"chmod +x {ch_path}/clickhouse",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-server",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-local",
@@ -451,9 +451,7 @@ def main():
     if res and not info.is_local_run:
 
         def prepare_historical_data():
-            cidb = CIDBCluster(
-                url="https://play.clickhouse.com?user=play", user="", pwd=""
-            )
+            cidb = CIDBCluster()
             assert cidb.is_ready()
             result = cidb.do_select_query(
                 query=GET_HISTORICAL_TRESHOLDS_QUERY, timeout=10, retries=3
@@ -484,7 +482,6 @@ def main():
                 "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
                 "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
                 "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
-                "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
             }
             cmds = []
             for dataset_path in dataset_paths.values():
@@ -599,14 +596,11 @@ def main():
         assert test_files
 
         def run_tests():
-            # Run 10 random queries per test by default, but all queries for benchmarks
-            benchmarks = {"clickbench.xml", "tpch.xml"}
             for test in test_files:
-                max_queries = 0 if test in benchmarks else 10
                 CHServer.run_test(
                     "./tests/performance/" + test,
                     runs=7,
-                    max_queries=max_queries,
+                    max_queries=10,
                     results_path=perf_wd,
                 )
             return True
@@ -723,6 +717,8 @@ def main():
 
         def too_many_slow(msg):
             match = re.search(r"(|.* )(\d+) slower.*", msg)
+            # This threshold should be synchronized with the value in
+            # https://github.com/ClickHouse/ClickHouse/blob/master/docker/test/performance-comparison/report.py#L629
             threshold = 5
             return int(match.group(2).strip()) > threshold if match else False
 

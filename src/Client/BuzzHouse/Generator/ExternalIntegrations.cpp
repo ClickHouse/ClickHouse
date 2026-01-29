@@ -7,8 +7,6 @@
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -71,7 +69,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
         {
             SetValue & sv = const_cast<SetValue &>(i == 0 ? svs.set_value() : svs.other_values(i - 1));
 
-            if (allSettings.contains(sv.property()))
+            if (allSettings.find(sv.property()) != allSettings.end())
             {
                 const CHSetting & chs = allSettings.at(sv.property());
 
@@ -104,7 +102,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
         /// Remove partition by
         te.clear_partition_by();
     }
-    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree)
+    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
     {
         if (te.has_primary_key() && te.has_order() && rg.nextSmallNumber() < 5)
         {
@@ -142,16 +140,13 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
     }
     if (newt.has_table_def())
     {
-        std::vector<TableDefItem> items_to_keep;
-        TableDef & def = const_cast<TableDef &>(newt.table_def());
+        const TableDef & def = newt.table_def();
 
         for (int i = 0; i < def.table_defs_size(); i++)
         {
-            const auto & next = def.table_defs(i);
-
-            if (next.has_col_def())
+            if (def.table_defs(i).has_col_def())
             {
-                ColumnDef & cdef = const_cast<ColumnDef &>(next.col_def());
+                ColumnDef & cdef = const_cast<ColumnDef &>(def.table_defs(i).col_def());
                 TopTypeName & ttn = const_cast<TopTypeName &>(cdef.type().type());
 
                 if (cdef.has_codecs() && rg.nextBool())
@@ -189,7 +184,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                         {
                             SetValue & sv = const_cast<SetValue &>(j == 0 ? svs.set_value() : svs.other_values(j - 1));
 
-                            if (allSettings.contains(sv.property()))
+                            if (allSettings.find(sv.property()) != allSettings.end())
                             {
                                 const CHSetting & chs = allSettings.at(sv.property());
 
@@ -202,18 +197,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                         }
                     }
                 }
-                /// Keep all columns
-                items_to_keep.emplace_back(next);
             }
-            else if (rg.nextSmallNumber() < 8)
-            {
-                items_to_keep.emplace_back(next);
-            }
-        }
-        def.clear_table_defs();
-        for (const auto & item : items_to_keep)
-        {
-            *def.add_table_defs() = item;
         }
     }
     if (newt.has_cluster() && rg.nextSmallNumber() < 4)
@@ -250,7 +234,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             newd.set_if_not_exists(true);
             deng->set_engine(t.db->deng);
             t.db->setName(newd.mutable_database());
-            t.db->finishDatabaseSpecification(deng);
+            t.db->finishDatabaseSpecification(deng, t.db->nparams > 0);
             CreateDatabaseToString(buf, newd);
             res &= !performQuery(buf + ";");
         }
@@ -266,7 +250,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             {
                 t.db->setName(est.mutable_database());
             }
-            if (!fc.measure_performance && !fc.compare_explains && rg.nextMediumNumber() < 91)
+            if (rg.nextMediumNumber() < 91)
             {
                 this->swapTableDefinitions(rg, newt);
             }
@@ -285,7 +269,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return !performQuery(fmt::format("{} {} SYNC;", truncateStatement(), getTableName(t.db, t.tname)));
+    return !performQuery(fmt::format("{} {};", truncateStatement(), getTableName(t.db, t.tname)));
 }
 
 bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
@@ -383,8 +367,7 @@ bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const 
     if (is_clickhouse && t.isMergeTreeFamily())
     {
         /// Sometimes the optimize step doesn't have to do anything, then throws error. Ignore it
-        const auto u = performQueryOnServerOrRemote(
-            pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK SETTINGS mutations_sync = 2;", getTableName(t.db, t.tname)));
+        const auto u = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
         const auto v = performQueryOnServerOrRemote(
             pt, fmt::format("OPTIMIZE TABLE {}{};", getTableName(t.db, t.tname), t.supportsFinal() ? " FINAL" : ""));
         UNUSED(u);
@@ -1206,7 +1189,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else
     {
-        UNREACHABLE();
+        chassert(0);
     }
 }
 
@@ -1352,7 +1335,7 @@ void MongoDBIntegration::documentAppendAnyValue(
     }
     else
     {
-        UNREACHABLE();
+        chassert(0);
     }
 }
 
@@ -1459,7 +1442,7 @@ bool DolorIntegration::httpPut(const String & path, const String & body)
     Poco::URI uri;
     uri.setScheme("http");
     uri.setHost(sc.server_hostname);
-    uri.setPort(static_cast<uint16_t>(sc.port));
+    uri.setPort(sc.port);
     uri.setPath(path);
 
     /// Build PUT request
@@ -1512,11 +1495,11 @@ bool DolorIntegration::performDatabaseIntegration(RandomGenerator & rg, SQLDatab
             catalog = "unity";
             break;
         default:
-            UNREACHABLE();
+            chassert(0);
     }
     buf += fmt::format(
-        R"({{"seed":{},"database_name":"{}","storage":"{}","engine":"{}","catalog":"{}"}})",
-        rg.nextInFullRange(),
+        R"({{"seed":{},"database_name":"{}","storage":"{}","lake":"{}","catalog":"{}"}})",
+        rg.nextRandomUInt64(),
         d.getSparkCatalogName(),
         d.storage == LakeStorage::S3 ? "s3" : (d.storage == LakeStorage::Azure ? "azure" : "local"),
         d.format == LakeFormat::DeltaLake ? "deltalake" : "iceberg",
@@ -1530,20 +1513,19 @@ bool DolorIntegration::reRunCreateDatabase(const String & body)
     return httpPut("/sparkdatabase", body);
 }
 
-static const DB::Strings & catalogs = {"glue", "hive", "rest", "unity"};
-
-void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de)
+void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
 {
-    String catalog_str;
     const Catalog * cat = nullptr;
+    SetValue * sv1 = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+    SetValue * sv2 = svs->add_other_values();
 
-    chassert(d.storage == LakeStorage::S3);
+    sv1->set_property("catalog_type");
     switch (d.catalog)
     {
         case LakeCatalog::Glue:
             cat = &sc.glue_catalog.value();
             de->add_params()->set_svalue(fmt::format("http://{}:{}", cat->server_hostname, cat->port));
-            catalog_str = "glue";
+            sv1->set_value("'glue'");
             break;
         case LakeCatalog::Hive:
             cat = &sc.hive_catalog.value();
@@ -1551,92 +1533,50 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
             {
                 de->add_params()->set_svalue(fmt::format("thrift://{}:{}", cat->server_hostname, cat->port));
             }
-            catalog_str = "hive";
+            sv1->set_value("'hive'");
             break;
         case LakeCatalog::REST:
             cat = &sc.rest_catalog.value();
             de->add_params()->set_svalue(fmt::format("http://{}:{}{}", cat->server_hostname, cat->port, cat->path));
-            catalog_str = "rest";
+            sv1->set_value("'rest'");
             break;
         case LakeCatalog::Unity:
             cat = &sc.unity_catalog.value();
             de->add_params()->set_svalue(
                 fmt::format(
                     "http://{}:{}{}{}", cat->server_hostname, cat->port, cat->path, d.format == LakeFormat::Iceberg ? "/iceberg" : ""));
-            catalog_str = d.format == LakeFormat::Iceberg ? "rest" : "unity";
+            sv1->set_value(fmt::format("'{}'", d.format == LakeFormat::Iceberg ? "rest" : "unity"));
             break;
         default:
-            UNREACHABLE();
+            chassert(0);
     }
-
-    if (rg.nextMediumNumber() < 6)
+    sv2->set_property("warehouse");
+    sv2->set_value("'" + d.getName() + "'");
+    chassert(d.storage == LakeStorage::S3);
+    if (d.format == LakeFormat::Iceberg)
     {
-        /// Mess up with the catalog
-        catalog_str = rg.pickRandomly(catalogs);
+        const ServerCredentials & minio = fc.minio_server.value();
+
+        de->add_params()->set_svalue(minio.user);
+        de->add_params()->set_svalue(minio.secret);
+
+        SetValue * sv3 = svs->add_other_values();
+        sv3->set_property("storage_endpoint");
+        sv3->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
     }
-    uint32_t added_type = 0;
-    uint32_t added_warehouse = 0;
-    uint32_t added_endpoint = 0;
-    uint32_t added_region = 0;
-    uint32_t added_credentials = 0;
-    const uint32_t toadd_type = rg.nextMediumNumber() < 96;
-    const uint32_t toadd_warehouse = rg.nextMediumNumber() < 96;
-    const uint32_t toadd_endpoint = d.format == LakeFormat::Iceberg && rg.nextMediumNumber() < 96;
-    const uint32_t toadd_region = !cat->region.empty() && rg.nextMediumNumber() < 96;
-    const uint32_t toadd_credentials = rg.nextSmallNumber() < 4;
-    const uint32_t total_to_add = toadd_type + toadd_warehouse + toadd_endpoint + toadd_region + toadd_credentials;
-
-    for (uint32_t i = 0; i < total_to_add; i++)
+    if (!cat->region.empty())
     {
-        SettingValues * svs = de->mutable_setting_values();
-        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-        const uint32_t add_type = 3 * static_cast<uint32_t>(added_type < toadd_type);
-        const uint32_t add_warehouse = 3 * static_cast<uint32_t>(added_warehouse < toadd_warehouse);
-        const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
-        const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
-        const uint32_t add_credentials = 3 * static_cast<uint32_t>(added_credentials < toadd_credentials);
-        const uint32_t prob_space = add_type + add_warehouse + add_endpoint + add_region + add_credentials;
-        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-        const uint32_t nopt = next_dist(rg.generator);
+        SetValue * sv4 = svs->add_other_values();
 
-        if (add_type && nopt < (add_type + 1))
-        {
-            sv->set_property("catalog_type");
-            sv->set_value("'" + catalog_str + "'");
-            added_type++;
-        }
-        else if (add_warehouse && nopt < (add_type + add_warehouse + 1))
-        {
-            sv->set_property("warehouse");
-            sv->set_value("'" + d.getName() + "'");
-            added_warehouse++;
-        }
-        else if (add_endpoint && nopt < (add_type + add_warehouse + add_endpoint + 1))
-        {
-            const ServerCredentials & minio = fc.minio_server.value();
+        sv4->set_property("region");
+        sv4->set_value("'" + cat->region + "'");
+    }
+    if (d.catalog == LakeCatalog::Unity || rg.nextSmallNumber() < 4)
+    {
+        SetValue * sv5 = svs->add_other_values();
 
-            de->add_params()->set_svalue(minio.user);
-            de->add_params()->set_svalue(minio.secret);
-            sv->set_property("storage_endpoint");
-            sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
-            added_endpoint++;
-        }
-        else if (add_region && nopt < (add_type + add_warehouse + add_endpoint + add_region + 1))
-        {
-            sv->set_property("region");
-            sv->set_value("'" + cat->region + "'");
-            added_region++;
-        }
-        else if (add_credentials && nopt < (add_type + add_warehouse + add_endpoint + add_region + add_credentials + 1))
-        {
-            sv->set_property("vended_credentials");
-            sv->set_value(rg.nextBool() ? "1" : "0");
-            added_credentials++;
-        }
-        else
-        {
-            UNREACHABLE();
-        }
+        sv5->set_property("vended_credentials");
+        sv5->set_value(d.catalog == LakeCatalog::Unity || rg.nextBool() ? "1" : "0");
     }
 }
 
@@ -1654,12 +1594,16 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
 
         collectColumnPaths("c" + std::to_string(key), val.tp, 0, cpc, entries);
     }
-    /// Common information
+
+    chassert(t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine());
     buf += fmt::format(
-        R"({{"seed":{},"database_name":"{}","table_name":"{}","format":"{}","deterministic":{},"columns":[)",
-        rg.nextInFullRange(),
+        R"({{"seed":{},"catalog_name":"{}","database_name":"{}","table_name":"{}","storage":"{}","lake":"{}","format":"{}","deterministic":{},"columns":[)",
+        rg.nextRandomUInt64(),
+        t.getSparkCatalogName(),
         t.getDatabaseName(),
         t.getTableName(false),
+        t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"),
+        t.isAnyDeltaLakeEngine() ? "deltalake" : "iceberg",
         t.file_format.has_value() ? InOutFormat_Name(t.file_format.value()).substr(6) : "any",
         t.is_deterministic ? "1" : "0");
     for (const auto & entry : entries)
@@ -1668,20 +1612,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
             R"({}{{"name":"{}","type":"{}"}})", first ? "" : ",", entry.getBottomName(), entry.getBottomType()->typeName(false, true));
         first = false;
     }
-    buf += "]";
-    if (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine())
-    {
-        buf += fmt::format(
-            R"(,"engine":"{}","catalog_name":"{}","storage":"{}")",
-            t.isAnyDeltaLakeEngine() ? "deltalake" : "iceberg",
-            t.getSparkCatalogName(),
-            t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"));
-    }
-    else if (t.isKafkaEngine())
-    {
-        buf += fmt::format(R"(,"engine":"kafka","topic":"{}","group":"{}")", t.topic.value(), t.group.value());
-    }
-    buf += "}";
+    buf += "]}";
     fc.outf << "--External table " << buf << std::endl;
     return httpPut("/sparktable", buf);
 }
@@ -1691,157 +1622,92 @@ bool DolorIntegration::reRunCreateTable(const String & body)
     return httpPut("/sparktable", body);
 }
 
-void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
+void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te)
 {
-    if (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine())
+    const LakeCatalog catalog = t.getLakeCatalog();
+
+    if (catalog == LakeCatalog::None)
     {
-        const LakeCatalog catalog = t.getLakeCatalog();
+        te->add_params()->set_rvalue(
+            t.isOnS3() ? fc.minio_server.value().named_collection : (t.isOnAzure() ? fc.azurite_server.value().named_collection : "local"));
+    }
+    else
+    {
+        const Catalog * cat = nullptr;
+        SettingValues * svs = te->mutable_setting_values();
+        SetValue * sv1 = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+        SetValue * sv2 = svs->add_other_values();
+        SetValue * sv3 = svs->add_other_values();
+        SetValue * sv4 = svs->add_other_values();
 
-        if (catalog == LakeCatalog::None)
+        sv1->set_property("storage_catalog_type");
+        sv2->set_property("storage_warehouse");
+        sv3->set_property("object_storage_endpoint");
+        sv4->set_property("storage_catalog_url");
+        sv2->set_value("'" + t.getDatabaseName() + "'");
+        switch (catalog)
         {
-            te->add_params()->set_rvalue(
-                t.isOnS3() ? fc.minio_server.value().named_collection
-                           : (t.isOnAzure() ? fc.azurite_server.value().named_collection : "local"));
-        }
-        else
-        {
-            const Catalog * cat = nullptr;
-            String catalog_url;
-            String catalog_str;
-
-            switch (catalog)
-            {
-                case LakeCatalog::Glue:
-                    cat = &sc.glue_catalog.value();
-                    catalog_str = "glue";
-                    catalog_url = fmt::format("http://{}:{}", cat->server_hostname, cat->port);
-                    break;
-                case LakeCatalog::REST:
-                    cat = &sc.rest_catalog.value();
-                    catalog_str = "rest";
-                    catalog_url = fmt::format("http://{}:{}{}", cat->server_hostname, cat->port, cat->path);
-                    break;
-                case LakeCatalog::Hive:
-                    cat = &sc.hive_catalog.value();
-                    catalog_str = "hive";
-                    catalog_url = fmt::format("thrift://{}:{}", cat->server_hostname, cat->port);
-                    break;
-                case LakeCatalog::Unity:
-                    cat = &sc.unity_catalog.value();
-                    catalog_str = t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "rest" : "unity";
-                    catalog_url = fmt::format(
-                        "http://{}:{}{}{}",
+            case LakeCatalog::Glue:
+                cat = &sc.glue_catalog.value();
+                sv1->set_value("'glue'");
+                sv4->set_value(fmt::format("'http://{}:{}'", cat->server_hostname, cat->port));
+                break;
+            case LakeCatalog::REST:
+                cat = &sc.rest_catalog.value();
+                sv1->set_value("'rest'");
+                sv4->set_value(fmt::format("'http://{}:{}{}'", cat->server_hostname, cat->port, cat->path));
+                break;
+            case LakeCatalog::Hive:
+                cat = &sc.hive_catalog.value();
+                sv1->set_value("'hive'");
+                sv4->set_value(fmt::format("thrift://{}:{}", cat->server_hostname, cat->port));
+                break;
+            case LakeCatalog::Unity:
+                cat = &sc.unity_catalog.value();
+                sv1->set_value(fmt::format("'{}'", t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "rest" : "unity"));
+                sv4->set_value(
+                    fmt::format(
+                        "'http://{}:{}{}{}'",
                         cat->server_hostname,
                         cat->port,
                         cat->path,
-                        t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "/iceberg" : "");
-                    break;
-                default:
-                    UNREACHABLE();
-            }
+                        t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "/iceberg" : ""));
+                break;
+            default:
+                chassert(0);
+        }
+        /// The key-value format is not well supported for catalogs at the moment
+        const ServerCredentials & minio = fc.minio_server.value();
 
-            /// The other storages are not tested yet
-            chassert(t.isOnS3());
-            if (rg.nextMediumNumber() < 6)
+        /// I don't know how to set for other storages
+        chassert(t.isOnS3());
+        te->add_params()->set_svalue(t.getTablePath(fc));
+        te->add_params()->set_svalue(minio.password);
+        te->add_params()->set_svalue(minio.secret);
+        if (t.isAnyIcebergEngine() && t.file_format.has_value())
+        {
+            te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
+            if (t.file_comp.has_value())
             {
-                /// Mess up with the catalog
-                catalog_str = rg.pickRandomly(catalogs);
-            }
-            uint32_t added_sct = 0;
-            uint32_t added_warehouse = 0;
-            uint32_t added_endpoint = 0;
-            uint32_t added_region = 0;
-            uint32_t added_url = 0;
-            const uint32_t toadd_sct = rg.nextMediumNumber() < 96;
-            const uint32_t toadd_warehouse = rg.nextMediumNumber() < 96;
-            const uint32_t toadd_endpoint = rg.nextMediumNumber() < 96;
-            const uint32_t toadd_region = !cat->region.empty() && rg.nextMediumNumber() < 96;
-            const uint32_t toadd_url = rg.nextMediumNumber() < 96;
-            const uint32_t total_to_add = toadd_sct + toadd_warehouse + toadd_endpoint + toadd_region + toadd_url;
-
-            for (uint32_t i = 0; i < total_to_add; i++)
-            {
-                SettingValues * svs = te->mutable_setting_values();
-                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-                const uint32_t add_sct = 3 * static_cast<uint32_t>(added_sct < toadd_sct);
-                const uint32_t add_warehouse = 3 * static_cast<uint32_t>(added_warehouse < toadd_warehouse);
-                const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
-                const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
-                const uint32_t add_url = 3 * static_cast<uint32_t>(added_url < toadd_url);
-                const uint32_t prob_space = add_sct + add_warehouse + add_endpoint + add_region + add_url;
-                std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-                const uint32_t nopt = next_dist(rg.generator);
-
-                if (add_sct && nopt < (add_sct + 1))
-                {
-                    sv->set_property("storage_catalog_type");
-                    sv->set_value("'" + catalog_str + "'");
-                    added_sct++;
-                }
-                else if (add_warehouse && nopt < (add_sct + add_warehouse + 1))
-                {
-                    sv->set_property("storage_warehouse");
-                    sv->set_value("'" + t.getDatabaseName() + "'");
-                    added_warehouse++;
-                }
-                else if (add_endpoint && nopt < (add_sct + add_warehouse + add_endpoint + 1))
-                {
-                    /// The key-value format is not well supported for catalogs at the moment
-                    const ServerCredentials & minio = fc.minio_server.value();
-
-                    te->add_params()->set_svalue(t.getTablePath(fc));
-                    te->add_params()->set_svalue(minio.password);
-                    te->add_params()->set_svalue(minio.secret);
-                    if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
-                    {
-                        te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
-                        if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
-                        {
-                            te->add_params()->set_svalue(t.file_comp.value());
-                        }
-                    }
-                    sv->set_property("object_storage_endpoint");
-                    sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
-                    added_endpoint++;
-                }
-                else if (add_region && nopt < (add_sct + add_warehouse + add_endpoint + add_region + 1))
-                {
-                    sv->set_property("storage_region");
-                    sv->set_value("'" + cat->region + "'");
-                    added_region++;
-                }
-                else if (add_url && nopt < (add_sct + add_warehouse + add_endpoint + add_region + add_url + 1))
-                {
-                    sv->set_property("storage_catalog_url");
-                    sv->set_value("'" + catalog_url + "'");
-                    added_url++;
-                }
-                else
-                {
-                    UNREACHABLE();
-                }
+                te->add_params()->set_svalue(t.file_comp.value());
             }
         }
-    }
-    else if (t.isKafkaEngine())
-    {
-        const String & host = fc.kafka_server.has_value() ? fc.kafka_server.value().server_hostname : "localhost";
-        const uint16_t & port = static_cast<uint16_t>(fc.kafka_server.has_value() ? fc.kafka_server.value().port : 9092);
+        sv3->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+        if (!cat->region.empty())
+        {
+            SetValue * sv5 = svs->add_other_values();
 
-        te->add_params()->set_svalue(fmt::format("{}:{}", host, port));
-        te->add_params()->set_svalue(t.topic.value()); /// topic
-        te->add_params()->set_svalue(t.group.value()); /// group
-        te->add_params()->set_in_out(t.file_format.has_value() ? t.file_format.value() : InOutFormat::INOUT_CSV);
+            sv5->set_property("storage_region");
+            sv5->set_value("'" + cat->region + "'");
+        }
     }
 }
 
-bool DolorIntegration::performExternalCommand(
-    const uint64_t seed, const bool async, const String & engine, const String & cname, const String & tname)
+bool DolorIntegration::performExternalCommand(const uint64_t seed, const bool async, const String & cname, const String & tname)
 {
     return httpPut(
         "/sparkupdate",
-        fmt::format(
-            R"({{"seed":{},"async":{},"engine":"{}","catalog_name":"{}","table_name":"{}"}})", seed, async ? 1 : 0, engine, cname, tname));
+        fmt::format(R"({{"seed":{},"async":{},"catalog_name":"{}","table_name":"{}"}})", seed, async ? 1 : 0, cname, tname));
 }
 
 ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
@@ -1889,7 +1755,7 @@ ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     }
 }
 
-void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de)
+void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
 {
     ClickHouseIntegration * next = nullptr;
 
@@ -1899,11 +1765,12 @@ void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatab
             next = dolor.get();
             break;
         default:
-            UNREACHABLE();
+            chassert(0);
+            break;
     }
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performDatabaseIntegration(rg, d));
-    next->setDatabaseDetails(rg, d, de);
+    next->setDatabaseDetails(rg, d, de, svs);
 }
 
 void ExternalIntegrations::createExternalDatabaseTable(
@@ -1941,7 +1808,8 @@ void ExternalIntegrations::createExternalDatabaseTable(
             next = dolor.get();
             break;
         default:
-            UNREACHABLE();
+            chassert(0);
+            break;
     }
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performTableIntegration(rg, t, true, entries));
@@ -1958,7 +1826,8 @@ bool ExternalIntegrations::reRunCreateDatabase(const IntegrationCall ic, const S
             next = dolor.get();
             break;
         default:
-            UNREACHABLE();
+            chassert(0);
+            break;
     }
     return next ? next->reRunCreateDatabase(body) : false;
 }
@@ -1973,13 +1842,14 @@ bool ExternalIntegrations::reRunCreateTable(const IntegrationCall ic, const Stri
             next = dolor.get();
             break;
         default:
-            UNREACHABLE();
+            chassert(0);
+            break;
     }
     return next ? next->reRunCreateTable(body) : false;
 }
 
 bool ExternalIntegrations::performExternalCommand(
-    const uint64_t seed, const bool async, const IntegrationCall ic, const String & engine, const String & cname, const String & tname)
+    const uint64_t seed, const bool async, const IntegrationCall ic, const String & cname, const String & tname)
 {
     ClickHouseIntegration * next = nullptr;
 
@@ -1989,16 +1859,17 @@ bool ExternalIntegrations::performExternalCommand(
             next = dolor.get();
             break;
         default:
-            UNREACHABLE();
+            chassert(0);
+            break;
     }
     if (next)
     {
         if (async)
         {
-            worker.enqueue([next, seed, engine, cname, tname]() { next->performExternalCommand(seed, true, engine, cname, tname); });
+            worker.enqueue([next, seed, cname, tname]() { next->performExternalCommand(seed, true, cname, tname); });
             return true;
         }
-        return next->performExternalCommand(seed, false, engine, cname, tname);
+        return next->performExternalCommand(seed, false, cname, tname);
     }
     return false;
 }
@@ -2064,7 +1935,8 @@ void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const Stri
             azurite->setBackupDetails(filename, br);
             break;
         default:
-            UNREACHABLE();
+            chassert(0);
+            break;
     }
 }
 

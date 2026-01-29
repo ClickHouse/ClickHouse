@@ -4,11 +4,11 @@ description: 'The File table engine keeps the data in a file in one of the suppo
 sidebar_label: 'File'
 sidebar_position: 40
 slug: /engines/table-engines/special/file
-title: 'File table engine'
+title: 'File Table Engine'
 doc_type: 'reference'
 ---
 
-# File table engine
+# `File` table engine
 
 The File table engine keeps the data in a file in one of the supported [file formats](/interfaces/formats#formats-overview) (`TabSeparated`, `Native`, etc.).
 

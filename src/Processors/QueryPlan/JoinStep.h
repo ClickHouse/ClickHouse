@@ -49,15 +49,12 @@ public:
         std::string rhs_name;
     };
 
-    struct PrimaryKeySharding : std::vector<PrimaryKeyNamesPair>
-    {
-        bool is_reverse_order = false;
-    };
+    using PrimaryKeySharding = std::vector<PrimaryKeyNamesPair>;
 
     /// Set names of PK columns for optimized for JOIN sharder by PK ranges.
     /// Names are required for EXPLAIN only.
     void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
-    void keepLeftPipelineInOrder(bool disable_squashing = false);
+    void keepLeftPipelineInOrder() { keep_left_read_in_order = true; }
 
     bool isOptimized() const { return optimized; }
     void setOptimized() { optimized = true; }

@@ -231,7 +231,6 @@ MemoryWorker::MemoryWorker(
     , correct_tracker(config.correct_tracker)
     , purge_total_memory_threshold_ratio(config.purge_total_memory_threshold_ratio)
     , purge_dirty_pages_threshold_ratio(config.purge_dirty_pages_threshold_ratio)
-    , decay_adjustment_period_ms(config.decay_adjustment_period_ms)
     , page_cache(page_cache_)
 {
 #if USE_JEMALLOC
@@ -346,25 +345,15 @@ uint64_t MemoryWorker::getMemoryUsage(bool log_error)
         case MemoryUsageSource::None:
         {
             if (log_error)
-                LOG_ERROR(log, "Trying to fetch memory usage while no memory source can be used");
+                LOG_ERROR(getLogger("MemoryWorker"), "Trying to fetch memory usage while no memory source can be used");
             return 0;
         }
     }
 }
 
-namespace
-{
-
-[[maybe_unused]] std::chrono::milliseconds getCurrentTimeMs()
-{
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch());
-}
-
-}
-
 void MemoryWorker::updateResidentMemoryThread()
 {
-    DB::setThreadName(ThreadName::MEMORY_WORKER);
+    setThreadName("MemoryWorker");
 
     /// Set the biggest priority for this thread to avoid drift
     /// under the CPU starvation.
@@ -373,12 +362,6 @@ void MemoryWorker::updateResidentMemoryThread()
     std::chrono::milliseconds chrono_period_ms{rss_update_period_ms};
     [[maybe_unused]] bool first_run = true;
     std::unique_lock rss_update_lock(rss_update_mutex);
-
-#if USE_JEMALLOC
-    /// First time we switched the state of purging dirty pages (purging -> not purging OR not purging -> purging)
-    bool purging_dirty_pages = false;
-    std::chrono::milliseconds purge_state_change_time_ms{0};
-#endif
 
     while (true)
     {
@@ -396,63 +379,16 @@ void MemoryWorker::updateResidentMemoryThread()
 
 #if USE_JEMALLOC
         const auto memory_tracker_limit = total_memory_tracker.getHardLimit();
-        const auto purge_total_memory_threshold = static_cast<double>(memory_tracker_limit) * purge_total_memory_threshold_ratio;
-        const auto purge_dirty_pages_threshold = static_cast<double>(memory_tracker_limit) * purge_dirty_pages_threshold_ratio;
 
-        const bool needs_purge = (purge_total_memory_threshold_ratio > 0 && static_cast<double>(resident) > purge_total_memory_threshold)
+        const bool needs_purge
+            = (purge_total_memory_threshold_ratio > 0 && resident > memory_tracker_limit * purge_total_memory_threshold_ratio)
             || (purge_dirty_pages_threshold_ratio > 0
-                && static_cast<double>(pdirty_mib.getValue() * page_size) > purge_dirty_pages_threshold);
+                && pdirty_mib.getValue() * page_size > memory_tracker_limit * purge_dirty_pages_threshold_ratio);
 
-        auto current_decay_state = decay_state.load(std::memory_order_relaxed);
-        if (needs_purge)
+        bool is_purge_enabled = false;
+        if (needs_purge && purge_dirty_pages.compare_exchange_strong(is_purge_enabled, true, std::memory_order_relaxed))
         {
-            bool notify_purge = false;
-            if (decay_adjustment_period_ms.count() > 0)
-            {
-                if (!std::exchange(purging_dirty_pages, true))
-                {
-                    /// Transitioned into purging state, record the time
-                    purge_state_change_time_ms = getCurrentTimeMs();
-                }
-                else if (
-                    (getCurrentTimeMs() - purge_state_change_time_ms >= decay_adjustment_period_ms)
-                    && current_decay_state == MemoryWorker::DecayState::Enabled)
-                {
-                    /// Sustained memory pressure - request disabling decay
-                    MemoryWorker::DecayState expected = MemoryWorker::DecayState::Enabled;
-                    notify_purge |= decay_state.compare_exchange_strong(
-                        expected, MemoryWorker::DecayState::DisableRequested, std::memory_order_relaxed);
-                }
-            }
-
-            if (current_decay_state != MemoryWorker::DecayState::Disabled)
-            {
-                /// Trigger immediate purge if decay is not yet disabled
-                bool expected_purge_dirty_pages = false;
-                notify_purge |= purge_dirty_pages.compare_exchange_strong(expected_purge_dirty_pages, true, std::memory_order_relaxed);
-            }
-
-            if (notify_purge)
-                purge_dirty_pages_cv.notify_all();
-        }
-        else if (decay_adjustment_period_ms.count() > 0)
-        {
-            if (std::exchange(purging_dirty_pages, false))
-            {
-                /// Transitioned out of purging state, record the time
-                purge_state_change_time_ms = getCurrentTimeMs();
-            }
-            else if (
-                (getCurrentTimeMs() - purge_state_change_time_ms >= decay_adjustment_period_ms)
-                && current_decay_state == MemoryWorker::DecayState::Disabled)
-            {
-                /// Sustained normal conditions - request enabling decay
-                MemoryWorker::DecayState expected = MemoryWorker::DecayState::Disabled;
-                if (decay_state.compare_exchange_strong(expected, MemoryWorker::DecayState::EnableRequested, std::memory_order_relaxed))
-                {
-                    purge_dirty_pages_cv.notify_all();
-                }
-            }
+            purge_dirty_pages_cv.notify_all();
         }
 
         /// update MemoryTracker with `allocated` information from jemalloc when:
@@ -479,91 +415,23 @@ void MemoryWorker::updateResidentMemoryThread()
     }
 }
 
-#if USE_JEMALLOC
-void MemoryWorker::setDirtyDecayForAllArenas(size_t decay_ms)
-{
-    try
-    {
-        /// First, set the default for any NEW arenas that get created
-        Jemalloc::setValue("arenas.dirty_decay_ms", decay_ms);
-
-        /// Now update all EXISTING arenas
-        /// Query how many arenas currently exist
-        unsigned narenas = Jemalloc::getValue<unsigned>("arenas.narenas");
-
-        /// Iterate through each arena and set its dirty_decay_ms
-        for (unsigned i = 0; i < narenas; ++i)
-        {
-            std::string arena_path = fmt::format("arena.{}.dirty_decay_ms", i);
-
-            try
-            {
-                Jemalloc::setValue(arena_path.c_str(), decay_ms);
-            }
-            catch (...)
-            {
-                /// Some arenas might not exist or be accessible, skip them
-                LOG_TRACE(log, "Failed to set dirty_decay_ms for arena {}", i);
-            }
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Failed to set dirty_decay_ms");
-    }
-}
-
 void MemoryWorker::purgeDirtyPagesThread()
 {
+#if USE_JEMALLOC
     /// Instead of having completely separate logic for purging dirty pages,
     /// we rely on the main thread to notify us when we need to purge dirty pages.
     /// We do it to avoid reading RSS value in both threads. Even though they are fairly
     /// fast, they are still not free.
     /// So we keep the work of reading current RSS in one thread which allows us to keep the low period time for it.
-    DB::setThreadName(ThreadName::MEMORY_WORKER);
+    setThreadName("MemoryWorker");
 
     std::unique_lock purge_dirty_pages_lock(purge_dirty_pages_mutex);
 
-    uint64_t default_dirty_decay_ms = dirty_decay_ms_mib.getValue();
-    LOG_INFO(log, "Default dirty pages decay period: {}ms", default_dirty_decay_ms);
     while (true)
     {
-        purge_dirty_pages_cv.wait(
-            purge_dirty_pages_lock,
-            [&]
-            {
-                auto state = decay_state.load(std::memory_order_relaxed);
-                return shutdown || purge_dirty_pages.load(std::memory_order_relaxed)
-                    || state == MemoryWorker::DecayState::DisableRequested
-                    || state == MemoryWorker::DecayState::EnableRequested;
-            });
-
+        purge_dirty_pages_cv.wait(purge_dirty_pages_lock, [this] { return shutdown || purge_dirty_pages.load(std::memory_order_relaxed); });
         if (shutdown)
             return;
-
-        /// Handle decay state transitions
-        auto current_state = decay_state.load(std::memory_order_relaxed);
-        if (current_state == MemoryWorker::DecayState::DisableRequested)
-        {
-            LOG_INFO(
-                log,
-                "Setting jemalloc's dirty pages decay period to 0ms (disabling automatic decay) because of high memory usage for a longer "
-                "period of time (> {}ms). This should provide server with more memory but it could negatively impact the performance",
-                decay_adjustment_period_ms.count());
-            setDirtyDecayForAllArenas(0);
-            decay_state.store(MemoryWorker::DecayState::Disabled, std::memory_order_relaxed);
-        }
-        else if (current_state == MemoryWorker::DecayState::EnableRequested)
-        {
-            LOG_INFO(
-                log,
-                "Setting jemalloc's dirty pages decay period to {}ms (re-enabling automatic decay). Server has been operating with normal "
-                "memory usage for at least {}ms",
-                default_dirty_decay_ms,
-                decay_adjustment_period_ms.count());
-            setDirtyDecayForAllArenas(default_dirty_decay_ms);
-            decay_state.store(MemoryWorker::DecayState::Enabled, std::memory_order_relaxed);
-        }
 
         bool is_purge_enabled = true;
         if (!purge_dirty_pages.compare_exchange_strong(is_purge_enabled, false, std::memory_order_relaxed))
@@ -574,7 +442,7 @@ void MemoryWorker::purgeDirtyPagesThread()
         ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
         ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, purge_watch.elapsedMicroseconds());
     }
-}
 #endif
+}
 
 }

@@ -5,7 +5,6 @@
 #    pragma clang diagnostic ignored "-Wshadow"
 #    pragma clang diagnostic ignored "-Wextra-semi-stmt"
 #    pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#    pragma clang diagnostic ignored "-Wimplicit-int-float-conversion"
 
 #    include <pocketfft_hdronly.h>
 
@@ -159,8 +158,8 @@ public:
             return true;
         }
 
-        double step = 0.5 / static_cast<double>(spec_len - 1);
-        auto freq = static_cast<double>(idx) * step;
+        double step = 0.5 / (spec_len - 1);
+        auto freq = idx * step;
 
         period = std::round(1 / freq);
         return true;
@@ -199,7 +198,7 @@ Finds the period of the given series data using FFT - [Fast Fourier transform](h
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSeriesPeriodDetectFFT>(documentation);
 }

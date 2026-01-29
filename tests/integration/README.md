@@ -23,13 +23,13 @@ python -m ci.praktika run "<JOB_NAME>"
 ### Run a Specific Test Within a CI Job
 ```bash
 python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
-  --test "test_named_collections"
+  --test "test_named_collections/"
 ```
 - With `--test`, the batch index in the job name (e.g., `4/5`) is irrelevant locally, but the job name must match an actual CI job to select the right configuration.
 - You can pass multiple test selectors:
   ```bash
   python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
-    --test "test_named_collections/test.py::test_default_access" "test_multiple_disks"
+    --test "test_named_collections/test.py::test_default_access" "test_multiple_disks/"
   ```
 - Tip: For local runs with `--test`, the batch index and build flavor are not required. You can use the alias `integration`:
   ```bash
@@ -40,10 +40,9 @@ python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
 ### Additional Customization Options
 - `--count N` to repeat each test N times (`--count` is passed to pytest with `--repeat-scope=function`).
 - `--debug` to open the Python debug console on exception (`--pdb` is passed to pytest).
-- `--path PATH` custom ClickHouse server binary location (if not in default locations).
-- `--path_1 PATH` custom path to the ClickHouse server config directory (if not in `./programs/server/config/`).
-- `--workers N` to override automatic calculation of the recommended maximum number of parallel pytest workers. The value is passed to pytest-xdist as `-n N`. Use a lower number on resource-constrained machines or increase it to utilize more CPU cores.
-- `--param KEY=VALUE[,KEY=VALUE...]` to inject custom environment variables for pytest. Pass comma-separated KEY=VALUE pairs (e.g., `--param PYTEST_ADDOPTS=-vv,CUSTOM_FLAG=1`).
+- `--path` custom ClickHouse server binary location (if not in default locations).
+- `--path_1` custom path to the ClickHouse server config directory (if not in `./programs/server/config/`).
+
 ## Running Natively
 
 ### Prerequisites
@@ -202,10 +201,4 @@ sudo vim /etc/docker/daemon.json
 {
   "ipv6": false
 }
-```
-
-### "Permission denied" errors in ClickHouse repository after running integration tests
-Sometimes after running integration tests natively docker seems to change the permissions of the ClickHouse code repository and running normal `clickhouse-test` tests fails due to these permission errors. To fix it, chown back to your user and group:
-```bash
-sudo chown -R <user>:<group> ClickHouse/
 ```

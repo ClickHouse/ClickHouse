@@ -3,6 +3,7 @@
 #include <map>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <Core/QualifiedTableName.h>
 #include <Core/Types.h>
 #include <Databases/LoadingStrictnessLevel.h>

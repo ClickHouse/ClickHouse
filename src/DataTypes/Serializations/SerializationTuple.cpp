@@ -11,6 +11,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+
 namespace DB
 {
 
@@ -60,15 +61,6 @@ void SerializationTuple::serializeBinary(const IColumn & column, size_t row_num,
     {
         const auto & serialization = elems[element_index];
         serialization->serializeBinary(extractElementColumn(column, element_index), row_num, ostr, settings);
-    }
-}
-
-void SerializationTuple::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    for (size_t element_index = 0; element_index < elems.size(); ++element_index)
-    {
-        const auto & serialization = elems[element_index];
-        serialization->serializeForHashCalculation(extractElementColumn(column, element_index), row_num, ostr);
     }
 }
 
@@ -145,21 +137,14 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 
 void SerializationTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.pretty_format && settings.pretty.named_tuples_as_json && has_explicit_names)
+    writeChar('(', ostr);
+    for (size_t i = 0; i < elems.size(); ++i)
     {
-        serializeTextJSONPretty(column, row_num, ostr, settings, 1);
+        if (i != 0)
+            writeChar(',', ostr);
+        elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
     }
-    else
-    {
-        writeChar('(', ostr);
-        for (size_t i = 0; i < elems.size(); ++i)
-        {
-            if (i != 0)
-                writeChar(',', ostr);
-            elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
-        }
-        writeChar(')', ostr);
-    }
+    writeChar(')', ostr);
 }
 
 template <typename ReturnType>
@@ -309,9 +294,7 @@ void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t 
         }
 
         writeChar('\n', ostr);
-        const auto final_indent = indent * settings.json.pretty_print_indent_multiplier;
-        if (final_indent > 1)
-            writeChar(settings.json.pretty_print_indent, final_indent, ostr);
+        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
         writeChar('}', ostr);
     }
     else

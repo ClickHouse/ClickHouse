@@ -7,12 +7,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Poco/String.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <Interpreters/InstrumentationManager.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <base/EnumReflection.h>
 
@@ -20,7 +16,7 @@
 namespace DB
 {
 
-[[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
+[[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                                  Expected & expected, bool require_table, bool allow_string_literal)
 {
     /// Better form for user: SYSTEM <ACTION> table ON CLUSTER cluster
@@ -74,7 +70,7 @@ enum class SystemQueryTargetType : uint8_t
     Disk,
 };
 
-[[nodiscard]] static bool parseQueryWithOnClusterAndTarget(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, SystemQueryTargetType target_type)
+[[nodiscard]] static bool parseQueryWithOnClusterAndTarget(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, SystemQueryTargetType target_type)
 {
     /// Better form for user: SYSTEM <ACTION> target_name ON CLUSTER cluster
     /// Query rewritten form + form while executing on cluster: SYSTEM <ACTION> ON CLUSTER cluster target_name
@@ -139,7 +135,7 @@ enum class SystemQueryTargetType : uint8_t
     return true;
 }
 
-[[nodiscard]] static bool parseQueryWithOnCluster(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
+[[nodiscard]] static bool parseQueryWithOnCluster(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                     Expected & expected)
 {
     String cluster_str;
@@ -153,7 +149,7 @@ enum class SystemQueryTargetType : uint8_t
     return true;
 }
 
-[[nodiscard]] static bool parseDropReplica(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, bool database)
+[[nodiscard]] static bool parseDropReplica(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, bool database)
 {
     if (!parseQueryWithOnCluster(res, pos, expected))
         return false;
@@ -193,9 +189,7 @@ enum class SystemQueryTargetType : uint8_t
             String zk_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
             if (!zk_path.empty() && zk_path[zk_path.size() - 1] == '/')
                 zk_path.pop_back();
-            res->full_replica_zk_path = std::move(zk_path);
-            res->zk_name = zkutil::extractZooKeeperName(res->full_replica_zk_path);
-            res->replica_zk_path = zkutil::extractZooKeeperPath(res->full_replica_zk_path, /*check_starts_with_slash*/false);
+            res->replica_zk_path = zk_path;
         }
         else
             return false;
@@ -209,7 +203,7 @@ enum class SystemQueryTargetType : uint8_t
     return true;
 }
 
-[[nodiscard]] static bool parseDropCatalogReplica(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected)
+[[nodiscard]] static bool parseDropCatalogReplica(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr ast;
     if (!ParserStringLiteral{}.parse(pos, ast, expected))
@@ -225,7 +219,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
     using Type = ASTSystemQuery::Type;
 
-    auto res = make_intrusive<ASTSystemQuery>();
+    auto res = std::make_shared<ASTSystemQuery>();
 
     bool found = false;
 
@@ -239,51 +233,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
     }
 
-    /// SYSTEM DROP [...] CACHE sounds like the statement disables the cache but it merely clears it.
-    /// SYSTEM CLEAR [...] CACHE is the preferred syntax but we need to retain support for DROP.
-    if (!found)
-    {
-        static const std::vector<std::pair<std::string_view, Type>> system_aliases = {
-            {"DROP DNS CACHE", Type::CLEAR_DNS_CACHE},
-            {"DROP CONNECTIONS CACHE", Type::CLEAR_CONNECTIONS_CACHE},
-            {"DROP MARK CACHE", Type::CLEAR_MARK_CACHE},
-            {"DROP PRIMARY INDEX CACHE", Type::CLEAR_PRIMARY_INDEX_CACHE},
-            {"DROP UNCOMPRESSED CACHE", Type::CLEAR_UNCOMPRESSED_CACHE},
-            {"DROP INDEX MARK CACHE", Type::CLEAR_INDEX_MARK_CACHE},
-            {"DROP INDEX UNCOMPRESSED CACHE", Type::CLEAR_INDEX_UNCOMPRESSED_CACHE},
-            {"DROP VECTOR SIMILARITY INDEX CACHE", Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE},
-            {"DROP TEXT INDEX DICTIONARY CACHE", Type::CLEAR_TEXT_INDEX_DICTIONARY_CACHE},
-            {"DROP TEXT INDEX HEADER CACHE", Type::CLEAR_TEXT_INDEX_HEADER_CACHE},
-            {"DROP TEXT INDEX POSTINGS CACHE", Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE},
-            {"DROP TEXT INDEX CACHES", Type::CLEAR_TEXT_INDEX_CACHES},
-            {"DROP MMAP CACHE", Type::CLEAR_MMAP_CACHE},
-            {"DROP QUERY CONDITION CACHE", Type::CLEAR_QUERY_CONDITION_CACHE},
-            {"DROP QUERY CACHE", Type::CLEAR_QUERY_CACHE},
-            {"DROP COMPILED EXPRESSION CACHE", Type::CLEAR_COMPILED_EXPRESSION_CACHE},
-            {"DROP ICEBERG METADATA CACHE", Type::CLEAR_ICEBERG_METADATA_CACHE},
-            {"DROP FILESYSTEM CACHE", Type::CLEAR_FILESYSTEM_CACHE},
-            {"DROP DISTRIBUTED CACHE", Type::CLEAR_DISTRIBUTED_CACHE},
-            {"DROP DISK METADATA CACHE", Type::CLEAR_DISK_METADATA_CACHE},
-            {"DROP PAGE CACHE", Type::CLEAR_PAGE_CACHE},
-            {"DROP SCHEMA CACHE", Type::CLEAR_SCHEMA_CACHE},
-            {"DROP FORMAT SCHEMA CACHE", Type::CLEAR_FORMAT_SCHEMA_CACHE},
-            {"DROP S3 CLIENT CACHE", Type::CLEAR_S3_CLIENT_CACHE},
-        };
-
-        for (const auto & [alias, type] : system_aliases)
-        {
-            if (ParserKeyword::createDeprecatedPtr(alias)->ignore(pos, expected))
-            {
-                res->type = type;
-                found = true;
-                break;
-            }
-        }
-    }
-
     if (!found)
         return false;
-
 
     switch (res->type)
     {
@@ -326,15 +277,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
-        case Type::NOTIFY_FAILPOINT:
-        {
-            ASTPtr ast;
-            if (ParserIdentifier{}.parse(pos, ast, expected))
-                res->fail_point_name = ast->as<ASTIdentifier &>().name();
-            else
-                return false;
-            break;
-        }
         case Type::WAIT_FAILPOINT:
         {
             ASTPtr ast;
@@ -342,13 +284,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 res->fail_point_name = ast->as<ASTIdentifier &>().name();
             else
                 return false;
-
-            /// Optional PAUSE or RESUME keyword
-            if (ParserKeyword(Keyword::PAUSE).ignore(pos, expected))
-                res->fail_point_action = ASTSystemQuery::FailPointAction::PAUSE;
-            else if (ParserKeyword(Keyword::RESUME).ignore(pos, expected))
-                res->fail_point_action = ASTSystemQuery::FailPointAction::RESUME;
-
             break;
         }
 
@@ -572,7 +507,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             res->seconds = seconds->as<ASTLiteral>()->value.safeGet<UInt64>();
             break;
         }
-        case Type::CLEAR_QUERY_CACHE:
+        case Type::DROP_QUERY_CACHE:
         {
             ParserLiteral tag_parser;
             ASTPtr ast;
@@ -582,7 +517,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::CLEAR_FILESYSTEM_CACHE:
+        case Type::DROP_FILESYSTEM_CACHE:
         {
             ParserLiteral path_parser;
             ASTPtr ast;
@@ -600,7 +535,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::CLEAR_DISTRIBUTED_CACHE:
+        case Type::DROP_DISTRIBUTED_CACHE:
         {
             ParserLiteral parser;
             ASTPtr ast;
@@ -625,13 +560,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::CLEAR_DISK_METADATA_CACHE:
+        case Type::DROP_DISK_METADATA_CACHE:
         {
             if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
                 return false;
             break;
         }
-        case Type::CLEAR_SCHEMA_CACHE:
+        case Type::DROP_SCHEMA_CACHE:
         {
             if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
             {
@@ -650,7 +585,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
             break;
         }
-        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
+        case Type::DROP_FORMAT_SCHEMA_CACHE:
         {
             if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
             {
@@ -691,7 +626,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 ast->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
                 res->backup_source = ast;
-                res->children.push_back(res->backup_source);
             }
 
             break;
@@ -772,7 +706,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 
-        case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::FLUSH_LOGS:
         {
             Pos prev_token = pos;
@@ -786,26 +719,26 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ParserToken s_dot(TokenType::Dot);
             ParserIdentifier table_parser(true);
 
+
             do
             {
                 ASTPtr table_first;
                 if (!table_parser.parse(pos, table_first, expected))
                 {
-                    if (res->tables.empty())
+                    if (res->logs.empty())
                         break;
                     return false;
                 }
 
                 if (!s_dot.ignore(pos))
-                {
-                    res->tables.emplace_back(String{}, table_first->as<ASTIdentifier &>().full_name);
-                }
+                    res->logs.emplace_back(table_first->as<ASTIdentifier &>().full_name);
                 else
                 {
                     ASTPtr table_second;
                     if (!table_parser.parse(pos, table_second, expected))
                         return false;
-                    res->tables.emplace_back(table_first->as<ASTIdentifier &>().full_name, table_second->as<ASTIdentifier &>().full_name);
+                    res->logs.emplace_back(
+                        fmt::format("{}.{}", table_first->as<ASTIdentifier &>().full_name, table_second->as<ASTIdentifier &>().full_name));
                 }
 
 
@@ -813,103 +746,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             break;
         }
-
-#if USE_XRAY
-        case Type::INSTRUMENT_REMOVE:
-        {
-            ASTPtr temporary_identifier;
-
-            if (ParserSubquery{}.parse(pos, temporary_identifier, expected))
-            {
-                if (!temporary_identifier->children.empty())
-                {
-                    WriteBufferFromOwnString query_buffer;
-                    IAST::FormatSettings settings(true);
-                    temporary_identifier->children[0]->format(query_buffer, settings);
-                    res->instrumentation_subquery = query_buffer.str();
-                }
-                break;
-            }
-
-            if (ParserLiteral{}.parse(pos, temporary_identifier, expected))
-            {
-                const auto field = temporary_identifier->as<ASTLiteral &>().value;
-                switch (field.getType())
-                {
-                    case Field::Types::Which::String:
-                        res->instrumentation_point = field.safeGet<String>();
-                        break;
-                    case Field::Types::Which::UInt64:
-                        res->instrumentation_point = field.safeGet<UInt64>();
-                        break;
-                    default:
-                        return false;
-                }
-            }
-            else if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
-            {
-                String identifier = temporary_identifier->as<ASTIdentifier &>().name();
-                if (Poco::toLower(identifier) == "all")
-                    res->instrumentation_point = Instrumentation::All{};
-                else
-                    return false;
-            }
-
-            break;
-        }
-        case Type::INSTRUMENT_ADD:
-        {
-            ASTPtr temporary_identifier;
-            if (ParserLiteral{}.parse(pos, temporary_identifier, expected))
-                res->instrumentation_function_name = temporary_identifier->as<ASTLiteral &>().value.safeGet<String>();
-            else
-                return false;
-
-            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
-                res->instrumentation_handler_name = temporary_identifier->as<ASTIdentifier &>().name();
-            else
-                return false;
-
-            if (Poco::toLower(res->instrumentation_handler_name) == "profile")
-            {
-                res->instrumentation_entry_type = Instrumentation::EntryType::ENTRY_AND_EXIT;
-                break;
-            }
-
-            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
-            {
-                String entry_type = temporary_identifier->as<ASTIdentifier &>().name();
-                if (Poco::toLower(entry_type) == "entry")
-                    res->instrumentation_entry_type = Instrumentation::EntryType::ENTRY;
-                else if (Poco::toLower(entry_type) == "exit")
-                    res->instrumentation_entry_type = Instrumentation::EntryType::EXIT;
-                else
-                    return false;
-            }
-            else
-                return false;
-
-            ASTPtr params_ast;
-            while (ParserLiteral{}.parse(pos, params_ast, expected))
-            {
-                const auto & value = params_ast->as<ASTLiteral &>().value;
-                if (value.getType() == Field::Types::String)
-                    res->instrumentation_parameters.emplace_back(value.safeGet<String>());
-                else if (value.getType() == Field::Types::Int64)
-                    res->instrumentation_parameters.emplace_back(value.safeGet<Int64>());
-                else if (value.getType() == Field::Types::UInt64)
-                    res->instrumentation_parameters.emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
-                else if (value.getType() == Field::Types::Float64)
-                    res->instrumentation_parameters.emplace_back(value.safeGet<Float64>());
-            }
-
-            if (res->instrumentation_parameters.empty())
-                return false;
-
-            break;
-        }
-#endif
-
 #if USE_JEMALLOC
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
@@ -923,11 +759,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 #endif
-        case Type::RESET_DDL_WORKER: {
-            if (!parseQueryWithOnCluster(res, pos, expected))
-                return false;
-            break;
-        }
+
         default:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))

@@ -1,14 +1,12 @@
 #pragma once
 #include "config.h"
 
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/EqualityDeleteObject.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
-
-#include <Formats/FormatParserSharedResources.h>
 
 
 namespace DB::Iceberg
@@ -40,14 +38,14 @@ private:
 
 namespace DB
 {
-struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<IcebergDataObjectInfo>
+struct IcebergDataObjectInfo : public RelativePathWithMetadata, std::enable_shared_from_this<IcebergDataObjectInfo>
 {
     using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
 
     /// Full path to the data object file
     /// It is used to filter position deletes objects by data file path.
     /// It is also used to create a filter for the data object in the position delete transform.
-    explicit IcebergDataObjectInfo(Iceberg::ManifestFileEntryPtr data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_);
+    explicit IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_);
 
     explicit IcebergDataObjectInfo(const RelativePathWithMetadata & path_);
 
@@ -55,14 +53,13 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
         ObjectStoragePtr object_storage,
         const SharedHeader & header,
         const std::optional<FormatSettings> & format_settings,
-        FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr context_);
 
     std::optional<String> getFileFormat() const override { return info.file_format; }
 
-    void addPositionDeleteObject(Iceberg::ManifestFileEntryPtr position_delete_object);
+    void addPositionDeleteObject(Iceberg::ManifestFileEntry position_delete_object);
 
-    void addEqualityDeleteObject(const Iceberg::ManifestFileEntryPtr & equality_delete_object);
+    void addEqualityDeleteObject(const Iceberg::ManifestFileEntry & equality_delete_object);
     Iceberg::IcebergObjectSerializableInfo info;
 };
 
