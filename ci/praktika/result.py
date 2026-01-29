@@ -9,7 +9,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
 from .event import Event
@@ -17,6 +17,9 @@ from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import ContextManager, MetaClasses, Shell, Utils
+
+if TYPE_CHECKING:
+    from .info import Info
 
 
 @dataclasses.dataclass
@@ -223,13 +226,14 @@ class Result(MetaClasses.Serializable):
         self.dump()
         return self
 
-    def set_files(self, files) -> "Result":
+    def set_files(self, files, strict=True) -> "Result":
         if isinstance(files, (str, Path)):
             files = [files]
-        for file in files:
-            assert Path(
-                file
-            ).is_file(), f"Not valid file [{file}] from file list [{files}]"
+        if strict:
+            for file in files:
+                assert Path(
+                    file
+                ).is_file(), f"Not valid file [{file}] from file list [{files}]"
         if not self.files:
             self.files = []
         for file in self.files:
@@ -241,6 +245,30 @@ class Result(MetaClasses.Serializable):
         self.files += files
         self.dump()
         return self
+
+    def set_on_error_hook(self, hook: str) -> "Result":
+        """
+        Sets a bash script to execute when the job encounters a critical error.
+
+        This hook runs on job-level failures such as:
+        - Hard timeout exceeded
+        - Job killed or terminated by the system
+        - Infrastructure failures
+
+        The hook script should handle cleanup, log collection, or any other
+        recovery actions needed before the job terminates.
+
+        Args:
+            hook: Bash script/commands to execute on error
+
+        Returns:
+            Self for method chaining
+        """
+        self.ext["on_error_hook"] = hook
+        return self
+
+    def get_on_error_hook(self) -> str:
+        return self.ext.get("on_error_hook", "")
 
     def set_info(self, info: str) -> "Result":
         if self.info:
@@ -526,6 +554,7 @@ class Result(MetaClasses.Serializable):
             if result_.status in (
                 self.Status.ERROR,
                 self.Status.FAILED,
+                self.Status.DROPPED,
                 self.StatusExtended.FAIL,
             ):
                 has_failed = True
@@ -866,26 +895,44 @@ class Result(MetaClasses.Serializable):
             raise RuntimeError("Not implemented")
         return self
 
-    def to_event(
-        self,
-    ):
-        pr_number = self.ext.get("pr_number", -1)
+    def to_event(self, info: "Info"):
+        result_dict = Result.to_dict(self)
+
+        def _prune_result_info(result):
+            if not isinstance(result, dict):
+                return
+            result.pop("info", None)
+
+            results = result.get("results")
+            if not isinstance(results, list):
+                return
+            for r in results:
+                _prune_result_info(r)
+
+        _prune_result_info(result_dict)
+
         return Event(
             type=Event.Type.COMPLETED if self.is_completed() else Event.Type.RUNNING,
             timestamp=int(time.time()),
-            sha=self.ext.get("commit_sha", ""),
-            pr_number=pr_number,
-            pr_status="open" if pr_number > 0 else "merged",
-            pr_title=self.ext.get("pr_title", ""),
-            branch=self.ext.get("git_branch", ""),
+            sha=info.sha,
             ci_status=self.status,
-            result=Result.to_dict(self),
+            result=result_dict,
             ext={
-                "commit_message": self.ext.get("commit_message", ""),
-                "related_prs": self.ext.get("related_prs", []),
-                "repo_name": self.ext.get("repo_name", ""),
-                "report_url": self.ext.get("report_url", ""),
-                "change_url": self.ext.get("change_url", ""),
+                "pr_number": info.pr_number,
+                "pr_title": info.pr_title,
+                "branch": info.git_branch,
+                "commit_message": info.commit_message,
+                "linked_pr_number": info.linked_pr_number or 0,
+                "parent_pr_number": info.get_kv_data("parent_pr_number") or 0,
+                "repo_name": info.repo_name,
+                "report_url": info.get_job_report_url(latest=False),
+                "change_url": info.change_url,
+                "workflow_name": info.workflow_name,
+                "base_branch": info.base_branch,
+                "run_id": info.run_id,
+                "run_url": info.run_url,
+                "commit_authors": info.commit_authors,
+                "is_cancelled": self.ext.get("is_cancelled", False),
             },
         )
 

@@ -105,7 +105,7 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
                     return [converted_step, &time_zone = date_time64->getTimeZone()](Field & field, Int32 jumps_count) \
                     { \
                         auto field_decimal = field.safeGet<DecimalField<DateTime64>>(); \
-                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), converted_step * jumps_count, time_zone, utc_time_zone, field_decimal.getScale()); \
+                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), converted_step * jumps_count, time_zone, utc_time_zone, static_cast<UInt16>(field_decimal.getScale())); \
                         field = DecimalField<decltype(res)>(res, field_decimal.getScale()); \
                     }; \
                     break;
@@ -237,16 +237,19 @@ FillingTransform::FillingTransform(
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
 {
     if (interpolate_description)
+    {
         interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions.clone());
+
+        for (const auto & description: sort_description_)
+            if (interpolate_description->result_columns_set.contains(description.alias))
+                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "Column '{}' is participating in ORDER BY expression and can't be INTERPOLATE output",
+                    description.alias);
+    }
 
     std::vector<bool> is_fill_column(header_->columns());
     for (size_t i = 0, size = fill_description.size(); i < size; ++i)
     {
-        if (interpolate_description && interpolate_description->result_columns_set.contains(fill_description[i].column_name))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "Column '{}' is participating in ORDER BY ... WITH FILL expression and can't be INTERPOLATE output",
-                fill_description[i].column_name);
-
         size_t block_position = header_->getPositionByName(fill_description[i].column_name);
         is_fill_column[block_position] = true;
         fill_column_positions.push_back(block_position);

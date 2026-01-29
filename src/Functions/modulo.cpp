@@ -107,7 +107,7 @@ struct ModuloByConstantImpl
 
         /// Modulo of division by negative number is the same as the positive number.
         if (b < 0)
-            b = -b;
+            b = static_cast<B>(-b);
 
         /// Here we failed to make the SSE variant from libdivide give an advantage.
 

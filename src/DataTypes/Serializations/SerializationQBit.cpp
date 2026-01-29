@@ -159,7 +159,7 @@ void SerializationQBit::serializeFloatsFromQBitTuple(const Tuple & tuple, WriteB
     {
         const String & fixed_string = tuple[bit].safeGet<String>();
         const UInt8 * src = reinterpret_cast<const UInt8 *>(fixed_string.data());
-        const Word mask = Word(1) << (bits - 1 - bit);
+        const Word mask = static_cast<Word>(Word(1) << (bits - 1 - bit));
         SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
     }
 
@@ -215,7 +215,7 @@ void SerializationQBit::serializeFloatsFromQBit(const IColumn & column, size_t r
     {
         const auto & fs = assert_cast<const ColumnFixedString &>(extractElementColumn(column, bit));
         const UInt8 * src = reinterpret_cast<const UInt8 *>(fs.getChars().data()) + row_num * slice_size;
-        const Word mask = Word(1) << (bits - 1 - bit);
+        const Word mask = static_cast<Word>(Word(1) << (bits - 1 - bit));
         SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
     }
 
@@ -439,7 +439,7 @@ DECLARE_DEFAULT_CODE(
             for (int i = 0; i < 8; ++i)
             {
                 /// Mask is 0...0 if current bit is 0, 1...1 if it is 1. Use it to avoid a branch
-                T mask = -T((v >> i) & 1);
+                T mask = static_cast<T>(-T((v >> i) & 1));
                 dst[row_base - 7 + i] |= (mask & bit_mask);
             }
         }

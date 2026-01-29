@@ -9,7 +9,8 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/TableLockHolder.h>
-
+#include <Access/Common/AccessType.h>
+#include <Access/Common/AccessFlags.h>
 
 namespace DB
 {
@@ -138,6 +139,11 @@ template <bool or_null>
 ExecutableFunctionPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAndName &) const
 {
     Block result_columns {{return_type->createColumn(), return_type, attr_name}};
+
+    Names column_names = storage_join->getKeyNames();
+    column_names.push_back(attr_name);
+    context->checkAccess(AccessType::SELECT, storage_join->getStorageID(), column_names);
+
     return std::make_unique<ExecutableFunctionJoinGet<or_null>>(context, table_lock, storage_join, result_columns);
 }
 
@@ -154,11 +160,10 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
                         "Illegal type {} of first argument of function joinGet, expected a const string.",
                         arguments[0].type->getName());
 
-    auto qualified_name = QualifiedTableName::parseFromString(join_name);
-    if (qualified_name.database.empty())
-        qualified_name.database = context->getCurrentDatabase();
+    const auto qualified_name = QualifiedTableName::parseFromString(join_name);
+    const auto storage_id = context->resolveStorageID({qualified_name.database, qualified_name.table});
 
-    auto table = DatabaseCatalog::instance().getTable({qualified_name.database, qualified_name.table}, std::const_pointer_cast<Context>(context));
+    auto table = DatabaseCatalog::instance().getTable(storage_id, std::const_pointer_cast<Context>(context));
     auto storage_join = std::dynamic_pointer_cast<StorageJoin>(table);
     if (!storage_join)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Table {} should have engine StorageJoin", join_name);

@@ -746,7 +746,7 @@ Dwarf::CompilationUnit Dwarf::getCompilationUnit(uint64_t offset) const
     cu.size += cu.is64Bit ? 12 : 4;
 
     // 2) version
-    cu.version = read<uint16_t>(chunk);
+    cu.version = static_cast<uint8_t>(read<uint16_t>(chunk));
     SAFE_CHECK(cu.version >= 2 && cu.version <= 5, "invalid info version");
 
     if (cu.version == 5)
@@ -965,7 +965,7 @@ Dwarf::Die Dwarf::getDieAtOffset(const CompilationUnit & cu, uint64_t offset) co
     {
         return die;
     }
-    die.attr_offset = sp.data() - info_.data() - offset;
+    die.attr_offset = static_cast<uint8_t>(sp.data() - info_.data() - offset);
     die.abbr = !cu.abbr_cache.empty() && die.code < kMaxAbbreviationEntries ? cu.abbr_cache[die.code - 1]
                                                                             : getAbbreviation(die.code, cu.abbrev_offset);
 

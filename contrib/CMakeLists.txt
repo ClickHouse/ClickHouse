@@ -132,7 +132,7 @@ add_contrib (aws-cmake
     aws-cmake
 )
 
-add_contrib (aklomp-base64-cmake aklomp-base64)
+add_contrib (base64-cmake base64)
 add_contrib (simdjson-cmake simdjson)
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
@@ -219,6 +219,8 @@ add_contrib (libssh-cmake libssh)
 add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
 add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
 add_contrib (antlr4-grammars-cmake antlr4-grammars)
+
+add_contrib(simdcomp-cmake simdcomp)
 
 add_contrib (numactl-cmake numactl)
 

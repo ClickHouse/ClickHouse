@@ -453,7 +453,9 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
             paths,
             metadata->getPath(),
             metadata->getBucketsNum(),
-            metadata->isPathWithHivePartitioning(),
+            metadata->getBucketingMode(),
+            metadata->getPartitioningMode(),
+            metadata->getFilenameParser(),
             log);
 
     std::unordered_set<std::string> paths_set;
@@ -567,7 +569,12 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
 
     if (use_buckets_for_processing)
     {
-        const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(object_info->getPath(), buckets_num);
+        const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(
+            object_info->getPath(),
+            buckets_num,
+            metadata->getBucketingMode(),
+            metadata->getPartitioningMode(),
+            metadata->getFilenameParser());
         std::lock_guard lock(mutex);
         keys_cache_per_bucket.at(bucket)->keys.emplace_front(object_info, file_metadata);
     }
@@ -828,7 +835,12 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
 
             chassert(!file_metadata);
 
-            const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(object_info->getPath(), buckets_num);
+            const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(
+                object_info->getPath(),
+                buckets_num,
+                metadata->getBucketingMode(),
+                metadata->getPartitioningMode(),
+                metadata->getFilenameParser());
             auto bucket_it = keys_cache_per_bucket.find(bucket);
             if (bucket_it == keys_cache_per_bucket.end())
             {
@@ -1241,7 +1253,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
         }
 
         if (commit_settings.max_processing_time_sec_before_commit
-            && progress->elapsed_time.elapsedSeconds() >= commit_settings.max_processing_time_sec_before_commit)
+            && progress->elapsed_time.elapsedSeconds() >= static_cast<double>(commit_settings.max_processing_time_sec_before_commit))
         {
             LOG_DEBUG(log, "Max processing time before commit reached "
                       "(rows: {}, bytes: {}, files: {}, time: {})",
@@ -1258,7 +1270,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     Coordination::Requests & requests,
     bool insert_succeeded,
     StoredObjects & successful_files,
-    HiveLastProcessedFileInfoMap & file_map,
+    PartitionLastProcessedFileInfoMap & file_map,
     LastProcessedFileInfoMapPtr created_nodes,
     const std::string & exception_message,
     int error_code)
@@ -1274,7 +1286,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
 
     const bool is_ordered_mode = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
     const bool use_buckets_for_processing = file_iterator->useBucketsForProcessing();
-    const bool is_path_with_hive_partitioning = files_metadata->isPathWithHivePartitioning();
+    const bool has_partitioning = files_metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
     std::map<size_t, size_t> last_processed_file_idx_per_bucket;
 
     /// For Ordered mode collect a map: bucket_id -> max_processed_path.
@@ -1330,8 +1342,8 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                         {
                             file_metadata->prepareResetProcessingRequests(requests);
                         }
-                        if (is_path_with_hive_partitioning)
-                            file_metadata->prepareHiveProcessedMap(file_map);
+                        if (has_partitioning)
+                            file_metadata->preparePartitionProcessedMap(file_map);
                     }
                     else
                     {
@@ -1388,16 +1400,22 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     }
 }
 
-void ObjectStorageQueueSource::prepareHiveProcessedRequests(
+void ObjectStorageQueueSource::preparePartitionProcessedRequests(
     Coordination::Requests & requests,
-    const HiveLastProcessedFileInfoMap & file_map)
+    const PartitionLastProcessedFileInfoMap & last_processed_file_per_partition)
 {
-    for (const auto & [node_path, file_info] : file_map)
+    for (const auto & [partition_processed_path, last_processed_file_info] : last_processed_file_per_partition)
     {
-        if (file_info.exists)
-            requests.push_back(zkutil::makeSetRequest(node_path, file_info.file_path, -1));
+        if (last_processed_file_info.exists)
+        {
+            requests.push_back(zkutil::makeSetRequest(
+                partition_processed_path, last_processed_file_info.file_path, -1));
+        }
         else
-            requests.push_back(zkutil::makeCreateRequest(node_path, file_info.file_path, zkutil::CreateMode::Persistent));
+        {
+            requests.push_back(zkutil::makeCreateRequest(
+                partition_processed_path, last_processed_file_info.file_path, zkutil::CreateMode::Persistent));
+        }
     }
 }
 
@@ -1477,17 +1495,17 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
-    HiveLastProcessedFileInfoMap file_map;
+    PartitionLastProcessedFileInfoMap last_processed_file_per_partition;
     // `created_nodes` is nullptr here, because it is required only in mutithread case,
     // when `requests` is filled with several `prepareCommitRequests` calls.
     prepareCommitRequests(
         requests,
         insert_succeeded,
         successful_objects,
-        file_map,
+        last_processed_file_per_partition,
         /* created_nodes */ nullptr,
         exception_message);
-    prepareHiveProcessedRequests(requests, file_map);
+    preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
 
     if (!successful_objects.empty()
         && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)

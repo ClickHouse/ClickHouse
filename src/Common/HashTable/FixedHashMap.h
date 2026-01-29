@@ -118,7 +118,7 @@ public:
         UInt32 worker_id, UInt32 total_worker)
     {
         UInt32 min_index = 0;
-        UInt32 max_index = this->getBufferSizeInCells();
+        UInt32 max_index = static_cast<UInt32>(this->getBufferSizeInCells());
         if (this->canUseMinMaxOptimization())
         {
             auto [min, max] = this->getMinMaxIndex();
@@ -135,7 +135,7 @@ public:
             {
                 typename Self::LookupResult res_it;
                 bool inserted;
-                that.emplace(i, res_it, inserted, i);
+                that.emplace(static_cast<Key>(i), res_it, inserted, i);
                 func(res_it->getMapped(), this->buf[i].getMapped(), inserted);
             }
         }

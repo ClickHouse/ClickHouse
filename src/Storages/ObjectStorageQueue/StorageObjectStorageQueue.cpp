@@ -283,6 +283,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
     , can_be_moved_between_databases((*queue_settings_)[ObjectStorageQueueSetting::keeper_path].changed)
     , keep_data_in_keeper(keep_data_in_keeper_)
+    , use_hive_partitioning((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
 {
     const auto & read_path = configuration->getPathForRead();
     if (read_path.path.empty())
@@ -310,29 +311,35 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
     configuration->check(context_);
 
-    if ((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
+    bool is_path_with_hive_partitioning = false;
+    if (use_hive_partitioning)
     {
         hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(
             columns, configuration->getRawPath().path, format_settings, context_);
-    }
 
-    auto hive_partition_columns_to_read_from_file_path_set = hive_partition_columns_to_read_from_file_path.getNameSet();
+        is_path_with_hive_partitioning = !hive_partition_columns_to_read_from_file_path.empty();
+        if (is_path_with_hive_partitioning)
+        {
+            auto hive_columns_set = hive_partition_columns_to_read_from_file_path.getNameSet();
+            for (const auto & column : columns.getAllPhysical())
+            {
+                auto hive_column = hive_columns_set.find(column.getNameInStorage());
+                if (hive_column == hive_columns_set.end())
+                    file_columns.emplace_back(column);
+                else
+                    hive_columns_set.erase(hive_column);
+            }
 
-    for (const auto & column : columns.getAllPhysical())
-    {
-        auto hive_column = hive_partition_columns_to_read_from_file_path_set.find(column.getNameInStorage());
-        if (hive_column == hive_partition_columns_to_read_from_file_path_set.end())
-            file_columns.emplace_back(column);
-        else
-            hive_partition_columns_to_read_from_file_path_set.erase(hive_column);
-    }
-
-    /// All hive columns must be in storage schema
-    if (!hive_partition_columns_to_read_from_file_path_set.empty())
-    {
-        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
-            "All hive partitioning columns must be in engine schema. Next columns not found: {}",
-            fmt::join(hive_partition_columns_to_read_from_file_path_set, ", "));
+            /// All hive columns must be in storage schema
+            if (!hive_columns_set.empty())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_QUERY_PARAMETER,
+                    "All hive partitioning columns must be in engine schema. "
+                    "Next columns not found: {}",
+                    fmt::join(hive_columns_set, ", "));
+            }
+        }
     }
 
     StorageInMemoryMetadata storage_metadata;
@@ -340,11 +347,9 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     if (engine_args->settings)
-        storage_metadata.settings_changes = engine_args->settings->ptr();
+        storage_metadata.settings_changes = engine_args->getChild(*engine_args->settings);
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
-
-    bool is_path_with_hive_partitioning = !hive_partition_columns_to_read_from_file_path.empty();
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
@@ -354,7 +359,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         configuration_->format,
         context_,
         is_attach,
-        is_path_with_hive_partitioning,
         log);
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
@@ -367,8 +371,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
-        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
-        is_path_with_hive_partitioning);
+        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
 
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -795,7 +798,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
 
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
@@ -965,11 +968,22 @@ void StorageObjectStorageQueue::commit(
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
-    ObjectStorageQueueIFileMetadata::HiveLastProcessedFileInfoMap file_map;
-    LastProcessedFileInfoMapPtr created_nodes = std::make_shared<LastProcessedFileInfoMap>();
+
+    PartitionLastProcessedFileInfoMap last_processed_file_per_partition;
+    auto created_nodes = std::make_shared<LastProcessedFileInfoMap>();
     for (auto & source : sources)
-        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, created_nodes, exception_message, error_code);
-    ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, file_map);
+    {
+        source->prepareCommitRequests(
+            requests, insert_succeeded, successful_objects,
+            last_processed_file_per_partition, created_nodes, exception_message, error_code);
+    }
+
+    // Use partition-based processing for both HIVE and REGEX modes
+    bool has_partitioning = files_metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
+    if (has_partitioning)
+        ObjectStorageQueueSource::preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
+    else
+        chassert(last_processed_file_per_partition.empty());
 
     if (requests.empty())
     {
@@ -1420,7 +1434,7 @@ void StorageObjectStorageQueue::alter(
             else if (change.name == "enable_hash_ring_filtering")
                 enable_hash_ring_filtering = change.value.safeGet<bool>();
             else if (change.name == "after_processing_retries")
-                after_processing_settings.after_processing_retries = change.value.safeGet<UInt32>();
+                after_processing_settings.after_processing_retries = static_cast<UInt32>(change.value.safeGet<UInt32>());
             else if (change.name == "after_processing_move_uri")
                 after_processing_settings.after_processing_move_uri = change.value.safeGet<String>();
             else if (change.name == "after_processing_move_prefix")
@@ -1518,9 +1532,9 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
 
     auto cleanup_interval_ms = files_metadata->getCleanupIntervalMS();
-    settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = cleanup_interval_ms.first;
-    settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = cleanup_interval_ms.second;
-    settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = files_metadata->getPersistentProcessingNodeTTLSeconds();
+    settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = static_cast<UInt32>(cleanup_interval_ms.first);
+    settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
+    settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(files_metadata->getPersistentProcessingNodeTTLSeconds());
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = files_metadata->usePersistentProcessingNode();
 
     {

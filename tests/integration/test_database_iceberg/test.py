@@ -33,6 +33,8 @@ from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
 from helpers.test_tools import TSV, csv_compare
 from helpers.config_cluster import minio_secret_key
+from helpers.network import PartitionManager
+from helpers.client import QueryRuntimeException
 
 BASE_URL = "http://rest:8181/v1"
 BASE_URL_LOCAL = "http://localhost:8182/v1"
@@ -169,13 +171,20 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     )
 
 def drop_clickhouse_iceberg_table(
-    node, database_name, table_name
+    node, database_name, table_name, if_exists=False
 ):
-    node.query(
-        f"""
-DROP TABLE {CATALOG_NAME}.`{database_name}.{table_name}`
-    """
-    )
+    if if_exists:
+        node.query(
+            f"""
+    DROP TABLE IF EXISTS {CATALOG_NAME}.`{database_name}.{table_name}`
+        """
+        )
+    else:
+        node.query(
+            f"""
+    DROP TABLE {CATALOG_NAME}.`{database_name}.{table_name}`
+        """
+        )
 
 
 @pytest.fixture(scope="module")
@@ -628,6 +637,9 @@ def test_drop_table(started_cluster):
     create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
     assert len(catalog.list_tables(root_namespace)) == 1
 
+    drop_clickhouse_iceberg_table(node, root_namespace, table_name + "some_strange_non_exists_suffix", True)
+    assert len(catalog.list_tables(root_namespace)) == 1
+
     drop_clickhouse_iceberg_table(node, root_namespace, table_name)
     assert len(catalog.list_tables(root_namespace)) == 0
 
@@ -715,3 +727,26 @@ def test_not_specified_catalog_type(started_cluster):
     )
     with pytest.raises(Exception):
         node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+def test_gcs(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    node.query("SYSTEM ENABLE FAILPOINT database_iceberg_gcs")
+    node.query(
+        f"""
+        DROP DATABASE IF EXISTS {CATALOG_NAME};
+        SET allow_database_iceberg = 1;
+        """
+    )
+
+    with pytest.raises(Exception) as err:
+        node.query(
+            f"""
+            CREATE DATABASE {CATALOG_NAME}
+            ENGINE = DataLakeCatalog('{BASE_URL_DOCKER}', 'gcs', 'dummy')
+            SETTINGS
+                catalog_type = 'rest',
+                warehouse = 'demo',
+            """
+        )
+        assert "Google cloud storage converts to S3" in str(err.value)

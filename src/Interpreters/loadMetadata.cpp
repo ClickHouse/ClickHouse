@@ -17,10 +17,8 @@
 #include <Databases/TablesLoader.h>
 #include <Storages/StorageMaterializedView.h>
 
-#include <IO/ReadBufferFromFile.h>
 
 #include <Core/Settings.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>

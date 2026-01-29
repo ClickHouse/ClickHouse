@@ -1,6 +1,7 @@
 #include <Poco/Net/NetException.h>
 
 #include <base/scope_guard.h>
+#include <Common/scope_guard_safe.h>
 
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <Common/Exception.h>
@@ -56,7 +57,7 @@ ssize_t ReadBufferFromPocoSocketBase::socketReceiveBytesImpl(char * ptr, size_t 
         if (async_callback)
         {
             socket.setBlocking(false);
-            SCOPE_EXIT(socket.setBlocking(true));
+            SCOPE_EXIT_SAFE(socket.setBlocking(true));
             bool secure = socket.secure();
             bytes_read = socket.impl()->receiveBytes(ptr, static_cast<int>(size));
 

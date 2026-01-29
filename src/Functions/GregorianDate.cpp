@@ -226,10 +226,10 @@ ReturnType GregorianDate::writeImpl(WriteBuffer & buf) const
     else
     {
         auto y = year_;
-        writeChar('0' + y / 1000, buf); y %= 1000;
-        writeChar('0' + y /  100, buf); y %=  100;
-        writeChar('0' + y /   10, buf); y %=   10;
-        writeChar('0' + y       , buf);
+        writeChar('0' + static_cast<char>(y / 1000), buf); y %= 1000;
+        writeChar('0' + static_cast<char>(y /  100), buf); y %=  100;
+        writeChar('0' + static_cast<char>(y /   10), buf); y %=   10;
+        writeChar('0' + static_cast<char>(y       ), buf);
 
         writeChar('-', buf);
 
@@ -298,7 +298,7 @@ bool OrdinalDate::tryInit(int64_t modified_julian_day)
     const auto d         = mod(c, 1461);
     const auto y         = min(div(d, 365), 3);
 
-    day_of_year_ = d - y * 365 + 1;
+    day_of_year_ = static_cast<uint16_t>(d - y * 365 + 1);
     year_ = static_cast<int32_t>(quad_cent * 400 + cent * 100 + quad * 4 + y + 1);
 
     return true;
@@ -353,7 +353,7 @@ MonthDay::MonthDay(bool is_leap_year, uint16_t day_of_year)
         ++month_;
         d -= len;
     }
-    day_of_month_ = d;
+    day_of_month_ = static_cast<uint8_t>(d);
 }
 
 uint16_t MonthDay::dayOfYear(bool is_leap_year) const
@@ -364,7 +364,7 @@ uint16_t MonthDay::dayOfYear(bool is_leap_year) const
             (is_leap_year ? "leap, " : "non-leap, "), month_, day_of_month_);
     }
     const auto k = month_ <= 2 ? 0 : is_leap_year ? -1 :-2;
-    return (367 * month_ - 362) / 12 + k + day_of_month_;
+    return static_cast<uint16_t>((367 * month_ - 362) / 12 + k + day_of_month_);
 }
 
 template void GregorianDate::writeImpl<void>(WriteBuffer & buf) const;

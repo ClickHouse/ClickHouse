@@ -40,7 +40,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTQueryWithTableAndOutputImpl<AstIDAndQueryNames>>(*this);
+        auto res = make_intrusive<ASTQueryWithTableAndOutputImpl<AstIDAndQueryNames>>(*this);
         res->children.clear();
         cloneOutputOptions(*res);
         cloneTableOptions(*res);

@@ -30,6 +30,10 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
         use_persistent_processing_nodes_,
         log_)
 {
+    LOG_TEST(log, "Path: {}, node_name: {}, max_loading_retries: {}, "
+             "processed_path: {}, processing_path: {}, failed_path: {}",
+             path, node_name, max_loading_retries,
+             processed_node_path, processing_node_path, failed_node_path);
 }
 
 ObjectStorageQueueUnorderedFileMetadata::SetProcessingResponseIndexes

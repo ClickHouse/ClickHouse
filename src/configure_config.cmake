@@ -215,6 +215,9 @@ endif()
 if (TARGET ch_contrib::sha3iuf)
     set(USE_SHA3IUF 1)
 endif()
+if (TARGET ch_contrib::simdcomp)
+    set(USE_SIMDCOMP 1)
+endif()
 set (USE_YTSAURUS 1)
 
 

@@ -8,7 +8,6 @@ from ci.praktika.result import Result
 from ci.praktika.settings import Settings
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
-
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/build"
 temp_dir = f"{current_directory}/ci/tmp"

@@ -144,10 +144,6 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     , node_metadata(createNodeMetadata(path))
     , log(log_)
 {
-    LOG_TEST(log, "Path: {}, node_name: {}, max_loading_retries: {}, "
-             "processed_path: {}, processing_path: {}, failed_path: {}",
-             path, node_name, max_loading_retries,
-             processed_node_path, processing_node_path, failed_node_path);
 }
 
 ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
@@ -545,11 +541,6 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
         chassert(
             !zk_client->exists(processing_node_path),
             fmt::format("Expected path {} not to exist while finalizing {}", processing_node_path, path));
-
-        if (!useBucketsForProcessing())
-            chassert(
-                !zk_client->exists(processed_node_path),
-                fmt::format("Expected path {} not to exist while finalizing {}", processed_node_path, path));
 
         chassert(
             zk_client->exists(failed_node_path) || zk_client->exists(failed_node_path + ".retriable"),

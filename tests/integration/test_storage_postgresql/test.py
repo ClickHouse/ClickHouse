@@ -1,4 +1,5 @@
 import logging
+import time
 from multiprocessing.dummy import Pool
 
 import pytest
@@ -728,11 +729,16 @@ def test_auto_close_connection(started_cluster):
     """
     )
 
-    count = int(
-        node2.query(
-            f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"
+    # Wait for auto-close to take effect (connections may still be closing under TSAN)
+    for _ in range(20):
+        count = int(
+            node2.query(
+                f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"
+            )
         )
-    )
+        if count <= 2:
+            break
+        time.sleep(0.5)
 
     # Connection from python + pg_stat table also has a connection at the moment of current query
     assert count == 2

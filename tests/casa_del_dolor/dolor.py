@@ -673,7 +673,7 @@ while all_running and (not reached_limit):
                 all_running = False
         reached_limit = test_limit is not None and time.time() >= test_limit
         if reached_limit:
-            logger.info("Test timeout reached, stopping the fuzzer")
+            logger.info("Test timeout reached, stopping the load generator and exiting")
         if all_running and (not reached_limit):
             if args.with_leak_detection and next_leak_detection < time.time():
                 leak_detector.run_next_leak_detection(cluster, client)

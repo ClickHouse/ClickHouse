@@ -17,7 +17,7 @@ template <typename T>
 requires std::is_integral_v<T> && (sizeof(T) <= sizeof(UInt32))
 inline T roundDownToPowerOfTwo(T x)
 {
-    return x <= 0 ? 0 : (T(1) << (31 - __builtin_clz(x)));
+    return x <= 0 ? 0 : static_cast<T>(static_cast<T>(1) << (31 - __builtin_clz(x)));
 }
 
 template <typename T>

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
+#include <Client/BuzzHouse/Generator/ProbabilityGenerator.h>
 #include <Client/BuzzHouse/Generator/RandomGenerator.h>
 #include <Client/BuzzHouse/Generator/RandomSettings.h>
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
@@ -190,6 +191,119 @@ private:
     void generatingPeerQuery(const PeerQuery value) { peer_query = value; }
     void setAllowEngineUDF(const bool value) { allow_engine_udf = value; }
     void resetAliasCounter() { aliases_counter = 0; }
+
+    enum class SQLOp
+    {
+        CreateTable = 0,
+        CreateView,
+        Drop,
+        Insert,
+        LightDelete,
+        Truncate,
+        OptimizeTable,
+        CheckTable,
+        DescTable,
+        Exchange,
+        Alter,
+        SetValues,
+        Attach,
+        Detach,
+        CreateDatabase,
+        CreateFunction,
+        SystemStmt,
+        BackupOrRestore,
+        CreateDictionary,
+        Rename,
+        LightUpdate,
+        SelectQuery,
+        Kill,
+        ShowStatement
+    };
+
+    enum class LitOp
+    {
+        LitHugeInt = 0,
+        LitUHugeInt,
+        LitInt,
+        LitUInt,
+        LitTime,
+        LitDate,
+        LitDateTime,
+        LitDecimal,
+        LitRandStr,
+        LitUUID,
+        LitIPv4,
+        LitIPv6,
+        LitGeo,
+        LitStr,
+        LitSpecial,
+        LitJSON,
+        LitNULLVal,
+        LitFraction
+    };
+
+    enum class ExpOp
+    {
+        Literal = 0,
+        ColumnRef,
+        Predicate,
+        CastExpr,
+        UnaryExpr,
+        IntervalExpr,
+        ColumnsExpr,
+        CondExpr,
+        CaseExpr,
+        SubqueryExpr,
+        BinaryExpr,
+        ArrayTupleExpr,
+        FuncExpr,
+        WindowFuncExpr,
+        TableStarExpr,
+        LambdaExpr,
+        ProjectionExpr,
+        DictExpr,
+        StarExpr
+    };
+
+    enum class PredOp
+    {
+        UnaryExpr = 0,
+        BinaryExpr,
+        BetweenExpr,
+        InExpr,
+        AnyExpr,
+        IsNullExpr,
+        ExistsExpr,
+        LikeExpr,
+        SearchExpr,
+        OtherExpr
+    };
+
+    enum class QueryOp
+    {
+        DerivatedTable = 0,
+        CTE,
+        Table,
+        View,
+        RemoteUDF,
+        GenerateSeriesUDF,
+        SystemTable,
+        MergeUDF,
+        ClusterUDF,
+        MergeIndexUDF,
+        LoopUDF,
+        ValuesUDF,
+        RandomDataUDF,
+        Dictionary,
+        URLEncodedTable,
+        TableEngineUDF,
+        MergeProjectionUDF,
+        RandomTableUDF,
+        MergeIndexAnalyzeUDF
+    };
+
+    ProbabilityGenerator SQLGen, litGen, expGen, predGen, queryGen;
+    std::vector<bool> SQLMask, litMask, expMask, predMask, queryMask;
 
     template <typename T>
     String setMergeTableParameter(RandomGenerator & rg, const String & initial);
@@ -678,7 +792,7 @@ public:
     template <TableRequirement req>
     auto getQueryTableLambda();
 
-    StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, bool supports_cloud_features_);
+    StatementGenerator(RandomGenerator & rg, FuzzConfig & fuzzc, ExternalIntegrations & conn, bool supports_cloud_features_);
 
     void setBackupDestination(RandomGenerator & rg, BackupRestore * br);
     std::optional<String> backupOrRestoreObject(BackupRestoreObject * bro, SQLObject obj, const SQLBase & b);

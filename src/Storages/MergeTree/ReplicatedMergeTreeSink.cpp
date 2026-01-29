@@ -60,6 +60,7 @@ namespace FailPoints
     extern const char replicated_merge_tree_insert_quorum_fail_0[];
     extern const char replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault[];
     extern const char replicated_merge_tree_insert_retry_pause[];
+    extern const char rmt_delay_commit_part[];
 }
 
 namespace ErrorCodes
@@ -939,9 +940,10 @@ std::map<std::string, std::string> ReplicatedMergeTreeSink::commitPart(
 
         fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_after_op, { zookeeper->forceFailureAfterOperation(); });
 
+        fiu_do_on(FailPoints::rmt_delay_commit_part, { sleepForSeconds(5); });
+
         Coordination::Responses responses;
         Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses, /* check_session_valid */ true); /// 1 RTT
-
         if (multi_code == Coordination::Error::ZOK)
         {
             part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;

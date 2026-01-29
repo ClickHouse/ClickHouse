@@ -1,7 +1,8 @@
-personal_ws-1.1 en 3452
+personal_ws-1.1 en 3453
 aarch
 AArch
 ACLs
+ADLS
 ALTERs
 AMPLab
 AMQP
@@ -665,6 +666,7 @@ LogQL
 LogQueriesType
 LogsLevel
 Logstash
+LongestRunningMerge
 LookML
 LoongArch
 LowCardinality
@@ -1203,6 +1205,7 @@ TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Tauri
+TcpExtListenOverflows
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
