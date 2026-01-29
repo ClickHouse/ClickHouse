@@ -17,7 +17,7 @@ ColumnsDescription StorageSystemQueryConditionCache::getColumnsDescription()
     return ColumnsDescription
     {
         {"key_hash", std::make_shared<DataTypeUInt128>(), "Hash of (table_uuid, part_name, condition_hash)."},
-#ifndef NDEBUG
+#if defined(DEBUG) || defined(SANITIZER)
         {"table_uuid", std::make_shared<DataTypeUUID>(), "The table UUID."},
         {"part_name", std::make_shared<DataTypeString>(), "The part name."},
         {"condition", std::make_shared<DataTypeString>(), "The hashed filter condition. Only set if setting query_condition_cache_store_conditions_as_plaintext = true."},
@@ -53,7 +53,7 @@ void StorageSystemQueryConditionCache::fillData(MutableColumns & res_columns, Co
     for (const auto & [key, entry] : content)
     {
         res_columns[0]->insert(key);
-#ifndef NDEBUG
+#if defined(DEBUG) || defined(SANITIZER)
         res_columns[0]->insert(entry->table_id);
         res_columns[1]->insert(entry->part_name);
         res_columns[2]->insert(entry->condition);

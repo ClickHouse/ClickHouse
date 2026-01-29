@@ -35,7 +35,7 @@ private:
 
     struct Entry
     {
-#ifndef NDEBUG
+#if defined(DEBUG) || defined(SANITIZER)
         const UUID table_id;
         const String part_name;
         const UInt64 condition_hash = 42;
@@ -50,7 +50,7 @@ private:
 
         explicit Entry(size_t mark_count); /// (**)
 
-#ifndef NDEBUG
+#if defined(DEBUG) || defined(SANITIZER)
         Entry(size_t mark_count_, const UUID & table_id_, const String & part_name_, const UInt64 condition_hash_, const String & condition_)
             : table_id(table_id_)
             , part_name(part_name_)
