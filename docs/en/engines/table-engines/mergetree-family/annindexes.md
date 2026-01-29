@@ -124,7 +124,7 @@ CREATE TABLE table
 (
   [...],
   vectors Array(Float*),
-  INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>, <dimensions>[, <quantization>, <hnsw_max_connections_per_layer>, <hnsw_candidate_list_size_for_construction>]) [GRANULARITY N]
+  INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>, <dimensions>[, <quantization>, <hnsw_max_connections_per_layer>, <hnsw_candidate_list_size_for_construction>, <leann_params>]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY [...]
@@ -134,6 +134,7 @@ These HNSW-specific parameters are available:
 - `<quantization>` controls the quantization of the vectors in the proximity graph. Possible values are `f64`, `f32`, `f16`, `bf16`, `i8`, or `b1`. The default value is `bf16`. Note that this parameter does not affect the representation of the vectors in the underlying column.
 - `<hnsw_max_connections_per_layer>` controls the number of neighbors per graph node, also known as HNSW hyperparameter `M`. The default value is `32`. Value `0` means using the default value.
 - `<hnsw_candidate_list_size_for_construction>` controls the size of the dynamic candidate list during construction of the HNSW graph, also known as HNSW hyperparameter `ef_construction`. The default value is `128`. Value `0` means using the default value.
+- `<leann_params>` specifies LeaNN optimization parameters. Use `'enable_hub_pruning'` or `'true'` to enable hub node pruning, which reduces index size by approximately 50% while maintaining search quality. Use an empty string or `'false'` to disable (default). Hub node pruning identifies and retains only highly connected "hub" nodes during index construction, resulting in a smaller index with minimal recall loss.
 
 The default values of all HNSW-specific parameters work reasonably well in the majority of use cases.
 We therefore do not recommend customizing the HNSW-specific parameters.

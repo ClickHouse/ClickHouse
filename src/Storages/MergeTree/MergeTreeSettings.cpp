@@ -1928,6 +1928,11 @@ namespace ErrorCodes
 
     **Default Value:** false
     )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_leann_optimization_for_hnsw, false, R"(
+    Allow experimental LeaNN optimization techniques for HNSW vector similarity indexes.
+    When enabled, allows using the 7th parameter in vector_similarity index to enable hub node pruning,
+    which reduces index size by approximately 50% while maintaining search quality.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
     Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
     )", EXPERIMENTAL) \
