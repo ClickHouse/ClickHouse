@@ -138,6 +138,10 @@ protected:
         {
             findURLSecretArguments();
         }
+        else if (function->name() == "redis")
+        {
+            findRedisFunctionSecretArguments();
+        }
     }
 
     void findMySQLFunctionSecretArguments()
@@ -188,7 +192,7 @@ protected:
         result.replacement = std::move(uri);
     }
 
-    void findRedisSecretArguments()
+    void findRedisTableEngineSecretArguments()
     {
         /// Redis does not have URL/address argument,
         /// only 'host:port' and separate "password" argument.
@@ -522,7 +526,7 @@ protected:
         }
         else if (engine_name == "Redis")
         {
-            findRedisSecretArguments();
+            findRedisTableEngineSecretArguments();
         }
     }
 
@@ -610,6 +614,12 @@ protected:
         /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
         if (url_arg_idx + 4 < count)
             markSecretArgument(url_arg_idx + 4);
+    }
+
+    void findRedisFunctionSecretArguments()
+    {
+        // redis(host:port, key, structure, db_index, password, pool_size)
+        markSecretArgument(4);
     }
 
     void findDatabaseEngineSecretArguments()
