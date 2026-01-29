@@ -3,6 +3,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTEnumDataType.h>
+#include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTObjectTypeArgument.h>
@@ -322,6 +323,87 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             node = enum_node;
             return true;
         }
+        pos = saved_pos;
+    }
+
+    /// Handle Tuple types specially - parse directly into ASTTupleDataType
+    /// to avoid creating ASTNameTypePair nodes for each named element.
+    if (type_name == "Tuple" && pos->type == TokenType::OpeningRoundBracket)
+    {
+        auto saved_pos = pos;
+        ++pos;
+
+        auto tuple_node = make_intrusive<ASTTupleDataType>();
+        tuple_node->name = type_name;
+        auto arguments = make_intrusive<ASTExpressionList>();
+        tuple_node->children.push_back(arguments);
+
+        bool has_named_elements = false;
+        Strings element_names_tmp;
+        bool first_element = true;
+
+        while (true)
+        {
+            if (!first_element)
+            {
+                if (pos->type == TokenType::Comma)
+                    ++pos;
+                else
+                    break;
+            }
+            first_element = false;
+
+            /// Try to parse: identifier Type (named element)
+            /// or just: Type (unnamed element)
+            ParserIdentifier identifier_parser;
+            ParserDataType type_parser;
+            ASTPtr identifier_node;
+            ASTPtr type_node;
+
+            auto element_pos = pos;
+            if (identifier_parser.parse(pos, identifier_node, expected) && type_parser.parse(pos, type_node, expected))
+            {
+                /// Named element: name Type
+                String elem_name;
+                tryGetIdentifierNameInto(identifier_node, elem_name);
+                element_names_tmp.push_back(elem_name);
+                arguments->children.push_back(type_node);
+                has_named_elements = true;
+            }
+            else
+            {
+                /// Try just Type (unnamed element)
+                pos = element_pos;
+                if (type_parser.parse(pos, type_node, expected))
+                {
+                    /// Empty placeholder needed to detect mixed named/unnamed tuples.
+                    /// The factory validates that all names are non-empty when element_names is set.
+                    element_names_tmp.push_back("");
+                    arguments->children.push_back(type_node);
+                }
+                else
+                {
+                    /// Could not parse element
+                    break;
+                }
+            }
+        }
+
+        if (pos->type == TokenType::ClosingRoundBracket && !arguments->children.empty())
+        {
+            ++pos;
+            /// Only store element_names if tuple has any named elements
+            if (has_named_elements)
+            {
+                element_names_tmp.shrink_to_fit();
+                tuple_node->element_names = std::move(element_names_tmp);
+            }
+            arguments->children.shrink_to_fit();
+            node = tuple_node;
+            return true;
+        }
+
+        /// Fall back to generic parser
         pos = saved_pos;
     }
 
