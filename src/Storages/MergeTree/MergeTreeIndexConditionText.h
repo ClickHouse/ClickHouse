@@ -87,6 +87,8 @@ public:
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
 
+    const TokenExtractorPtr & tokenExtractor() const { return token_extractor; }
+
 private:
     /// Uses RPN like KeyCondition
     struct RPNElement
@@ -166,4 +168,9 @@ private:
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
 bool isTextIndexVirtualColumn(const String & column_name);
 
+void applyTextIndexFunctionParams(
+    const ActionsDAG::Node * function_dag_node,
+    String function_name,
+    std::unique_ptr<ITokenExtractor> token_extractor,
+    std::vector<String> search_tokens);
 }

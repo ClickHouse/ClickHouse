@@ -8,6 +8,7 @@
 #include <Core/IResolvedFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/NullsAction.h>
 #include <Common/typeid_cast.h>
 
@@ -138,6 +139,15 @@ public:
         return std::static_pointer_cast<const IFunctionBase>(function);
     }
 
+    /// Get mutable configurators
+    std::vector<FunctionConfigurator> & getConfigurators() { return configurators; }
+
+    void applyConfigurator(const ActionsDAG::Node * function_dag_node) const
+    {
+        for (const auto & configurator : configurators)
+            configurator(function_dag_node);
+    }
+
     /** Get aggregate function.
       * If function is not resolved nullptr returned.
       * If function is resolved as non aggregate function nullptr returned.
@@ -223,6 +233,7 @@ private:
     bool wrap_with_nullable = false;
     /// Function was parsed as operator. This option is only needed to make AST formatting more consistent.
     bool is_operator = false;
+    std::vector<FunctionConfigurator> configurators = {};
 
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;

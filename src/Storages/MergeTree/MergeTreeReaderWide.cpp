@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 
 #include <Columns/ColumnArray.h>
@@ -174,7 +175,20 @@ size_t MergeTreeReaderWide::readRows(
             /// The column is already present in the block so we will append the values to the end.
             bool append = res_columns[pos] != nullptr;
             if (!append)
+            {
+                /// Skip text index virtual columns with default expressions - they will be evaluated later
+                if (isTextIndexVirtualColumn(column_to_read.name) && storage_snapshot->virtual_columns)
+                {
+                    const auto * virtual_column = storage_snapshot->virtual_columns->tryGetDescription(column_to_read.name);
+                    if (virtual_column && virtual_column->default_desc.expression)
+                    {
+                        res_columns[pos] = nullptr;
+                        continue;
+                    }
+                }
+
                 res_columns[pos] = column_to_read.type->createColumn(*serializations[pos]);
+            }
 
             auto & column = res_columns[pos];
             try

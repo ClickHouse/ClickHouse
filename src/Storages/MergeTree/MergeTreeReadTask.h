@@ -72,7 +72,6 @@ struct IndexReadTask
 };
 
 using IndexReadTasks = std::unordered_map<String, IndexReadTask>;
-using IndexReadColumns = std::unordered_map<String, NamesAndTypesList>;
 
 struct MergeTreeReadTaskColumns
 {

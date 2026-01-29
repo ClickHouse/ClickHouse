@@ -21,6 +21,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageDummy.h>
 #include <Common/checkStackSize.h>
@@ -444,7 +445,8 @@ void fillMissingColumns(
             res_columns[i] = nullptr;
 
         /// Nothing to fill or default should be filled in evaluateMissingDefaults
-        if (res_columns[i] || hasDefault(metadata_snapshot, *requested_column))
+        /// Skip text index virtual columns - they have default expressions and will be evaluated later.
+        if (res_columns[i] || isTextIndexVirtualColumn(requested_column->name) || hasDefault(metadata_snapshot, *requested_column))
             continue;
 
         std::vector<ColumnPtr> current_offsets;

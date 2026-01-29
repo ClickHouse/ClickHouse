@@ -63,7 +63,7 @@ struct ScopeStack : WithContext
     void addColumn(ColumnWithTypeAndName column);
     void addAlias(const std::string & name, std::string alias);
     void addArrayJoin(const std::string & source_name, std::string result_name);
-    void addFunction(const FunctionOverloadResolverPtr & function, const Names & argument_names, std::string result_name);
+    const ActionsDAG::Node & addFunction(const FunctionOverloadResolverPtr & function, const Names & argument_names, std::string result_name);
 
     ActionsDAG popLevel();
 
@@ -171,11 +171,9 @@ public:
             actions_stack.addArrayJoin(source_name, std::move(result_name));
         }
 
-        void addFunction(const FunctionOverloadResolverPtr & function,
-                         const Names & argument_names,
-                         std::string result_name)
+        const ActionsDAG::Node & addFunction(const FunctionOverloadResolverPtr & function, const Names & argument_names, std::string result_name)
         {
-            actions_stack.addFunction(function, argument_names, std::move(result_name));
+            return actions_stack.addFunction(function, argument_names, std::move(result_name));
         }
 
         ActionsDAG getActions()
