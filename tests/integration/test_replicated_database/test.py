@@ -1995,3 +1995,96 @@ def test_ignore_cluster_name_setting(started_cluster):
     # Cleanup
     for node in [main_node, dummy_node]:
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_rename_alter_digest_mismatch(started_cluster):
+    main_node = started_cluster.instances["main_node"]
+
+    main_node.query("DROP DATABASE IF EXISTS digest_test SYNC")
+
+    main_node.query("""
+        CREATE DATABASE digest_test
+        ENGINE = Replicated('/clickhouse/databases/digest_test', 'shard1', 'replica1')
+    """)
+
+    main_node.query("""
+        CREATE TABLE digest_test.test_table (
+            date DateTime,
+            id String
+        ) ENGINE = ReplicatedReplacingMergeTree(date)
+        ORDER BY id
+        SETTINGS deduplicate_merge_projection_mode = 'drop'
+    """)
+
+    main_node.query("""
+        SYSTEM ENABLE FAILPOINT database_replicated_rename_table_after_read_metadata;
+        SYSTEM ENABLE FAILPOINT database_replicated_alter_table_before_update_digest;
+    """)
+
+    alter_error = None
+    rename_error = None
+
+    def run_alter():
+        nonlocal alter_error
+        try:
+            main_node.query("""
+                ALTER TABLE digest_test.test_table
+                ADD PROJECTION max_date (SELECT max(date))
+                SETTINGS alter_sync = 2, distributed_ddl_output_mode = 'none'
+            """)
+        except Exception as e:
+            alter_error = str(e)
+
+    def run_rename():
+        nonlocal rename_error
+        try:
+            main_node.query("""
+                RENAME TABLE digest_test.test_table
+                TO digest_test.test_table_renamed
+                SETTINGS distributed_ddl_output_mode = 'none'
+            """)
+        except Exception as e:
+            rename_error = str(e)
+
+    alter_thread = threading.Thread(target=run_alter)
+    alter_thread.start()
+    main_node.query("""
+        SYSTEM WAIT FAILPOINT database_replicated_alter_table_before_update_digest PAUSE
+    """)
+
+    rename_thread = threading.Thread(target=run_rename)
+    rename_thread.start()
+    main_node.query("""
+        SYSTEM WAIT FAILPOINT database_replicated_rename_table_after_read_metadata PAUSE
+    """)
+
+    main_node.query("""
+        SYSTEM NOTIFY FAILPOINT database_replicated_alter_table_before_update_digest
+    """)
+    alter_thread.join(timeout=10)
+
+    main_node.query("""
+        SYSTEM NOTIFY FAILPOINT database_replicated_rename_table_after_read_metadata
+    """)
+    rename_thread.join(timeout=10)
+
+    main_node.query("""
+        SYSTEM DISABLE FAILPOINT database_replicated_rename_table_after_read_metadata;
+        SYSTEM DISABLE FAILPOINT database_replicated_alter_table_before_update_digest;
+    """)
+
+    if alter_error:
+        pytest.fail(f"ALTER failed unexpectedly: {alter_error}")
+
+    if rename_error:
+        pytest.fail(f"RENAME failed unexpectedly: {rename_error}")
+
+    # Verify the table was renamed and has the projection
+    result = main_node.query("""
+        SHOW CREATE TABLE digest_test.test_table_renamed
+    """)
+
+    assert "PROJECTION" in result, "Table should have the projection after rename"
+    assert "max_date" in result, "Projection max_date should be present"
+
+    main_node.query("DROP DATABASE IF EXISTS digest_test SYNC")

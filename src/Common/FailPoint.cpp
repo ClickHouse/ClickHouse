@@ -141,7 +141,9 @@ static struct InitFiu
     ONCE(parallel_replicas_reading_response_timeout) \
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
-    REGULAR(rmt_delay_commit_part)
+    REGULAR(rmt_delay_commit_part) \
+    PAUSEABLE(database_replicated_rename_table_after_read_metadata) \
+    PAUSEABLE(database_replicated_alter_table_before_update_digest)
 
 namespace FailPoints
 {
