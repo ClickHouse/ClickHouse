@@ -79,11 +79,13 @@ private:
 };
 
 
-class ReadFromParallelRemoteReplicasStep : public ISourceStep
+class ReadFromParallelRemoteReplicasStep : public SourceStepWithFilterBase
 {
 public:
     ReadFromParallelRemoteReplicasStep(
         ASTPtr query_ast_,
+        const QueryTreeNodePtr & query_tree_,
+        const PlannerContextPtr & planner_context,
         ClusterPtr cluster_,
         const StorageID & storage_id_,
         ParallelReplicasReadingCoordinatorPtr coordinator_,
@@ -119,6 +121,8 @@ private:
 
     ClusterPtr cluster;
     ASTPtr query_ast;
+    QueryTreeNodePtr query_tree;
+    PlannerContextPtr planner_context;
     StorageID storage_id;
     ParallelReplicasReadingCoordinatorPtr coordinator;
     QueryProcessingStage::Enum stage;

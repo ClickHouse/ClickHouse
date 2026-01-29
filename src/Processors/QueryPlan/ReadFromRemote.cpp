@@ -258,7 +258,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
             continue;
         }
 
-        /// Labmdas are not supported (converting back to AST is complicated).
+        /// Lambdas are not supported (converting back to AST is complicated).
         /// We have two cases here cause function with no capture can be constant-folded.
         if (WhichDataType(node->result_type).isFunction()
             || (node->type == ActionsDAG::ActionType::FUNCTION
@@ -460,7 +460,20 @@ static void addFilters(
 
     const auto * table_node = table_expressions.front()->as<TableNode>();
     if (!table_node)
-        return;
+    {
+        const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
+        if (!inner_query_node)
+            return;
+
+        table_expressions = extractTableExpressions(inner_query_node->getJoinTree());
+        /// Case with JOIN is not supported so far.
+        if (table_expressions.size() != 1)
+            return;
+
+        table_node = table_expressions.front()->as<TableNode>();
+        if (!table_node)
+            return;
+    }
 
     TableWithColumnNamesAndTypes table_with_columns(
         DatabaseAndTableWithAlias(table_node->toASTIdentifier()),
@@ -838,6 +851,8 @@ bool ReadFromRemote::hasSerializedPlan() const
 
 ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     ASTPtr query_ast_,
+    const QueryTreeNodePtr & query_tree_,
+    const PlannerContextPtr & planner_context_,
     ClusterPtr cluster_,
     const StorageID & storage_id_,
     ParallelReplicasReadingCoordinatorPtr coordinator_,
@@ -852,9 +867,11 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     std::vector<ConnectionPoolPtr> pools_to_use_,
     std::optional<size_t> exclude_pool_index_,
     ConnectionPoolWithFailoverPtr connection_pool_with_failover_)
-    : ISourceStep(std::move(header_))
+    : SourceStepWithFilterBase(std::move(header_))
     , cluster(cluster_)
     , query_ast(query_ast_)
+    , query_tree(query_tree_)
+    , planner_context(planner_context_)
     , storage_id(storage_id_)
     , coordinator(std::move(coordinator_))
     , stage(std::move(stage_))
@@ -897,6 +914,9 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    if (filter_actions_dag)
+        addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag);
+
     Pipes pipes = addPipes(query_ast, output_header);
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
