@@ -12,8 +12,12 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/Web/Configuration.h>
 #include <Storages/StorageURLCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -123,6 +127,66 @@ StoragePtr TableFunctionURL::getStorage(
             getActualTableStructure(context, true),
             ConstraintsDescription{},
             configuration);
+    }
+
+    if (!is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(source))
+    {
+        auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
+
+        ASTs engine_args;
+        engine_args.emplace_back(ASTPtr(new ASTLiteral(source)));
+        engine_args.emplace_back(ASTPtr(new ASTLiteral(format_)));
+
+        if (structure != "auto" || compression_method_ != "auto")
+            engine_args.emplace_back(ASTPtr(new ASTLiteral(structure)));
+        if (compression_method_ != "auto")
+            engine_args.emplace_back(ASTPtr(new ASTLiteral(compression_method_)));
+
+        if (!configuration.headers.empty())
+        {
+            ASTs header_equals;
+            header_equals.reserve(configuration.headers.size());
+            for (const auto & [header_name, header_value] : configuration.headers)
+            {
+                ASTs equals_args;
+                equals_args.emplace_back(ASTPtr(new ASTLiteral(header_name)));
+                equals_args.emplace_back(ASTPtr(new ASTLiteral(header_value)));
+                header_equals.emplace_back(makeASTOperator("equals", std::move(equals_args)));
+            }
+
+            ASTPtr headers_list = ASTPtr(new ASTExpressionList());
+            headers_list->children = std::move(header_equals);
+
+            ASTPtr headers_func = ASTPtr(new ASTFunction());
+            auto * headers_func_node = headers_func->as<ASTFunction>();
+            headers_func_node->name = "headers";
+            headers_func_node->arguments = headers_list;
+            headers_func_node->children.push_back(headers_func_node->arguments);
+            engine_args.emplace_back(std::move(headers_func));
+        }
+
+        StorageObjectStorageConfiguration::initialize(*object_storage_configuration, engine_args, context, /* with_table_structure */ true);
+
+        ObjectStoragePtr object_storage = object_storage_configuration->createObjectStorage(context, /* is_readonly */ true);
+
+        return std::make_shared<StorageObjectStorage>(
+            object_storage_configuration,
+            object_storage,
+            context,
+            StorageID(getDatabaseName(), table_name),
+            columns,
+            ConstraintsDescription{},
+            String{},
+            std::nullopt,
+            LoadingStrictnessLevel::CREATE,
+            /* catalog */ nullptr,
+            /* if_not_exists */ false,
+            /* is_datalake_query */ false,
+            /* distributed_processing */ can_use_distributed_iterator,
+            /* partition_by */ nullptr,
+            /* order_by */ nullptr,
+            /* is_table_function */ true,
+            /* lazy_init */ false);
     }
 
     return std::make_shared<StorageURL>(

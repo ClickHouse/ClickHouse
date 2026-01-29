@@ -2,10 +2,8 @@
 
 #include "config.h"
 
-#include <Common/SharedMutex.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-
-#include <filesystem>
+#include <IO/HTTPHeaderEntries.h>
 
 namespace Poco
 {
@@ -15,13 +13,13 @@ class Logger;
 namespace DB
 {
 
-class WebObjectStorage : public IObjectStorage, WithContext
+class WebObjectStorage : public IObjectStorage, public WithContext
 {
     friend class MetadataStorageFromStaticFilesWebServer;
     friend class MetadataStorageFromStaticFilesWebServerTransaction;
 
 public:
-    WebObjectStorage(const String & url_, ContextPtr context_);
+    WebObjectStorage(const String & url_, const String & query_fragment_, ContextPtr context_, HTTPHeaderEntries headers_ = {});
 
     std::string getName() const override { return "Web"; }
 
@@ -31,7 +29,11 @@ public:
 
     std::string getDescription() const override { return url; }
 
+    const String & getBaseURL() const { return url; }
+    const HTTPHeaderEntries & getHeaders() const { return headers; }
+
     bool exists(const StoredObject & object) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
@@ -75,67 +77,13 @@ public:
 protected:
     [[noreturn]] static void throwNotAllowed();
     bool exists(const std::string & path) const;
-
-    enum class FileType : uint8_t
-    {
-        File,
-        Directory
-    };
-
-    struct FileData;
-    using FileDataPtr = std::shared_ptr<FileData>;
-
-    struct FileData
-    {
-        FileData(FileType type_, size_t size_, bool loaded_children_ = false)
-            : type(type_), size(size_), loaded_children(loaded_children_) {}
-
-        static FileDataPtr createFileInfo(size_t size_)
-        {
-            return std::make_shared<FileData>(FileType::File, size_, false);
-        }
-
-        static FileDataPtr createDirectoryInfo(bool loaded_childrent_)
-        {
-            return std::make_shared<FileData>(FileType::Directory, 0, loaded_childrent_);
-        }
-
-        FileType type;
-        size_t size;
-        std::atomic<bool> loaded_children;
-    };
-
-    struct Files : public std::map<String, FileDataPtr>
-    {
-        auto find(const String & path, bool is_file) const
-        {
-            if (is_file)
-                return std::map<String, FileDataPtr>::find(path);
-            return std::map<String, FileDataPtr>::find(path.ends_with("/") ? path : path + '/');
-        }
-
-        auto add(const String & path, FileDataPtr data)
-        {
-            if (data->type == FileType::Directory)
-                return emplace(path.ends_with("/") ? path : path + '/', data);
-            return emplace(path, data);
-        }
-    };
-
-    mutable Files files;
-    mutable SharedMutex metadata_mutex;
-
-    FileDataPtr tryGetFileInfo(const String & path) const;
-    std::vector<std::filesystem::path> listDirectory(const String & path) const;
-    FileDataPtr getFileInfo(const String & path) const;
+    std::string buildURL(const std::string & path) const;
 
 private:
-    std::pair<WebObjectStorage::FileDataPtr, std::vector<std::filesystem::path>>
-    loadFiles(const String & path, const std::unique_lock<SharedMutex> &) const;
-
     const String url;
+    const String query_fragment;
+    const HTTPHeaderEntries headers;
     LoggerPtr log;
-    size_t min_bytes_for_seek;
 };
 
 }

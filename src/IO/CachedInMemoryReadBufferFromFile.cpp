@@ -100,6 +100,13 @@ void CachedInMemoryReadBufferFromFile::setReadUntilEnd()
     setReadUntilPosition(file_size.value());
 }
 
+std::optional<Field> CachedInMemoryReadBufferFromFile::getMetadata(const String & name) const
+{
+    if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(in.get()))
+        return provider->getMetadata(name);
+    return std::nullopt;
+}
+
 bool CachedInMemoryReadBufferFromFile::nextImpl()
 {
     chassert(read_until_position <= file_size.value());

@@ -672,6 +672,7 @@ bool DiskObjectStorage::isSharedCompatible() const
         case MetadataStorageType::Plain:
         case MetadataStorageType::PlainRewritable:
         case MetadataStorageType::StaticWeb:
+        case MetadataStorageType::WebIndex:
             return true;
         default:
             return false;
