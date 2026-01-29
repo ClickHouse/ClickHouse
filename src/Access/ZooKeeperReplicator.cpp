@@ -587,7 +587,7 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
             if (auto entity = tryReadEntityFromZooKeeper(zookeeper, uuid))
                 entities.emplace_back(uuid, entity);
         }
-        memory_storage.setAll(entities);
+        memory_storage.setAll(entities, /* notify= */ true, /* ignore_limit= */ true);
     }
     else
     {

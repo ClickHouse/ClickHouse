@@ -307,7 +307,7 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
 }
 
 
-void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities, bool notify)
+void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities, bool notify, bool ignore_limit)
 {
     std::lock_guard lock{mutex};
 
@@ -315,10 +315,13 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
     auto entities_without_conflicts = all_entities;
     clearConflictsInEntitiesList(entities_without_conflicts, getLogger());
 
-    /// It is ok if total count equals access_entities_num_limit, so throw only if it is greater than limit
-    UInt64 size_to_check = entities_without_conflicts.empty() ? 0 : entities_without_conflicts.size() - 1;
-    if (entityLimitWillBeReached(size_to_check))
-        throwTooManyEntities(entities_without_conflicts.size());
+    auto total_count = CurrentMetrics::get(CurrentMetrics::AccessEntities);
+    auto count_in_storage = entries_by_id.size();
+    auto new_count_in_storage = entities_without_conflicts.size();
+    auto result_count = total_count - count_in_storage + new_count_in_storage ;
+    /// It is ok if result count equals access_entities_num_limit, so throw only if it is greater than limit
+    if (!ignore_limit && entityLimitWillBeReached(result_count - (new_count_in_storage == 0 ? 0 : 1)))
+        throwTooManyEntities(result_count);
 
     /// Remove entities which are not used anymore.
     boost::container::flat_set<UUID> ids_to_keep;

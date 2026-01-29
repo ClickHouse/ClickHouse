@@ -262,7 +262,7 @@ bool DiskAccessStorage::readLists()
 
     memory_storage.removeAllExcept({});
     /// This entities are not fully loaded yet, do not send notifications to AccessChangesNotifier
-    memory_storage.setAll(ids_entities, /* notify= */ false);
+    memory_storage.setAll(ids_entities, /* notify= */ false, /* ignore_limit= */ true);
 
     return true;
 }
@@ -382,7 +382,7 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
         all_entities.emplace_back(id, entity);
     }
 
-    memory_storage.setAll(all_entities);
+    memory_storage.setAll(all_entities, /* notify= */ true, /* ignore_limit= */ true);
 
     for (auto type : collections::range(AccessEntityType::MAX))
         types_of_lists_to_write.insert(type);
@@ -481,7 +481,7 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
         if (collision_id.has_value())
         {
             scheduleWriteLists(new_entity->getType());
-            deleteAccessEntityOnDisk(collision_id.value());
+            deleteAccessEntityOnDisk(collision_id.value()); /// BAD, move after insert
         }
     }
 
