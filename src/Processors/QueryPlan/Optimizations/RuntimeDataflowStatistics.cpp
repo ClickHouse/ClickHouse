@@ -112,6 +112,9 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
 
 void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
 {
+    if (header.empty() || header.rows() == 0)
+        return;
+
     Stopwatch watch;
 
     size_t sample_bytes = 0;
@@ -165,6 +168,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggregator & aggregator, const Block & block)
 {
+    if (block.empty() || block.rows() == 0)
+        return;
+
     Stopwatch watch;
 
     auto get_key_column_sizes = [&](bool compress)
@@ -223,8 +229,12 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     auto & statistics = input_bytes_statistics[type];
     std::lock_guard lock(statistics.mutex);
     statistics.bytes += read_bytes;
-    if (read_bytes)
+    if (read_bytes && !columns.empty())
     {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "read_bytes={}, columns.size()={}", read_bytes, columns.size());
+        if (!columns.empty())
+            LOG_DEBUG(&Poco::Logger::get("debug"), "columns.front().column->size()={}", columns.front().column->size());
+        const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
         for (const auto & column : columns)
         {
             if (column_sizes.contains(column.name))
@@ -238,10 +248,18 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
             else
             {
                 // We don't have individual column size info, likely because it is a compact part. Let's try to estimate it.
-                const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
+                (void)counter;
                 if (!column.column->empty() && counter % 50 == 0 && counter < 150)
                 {
                     const auto [sample, compressed] = estimateCompressedColumnSize(column);
+                    LOG_DEBUG(
+                        &Poco::Logger::get("debug"),
+                        "column.name={}, column.column->size()={}, column.column->byteSize()={}, sample={}, compressed={}",
+                        column.name,
+                        column.column->size(),
+                        column.column->byteSize(),
+                        sample,
+                        compressed);
                     statistics.sample_bytes += sample;
                     statistics.compressed_bytes += compressed;
                 }

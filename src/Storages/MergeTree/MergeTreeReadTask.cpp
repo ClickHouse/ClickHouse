@@ -396,6 +396,11 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         block = sample_block.cloneWithColumns(read_result.columns);
     }
 
+    LOG_DEBUG(
+        &Poco::Logger::get("debug"),
+        "sample_block.dumpStructure()={}, block.dumpStructure());={}",
+        sample_block.dumpStructure(),
+        block.dumpStructure());
     if (updater)
         updater->recordInputColumns(block.getColumnsWithTypeAndName(), info->data_part->getColumnSizes(), num_read_bytes);
 
