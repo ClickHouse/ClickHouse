@@ -57,18 +57,10 @@ void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
                 if (!same)
                 {
                     /// In case of encrypted disk we cannot simply compare getMetadataStorage() since it is wrapped
-                    if (disk->getDataSourceDescription().is_encrypted)
-                    {
-                        auto underlying_disk = disk->getDelegateDiskIfExists();
-                        if (underlying_disk)
-                            same = underlying_disk->getMetadataStorage().get() == saved_disk->getMetadataStorage().get();
-                    }
-                    else if (saved_disk->getDataSourceDescription().is_encrypted)
-                    {
-                        auto underlying_saved_disk = saved_disk->getDelegateDiskIfExists();
-                        if (underlying_saved_disk)
-                            same = underlying_saved_disk->getMetadataStorage().get() == disk->getMetadataStorage().get();
-                    }
+                    auto delegated_disk_or_original = disk->getDataSourceDescription().is_encrypted && disk->getDelegateDiskIfExists() ? disk->getDelegateDiskIfExists() : disk;
+                    auto delegated_saved_disk_or_original = saved_disk->getDataSourceDescription().is_encrypted && saved_disk->getDelegateDiskIfExists() ? saved_disk->getDelegateDiskIfExists() : saved_disk;
+
+                    same = delegated_disk_or_original->getMetadataStorage().get() == delegated_saved_disk_or_original->getMetadataStorage().get();
                 }
 
                 if (!same)
