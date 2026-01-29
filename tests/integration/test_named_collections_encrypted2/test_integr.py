@@ -334,20 +334,22 @@ def test_server_starts_with_dropped_collection_table(cluster):
         format = 'CSV'
     """)
 
-    node.query("""
-               CREATE TABLE orphan_table
-               (
-                   x Int32,
-                   y Int32
-               )
-                   ENGINE = S3(orphan_coll)
-               """)
+    node.query(
+        """
+        CREATE TABLE orphan_table
+        (
+            x Int32,
+            y Int32
+        )
+            ENGINE = S3(orphan_coll)
+        """)
 
-    node.query("""
-               INSERT INTO FUNCTION s3(orphan_coll, structure = 'x Int32, y Int32')
-               VALUES (1, 10),
-                      (2, 20)
-               """)
+    node.query(
+        """
+        INSERT INTO FUNCTION s3(orphan_coll, structure = 'x Int32, y Int32')
+        VALUES (1, 10),
+               (2, 20)
+        """)
     assert node.query("SELECT sum(y) FROM orphan_table").strip() == "30"
 
     node.query("DROP NAMED COLLECTION orphan_coll")
@@ -376,12 +378,13 @@ def test_url_function_with_named_collection(cluster):
         method = 'PUT'
     """)
 
-    node.query("""
-               INSERT INTO FUNCTION url(url_write_nc)
-               VALUES (1, 'alice', 10.5),
-                      (2, 'bob', 20.3),
-                      (3, 'charlie', 30.7)
-               """)
+    node.query(
+        """
+        INSERT INTO FUNCTION url(url_write_nc)
+        VALUES (1, 'alice', 10.5),
+               (2, 'bob', 20.3),
+               (3, 'charlie', 30.7)
+        """)
 
     node.query("""
         CREATE NAMED COLLECTION url_read_nc AS
