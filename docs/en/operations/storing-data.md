@@ -688,7 +688,6 @@ These settings should be defined in the disk configuration section.
 | `use_split_cache`                     | Boolean | `false`    | Use separation of files to system/data.                                                                                                                                     |
 | `split_cache_ratio`                   | Double | `0.1`    | Ratio of system segment to total size of cache for split_cache.                                                                                                                                     |
 
-
 > **Note**: Size values support units like `ki`, `Mi`, `Gi`, etc. (e.g., `10Gi`).
 
 ## File Cache Query/Profile Settings {#file-cache-query-profile-settings}
