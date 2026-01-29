@@ -257,22 +257,12 @@ Chunk IRowInputFormat::read()
         if (isConnectionError(e.code()))
         {
             got_connection_exception  = true;
-            bool need_rollback = false;
 
             for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
             {
-                if (columns[column_idx]->size() != checkpoints[column_idx]->size)
-                {
-                    need_rollback = true;
-                    break;
-                }
-            }
-
-            if (need_rollback)
-            {
-                for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
-                    columns[column_idx]->rollback(*checkpoints[column_idx]);
-            }
+                auto & column = columns[column_idx];
+                if (column->size() > num_rows)
+                    column->popBack(column->size() - num_rows);
         }
         else
         {
