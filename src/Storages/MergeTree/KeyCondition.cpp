@@ -1271,36 +1271,69 @@ bool applyDeterministicDagToColumn(
     ColumnPtr & out_column,
     DataTypePtr & out_type)
 {
-    ColumnPtr col = in_column->convertToFullIfNeeded();
-    DataTypePtr type = removeLowCardinality(in_type);
-    DataTypePtr dag_input_type = removeLowCardinality(dag.input_type);
+    ColumnPtr input_column = in_column->convertToFullIfNeeded();
+    DataTypePtr input_type = removeLowCardinality(in_type);
+    const DataTypePtr dag_input_type = removeLowCardinality(dag.input_type);
 
-    auto normalize_output = [&]() -> bool
+    /// This is the final check for the output column after DAG execution:
+    /// - materialize output column (Const/LowCardinality)
+    /// - reject if any NULLs were created as a result of transformation
+    /// - strip Nullable/LowCardinality wrappers to get the actual column
+    auto finalize_output_column_and_type = [&](ColumnPtr & column, DataTypePtr & type) -> bool
     {
-        out_column = out_column->convertToFullColumnIfConst();
+        column = column->convertToFullIfNeeded();
+        type = removeLowCardinality(type);
 
-        if (out_column->isNullable())
+        if (column->isNullable())
         {
-            const auto & n = assert_cast<const ColumnNullable &>(*out_column);
+            const auto & n = assert_cast<const ColumnNullable &>(*column);
             for (char8_t b : n.getNullMapData())
                 if (b)
                     return false;
-            out_column = n.getNestedColumnPtr();
-            out_type = removeNullable(out_type);
+            column = n.getNestedColumnPtr();
+            type = removeNullable(type);
         }
-
-        out_column = out_column->convertToFullColumnIfLowCardinality();
-        out_type = removeLowCardinality(out_type);
         return true;
     };
 
-    if (!type->equals(*dag_input_type))
+    /// Cast column to target_type and fail if the cast introduces NULLs.
+    auto cast_without_nulls = [&](ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type) -> bool
+    {
+        if (canBeSafelyCast(type, target_type))
+        {
+            column = castColumnAccurate({column, type, ""}, target_type);
+            type = target_type;
+            return true;
+        }
+
+        if (!target_type->isNullable() && !target_type->canBeInsideNullable())
+        {
+            /// We cannot apply castColumnAccurateOrNull() because it will throw exception
+            return false;
+        }
+
+        column = castColumnAccurateOrNull({column, type, ""}, target_type);
+        const auto & n = assert_cast<const ColumnNullable &>(*column);
+
+        /// If we have any NULLs after cast, that means cast could not be applied accurately for all values
+        for (char8_t b : n.getNullMapData())
+            if (b)
+                return false;
+
+        if (!target_type->isNullable())
+            column = n.getNestedColumnPtr();
+
+        type = target_type;
+        return true;
+    };
+
+    if (!input_type->equals(*dag_input_type))
     {
         /// Fast-path: consume leading CAST(...) that are no-op for current type
         /// or can be applied directly to the CAST result type. This avoids the
         /// round-trip through dag.input_type (e.g. String -> Dynamic -> String).
         /// Additionally, some round trip might not be possible to do safely. Like String -> Dynamic -> String.
-        auto try_apply_cast_dag_fast_path = [&]() -> bool
+        auto try_apply_direct_cast_fast_path = [&]() -> bool
         {
             const auto & actions_dag = dag.actions->getActionsDAG();
 
@@ -1345,68 +1378,24 @@ bool applyDeterministicDagToColumn(
 
             const auto cast_result_type = removeLowCardinality(output_node->result_type);
 
-            if (type->equals(*cast_result_type))
-            {
-                out_column = col;
-                out_type = type;
-                return normalize_output();
-            }
+            out_column = input_column;
+            out_type = input_type;
 
-            if (canBeSafelyCast(type, cast_result_type))
-            {
-                out_column = castColumnAccurate({col, type, ""}, cast_result_type);
-                out_type = cast_result_type;
-                return normalize_output();
-            }
-
-            if (!cast_result_type->isNullable() && !cast_result_type->canBeInsideNullable())
-            {
-                /// We cannot apply castColumnAccurateOrNull() because it will throw exception
+            if (!input_type->equals(*cast_result_type) && !cast_without_nulls(out_column, out_type, cast_result_type))
                 return false;
-            }
 
-            out_column = castColumnAccurateOrNull({col, type, ""}, cast_result_type);
-            const auto & n = assert_cast<const ColumnNullable &>(*out_column);
-            for (char8_t b : n.getNullMapData())
-                if (b)
-                    return false;
-
-            if (!cast_result_type->isNullable())
-                out_column = n.getNestedColumnPtr();
-
-            out_type = cast_result_type;
-            return normalize_output();
+            return finalize_output_column_and_type(out_column, out_type);
         };
 
-        if (try_apply_cast_dag_fast_path())
+        if (try_apply_direct_cast_fast_path())
             return true;
 
-        if (canBeSafelyCast(type, dag_input_type))
-        {
-            col = castColumnAccurate({col, type, ""}, dag_input_type);
-            type = dag_input_type;
-        }
-        else if (!dag_input_type->isNullable() && !dag_input_type->canBeInsideNullable())
-        {
+        if (!cast_without_nulls(input_column, input_type, dag_input_type))
             return false;
-        }
-        else
-        {
-            col = castColumnAccurateOrNull({col, type, ""}, dag_input_type);
-            const auto & n = assert_cast<const ColumnNullable &>(*col);
-            for (char8_t b : n.getNullMapData())
-                if (b)
-                    return false;
-
-            if (!dag_input_type->isNullable())
-                col = n.getNestedColumnPtr();
-
-            type = dag_input_type;
-        }
     }
 
     Block block;
-    block.insert({col, type, input_name});
+    block.insert({input_column, input_type, input_name});
 
     /// This can throw. For example, `ORDER BY toUUID(p)` where p is String.
     /// Then,`WHERE p = 'not-a-uuid'` will throw. Maybe `CAST` function arguments could be checked earlier;
@@ -1424,7 +1413,7 @@ bool applyDeterministicDagToColumn(
     const auto & res = block.getByName(dag.output_name);
     out_column = res.column;
     out_type = res.type;
-    return normalize_output();
+    return finalize_output_column_and_type(out_column, out_type);
 }
 
 
