@@ -1,12 +1,13 @@
-Equality, LHS - plan
+Less, LHS - plan
 SELECT
     __table1.color_id AS color_id,
     __table1.payload AS payload
 FROM default.t AS __table1
-WHERE dictGetString(\'colors\', \'name\', __table1.color_id) = \'red\'
+WHERE dictGetString(\'colors\', \'name\', __table1.color_id) < \'red\'
 ORDER BY
     __table1.color_id ASC,
     __table1.payload ASC
-Equality, LHS
-1	a
-3	c
+Less, LHS
+2	b
+4	d
+5	R
