@@ -75,19 +75,6 @@ namespace DB::ServerSetting
     extern const ServerSettingsUInt64 s3_retry_attempts;
 }
 
-namespace DB::StorageObjectStorageSetting
-{
-    extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
-}
-
-namespace DB::DatabaseDataLakeSetting
-{
-    extern const DatabaseDataLakeSettingsString storage_endpoint;
-    extern const DatabaseDataLakeSettingsString aws_access_key_id;
-    extern const DatabaseDataLakeSettingsString aws_secret_access_key;
-    extern const DatabaseDataLakeSettingsString region;
-}
-
 namespace CurrentMetrics
 {
     extern const Metric MarkCacheBytes;
@@ -113,6 +100,8 @@ GlueCatalog::GlueCatalog(
 {
     DB::S3::CredentialsConfiguration creds_config;
     creds_config.use_environment_credentials = true;
+    creds_config.role_arn = settings.aws_role_arn;
+    creds_config.role_session_name = settings.aws_role_session_name;
 
     const auto & server_settings = getContext()->getGlobalContext()->getServerSettings();
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
