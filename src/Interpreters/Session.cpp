@@ -320,6 +320,12 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
+        if (auto audit_log = getAuditLogger(); audit_log && global_context->isEnabledAuditType(Context::AuditLogTypes::USER))
+        {
+            LOG_AUDIT(audit_log, "User, {}, {}, Logout",
+                    user->getName(), getClientInfo().current_address->host().toString());
+        }
+
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(user_id.value_or(UUID{})));
         if (auto session_log = getSessionLog())
         {
@@ -350,6 +356,12 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     }
     catch (const Exception & e)
     {
+        if (auto audit_log = getAuditLogger(); audit_log && global_context->isEnabledAuditType(Context::AuditLogTypes::USER))
+        {
+            LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure",
+                    user_name, getClientInfo().current_address->host().toString());
+        }
+
         LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
             session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e);
@@ -420,6 +432,13 @@ void Session::checkIfUserIsStillValid()
 
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
+    if (auto audit_log = getAuditLogger(); audit_log && global_context->isEnabledAuditType(Context::AuditLogTypes::USER))
+    {
+        LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure",
+                user_name.has_value() ? user_name.value() : "",
+                getClientInfo().current_address->host().toString());
+    }
+
     LOG_DEBUG(log, "Authentication failed with error: {}", e.what());
     if (auto session_log = getSessionLog())
     {
@@ -739,6 +758,12 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      getClientInfo(),
                                      user,
                                      user_authenticated_with);
+    }
+
+    if (auto audit_log = getAuditLogger(); audit_log && global_context->isEnabledAuditType(Context::AuditLogTypes::USER))
+    {
+        LOG_AUDIT(audit_log, "User, {}, {}, LoginSuccess",
+                user->getName(), getClientInfo().current_address->host().toString());
     }
 
     notified_session_log_about_login = true;

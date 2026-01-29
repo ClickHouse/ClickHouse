@@ -45,6 +45,9 @@ private:
     Poco::AutoPtr<Poco::FileChannel> error_log_file;
     Poco::AutoPtr<Poco::Channel> syslog_channel;
 
+    /// Audit log file channel
+    Poco::AutoPtr<Poco::FileChannel> audit_log_file;
+
     /// Previous value of logger element in config. It is used to reinitialize loggers whenever the value changed.
     std::optional<std::string> config_logger;
 
