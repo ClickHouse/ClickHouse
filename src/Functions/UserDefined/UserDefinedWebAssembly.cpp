@@ -97,24 +97,19 @@ public:
     void checkSignature() const
     {
         auto function_declaration = wasm_module->getExport(function_name);
-        if (!function_declaration)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "WebAssembly function '{}' doesn't exist", function_name);
 
-        const auto & wasm_argument_types = function_declaration->getArgumentTypes();
+        const auto & wasm_argument_types = function_declaration.getArgumentTypes();
         if (wasm_argument_types.size() != arguments.size())
         {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "WebAssembly function '{}' expects {} arguments, but it's declared with {} arguments",
-                function_name,
-                wasm_argument_types.size(),
-                arguments.size());
+                function_name, wasm_argument_types.size(), arguments.size());
         }
 
         for (size_t i = 0; i < arguments.size(); ++i)
             checkDataTypeWithWasmValKind(arguments[i].get(), wasm_argument_types[i]);
 
-        auto wasm_return_type = function_declaration->getReturnType();
+        auto wasm_return_type = function_declaration.getReturnType();
         if (bool(result_type) != wasm_return_type.has_value())
         {
             throw Exception(
@@ -207,7 +202,6 @@ public:
     }
 };
 
-
 struct WasmBuffer
 {
     WasmPtr ptr;
@@ -265,11 +259,7 @@ public:
 
     void checkFunction(const WasmFunctionDeclaration & expected) const
     {
-        auto function_declaration = wasm_module->getExport(expected.getName());
-        if (!function_declaration)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "WebAssembly function '{}' not found", expected.getName());
-
-        checkFunctionDeclarationMatches(*function_declaration, expected);
+        checkFunctionDeclarationMatches(wasm_module->getExport(expected.getName()), expected);
     }
 
     void checkSignature() const

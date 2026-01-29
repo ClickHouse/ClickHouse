@@ -182,7 +182,7 @@ struct WasmEdgeFunctionProps
     {
     }
 
-    WasmFunctionDeclarationPtr getFunctionDeclaration() const
+    WasmFunctionDeclaration getFunctionDeclaration() const
     {
         if (returns_count > 1)
             throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' has more than one return value", function_name);
@@ -200,7 +200,7 @@ struct WasmEdgeFunctionProps
             WasmEdge_FunctionTypeGetReturns(func_ctx, &return_type_val, 1);
             return_type = fromWasmEdgeValueType(return_type_val);
         }
-        return std::make_unique<WasmFunctionDeclaration>(function_name, std::move(argument_types), return_type);
+        return WasmFunctionDeclaration(function_name, std::move(argument_types), return_type);
     }
 
     const WasmEdge_FunctionTypeContext * func_ctx;
@@ -254,12 +254,13 @@ public:
 
     void linkTo(WasmEdge_ModuleInstanceContext * module_instance_ctx)
     {
-        auto argument_types = host_function_ptr->getArgumentTypes();
+        const auto & func_decl = host_function_ptr->getFunctionDeclaration();
+        const auto & argument_types = func_decl.getArgumentTypes();
         std::vector<WasmEdge_ValType> params(argument_types.size());
         std::transform(argument_types.begin(), argument_types.end(), params.begin(), toWasmEdgeValueType);
 
         std::vector<WasmEdge_ValType> returns;
-        if (auto return_type = host_function_ptr->getReturnType())
+        if (auto return_type = func_decl.getReturnType())
             returns.push_back(toWasmEdgeValueType(*return_type));
 
         auto func_type = WasmEdgeResourcePtrCreate<WasmEdge_FunctionTypeCreate>(
@@ -268,7 +269,7 @@ public:
         auto * function_instance
             = WasmEdge_FunctionInstanceCreate(func_type.get(), callFunction, reinterpret_cast<void *>(this), /* cost= */ 1);
 
-        auto function_name = host_function_ptr->getName();
+        auto function_name = func_decl.getName();
         WasmEdge_ModuleInstanceAddFunction(
             module_instance_ctx,
             WasmEdge_StringWrap(reinterpret_cast<const char *>(function_name.data()), static_cast<uint32_t>(function_name.size())),
@@ -341,10 +342,12 @@ WasmEdge_Result HostFunctionAdapter::callFunction(
     auto * adapter = reinterpret_cast<HostFunctionAdapter *>(payload);
     auto * compartment = adapter->compartment;
     const auto & host_func = *adapter->host_function_ptr;
+    const auto & func_decl = host_func.getFunctionDeclaration();
+
 
     try
     {
-        auto argument_types = host_func.getArgumentTypes();
+        const auto & argument_types = func_decl.getArgumentTypes();
         std::vector<WasmVal> args(argument_types.size());
         for (size_t i = 0; i < argument_types.size(); ++i)
         {
@@ -353,7 +356,7 @@ WasmEdge_Result HostFunctionAdapter::callFunction(
                 throw Exception(
                     ErrorCodes::WASM_ERROR,
                     "Function {} invoked with wrong argument types [{}]",
-                    formatFunctionDeclaration(host_func),
+                    formatFunctionDeclaration(func_decl),
                     fmt::join(args | std::views::transform(getWasmValKind), ", "));
         }
 
@@ -445,7 +448,7 @@ std::vector<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_n
             function_name,
             params.size(),
             params_count,
-            formatFunctionDeclaration(*func_it->second.getFunctionDeclaration()));
+            formatFunctionDeclaration(func_it->second.getFunctionDeclaration()));
 
     std::vector<WasmEdge_Value> params_values(params.size());
     for (size_t i = 0; i < params.size(); ++i)
@@ -499,19 +502,19 @@ public:
     std::unique_ptr<WasmCompartment> instantiate(Config cfg) const override
     {
         auto compartment = std::make_unique<WasmEdgeCompartment>(cfg);
-        for (const auto & host_function_ptr : host_functions)
-            compartment->addHostFunction(host_function_ptr.get());
+        for (const auto & host_function : host_functions)
+            compartment->addHostFunction(&host_function);
         compartment->loadModuleFromAst(ast_module.get());
         return compartment;
     }
 
-    std::vector<WasmFunctionDeclarationPtr> getImports() const override
+    std::vector<WasmFunctionDeclaration> getImports() const override
     {
         auto imports_length = WasmEdge_ASTModuleListImportsLength(ast_module.get());
         std::vector<const WasmEdge_ImportTypeContext *> imports(imports_length);
         WasmEdge_ASTModuleListImports(ast_module.get(), imports.data(), imports_length);
 
-        std::vector<WasmFunctionDeclarationPtr> result;
+        std::vector<WasmFunctionDeclaration> result;
 
         for (const auto * import_ctx : imports)
         {
@@ -529,16 +532,16 @@ public:
         return result;
     }
 
-    void addImport(std::unique_ptr<WasmHostFunction> import_host_function) override
+    void linkFunction(WasmHostFunction import_host_function) override
     {
         host_functions.push_back(std::move(import_host_function));
     }
 
-    WasmFunctionDeclarationPtr getExport(std::string_view function_name) const override
+    WasmFunctionDeclaration getExport(std::string_view function_name) const override
     {
         auto export_it = exports.find(function_name);
         if (export_it == exports.end() || export_it->second == nullptr)
-            return nullptr;
+            throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' is not found in module exports", function_name);
         const auto * function_type = WasmEdge_ExportTypeGetFunctionType(ast_module.get(), export_it->second);
         if (!function_type)
             throw Exception(ErrorCodes::WASM_ERROR, "Cannot get function for export '{}'", function_name);
@@ -548,7 +551,7 @@ public:
 private:
     WasmEdgeResourcePtr<WasmEdge_ASTModuleContext> ast_module;
     std::map<std::string, const WasmEdge_ExportTypeContext *, std::less<>> exports;
-    std::vector<std::unique_ptr<WasmHostFunction>> host_functions;
+    std::vector<WasmHostFunction> host_functions;
 };
 
 

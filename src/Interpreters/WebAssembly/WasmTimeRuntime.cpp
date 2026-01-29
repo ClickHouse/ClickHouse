@@ -105,9 +105,9 @@ wasmtime::Val toWasmTimeValue(WasmVal val)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-wasmtime::FuncType toWasmFunctionType(WasmHostFunction * host_function_ptr)
+wasmtime::FuncType toWasmFunctionType(const WasmFunctionDeclaration & host_function_decl)
 {
-    auto argument_types = host_function_ptr->getArgumentTypes();
+    auto argument_types = host_function_decl.getArgumentTypes();
     std::vector<wasmtime::ValType> param_types;
     param_types.reserve(argument_types.size());
     for (auto & argument_type : argument_types)
@@ -117,7 +117,7 @@ wasmtime::FuncType toWasmFunctionType(WasmHostFunction * host_function_ptr)
 
     std::vector<wasmtime::ValType> result_type;
     result_type.reserve(1);
-    if (auto return_type = host_function_ptr->getReturnType())
+    if (auto return_type = host_function_decl.getReturnType())
     {
         result_type.emplace_back(toWasmTimeValKind(return_type.value()));
     }
@@ -259,19 +259,20 @@ namespace
 
 wasmtime::Result<std::monostate, wasmtime::Trap> callHostFunction(
     WasmTimeCompartment * compartment,
-    WasmHostFunction * host_function_ptr,
+    const WasmHostFunction * host_function_ptr,
     const wasmtime::Span<const wasmtime::Val> params,
     wasmtime::Span<wasmtime::Val> results)
 {
+    const auto & func_decl = host_function_ptr->getFunctionDeclaration();
     try
     {
-        auto argument_types = host_function_ptr->getArgumentTypes();
+        auto argument_types = func_decl.getArgumentTypes();
         if (argument_types.size() != params.size())
         {
             throw Exception(
                 ErrorCodes::WASM_ERROR,
                 "Function {} was called from wasm with different number of arguments {} != {}",
-                formatFunctionDeclaration(*host_function_ptr),
+                formatFunctionDeclaration(func_decl),
                 params.size(),
                 argument_types.size());
         }
@@ -282,7 +283,7 @@ wasmtime::Result<std::monostate, wasmtime::Trap> callHostFunction(
                 throw Exception(
                     ErrorCodes::WASM_ERROR,
                     "Function {} invoked with wrong argument types [{}]",
-                    formatFunctionDeclaration(*host_function_ptr),
+                    formatFunctionDeclaration(func_decl),
                     fmt::join(args | std::views::transform(getWasmValKind), ", "));
             args[i] = fromWasmTimeValue(params[i]);
         }
@@ -295,7 +296,7 @@ wasmtime::Result<std::monostate, wasmtime::Trap> callHostFunction(
                 throw Exception(
                     ErrorCodes::WASM_ERROR,
                     "Function {} invoked with different number of return values 1 != {}",
-                    formatFunctionDeclaration(*host_function_ptr),
+                    formatFunctionDeclaration(func_decl),
                     results.size());
             }
             results[0] = toWasmTimeValue(result_val.value());
@@ -314,7 +315,7 @@ wasmtime::Result<std::monostate, wasmtime::Trap> callHostFunction(
 }
 }
 
-WasmFunctionDeclarationPtr buildFunctionDeclaration(std::string_view function_name, wasmtime::FuncType::Ref function_info)
+WasmFunctionDeclaration buildFunctionDeclaration(std::string_view function_name, wasmtime::FuncType::Ref function_info)
 {
     if (function_info.results().size() > 1)
         throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' has more than one return value", function_name);
@@ -332,7 +333,7 @@ WasmFunctionDeclarationPtr buildFunctionDeclaration(std::string_view function_na
         argument_types.emplace_back(fromWasmTimeValKind(function_argument.kind()));
     }
 
-    return std::make_unique<WasmFunctionDeclaration>(function_name, std::move(argument_types), return_type);
+    return WasmFunctionDeclaration(function_name, std::move(argument_types), return_type);
 }
 
 class WasmTimeModule : public WasmModule
@@ -382,13 +383,14 @@ public:
         }
 
         wasmtime::Linker linker(engine);
-        for (const auto & host_function_ptr : host_functions)
+        for (const auto & host_function : host_functions)
         {
+            const auto & func_decl = host_function.getFunctionDeclaration();
             auto add_host_func_result = linker.func_new(
                 "env",
-                host_function_ptr->getName(),
-                toWasmFunctionType(host_function_ptr.get()),
-                [host_function_raw_ptr = host_function_ptr.get()](
+                func_decl.getName(),
+                toWasmFunctionType(func_decl),
+                [host_function_raw_ptr = &host_function](
                     wasmtime::Caller caller,
                     wasmtime::Span<const wasmtime::Val> params,
                     wasmtime::Span<wasmtime::Val> results) -> wasmtime::Result<std::monostate, wasmtime::Trap>
@@ -416,9 +418,9 @@ public:
     }
 
 
-    std::vector<WasmFunctionDeclarationPtr> getImports() const override
+    std::vector<WasmFunctionDeclaration> getImports() const override
     {
-        std::vector<WasmFunctionDeclarationPtr> result;
+        std::vector<WasmFunctionDeclaration> result;
         result.reserve(function_imports_map.size());
 
         for (const auto & [function_name, function_info] : function_imports_map)
@@ -429,16 +431,16 @@ public:
         return result;
     }
 
-    void addImport(std::unique_ptr<WasmHostFunction> import_host_function) override
+    void linkFunction(WasmHostFunction import_host_function) override
     {
         host_functions.emplace_back(std::move(import_host_function));
     }
 
-    WasmFunctionDeclarationPtr getExport(std::string_view function_name) const override
+    WasmFunctionDeclaration getExport(std::string_view function_name) const override
     {
         auto export_it = function_exports_map.find(function_name);
         if (export_it == function_exports_map.end())
-            return nullptr;
+            throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' is not found in module exports", function_name);
         return buildFunctionDeclaration(function_name, export_it->second);
     }
 
@@ -452,7 +454,7 @@ private:
     wasmtime::ImportType::List all_imports_list;
     std::map<std::string, wasmtime::FuncType::Ref, std::less<>> function_imports_map;
 
-    std::vector<std::unique_ptr<WasmHostFunction>> host_functions;
+    std::vector<WasmHostFunction> host_functions;
 
     LoggerPtr log = getLogger("WasmTimeModule");
 };

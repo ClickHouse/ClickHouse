@@ -22,7 +22,7 @@ WasmValKind getWasmValKind(const WasmVal & val)
     }, val);
 }
 
-String formatFunctionDeclaration(const IWasmFunctionDeclaration & wasm_func)
+String formatFunctionDeclaration(const WasmFunctionDeclaration & wasm_func)
 {
     auto result_type = wasm_func.getReturnType();
     return fmt::format("{}({}) -> {}",
@@ -31,7 +31,7 @@ String formatFunctionDeclaration(const IWasmFunctionDeclaration & wasm_func)
         result_type ? toString(*result_type) : "void");
 }
 
-void checkFunctionDeclarationMatches(const IWasmFunctionDeclaration & actual, const IWasmFunctionDeclaration & expected)
+void checkFunctionDeclarationMatches(const WasmFunctionDeclaration & actual, const WasmFunctionDeclaration & expected)
 {
     if (actual.getName() != expected.getName())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected function name: '{}', expected '{}'", actual.getName(), expected.getName());

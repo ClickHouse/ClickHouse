@@ -51,10 +51,10 @@ public:
       */
     virtual std::unique_ptr<WasmCompartment> instantiate(Config cfg) const = 0;
 
-    virtual std::vector<WasmFunctionDeclarationPtr> getImports() const = 0;
-    virtual void addImport(std::unique_ptr<WasmHostFunction> host_function) = 0;
+    virtual std::vector<WasmFunctionDeclaration> getImports() const = 0;
+    virtual void linkFunction(WasmHostFunction host_function) = 0;
 
-    virtual WasmFunctionDeclarationPtr getExport(std::string_view function_name) const = 0;
+    virtual WasmFunctionDeclaration getExport(std::string_view function_name) const = 0;
 
     virtual ~WasmModule() = default;
 };

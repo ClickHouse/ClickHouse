@@ -31,8 +31,6 @@ public:
     std::pair<ModulePtr, UInt256> getModule(std::string_view module_name);
     std::vector<std::pair<std::string, UInt256>> getModulesList() const;
 
-    static void addImportsTo(WebAssembly::WasmModule & module);
-
     void deleteModuleIfExists(std::string_view module_name);
 
     WasmModuleManager(const WasmModuleManager &) = delete;

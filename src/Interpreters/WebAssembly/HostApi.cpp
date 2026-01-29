@@ -11,7 +11,8 @@
 
 namespace DB::ErrorCodes
 {
-extern const int WASM_ERROR;
+    extern const int WASM_ERROR;
+    extern const int RESOURCE_NOT_FOUND;
 }
 
 namespace DB::WebAssembly
@@ -42,43 +43,40 @@ Int64 wasmExportServerVer(WasmCompartment *)
 void wasmExportRandom(WasmCompartment * compartment, WasmPtr wasm_ptr, WasmSizeT size)
 {
     auto * host_ptr = compartment->getMemory(wasm_ptr, size);
-    std::uniform_int_distribution<> dist(std::numeric_limits<UInt8>::max(), std::numeric_limits<UInt8>::max());
+    std::uniform_int_distribution<> dist(std::numeric_limits<UInt8>::min(), std::numeric_limits<UInt8>::max());
     for (WasmSizeT i = 0; i < size; ++i)
         host_ptr[i] = static_cast<UInt8>(dist(thread_local_rng));
 }
 
 }
 
+template <typename>
+class WasmHostFunctionAdapter;
+
 template <typename ReturnType, typename... Args>
-class WasmHostFunctionImpl final : public WasmHostFunction
+class WasmHostFunctionAdapter<ReturnType (*)(WasmCompartment *, Args...)>
 {
 public:
     using HostFunctionPtr = ReturnType (*)(WasmCompartment *, Args...);
 
-    explicit WasmHostFunctionImpl(std::string function_name_, HostFunctionPtr host_function_)
-        : function_name(std::move(function_name_))
-        , host_function(host_function_)
+    explicit WasmHostFunctionAdapter(HostFunctionPtr host_function_, std::string_view function_name_)
+        : host_function(host_function_), function_name(function_name_)
     {
     }
 
-    std::optional<WasmVal> operator()(WasmCompartment * compartment, std::span<WasmVal> args) const override
+    std::optional<WasmVal> operator()(WasmCompartment * compartment, std::span<WasmVal> args) const
     {
         if (args.size() != sizeof...(Args))
-            throw Exception(
-                ErrorCodes::WASM_ERROR,
+            throw Exception(ErrorCodes::WASM_ERROR,
                 "WebAssembly function '{}' expects {} arguments, got {}",
-                function_name,
-                sizeof...(Args),
-                args.size());
+                function_name, sizeof...(Args), args.size());
         if constexpr (!std::is_void_v<ReturnType>)
             return callFunctionImpl(compartment, args.data(), std::make_index_sequence<sizeof...(Args)>());
         callFunctionImpl(compartment, args.data(), std::make_index_sequence<sizeof...(Args)>());
         return std::nullopt;
     }
 
-    std::string_view getName() const override { return function_name; }
-
-    std::optional<WasmValKind> getReturnType() const override
+    static std::optional<WasmValKind> getReturnType()
     {
         if constexpr (std::is_void_v<ReturnType>)
             return std::nullopt;
@@ -86,9 +84,7 @@ public:
             return WasmValTypeToKind<ReturnType>::value;
     }
 
-    std::vector<WasmValKind> getArgumentTypes() const override { return {WasmValTypeToKind<Args>::value...}; }
-
-    ~WasmHostFunctionImpl() override = default;
+    static std::vector<WasmValKind> getArgumentTypes() { return {WasmValTypeToKind<Args>::value...}; }
 
 private:
     template <size_t... is>
@@ -97,31 +93,44 @@ private:
         return host_function(compartment, std::get<Args>(params[is])...);
     }
 
-    std::string function_name;
     HostFunctionPtr host_function;
+    std::string_view function_name;
 };
 
-
-template <typename ReturnType, typename... Args>
-std::unique_ptr<WasmHostFunction> makeHostFunction(std::string_view function_name, ReturnType (*host_function)(WasmCompartment *, Args...))
+template <typename FuncPtr>
+std::optional<WasmVal> invokeImpl(void * ptr, std::string_view function_name, WasmCompartment * c, std::span<WasmVal> args)
 {
-    return std::make_unique<WasmHostFunctionImpl<ReturnType, Args...>>(std::string(function_name), host_function);
+    return WasmHostFunctionAdapter<FuncPtr>(reinterpret_cast<FuncPtr>(ptr), function_name)(c, args);
 }
 
-std::unique_ptr<WasmHostFunction> getHostFunction(std::string_view function_name)
+template <typename ReturnType, typename... Args>
+WasmHostFunction makeHostFunction(std::string_view function_name, ReturnType (*host_function)(WasmCompartment *, Args...))
 {
-    std::array exported_functions{
+    using FuncPtr = ReturnType (*)(WasmCompartment *, Args...);
+    WasmFunctionDeclaration func_decl(
+        function_name,
+        WasmHostFunctionAdapter<FuncPtr>::getArgumentTypes(),
+        WasmHostFunctionAdapter<FuncPtr>::getReturnType());
+
+    return WasmHostFunction(std::move(func_decl), reinterpret_cast<void *>(host_function), &invokeImpl<FuncPtr>);
+}
+
+WasmHostFunction getHostFunction(std::string_view function_name)
+{
+    static const std::array exported_functions{
         makeHostFunction("clickhouse_server_version", wasmExportServerVer),
         makeHostFunction("clickhouse_terminate", wasmExportTerminate),
         makeHostFunction("clickhouse_log", wasmExportLog),
         makeHostFunction("clickhouse_random", wasmExportRandom),
     };
-    for (auto && function : exported_functions)
+
+    for (const auto & function : exported_functions)
     {
-        if (function->getName() == function_name)
-            return std::move(function);
+        if (function.getFunctionDeclaration().getName() == function_name)
+            return function;
     }
-    return nullptr;
+
+    throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "Unknown WebAssembly host function '{}'", function_name);
 }
 
 }

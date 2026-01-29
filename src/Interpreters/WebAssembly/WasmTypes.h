@@ -49,38 +49,21 @@ template <typename T> struct NativeToWasmType { using Type = std::variant_altern
 
 WasmValKind getWasmValKind(const WasmVal & val);
 
-class IWasmFunctionDeclaration
+class WasmFunctionDeclaration
 {
 public:
-    virtual std::vector<WasmValKind> getArgumentTypes() const = 0;
-    virtual std::optional<WasmValKind> getReturnType() const = 0;
-    virtual std::string_view getName() const = 0;
-
-    IWasmFunctionDeclaration() = default;
-    IWasmFunctionDeclaration(const IWasmFunctionDeclaration &) = delete;
-    IWasmFunctionDeclaration & operator=(const IWasmFunctionDeclaration &) = delete;
-    IWasmFunctionDeclaration(IWasmFunctionDeclaration &&) = default;
-    IWasmFunctionDeclaration & operator=(IWasmFunctionDeclaration &&) = default;
-
-    virtual ~IWasmFunctionDeclaration() = default;
-};
-
-String formatFunctionDeclaration(const IWasmFunctionDeclaration & wasm_func);
-void checkFunctionDeclarationMatches(const IWasmFunctionDeclaration & actual, const IWasmFunctionDeclaration & expected);
-
-class WasmFunctionDeclaration final : public IWasmFunctionDeclaration
-{
-public:
-    WasmFunctionDeclaration(std::string_view function_name_, std::vector<WasmValKind> argument_types_, std::optional<WasmValKind> return_type_)
+    WasmFunctionDeclaration(std::string_view function_name_,
+        std::vector<WasmValKind> argument_types_,
+        std::optional<WasmValKind> return_type_)
         : function_name(std::move(function_name_))
         , argument_types(std::move(argument_types_))
         , return_type(return_type_)
     {
     }
 
-    std::string_view getName() const override { return function_name; }
-    std::vector<WasmValKind> getArgumentTypes() const override { return argument_types; }
-    std::optional<WasmValKind> getReturnType() const override { return return_type; }
+    std::string_view getName() const { return function_name; }
+    const std::vector<WasmValKind> & getArgumentTypes() const { return argument_types; }
+    std::optional<WasmValKind> getReturnType() const { return return_type; }
 
 private:
     std::string function_name;
@@ -88,7 +71,8 @@ private:
     std::optional<WasmValKind> return_type;
 };
 
-using WasmFunctionDeclarationPtr = std::unique_ptr<IWasmFunctionDeclaration>;
+String formatFunctionDeclaration(const WasmFunctionDeclaration & wasm_func);
+void checkFunctionDeclarationMatches(const WasmFunctionDeclaration & actual, const WasmFunctionDeclaration & expected);
 
 }
 

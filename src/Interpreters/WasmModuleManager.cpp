@@ -198,15 +198,13 @@ void WasmModuleManager::saveModule(std::string_view module_name, std::string_vie
 }
 
 
-void WasmModuleManager::addImportsTo(WasmModule & module)
+void linkHostFunctions(WasmModule & module)
 {
     for (const auto & declaration : module.getImports())
     {
-        auto host_func = WebAssembly::getHostFunction(declaration->getName());
-        if (!host_func)
-            throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "WebAssembly host function '{}' not found", declaration->getName());
-        checkFunctionDeclarationMatches(*declaration, *host_func);
-        module.addImport(std::move(host_func));
+        auto host_func = WebAssembly::getHostFunction(declaration.getName());
+        checkFunctionDeclarationMatches(declaration, host_func.getFunctionDeclaration());
+        module.linkFunction(std::move(host_func));
     }
 }
 
@@ -247,7 +245,7 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
     UInt256 module_hash = calculateHash(wasm_code);
 
     modules[std::string(module_name)] = {module, module_hash};
-    addImportsTo(*module);
+    linkHostFunctions(*module);
 
     return {module, module_hash};
 }
