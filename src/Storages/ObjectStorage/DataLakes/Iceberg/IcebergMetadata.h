@@ -80,7 +80,7 @@ public:
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
 
-    IcebergHistory getHistory(ContextPtr local_context) const;
+    IcebergHistory getIcebergHistory(ContextPtr local_context) const;
 
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;

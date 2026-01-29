@@ -88,6 +88,9 @@ public:
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override;
 
+    /// Get history of Delta Lake table versions
+    DataLakeHistory getHistory(ContextPtr local_context) const override;
+
 private:
     const LoggerPtr log;
     const DeltaLake::KernelHelperPtr kernel_helper;

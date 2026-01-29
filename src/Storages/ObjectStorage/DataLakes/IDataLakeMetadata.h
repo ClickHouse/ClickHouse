@@ -1,5 +1,7 @@
 #pragma once
 #include <boost/noncopyable.hpp>
+#include <map>
+#include <optional>
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
@@ -29,6 +31,18 @@ extern const int UNSUPPORTED_METHOD;
 
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
+
+/// History record for Delta Lake version tracking
+struct DataLakeHistoryRecord
+{
+    UInt64 version;
+    std::optional<DateTime64> timestamp;
+    String operation;
+    std::map<String, String> operation_parameters;
+    bool is_current;
+};
+
+using DataLakeHistory = std::vector<DataLakeHistoryRecord>;
 class StorageObjectStorageConfiguration;
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
 struct StorageID;
@@ -136,6 +150,9 @@ public:
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
     virtual void drop(ContextPtr) { }
+
+    /// Get history of data lake table versions (Delta Lake specific)
+    virtual DataLakeHistory getHistory(ContextPtr /*local_context*/) const { return {}; }
 
 protected:
     virtual ObjectIterator

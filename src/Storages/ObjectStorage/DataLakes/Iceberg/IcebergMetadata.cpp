@@ -345,7 +345,7 @@ bool IcebergMetadata::optimize(
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto snapshots_info = getHistory(context);
+        auto snapshots_info = getIcebergHistory(context);
         compactIcebergTable(
             snapshots_info,
             persistent_components,
@@ -651,7 +651,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
     return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, cache_ptr);
 }
 
-IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
+IcebergMetadata::IcebergHistory IcebergMetadata::getIcebergHistory(ContextPtr local_context) const
 {
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
