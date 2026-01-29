@@ -16,11 +16,17 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
 
 namespace fs = std::filesystem;
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char local_object_storage_network_error_during_remove[];
+}
 
 namespace ErrorCodes
 {
@@ -28,6 +34,7 @@ namespace ErrorCodes
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_RMDIR;
     extern const int READONLY;
+    extern const int FAULT_INJECTED;
 }
 
 LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
@@ -222,6 +229,10 @@ void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
     throwIfReadonly();
     if (exists(object))
         removeObject(object);
+
+    fiu_do_on(FailPoints::local_object_storage_network_error_during_remove, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected error after remove object {}", object.remote_path);
+    });
 }
 
 void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
