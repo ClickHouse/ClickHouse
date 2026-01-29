@@ -413,6 +413,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
             print("2 session_timeout:", session_timeout) #REMOVEME
+            print("--session-timeout={session_timeout}")
             test_result_parallel = Result.from_pytest_run(
                 command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout}",
                 cwd="./tests/integration/",
