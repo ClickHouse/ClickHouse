@@ -263,6 +263,7 @@ Chunk IRowInputFormat::read()
                 auto & column = columns[column_idx];
                 if (column->size() > num_rows)
                     column->popBack(column->size() - num_rows);
+            }
         }
         else
         {
