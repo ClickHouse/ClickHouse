@@ -4,14 +4,16 @@
 
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/IResourceManager.h>
-#include <Common/Scheduler/SchedulerRoot.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/Scheduler/Nodes/SchedulerNodeFactory.h>
-#include <Common/Scheduler/Nodes/PriorityPolicy.h>
-#include <Common/Scheduler/Nodes/FifoQueue.h>
-#include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
-#include <Common/Scheduler/Nodes/UnifiedSchedulerNode.h>
+#include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
+#include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
+#include <Common/Scheduler/Nodes/WorkloadNode.h>
 #include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
+
+#include <Common/ThreadPool.h>
 
 #include <Poco/Util/XMLConfiguration.h>
 
@@ -42,7 +44,7 @@ struct ResourceTestBase
     }
 
     template <class TClass>
-    static TClass * add(EventQueue * event_queue, SchedulerNodePtr & root_node, const String & path, const String & xml = {})
+    static TClass * add(EventQueue & event_queue, SchedulerNodePtr & root_node, const String & path, const String & xml = {})
     {
         std::stringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         stream << "<resource><node path=\"" << path << "\">" << xml << "</node></resource>";
@@ -53,7 +55,7 @@ struct ResourceTestBase
     }
 
     template <class TClass, class... Args>
-    static TClass * add(EventQueue * event_queue, SchedulerNodePtr & root_node, const String & path, Args... args)
+    static TClass * add(EventQueue & event_queue, SchedulerNodePtr & root_node, const String & path, Args... args)
     {
         if (path == "/")
         {
@@ -124,27 +126,27 @@ public:
     template <class TClass>
     void add(const String & path, const String & xml = {})
     {
-        ResourceTestBase::add<TClass>(&event_queue, root_node, path, xml);
+        ResourceTestBase::add<TClass>(event_queue, root_node, path, xml);
     }
 
     template <class TClass, class... Args>
     void addCustom(const String & path, Args... args)
     {
-        ResourceTestBase::add<TClass>(&event_queue, root_node, path, std::forward<Args>(args)...);
+        ResourceTestBase::add<TClass>(event_queue, root_node, path, std::forward<Args>(args)...);
     }
 
-    UnifiedSchedulerNodePtr createUnifiedNode(const String & basename, const WorkloadSettings & settings = {})
+    TimeSharedWorkloadNodePtr createUnifiedNode(const String & basename, const WorkloadSettings & settings = {})
     {
         return createUnifiedNode(basename, {}, settings);
     }
 
-    UnifiedSchedulerNodePtr createUnifiedNode(const String & basename, const UnifiedSchedulerNodePtr & parent, const WorkloadSettings & settings = {})
+    TimeSharedWorkloadNodePtr createUnifiedNode(const String & basename, const TimeSharedWorkloadNodePtr & parent, const WorkloadSettings & settings = {})
     {
-        auto node = std::make_shared<UnifiedSchedulerNode>(&event_queue, settings);
+        auto node = std::make_shared<TimeSharedWorkloadNode>(event_queue, settings, CostUnit::IOByte, "test_resource");
         node->basename = basename;
         if (parent)
         {
-            parent->attachUnifiedChild(node);
+            parent->attachWorkloadChild(node);
         }
         else
         {
@@ -158,31 +160,32 @@ public:
     // Unit test implementation must make sure that all needed queues and constraints are not going to be destroyed.
     // Normally it is the responsibility of WorkloadResourceManager, but we do not use it here, so manual version control is required.
     // (see WorkloadResourceManager::Resource::updateCurrentVersion() fo details)
-    void updateUnifiedNode(const UnifiedSchedulerNodePtr & node, const UnifiedSchedulerNodePtr & old_parent, const UnifiedSchedulerNodePtr & new_parent, const WorkloadSettings & new_settings)
+    void updateUnifiedNode(const TimeSharedWorkloadNodePtr & node, const TimeSharedWorkloadNodePtr & old_parent, const TimeSharedWorkloadNodePtr & new_parent, const WorkloadSettings & new_settings)
     {
         EXPECT_TRUE((old_parent && new_parent) || (!old_parent && !new_parent)); // changing root node is not supported
         bool detached = false;
-        if (UnifiedSchedulerNode::updateRequiresDetach(
+        if (IWorkloadNode::updateRequiresDetach(
             old_parent ? old_parent->basename : "",
             new_parent ? new_parent->basename : "",
             node->getSettings(),
-            new_settings))
+            new_settings,
+            SharingMode::TimeShared))
         {
             if (old_parent)
-                old_parent->detachUnifiedChild(node);
+                old_parent->detachWorkloadChild(node);
             detached = true;
         }
 
         node->updateSchedulingSettings(new_settings);
 
         if (detached && new_parent)
-            new_parent->attachUnifiedChild(node);
+            new_parent->attachWorkloadChild(node);
     }
 
 
-    void enqueue(const UnifiedSchedulerNodePtr & node, const std::vector<ResourceCost> & costs)
+    void enqueue(const TimeSharedWorkloadNodePtr & node, const std::vector<ResourceCost> & costs)
     {
-        enqueueImpl(node->getQueue().get(), costs, node->basename);
+        enqueueImpl(node->getLink().queue, costs, node->basename);
     }
 
     void enqueue(const String & path, const std::vector<ResourceCost> & costs)
@@ -219,11 +222,11 @@ public:
         processEvents(); // to activate queues
     }
 
-    void dequeue(size_t count_limit = size_t(-1), ResourceCost cost_limit = ResourceCostMax)
+    void dequeue(size_t count_limit = size_t(-1), ResourceCost cost_limit = std::numeric_limits<ResourceCost>::max())
     {
         while (count_limit > 0 && cost_limit > 0)
         {
-            if (auto [request, _] = root_node->dequeueRequest(); request)
+            if (auto [request, _] = getRoot().dequeueRequest(); request)
             {
                 count_limit--;
                 cost_limit -= request->cost;
@@ -236,16 +239,16 @@ public:
         }
     }
 
-    void process(EventQueue::TimePoint now, size_t count_limit = size_t(-1), ResourceCost cost_limit = ResourceCostMax)
+    void process(EventQueue::TimePoint now, size_t count_limit = size_t(-1), ResourceCost cost_limit = std::numeric_limits<ResourceCost>::max())
     {
         event_queue.setManualTime(now);
 
         while (count_limit > 0 && cost_limit > 0)
         {
             processEvents();
-            if (!root_node->isActive())
+            if (!getRoot().isActive())
                 return;
-            if (auto [request, _] = root_node->dequeueRequest(); request)
+            if (auto [request, _] = getRoot().dequeueRequest(); request)
             {
                 count_limit--;
                 cost_limit -= request->cost;
@@ -280,6 +283,11 @@ public:
     void processEvents()
     {
         while (event_queue.tryProcess()) {}
+    }
+
+    ITimeSharedNode & getRoot()
+    {
+        return static_cast<ITimeSharedNode &>(*root_node);
     }
 
 private:

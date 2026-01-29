@@ -428,6 +428,9 @@
     M(ConcurrentQueryScheduled, "Total number of query slot requests are being scheduled currently") \
     M(ConcurrentQueryAcquired, "Total number of acquired query slots") \
     \
+    M(MemoryReservationApproved, "Total number of currently allocated (approved) bytes for memory reservations") \
+    M(MemoryReservationDemand, "Total number of outstanding increase request bytes for memory reservations") \
+    \
     M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
     \
     M(SharedCatalogStateApplicationThreads, "Number of threads in the threadpool for state application in Shared Catalog.") \

@@ -56,6 +56,7 @@ namespace Setting
     extern const SettingsBool trace_profile_events;
     extern const SettingsString trace_profile_events_list;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
+    extern const SettingsUInt64 reserve_memory;
 }
 
 namespace ErrorCodes
@@ -125,6 +126,7 @@ ProcessList::EntryPtr ProcessList::insert(
     // NOTE: There is a separate independent limit for the whole server `max_concurrent_queries`.
     // NOTE: If that limit is exhausted, the query will be later blocked and wait while holding a query slot.
     QuerySlotPtr query_slot;
+    MemoryReservationPtr memory_reservation;
     if (!is_unlimited_query)
     {
         String query_resource_name = query_context->getWorkloadEntityStorage().getQueryResourceName();
@@ -132,6 +134,12 @@ ProcessList::EntryPtr ProcessList::insert(
         {
             if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
                 query_slot = std::make_unique<QuerySlot>(link);
+        }
+        String memory_reservation_resource_name = query_context->getWorkloadEntityStorage().getMemoryReservationResourceName();
+        if (!memory_reservation_resource_name.empty())
+        {
+            if (ResourceLink link = query_context->getWorkloadClassifier()->get(memory_reservation_resource_name))
+                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory]);
         }
     }
 
@@ -339,6 +347,7 @@ ProcessList::EntryPtr ProcessList::insert(
                 settings[Setting::priority],
                 std::chrono::milliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
             std::move(query_slot),
+            std::move(memory_reservation),
             std::move(thread_group),
             query_kind,
             settings,
@@ -467,6 +476,7 @@ QueryStatus::QueryStatus(
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
     QuerySlotPtr && query_slot_,
+    MemoryReservationPtr && memory_reservation_,
     ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
     const Settings & query_settings_,
@@ -477,6 +487,7 @@ QueryStatus::QueryStatus(
     , normalized_query_hash(normalized_query_hash_)
     , client_info(client_info_)
     , query_slot(std::move(query_slot_))
+    , memory_reservation(std::move(memory_reservation_))
     , thread_group(std::move(thread_group_))
     , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
     , priority_handle(std::move(priority_handle_))

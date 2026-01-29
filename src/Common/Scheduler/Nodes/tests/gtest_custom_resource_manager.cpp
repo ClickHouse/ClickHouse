@@ -2,7 +2,7 @@
 
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
-#include <Common/Scheduler/Nodes/CustomResourceManager.h>
+#include <Common/Scheduler/CustomResourceManager.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 using namespace DB;

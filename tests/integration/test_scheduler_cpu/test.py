@@ -122,7 +122,7 @@ def test_create_workload():
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/admin' and type='unified' and priority=0"
+                f"select count() from system.scheduler where path ilike '%/admin' and type='workload' and priority=0"
             )
             == "1\n"
         )
@@ -134,7 +134,7 @@ def test_create_workload():
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/production' and type='unified' and weight=9"
+                f"select count() from system.scheduler where path ilike '%/production' and type='workload' and weight=9"
             )
             == "1\n"
         )

@@ -18,6 +18,7 @@
 #include <Common/UniqueLock.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Scheduler/MemoryReservation.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/OvercommitTracker.h>
@@ -100,8 +101,9 @@ protected:
     UInt64 normalized_query_hash;
     ClientInfo client_info;
 
-    /// Query slot scheduling for workloads
+    /// Acquired workload resources
     QuerySlotPtr query_slot;
+    MemoryReservationPtr memory_reservation;
 
     /// Info about all threads involved in query execution
     ThreadGroupPtr thread_group;
@@ -204,6 +206,7 @@ public:
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
         QuerySlotPtr && query_slot_,
+        MemoryReservationPtr && memory_reservation_,
         ThreadGroupPtr && thread_group_,
         IAST::QueryKind query_kind_,
         const Settings & query_settings_,
@@ -234,6 +237,11 @@ public:
         if (!thread_group)
             return nullptr;
         return &thread_group->memory_tracker;
+    }
+
+    MemoryReservation * getMemoryReservation() const
+    {
+        return memory_reservation.get();
     }
 
     bool hasThreadGroup() const
@@ -294,8 +302,12 @@ public:
         return is_internal;
     }
 
-    /// Manually release query slot (if any).
-    void releaseQuerySlot() { query_slot.reset(); }
+    /// Manually release all acquired workload resources.
+    void releaseWorkloadResources()
+    {
+        memory_reservation.reset();
+        query_slot.reset();
+    }
 };
 
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;

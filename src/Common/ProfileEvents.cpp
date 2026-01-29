@@ -1228,6 +1228,13 @@ The server successfully detected this situation and will download merged part fr
     M(ConcurrentQuerySlotsAcquired, "Total number of query slots acquired", ValueType::Number) \
     M(ConcurrentQueryWaitMicroseconds, "Total time a query was waiting for a query slots", ValueType::Microseconds) \
     \
+    M(MemoryReservationAdmitMicroseconds, "Total time a query was waiting for initial memory reservation to be admitted", ValueType::Microseconds) \
+    M(MemoryReservationIncreaseMicroseconds, "Total time a query was waiting for memory reservation increase to be approved", ValueType::Microseconds) \
+    M(MemoryReservationIncreases, "Total number of approved memory reservation increase requests", ValueType::Number) \
+    M(MemoryReservationDecreases, "Total number of approved memory reservation decrease requests", ValueType::Number) \
+    M(MemoryReservationKilled, "Total number of memory reservation kill signals", ValueType::Number) \
+    M(MemoryReservationFailed, "Total number of failed memory reservations", ValueType::Number) \
+    \
     M(CoordinatedMergesMergeCoordinatorUpdateCount, "Total number of merge coordinator updates", ValueType::Number) \
     M(CoordinatedMergesMergeCoordinatorUpdateMicroseconds, "Total time spend on updating merge coordinator state", ValueType::Microseconds) \
     M(CoordinatedMergesMergeCoordinatorFetchMetadataMicroseconds, "Total time spend on fetching fresh metadata inside merge coordinator", ValueType::Microseconds) \

@@ -2265,7 +2265,7 @@ void executeQuery(
         implicit_tcl_executor->commit(context);
 
     /// We release query slot here to make sure client can safely reuse the slot with his next query, otherwise it will be released too late by BlockIO.
-    context->releaseQuerySlot();
+    context->releaseWorkloadResources();
 
     /// The order is important here:
     /// - first we save the finish_time that will be used for the entry in query_log/opentelemetry_span_log.finish_time_us

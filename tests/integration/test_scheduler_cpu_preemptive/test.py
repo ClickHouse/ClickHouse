@@ -105,7 +105,7 @@ def test_create_workload():
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/admin' and type='unified' and priority=0"
+                f"select count() from system.scheduler where path ilike '%/admin' and type='workload' and priority=0"
             )
             == "1\n"
         )
@@ -117,7 +117,7 @@ def test_create_workload():
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/production' and type='unified' and weight=9"
+                f"select count() from system.scheduler where path ilike '%/production' and type='workload' and weight=9"
             )
             == "1\n"
         )
@@ -304,7 +304,7 @@ class QueryPool:
 
 def get_all_dequeued_costs() -> dict[str, float]:
     rows = node.query(
-        "select path, dequeued_cost from system.scheduler where resource='cpu' and type='unified'"
+        "select path, dequeued_cost from system.scheduler where resource='cpu' and type='workload'"
     ).strip().split('\n')
     return {line.split()[0].split('/')[-1]: float(line.split()[1]) for line in rows if line}
 

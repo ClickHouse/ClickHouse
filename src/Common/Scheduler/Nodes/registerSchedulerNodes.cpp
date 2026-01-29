@@ -7,6 +7,8 @@
 namespace DB
 {
 
+// This legacy factory is only used by CustomResourceManager and does not require all nodes to be registered.
+
 void registerPriorityPolicy(SchedulerNodeFactory &);
 void registerFairPolicy(SchedulerNodeFactory &);
 void registerSemaphoreConstraint(SchedulerNodeFactory &);
