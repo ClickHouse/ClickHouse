@@ -159,15 +159,15 @@ private:
 
 static std::shared_ptr<ASTSelectWithUnionQuery> makeSelectFromExpression(const ASTPtr & expr)
 {
-    const auto select = std::make_shared<ASTSelectQuery>();
+    auto select = std::make_shared<ASTSelectQuery>();
 
-    const auto select_list = std::make_shared<ASTExpressionList>();
+    auto select_list = std::make_shared<ASTExpressionList>();
     select_list->children.push_back(expr);
-    select->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
 
     auto select_with_union = std::make_shared<ASTSelectWithUnionQuery>();
     select_with_union->list_of_selects = std::make_shared<ASTExpressionList>();
-    select_with_union->list_of_selects->children.push_back(select);
+    select_with_union->list_of_selects->children.push_back(std::move(select));
 
     return select_with_union;
 }
