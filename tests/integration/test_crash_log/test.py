@@ -48,6 +48,8 @@ def test_crash_log_synchronous(started_node):
     ):
         pytest.skip("doesn't fit in timeouts for stacktrace generation")
 
+    started_node.query("TRUNCATE TABLE IF EXISTS system.crash_log")
+
     crashes_count = 0
     for signal in ["SEGV", "4"]:
         started_node.query("SYSTEM ENABLE FAILPOINT sleep_in_logs_flush")
@@ -59,6 +61,39 @@ def test_crash_log_synchronous(started_node):
             started_node.query("SELECT COUNT(*) FROM system.crash_log")
             == f"{crashes_count}\n"
         )
+
+
+def test_crash_log_extra_fields(started_node):
+    if (
+        started_node.is_built_with_thread_sanitizer()
+        or started_node.is_built_with_address_sanitizer()
+        or started_node.is_built_with_memory_sanitizer()
+    ):
+        pytest.skip("doesn't fit in timeouts for stacktrace generation")
+
+    started_node.query("TRUNCATE TABLE IF EXISTS system.crash_log")
+    started_node.query("SYSTEM ENABLE FAILPOINT terminate_with_exception")
+    started_node.query("SELECT 1", ignore_error=True)
+    wait_for_clickhouse_stop(started_node)
+    started_node.restart_clickhouse()
+
+    assert started_node.query(
+        """
+        SELECT
+            count()
+        FROM system.crash_log
+        WHERE 1
+            AND signal = 6
+            AND signal_code = -6 -- SI_TKILL
+            AND signal_description = 'Sent by tkill.'
+            AND fault_access_type = ''
+            AND fault_address IS NULL
+            AND current_exception LIKE '%terminate_with_exception%'
+            AND query = 'SELECT 1'
+            AND length(git_hash) > 0
+            AND length(architecture) > 0
+        """
+    ).strip() == "1"
 
 
 def test_pkill_query_log(started_node):
