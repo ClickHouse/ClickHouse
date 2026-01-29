@@ -9,16 +9,15 @@
 
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/GetObjectTaggingRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/s3/model/ListObjectsRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
-#include <aws/s3/model/GetObjectTaggingRequest.h>
 #include <aws/s3/model/AbortMultipartUploadRequest.h>
 #include <aws/s3/model/CreateMultipartUploadRequest.h>
 #include <aws/s3/model/CompleteMultipartUploadRequest.h>
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/PutObjectRequest.h>
-#include <aws/s3/model/PutObjectTaggingRequest.h>
 #include <aws/s3/model/UploadPartRequest.h>
 #include <aws/s3/model/UploadPartCopyRequest.h>
 #include <aws/s3/model/DeleteObjectRequest.h>
@@ -148,16 +147,11 @@ public:
     Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override;
 };
 
-class HeadObjectRequest: public ExtendedRequest<Model::HeadObjectRequest>
-{
-public:
-    void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
-};
-
+using HeadObjectRequest = ExtendedRequest<Model::HeadObjectRequest>;
+using GetObjectTaggingRequest = ExtendedRequest<Model::GetObjectTaggingRequest>;
 using ListObjectsV2Request = ExtendedRequest<Model::ListObjectsV2Request>;
 using ListObjectsRequest = ExtendedRequest<Model::ListObjectsRequest>;
 using GetObjectRequest = ExtendedRequest<Model::GetObjectRequest>;
-using GetObjectTaggingRequest = ExtendedRequest<Model::GetObjectTaggingRequest>;
 
 class UploadPartRequest : public ExtendedRequest<Model::UploadPartRequest>
 {
@@ -183,7 +177,6 @@ public:
 using CreateMultipartUploadRequest = ExtendedRequest<Model::CreateMultipartUploadRequest>;
 using AbortMultipartUploadRequest = ExtendedRequest<Model::AbortMultipartUploadRequest>;
 using UploadPartCopyRequest = ExtendedRequest<Model::UploadPartCopyRequest>;
-using PutObjectTaggingRequest = ExtendedRequest<Model::PutObjectTaggingRequest>;
 
 class DeleteObjectRequest : public ExtendedRequest<Model::DeleteObjectRequest>
 {

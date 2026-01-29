@@ -25,8 +25,6 @@ namespace DeltaLake
 class TableSnapshot
 {
 public:
-    static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
-
     explicit TableSnapshot(
         KernelHelperPtr helper_,
         DB::ObjectStoragePtr object_storage_,
@@ -96,6 +94,8 @@ private:
     void initSnapshotImpl() const;
     void updateSettings(const DB::ContextPtr & context);
 };
+
+/// TODO; Enable event tracing in DeltaKernel.
 
 }
 

@@ -164,11 +164,6 @@ void MutatePlainMergeTreeTask::cancel() noexcept
     if (new_part)
         new_part->removeIfNeeded();
 
-    /// We need to destroy task here because it holds RAII wrapper for
-    /// temp directories which guards temporary dir from background removal which can
-    /// conflict with the next scheduled merge because it will be possible after merge_mutate_entry->finalize()
-    mutate_task.reset();
-
     if (merge_mutate_entry)
         merge_mutate_entry->finalize();
 }
@@ -176,10 +171,11 @@ void MutatePlainMergeTreeTask::cancel() noexcept
 
 ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
 {
-    auto context = Context::createCopy(storage.getContext()->getBackgroundContext());
+    auto context = Context::createCopy(storage.getContext());
     context->makeQueryContextForMutate(*storage.getSettings());
     auto queryId = getQueryId();
     context->setCurrentQueryId(queryId);
+    context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MUTATION);
     return context;
 }
 

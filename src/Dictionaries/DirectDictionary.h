@@ -18,7 +18,7 @@ template <DictionaryKeyType dictionary_key_type>
 class DirectDictionary final : public IDictionary
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     DirectDictionary(
         const StorageID & dict_id_,
@@ -42,7 +42,7 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
+        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
     }
 
     double getHitRate() const override { return 1.0; }

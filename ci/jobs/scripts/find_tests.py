@@ -4,6 +4,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from random import sample
 
 sys.path.append("./")
 
@@ -26,7 +27,7 @@ FAILED_TESTS_QUERY = """ \
             and pull_request_number = {PR_NUMBER}
             and check_name LIKE '{JOB_TYPE}%'
             and check_status = 'failure'
-            and match(test_name, '{TEST_NAME_PATTERN}')
+            and match(test_name, '^[0-9]{{5}}_')
             and test_status = 'FAIL'
             and check_start_time >= now() - interval 300 day
           order by check_start_time desc
@@ -104,16 +105,8 @@ class Targeting:
 
         tests = []
         cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
-        if self.job_type == self.INTEGRATION_JOB_TYPE:
-            test_name_pattern = "^test_"
-        elif self.job_type == self.STATELESS_JOB_TYPE:
-            test_name_pattern = "^[0-9]{5}_"
-        else:
-            assert False, f"Not supported job type [{self.job_type}]"
         query = FAILED_TESTS_QUERY.format(
-            PR_NUMBER=self.info.pr_number,
-            JOB_TYPE=self.job_type,
-            TEST_NAME_PATTERN=test_name_pattern,
+            PR_NUMBER=self.info.pr_number, JOB_TYPE=self.job_type
         )
         query_result = cidb.query(query, log_level="")
         # Parse test names from the query result
@@ -230,7 +223,7 @@ class Targeting:
         """
         1. Makes a best effort to get changed symbols by reading the PR diff and the ClickHouse binary DWARF.
         2. Gets a list of tests that cover each found symbol from the coverage database.
-        3. Skips symbols with more than 'max_tests_per_symbol' tests (too common code).
+        3. Selects up to 'max_tests_per_symbol' random tests per symbol when there are more.
         4. Returns the unique tests and a Result with info about the findings.
         """
 
@@ -261,9 +254,9 @@ class Targeting:
             for (file_, line), (symbol, tests) in resolved_file_lines.items():
                 info += f"  {file_}:{line} -> symbol: {symbol[:70]}...\n"
                 if len(tests) > max_tests_per_symbol:
-                    info += f"    skipping {len(tests)} tests (too common code)\n"
-                else:
-                    selected_tests.update(tests)
+                    info += f" select {max_tests_per_symbol} random tests out of {len(tests)}\n"
+                    tests = sample(tests, max_tests_per_symbol)
+            selected_tests.update(tests)
             for test in tests[:10]:
                 info += f"  - {test}\n"
             if len(tests) > 10:

@@ -1,14 +1,16 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Storages/System/StorageSystemFunctions.h>
+#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 
@@ -150,10 +152,10 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & user_defined_sql_functions_names = user_defined_sql_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : user_defined_sql_functions_names)
     {
-        ASTPtr ast;
+        String create_query;
         try
         {
-            ast = user_defined_sql_functions_factory.get(function_name);
+            create_query = user_defined_sql_functions_factory.get(function_name)->formatWithSecretsOneLine();
         }
         catch (const Exception & e)
         {
@@ -162,9 +164,6 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
             else
                 throw;
         }
-        String create_query;
-        if (ast)
-            create_query = format({context, *ast});
         fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
     }
 

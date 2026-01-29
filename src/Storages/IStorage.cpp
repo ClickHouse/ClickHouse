@@ -8,7 +8,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -17,7 +16,6 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
-#include <Planner/collectSelectedColumnsFromTable.h>
 
 
 namespace DB
@@ -26,7 +24,6 @@ namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool distributed_aggregation_memory_efficient;
-    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -358,18 +355,7 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
         if (view->getInMemoryMetadataPtr()->select.inner_query)
         {
             const auto & select_query = view->getInMemoryMetadataPtr()->select.inner_query;
-            Names required_columns;
-            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            {
-                auto interpreter = InterpreterSelectQueryAnalyzer(select_query, context, SelectQueryOptions{}.noModify());
-                auto query_tree = interpreter.getQueryTree();
-                required_columns = collectSelectedColumnsFromTable(query_tree, storage_id, context);
-            }
-            else
-            {
-                required_columns = InterpreterSelectQuery(select_query, context, SelectQueryOptions{}.noModify()).getRequiredColumns();
-            }
-
+            auto required_columns = InterpreterSelectQuery(select_query, context, SelectQueryOptions{}.noModify()).getRequiredColumns();
             for (const auto & col_name : required_columns)
                 name_deps[col_name].push_back(view_id.table_name);
         }
@@ -400,7 +386,7 @@ std::optional<CheckResult> IStorage::checkDataNext(DataValidationTasksPtr & /* c
     return {};
 }
 
-void IStorage::applyMetadataChangesToCreateQueryForBackup(const ASTPtr &) const
+void IStorage::applyMetadataChangesToCreateQueryForBackup(ASTPtr &) const
 {
 }
 

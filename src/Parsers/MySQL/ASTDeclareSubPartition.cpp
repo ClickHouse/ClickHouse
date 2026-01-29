@@ -39,7 +39,7 @@ bool ParserDeclareSubPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     /// Optional options
     options_p.parse(pos, options, expected);
 
-    auto subpartition_declare = make_intrusive<ASTDeclareSubPartition>();
+    auto subpartition_declare = std::make_shared<ASTDeclareSubPartition>();
     subpartition_declare->options = options;
     subpartition_declare->logical_name = logical_name->as<ASTIdentifier>()->name();
 
@@ -55,7 +55,7 @@ bool ParserDeclareSubPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
 ASTPtr ASTDeclareSubPartition::clone() const
 {
-    auto res = make_intrusive<ASTDeclareSubPartition>(*this);
+    auto res = std::make_shared<ASTDeclareSubPartition>(*this);
     res->children.clear();
 
     if (options)

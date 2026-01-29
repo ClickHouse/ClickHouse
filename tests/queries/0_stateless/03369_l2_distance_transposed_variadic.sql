@@ -1,3 +1,5 @@
+SET allow_experimental_qbit_type = 1;
+
 SELECT 'Test L2DistanceTransposed: BFloat16';
 DROP TABLE IF EXISTS qbit;
 CREATE TABLE qbit (id UInt32, vec QBit(BFloat16, 3)) ENGINE = Memory;

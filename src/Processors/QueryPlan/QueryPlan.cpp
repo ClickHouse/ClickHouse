@@ -41,8 +41,6 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
     changes.emplace_back("projections", int(projections));
     changes.emplace_back("sorting", int(sorting));
     changes.emplace_back("distributed", int(distributed));
-    changes.emplace_back("input_headers", int(input_headers));
-    changes.emplace_back("column_structure", int(column_structure));
 
     return changes;
 }
@@ -346,26 +344,25 @@ static void explainStep(
     IQueryPlanStep & step,
     IQueryPlanStep::FormatSettings & settings,
     const ExplainPlanOptions & options,
-    size_t max_description_length)
+    size_t max_description_lengs)
 {
-    const std::string prefix(settings.offset, ' ');
+    std::string prefix(settings.offset, ' ');
     settings.out << prefix;
     settings.out << step.getName();
 
     auto description = step.getStepDescription();
-    if (max_description_length)
-        description = description.substr(0, max_description_length);
+    if (max_description_lengs)
+        description = description.substr(0, max_description_lengs);
     if (options.description && !description.empty())
         settings.out <<" (" << description << ')';
 
     settings.out.write('\n');
 
-    const auto dump_column = [&out = settings.out, dump_structure = options.column_structure](const ColumnWithTypeAndName & column)
+    const auto dump_column = [&out = settings.out](const ColumnWithTypeAndName & column)
     {
-        if (dump_structure)
-            column.dumpStructure(out);
-        else
-            column.dumpNameAndType(out);
+        column.dumpNameAndType(out);
+        if (column.column && isColumnLazy(*column.column.get()))
+            out << " (Lazy)";
     };
 
     if (options.header)
@@ -465,15 +462,7 @@ std::string debugExplainStep(IQueryPlanStep & step)
     return out.str();
 }
 
-std::string debugExplainPlan(const QueryPlan & plan)
-{
-    WriteBufferFromOwnString out;
-    ExplainPlanOptions options{.header = true, .actions = true};
-    plan.explainPlan(out, options);
-    return out.str();
-}
-
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent, size_t max_description_length) const
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent, size_t max_description_lengs) const
 {
     checkInitialized();
 
@@ -496,7 +485,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
         if (!frame.is_description_printed)
         {
             settings.offset = (indent + stack.size() - 1) * settings.indent;
-            explainStep(*frame.node->step, settings, options, max_description_length);
+            explainStep(*frame.node->step, settings, options, max_description_lengs);
             frame.is_description_printed = true;
         }
 
@@ -837,35 +826,32 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
 }
 
 
-void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlan plan)
+void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlanPtr plan)
 {
     chassert(nodes.end() != std::find_if(cbegin(nodes), cend(nodes), [node](const Node & n) { return n.step == node->step; }));
 
-    if (node->step)
+    const auto & header = node->step->getOutputHeader();
+    const auto & plan_header = plan->getCurrentHeader();
+
+    if (!blocksHaveEqualStructure(*header, *plan_header))
     {
-        const auto & header = node->step->getOutputHeader();
-        const auto & plan_header = plan.getCurrentHeader();
+        auto converting_dag = ActionsDAG::makeConvertingActions(
+            plan_header->getColumnsWithTypeAndName(),
+            header->getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name,
+            nullptr);
 
-        if (!blocksHaveEqualStructure(*header, *plan_header))
-        {
-            auto converting_dag = ActionsDAG::makeConvertingActions(
-                plan_header->getColumnsWithTypeAndName(),
-                header->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name,
-                nullptr);
-
-            auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
-            plan.addStep(std::move(expression));
-        }
+        auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
+        plan->addStep(std::move(expression));
     }
 
-    nodes.splice(nodes.end(), std::move(plan.nodes));
+    nodes.splice(nodes.end(), std::move(plan->nodes));
 
-    node->step = std::move(plan.getRootNode()->step);
-    node->children = std::move(plan.getRootNode()->children);
+    node->step = std::move(plan->getRootNode()->step);
+    node->children = std::move(plan->getRootNode()->children);
 
-    max_threads = std::max(max_threads, plan.max_threads);
-    resources = std::move(plan.resources);
+    max_threads = std::max(max_threads, plan->max_threads);
+    resources = std::move(plan->resources);
 }
 
 }

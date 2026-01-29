@@ -29,11 +29,6 @@ struct StorageInMemoryMetadata
     /// defaults, comments, etc. All table engines have columns.
     ColumnsDescription columns;
     /// Table indices. Currently supported for MergeTree only.
-    bool add_minmax_index_for_numeric_columns = false;
-    bool add_minmax_index_for_string_columns = false;
-    bool add_minmax_index_for_temporal_columns = false;
-    /// Needed for compatibility
-    bool escape_index_filenames = true;
     IndicesDescription secondary_indices;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;
@@ -302,9 +297,6 @@ struct StorageInMemoryMetadata
 
     /// Elements of `columns` that have `default_desc.expression == nullptr`.
     NameSet getColumnsWithoutDefaultExpressions(const NamesAndTypesList & exclude) const;
-
-    void addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context);
-    void dropImplicitIndicesForColumn(const String & column_name);
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;

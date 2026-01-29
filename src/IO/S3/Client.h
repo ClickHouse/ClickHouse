@@ -208,7 +208,6 @@ public:
 
     Model::CopyObjectOutcome CopyObject(CopyObjectRequest & request) const;
     Model::PutObjectOutcome PutObject(PutObjectRequest & request) const;
-    Model::PutObjectTaggingOutcome PutObjectTagging(PutObjectTaggingRequest & request) const;
     Model::DeleteObjectOutcome DeleteObject(DeleteObjectRequest & request) const;
     Model::DeleteObjectsOutcome DeleteObjects(DeleteObjectsRequest & request) const;
 
@@ -269,7 +268,6 @@ private:
 
     using Aws::S3::S3Client::CopyObject;
     using Aws::S3::S3Client::PutObject;
-    using Aws::S3::S3Client::PutObjectTagging;
     using Aws::S3::S3Client::DeleteObject;
     using Aws::S3::S3Client::DeleteObjects;
 

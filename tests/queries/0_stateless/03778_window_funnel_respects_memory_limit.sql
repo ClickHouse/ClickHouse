@@ -1,4 +1,4 @@
--- Tags: no-random-mergetree-settings, no-random-settings, long, no-tsan, no-asan, no-ubsan, no-msan, no-debug
+-- Tags: no-random-mergetree-settings, no-random-settings, long
 
 DROP TABLE IF EXISTS test;
 

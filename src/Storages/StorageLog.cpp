@@ -24,11 +24,10 @@
 #include <DataTypes/NestedUtils.h>
 
 #include <Interpreters/Context.h>
-#include <Processors/ISource.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/NullSource.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/ISource.h>
+#include <QueryPipeline/Pipe.h>
+#include <Processors/Sinks/SinkToStorage.h>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
@@ -889,11 +888,6 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
     return std::chrono::seconds{lock_timeout};
 }
 
-void StorageLog::drop()
-{
-    disk->removeRecursive(table_path);
-}
-
 void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
     WriteLock lock{rwlock, getLockTimeout(local_context)};
@@ -928,14 +922,18 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
     getContext()->clearMMappedFileCache();
 }
 
-Pipe StorageLog::createReadingPipe(
+
+Pipe StorageLog::read(
     const Names & column_names,
-    ContextPtr local_context,
     const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & /*query_info*/,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams
-)
+    size_t num_streams)
 {
+    storage_snapshot->check(column_names);
+
     auto lock_timeout = getLockTimeout(local_context);
     loadMarks(lock_timeout);
 
@@ -1000,27 +998,6 @@ Pipe StorageLog::createReadingPipe(
 
     /// No need to hold lock while reading because we read fixed range of data that does not change while appending more data.
     return Pipe::unitePipes(std::move(pipes));
-}
-
-void StorageLog::read(
-    QueryPlan & plan,
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
-    ContextPtr local_context,
-    QueryProcessingStage::Enum /*processed_stage*/,
-    size_t max_block_size,
-    size_t num_streams)
-{
-    storage_snapshot->check(column_names);
-
-    plan.addStep(std::make_unique<ReadFromStorageLogStep>(
-        column_names,
-        local_context,
-        *this,
-        storage_snapshot,
-        max_block_size,
-        num_streams));
 }
 
 SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
@@ -1272,47 +1249,6 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
         removeUnsavedMarks(lock);
         throw;
     }
-}
-
-namespace
-{
-
-SharedHeader getHeader(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot
-)
-{
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
-    auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
-    all_columns = Nested::convertToSubcolumns(all_columns);
-
-    return std::make_shared<const Block>(LogSource::getHeader(all_columns));
-}
-
-}
-
-ReadFromStorageLogStep::ReadFromStorageLogStep(
-        const Names & column_names_,
-        ContextPtr local_context_,
-        StorageLog & storage_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        size_t max_block_size_,
-        size_t num_streams_
-)
-    : ISourceStep(getHeader(column_names_, storage_snapshot_))
-    , column_names(column_names_)
-    , local_context(local_context_)
-    , storage(storage_)
-    , storage_snapshot(storage_snapshot_)
-    , max_block_size(max_block_size_)
-    , num_streams(num_streams_)
-{
-}
-
-void ReadFromStorageLogStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)
-{
-    auto pipe = storage.createReadingPipe(column_names, local_context, storage_snapshot, max_block_size, num_streams);
-    pipeline.init(std::move(pipe));
 }
 
 void registerStorageLog(StorageFactory & factory)

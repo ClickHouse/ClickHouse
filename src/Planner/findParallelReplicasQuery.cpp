@@ -8,6 +8,7 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Parsers/ASTSubquery.h>
 #include <Planner/PlannerJoinTree.h>
 #include <Planner/Utils.h>
 #include <Planner/findQueryForParallelReplicas.h>
@@ -28,7 +29,6 @@ namespace Setting
 {
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
-    extern const SettingsBool parallel_replicas_allow_materialized_views;
 }
 
 namespace ErrorCodes
@@ -39,19 +39,7 @@ namespace ErrorCodes
 
 static bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context [[maybe_unused]])
 {
-    auto storage = table_node.getStorage();
-    const auto * mv = typeid_cast<const StorageMaterializedView *>(storage.get());
-    if (mv)
-    {
-        if (!context->getSettingsRef()[Setting::parallel_replicas_allow_materialized_views])
-            return false;
-
-        // address refreshable MVs separately, currently leads to logical error
-        if (mv->isRefreshable())
-            return false;
-
-        storage = mv->getTargetTable();
-    }
+    const auto & storage = table_node.getStorage();
 
     if (!storage->isMergeTree() && !typeid_cast<const StorageDummy *>(storage.get()))
         return false;
@@ -513,7 +501,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
     ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
-    auto [header, new_planner_context] = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(
+    auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
     const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get(), context);
@@ -527,8 +515,6 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         header,
         processed_stage,
         modified_query_ast,
-        std::move(modified_query_tree),
-        std::move(new_planner_context),
         context,
         storage_limits,
         nullptr);

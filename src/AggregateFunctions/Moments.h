@@ -1,13 +1,12 @@
 #pragma once
 
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <boost/math/distributions/students_t.hpp>
+#include <boost/math/distributions/normal.hpp>
+#include <boost/math/distributions/fisher_f.hpp>
 #include <cfloat>
 #include <numeric>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <boost/math/distributions/fisher_f.hpp>
-#include <boost/math/distributions/normal.hpp>
-#include <boost/math/distributions/students_t.hpp>
-#include <Common/ContainersWithMemoryTracking.h>
 
 
 namespace DB
@@ -535,11 +534,11 @@ struct AnalysisOfVarianceMoments
     constexpr static size_t MAX_GROUPS_NUMBER = 1024 * 1024;
 
     /// Sums of values within a group
-    VectorWithMemoryTracking<T> xs1{};
+    std::vector<T> xs1{};
     /// Sums of squared values within a group
-    VectorWithMemoryTracking<T> xs2{};
+    std::vector<T> xs2{};
     /// Sizes of each group. Total number of observations is just a sum of all these values
-    VectorWithMemoryTracking<size_t> ns{};
+    std::vector<size_t> ns{};
 
     void resizeIfNeeded(size_t possible_size)
     {
@@ -598,7 +597,7 @@ struct AnalysisOfVarianceMoments
         if (n == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no observations to calculate mean value");
 
-        return std::accumulate(xs1.begin(), xs1.end(), 0.0) / static_cast<Float64>(n);
+        return std::accumulate(xs1.begin(), xs1.end(), 0.0) / n;
     }
 
     Float64 getMeanGroup(size_t group) const
@@ -606,7 +605,7 @@ struct AnalysisOfVarianceMoments
         if (ns[group] == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no observations for group {}", group);
 
-        return xs1[group] / static_cast<T>(ns[group]);
+        return xs1[group] / ns[group];
     }
 
     Float64 getBetweenGroupsVariation() const
@@ -617,7 +616,7 @@ struct AnalysisOfVarianceMoments
         for (size_t i = 0; i < xs1.size(); ++i)
         {
             auto group_mean = getMeanGroup(i);
-            res += static_cast<Float64>(ns[i]) * (group_mean - mean) * (group_mean - mean);
+            res += ns[i] * (group_mean - mean) * (group_mean - mean);
         }
         return res;
     }
@@ -628,7 +627,7 @@ struct AnalysisOfVarianceMoments
         for (size_t i = 0; i < xs1.size(); ++i)
         {
             auto group_mean = getMeanGroup(i);
-            res += xs2[i] + static_cast<Float64>(ns[i]) * group_mean * group_mean - 2 * group_mean * xs1[i];
+            res += xs2[i] + ns[i] * group_mean * group_mean - 2 * group_mean * xs1[i];
         }
         return res;
     }
@@ -644,7 +643,7 @@ struct AnalysisOfVarianceMoments
         if (k == n)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
 
-        return (getBetweenGroupsVariation() * static_cast<double>(n - k)) / (getWithinGroupsVariation() * static_cast<double>(k - 1));
+        return (getBetweenGroupsVariation() * (n - k)) / (getWithinGroupsVariation() * (k - 1));
     }
 
     Float64 getPValue(Float64 f_statistic) const
@@ -661,7 +660,7 @@ struct AnalysisOfVarianceMoments
         if (k == n)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
 
-        return 1.0f - boost::math::cdf(boost::math::fisher_f(static_cast<double>(k - 1), static_cast<double>(n - k)), f_statistic);
+        return 1.0f - boost::math::cdf(boost::math::fisher_f(k - 1, n - k), f_statistic);
     }
 };
 

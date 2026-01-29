@@ -9,6 +9,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnLazy.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
@@ -153,7 +154,7 @@ bool IColumn::getBool(size_t /*n*/) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getBool is not supported for {}", getName());
 }
 
-std::string_view IColumn::serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const IColumn::SerializationSettings * /* settings */) const
+StringRef IColumn::serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArena is not supported for {}", getName());
 }
@@ -168,7 +169,7 @@ void IColumn::batchSerializeValueIntoMemory(std::vector<char *> & /* memories */
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemory is not supported for {}", getName());
 }
 
-std::string_view IColumn::serializeValueIntoArenaWithNull(
+StringRef IColumn::serializeValueIntoArenaWithNull(
     size_t /* n */,
     Arena & /* arena */,
     char const *& /* begin */,
@@ -295,6 +296,11 @@ bool isColumnConst(const IColumn & column)
     return checkColumn<ColumnConst>(column);
 }
 
+bool isColumnLazy(const IColumn & column)
+{
+    return checkColumn<ColumnLazy>(column);
+}
+
 template <typename Derived, typename Parent>
 MutableColumns IColumnHelper<Derived, Parent>::scatter(size_t num_columns, const IColumn::Selector & selector) const
 {
@@ -309,7 +315,7 @@ MutableColumns IColumnHelper<Derived, Parent>::scatter(size_t num_columns, const
         column = self.cloneEmpty();
 
     {
-        size_t reserve_size = static_cast<size_t>(static_cast<double>(num_rows) * 1.1 / static_cast<double>(num_columns));    /// 1.1 is just a guess. Better to use n-sigma rule.
+        size_t reserve_size = static_cast<size_t>(num_rows * 1.1 / num_columns);    /// 1.1 is just a guess. Better to use n-sigma rule.
 
         if (reserve_size > 1)
             for (auto & column : columns)
@@ -329,7 +335,7 @@ void IColumnHelper<Derived, Parent>::gather(ColumnGathererStream & gatherer)
 }
 
 template <typename Derived, bool reversed>
-void compareColumnImpl(
+void compareImpl(
     const Derived & lhs,
     const Derived & rhs,
     size_t rhs_row_num,
@@ -414,7 +420,7 @@ void IColumnHelper<Derived, Parent>::compareColumn(
         if (row_indexes)
             compareWithIndexImpl<Derived, true>(lhs, rhs, rhs_row_num, row_indexes, compare_results, nan_direction_hint);
         else
-            compareColumnImpl<Derived, true>(lhs, rhs, rhs_row_num, row_indexes, compare_results, nan_direction_hint);
+            compareImpl<Derived, true>(lhs, rhs, rhs_row_num, row_indexes, compare_results, nan_direction_hint);
     }
     else if (row_indexes)
     {
@@ -422,7 +428,7 @@ void IColumnHelper<Derived, Parent>::compareColumn(
     }
     else
     {
-        compareColumnImpl<Derived, false>(lhs, rhs, rhs_row_num, row_indexes, compare_results, nan_direction_hint);
+        compareImpl<Derived, false>(lhs, rhs, rhs_row_num, row_indexes, compare_results, nan_direction_hint);
     }
 }
 
@@ -450,7 +456,7 @@ double IColumnHelper<Derived, Parent>::getRatioOfDefaultRows(double sample_ratio
 
     const auto & self = static_cast<const Derived &>(*this);
     size_t num_rows = self.size();
-    size_t num_sampled_rows = std::min(static_cast<size_t>(static_cast<double>(num_rows) * sample_ratio), num_rows);
+    size_t num_sampled_rows = std::min(static_cast<size_t>(num_rows * sample_ratio), num_rows);
     size_t num_checked_rows = 0;
     size_t res = 0;
 
@@ -475,7 +481,7 @@ double IColumnHelper<Derived, Parent>::getRatioOfDefaultRows(double sample_ratio
     if (num_checked_rows == 0)
         return 0.0;
 
-    return static_cast<double>(res) / static_cast<double>(num_checked_rows);
+    return static_cast<double>(res) / num_checked_rows;
 }
 
 template <typename Derived, typename Parent>
@@ -605,7 +611,7 @@ void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypeP
 }
 
 template <typename Derived, typename Parent>
-std::string_view IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(
+StringRef IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(
     size_t n, Arena & arena, char const *& begin, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     const auto & self = static_cast<const Derived &>(*this);
@@ -632,14 +638,14 @@ std::string_view IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull
         memory = arena.allocContinue(1, begin);
         *memory = 0;
         auto res = self.serializeValueIntoArena(n, arena, begin, settings);
-        return std::string_view(res.data() - 1, res.size() + 1);
+        return StringRef(res.data - 1, res.size + 1);
     }
 
     return self.serializeValueIntoArena(n, arena, begin, settings);
 }
 
 template <typename Derived, typename Parent>
-std::string_view IColumnHelper<Derived, Parent>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+StringRef IColumnHelper<Derived, Parent>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived>)
         return IColumn::serializeValueIntoArena(n, arena, begin, settings);
@@ -698,8 +704,8 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(si
 
     const auto & self = static_cast<const Derived &>(*this);
     auto raw_data = self.getDataAt(n);
-    memcpy(memory, raw_data.data(), raw_data.size());
-    return memory + raw_data.size();
+    memcpy(memory, raw_data.data, raw_data.size);
+    return memory + raw_data.size;
 }
 
 template <typename Derived, typename Parent>
@@ -907,13 +913,13 @@ template class IColumnHelper<ColumnBLOB, IColumn>;
 void intrusive_ptr_add_ref(const IColumn * c)
 {
     BOOST_ASSERT(c != nullptr);
-    boost::sp_adl_block::intrusive_ptr_add_ref<IColumn, boost::thread_safe_counter>(c);
+    boost::sp_adl_block::intrusive_ptr_add_ref(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
 }
 
 void intrusive_ptr_release(const IColumn * c)
 {
     BOOST_ASSERT(c != nullptr);
-    boost::sp_adl_block::intrusive_ptr_release<IColumn, boost::thread_safe_counter>(c);
+    boost::sp_adl_block::intrusive_ptr_release(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
 }
 
 }

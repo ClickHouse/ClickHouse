@@ -42,10 +42,6 @@ public:
 
     virtual bool canReadIncompleteGranules() const = 0;
 
-    /// This is a special case for the filter-only reader, when no other filtration is potentially applied.
-    /// So we must always apply filter into the RangeReader.
-    virtual bool mustApplyFilter() const { return false; }
-
     virtual size_t getResultColumnCount() const { return getColumns().size(); }
 
     virtual bool producesFilterOnly() const { return false; }
@@ -178,6 +174,6 @@ struct MergeTreeIndexWithCondition;
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
-    const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark);
+    const NamesAndTypesList & columns_to_read);
+
 }

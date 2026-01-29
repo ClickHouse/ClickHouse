@@ -30,6 +30,7 @@ namespace
 class FunctionPrintf : public IFunction
 {
 private:
+    ContextPtr context;
     FunctionOverloadResolverPtr function_concat;
 
     struct Instruction
@@ -103,7 +104,7 @@ private:
             size_t curr_offset = 0;
             for (size_t i = 0; i < concrete_column->size(); ++i)
             {
-                auto a = concrete_column->getDataAt(i);
+                auto a = concrete_column->getDataAt(i).toView();
                 s = fmt::sprintf(format, a);
 
                 res_chars.resize(curr_offset + s.size());
@@ -156,9 +157,8 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionPrintf>(context); }
 
-    explicit FunctionPrintf(ContextPtr context)
-        : function_concat(FunctionFactory::instance().get("concat", context))
-    {}
+    explicit FunctionPrintf(ContextPtr context_)
+        : context(context_), function_concat(FunctionFactory::instance().get("concat", context)) { }
 
     String getName() const override { return name; }
 
@@ -366,7 +366,7 @@ Literal `%` character can be escaped by `%%`.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionPrintf>(documentation);
 }

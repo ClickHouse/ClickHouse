@@ -97,9 +97,9 @@ public:
         return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
-    std::string_view getDataAt(size_t n) const override
+    StringRef getDataAt(size_t n) const override
     {
-        return {reinterpret_cast<const char *>(&data[n]), sizeof(data[n])};
+        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
     Float64 getFloat64(size_t n) const final;
@@ -137,7 +137,6 @@ public:
     bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
-    void filter(const IColumn::Filter & filt) override;
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;

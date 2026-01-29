@@ -6,7 +6,7 @@ namespace
 {
     std::string getFQDNOrHostNameImpl()
     {
-#if defined(OS_DARWIN) || defined(OS_SUNOS)
+#if defined(OS_DARWIN)
         return Poco::Net::DNS::hostName();
 #else
         try

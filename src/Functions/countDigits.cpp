@@ -134,18 +134,18 @@ private:
             if constexpr (is_decimal<T>)
             {
                 auto value = src_data[i].value;
-                if (value < 0) [[unlikely]]
-                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(static_cast<NativeT>(-value)));
+                if (unlikely(value < 0))
+                    dst_data[i] = digits10<NativeT>(-static_cast<NativeT>(value));
                 else
-                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(value));
+                    dst_data[i] = digits10<NativeT>(value);
             }
             else
             {
                 auto value = src_data[i];
-                if (value < 0) [[unlikely]]
-                    dst_data[i] = static_cast<UInt8>(digits10(static_cast<NativeT>(-static_cast<NativeT>(value))));
+                if (unlikely(value < 0))
+                    dst_data[i] = digits10<NativeT>(-static_cast<NativeT>(value));
                 else
-                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(value));
+                    dst_data[i] = digits10<NativeT>(value);
             }
         }
     }
@@ -194,7 +194,7 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
     };
     FunctionDocumentation::IntroducedIn introduced_in_countDigits = {20, 8};
     FunctionDocumentation::Category category_countDigits = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_countDigits = {description_countDigits, syntax_countDigits, arguments_countDigits, {}, returned_value_countDigits, examples_countDigits, introduced_in_countDigits, category_countDigits};
+    FunctionDocumentation documentation_countDigits = {description_countDigits, syntax_countDigits, arguments_countDigits, returned_value_countDigits, examples_countDigits, introduced_in_countDigits, category_countDigits};
 
     factory.registerFunction<FunctionCountDigits>(documentation_countDigits);
 }

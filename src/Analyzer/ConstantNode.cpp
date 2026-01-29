@@ -25,10 +25,9 @@
 namespace DB
 {
 
-    ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_, bool is_deterministic_)
+ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_)
     : IQueryTreeNode(children_size)
     , constant_value(std::move(constant_value_))
-    , is_deterministic(is_deterministic_)
 {
     source_expression = std::move(source_expression_);
 }
@@ -154,11 +153,11 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
 {
-    return std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
+    return std::make_shared<ConstantNode>(constant_value, source_expression);
 }
 
 template <typename F>
-boost::intrusive_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generator) const
+std::shared_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generator) const
 {
     HashState hash_state;
     hash_state.update(getTreeHash());
@@ -167,18 +166,18 @@ boost::intrusive_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generat
     auto hash = getSipHash128AsPair(hash_state);
 
     if (cached_ast && hash == hash_ast)
-        return make_intrusive<ASTLiteral>(*cached_ast);
+        return std::make_shared<ASTLiteral>(*cached_ast);
 
     hash_ast = hash;
     cached_ast = ast_generator(*this);
 
-    return make_intrusive<ASTLiteral>(*cached_ast);
+    return std::make_shared<ASTLiteral>(*cached_ast);
 }
 
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType())); };
-    static const auto from_field = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(node.getValue()); };
+    static const auto from_column = [](const ConstantNode &node){ return std::make_shared<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType())); };
+    static const auto from_field = [](const ConstantNode &node){ return std::make_shared<ASTLiteral>(node.getValue()); };
 
     if (!options.add_cast_for_constants)
         return getCachedAST(from_column);
@@ -201,7 +200,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.
         /// Also for Dynamic and Object types we can loose types information, so we need to create a Field carefully.
         auto constant_value_ast = getCachedAST(from_column);
-        auto constant_type_name_ast = make_intrusive<ASTLiteral>(constant_value_type->getName());
+        auto constant_type_name_ast = std::make_shared<ASTLiteral>(constant_value_type->getName());
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
     }
 

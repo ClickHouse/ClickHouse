@@ -70,7 +70,7 @@ BlockIO InterpreterDropQuery::execute()
 {
     BlockIO res;
     auto & drop = query_ptr->as<ASTDropQuery &>();
-    ASTs drops = drop.getRewrittenASTsOfSingleTable(query_ptr);
+    ASTs drops = drop.getRewrittenASTsOfSingleTable();
     for (const auto & drop_query_ptr : drops)
     {
         current_query_ptr = drop_query_ptr;
@@ -501,7 +501,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     StorageID storage_id = table_ptr->getStorageID();
                     if (storage_id.hasUUID())
                         prepared_tables.insert(storage_id.uuid);
-                    runner.enqueueAndKeepTrack([my_table_ptr = std::move(table_ptr)]()
+                    runner([my_table_ptr = std::move(table_ptr)]()
                     {
                         my_table_ptr->flushAndPrepareForShutdown();
                     });
@@ -580,10 +580,10 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
         for (const auto & table_id : tables_to_truncate)
         {
-            runner.enqueueAndKeepTrack([&, table_id]()
+            runner([&, table_id]()
             {
                 // Create a proper AST for a single-table TRUNCATE query.
-                auto sub_query_ptr = make_intrusive<ASTDropQuery>();
+                auto sub_query_ptr = std::make_shared<ASTDropQuery>();
                 auto & sub_query = sub_query_ptr->as<ASTDropQuery &>();
                 sub_query.kind = ASTDropQuery::Kind::Truncate;
                 sub_query.if_exists = true;
@@ -592,8 +592,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 sub_query.setDatabase(table_id.database_name);
                 sub_query.setTable(table_id.table_name);
                 // Optionally, add these nodes to sub_query->children if needed:
-                sub_query.children.push_back(make_intrusive<ASTIdentifier>(table_id.database_name));
-                sub_query.children.push_back(make_intrusive<ASTIdentifier>(table_id.table_name));
+                sub_query.children.push_back(std::make_shared<ASTIdentifier>(table_id.database_name));
+                sub_query.children.push_back(std::make_shared<ASTIdentifier>(table_id.table_name));
 
                 DatabasePtr dummy_db;
                 UUID table_uuid = UUIDHelpers::Nil;
@@ -699,7 +699,7 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
     {
         /// We create and execute `drop` query for internal table.
-        auto drop_query = make_intrusive<ASTDropQuery>();
+        auto drop_query = std::make_shared<ASTDropQuery>();
         drop_query->setDatabase(target_table_id.database_name);
         drop_query->setTable(target_table_id.table_name);
         drop_query->kind = kind;

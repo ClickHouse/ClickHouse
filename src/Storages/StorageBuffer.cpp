@@ -186,7 +186,7 @@ StorageBuffer::StorageBuffer(
             CurrentMetrics::StorageBufferFlushThreads, CurrentMetrics::StorageBufferFlushThreadsActive, CurrentMetrics::StorageBufferFlushThreadsScheduled,
             num_shards, 0, num_shards);
     }
-    flush_handle = bg_pool.createTask(getStorageID(), log->name() + "/Bg", [this]{ backgroundFlush(); });
+    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
 
     LOG_TRACE(log, "Buffer(flush: ({}), min: ({}), max: ({}))", flush_thresholds.toString(), min_thresholds.toString(), max_thresholds.toString());
 }
@@ -938,7 +938,7 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
     {
         if (runner)
         {
-            runner->enqueueAndKeepTrack([&]()
+            (*runner)([&]()
             {
                 flushBuffer(buf, check_thresholds, false);
             });
@@ -1048,7 +1048,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-    auto insert = make_intrusive<ASTInsertQuery>();
+    auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = destination_id;
 
     /** We will insert columns that are the intersection set of columns of the buffer table and the subordinate table.
@@ -1083,11 +1083,11 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     if (block_to_write.columns() != block.columns())
         LOG_WARNING(log, "Not all columns from block in buffer exist in destination table {}. Some columns are discarded.", destination_id.getNameForLogs());
 
-    auto list_of_columns = make_intrusive<ASTExpressionList>();
+    auto list_of_columns = std::make_shared<ASTExpressionList>();
     insert->columns = list_of_columns;
     list_of_columns->children.reserve(block_to_write.columns());
     for (const auto & column : block_to_write)
-        list_of_columns->children.push_back(make_intrusive<ASTIdentifier>(column.name));
+        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
 
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();

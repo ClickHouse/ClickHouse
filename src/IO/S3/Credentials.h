@@ -105,23 +105,9 @@ class AWSInstanceProfileCredentialsProvider : public Aws::Auth::AWSCredentialsPr
 public:
     /// See InstanceProfileCredentialsProvider.
 
-    static std::shared_ptr<Aws::Auth::AWSCredentialsProvider>
-    create(const Aws::Client::ClientConfiguration & client_configuration, bool use_secure_pull);
-
     explicit AWSInstanceProfileCredentialsProvider(const std::shared_ptr<AWSEC2InstanceProfileConfigLoader> & config_loader);
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
-
-    struct CacheKey
-    {
-        String endpoint;
-        bool use_secure_pull;
-
-        bool operator==(const CacheKey & rhs) const = default;
-
-        void updateHash(SipHash & hash) const;
-    };
-
 protected:
     void Reload() override;
 
@@ -228,7 +214,7 @@ public:
     S3CredentialsProviderChain(
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
-        const CredentialsConfiguration & credentials_configuration);
+        CredentialsConfiguration credentials_configuration);
 };
 
 class AssumeRoleRequest : public Aws::AmazonSerializableWebServiceRequest
@@ -297,7 +283,7 @@ public:
             std::string session_name_,
             uint64_t expiration_window_seconds_,
             std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider,
-            const DB::S3::PocoHTTPClientConfiguration & client_configuration,
+            DB::S3::PocoHTTPClientConfiguration & client_configuration,
             const std::string & sts_endpoint_override = "");
 
     AwsAuthSTSAssumeRoleCredentialsProvider(
@@ -331,10 +317,6 @@ private:
     LoggerPtr logger;
 };
 
-std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
-    const DB::S3::PocoHTTPClientConfiguration & configuration,
-    const Aws::Auth::AWSCredentials & credentials,
-    const CredentialsConfiguration & credentials_configuration);
 }
 
 #else
