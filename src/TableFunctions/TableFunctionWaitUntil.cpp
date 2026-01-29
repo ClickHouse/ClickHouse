@@ -20,10 +20,11 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
-#include <base/scope_guard.h>
-#include <base/sleep.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FunctionDocumentation.h>
+
+#include <base/scope_guard.h>
+#include <base/sleep.h>
 
 namespace DB
 {
@@ -157,16 +158,16 @@ private:
     WaitArgs wait_args;
 };
 
-static std::shared_ptr<ASTSelectWithUnionQuery> makeSelectFromExpression(const ASTPtr & expr)
+static boost::intrusive_ptr<ASTSelectWithUnionQuery> makeSelectFromExpression(const ASTPtr & expr)
 {
-    auto select = std::make_shared<ASTSelectQuery>();
+    auto select = make_intrusive<ASTSelectQuery>();
 
-    auto select_list = std::make_shared<ASTExpressionList>();
+    auto select_list = make_intrusive<ASTExpressionList>();
     select_list->children.push_back(expr);
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
 
-    auto select_with_union = std::make_shared<ASTSelectWithUnionQuery>();
-    select_with_union->list_of_selects = std::make_shared<ASTExpressionList>();
+    auto select_with_union = make_intrusive<ASTSelectWithUnionQuery>();
+    select_with_union->list_of_selects = make_intrusive<ASTExpressionList>();
     select_with_union->list_of_selects->children.push_back(std::move(select));
 
     return select_with_union;
