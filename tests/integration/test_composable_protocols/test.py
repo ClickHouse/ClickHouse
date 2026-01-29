@@ -165,9 +165,9 @@ def test_proxy_1():
     source_addr = proxy.get_source_addr()
     assert (
         client.query(
-            f"SELECT forwarded_for, address, port, initial_address, initial_port FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryStart'"
+            f"SELECT forwarded_for, address, port, initial_address, initial_port, connection_address, connection_port FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryStart'"
         )
-        == f"123.231.132.213:12345\t::ffff:{source_addr[0]}\t{source_addr[1]}\t::ffff:{source_addr[0]}\t{source_addr[1]}\n"
+        == f"123.231.132.213:12345\t::ffff:123.231.132.213\t12345\t::ffff:123.231.132.213\t12345\t::ffff:{source_addr[0]}\t{source_addr[1]}\n"
     )
 
     # user123 only allowed from 123.123.123.123
@@ -183,9 +183,9 @@ def test_proxy_1():
     source_addr = proxy.get_source_addr()
     assert (
         client.query(
-            f"SELECT forwarded_for, address, port, initial_address, initial_port FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryStart'"
+            f"SELECT forwarded_for, address, port, initial_address, initial_port, connection_address, connection_port FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryStart'"
         )
-        == f"123.123.123.123:12345\t::ffff:{source_addr[0]}\t{source_addr[1]}\t::ffff:{source_addr[0]}\t{source_addr[1]}\n"
+        == f"123.123.123.123:12345\t::ffff:123.123.123.123\t12345\t::ffff:123.123.123.123\t12345\t::ffff:{source_addr[0]}\t{source_addr[1]}\n"
     )
 
     # user123 is not allowed from other than 123.123.123.123
