@@ -74,17 +74,17 @@ public:
 private:
     void build();
 
-    ALWAYS_INLINE UInt64 getResultRowIndex(UInt64 patch_idx, UInt64 row_idx) const
+    UInt64 getResultRowIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
         return patches[patch_idx]->result_row_indices[row_idx];
     }
 
-    ALWAYS_INLINE UInt64 getPatchRowIndex(UInt64 patch_idx, UInt64 row_idx) const
+    UInt64 getPatchRowIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
         return patches[patch_idx]->patch_row_indices[row_idx];
     }
 
-    ALWAYS_INLINE UInt64 getPatchBlockIndex(UInt64 patch_idx, UInt64 row_idx) const
+    UInt64 getPatchBlockIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
         return patches[patch_idx]->getNumSources() == 1 ? 0 : patches[patch_idx]->patch_block_indices[row_idx];
     }
@@ -318,7 +318,7 @@ void applyPatchesToBlockRaw(
             continue;
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
-        result_column.column = removeSpecialRepresentations(result_column.column);
+        result_column.column = recursiveRemoveSparse(result_column.column);
 
         for (const auto & patch_to_apply : patches)
         {
@@ -367,7 +367,7 @@ void applyPatchesToBlockCombined(
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
         auto multi_patch = builder.createPatchForColumn(result_column.name, result_versions);
-        result_column.column = removeSpecialRepresentations(result_column.column);
+        result_column.column = recursiveRemoveSparse(result_column.column);
 
         if (canApplyPatchInplace(*result_column.column))
             result_column.column->assumeMutableRef().updateInplaceFrom(multi_patch);
@@ -484,78 +484,32 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
     patch_to_apply->patch_block_indices.reserve(size_to_reserve);
     patch_to_apply->patch_row_indices.reserve(size_to_reserve);
 
-    struct IteratorsPair
-    {
-        bool found = false;
-        PatchOffsetsMap::const_iterator it;
-        PatchOffsetsMap::const_iterator end;
-    };
-
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
-    /// Mapping from block number to iterator in offsets map.
-    absl::flat_hash_map<UInt64, IteratorsPair, HashCRC32<UInt64>> offsets_iterators;
-    IteratorsPair * current_offset_iterators = nullptr;
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    /// Check that offsets are sorted within each block number.
-    absl::flat_hash_map<UInt64, UInt64> last_offset_by_block_number;
-#endif
+    const OffsetsHashMap * offsets_hash_map = nullptr;
 
     for (size_t row = 0; row < num_rows; ++row)
     {
         if (result_block_number[row] < join_entry.min_block || result_block_number[row] > join_entry.max_block)
-            continue;
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
         {
-            auto it = last_offset_by_block_number.find(result_block_number[row]);
-            if (it != last_offset_by_block_number.end() && it->second >= result_block_offset[row])
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Block offsets ({}, {}) are not sorted within block number {}", it->second, result_block_offset[row], result_block_number[row]);
-
-            last_offset_by_block_number[result_block_number[row]] = result_block_offset[row];
+            continue;
         }
-#endif
 
         if (result_block_number[row] != prev_block_number)
         {
             prev_block_number = result_block_number[row];
-            auto [block_number_it, inserted] = offsets_iterators.try_emplace(result_block_number[row]);
-
-            if (inserted)
-            {
-                auto it = join_entry.hash_map.find(result_block_number[row]);
-
-                if (it != join_entry.hash_map.end())
-                {
-                    const auto & offsets_map = it->second;
-                    auto & iterators = block_number_it->second;
-
-                    iterators.found = true;
-                    iterators.it = offsets_map.lower_bound(result_block_offset[row]);
-                    iterators.end = offsets_map.end();
-                }
-            }
-
-            current_offset_iterators = &block_number_it->second;
+            auto it = join_entry.hash_map.find(prev_block_number);
+            offsets_hash_map = it != join_entry.hash_map.end() ? &it->second : nullptr;
         }
 
-        chassert(current_offset_iterators);
-        auto & iterators = *current_offset_iterators;
-
-        if (iterators.found)
+        if (offsets_hash_map)
         {
-            while (iterators.it != iterators.end && iterators.it->first < result_block_offset[row])
-            {
-                ++iterators.it;
-            }
+            auto offset_it = offsets_hash_map->find(result_block_offset[row]);
 
-            if (iterators.it != iterators.end && iterators.it->first == result_block_offset[row])
+            if (offset_it != offsets_hash_map->end())
             {
-                const auto & [patch_block_index, patch_row_index] = iterators.it->second;
-
                 patch_to_apply->result_row_indices.push_back(row);
-                patch_to_apply->patch_block_indices.push_back(patch_block_index);
-                patch_to_apply->patch_row_indices.push_back(patch_row_index);
+                patch_to_apply->patch_block_indices.push_back(offset_it->second.first);
+                patch_to_apply->patch_row_indices.push_back(offset_it->second.second);
             }
         }
     }

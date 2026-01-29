@@ -1,4 +1,5 @@
 #include <Parsers/ASTInterpolateElement.h>
+#include <Common/SipHash.h>
 #include <IO/Operators.h>
 
 
@@ -7,7 +8,7 @@ namespace DB
 
 ASTPtr ASTInterpolateElement::clone() const
 {
-    auto clone = make_intrusive<ASTInterpolateElement>(*this);
+    auto clone = std::make_shared<ASTInterpolateElement>(*this);
     clone->expr = clone->expr->clone();
     clone->children.clear();
     clone->children.push_back(clone->expr);

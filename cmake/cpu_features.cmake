@@ -13,44 +13,36 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
     list(APPEND RUSTFLAGS_CPU "-C" "target-feature=native")
 
-    macro(GET_CPU_FEATURES TEST_FEATURE_RESULT)
-       execute_process(
-            COMMAND sh -c "clang -E - -march=native -###"
-            INPUT_FILE /dev/null
-            OUTPUT_QUIET
-            ERROR_VARIABLE ${TEST_FEATURE_RESULT})
-    endmacro()
-
-    macro(TEST_CPU_FEATURE TEST_FEATURE_RESULT feat flag)
-        if (${TEST_FEATURE_RESULT} MATCHES "\"\\+${feat}\"")
-            set(${flag} ON)
-        else ()
-            set(${flag} OFF)
-        endif ()
-    endmacro()
-
     # Populate the ENABLE_ option flags. This is required for the build of some third-party dependencies, specifically snappy, which
     # (somewhat weirdly) expects the relative SNAPPY_HAVE_ preprocessor variables to be populated, in addition to the microarchitecture
     # feature flags being enabled in the compiler. This fixes the ARCH_NATIVE flag by automatically populating the ENABLE_ option flags
     # according to the current CPU's capabilities, detected using clang.
     if (ARCH_AMD64)
-        GET_CPU_FEATURES (TEST_FEATURE_RESULT)
+        execute_process(
+            COMMAND sh -c "clang -E - -march=native -###"
+            INPUT_FILE /dev/null
+            OUTPUT_QUIET
+            ERROR_VARIABLE TEST_FEATURE_RESULT)
 
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} ssse3 ENABLE_SSSE3)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} sse4.1 ENABLE_SSE41)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} sse4.2 ENABLE_SSE42)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} vpclmulqdq ENABLE_PCLMULQDQ)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} popcnt ENABLE_POPCNT)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} avx ENABLE_AVX)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} avx2 ENABLE_AVX2)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} avx512f ENABLE_AVX512)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} avx512vbmi ENABLE_AVX512_VBMI)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} bmi ENABLE_BMI)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} bmi2 ENABLE_BMI2)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} aes ENABLE_AES)
-    elseif (ARCH_AARCH64)
-        GET_CPU_FEATURES (TEST_FEATURE_RESULT)
-        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} aes ENABLE_AES)
+        macro(TEST_AMD64_FEATURE TEST_FEATURE_RESULT feat flag)
+            if (${TEST_FEATURE_RESULT} MATCHES "\"\\+${feat}\"")
+                set(${flag} ON)
+            else ()
+                set(${flag} OFF)
+            endif ()
+        endmacro()
+
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} ssse3 ENABLE_SSSE3)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} sse4.1 ENABLE_SSE41)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} sse4.2 ENABLE_SSE42)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} vpclmulqdq ENABLE_PCLMULQDQ)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} popcnt ENABLE_POPCNT)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx ENABLE_AVX)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx2 ENABLE_AVX2)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx512f ENABLE_AVX512)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx512vbmi ENABLE_AVX512_VBMI)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} bmi ENABLE_BMI)
+        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} bmi2 ENABLE_BMI2)
     endif ()
 
 elseif (ARCH_AARCH64)
@@ -107,12 +99,12 @@ elseif (ARCH_AARCH64)
     # SIGILL). Even if they could run, the build machine wouldn't be able to run the ClickHouse binary. In that case, suggest to run the
     # build with the compat profile.
     if (OS_LINUX AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*|arm64.*|ARM64.*)" AND NOT NO_ARMV81_OR_HIGHER)
-        # CPU features in /proc/cpuinfo and compiler flags don't align :( ... pick an obvious flag contained in the modern but not in the
+        # CPU features in /proc/cpuinfo and compiler flags don't align :( ... pick some obvious flags contained in the modern but not in the
         # legacy profile (full Graviton 3 /proc/cpuinfo is "fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm
         # jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm ssbs paca pacg dcpodp svei8mm svebf16 i8mm
         # bf16 dgh rng")
         execute_process(
-            COMMAND grep -P "^(?=.*atomic)" /proc/cpuinfo
+            COMMAND grep -P "^(?=.*atomic)(?=.*ssbs)" /proc/cpuinfo
             OUTPUT_VARIABLE FLAGS)
         if (NOT FLAGS)
             MESSAGE(FATAL_ERROR "The build machine does not satisfy the minimum CPU requirements, try to run cmake with -DNO_ARMV81_OR_HIGHER=1")

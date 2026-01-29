@@ -38,7 +38,6 @@ FROM (
     EXPLAIN PLAN actions=1
     SELECT a, b, c, d, e
     FROM test_lazy_read_in_order
-    WHERE a >= 0
     ORDER BY a
     LIMIT 5
     SETTINGS max_threads=1
@@ -51,7 +50,6 @@ WHERE explain LIKE '%LazilyRead%'
 
 SELECT a, e
 FROM test_lazy_read_in_order
-WHERE a >= 0
 ORDER BY a
 LIMIT 5;
 
@@ -112,7 +110,6 @@ FROM (
     EXPLAIN PLAN actions=1
     SELECT a, b, c, d, e
     FROM test_lazy_read_in_order
-    WHERE a >= 0
     ORDER BY a, e
     LIMIT 5
     SETTINGS max_threads=1
@@ -125,7 +122,6 @@ WHERE explain LIKE '%LazilyRead%'
 
 SELECT a, e
 FROM test_lazy_read_in_order
-WHERE a >= 0
 ORDER BY a, e
 LIMIT 5;
 
@@ -137,7 +133,6 @@ FROM (
     EXPLAIN PLAN actions=1
     SELECT a, b, c, d, e
     FROM test_lazy_read_in_order
-    WHERE a >= 0
     ORDER BY a, a + 1
     LIMIT 5
     SETTINGS max_threads=1
@@ -150,7 +145,6 @@ WHERE explain LIKE '%LazilyRead%'
 
 SELECT a, e
 FROM test_lazy_read_in_order
-WHERE a >= 0
 ORDER BY a, a + 1
 LIMIT 5;
 
@@ -207,7 +201,6 @@ SELECT '=== Test 9: Compare with optimization disabled ===';
 -- Same query with optimizations disabled should give same results
 SELECT id, value, score
 FROM test_correctness
-WHERE id >= 0
 ORDER BY id ASC
 LIMIT 5
 SETTINGS
@@ -220,7 +213,6 @@ FROM (
     EXPLAIN PLAN actions=1
     SELECT id, value, score, data
     FROM test_correctness
-    WHERE id >= 0
     ORDER BY id ASC
     LIMIT 5
     SETTINGS max_threads=1

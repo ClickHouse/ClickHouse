@@ -4,7 +4,6 @@ sidebar_label: 'Visual Interfaces'
 sidebar_position: 28
 slug: /interfaces/third-party/gui
 title: 'Visual Interfaces from Third-party Developers'
-doc_type: 'reference'
 ---
 
 # Visual interfaces from third-party developers
@@ -318,19 +317,6 @@ Features:
 - No extra agents or components required on the ClickHouse side.
 
 [Telescope Source Code](https://github.com/iamtelescope/telescope) · [Live Demo](https://demo.iamtelescope.net)
-
-### ClickLens {#clicklens}
-
-[ClickLens](https://ntk148v.github.io/clicklens/) is a modern, powerful, and user-friendly web interface for managing and monitoring ClickHouse databases. It provides a comprehensive suite of tools for developers, analysts, and administrators to interact with their ClickHouse clusters efficiently. ClickHouse is an incredible analytical database, but managing it via CLI or basic tools can be challenging. ClickLens bridges the gap by offering:
-
-- Discover - Flexible, Kibana-like data exploration for any table
-- SQL Console - Write, execute, and analyze queries with syntax highlighting and streaming results
-- Real-time Monitoring - Keep an eye on your cluster's health, query performance, and resource usage
-- Schema Explorer - Navigate databases, tables, columns, parts, and more
-- Access Control - Manage users and roles directly from the UI
-- Native RBAC - Your UI permissions are derived directly from your ClickHouse grants
-
-[ClickLens Source Code](https://github.com/ntk148v/clicklens)
 
 ## Commercial {#commercial}
 

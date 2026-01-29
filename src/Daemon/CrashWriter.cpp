@@ -1,5 +1,6 @@
 #include <Daemon/CrashWriter.h>
 
+#include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/Environment.h>
 
@@ -18,30 +19,12 @@
 
 using namespace DB;
 
-namespace
-{
-constexpr std::string logger_name = "CrashWriter";
-}
 
 std::unique_ptr<CrashWriter> CrashWriter::instance;
 
 void CrashWriter::initialize(Poco::Util::LayeredConfiguration & config)
 {
-    auto logger = getLogger(logger_name);
-    if (!config.getBool("send_crash_reports.enabled", false))
-    {
-        LOG_DEBUG(logger, "Sending crash reports is disabled");
-        return;
-    }
-
-    auto endpoint = config.getString("send_crash_reports.endpoint");
-    if (endpoint.empty())
-    {
-        LOG_DEBUG(logger, "Sending crash reports is disabled because send_crash_reports.endpoint is not set");
-        return;
-    }
-
-    instance.reset(new CrashWriter(std::move(endpoint), config.getString("path", "")));
+    instance.reset(new CrashWriter(config));
 }
 
 bool CrashWriter::initialized()
@@ -49,12 +32,20 @@ bool CrashWriter::initialized()
     return instance != nullptr;
 }
 
-CrashWriter::CrashWriter(std::string endpoint_, std::string server_data_path_)
-    : endpoint(std::move(endpoint_))
-    , server_data_path(std::move(server_data_path_))
-    , logger(getLogger(logger_name))
+CrashWriter::CrashWriter(Poco::Util::LayeredConfiguration & config)
 {
-    LOG_DEBUG(logger, "Sending crash reports is initialized with {} endpoint (anonymized)", endpoint);
+    auto logger = getLogger("CrashWriter");
+
+    if (config.getBool("send_crash_reports.enabled", false))
+    {
+        endpoint = config.getString("send_crash_reports.endpoint");
+        server_data_path = config.getString("path", "");
+        LOG_DEBUG(logger, "Sending crash reports is initialized with {} endpoint (anonymized)", endpoint);
+    }
+    else
+    {
+        LOG_DEBUG(logger, "Sending crash reports is disabled");
+    }
 }
 
 void CrashWriter::onSignal(int sig, std::string_view error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
@@ -71,6 +62,7 @@ void CrashWriter::onException(int code, std::string_view format_string, const Fr
 
 void CrashWriter::sendError(Type type, int sig_or_error, std::string_view error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
 {
+    auto logger = getLogger("CrashWriter");
     if (!instance)
     {
         LOG_INFO(logger, "Not sending crash report");

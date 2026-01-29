@@ -19,7 +19,6 @@
 #include <Common/thread_local_rng.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/re2.h>
-#include <Common/setThreadName.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -70,7 +69,7 @@ BlockIO InterpreterDropQuery::execute()
 {
     BlockIO res;
     auto & drop = query_ptr->as<ASTDropQuery &>();
-    ASTs drops = drop.getRewrittenASTsOfSingleTable(query_ptr);
+    ASTs drops = drop.getRewrittenASTsOfSingleTable();
     for (const auto & drop_query_ptr : drops)
     {
         current_query_ptr = drop_query_ptr;
@@ -144,7 +143,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Temporary table {} doesn't exist", backQuoteIfNeed(table_id.table_name));
     }
 
-    auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr) : nullptr);
+    auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
 
     /// If table was already dropped by anyone, an exception will be thrown
     auto [database, table] = query.if_exists ? DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context_)
@@ -413,7 +412,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         return {};
 
     const auto & database_name = query.getDatabase();
-    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
+    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
     database = tryGetDatabase(database_name, query.if_exists);
     if (!database)
@@ -495,13 +494,13 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             auto prepare_tables = [&](std::vector<StoragePtr> & tables)
             {
                 /// Prepare tables for shutdown in parallel.
-                ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), ThreadName::DROP_TABLES);
+                ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");
                 for (StoragePtr & table_ptr : tables)
                 {
                     StorageID storage_id = table_ptr->getStorageID();
                     if (storage_id.hasUUID())
                         prepared_tables.insert(storage_id.uuid);
-                    runner.enqueueAndKeepTrack([my_table_ptr = std::move(table_ptr)]()
+                    runner([my_table_ptr = std::move(table_ptr)]()
                     {
                         my_table_ptr->flushAndPrepareForShutdown();
                     });
@@ -576,14 +575,15 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         std::mutex mutex_for_uuids;
         ThreadPoolCallbackRunnerLocal<void> runner(
             getDatabaseCatalogDropTablesThreadPool().get(),
-            ThreadName::TRUNCATE_TABLE);
+            "TruncTbls"
+        );
 
         for (const auto & table_id : tables_to_truncate)
         {
-            runner.enqueueAndKeepTrack([&, table_id]()
+            runner([&, table_id]()
             {
                 // Create a proper AST for a single-table TRUNCATE query.
-                auto sub_query_ptr = make_intrusive<ASTDropQuery>();
+                auto sub_query_ptr = std::make_shared<ASTDropQuery>();
                 auto & sub_query = sub_query_ptr->as<ASTDropQuery &>();
                 sub_query.kind = ASTDropQuery::Kind::Truncate;
                 sub_query.if_exists = true;
@@ -592,8 +592,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 sub_query.setDatabase(table_id.database_name);
                 sub_query.setTable(table_id.table_name);
                 // Optionally, add these nodes to sub_query->children if needed:
-                sub_query.children.push_back(make_intrusive<ASTIdentifier>(table_id.database_name));
-                sub_query.children.push_back(make_intrusive<ASTIdentifier>(table_id.table_name));
+                sub_query.children.push_back(std::make_shared<ASTIdentifier>(table_id.database_name));
+                sub_query.children.push_back(std::make_shared<ASTIdentifier>(table_id.table_name));
 
                 DatabasePtr dummy_db;
                 UUID table_uuid = UUIDHelpers::Nil;
@@ -695,11 +695,11 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context,
                                             const StorageID & target_table_id, bool sync, bool ignore_sync_setting, bool need_ddl_guard)
 {
-    auto ddl_guard = (need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(target_table_id.database_name, target_table_id.table_name, nullptr) : nullptr);
+    auto ddl_guard = (need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(target_table_id.database_name, target_table_id.table_name) : nullptr);
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
     {
         /// We create and execute `drop` query for internal table.
-        auto drop_query = make_intrusive<ASTDropQuery>();
+        auto drop_query = std::make_shared<ASTDropQuery>();
         drop_query->setDatabase(target_table_id.database_name);
         drop_query->setTable(target_table_id.table_name);
         drop_query->kind = kind;
