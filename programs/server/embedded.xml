@@ -62,4 +62,10 @@
     <quotas>
         <default />
     </quotas>
+
+    <user_directories>
+        <local_directory>
+            <path>access/</path>
+        </local_directory>
+    </user_directories>
 </clickhouse>
