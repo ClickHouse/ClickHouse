@@ -12,23 +12,20 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_insert_timeout"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_timeout (id UInt64, data String) ENGINE MergeTree ORDER BY id"
 
 
-{
-    for i in $(seq 0 40); do
-        echo "{\"id\":${i},\"data\":\"record_${i}\"}"
-    done
-    sleep 0.5
 
-    for i in $(seq 41 59); do
-        echo "{\"id\":${i},\"data\":\"record_${i}\"}"
+  {
+    for iteration in 1 2; do
+        for i in $(seq 1 40); do
+            echo "{\"id\":$(( (iteration*100) + i )),\"data\":\"batch_${iteration}\"}"
+        done
+        
+        sleep 1.5
+        
+        echo "{\"id\":$(( (iteration*100) + 99 )),\"data\":\"trigger_${iteration}\"}"
     done
-    sleep 0.5
-
-    for i in $(seq 60 89); do
-        echo "{\"id\":${i},\"data\":\"record_${i}\"}"
-    done
-} | ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_timeout FORMAT JSONEachRow" \
-    --max_insert_block_size=100 \
-    --input_format_max_block_wait_ms=200 \
+}  | ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_timeout FORMAT JSONEachRow" \
+    --max_insert_block_size=1000 \
+    --input_format_max_block_wait_ms=600 \
     --input_format_parallel_parsing=0 \
     --min_insert_block_size_bytes=1 \
     --max_query_size=1000
