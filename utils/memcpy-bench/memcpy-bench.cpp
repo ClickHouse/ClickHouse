@@ -22,6 +22,11 @@
 
 #include <boost/program_options.hpp>
 
+/// Include them one by one so we can test different implementations
+#define SZ_USE_HASWELL 1
+#define SZ_USE_SKYLAKE 1
+#define SZ_USE_ICE 1
+#include <stringzilla/memory.h>
 
 template <typename F, typename MemcpyImpl>
 void NO_INLINE loop(uint8_t * dst, uint8_t * src, size_t size, F && chunk_size_distribution, MemcpyImpl && impl)
@@ -839,6 +844,20 @@ extern "C" void * __memcpy_avx512_unaligned_erms(void * __restrict destination, 
 extern "C" void * __memcpy_avx512_no_vzeroupper(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
 
 
+void * sz_copy_haswell_cast(void * __restrict destination, const void * __restrict source, size_t size)
+{
+    void * dst = destination;
+    sz_copy_haswell(static_cast<sz_ptr_t>(destination), static_cast<sz_cptr_t>(source), size);
+    return dst;
+}
+
+void * sz_copy_skylake_cast(void * __restrict destination, const void * __restrict source, size_t size)
+{
+    void * dst = destination;
+    sz_copy_skylake(static_cast<sz_ptr_t>(destination), static_cast<sz_cptr_t>(source), size);
+    return dst;
+}
+
 #define VARIANT(N, NAME) \
     if (memcpy_variant == (N)) \
         return test(dst, src, size, iterations, num_threads, std::forward<F>(generator), NAME, #NAME);
@@ -870,6 +889,9 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
     VARIANT(27, __memcpy_avx512_unaligned)
     VARIANT(28, __memcpy_avx512_unaligned_erms)
     VARIANT(29, __memcpy_avx512_no_vzeroupper)
+
+    VARIANT(30, sz_copy_haswell_cast)
+    VARIANT(31, sz_copy_skylake_cast)
 
     return 0;
 }

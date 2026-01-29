@@ -26,6 +26,9 @@ endif()
 set_source_files_properties(FastMemcpy.cpp PROPERTIES COMPILE_FLAGS "-Wno-old-style-cast")
 set_source_files_properties(FastMemcpy_Avx.cpp PROPERTIES COMPILE_FLAGS "-mavx -Wno-old-style-cast -Wno-cast-qual -Wno-cast-align")
 
+# Suppress "marked as unused but used" warnings in memcpy-bench.cpp due to StringZilla dynamic dispatch setup
+set_source_files_properties(memcpy-bench.cpp PROPERTIES COMPILE_FLAGS "-Wno-used-but-marked-unused")
+
 target_include_directories(memcpy-bench PRIVATE .)
-target_link_libraries(memcpy-bench PRIVATE dbms clickhouse_functions boost::program_options)
+target_link_libraries(memcpy-bench PRIVATE dbms clickhouse_functions boost::program_options ch_contrib::stringzilla)
 
