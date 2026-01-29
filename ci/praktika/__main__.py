@@ -92,14 +92,6 @@ def create_parser():
         default="",
     )
     run_parser.add_argument(
-        "--workers",
-        help=(
-            "Integer parameter forwarded to the job script (commonly used as number of parallel workers) (job script defines semantics). Useful for local tests"
-        ),
-        type=int,
-        default=None,
-    )
-    run_parser.add_argument(
         "--pr",
         help=(
             "PR number to fetch required artifacts from its CI run (for local runs). Optional"
@@ -134,16 +126,9 @@ def create_parser():
 
     _yaml_parser = subparsers.add_parser("yaml", help="Generate YAML workflows")
 
-    # TODO: Merge with infra
     _html_parser = subparsers.add_parser("html", help="Upload an HTML report page")
     _html_parser.add_argument(
         "--test",
-        action="store_true",
-        default="",
-    )
-    _infra_parser = subparsers.add_parser("deploy", help="Deploy cloud infrastructure")
-    _infra_parser.add_argument(
-        "--all",
         action="store_true",
         default="",
     )
@@ -158,10 +143,6 @@ def main():
     if args.command == "yaml":
         Validator().validate()
         YamlGenerator().generate()
-    elif args.command == "deploy":
-        from .mangle import _get_infra_config
-
-        _get_infra_config().deploy(all=args.all)
     elif args.command == "html":
         Html.prepare(args.test)
     elif args.command == "run":
@@ -205,7 +186,6 @@ def main():
                 debug=args.debug,
                 path=args.path,
                 path_1=args.path_1,
-                workers=args.workers,
             )
     else:
         parser.print_help()

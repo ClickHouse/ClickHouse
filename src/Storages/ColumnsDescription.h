@@ -11,8 +11,6 @@
 #include <Common/NamePrompter.h>
 #include <Common/SettingsChanges.h>
 
-#include <Parsers/IAST.h>
-
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/mem_fun.hpp>
 #include <boost/multi_index/hashed_index.hpp>
@@ -75,11 +73,18 @@ struct GetColumnsOptions
         return *this;
     }
 
+    GetColumnsOptions & withExtendedObjects(bool value = true)
+    {
+        with_extended_objects = value;
+        return *this;
+    }
+
     Kind kind;
     VirtualsKind virtuals_kind = VirtualsKind::None;
 
     bool with_subcolumns = false;
     bool with_dynamic_subcolumns = false;
+    bool with_extended_objects = false;
 };
 
 /// Description of a single table column (in CREATE TABLE for example).
@@ -120,7 +125,7 @@ public:
 
     static ColumnsDescription fromNamesAndTypes(NamesAndTypes ordinary);
 
-    explicit ColumnsDescription(NamesAndTypesList ordinary, bool with_subcolumns = true);
+    explicit ColumnsDescription(NamesAndTypesList ordinary);
 
     ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
 

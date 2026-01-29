@@ -96,7 +96,6 @@ struct FixedStringUnaryOperationImpl
         ColumnFixedString::Chars & c)
     {
         size_t size = a.size();
-
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::apply(a[i]);
     }))
@@ -366,8 +365,8 @@ public:
                             auto n = col->getN();
                             for (size_t i = 0; i < size; ++i)
                             {
-                                vec_res[i] = static_cast<UInt16>(
-                                    StringUnaryOperationReduceImpl<Op<UInt8>>::vector(chars.data() + n * i, chars.data() + n * (i + 1)));
+                                vec_res[i] = StringUnaryOperationReduceImpl<Op<UInt8>>::vector(
+                                    chars.data() + n * i, chars.data() + n * (i + 1));
                             }
                             result_column = std::move(col_res);
                             return true;
@@ -490,7 +489,9 @@ public:
         {
             using DataType = std::decay_t<decltype(type)>;
             if constexpr (std::is_same_v<DataTypeFixedString, DataType> || std::is_same_v<DataTypeString, DataType>)
+            {
                 return false;
+            }
             else
             {
                 using T0 = typename DataType::FieldType;
@@ -512,7 +513,9 @@ public:
         {
             using DataType = std::decay_t<decltype(type)>;
             if constexpr (std::is_same_v<DataTypeFixedString, DataType> || std::is_same_v<DataTypeString, DataType>)
+            {
                 return false;
+            }
             else
             {
                 using T0 = typename DataType::FieldType;
@@ -520,16 +523,8 @@ public:
                 if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    if constexpr (std::is_same_v<Op<T0>, AbsImpl<T0>> || std::is_same_v<Op<T0>, BitCountImpl<T0>>)
-                    {
-                        /// We don't need to cast the argument to the result type if it's abs/bitcount function.
-                        result = Op<T0>::compile(b, arguments[0].value, is_signed_v<T0>);
-                    }
-                    else
-                    {
-                        auto * v = nativeCast(b, arguments[0], result_type);
-                        result = Op<T0>::compile(b, v, is_signed_v<T1>);
-                    }
+                    auto * v = nativeCast(b, arguments[0], result_type);
+                    result = Op<T0>::compile(b, v, is_signed_v<T1>);
 
                     return true;
                 }

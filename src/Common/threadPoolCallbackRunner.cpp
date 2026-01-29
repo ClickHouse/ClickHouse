@@ -1,4 +1,3 @@
-#include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Common/futex.h>
@@ -13,7 +12,7 @@ namespace ErrorCodes
 
 ThreadPoolCallbackRunnerFast::ThreadPoolCallbackRunnerFast() = default;
 
-void ThreadPoolCallbackRunnerFast::initThreadPool(ThreadPool & pool_, size_t max_threads_, ThreadName thread_name_, ThreadGroupPtr thread_group_)
+void ThreadPoolCallbackRunnerFast::initThreadPool(ThreadPool & pool_, size_t max_threads_, std::string thread_name_, ThreadGroupPtr thread_group_)
 {
     chassert(!pool);
     mode = Mode::ThreadPool;
@@ -70,7 +69,6 @@ void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)
     {
         std::unique_lock lock(mutex);
         queue.push_back(std::move(f));
-
         startMoreThreadsIfNeeded(active_tasks_, lock);
     }
 
@@ -94,35 +92,23 @@ void ThreadPoolCallbackRunnerFast::bulkSchedule(std::vector<std::function<void()
     if (mode == Mode::Disabled)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread pool runner is not initialized");
 
-    size_t n = fs.size();
-    size_t active_tasks_ = n + active_tasks.fetch_add(n, std::memory_order_relaxed);
+    size_t active_tasks_ = fs.size() + active_tasks.fetch_add(fs.size(), std::memory_order_relaxed);
 
     {
         std::unique_lock lock(mutex);
         queue.insert(queue.end(), std::move_iterator(fs.begin()), std::move_iterator(fs.end()));
-
-        try
-        {
-            startMoreThreadsIfNeeded(active_tasks_, lock);
-        }
-        catch (...)
-        {
-            /// Keep `queue` consistent with `queue_size`.
-            queue.erase(queue.end() - n, queue.end());
-            active_tasks.fetch_sub(n, std::memory_order_relaxed);
-            throw;
-        }
+        startMoreThreadsIfNeeded(active_tasks_, lock);
     }
 
     if (mode == Mode::ThreadPool)
     {
 #ifdef OS_LINUX
-        UInt32 prev_size = queue_size.fetch_add(static_cast<UInt32>(n), std::memory_order_release);
+        UInt32 prev_size = queue_size.fetch_add(fs.size(), std::memory_order_release);
         if (prev_size < max_threads)
-            futexWake(&queue_size, static_cast<int>(n));
+            futexWake(&queue_size, fs.size());
 #else
-        if (n < 4)
-            for (size_t i = 0; i < n; ++i)
+        if (fs.size() < 4)
+            for (size_t i = 0; i < fs.size(); ++i)
                 queue_cv.notify_one();
         else
             queue_cv.notify_all();
@@ -148,7 +134,7 @@ bool ThreadPoolCallbackRunnerFast::runTaskInline()
 void ThreadPoolCallbackRunnerFast::threadFunction()
 {
     std::optional<ThreadGroupSwitcher> switcher;
-    switcher.emplace(thread_group, thread_name);
+    switcher.emplace(thread_group, thread_name.c_str());
 
     while (true)
     {
@@ -314,7 +300,7 @@ void ShutdownHelper::shutdown()
     wait_shutdown();
 }
 
-template ThreadPoolCallbackRunnerUnsafe<void> threadPoolCallbackRunnerUnsafe<void>(ThreadPool & thread_pool, ThreadName thread);
+template ThreadPoolCallbackRunnerUnsafe<void> threadPoolCallbackRunnerUnsafe<void>(ThreadPool &, const std::string &);
 template class ThreadPoolCallbackRunnerLocal<void>;
 
 }

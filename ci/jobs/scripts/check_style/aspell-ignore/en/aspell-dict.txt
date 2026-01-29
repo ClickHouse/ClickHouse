@@ -1,8 +1,6 @@
-personal_ws-1.1 en 3453
-aarch
+personal_ws-1.1 en 3452
 AArch
 ACLs
-ADLS
 ALTERs
 AMPLab
 AMQP
@@ -207,24 +205,6 @@ ConnectionDetails
 Const
 ContextLockWait
 Contrib
-conversio
-convertCharset
-cooldown
-coroutines
-corrmatrix
-corrMatrix
-corrstable
-corrStable
-cors
-CORS
-cosineDistance
-countDigits
-countDistinctIf
-countEqual
-counterintuitively
-countIf
-countMatches
-countMatchesCaseInsensitive
 CountMin
 Covid
 Cramer
@@ -314,7 +294,6 @@ Doxygen
 Dresseler
 Durre
 ECMA
-EntryAndExit
 ETag
 EachRow
 Ecto
@@ -328,11 +307,9 @@ Encodings
 Enum
 Enums
 Eoan
-epilog
 EphemeralNode
 EscapingRule
 Ethereum
-Eval
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
@@ -418,8 +395,6 @@ HNSW
 HSTS
 HTTPConnection
 HTTPThreads
-HTTPs
-HTTPSecureThreads
 HashedDictionary
 HashedDictionaryThreads
 HashedDictionaryThreadsActive
@@ -491,39 +466,6 @@ IntervalQuarter
 IntervalSecond
 IntervalWeek
 IntervalYear
-InterserverSecureThreads
-intExp
-intHash
-IntN
-invalidCertificateHandler
-invariants
-invertedindexes
-INVOKER
-IOPrefetchThreads
-IOPrefetchThreadsActive
-IOThreads
-IOThreadsActive
-IOUringInFlightEvents
-IOUringPendingEvents
-IOWriterThreads
-IOWriterThreadsActive
-IProcessor
-IPTrie
-IPv
-irate
-isAdjustedToUTC
-isConstant
-isDecimalOverflow
-isFinite
-isInfinite
-isIPAddressInRange
-isIPv
-isMergeTreePartCoveredBy
-isNaN
-isNotDistinctFrom
-isNotNull
-isNull
-isNullable
 IsPentagon
 IsResClassIII
 IsValid
@@ -576,7 +518,6 @@ JSONExtractStringCaseInsensitive
 JSONExtractUInt
 JSONExtractUIntCaseInsensitive
 JSONHas
-JSONL
 JSONLength
 JSONLines
 JSONObjectEachRow
@@ -616,8 +557,6 @@ Keccak
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequests
-KeeperTCPSecureThreads
-KeeperTCPThreads
 Kerberos
 Khanna
 Kibana
@@ -666,7 +605,6 @@ LogQL
 LogQueriesType
 LogsLevel
 Logstash
-LongestRunningMerge
 LookML
 LoongArch
 LowCardinality
@@ -734,7 +672,6 @@ MergeTreePartsLoaderThreadsActive
 MergeTreeReadTaskRequestsSent
 MergeTreeSettings
 MergerMutator
-Mersenne
 MessagePack
 Metastore
 MetroHash
@@ -744,7 +681,6 @@ Milovidov
 MinHash
 MinIO
 MinMax
-MinMaxIndexPruned
 MindsDB
 Mongo
 Mongodb
@@ -799,7 +735,6 @@ NewSetting
 Noaa
 NodeJs
 NonMonotonic
-NotPruned
 NonZeroUInt
 NuRaft
 NumHexagons
@@ -876,7 +811,6 @@ Observability
 Octonica
 Ok
 OnTime
-OneLake
 OpenAI
 OpenCelliD
 OpenFileForRead
@@ -912,7 +846,6 @@ ParquetMetadata
 ParquetVersion
 Parsers
 PartMutation
-PartitionPruned
 Partitioner
 PartsActive
 PartsCommitted
@@ -928,14 +861,12 @@ PeerDB
 PendingAsyncInsert
 Percona
 PerfEventInfo
-Perfetto
 PhpStorm
 PlantUML
 Poess
 PointDistKm
 PointDistM
 PointDistRads
-PolygonToCells
 PostHistory
 PostLink
 PostLinks
@@ -968,7 +899,6 @@ PrivatePreviewBadge
 ProfileEvents
 Profiler
 Proleptic
-prolog
 PromHouse
 PromQL
 Promql
@@ -980,6 +910,7 @@ ProxySQL
 Punycode
 PyArrow
 PyCharm
+QATlib
 QBit
 QEMU
 QTCreator
@@ -1016,7 +947,6 @@ RawBLOB
 RawSum
 RawWithNames
 RawWithNamesAndTypes
-REPL
 ReDoS
 ReadTaskRequestsSent
 ReadonlyReplica
@@ -1175,7 +1105,6 @@ TAVG
 TCPConnection
 TCPHandler
 TCPThreads
-TCPSecureThreads
 TDigest
 TINYINT
 TLSv
@@ -1206,7 +1135,6 @@ TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Tauri
-TcpExtListenOverflows
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
@@ -1344,11 +1272,11 @@ YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
 ZCurve
+ZSTDQAT
 Zabbix
 Zipkin
 ZooKeeper
 ZooKeeper's
-ZooKeeperClientLastZXIDSeen
 ZooKeeperRequest
 ZooKeeperSession
 ZooKeeperWatch
@@ -1413,14 +1341,10 @@ appendTrailingCharIfAbsent
 approximative
 approxtopk
 approxtopsum
-areaCartesian
-areaSpherical
 argMax
 argMin
 argmax
 argmin
-argAndMax
-argAndMin
 arrayAUC
 arrayAUCPR
 arrayAll
@@ -1508,7 +1432,6 @@ atanh
 atomicity
 auth
 authType
-authenticatedUser
 authenticator
 authenticators
 autocompletion
@@ -1772,7 +1695,6 @@ csv
 csvwithnames
 csvwithnamesandtypes
 ctukey
-cume
 curdate
 currentDatabase
 currentProfiles
@@ -1884,7 +1806,6 @@ dictGetAll
 dictGetChildren
 dictGetDescendant
 dictGetHierarchy
-dictGetKeys
 dictGetOrDefault
 dictGetOrNull
 dictGetUUID
@@ -1945,7 +1866,6 @@ enqueued
 enum
 enum's
 enums
-ephemerals
 erfc
 errorCodeToName
 estimateCompressionRatio
@@ -2011,8 +1931,6 @@ flamegraph
 flatbuffers
 flattenTuple
 flink
-Flink
-flipCoordinates
 fluentd
 fmtlib
 formatDateTime
@@ -2155,7 +2073,6 @@ gtid
 gunzip
 gzip
 gzipped
-GRPCThreads
 hackernews
 hadoop
 halfMD
@@ -2530,7 +2447,6 @@ multiline
 multilinestring
 multiplyDecimal
 multipolygon
-multipolygons
 multiquery
 multiread
 multisearchany
@@ -2552,9 +2468,6 @@ mysql
 mysqldump
 mysqljs
 mytable
-Nagios
-naiveBayesClassifier
-Nambiar
 namedatabases
 namenetworks
 namenode
@@ -2699,8 +2612,6 @@ pclmulqdq
 pcre
 perf
 performant
-perimeterCartesian
-perimeterSpherical
 perkey
 perl
 persistency
@@ -2797,7 +2708,6 @@ proleptic
 prometheus
 prometheusQuery
 prometheusQueryRange
-PrometheusThreads
 proportionsZTest
 proto
 protobuf
@@ -2891,7 +2801,6 @@ readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
 readWKTRing
-readWkt
 readahead
 readline
 readme
@@ -3164,7 +3073,6 @@ subqueries
 subquery
 subranges
 subreddits
-subsecond
 subseconds
 subsequence
 substream
@@ -3394,7 +3302,6 @@ transactionally
 translateUTF
 translocality
 trie
-trigrams
 trimBoth
 trimLeft
 trimRight
@@ -3564,8 +3471,6 @@ xeus
 xkcd
 xlarge
 xml
-XRay
-xray
 xxHash
 xz
 yaml
@@ -3581,8 +3486,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-zxid
-readWKT
-readWKB
-WKT
-WKB

@@ -133,7 +133,7 @@ const ActionsDAG::Node & createResultPredicate(
 {
     if (!original_predicate->result_type->equals(*new_predicate_expr->result_type))
     {
-        return filter_dag.addCast(*new_predicate_expr, original_predicate->result_type, original_predicate->result_name, nullptr);
+        return filter_dag.addCast(*new_predicate_expr, original_predicate->result_type, original_predicate->result_name);
     }
     else
     {
@@ -199,7 +199,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
         rejected_conjuncts.push_back(conjunct);
     }
 
-    const auto trivial_filter = rejected_conjuncts.empty();
+    bool trivial_filter = rejected_conjuncts.empty();
     if (!result.empty())
     {
         /// There's a non-empty list of extracted condition parts.

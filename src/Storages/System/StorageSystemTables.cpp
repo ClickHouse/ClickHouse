@@ -42,9 +42,25 @@ namespace Setting
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
 
-namespace ErrorCodes
+namespace
 {
-    extern const int LOGICAL_ERROR;
+
+/// Avoid heavy operation on tables if we only queried columns that we can get without table object.
+/// Otherwise it will require table initialization for Lazy database.
+bool needTable(const DatabasePtr & database, const Block & header)
+{
+    if (database->getEngineName() != "Lazy")
+        return true;
+
+    static const std::set<std::string> columns_without_table = {"database", "name", "uuid", "metadata_modification_time"};
+    for (const auto & column : header.getColumnsWithTypeAndName())
+    {
+        if (columns_without_table.find(column.name) == columns_without_table.end())
+            return true;
+    }
+    return false;
+}
+
 }
 
 
@@ -81,7 +97,7 @@ ColumnPtr getFilteredTables(
     MutableColumnPtr uuid_column;
     MutableColumnPtr engine_column;
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
     if (dag)
     {
         bool filter_by_engine = false;
@@ -104,7 +120,7 @@ ColumnPtr getFilteredTables(
 
     for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
     {
-        const auto database_name = filtered_databases_column->getDataAt(database_idx);
+        const auto & database_name = filtered_databases_column->getDataAt(database_idx).toString();
         DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
         if (!database)
             continue;
@@ -195,7 +211,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"active_on_fly_data_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active data mutations (UPDATEs and DELETEs) suitable for applying on the fly."},
         {"active_on_fly_alter_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active alter mutations (MODIFY COLUMNs) suitable for applying on the fly."},
         {"active_on_fly_metadata_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active metadata mutations (RENAMEs) suitable for applying on the fly."},
-        {"columns_descriptions_cache_size", std::make_shared<DataTypeUInt64>(), "Size of columns description cache for *MergeTree tables"},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows INSERTed since server start (only for Buffer tables)."
         },
@@ -248,7 +263,7 @@ public:
         size_t size = tables_->size();
         tables.reserve(size);
         for (size_t idx = 0; idx < size; ++idx)
-            tables.insert(std::string{tables_->getDataAt(idx)});
+            tables.insert(tables_->getDataAt(idx).toString());
     }
 
     String getName() const override { return "Tables"; }
@@ -306,7 +321,7 @@ protected:
 
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
-                database_name = databases->getDataAt(database_idx);
+                database_name = databases->getDataAt(database_idx).toString();
                 database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
                 if (!database)
@@ -451,6 +466,8 @@ protected:
                         /* filter_by_table_name */ {},
                         /* skip_not_loaded */ false);
 
+            const bool need_table = needTable(database, getPort().getHeader());
+
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
@@ -460,23 +477,26 @@ protected:
                 if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                StoragePtr table = tables_it->table();
-                if (!table)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database iterator returned nullptr for the table, which is a bug");
-
+                StoragePtr table = nullptr;
                 TableLockHolder lock;
-
-                /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
-                /// and it's not protected internally by other mutexes
-                static const size_t DATA_PATHS_INDEX = 5;
-                if (columns_mask[DATA_PATHS_INDEX])
+                if (need_table)
                 {
-                    lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-                    if (!lock)
-                        // Table was dropped while acquiring the lock, skipping table
+                    table = tables_it->table();
+                    if (!table)
+                        // Table might have just been removed or detached for Lazy engine (see DatabaseLazy::tryGetTable())
                         continue;
-                }
 
+                    /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
+                    /// and it's not protected internally by other mutexes
+                    static const size_t DATA_PATHS_INDEX = 5;
+                    if (columns_mask[DATA_PATHS_INDEX])
+                    {
+                        lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+                        if (!lock)
+                            // Table was dropped while acquiring the lock, skipping table
+                            continue;
+                    }
+                }
                 ++rows_count;
 
                 size_t src_index = 0;
@@ -751,15 +771,6 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
                     }
-                }
-
-                // columns_descriptions_cache_size
-                if (columns_mask[src_index++])
-                {
-                    if (table_merge_tree)
-                        res_columns[res_index++]->insert(table_merge_tree->getColumnsDescriptionsCacheSize());
-                    else
-                        res_columns[res_index++]->insertDefault();
                 }
 
                 if (columns_mask[src_index++])

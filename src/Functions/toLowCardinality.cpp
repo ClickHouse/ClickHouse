@@ -65,7 +65,7 @@ REGISTER_FUNCTION(ToLowCardinality)
 Converts the input argument to the [LowCardinality](../data-types/lowcardinality.md) version of same data type.
 
 :::tip
-To convert from the `LowCardinality` data type to a regular data type, use the [CAST](#CAST) function.
+To convert from the `LowCardinality` data type to a regular data type, use the [CAST](#cast) function.
 For example: `CAST(x AS String)`.
 :::
     )";
@@ -89,7 +89,7 @@ SELECT toLowCardinality('1')
     };
     FunctionDocumentation::IntroducedIn toLowCardinality_introduced_in = {18, 12};
     FunctionDocumentation::Category toLowCardinality_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation toLowCardinality_documentation = {toLowCardinality_description, toLowCardinality_syntax, toLowCardinality_arguments, {}, toLowCardinality_returned_value, toLowCardinality_examples, toLowCardinality_introduced_in, toLowCardinality_category};
+    FunctionDocumentation toLowCardinality_documentation = {toLowCardinality_description, toLowCardinality_syntax, toLowCardinality_arguments, toLowCardinality_returned_value, toLowCardinality_examples, toLowCardinality_introduced_in, toLowCardinality_category};
 
     factory.registerFunction<FunctionToLowCardinality>(toLowCardinality_documentation);
 }

@@ -25,8 +25,6 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Access/AccessControl.h>
-#include <Access/DiskAccessStorage.h>
-#include <Access/MemoryAccessStorage.h>
 #include <Common/PoolId.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -103,18 +101,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
     extern const ServerSettingsDouble vector_similarity_index_cache_size_ratio;
-    extern const ServerSettingsString text_index_dictionary_block_cache_policy;
-    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_size;
-    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_max_entries;
-    extern const ServerSettingsDouble text_index_dictionary_block_cache_size_ratio;
-    extern const ServerSettingsString text_index_header_cache_policy;
-    extern const ServerSettingsUInt64 text_index_header_cache_size;
-    extern const ServerSettingsUInt64 text_index_header_cache_max_entries;
-    extern const ServerSettingsDouble text_index_header_cache_size_ratio;
-    extern const ServerSettingsString text_index_postings_cache_policy;
-    extern const ServerSettingsUInt64 text_index_postings_cache_size;
-    extern const ServerSettingsUInt64 text_index_postings_cache_max_entries;
-    extern const ServerSettingsDouble text_index_postings_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
@@ -336,8 +322,8 @@ static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, Co
     else
         default_database_uuid = UUIDHelpers::generateV4();
 
-    fs::path default_database_metadata_path = fs::weakly_canonical(context->getPath()) /
-        DatabaseCatalog::getStoreDirPath(default_database_uuid);
+    fs::path default_database_metadata_path = fs::weakly_canonical(context->getPath()) / "store"
+        / DatabaseCatalog::getPathForUUID(default_database_uuid);
 
     overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
     overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
@@ -541,7 +527,6 @@ void LocalServer::setupUsers()
         "            </networks>"
         "            <profile>default</profile>"
         "            <quota>default</quota>"
-        "            <access_management>1</access_management>"
         "            <named_collection_control>1</named_collection_control>"
         "        </default>"
         "    </users>"
@@ -583,20 +568,6 @@ void LocalServer::setupUsers()
         global_context->setUsersConfig(users_config);
     else
         throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Can't load config for users");
-
-    /// Add a writeable storage for SQL-based access management.
-    /// This allows creating users, roles, row policies, etc. via SQL queries.
-    if (getClientConfiguration().has("path"))
-    {
-        /// Use disk storage for persistence when --path is specified.
-        String access_path = fs::path(global_context->getPath()) / "access" / "";
-        access_control.addDiskStorage(DiskAccessStorage::STORAGE_TYPE, access_path, /* readonly= */ false, /* allow_backup= */ false);
-    }
-    else
-    {
-        /// Use in-memory storage for temporary/ephemeral mode.
-        access_control.addMemoryStorage(MemoryAccessStorage::STORAGE_TYPE, /* allow_backup= */ false);
-    }
 }
 
 void LocalServer::connect()
@@ -710,15 +681,7 @@ try
     connect();
 
     if (!table_name.empty())
-    {
-        // Set option to false for hidden query to prevent double-printing time
-        bool orig_print_time_to_stderr = getClientConfiguration().getBool("print-time-to-stderr", false);
-        getClientConfiguration().setBool("print-time-to-stderr", false);
-
         processQueryText(initial_query);
-
-        getClientConfiguration().setBool("print-time-to-stderr", orig_print_time_to_stderr);
-    }
 
 #if USE_FUZZING_MODE
     runLibFuzzer();
@@ -827,7 +790,7 @@ void LocalServer::processConfig()
     size_t max_server_memory_usage = server_settings[ServerSetting::max_server_memory_usage];
     const double max_server_memory_usage_to_ram_ratio = server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
     const size_t physical_server_memory = getMemoryAmount();
-    const size_t default_max_server_memory_usage = static_cast<size_t>(static_cast<double>(physical_server_memory) * max_server_memory_usage_to_ram_ratio);
+    const size_t default_max_server_memory_usage = static_cast<size_t>(physical_server_memory * max_server_memory_usage_to_ram_ratio);
 
     if (max_server_memory_usage == 0)
     {
@@ -854,7 +817,7 @@ void LocalServer::processConfig()
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
     const double cache_size_to_ram_max_ratio = server_settings[ServerSetting::cache_size_to_ram_max_ratio];
-    const size_t max_cache_size = static_cast<size_t>(static_cast<double>(physical_server_memory) * cache_size_to_ram_max_ratio);
+    const size_t max_cache_size = static_cast<size_t>(physical_server_memory * cache_size_to_ram_max_ratio);
 
     String uncompressed_cache_policy = server_settings[ServerSetting::uncompressed_cache_policy];
     size_t uncompressed_cache_size = server_settings[ServerSetting::uncompressed_cache_size];
@@ -918,39 +881,6 @@ void LocalServer::processConfig()
         LOG_INFO(log, "Lowered vector similarity index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(vector_similarity_index_cache_size));
     }
     global_context->setVectorSimilarityIndexCache(vector_similarity_index_cache_policy, vector_similarity_index_cache_size, vector_similarity_index_cache_max_count, vector_similarity_index_cache_size_ratio);
-
-    String text_index_dictionary_block_cache_policy = server_settings[ServerSetting::text_index_dictionary_block_cache_policy];
-    size_t text_index_dictionary_block_cache_size = server_settings[ServerSetting::text_index_dictionary_block_cache_size];
-    size_t text_index_dictionary_block_cache_max_count = server_settings[ServerSetting::text_index_dictionary_block_cache_max_entries];
-    double text_index_dictionary_block_cache_size_ratio = server_settings[ServerSetting::text_index_dictionary_block_cache_size_ratio];
-    if (text_index_dictionary_block_cache_size > max_cache_size)
-    {
-        text_index_dictionary_block_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered text index dictionary block cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_dictionary_block_cache_size));
-    }
-    global_context->setTextIndexDictionaryBlockCache(text_index_dictionary_block_cache_policy, text_index_dictionary_block_cache_size, text_index_dictionary_block_cache_max_count, text_index_dictionary_block_cache_size_ratio);
-
-    String text_index_header_cache_policy = server_settings[ServerSetting::text_index_header_cache_policy];
-    size_t text_index_header_cache_size = server_settings[ServerSetting::text_index_header_cache_size];
-    size_t text_index_header_cache_max_count = server_settings[ServerSetting::text_index_header_cache_max_entries];
-    double text_index_header_cache_size_ratio = server_settings[ServerSetting::text_index_header_cache_size_ratio];
-    if (text_index_header_cache_size > max_cache_size)
-    {
-        text_index_header_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered text index header cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_header_cache_size));
-    }
-    global_context->setTextIndexHeaderCache(text_index_header_cache_policy, text_index_header_cache_size, text_index_header_cache_max_count, text_index_header_cache_size_ratio);
-
-    String text_index_postings_cache_policy = server_settings[ServerSetting::text_index_postings_cache_policy];
-    size_t text_index_postings_cache_size = server_settings[ServerSetting::text_index_postings_cache_size];
-    size_t text_index_postings_cache_max_count = server_settings[ServerSetting::text_index_postings_cache_max_entries];
-    double text_index_postings_cache_size_ratio = server_settings[ServerSetting::text_index_postings_cache_size_ratio];
-    if (text_index_postings_cache_size > max_cache_size)
-    {
-        text_index_postings_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered text index posting list cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_postings_cache_size));
-    }
-    global_context->setTextIndexPostingsCache(text_index_postings_cache_policy, text_index_postings_cache_size, text_index_postings_cache_max_count, text_index_postings_cache_size_ratio);
 
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
@@ -1142,22 +1072,22 @@ void LocalServer::printHelpMessage(const OptionsDescription & options_descriptio
 void LocalServer::addExtraOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
-        ("table,N", po::value<std::string>(), "Name of the initial table")
-        ("copy", "Shortcut for format conversion, equivalent to: --query 'SELECT * FROM table'")
+        ("table,N", po::value<std::string>(), "name of the initial table")
+        ("copy", "shortcut for format conversion, equivalent to: --query 'SELECT * FROM table'")
 
         /// If structure argument is omitted then initial query is not generated
-        ("structure,S", po::value<std::string>(), "Structure of the initial table (list of column and type names)")
-        ("file,F", po::value<std::string>(), "Path to file with data of the initial table (stdin if not specified)")
+        ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
+        ("file,F", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
 
-        ("input-format", po::value<std::string>(), "Default input format. Takes precedence over --format.")
+        ("input-format", po::value<std::string>(), "input format of the initial table data")
 
         ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
         ("logger.log", po::value<std::string>(), "Log file name")
         ("logger.level", po::value<std::string>(), "Log level")
 
-        ("no-system-tables", "Do not attach system tables (better startup time)")
+        ("no-system-tables", "do not attach system tables (better startup time)")
         ("path", po::value<std::string>(), "Storage path. If it was not specified, we will use a temporary directory, that is cleaned up on exit.")
-        ("only-system-tables", "Attach only system tables from specified path")
+        ("only-system-tables", "attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
         ;
 }
@@ -1178,35 +1108,35 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 
 void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
-    if (options.contains("path"))
+    if (options.count("path"))
         getClientConfiguration().setString("path", options["path"].as<std::string>());
-    if (options.contains("table"))
+    if (options.count("table"))
         getClientConfiguration().setString("table-name", options["table"].as<std::string>());
-    if (options.contains("file"))
+    if (options.count("file"))
         getClientConfiguration().setString("table-file", options["file"].as<std::string>());
-    if (options.contains("structure"))
+    if (options.count("structure"))
         getClientConfiguration().setString("table-structure", options["structure"].as<std::string>());
-    if (options.contains("no-system-tables"))
+    if (options.count("no-system-tables"))
         getClientConfiguration().setBool("no-system-tables", true);
-    if (options.contains("only-system-tables"))
+    if (options.count("only-system-tables"))
         getClientConfiguration().setBool("only-system-tables", true);
 
-    if (options.contains("input-format"))
+    if (options.count("input-format"))
         getClientConfiguration().setString("table-data-format", options["input-format"].as<std::string>());
-    if (options.contains("output-format"))
+    if (options.count("output-format"))
         getClientConfiguration().setString("output-format", options["output-format"].as<std::string>());
 
-    if (options.contains("logger.console"))
+    if (options.count("logger.console"))
         getClientConfiguration().setBool("logger.console", options["logger.console"].as<bool>());
-    if (options.contains("logger.log"))
+    if (options.count("logger.log"))
         getClientConfiguration().setString("logger.log", options["logger.log"].as<std::string>());
-    if (options.contains("logger.level"))
+    if (options.count("logger.level"))
         getClientConfiguration().setString("logger.level", options["logger.level"].as<std::string>());
-    if (options.contains("send_logs_level"))
+    if (options.count("send_logs_level"))
         getClientConfiguration().setString("send_logs_level", options["send_logs_level"].as<std::string>());
-    if (options.contains("wait_for_suggestions_to_load"))
+    if (options.count("wait_for_suggestions_to_load"))
         getClientConfiguration().setBool("wait_for_suggestions_to_load", true);
-    if (options.contains("copy"))
+    if (options.count("copy"))
     {
         if (!queries.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--copy' and '--query' cannot be specified at the same time");

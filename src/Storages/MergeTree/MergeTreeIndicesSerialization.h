@@ -1,5 +1,4 @@
 #pragma once
-
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -8,8 +7,6 @@ namespace DB
 {
 
 class IMergeTreeIndexCondition;
-class IMergeTreeDataPart;
-struct IMergeTreeIndex;
 
 /// Represents a substream of a merge tree index.
 /// By default skip indexes have one substream (skp_idx_<name>.idx),
@@ -29,13 +26,6 @@ struct MergeTreeIndexSubstream
     String suffix;
     /// Extension of the index substream's file with data. Encodes the serialization version (".idx", "idx2", etc.)
     String extension;
-
-    static bool isCompressed(Type type)
-    {
-        /// Text index postings are not compressed by write buffer,
-        /// because the compression is implicitly applied during building them.
-        return type != Type::TextIndexPostings;
-    }
 };
 
 using MergeTreeIndexSubstreams = std::vector<MergeTreeIndexSubstream>;
@@ -59,8 +49,6 @@ struct MergeTreeIndexDeserializationState
 {
     MergeTreeIndexVersion version;
     const IMergeTreeIndexCondition * condition;
-    const IMergeTreeDataPart & part;
-    const IMergeTreeIndex & index;
 };
 
 }

@@ -1,5 +1,4 @@
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/EscapingRuleUtils.h>
@@ -8,9 +7,9 @@
 #include <IO/WriteBufferValidUTF8.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/assert_cast.h>
-#include <Columns/IColumn.h>
 
 #include <base/find_symbols.h>
 #include <base/scope_guard.h>

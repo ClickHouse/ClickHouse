@@ -31,9 +31,9 @@ public:
         return data_type;
     }
 
-    std::pair<String, DataTypePtr> getValueNameAndType(const IColumn::Options & options) const
+    std::pair<String, DataTypePtr> getValueNameAndType() const
     {
-        return column->getValueNameAndType(0, options);
+        return column->getValueNameAndType(0);
     }
 
 private:

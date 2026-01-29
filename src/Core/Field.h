@@ -410,8 +410,6 @@ public:
     std::string_view getTypeName() const;
 
     bool isNull() const { return which == Types::Null; }
-    bool isNaN() const { return which == Types::Float64 && std::isnan(get<Float64>()); }
-    bool isInf() const { return which == Types::Float64 && std::isinf(get<Float64>()); }
 
     bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
     bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
@@ -838,8 +836,7 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 void writeFieldBinary(const Field & x, WriteBuffer & buf);
 Field readFieldBinary(ReadBuffer & buf);
 
-String fieldToString(const Field & x);
-
+String toString(const Field & x);
 }
 
 template <>
@@ -860,6 +857,6 @@ struct fmt::formatter<DB::Field>
     template <typename FormatContext>
     auto format(const DB::Field & x, FormatContext & ctx) const
     {
-        return fmt::format_to(ctx.out(), "{}", fieldToString(x));
+        return fmt::format_to(ctx.out(), "{}", toString(x));
     }
 };

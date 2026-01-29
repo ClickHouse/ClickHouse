@@ -65,7 +65,6 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
         { "datetime_precision",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Decimal precision of DateTime64 data type. For other data types, the NULL value is returned."},
         { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."},
-        { "statistics",                 std::make_shared<DataTypeString>(), "The types of statistics created in this columns."}
     });
 
     description.setAliases({
@@ -320,13 +319,6 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
-                /// statistics
-                if (columns_mask[src_index++])
-                {
-                    const ColumnStatisticsDescription & stats = column.statistics;
-                    res_columns[res_index++]->insert(stats.getNameForLogs());
-                }
-
                 ++rows_count;
             }
         }
@@ -395,7 +387,7 @@ void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
         block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "database"));
         block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "table"));
 
-        virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
+        virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
 
         /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
         if (virtual_columns_filter)
@@ -445,7 +437,12 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
                 continue; /// We don't want to show the internal database for temporary tables in system.columns
-            database_column_mut->insert(database_name);
+
+            /// We are skipping "Lazy" database because we cannot afford initialization of all its tables.
+            /// This should be documented.
+
+            if (database->getEngineName() != "Lazy")
+                database_column_mut->insert(database_name);
         }
 
         Tables external_tables;

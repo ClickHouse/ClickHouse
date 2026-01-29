@@ -8,7 +8,6 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
 #include <base/scope_guard.h>
-#include <Common/thread_local_rng.h>
 
 #include <thread>
 #include <memory>

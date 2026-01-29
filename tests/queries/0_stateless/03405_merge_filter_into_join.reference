@@ -1,7 +1,7 @@
 -- { echoOn }
 
 EXPLAIN PLAN actions = 1
-SELECT * FROM (SELECT * FROM users u1 INNER JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0;
+SELECT * FROM (SELECT * FROM users u1 INNER JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
 Expression (Project names)
 Actions: INPUT : 0 -> __table1.uid Int16 : 0
          INPUT : 1 -> __table1.name String : 1
@@ -46,7 +46,7 @@ Positions: 6 0 1 2 3 4
                INPUT :: 4 -> __table3.name String : 4
                INPUT :: 5 -> __table3.age Int16 : 5
       Positions: 0 1 2 3 4 5
-        Join (JOIN FillRightFirst)
+        Join
         Type: INNER
         Strictness: ALL
         Algorithm: ConcurrentHashJoin
@@ -90,7 +90,7 @@ SELECT * FROM (SELECT * FROM users u1 INNER JOIN users u2 ON 1) WHERE age = u2.a
 6666	Ksenia	48	6666	Ksenia	48
 8888	Alice	50	8888	Alice	50
 EXPLAIN PLAN actions = 1
-SELECT * FROM (SELECT * FROM users u1 CROSS JOIN users u2) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0;
+SELECT * FROM (SELECT * FROM users u1 CROSS JOIN users u2) WHERE age = u2.age ORDER BY ALL;
 Expression (Project names)
 Actions: INPUT : 0 -> __table1.uid Int16 : 0
          INPUT : 1 -> __table1.name String : 1
@@ -135,7 +135,7 @@ Positions: 6 0 1 2 3 4
                INPUT :: 4 -> __table3.name String : 4
                INPUT :: 5 -> __table3.age Int16 : 5
       Positions: 0 1 2 3 4 5
-        Join (JOIN FillRightFirst)
+        Join
         Type: INNER
         Strictness: ALL
         Algorithm: ConcurrentHashJoin
@@ -179,7 +179,7 @@ SELECT * FROM (SELECT * FROM users u1 CROSS JOIN users u2) WHERE age = u2.age OR
 6666	Ksenia	48	6666	Ksenia	48
 8888	Alice	50	8888	Alice	50
 EXPLAIN PLAN actions = 1
-SELECT * FROM (SELECT * FROM users u1 SEMI JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0;
+SELECT * FROM (SELECT * FROM users u1 SEMI JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
 Expression (Project names)
 Actions: INPUT : 0 -> __table1.uid Int16 : 0
          INPUT : 1 -> __table1.name String : 1
@@ -234,10 +234,10 @@ Positions: 6 0 1 2 3 4
                  INPUT :: 4 -> __table3.name String : 4
                  INPUT :: 5 -> __table3.age Int16 : 5
         Positions: 0 1 2 3 4 5
-          Join (JOIN FillRightFirst)
+          Join
           Type: LEFT
           Strictness: SEMI
-          Algorithm: HashJoin
+          Algorithm: ConcurrentHashJoin
           Clauses: [(__lhs_const) = (__rhs_const)]
             Expression (Left Pre Join Actions)
             Actions: COLUMN Const(UInt8) -> __lhs_const UInt8 : 0
@@ -276,7 +276,7 @@ Positions: 6 0 1 2 3 4
                 Parts: 3
                 Granules: 3
 EXPLAIN PLAN actions = 1
-SELECT * FROM (SELECT * FROM users u1 FULL JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0;
+SELECT * FROM (SELECT * FROM users u1 FULL JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
 Expression (Project names)
 Actions: INPUT : 0 -> __table1.uid Int16 : 0
          INPUT : 1 -> __table1.name String : 1
@@ -331,7 +331,7 @@ Positions: 6 0 1 2 3 4
                  INPUT :: 4 -> __table3.name String : 4
                  INPUT :: 5 -> __table3.age Int16 : 5
         Positions: 0 1 2 3 4 5
-          Join (JOIN FillRightFirst)
+          Join
           Type: FULL
           Strictness: ALL
           Algorithm: HashJoin
@@ -373,7 +373,7 @@ Positions: 6 0 1 2 3 4
                 Parts: 3
                 Granules: 3
 EXPLAIN PLAN actions = 1
-SELECT * FROM (SELECT * FROM users u1 ANTI JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0;
+SELECT * FROM (SELECT * FROM users u1 ANTI JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
 Expression (Project names)
 Actions: INPUT : 0 -> __table1.uid Int16 : 0
          INPUT : 1 -> __table1.name String : 1
@@ -428,10 +428,10 @@ Positions: 6 0 1 2 3 4
                  INPUT :: 4 -> __table3.name String : 4
                  INPUT :: 5 -> __table3.age Int16 : 5
         Positions: 0 1 2 3 4 5
-          Join (JOIN FillRightFirst)
+          Join
           Type: LEFT
           Strictness: ANTI
-          Algorithm: HashJoin
+          Algorithm: ConcurrentHashJoin
           Clauses: [(__lhs_const) = (__rhs_const)]
             Expression (Left Pre Join Actions)
             Actions: COLUMN Const(UInt8) -> __lhs_const UInt8 : 0

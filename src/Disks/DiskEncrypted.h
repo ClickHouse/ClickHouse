@@ -32,8 +32,6 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
-    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
-
     bool existsFile(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
@@ -320,6 +318,7 @@ public:
     bool isBroken() const override { return delegate->isBroken(); }
     bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     bool supportsHardLinks() const override { return delegate->supportsHardLinks(); }
+    bool supportsPartitionCommand(const PartitionCommand & command) const override { return delegate->supportsPartitionCommand(command); }
     bool supportsStat() const override { return delegate->supportsStat(); }
     bool supportsChmod() const override { return delegate->supportsChmod(); }
     bool isSymlinkSupported() const override { return delegate->isSymlinkSupported(); }

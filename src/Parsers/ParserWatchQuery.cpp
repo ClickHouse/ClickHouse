@@ -28,7 +28,7 @@ bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ASTPtr database;
     ASTPtr table;
-    auto query = make_intrusive<ASTWatchQuery>();
+    auto query = std::make_shared<ASTWatchQuery>();
 
     if (!s_watch.ignore(pos, expected))
     {

@@ -1,16 +1,14 @@
 #pragma once
 
-#include <memory>
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Common/MultiVersion.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
 #include <IO/WithFileName.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 
 namespace DB
 {
@@ -61,6 +59,7 @@ private:
     void setMetadataFromResponse(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details, size_t blob_size) const;
 
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
+    Azure::Core::Context azure_context;
     ContainerClientPtr blob_container_client;
     BlobClientPtr blob_client;
 
@@ -86,7 +85,7 @@ private:
 
     LoggerPtr log = getLogger("ReadBufferFromAzureBlobStorage");
     /// No-way to make metadata non-mutable, because readBig method is const.
-    mutable MultiVersion<std::optional<ObjectMetadata>> last_object_metadata;
+    mutable std::optional<ObjectMetadata> last_object_metadata;
 };
 
 }

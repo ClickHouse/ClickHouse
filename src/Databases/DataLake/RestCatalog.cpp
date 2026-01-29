@@ -1,6 +1,5 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include "config.h"
 
@@ -148,32 +147,6 @@ RestCatalog::RestCatalog(
 
     config = loadConfig();
 }
-
-RestCatalog::RestCatalog(
-    const std::string & warehouse_,
-    const std::string & base_url_,
-    const std::string & onelake_tenant_id,
-    const std::string & onelake_client_id,
-    const std::string & onelake_client_secret,
-    const std::string & auth_scope_,
-    const std::string & oauth_server_uri_,
-    bool oauth_server_use_request_body_,
-    DB::ContextPtr context_)
-    : ICatalog(warehouse_)
-    , DB::WithContext(context_)
-    , base_url(correctAPIURI(base_url_))
-    , log(getLogger("RestCatalog(" + warehouse_ + ")"))
-    , tenant_id(onelake_tenant_id)
-    , client_id(onelake_client_id)
-    , client_secret(onelake_client_secret)
-    , auth_scope(auth_scope_)
-    , oauth_server_uri(oauth_server_uri_)
-    , oauth_server_use_request_body(oauth_server_use_request_body_)
-{
-    update_token_if_expired = true;
-    config = loadConfig();
-}
-
 
 RestCatalog::Config RestCatalog::loadConfig()
 {
@@ -389,14 +362,14 @@ bool RestCatalog::empty() const
 DB::Names RestCatalog::getTables() const
 {
     auto & pool = getContext()->getIcebergCatalogThreadpool();
-    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_REST_CATALOG);
+    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, "RestCatalog");
 
     DB::Names tables;
     std::mutex mutex;
 
     auto execute_for_each_namespace = [&](const std::string & current_namespace)
     {
-        runner.enqueueAndKeepTrack(
+        runner(
         [=, &tables, &mutex, this]
         {
             auto tables_in_namespace = getTables(current_namespace);
@@ -444,7 +417,7 @@ void RestCatalog::getNamespacesRecursive(
 
 Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::string & base_namespace) const
 {
-    std::vector<std::string_view> parts;
+    std::vector<std::string> parts;
     splitInto<'.'>(parts, base_namespace);
     std::string parent_param;
     for (const auto & part : parts)
@@ -556,8 +529,6 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, buf);
 
-    LOG_DEBUG(log, "Received tables response: {}", json_str);
-
     try
     {
         Poco::JSON::Parser parser;
@@ -608,9 +579,9 @@ bool RestCatalog::tryGetTableMetadata(
     {
         return getTableMetadataImpl(namespace_name, table_name, result);
     }
-    catch (const DB::Exception & ex)
+    catch (...)
     {
-        LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
+        DB::tryLogCurrentException(log);
         return false;
     }
 }
@@ -654,7 +625,6 @@ bool RestCatalog::getTableMetadataImpl(
 
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
-    LOG_DEBUG(log, "Receiving table metadata {} {}", table_name, json_str);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// This log message might contain credentials,
@@ -727,31 +697,6 @@ bool RestCatalog::getTableMetadataImpl(
                     std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token));
 
                 result.setEndpoint(storage_endpoint);
-                break;
-            }
-            case StorageType::Azure:
-            {
-                /// Azure ADLS Gen2 vended credentials use SAS tokens.
-                /// The config keys follow the pattern: adls.sas-token.<account_name>
-                /// or adls.sas-token.<account_name>.dfs.core.windows.net
-                /// We look for any key starting with "adls.sas-token." and use the first one found.
-                String sas_token;
-                std::vector<std::string> names;
-                config_object->getNames(names);
-                for (const auto & name : names)
-                {
-                    if (name.starts_with("adls.sas-token."))
-                    {
-                        sas_token = config_object->get(name).extract<String>();
-                        LOG_DEBUG(log, "Found Azure SAS token with key: {}", name);
-                        break;
-                    }
-                }
-
-                if (!sas_token.empty())
-                {
-                    result.setStorageCredentials(std::make_shared<AzureCredentials>(sas_token));
-                }
                 break;
             }
             default:

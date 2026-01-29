@@ -4,16 +4,15 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/BlockIO.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Settings.h>
 #include <Access/Common/AccessFlags.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 
 
 namespace DB
@@ -65,59 +64,6 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
 }
 
-/// AliasSink: Writes data to the target table using full INSERT pipeline
-/// which triggers materialized views on the target table.
-class AliasSink : public SinkToStorage, WithContext
-{
-public:
-    AliasSink(
-        StorageAlias & storage_,
-        ContextPtr context_,
-        const StorageMetadataPtr & metadata_snapshot_)
-        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
-        , WithContext(context_)
-        , storage(storage_)
-    {
-    }
-
-    String getName() const override { return "AliasSink"; }
-
-    void consume(Chunk & chunk) override
-    {
-        if (chunk.getNumRows() == 0)
-            return;
-
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
-
-        StoragePtr target = storage.getTargetTable();
-        StorageID target_id = target->getStorageID();
-
-        std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-        insert->table_id = target_id;
-        ASTPtr query_ptr(insert.release());
-
-        auto insert_context = Context::createCopy(getContext());
-        insert_context->makeQueryContext();
-
-        InterpreterInsertQuery interpreter(
-            query_ptr,
-            insert_context,
-            /* allow_materialized */ false,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_insert */ false);
-
-        BlockIO block_io = interpreter.execute();
-        PushingPipelineExecutor executor(block_io.pipeline);
-        executor.start();
-        executor.push(std::move(block));
-        executor.finish();
-    }
-
-private:
-    StorageAlias & storage;
-};
-
 void StorageAlias::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -151,17 +97,21 @@ void StorageAlias::read(
 }
 
 SinkToStoragePtr StorageAlias::write(
-    const ASTPtr & /*query*/,
+    const ASTPtr & query,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     ContextPtr local_context,
-    bool /*async_insert*/)
+    bool async_insert)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::INSERT});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    auto lock = target_storage->lockForShare(
+        local_context->getCurrentQueryId(),
+        local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    /// Use AliasSink which executes full INSERT pipeline on target
-    /// Therefore it will trigger the MV on the target
-    return std::make_shared<AliasSink>(*this, local_context, target_metadata);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
+    auto sink = target_storage->write(query, target_metadata, local_context, async_insert);
+
+    sink->addTableLock(lock);
+    return sink;
 }
 
 void StorageAlias::alter(
@@ -266,6 +216,11 @@ std::optional<QueryPipeline> StorageAlias::distributedWrite(const ASTInsertQuery
 StorageSnapshotPtr StorageAlias::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
     return getTargetTable()->getStorageSnapshot(metadata_snapshot, query_context);
+}
+
+StorageSnapshotPtr StorageAlias::getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context) const
+{
+    return getTargetTable()->getStorageSnapshotForQuery(metadata_snapshot, query, query_context);
 }
 
 StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const

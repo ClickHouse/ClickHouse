@@ -76,6 +76,11 @@ namespace ErrorCodes
     extern const int ABORTED;
 }
 
+namespace FailPoints
+{
+extern const char refresh_task_stop_racing_for_running_refresh[];
+}
+
 RefreshTask::RefreshTask(
     StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty, bool is_restore_from_backup)
     : log(getLogger("RefreshTask"))
@@ -157,7 +162,7 @@ OwnedRefreshTask RefreshTask::create(
 {
     auto task = std::make_shared<RefreshTask>(view, context, strategy, attach, coordinated, empty, is_restore_from_backup);
 
-    task->refresh_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshTask",
+    task->refresh_task = context->getSchedulePool().createTask("RefreshTask",
         [self = task.get()] { self->refreshTask(); });
 
     task->refresh_task_watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
@@ -309,7 +314,7 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
 RefreshTask::Info RefreshTask::getInfo() const
 {
     std::lock_guard guard(mutex);
-    return Info {.view_id = set_handle.getID(), .state = state, .next_refresh_time = next_refresh_time, .znode = coordination.root_znode, .replica_name = coordination.replica_name, .refresh_running = coordination.running_znode_exists, .progress = execution.progress.getValues(), .unexpected_error = scheduling.unexpected_error};
+    return Info {.view_id = set_handle.getID(), .state = state, .next_refresh_time = next_refresh_time, .znode = coordination.root_znode, .refresh_running = coordination.running_znode_exists, .progress = execution.progress.getValues(), .unexpected_error = scheduling.unexpected_error};
 }
 
 void RefreshTask::start()
@@ -663,15 +668,13 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     LOG_DEBUG(log, "Refreshing view {}", view_storage_id.getFullTableName());
     execution.progress.reset();
 
-    static constexpr bool internal = true;
-
     ContextMutablePtr refresh_context = view->getContext();
     ProcessList::EntryPtr process_list_entry;
     std::optional<StorageID> table_to_drop;
     auto new_table_id = StorageID::createEmpty();
 
     std::optional<QueryLogElement> query_log_elem;
-    boost::intrusive_ptr<ASTInsertQuery> refresh_query;
+    std::shared_ptr<ASTInsertQuery> refresh_query;
     String query_for_logging;
     UInt64 normalized_query_hash = 0;
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>("query");
@@ -692,7 +695,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             /// Create a table.
             query_for_logging = "(create target table)";
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-            CurrentThread::QueryScope query_scope;
+            std::unique_ptr<CurrentThread::QueryScope> query_scope;
             std::tie(refresh_query, query_scope) = view->prepareRefresh(append, refresh_context, table_to_drop);
             new_table_id = refresh_query->table_id;
 
@@ -702,7 +705,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
             process_list_entry = refresh_context->getProcessList().insert(
-                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal);
+                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
             refresh_context->setProgressCallback([this](const Progress & prog)
@@ -726,7 +729,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             /// cover the surrounding CREATE, EXCHANGE, and DROP queries.
             query_log_elem = logQueryStart(
                 start_time, refresh_context, query_for_logging, normalized_query_hash, refresh_query, pipeline,
-                &interpreter, /*internal*/ internal, view_storage_id.database_name,
+                &interpreter, /*internal*/ false, view_storage_id.database_name,
                 view_storage_id.table_name, /*async_insert*/ false);
 
             if (!pipeline.completed())
@@ -762,7 +765,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
                 /// `executor` must be destroyed before `pipeline`!
             }
 
-            logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/internal);
+            logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/false);
             query_log_elem = std::nullopt;
             query_span = nullptr;
         }
@@ -789,13 +792,13 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
 
         if (query_log_elem.has_value())
         {
-            logQueryException(*query_log_elem, refresh_context, stopwatch, refresh_query, query_span, /*internal*/ internal, /*log_error*/ !cancelled);
+            logQueryException(*query_log_elem, refresh_context, stopwatch, refresh_query, query_span, /*internal*/ false, /*log_error*/ !cancelled);
         }
         else
         {
             /// Failed when creating new table or when swapping tables.
             logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context,
-                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds(), /*internal*/ internal);
+                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds());
         }
 
         if (cancelled)
@@ -992,6 +995,11 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         ops.emplace_back(zkutil::makeSetRequest(coordination.path, root.toString(), root.version));
         if (running)
         {
+            bool stop_racing_for_running_refresh = false;
+            fiu_do_on(FailPoints::refresh_task_stop_racing_for_running_refresh, { stop_racing_for_running_refresh = true; });
+            if (stop_racing_for_running_refresh)
+                return false;
+
             ops.emplace_back(
                 zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral));
         }
