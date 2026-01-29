@@ -912,12 +912,14 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_UNTRACKED_MEMORY);
             getContext()->getUntrackedMemoryHolder()->alloc(query.untracked_memory_size);
+            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
             break;
         }
         case Type::FREE_UNTRACKED_MEMORY:
         {
             getContext()->checkAccess(AccessType::SYSTEM_UNTRACKED_MEMORY);
             getContext()->getUntrackedMemoryHolder()->free();
+            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
             break;
         }
         case Type::WAIT_FAILPOINT:
