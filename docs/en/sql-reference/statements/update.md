@@ -47,20 +47,6 @@ The updated values are:
 - **Physically materialized** only during subsequent merges and mutations
 - **Automatically cleaned up** once all active parts have the patches materialized
 
-### Manually applying patches {#manually-applying-patches}
-
-While patch parts are automatically applied during merges, you can manually trigger their materialization using the [`ALTER TABLE ... APPLY PATCHES`](/sql-reference/statements/alter/apply-patches) command:
-
-```sql
-ALTER TABLE [db.]table APPLY PATCHES;
-```
-
-This is useful when you want to:
-- Reduce the overhead of applying patches during `SELECT` queries
-- Consolidate multiple patch parts before they accumulate
-- Control when patches are materialized instead of waiting for automatic merges
-
-The command only rewrites the columns that were updated, making it more efficient than heavyweight mutations that rewrite entire data parts.
 ## Lightweight updates requirements {#lightweight-update-requirements}
 
 Lightweight updates are supported for [`MergeTree`](/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/engines/table-engines/mergetree-family/collapsingmergetree) engines and their [`Replicated`](/engines/table-engines/mergetree-family/replication.md) and [`Shared`](/cloud/reference/shared-merge-tree) versions.
@@ -137,3 +123,4 @@ The join mode is slower and requires more memory than the merge mode, but it is 
 
 - [`ALTER UPDATE`](/sql-reference/statements/alter/update) - Heavy `UPDATE` operations
 - [Lightweight `DELETE`](/sql-reference/statements/delete) - Lightweight `DELETE` operations
+- [`APPLY PATCHES`](/sql-reference/statements/alter/apply-patches) - Force physical materialization of patches to data parts (mutation operation)
