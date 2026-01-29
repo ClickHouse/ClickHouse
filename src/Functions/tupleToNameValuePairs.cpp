@@ -5,10 +5,12 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
 #include <memory>
 
@@ -38,17 +40,17 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        // get the type of all the fields in the tuple
-        const IDataType * col = arguments[0].type.get();
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(col);
+        const DataTypePtr col = arguments[0].type;
+        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(removeNullable(col).get());
 
         if (!tuple)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First argument for function {} must be a tuple.",
+                            "First argument for function {} must be a Tuple or a Nullable(Tuple).",
                             getName());
 
         const auto & element_types = tuple->getElements();
@@ -85,8 +87,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const IColumn * tuple_col = arguments[0].column.get();
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+        const DataTypeTuple * tuple_type = checkAndGetDataType<DataTypeTuple>(removeNullable(arguments[0].type).get());
+
+        const IColumn * tuple_col = removeNullable(arguments[0].column).get();
         const auto * tuple_col_concrete = assert_cast<const ColumnTuple *>(tuple_col);
 
         auto keys = ColumnString::create();
@@ -96,7 +99,7 @@ public:
         {
             for (size_t col = 0; col < tuple_col_concrete->tupleSize(); ++col)
             {
-                const std::string & key = tuple->getElementNames()[col];
+                const std::string & key = tuple_type->getElementNames()[col];
                 const IColumn & value_column = tuple_col_concrete->getColumn(col);
 
                 values->insertFrom(value_column, row);

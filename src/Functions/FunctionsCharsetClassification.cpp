@@ -5,8 +5,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTextClassification.h>
 
-#include <memory>
-
 
 namespace DB
 {
@@ -35,10 +33,11 @@ namespace
             const auto * it = standard.find(el.getKey());
             if (it != standard.end())
             {
-                res += el.getMapped() * log(it->getMapped());
-            } else
+                res += static_cast<Float64>(el.getMapped()) * log(it->getMapped());
+            }
+            else
             {
-                res += el.getMapped() * log(zero_frequency);
+                res += static_cast<Float64>(el.getMapped()) * log(zero_frequency);
             }
             /// If at some step the result has become less than the current maximum, then it makes no sense to count it fully.
             if (res < max_result)

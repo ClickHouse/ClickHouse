@@ -14,7 +14,14 @@ class ReplicatedAccessStorage : public IAccessStorage
 public:
     static constexpr char STORAGE_TYPE[] = "replicated";
 
-    ReplicatedAccessStorage(const String & storage_name, const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper, AccessChangesNotifier & changes_notifier_, bool allow_backup, UInt64 access_entities_num_limit_);
+    ReplicatedAccessStorage(
+        const String & storage_name,
+        const String & zookeeper_path,
+        zkutil::GetZooKeeper get_zookeeper,
+        AccessChangesNotifier & changes_notifier_,
+        bool allow_backup,
+        bool throw_on_invalid_entities_,
+        UInt64 access_entities_num_limit_);
     ~ReplicatedAccessStorage() override;
 
     void shutdown() override;

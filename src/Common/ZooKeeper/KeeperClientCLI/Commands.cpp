@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-bool LSCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool LSCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String path;
     if (!parseKeeperPath(pos, expected, path))
@@ -50,7 +50,7 @@ void LSCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client)
     client->cout << "\n";
 }
 
-bool CDCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool CDCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String path;
     if (!parseKeeperPath(pos, expected, path))
@@ -72,7 +72,7 @@ void CDCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client)
         client->cwd = new_path;
 }
 
-bool SetCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool SetCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String path;
     if (!parseKeeperPath(pos, expected, path))
@@ -102,7 +102,7 @@ void SetCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client
             static_cast<Int32>(query->args[2].safeGet<Int32>()));
 }
 
-bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool CreateCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String path;
     if (!parseKeeperPath(pos, expected, path))
@@ -146,7 +146,7 @@ void CreateCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * cli
         static_cast<int>(query->args[2].safeGet<Int64>()));
 }
 
-bool TouchCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool TouchCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String arg;
     if (!parseKeeperPath(pos, expected, arg))
@@ -161,7 +161,7 @@ void TouchCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * clie
     client->zookeeper->createIfNotExists(client->getAbsolutePath(query->args[0].safeGet<String>()), "");
 }
 
-bool GetCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool GetCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String path;
     if (!parseKeeperPath(pos, expected, path))
@@ -176,7 +176,7 @@ void GetCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client
     client->cout << client->zookeeper->get(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
 
-bool ExistsCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
+bool ExistsCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
 {
     String path;
     if (!parseKeeperPath(pos, expected, path))
@@ -191,7 +191,7 @@ void ExistsCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClientBa
     client->cout << client->zookeeper->exists(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
 
-bool GetStatCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool GetStatCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String path;
     if (!parseKeeperPath(pos, expected, path))
@@ -362,7 +362,7 @@ void parallelized_traverse(const fs::path & path, KeeperClientBase * client, siz
 
 } /// anonymous namespace
 
-bool FindSuperNodes::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool FindSuperNodes::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     ASTPtr threshold;
     if (!ParserUnsignedInteger{}.parse(pos, threshold, expected))
@@ -402,7 +402,7 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClientBase * cl
     parallelized_traverse(path, client, /* max_in_flight_requests */ 50, ctx);
 }
 
-bool DeleteStaleBackups::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeeperQuery> & /* node */, Expected & /* expected */) const
+bool DeleteStaleBackups::parse(IParser::Pos & /* pos */, boost::intrusive_ptr<ASTKeeperQuery> & /* node */, Expected & /* expected */) const
 {
     return true;
 }
@@ -447,7 +447,7 @@ void DeleteStaleBackups::execute(const ASTKeeperQuery * /* query */, KeeperClien
         });
 }
 
-bool FindBigFamily::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool FindBigFamily::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String path;
     if (!parseKeeperPath(pos, expected, path))
@@ -488,7 +488,7 @@ void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClientBase * cli
         client->cout << std::get<1>(ctx.result[i]) << "\t" << std::get<0>(ctx.result[i]) << "\n";
 }
 
-bool RMCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool RMCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String path;
     if (!parseKeeperPath(pos, expected, path))
@@ -511,7 +511,7 @@ void RMCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client)
     client->zookeeper->remove(client->getAbsolutePath(query->args[0].safeGet<String>()), version);
 }
 
-bool RMRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool RMRCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String path;
     if (!parseKeeperPath(pos, expected, path))
@@ -537,7 +537,7 @@ void RMRCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client
         [client, path, remove_nodes_limit] { client->zookeeper->removeRecursive(path, static_cast<UInt32>(remove_nodes_limit)); });
 }
 
-bool ReconfigCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
+bool ReconfigCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
 {
     ParserKeyword s_add(Keyword::ADD);
     ParserKeyword s_remove(Keyword::REMOVE);
@@ -590,7 +590,7 @@ void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient
     client->cout << response.value << '\n';
 }
 
-bool SyncCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
+bool SyncCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
 {
     String path;
     if (!parseKeeperPath(pos, expected, path))
@@ -605,7 +605,7 @@ void SyncCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClientBase
     client->cout << client->zookeeper->sync(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
 
-bool HelpCommand::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeeperQuery> & /* node */, Expected & /* expected */) const
+bool HelpCommand::parse(IParser::Pos & /* pos */, boost::intrusive_ptr<ASTKeeperQuery> & /* node */, Expected & /* expected */) const
 {
     return true;
 }
@@ -616,7 +616,7 @@ void HelpCommand::execute(const ASTKeeperQuery * /* query */, KeeperClientBase *
         client->cout << pair.second->generateHelpString() << "\n";
 }
 
-bool FourLetterWordCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool FourLetterWordCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     expected.add(pos, "four-letter-word command");
     if (pos->type != TokenType::BareWord)
@@ -636,7 +636,7 @@ void FourLetterWordCommand::execute(const ASTKeeperQuery * query, KeeperClientBa
     client->cout << client->executeFourLetterCommand(query->args[0].safeGet<String>()) << "\n";
 }
 
-bool GetDirectChildrenNumberCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool GetDirectChildrenNumberCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String path;
     if (!parseKeeperPath(pos, expected, path))
@@ -657,7 +657,7 @@ void GetDirectChildrenNumberCommand::execute(const ASTKeeperQuery * query, Keepe
     client->cout << stat.numChildren << "\n";
 }
 
-bool GetAllChildrenNumberCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool GetAllChildrenNumberCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String path;
     if (!parseKeeperPath(pos, expected, path))
@@ -870,7 +870,7 @@ private:
 
 }
 
-bool CPCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, [[maybe_unused]] Expected & expected) const
+bool CPCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, [[maybe_unused]] Expected & expected) const
 {
     String src_path;
     if (!parseKeeperPath(pos, expected, src_path))
@@ -896,7 +896,7 @@ void CPCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client)
         operation.perform();
 }
 
-bool CPRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool CPRCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String src_path;
     if (!parseKeeperPath(pos, expected, src_path))
@@ -922,7 +922,7 @@ void CPRCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client
         operation.perform();
 }
 
-bool MVCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool MVCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String src_path;
     if (!parseKeeperPath(pos, expected, src_path))
@@ -948,7 +948,7 @@ void MVCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client)
         operation.perform();
 }
 
-bool MVRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool MVRCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String src_path;
     if (!parseKeeperPath(pos, expected, src_path))
@@ -974,7 +974,7 @@ void MVRCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client
         operation.perform();
 }
 
-bool GetAclCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+bool GetAclCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String src_path;
     if (!parseKeeperPath(pos, expected, src_path))

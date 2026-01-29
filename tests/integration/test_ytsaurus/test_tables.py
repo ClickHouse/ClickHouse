@@ -34,11 +34,12 @@ def started_cluster():
 
 
 def test_yt_simple_table_engine(started_cluster):
+    table = "//tmp/table"
     yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
-    yt.create_table("//tmp/table", '{"a":"10","b":"20"}\n{"a":"20","b":"40"}')
+    yt.create_table(table, '{"a":"10","b":"20"}\n{"a":"20","b":"40"}')
     instance.rotate_logs()
     instance.query(
-        f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus('{yt_uri_helper.uri}', '//tmp/table', '{yt_uri_helper.token}')"
+        f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus('{yt_uri_helper.uri}', '{table}', '{yt_uri_helper.token}')"
     )
 
     assert instance.query("SELECT * FROM yt_test") == "10\t20\n20\t40\n"
@@ -50,7 +51,7 @@ def test_yt_simple_table_engine(started_cluster):
 
     instance.query("DROP TABLE yt_test SYNC")
 
-    yt.remove_table("//tmp/table")
+    yt.remove_table(table)
 
 
 def test_yt_simple_table_function(started_cluster):
@@ -515,3 +516,39 @@ def test_ytsaurus_replicated_table(started_cluster):
     assert instance.query("SELECT * FROM yt_test") == "10\t20\n20\t40\n"
     instance.query("DROP TABLE yt_test SYNC")
     yt.remove_replicated_table(f"{table_path}")
+
+
+def test_yt_named_collection(started_cluster):
+    table = "//tmp/table"
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
+    yt.create_table(table, '{"a":"10","b":"20"}\n{"a":"20","b":"40"}')
+    instance.rotate_logs()
+    instance.query(
+        f"""
+            CREATE NAMED COLLECTION ytsaurus_nc AS
+            http_proxy_urls = '{yt_uri_helper.uri}',
+            cypress_path = '{table}',
+            oauth_token = '{yt_uri_helper.token}'
+            """
+    )
+
+    instance.query(
+        f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus(ytsaurus_nc)"
+    )
+
+    assert instance.query("SELECT * FROM yt_test") == "10\t20\n20\t40\n"
+    assert instance.query("SELECT a,b FROM yt_test") == "10\t20\n20\t40\n"
+    assert instance.query("SELECT a FROM yt_test") == "10\n20\n"
+
+    assert instance.query("SELECT * FROM yt_test WHERE a > 15") == "20\t40\n"
+    instance.wait_for_log_line("Get list of heavy proxies from path")
+
+    assert (
+        instance.query(f"SELECT * FROM ytsaurus(ytsaurus_nc, 'a Int32, b Int32')")
+        == "10\t20\n20\t40\n"
+    )
+
+    instance.query("DROP TABLE yt_test SYNC")
+    instance.query("DROP NAMED COLLECTION ytsaurus_nc")
+
+    yt.remove_table(table)

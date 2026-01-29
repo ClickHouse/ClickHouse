@@ -14,7 +14,7 @@ namespace MySQLParser
 
 ASTPtr ASTDeclarePartition::clone() const
 {
-    auto res = std::make_shared<ASTDeclarePartition>(*this);
+    auto res = make_intrusive<ASTDeclarePartition>(*this);
     res->children.clear();
 
     if (options)
@@ -102,7 +102,7 @@ bool ParserDeclarePartition::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
             return false;
     }
 
-    auto partition_declare = std::make_shared<ASTDeclarePartition>();
+    auto partition_declare = make_intrusive<ASTDeclarePartition>();
     partition_declare->options = options;
     partition_declare->less_than = less_than;
     partition_declare->in_expression = in_expression;
