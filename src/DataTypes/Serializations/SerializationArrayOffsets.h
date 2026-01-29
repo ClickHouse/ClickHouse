@@ -9,6 +9,8 @@ namespace DB
 class SerializationArrayOffsets : public SerializationNumber<UInt64>
 {
 public:
+    String getName() const override;
+
     void deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
     size_t rows_offset,

@@ -15,6 +15,8 @@ public:
     explicit SerializationFixedString(size_t n_) : n(n_) {}
     size_t getN() const { return n; }
 
+    String getName() const override;
+
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

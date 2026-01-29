@@ -19,6 +19,16 @@ namespace ErrorCodes
 extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
+String SerializationDateTime::getName() const
+{
+    return "DateTime";
+}
+
+String SerializationTime::getName() const
+{
+    return "Time";
+}
+
 namespace
 {
 

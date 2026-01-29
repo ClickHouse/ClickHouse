@@ -41,6 +41,11 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 {
 }
 
+String SerializationLowCardinality::getName() const
+{
+    return "LowCardinality(" + dictionary_type->getName() + ", " + dict_inner_serialization->getName() + ")";
+}
+
 void SerializationLowCardinality::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,

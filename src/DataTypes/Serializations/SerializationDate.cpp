@@ -10,6 +10,11 @@
 namespace DB
 {
 
+String SerializationDate::getName() const
+{
+    return "Date";
+}
+
 void SerializationDate::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeDateText(DayNum(assert_cast<const ColumnUInt16 &>(column).getData()[row_num]), ostr, time_zone);

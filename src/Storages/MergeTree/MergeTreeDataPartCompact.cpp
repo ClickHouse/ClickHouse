@@ -145,13 +145,13 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
 
 void MergeTreeDataPartCompact::loadIndexGranularity()
 {
-    if (columns.empty())
+    if (columns->empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
     loadIndexGranularityImpl(
         index_granularity,
         index_granularity_info,
-        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size(),
+        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns->size(),
         getDataPartStorage(),
         *storage.getSettings());
 }
@@ -175,7 +175,7 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         /*save_marks_in_cache=*/ true,
         context->getReadSettings(),
         /*load_marks_threadpool_=*/ nullptr,
-        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size());
+        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns->size());
 
     loader.loadMarks();
 }
@@ -255,7 +255,7 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
                     getDataPartStorage().getRelativePath(),
                     std::string(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name));
 
-            UInt64 expected_file_size = index_granularity_info.getMarkSizeInBytes(columns.size()) * index_granularity->getMarksCount();
+            UInt64 expected_file_size = index_granularity_info.getMarkSizeInBytes(columns->size()) * index_granularity->getMarksCount();
             if (expected_file_size != file_size)
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,

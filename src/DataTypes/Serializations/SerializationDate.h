@@ -11,6 +11,8 @@ class SerializationDate final : public SerializationNumber<UInt16>
 public:
     explicit SerializationDate(const DateLUTImpl & time_zone_ = DateLUT::instance());
 
+    String getName() const override;
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;

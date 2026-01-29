@@ -74,16 +74,17 @@ std::tuple_element_t<I, NameAndTypePair> & get(NameAndTypePair & name_and_type)
 }
 
 using NamesAndTypes = std::vector<NameAndTypePair>;
+using NamesAndTypesListBase = std::list<NameAndTypePair, BytesAwareAllocatorWithMemoryTracking<NameAndTypePair>>;
 
-class NamesAndTypesList : public std::list<NameAndTypePair>
+class NamesAndTypesList : public NamesAndTypesListBase
 {
 public:
     NamesAndTypesList() = default;
 
-    NamesAndTypesList(std::initializer_list<NameAndTypePair> init) : std::list<NameAndTypePair>(init) {}
+    NamesAndTypesList(std::initializer_list<NameAndTypePair> init) : NamesAndTypesListBase(init) {}
 
     template <typename Iterator>
-    NamesAndTypesList(Iterator begin, Iterator end) : std::list<NameAndTypePair>(begin, end) {}
+    NamesAndTypesList(Iterator begin, Iterator end) : NamesAndTypesListBase(begin, end) {}
 
     void readText(ReadBuffer & buf, bool check_eof = true);
     void writeText(WriteBuffer & buf) const;

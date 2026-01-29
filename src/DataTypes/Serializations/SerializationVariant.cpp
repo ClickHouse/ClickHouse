@@ -31,6 +31,11 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+String SerializationVariant::getName() const
+{
+    return variant_name;
+}
+
 struct SerializeBinaryBulkStateVariant : public ISerialization::SerializeBinaryBulkState
 {
     explicit SerializeBinaryBulkStateVariant(UInt64 mode) : discriminators_mode(mode)

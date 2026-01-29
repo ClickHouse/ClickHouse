@@ -27,6 +27,11 @@ SerializationSubObjectSharedData::SerializationSubObjectSharedData(
 {
 }
 
+String SerializationSubObjectSharedData::getName() const
+{
+    return "SubObjectSharedData(" + std::to_string(static_cast<int>(serialization_version.value)) + ", " + std::to_string(buckets) + ", " + paths_prefix + ")";
+}
+
 struct DeserializeBinaryBulkStateSubObjectSharedData : public ISerialization::DeserializeBinaryBulkState
 {
     ISerialization::DeserializeBinaryBulkStatePtr map_state;

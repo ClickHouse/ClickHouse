@@ -54,6 +54,8 @@ public:
     {
     }
 
+    String getName() const override;
+
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
 
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;

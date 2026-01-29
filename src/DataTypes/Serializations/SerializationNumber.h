@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
+#include <base/TypeName.h>
 
 namespace DB
 {
@@ -17,6 +18,8 @@ class SerializationNumber : public SimpleTextSerialization
 public:
     using FieldType = T;
     using ColumnType = ColumnVector<T>;
+
+    String getName() const override { return String(TypeName<T>); }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;

@@ -21,6 +21,8 @@ public:
     SerializationAggregateFunction(const AggregateFunctionPtr & function_, String type_name_, size_t version_)
         : function(function_), type_name(std::move(type_name_)), version(version_) {}
 
+    String getName() const override;
+
     /// NOTE These two functions for serializing single values are incompatible with the functions below.
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const override;

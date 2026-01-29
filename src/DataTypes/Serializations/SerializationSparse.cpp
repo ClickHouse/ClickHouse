@@ -22,6 +22,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+String SerializationSparse::getName() const
+{
+    return "Sparse(" + nested->getName() + ")";
+}
+
+String SerializationSparseNullMap::getName() const
+{
+    return "SparseNullMap";
+}
+
 namespace
 {
 

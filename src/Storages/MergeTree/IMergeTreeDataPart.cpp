@@ -414,12 +414,21 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
     decrementStateMetric(state);
     decrementTypeMetric(part_type);
 
+    /// They can be null in case if part is in broken state.
+    chassert(!(static_cast<bool>(columns) ^ static_cast<bool>(columns_description)), "Both columns and columns_description should be null or both should be not null");
+
     if (columns_description)
     {
         columns_description.reset();
         columns_description_with_collected_nested.reset();
-        storage.decrefColumnsDescriptionForColumns(columns);
+        storage.decrefColumnsDescriptionForColumns(*columns);
     }
+
+    if (columns)
+    {
+        storage.decrefNamesAndTypesListInSharedCache(columns);
+    }
+
 
     DimensionalMetrics::sub(
         DimensionalMetrics::MergeTreeParts,
@@ -525,8 +534,8 @@ String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) c
 
 std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & column_name) const
 {
-    auto it = column_name_to_position.find(column_name);
-    if (it == column_name_to_position.end())
+    auto it = column_name_to_position->find(column_name);
+    if (it == column_name_to_position->end())
         return {};
     return it->second;
 }
@@ -594,41 +603,46 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 }
 
 
-void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version)
+SerializationByName IMergeTreeDataPart::constructSerializations(
+    const NameToNumber & column_name_to_position,
+    const NamesAndTypesList & columns,
+    const SerializationInfoByName & infos)
 {
-    columns = new_columns;
-    serialization_infos = new_infos;
-    metadata_version = new_metadata_version;
-
-    serializations.clear();
-    column_name_to_position.clear();
-    column_name_to_position.reserve(new_columns.size());
-    size_t pos = 0;
-
-    for (const auto & column : columns)
-        column_name_to_position.emplace(column.name, pos++);
-
+    SerializationByName custom_serializations;
     for (const auto & column : columns)
     {
-        auto it = serialization_infos.find(column.name);
-        auto serialization = it == serialization_infos.end()
-            ? IDataType::getSerialization(column, serialization_infos.getSettings())
+        auto it = infos.find(column.name);
+        auto serialization = it == infos.end()
+            ? IDataType::getSerialization(column, infos.getSettings())
             : IDataType::getSerialization(column, *it->second);
 
-        serializations.emplace(column.name, serialization);
+        custom_serializations.emplace(column.name, serialization);
 
         IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
         {
             auto full_name = Nested::concatenateName(column.name, subname);
             /// Don't override the column serialization with subcolumn serialization if column with the same name exists.
             if (!column_name_to_position.contains(full_name))
-                serializations.emplace(full_name, subdata.serialization);
+                custom_serializations.emplace(full_name, subdata.serialization);
         }, ISerialization::SubstreamData(serialization));
     }
+    return custom_serializations;
+}
 
-    auto columns_descriptions = storage.getColumnsDescriptionForColumns(columns);
+
+void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version)
+{
+    auto new_columns_copy = new_columns;
+    columns = storage.getCachedNamesAndTypesList(std::move(new_columns_copy));
+    serialization_infos = new_infos;
+    metadata_version = new_metadata_version;
+
+    auto columns_descriptions = storage.getColumnsDescriptionForColumns(*columns);
     columns_description = columns_descriptions.original;
     columns_description_with_collected_nested = columns_descriptions.with_collected_nested;
+    column_name_to_position = columns_descriptions.column_name_to_position;
+
+    serializations = constructSerializations(*column_name_to_position, *columns, new_infos);
 }
 
 String IMergeTreeDataPart::getProjectionName() const
@@ -1391,7 +1405,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
 
     const auto & storage_columns = metadata_snapshot->getColumns();
     CompressionCodecPtr result = nullptr;
-    for (const auto & part_column : columns)
+    for (const auto & part_column : getColumns())
     {
         /// It was compressed with default codec and it's not empty
         auto column_size = getColumnSize(part_column.name);
@@ -1609,7 +1623,7 @@ void IMergeTreeDataPart::loadRowsCount()
             return;
         }
 
-        for (const NameAndTypePair & column : columns)
+        for (const NameAndTypePair & column : getColumns())
         {
             ColumnPtr column_col = column.type->createColumn(*getSerialization(column.name));
             if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
@@ -1853,7 +1867,7 @@ bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
 
 bool IMergeTreeDataPart::hasLightweightDelete() const
 {
-    return columns.contains(RowExistsColumn::name);
+    return columns->contains(RowExistsColumn::name);
 }
 
 void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) const
@@ -2421,8 +2435,8 @@ void IMergeTreeDataPart::checkConsistency(bool require_part_metadata) const
         const auto debug_info = fmt::format(
             "columns: {}, getMarkSizeInBytes: {}, getMarksCount: {}, index_granularity_info: [{}], index_granularity: [{}], "
             "part_state: [{}]",
-            columns.toString(),
-            index_granularity_info.getMarkSizeInBytes(columns.size()),
+            columns->toString(),
+            index_granularity_info.getMarkSizeInBytes(columns->size()),
             index_granularity->getMarksCount(),
             index_granularity_info.describe(),
             index_granularity->describe(),

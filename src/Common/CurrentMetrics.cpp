@@ -361,6 +361,9 @@
     M(BcryptCacheBytes, "Total size of the bcrypt authentication cache in bytes") \
     M(BcryptCacheSize, "Total number of entries in the bcrypt authentication cache") \
     M(ColumnsDescriptionsCacheSize, "Size of ColumnsDescriptions cache (per-table cache)") \
+    M(ColumnsDescriptionsCacheBytes, "Size (in bytes) of ColumnsDescriptions cache (per-table cache)") \
+    M(NamesAndTypesCacheSize, "Size of a shared per-table cache of NamesAndTypes objects") \
+    M(NamesAndTypesCacheBytes, "Size (in bytes) of a shared per-table cache of NamesAndTypes objects") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \

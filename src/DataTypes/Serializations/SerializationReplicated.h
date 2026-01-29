@@ -14,6 +14,8 @@ class SerializationReplicated final : public ISerialization
 public:
     explicit SerializationReplicated(const SerializationPtr & nested_);
 
+    String getName() const override;
+
     KindStack getKindStack() const override;
 
     void enumerateStreams(

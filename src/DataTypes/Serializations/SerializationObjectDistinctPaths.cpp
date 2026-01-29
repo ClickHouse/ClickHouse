@@ -18,6 +18,19 @@ SerializationObjectDistinctPaths::SerializationObjectDistinctPaths(const std::ve
     shared_data_paths_serialization = shared_data_type->getSubcolumnSerialization("paths", shared_data_type->getDefaultSerialization());
 }
 
+String SerializationObjectDistinctPaths::getName() const
+{
+    String result = "ObjectDistinctPaths(";
+    for (size_t i = 0; i < typed_paths.size(); ++i)
+    {
+        if (i > 0)
+            result += ", ";
+        result += typed_paths[i];
+    }
+    result += ")";
+    return result;
+}
+
 struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::DeserializeBinaryBulkState
 {
     /// State of the whole Object column structure.

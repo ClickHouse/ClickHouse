@@ -69,6 +69,8 @@ public:
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & dynamic_type_);
 
+    String getName() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

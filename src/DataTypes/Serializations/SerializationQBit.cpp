@@ -31,6 +31,11 @@ extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
 extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
+String SerializationQBit::getName() const
+{
+    return "QBit(" + nested->getName() + ", " + std::to_string(element_size) + ", " + std::to_string(dimension) + ")";
+}
+
 static const ColumnTuple & extractNestedColumn(const IColumn & column)
 {
     return assert_cast<const ColumnQBit &>(column).getNestedData();

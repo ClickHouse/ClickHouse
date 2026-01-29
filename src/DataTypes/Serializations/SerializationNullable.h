@@ -23,6 +23,8 @@ public:
 
     const SerializationPtr & getNested() const { return nested; }
 
+    String getName() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

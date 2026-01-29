@@ -12,6 +12,8 @@ class SerializationDateTime final : public SerializationNumber<UInt32>, public T
 public:
     explicit SerializationDateTime(const TimezoneMixin & time_zone_);
 
+    String getName() const override;
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -34,6 +36,8 @@ class SerializationTime final : public SerializationNumber<Int32>
 public:
     explicit SerializationTime(const DataTypeTime & /*time_type*/);
 
+    String getName() const override;
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -52,4 +56,3 @@ public:
 };
 
 }
-

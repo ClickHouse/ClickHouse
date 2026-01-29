@@ -4,6 +4,11 @@
 namespace DB
 {
 
+String SerializationArrayOffsets::getName() const
+{
+    return "ArrayOffsets";
+}
+
 void SerializationArrayOffsets::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
     size_t rows_offset,

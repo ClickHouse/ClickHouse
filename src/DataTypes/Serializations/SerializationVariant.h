@@ -74,6 +74,8 @@ public:
 
     explicit SerializationVariant(const DataTypes & variant_types_, const String & variant_name_);
 
+    String getName() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

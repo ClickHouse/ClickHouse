@@ -10,6 +10,11 @@
 namespace DB
 {
 
+String SerializationUUID::getName() const
+{
+    return "UUID";
+}
+
 void SerializationUUID::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeText(assert_cast<const ColumnUUID &>(column).getData()[row_num], ostr);

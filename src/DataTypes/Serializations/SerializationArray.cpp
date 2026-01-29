@@ -29,6 +29,11 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+String SerializationArray::getName() const
+{
+    return "Array(" + nested->getName() + ")";
+}
+
 static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
 static constexpr size_t MAX_ARRAYS_SIZE = 1ULL << 40;
 

@@ -26,6 +26,11 @@ namespace ErrorCodes
 
 static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
 
+String SerializationFixedString::getName() const
+{
+    return "FixedString(" + std::to_string(n) + ")";
+}
+
 void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
     const String & s = field.safeGet<String>();

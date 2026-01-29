@@ -30,6 +30,11 @@ public:
     {
     }
 
+    String getName() const override
+    {
+        return "VariantElementNullMap(" + variant_element_name + ", " + std::to_string(variant_discriminator) + ")";
+    }
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

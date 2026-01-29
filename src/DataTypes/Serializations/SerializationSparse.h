@@ -28,6 +28,8 @@ class SerializationSparse final : public ISerialization
 public:
     explicit SerializationSparse(const SerializationPtr & nested_);
 
+    String getName() const override;
+
     KindStack getKindStack() const override;
 
     void enumerateStreams(
@@ -135,6 +137,8 @@ class SerializationSparseNullMap final : public SerializationNumber<UInt8>
 {
 public:
     using Base = SerializationNumber<UInt8>;
+
+    String getName() const override;
 
     void serializeBinaryBulkStatePrefix(
         const IColumn & column,

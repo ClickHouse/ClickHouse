@@ -12,6 +12,8 @@ class SerializationStringSize final : public SerializationNumber<UInt64>
 public:
     explicit SerializationStringSize(MergeTreeStringSerializationVersion version_);
 
+    String getName() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
