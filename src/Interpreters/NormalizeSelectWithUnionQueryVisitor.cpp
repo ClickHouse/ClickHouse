@@ -32,9 +32,10 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTPtr & ast, Data & data)
     {
         /// The rewrite of ASTSelectWithUnionQuery may strip the format info, so
         /// we need to keep and restore it.
-        auto format = select_union->format_ast;
+        auto format = select_union->getFormatAst();
         visit(*select_union, data);
-        select_union->format_ast = format;
+        if (format)
+            select_union->setFormatAst(format);
     }
 }
 

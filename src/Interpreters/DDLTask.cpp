@@ -507,7 +507,7 @@ bool DDLTask::tryFindHostInCluster()
                     /// For other DDLs like CREATE USER, there is no database name and should be executed successfully.
                     if (query_with_table)
                     {
-                        if (!query_with_table->database)
+                        if (!query_with_table->getDatabaseAst())
                             throw Exception(
                                 ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
                                 "For a distributed DDL on circular replicated cluster its table name "
@@ -643,7 +643,7 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
     if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
     {
         /// Update database name with actual name of local database
-        chassert(!ddl_query->database);
+        chassert(!ddl_query->getDatabaseAst());
         ddl_query->setDatabase(database->getDatabaseName());
     }
     formatRewrittenQuery(context);

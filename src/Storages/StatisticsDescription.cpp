@@ -197,7 +197,7 @@ ASTPtr ColumnStatisticsDescription::getAST() const
 {
     auto function_node = make_intrusive<ASTFunction>();
     function_node->name = "STATISTICS";
-    function_node->kind = ASTFunction::Kind::STATISTICS;
+    function_node->setKind(ASTFunction::Kind::STATISTICS);
     function_node->arguments = make_intrusive<ASTExpressionList>();
 
     for (const auto & [type, desc] : types_to_desc)

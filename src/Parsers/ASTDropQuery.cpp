@@ -29,6 +29,7 @@ String ASTDropQuery::getID(char delim) const
 ASTPtr ASTDropQuery::clone() const
 {
     auto res = make_intrusive<ASTDropQuery>(*this);
+    res->children.clear();
     cloneOutputOptions(*res);
     cloneTableOptions(*res);
     return res;
@@ -36,6 +37,8 @@ ASTPtr ASTDropQuery::clone() const
 
 void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    auto db = getDatabaseAst();
+    auto tbl = getTableAst();
     if (kind == ASTDropQuery::Kind::Drop)
         ostr << "DROP ";
     else if (kind == ASTDropQuery::Kind::Detach)
@@ -45,14 +48,14 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 
-    if (temporary)
+    if (isTemporary())
         ostr << "TEMPORARY ";
 
     if (has_all)
         ostr << "ALL ";
     if (has_tables)
         ostr << "TABLES FROM ";
-    else if (!table && !database_and_tables && database)
+    else if (!tbl && !database_and_tables && db)
         ostr << "DATABASE ";
     else if (is_dictionary)
         ostr << "DICTIONARY ";
@@ -67,9 +70,9 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     if (if_empty)
         ostr << "IF EMPTY ";
 
-    if (!table && !database_and_tables && database)
+    if (!tbl && !database_and_tables && db)
     {
-        database->format(ostr, settings, state, frame);
+        db->format(ostr, settings, state, frame);
     }
     else if (database_and_tables)
     {
@@ -83,9 +86,9 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
             if (!identifier)
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected type for list of table names.");
 
-            if (auto db = identifier->getDatabase())
+            if (auto idb = identifier->getDatabase())
             {
-                db->format(ostr, settings, state, frame);
+                idb->format(ostr, settings, state, frame);
                 ostr << '.';
             }
 
@@ -96,14 +99,14 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     }
     else
     {
-        if (database)
+        if (db)
         {
-            database->format(ostr, settings, state, frame);
+            db->format(ostr, settings, state, frame);
             ostr << '.';
         }
 
-        chassert(table);
-        table->format(ostr, settings, state, frame);
+        chassert(tbl);
+        tbl->format(ostr, settings, state, frame);
     }
 
     if (!like.empty())
@@ -144,14 +147,8 @@ ASTs ASTDropQuery::getRewrittenASTsOfSingleTable(ASTPtr self) const
         if (!database_and_table)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected type for list of table names.");
 
-        query.database = database_and_table->getDatabase();
-        query.table = database_and_table->getTable();
-
-        if (query.database)
-            query.children.push_back(query.database);
-
-        if (query.table)
-            query.children.push_back(query.table);
+        query.setDatabaseAst(database_and_table->getDatabase());
+        query.setTableAst(database_and_table->getTable());
 
         res.push_back(cloned);
     }

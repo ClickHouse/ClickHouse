@@ -232,7 +232,7 @@ namespace
     {
         if (const auto * ast_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
         {
-            if (ast_with_output->format_ast && (getIdentifierName(ast_with_output->format_ast) != "Arrow"))
+            if (auto format_ast = ast_with_output->getFormatAst(); format_ast && (getIdentifierName(format_ast) != "Arrow"))
                 return arrow::Status::ExecutionError("Invalid format, only 'Arrow' format is supported");
         }
         else if (const auto * insert = dynamic_cast<const ASTInsertQuery *>(ast.get()))

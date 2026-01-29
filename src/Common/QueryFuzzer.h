@@ -119,10 +119,9 @@ public:
             return {};
 
         const auto & query_ast = *parsed_query->template as<ParsedAST>();
-        if (!query_ast.table)
-            return {};
-
         auto table_name = query_ast.getTable();
+        if (table_name.empty())
+            return {};
         auto it = original_table_name_to_fuzzed.find(table_name);
         if (it == original_table_name_to_fuzzed.end())
             return {};
@@ -208,7 +207,7 @@ private:
     void fuzzOrderByElement(ASTOrderByElement * elem);
     void fuzzOrderByList(IAST * ast, size_t nproj);
     void fuzzColumnLikeExpressionList(IAST * ast);
-    void fuzzNullsAction(NullsAction & action);
+    NullsAction fuzzNullsAction(NullsAction action);
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
     void fuzzExplainQuery(ASTExplainQuery & explain);

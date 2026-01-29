@@ -29,8 +29,12 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!s_from.ignore(pos, expected))
             return false;
 
-        if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+        ASTPtr database;
+        ASTPtr table;
+        if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
             return false;
+        query->setDatabaseAst(database);
+        query->setTableAst(table);
 
         if (s_on.ignore(pos, expected))
         {
@@ -68,8 +72,10 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             ParserSetQuery parser_settings(true);
 
-            if (!parser_settings.parse(pos, query->settings_ast, expected))
+            ASTPtr settings_node;
+            if (!parser_settings.parse(pos, settings_node, expected))
                 return false;
+            query->setSettingsAst(std::move(settings_node));
         }
     }
     else
@@ -80,15 +86,6 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (query->predicate)
         query->children.push_back(query->predicate);
-
-    if (query->database)
-        query->children.push_back(query->database);
-
-    if (query->table)
-        query->children.push_back(query->table);
-
-    if (query->settings_ast)
-        query->children.push_back(query->settings_ast);
 
     return true;
 }

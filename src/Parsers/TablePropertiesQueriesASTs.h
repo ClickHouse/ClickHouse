@@ -88,6 +88,7 @@ public:
     {
         auto res = make_intrusive<ASTExistsDatabaseQuery>(*this);
         res->children.clear();
+        cloneOutputOptions(*res);
         cloneTableOptions(*res);
         return res;
     }
@@ -97,7 +98,7 @@ protected:
     {
         ostr << ASTExistsDatabaseQueryIDAndQueryNames::Query
                     << " ";
-        database->format(ostr, settings, state, frame);
+        getDatabaseAst()->format(ostr, settings, state, frame);
     }
 
     QueryKind getQueryKind() const override { return QueryKind::Exists; }
@@ -110,6 +111,7 @@ public:
     {
         auto res = make_intrusive<ASTShowCreateDatabaseQuery>(*this);
         res->children.clear();
+        cloneOutputOptions(*res);
         cloneTableOptions(*res);
         return res;
     }
@@ -119,7 +121,7 @@ protected:
     {
         ostr << ASTShowCreateDatabaseQueryIDAndQueryNames::Query
                       << " ";
-        database->format(ostr, settings, state, frame);
+        getDatabaseAst()->format(ostr, settings, state, frame);
     }
 };
 

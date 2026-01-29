@@ -109,13 +109,13 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (!(exists_view || parse_show_create_view))
         {
             if (temporary || s_temporary.ignore(pos, expected))
-                query->temporary = true;
+                query->setIsTemporary(true);
 
             if (!s_table.ignore(pos, expected))
                 s_dictionary.ignore(pos, expected);
         }
 
-        query->temporary = temporary;
+        query->setIsTemporary(temporary);
 
         if (!name_p.parse(pos, table, expected))
             return false;
@@ -127,14 +127,8 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         }
     }
 
-    query->database = database;
-    query->table = table;
-
-    if (database)
-        query->children.push_back(database);
-
-    if (table)
-        query->children.push_back(table);
+    query->setDatabaseAst(database);
+    query->setTableAst(table);
 
     node = query;
 

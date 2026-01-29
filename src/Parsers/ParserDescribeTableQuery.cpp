@@ -48,14 +48,13 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ASTPtr settings;
     if (s_settings.ignore(pos, expected))
     {
-        if (!parser_settings.parse(pos, query->settings_ast, expected))
+        ASTPtr settings_node;
+        if (!parser_settings.parse(pos, settings_node, expected))
             return false;
+        query->setSettingsAst(std::move(settings_node));
     }
 
     query->children.push_back(query->table_expression);
-
-    if (query->settings_ast)
-        query->children.push_back(query->settings_ast);
 
     node = query;
 

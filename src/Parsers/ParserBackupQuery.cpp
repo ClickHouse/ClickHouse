@@ -217,7 +217,7 @@ namespace
         if (!ParserIdentifierWithOptionalParameters{}.parse(pos, backup_name, expected))
             return false;
 
-        backup_name->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
+        backup_name->as<ASTFunction &>().setKind(ASTFunction::Kind::BACKUP_NAME);
         return true;
     }
 

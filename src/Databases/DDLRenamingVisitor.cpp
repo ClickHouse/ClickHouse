@@ -27,7 +27,7 @@ namespace
     /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
     void visitCreateQuery(ASTCreateQuery & create, const DDLRenamingVisitor::Data & data)
     {
-        if (create.temporary)
+        if (create.isTemporary())
         {
             /// CREATE TEMPORARY TABLE
             String table_name = create.getTable();
@@ -38,12 +38,12 @@ namespace
                 create.setTable(new_table_name.table);
                 if (new_table_name.database != DatabaseCatalog::TEMPORARY_DATABASE)
                 {
-                    create.temporary = false;
+                    create.setIsTemporary(false);
                     create.setDatabase(new_table_name.database);
                 }
             }
         }
-        else if (create.table)
+        else if (create.getTableAst())
         {
             /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW
             QualifiedTableName full_name;
@@ -58,7 +58,7 @@ namespace
                     create.setTable(new_table_name.table);
                     if (new_table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
                     {
-                        create.temporary = true;
+                        create.setIsTemporary(true);
                         create.setDatabase("");
                     }
                     else
@@ -68,7 +68,7 @@ namespace
                 }
             }
         }
-        else if (create.database)
+        else if (create.getDatabaseAst())
         {
             /// CREATE DATABASE
             String database_name = create.getDatabase();

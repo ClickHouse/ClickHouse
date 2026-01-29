@@ -26,8 +26,8 @@ ASTPtr ASTUpdateQuery::clone() const
     add_children_if_needed(partition, res->partition);
     add_children_if_needed(predicate, res->predicate);
     add_children_if_needed(assignments, res->assignments);
-    add_children_if_needed(settings_ast, res->settings_ast);
 
+    cloneOutputOptions(*res);
     cloneTableOptions(*res);
     return res;
 }
@@ -36,7 +36,7 @@ void ASTUpdateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 {
     ostr << "UPDATE ";
 
-    if (database)
+    if (!getDatabase().empty())
     {
         ostr << backQuoteIfNeed(getDatabase());
         ostr << ".";

@@ -663,6 +663,9 @@ ASTPtr ASTAlterQuery::clone() const
     if (command_list)
         res->set(res->command_list, command_list->clone());
 
+    cloneOutputOptions(*res);
+    cloneTableOptions(*res);
+
     return res;
 }
 
@@ -685,22 +688,24 @@ void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & s
             break;
     }
 
-    if (table)
+    auto tbl = getTableAst();
+    auto db = getDatabaseAst();
+    if (tbl)
     {
         ostr << indent_str;
-        if (database)
+        if (db)
         {
-            database->format(ostr, settings, state, frame);
+            db->format(ostr, settings, state, frame);
             ostr << '.';
         }
 
-        chassert(table);
-        table->format(ostr, settings, state, frame);
+        chassert(tbl);
+        tbl->format(ostr, settings, state, frame);
     }
-    else if (alter_object == AlterObjectType::DATABASE && database)
+    else if (alter_object == AlterObjectType::DATABASE && db)
     {
         ostr << indent_str;
-        database->format(ostr, settings, state, frame);
+        db->format(ostr, settings, state, frame);
     }
 
     formatOnCluster(ostr, settings);

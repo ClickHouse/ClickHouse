@@ -38,8 +38,12 @@ bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expe
 
     auto query = make_intrusive<ASTCheckTableQuery>();
 
-    if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+    ASTPtr database;
+    ASTPtr table;
+    if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
         return false;
+    query->setDatabaseAst(database);
+    query->setTableAst(table);
 
     if (s_partition.ignore(pos, expected))
     {
@@ -57,12 +61,6 @@ bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expe
             return false;
         query->part_name = ast_literal->value.safeGet<String>();
     }
-
-    if (query->database)
-        query->children.push_back(query->database);
-
-    if (query->table)
-        query->children.push_back(query->table);
 
     node = query;
     return true;

@@ -46,6 +46,9 @@ public:
             res->children.push_back(res->deduplicate_by_columns);
         }
 
+        cloneOutputOptions(*res);
+        cloneTableOptions(*res);
+
         return res;
     }
 

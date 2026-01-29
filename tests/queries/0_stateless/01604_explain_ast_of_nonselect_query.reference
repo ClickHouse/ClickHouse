@@ -1,4 +1,5 @@
 AlterQuery  t1 (children 2)
+ Identifier t1
  ExpressionList (children 1)
   AlterCommand DELETE (children 1)
    Function equals (children 1)
@@ -6,7 +7,6 @@ AlterQuery  t1 (children 2)
      Identifier date
      Function today (children 1)
       ExpressionList
- Identifier t1
 CreateFunctionQuery double (children 2)
  Identifier double
  Function lambda (children 1)

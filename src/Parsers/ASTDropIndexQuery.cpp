@@ -20,6 +20,7 @@ ASTPtr ASTDropIndexQuery::clone() const
     res->index_name = index_name->clone();
     res->children.push_back(res->index_name);
 
+    cloneOutputOptions(*res);
     cloneTableOptions(*res);
 
     return res;
@@ -37,16 +38,16 @@ void ASTDropIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings
     index_name->format(ostr, settings, state, frame);
     ostr << " ON ";
 
-    if (table)
+    if (auto tbl = getTableAst())
     {
-        if (database)
+        if (auto db = getDatabaseAst())
         {
-            database->format(ostr, settings, state, frame);
+            db->format(ostr, settings, state, frame);
             ostr << '.';
         }
 
-        chassert(table);
-        table->format(ostr, settings, state, frame);
+        chassert(tbl);
+        tbl->format(ostr, settings, state, frame);
     }
 
     formatOnCluster(ostr, settings);

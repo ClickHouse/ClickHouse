@@ -305,13 +305,15 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 {
     frame.need_parens = false;
 
-    if (database && !table)
+    auto db = getDatabaseAst();
+    auto tbl = getTableAst();
+    if (db && !tbl)
     {
         ostr
             << (attach ? "ATTACH DATABASE " : "CREATE DATABASE ")
             << (if_not_exists ? "IF NOT EXISTS " : "");
 
-        database->format(ostr, settings, state, frame);
+        db->format(ostr, settings, state, frame);
 
         if (uuid != UUIDHelpers::Nil)
             ostr << " UUID " << quoteString(toString(uuid));
@@ -358,26 +360,26 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
         ostr << action;
         ostr << " ";
-        ostr << (temporary ? "TEMPORARY " : "")
+        ostr << (isTemporary() ? "TEMPORARY " : "")
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
            ;
 
-        if (database)
+        if (db)
         {
-            database->format(ostr, settings, state, frame);
+            db->format(ostr, settings, state, frame);
             ostr << '.';
         }
 
-        chassert(table);
-        table->format(ostr, settings, state, frame);
+        chassert(tbl);
+        tbl->format(ostr, settings, state, frame);
 
         if (uuid != UUIDHelpers::Nil)
             ostr << " UUID " << quoteString(toString(uuid));
 
-        assert(attach || !attach_from_path);
-        if (attach_from_path)
-            ostr << " FROM " << quoteString(*attach_from_path);
+        assert(attach || !has_attach_from_path);
+        if (has_attach_from_path)
+            ostr << " FROM " << quoteString(attach_from_path);
 
         if (attach_as_replicated.has_value())
         {
@@ -402,14 +404,14 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         /// Always DICTIONARY
         ostr << action << " DICTIONARY " << (if_not_exists ? "IF NOT EXISTS " : "");
 
-        if (database)
+        if (db)
         {
-            database->format(ostr, settings, state, frame);
+            db->format(ostr, settings, state, frame);
             ostr << '.';
         }
 
-        chassert(table);
-        table->format(ostr, settings, state, frame);
+        chassert(tbl);
+        tbl->format(ostr, settings, state, frame);
 
         if (uuid != UUIDHelpers::Nil)
             ostr << " UUID " << quoteString(toString(uuid));

@@ -41,16 +41,16 @@ protected:
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
         ostr << indent_str << "CHECK TABLE ";
 
-        if (table)
+        if (auto tbl = getTableAst())
         {
-            if (database)
+            if (auto db = getDatabaseAst())
             {
-                database->format(ostr, settings, state, frame);
+                db->format(ostr, settings, state, frame);
                 ostr << '.';
             }
 
-            chassert(table);
-            table->format(ostr, settings, state, frame);
+            chassert(tbl);
+            tbl->format(ostr, settings, state, frame);
         }
 
         if (partition)

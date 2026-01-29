@@ -31,8 +31,12 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!s_update.ignore(pos, expected))
         return false;
 
-    if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+    ASTPtr database;
+    ASTPtr table;
+    if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
         return false;
+    query->setDatabaseAst(database);
+    query->setTableAst(table);
 
     if (s_on.ignore(pos, expected))
     {
@@ -75,8 +79,10 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (s_settings.ignore(pos, expected))
     {
         ParserSetQuery parser_settings(true);
-        if (!parser_settings.parse(pos, query->settings_ast, expected))
+        ASTPtr settings_node;
+        if (!parser_settings.parse(pos, settings_node, expected))
             return false;
+        query->setSettingsAst(std::move(settings_node));
     }
 
     auto add_to_children = [&](const auto & ast)
@@ -85,12 +91,9 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             query->children.push_back(ast);
     };
 
-    add_to_children(query->database);
-    add_to_children(query->table);
     add_to_children(query->partition);
     add_to_children(query->predicate);
     add_to_children(query->assignments);
-    add_to_children(query->settings_ast);
 
     return true;
 }
