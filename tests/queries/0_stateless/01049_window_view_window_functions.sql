@@ -44,6 +44,7 @@ SELECT tumbleEnd(tuple()); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT tumbleStart(toUInt32(42)) SETTINGS session_timezone='UTC';
 SELECT tumbleStart((now(), now(), 'meow')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tumbleStart(now()); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- Check that it's not LOGICAL_ERROR.
 create window view v to nonexist (x Int8) inner engine AggregatingMergeTree order by x as select x from nonexist group by tumble(now()) settings allow_experimental_window_view = 1, allow_experimental_analyzer = 0; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select hopEnd((makeDateTime(null), toDateTime('2025-02-07 17:23:42'))) SETTINGS session_timezone='UTC'; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

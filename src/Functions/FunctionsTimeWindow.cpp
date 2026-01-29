@@ -3,6 +3,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/IColumn.h>
+#include <Core/Types.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -13,6 +15,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsTimeWindow.h>
+#include <Common/IntervalKind.h>
 
 
 namespace DB
@@ -70,13 +73,20 @@ ColumnPtr executeWindowBound(const ColumnPtr & column, size_t index, const Strin
         function_name);
 }
 
-void extractIntervalKind(const ColumnWithTypeAndName & argument, IntervalKind & interval_kind, bool & result_type_is_date)
+IntervalKind extractIntervalKind(const IDataType * argument)
 {
-    const auto * interval_type = checkAndGetDataType<DataTypeInterval>(argument.type.get());
+    const auto * interval_type = checkAndGetDataType<DataTypeInterval>(argument);
     chassert(interval_type);
-    interval_kind = interval_type->getKind();
-    result_type_is_date = (interval_type->getKind() == IntervalKind::Kind::Year) || (interval_type->getKind() == IntervalKind::Kind::Quarter)
-        || (interval_type->getKind() == IntervalKind::Kind::Month) || (interval_type->getKind() == IntervalKind::Kind::Week);
+    return interval_type->getKind();
+}
+
+IntervalKind extractIntervalKind(const ColumnWithTypeAndName & argument)
+{
+    return extractIntervalKind(argument.type.get());
+}
+
+bool isIntervalDate(IntervalKind kind) {
+    return kind == IntervalKind::Kind::Year || kind == IntervalKind::Kind::Quarter || kind == IntervalKind::Kind::Month || kind == IntervalKind::Kind::Week;
 }
 
 bool isTupleOfTwoDateTimesOrUInt32(const IDataType & type)
@@ -166,12 +176,10 @@ struct TimeWindowImpl<TUMBLE>
         };
         validateFunctionArguments(function_name, arguments, mandatory_args, optional_args);
 
-        bool result_type_is_date;
-        IntervalKind interval_kind;
-        extractIntervalKind(arguments.at(1), interval_kind, result_type_is_date);
-
+        IntervalKind interval_kind = extractIntervalKind(arguments.at(1));
         DataTypePtr data_type = nullptr;
-        if (result_type_is_date)
+
+        if (isIntervalDate(interval_kind))
             data_type = std::make_shared<DataTypeDate>();
         else
             data_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
@@ -335,19 +343,13 @@ struct TimeWindowImpl<HOP>
         };
         validateFunctionArguments(function_name, arguments, mandatory_args, optional_args);
 
-        bool result_type_is_date;
-        IntervalKind interval_kind_1;
-        IntervalKind interval_kind_2;
-
-        extractIntervalKind(arguments.at(1), interval_kind_1, result_type_is_date);
-        extractIntervalKind(arguments.at(2), interval_kind_2, result_type_is_date);
-
-        if (interval_kind_1 != interval_kind_2)
+        IntervalKind hop_interval_kind = extractIntervalKind(arguments.at(1));
+        if (hop_interval_kind != extractIntervalKind(arguments.at(2)))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal type of window and hop column of function {}, must be same",
                 function_name);
 
         DataTypePtr data_type = nullptr;
-        if (result_type_is_date)
+        if (isIntervalDate(hop_interval_kind))
             data_type = std::make_shared<DataTypeDate>();
         else
             data_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false));
@@ -490,21 +492,13 @@ struct TimeWindowImpl<WINDOW_ID>
                 validateFunctionArguments(function_name, arguments, mandatory_args, {});
         }
 
-        bool result_type_is_date;
-        IntervalKind interval_kind_1;
-        IntervalKind interval_kind_2;
+        IntervalKind window_interval_kind = extractIntervalKind(arguments.at(1));
 
-        extractIntervalKind(arguments.at(1), interval_kind_1, result_type_is_date);
+        if (arguments.size() >= 3 && window_interval_kind != extractIntervalKind(arguments.at(2)))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal type of window and hop column of function {}, must be same",
+                function_name);
 
-        if (arguments.size() >= 3 && isInterval(arguments.at(2).type))
-        {
-            extractIntervalKind(arguments.at(2), interval_kind_2, result_type_is_date);
-            if (interval_kind_1 != interval_kind_2)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal type of window and hop column of function {}, must be same",
-                    function_name);
-        }
-
-        if (result_type_is_date)
+        if (isIntervalDate(window_interval_kind))
             return std::make_shared<DataTypeUInt16>();
         return std::make_shared<DataTypeUInt32>();
     }
