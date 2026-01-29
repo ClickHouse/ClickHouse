@@ -309,6 +309,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 memory_worker_period_ms;
     extern const ServerSettingsDouble memory_worker_purge_dirty_pages_threshold_ratio;
     extern const ServerSettingsDouble memory_worker_purge_total_memory_threshold_ratio;
+    extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsBool memory_worker_use_cgroup;
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
@@ -971,7 +972,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
                 startup_context->setCurrentQueryId("");
 
                 {
-                    CurrentThread::QueryScope query_scope(startup_context);
+                    auto query_scope = CurrentThread::QueryScope::create(startup_context);
                     executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
                 }
 
@@ -1004,7 +1005,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             startup_context->setCurrentQueryId("");
 
-            CurrentThread::QueryScope query_scope(startup_context);
+            auto query_scope = CurrentThread::QueryScope::create(startup_context);
 
             executeQuery(read_buffer, write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
@@ -1308,18 +1309,7 @@ try
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
 #endif
 
-    bool has_trace_collector = false;
-    /// Disable it if we collect test coverage information, because it will work extremely slow.
-#if !WITH_COVERAGE
-    /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
-    has_trace_collector = hasPHDRCache() && config().has("trace_log");
-#endif
-
-    /// Describe multiple reasons when query profiler cannot work.
-
-#if WITH_COVERAGE
-    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they work extremely slow with test coverage.");
-#endif
+    bool has_trace_collector = hasPHDRCache() && config().has("trace_log");
 
 #if defined(SANITIZER)
     LOG_INFO(log, "Query Profiler is disabled because it cannot work under sanitizers"
@@ -1419,6 +1409,7 @@ try
         .purge_dirty_pages_threshold_ratio = server_settings[ServerSetting::memory_worker_purge_dirty_pages_threshold_ratio],
         .purge_total_memory_threshold_ratio = server_settings[ServerSetting::memory_worker_purge_total_memory_threshold_ratio],
         .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
+        .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
         .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
     };
 
@@ -2934,6 +2925,7 @@ try
                     global_context,
                     &config(),
                     "distributed_ddl",
+                    "default",
                     "DDLWorker",
                     &CurrentMetrics::MaxDDLEntryID,
                     &CurrentMetrics::MaxPushedDDLEntryID),

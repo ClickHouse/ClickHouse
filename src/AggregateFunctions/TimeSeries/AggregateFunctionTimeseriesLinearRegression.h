@@ -132,7 +132,7 @@ private:
     }
 
     void fillResultValue(const TimestampType current_timestamp,
-        const std::deque<std::pair<TimestampType, ValueType>> & samples_in_window,
+        const DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> & samples_in_window,
         ValueType & result, UInt8 & null) const
     {
         size_t n = samples_in_window.size();
@@ -224,8 +224,8 @@ public:
 
         const auto & buckets = Base::data(place)->buckets;
 
-        std::deque<std::pair<TimestampType, ValueType>> samples_in_window;
-        std::vector<std::pair<TimestampType, ValueType>> timestamps_buffer;
+        DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> samples_in_window;
+        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> timestamps_buffer;
 
 
         /// Fill the data for missing buckets
