@@ -87,6 +87,8 @@ struct QueryPlanOptimizationSettings
     bool build_sets = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
 
+    bool enable_cascades_optimizer = true;
+
     bool make_distributed_plan = false;
     bool distributed_plan_singe_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
     UInt64 distributed_plan_default_shuffle_join_bucket_count = 8;

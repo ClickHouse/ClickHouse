@@ -33,6 +33,7 @@ std::string_view toString(JoinConditionOperator op)
     switch (op)
     {
         case JoinConditionOperator::Equals: return "=";
+        case JoinConditionOperator::NotEquals: return "!=";
         case JoinConditionOperator::NullSafeEquals: return "<=>";
         case JoinConditionOperator::Less: return "<";
         case JoinConditionOperator::LessOrEquals: return "<=";
@@ -305,6 +306,30 @@ ActionsDAG JoinExpressionActions::getSubDAG(JoinActionRef action)
     return getSubDAG(std::views::single(action));
 }
 
+void JoinExpressionActions::swapExpressionSources()
+{
+    if (!data)
+        return;
+
+    for (auto & source : data->expression_sources)
+    {
+        /// Check that there are not more than 2 sources
+        if (source.second.count() > 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected expression source count {}, should be <=2", source.second.count());
+
+        /// Check that sources are 0 and/or 1
+        if ((source.second & BitSet::allSet(2)) != source.second)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected expression sources {}, should only have 0 and/or 1", source.second);
+
+        BitSet swapped_sources;
+        /// Swap source 0 with source 1
+        swapped_sources.set(1, source.second.test(0));
+        /// Swap source 1 with source 0
+        swapped_sources.set(0, source.second.test(1));
+        source.second = swapped_sources;
+    }
+}
+
 JoinExpressionActions JoinExpressionActions::clone(ActionsDAG::NodeMapping & node_map) const
 {
     auto actions_dag = getActionsDAG()->clone(node_map);
@@ -355,6 +380,7 @@ std::string operatorToFunctionName(JoinConditionOperator op)
         case JoinConditionOperator::Or: return FunctionOr::name;
         case JoinConditionOperator::NullSafeEquals: return FunctionIsNotDistinctFrom::name;
         case JoinConditionOperator::Equals: return NameEquals::name;
+        case JoinConditionOperator::NotEquals: return NameNotEquals::name;
         case JoinConditionOperator::Less: return NameLess::name;
         case JoinConditionOperator::LessOrEquals: return NameLessOrEquals::name;
         case JoinConditionOperator::Greater: return NameGreater::name;

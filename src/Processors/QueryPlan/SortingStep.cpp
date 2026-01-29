@@ -613,6 +613,16 @@ std::unique_ptr<IQueryPlanStep> SortingStep::deserialize(Deserialization & ctx)
         ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
 }
 
+std::unique_ptr<IQueryPlanStep> SortingStep::clone() const
+{
+    if (!partition_by_description.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of partitioned sorting is not implemented for SortingStep");
+
+    return std::make_unique<SortingStep>(
+        input_headers.front(), result_description, limit, sort_settings);
+}
+
+
 void registerSortingStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Sorting", SortingStep::deserialize);
