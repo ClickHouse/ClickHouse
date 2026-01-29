@@ -402,7 +402,8 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         sample_block.dumpStructure(),
         block.dumpStructure());
     if (updater)
-        updater->recordInputColumns(block.getColumnsWithTypeAndName(), info->data_part->getColumnSizes(), num_read_bytes);
+        updater->recordInputColumns(
+            block.getColumnsWithTypeAndName(), info->data_part->getColumns(), info->data_part->getColumnSizes(), num_read_bytes);
 
     BlockAndProgress res = {
         .block = std::move(block),

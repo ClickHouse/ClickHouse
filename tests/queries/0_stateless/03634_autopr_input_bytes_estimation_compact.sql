@@ -29,9 +29,7 @@ SELECT a, s, d FROM t FORMAT Null SETTINGS log_comment='query_4';
 
 SELECT COUNT(*) FROM t WHERE a % 10 = 0 FORMAT Null SETTINGS log_comment='query_5';
 
---set send_logs_level='trace', send_logs_source_regexp='';
 SELECT COUNT(*) FROM t WHERE a > 10101 FORMAT Null SETTINGS log_comment='query_6', allow_experimental_projection_optimization=0, optimize_use_implicit_projections=0;
-set send_logs_level='none';
 
 SELECT COUNT(*) FROM t WHERE a <= 10101 FORMAT Null SETTINGS log_comment='query_7', allow_experimental_projection_optimization=0, optimize_use_implicit_projections=0;
 
@@ -52,4 +50,4 @@ FROM (
     WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'query_%') AND (type = 'QueryFinish')
     ORDER BY event_time_microseconds
 )
-WHERE greatest(compressed_bytes, statistics_input_bytes) / least(compressed_bytes, statistics_input_bytes) > 0;
+WHERE greatest(compressed_bytes, statistics_input_bytes) / least(compressed_bytes, statistics_input_bytes) > 2;

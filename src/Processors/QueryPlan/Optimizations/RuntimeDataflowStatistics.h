@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/NamesAndTypes.h>
 #include <Processors/Chunk.h>
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ColumnSize.h>
@@ -92,7 +93,11 @@ public:
 
     void recordAggregationKeySizes(const Aggregator & aggregator, const Block & block);
 
-    void recordInputColumns(const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes, size_t read_bytes = 0);
+    void recordInputColumns(
+        const ColumnsWithTypeAndName & input_columns,
+        const NamesAndTypesList & part_columns,
+        const ColumnSizeByName & column_sizes,
+        size_t read_bytes = 0);
 
     void markUnsupportedCase() { unsupported_case.store(true, std::memory_order_relaxed); }
 
