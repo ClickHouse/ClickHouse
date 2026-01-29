@@ -1,7 +1,10 @@
 #pragma once
+#include <chrono>
+#include <iostream>
+#include <thread>
 #include <Processors/Formats/IInputFormat.h>
 #include <Poco/JSON/Array.h>
-#include "config.h"
+#include <Common/logger_useful.h>
 
 #if USE_AVRO
 
@@ -37,7 +40,9 @@ public:
         , context(context_)
         , parser_shared_resources(parser_shared_resources_)
     {
+        LOG_DEBUG(&Poco::Logger::get("Sherlock"), "Initializing delete sources");
         initializeDeleteSources();
+        LOG_DEBUG(&Poco::Logger::get("Sherlock"), "Delete sources initialized, Stacktrace: {}", StackTrace().toString());
     }
 
     String getName() const override { return "IcebergPositionDeleteTransform"; }
@@ -75,12 +80,37 @@ public:
         ContextPtr context_)
         : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_)
     {
-        initialize();
+        Stopwatch stopwatch;
+        stopwatch.start();
+        LOG_DEBUG(getLogger("Sherlock"), "Starting to initialize bitmap position delete transform, previously called: {}", called);
+        LOG_DEBUG(
+            getLogger("Sherlock"),
+            "Starting to initialize bitmap position delete transform, position deletes: {}",
+            iceberg_object_info_->info.position_deletes_objects.size());
+
+        using namespace std::chrono_literals;
+        try
+        {
+            initialize();
+        }
+        catch (...)
+        {
+            LOG_DEBUG(getLogger("Sherlock"), "Initialize bitmap position delete transform failed");
+            std::this_thread::sleep_for(10000ms);
+        }
+        auto kek = stopwatch.elapsedMicroseconds();
+        called++;
+        LOG_DEBUG(getLogger("Sherlock"), "Initialized bitmap position delete transform in {} mcs", kek);
+        std::cerr << std::endl << "CERR LOG: Initialized bitmap position delete transform in " << kek << " mcs" << std::endl;
+
+        std::this_thread::sleep_for(10000ms);
     }
 
     String getName() const override { return "IcebergBitmapPositionDeleteTransform"; }
 
     void transform(Chunk & chunk) override;
+
+    static size_t called;
 
 private:
     void initialize();
@@ -101,7 +131,12 @@ public:
         ContextPtr context_)
         : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_)
     {
+        Stopwatch stopwatch;
+        stopwatch.start();
+        LOG_DEBUG(&Poco::Logger::get("Sherlock"), "Starting to initialize streaming position delete transform");
         initialize();
+        LOG_DEBUG(
+            &Poco::Logger::get("Sherlock"), "Initialized streaming position delete transform in {} ms", stopwatch.elapsedMicroseconds());
     }
 
     String getName() const override { return "IcebergStreamingPositionDeleteTransform"; }

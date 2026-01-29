@@ -156,6 +156,12 @@ void IcebergBitmapPositionDeleteTransform::initialize()
                 // Add filename matching check
                 auto filename_in_delete_record = filename_column->getDataAt(i);
                 auto current_data_file_path = iceberg_object_info->info.data_object_file_path_key;
+                LOG_DEBUG(
+                    &Poco::Logger::get("initialize"),
+                    "Filename in delete record: {}, current data file path: {}, delete chunk size: {}",
+                    filename_in_delete_record,
+                    current_data_file_path,
+                    delete_chunk.getNumRows());
 
                 // Only add to delete bitmap when the filename in delete record matches current data file path
                 if (filename_in_delete_record == current_data_file_path || filename_in_delete_record == "/" + current_data_file_path)
@@ -167,6 +173,8 @@ void IcebergBitmapPositionDeleteTransform::initialize()
         }
     }
 }
+
+size_t IcebergBitmapPositionDeleteTransform::called = 0;
 
 
 void IcebergStreamingPositionDeleteTransform::initialize()

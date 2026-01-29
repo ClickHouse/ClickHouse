@@ -1,10 +1,10 @@
 #include <memory>
 #include <sstream>
+#include <Core/ColumnWithTypeAndName.h>
+#include <IO/WriteBufferFromString.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
-#include <Core/ColumnWithTypeAndName.h>
-#include <IO/WriteBufferFromString.h>
 
 #if USE_AVRO
 
@@ -85,7 +85,8 @@ std::optional<std::pair<ColumnPtr, DataTypePtr>> & AvroForIcebergDeserializer::e
         auto column = parsed_column_data_type->getSubcolumn(path, parsed_column);
         auto data_type = parsed_column_data_type->getSubcolumnType(path);
         cache_extracted_subcolumns_with_types[path] = std::make_pair(column, data_type);
-    } else
+    }
+    else
     {
         cache_extracted_subcolumns_with_types[path] = std::nullopt;
     }

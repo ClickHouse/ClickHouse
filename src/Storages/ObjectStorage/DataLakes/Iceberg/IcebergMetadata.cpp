@@ -1,10 +1,13 @@
 #include "config.h"
 #if USE_AVRO
 
+#include <chrono>
 #include <cstddef>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <thread>
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeSet.h>
@@ -928,7 +931,19 @@ void IcebergMetadata::addDeleteTransformers(
     {
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
-            { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, parser_shared_resources, local_context); });
+            {
+                auto kek = iceberg_object_info->getPositionDeleteTransformer(
+                    object_storage, header, format_settings, parser_shared_resources, local_context);
+                LOG_DEBUG(
+                    &Poco::Logger::get("IcebergMetadata"),
+                    "Return get position transform: {}, {}",
+                    iceberg_object_info->info.data_object_file_path_key,
+                    iceberg_object_info->info.position_deletes_objects.size());
+                using namespace std::chrono_literals;
+
+                std::this_thread::sleep_for(1000ms);
+                return kek;
+            });
     }
     const auto & delete_files = iceberg_object_info->info.equality_deletes_objects;
     LOG_DEBUG(log, "Constructing filter transform for equality delete, there are {} delete files", delete_files.size());
