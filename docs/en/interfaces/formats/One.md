@@ -6,7 +6,6 @@ keywords: ['One']
 output_format: false
 slug: /interfaces/formats/One
 title: 'One'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

@@ -6,7 +6,6 @@ keywords: ['Native']
 output_format: true
 slug: /interfaces/formats/Native
 title: 'Native'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

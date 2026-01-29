@@ -49,10 +49,10 @@ protected:
     void updateObjectFromConfigWithoutReloading(
         IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const override;
 
-    std::string resolveDictionaryName(const std::string & dictionary_name, ContextPtr local_context) const;
+    std::string resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const;
 
     /// Try convert qualified dictionary name to persistent UUID
-    std::string resolveDictionaryNameFromDatabaseCatalog(const std::string & name, ContextPtr local_context) const;
+    std::string resolveDictionaryNameFromDatabaseCatalog(const std::string & name, const std::string & current_database_name) const;
 
     friend class StorageSystemDictionaries;
     friend class DatabaseDictionary;

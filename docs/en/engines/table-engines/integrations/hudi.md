@@ -4,8 +4,7 @@ description: 'This engine provides a read-only integration with existing Apache 
 sidebar_label: 'Hudi'
 sidebar_position: 86
 slug: /engines/table-engines/integrations/hudi
-title: 'Hudi table engine'
-doc_type: 'reference'
+title: 'Hudi Table Engine'
 ---
 
 # Hudi table engine

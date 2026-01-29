@@ -72,15 +72,16 @@
                 toInt32(rand64(number*41) % 2001 - 1000),
                 toInt32(rand64(number*43) % 2001 - 1000)
             ) AS pt
-        FROM numbers(500_000);
+        FROM numbers(200_000);
     </create_query>
 
     <query>
         WITH
-            (SELECT poly FROM multipoly_holder LIMIT 1) AS mp
+            (SELECT poly FROM multipoly_holder LIMIT 1) AS mp,
+            arrayShuffle(mp) AS mp_shuffled
         SELECT count()
         FROM random_pts
-        WHERE NOT ignore(pointInPolygon(pt, mp));
+        WHERE NOT ignore(pointInPolygon(pt, mp_shuffled));
     </query>
     <drop_query>DROP TABLE IF EXISTS random_polys;</drop_query>
     <drop_query>DROP TABLE IF EXISTS multipoly_holder;</drop_query>

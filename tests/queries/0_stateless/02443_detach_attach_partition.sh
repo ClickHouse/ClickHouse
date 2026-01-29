@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, long, disabled
-# FIXME: Disabled the test until it is fixed. The issue for tracking: https://github.com/ClickHouse/ClickHouse/issues/54748
+# Tags: race, zookeeper, long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

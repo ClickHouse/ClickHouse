@@ -1,4 +1,3 @@
-#include <mutex>
 #include <Access/ZooKeeperReplicator.h>
 
 #include <Access/AccessEntityIO.h>
@@ -10,20 +9,8 @@
 #include <Common/ThreadPool.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <base/range.h>
 #include <base/sleep.h>
-
-
-namespace
-{
-
-String makeWatchIdFromId(const DB::UUID & id)
-{
-    return "ZooKeeperReplicator::" + toString(id);
-}
-
-}
 
 namespace DB
 {
@@ -52,19 +39,13 @@ ZooKeeperReplicator::ZooKeeperReplicator(
     const String & zookeeper_path_,
     zkutil::GetZooKeeper get_zookeeper_,
     AccessChangesNotifier & changes_notifier_,
-    MemoryAccessStorage & memory_storage_,
-    bool throw_on_invalid_entities_)
+    MemoryAccessStorage & memory_storage_)
     : storage_name(storage_name_)
     , zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
     , watched_queue(std::make_shared<ConcurrentBoundedQueue<UUID>>(std::numeric_limits<size_t>::max()))
-    , watch_entities_list(std::make_shared<Coordination::WatchCallback>([my_watched_queue = watched_queue](const Coordination::WatchResponse &)
-      {
-          [[maybe_unused]] bool push_result = my_watched_queue->push(UUIDHelpers::Nil);
-      }))
     , memory_storage(memory_storage_)
     , changes_notifier(changes_notifier_)
-    , throw_on_invalid_entities(throw_on_invalid_entities_)
 {
     if (zookeeper_path.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must be non-empty");
@@ -417,7 +398,7 @@ bool ZooKeeperReplicator::updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper
 void ZooKeeperReplicator::runWatchingThread()
 {
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Started watching thread");
-    DB::setThreadName(ThreadName::ZOOKEEPER_ACL_WATCHER);
+    setThreadName("ZooACLWatch");
 
     while (watching)
     {
@@ -564,6 +545,10 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
     }
 
     const String zookeeper_uuids_path = zookeeper_path + "/uuid";
+    auto watch_entities_list = [my_watched_queue = watched_queue](const Coordination::WatchResponse &)
+    {
+        [[maybe_unused]] bool push_result = my_watched_queue->push(UUIDHelpers::Nil);
+    };
     Coordination::Stat stat;
     const auto entity_uuid_strs = zookeeper->getChildrenWatch(zookeeper_uuids_path, &stat, watch_entities_list);
 
@@ -626,19 +611,16 @@ void ZooKeeperReplicator::refreshEntityNoLock(const zkutil::ZooKeeperPtr & zooke
 
 AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const
 {
-    auto watch = zookeeper->createWatchFromRawCallback(makeWatchIdFromId(id), [&]() -> Coordination::WatchCallback
+    const auto watch_entity = [my_watched_queue = watched_queue, id](const Coordination::WatchResponse & response)
     {
-        return [my_watched_queue = watched_queue, id](const Coordination::WatchResponse & response)
-        {
-            if (response.type == Coordination::Event::CHANGED)
-                [[maybe_unused]] bool push_result = my_watched_queue->push(id);
-        };
-    });
+        if (response.type == Coordination::Event::CHANGED)
+            [[maybe_unused]] bool push_result = my_watched_queue->push(id);
+    };
 
     Coordination::Stat entity_stat;
     const String entity_path = zookeeper_path + "/uuid/" + toString(id);
     String entity_definition;
-    bool exists = zookeeper->tryGetWatch(entity_path, entity_definition, &entity_stat, watch);
+    bool exists = zookeeper->tryGetWatch(entity_path, entity_definition, &entity_stat, watch_entity);
     if (!exists)
         return nullptr;
 
@@ -648,9 +630,6 @@ AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::Zo
     }
     catch (...)
     {
-        if (throw_on_invalid_entities)
-            throw;
-
         tryLogCurrentException(&Poco::Logger::get(storage_name), "Error while reading the definition of " + toString(id));
         return nullptr;
     }

@@ -1,5 +1,5 @@
-from .common_direct import *
-from .common_direct import _VarintBytes
+from helpers.kafka.common_direct import *
+from helpers.kafka.common_direct import _VarintBytes
 
 
 def get_kafka_producer(port, serializer, retries):
@@ -135,7 +135,7 @@ def kafka_consume(kafka_cluster, topic, need_decode=True, timestamp=0):
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
         auto_offset_reset="earliest",
     )
-    consumer.subscribe(topics=[topic])
+    consumer.subscribe(topics=(topic))
     for toppar, messages in list(consumer.poll(5000).items()):
         if toppar.topic == topic:
             for message in messages:
@@ -224,24 +224,6 @@ def kafka_produce_protobuf_social(kafka_cluster, topic, start_index, num_message
     producer.flush()
     logging.debug(("Produced {} messages for topic {}".format(num_messages, topic)))
 
-def kafka_produce_protobuf_transaction_oneof(kafka_cluster, topic, start_index, num_messages):
-    data = b""
-    for i in range(start_index, start_index + num_messages):
-        tbuy = oneof_transaction_pb2.Transaction()
-        tbuy.date = str(1000000 + i)
-        tbuy.buy.payment.cash_value = 10
-        tbuy.buy.vendor_name = "dell"
-        tbuy.buy.items_bought = 1
-        serialized_msg = tbuy.SerializeToString()
-        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-
-    producer = KafkaProducer(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port),
-        value_serializer=producer_serializer,
-    )
-    producer.send(topic=topic, value=data)
-    producer.flush()
-    logging.debug(("Produced {} messages for topic {}".format(num_messages, topic)))
 
 def avro_message(value):
     schema = avro.schema.make_avsc_object(
@@ -298,7 +280,7 @@ def avro_confluent_message(schema_registry_client, value):
 
 
 def create_settings_string(settings):
-    if settings is None or len(settings) == 0:
+    if settings is None:
         return ""
 
     def format_value(value):
@@ -400,7 +382,7 @@ def insert_with_retry(instance, values, table_name="kafka", max_try_count=5):
 
 
 def random_string(size=8):
-    return "".join(random.choices(string.ascii_uppercase, k=size))
+    return "".join(random.choices(string.ascii_uppercase + string.digits, k=size))
 
 
 def gen_normal_json():
@@ -431,19 +413,13 @@ def gen_message_with_jsons(jsons=10, malformed=0):
 
 # Since everything is async and shaky when receiving messages from Kafka,
 # we may want to try and check results multiple times in a loop.
-def kafka_check_result(result, check=False, ref_file="test_kafka_json.reference", ref_string=None):
-    reference_content = ""
-    if ref_string is not None:
-        reference_content = ref_string
-    else:
-        fpath = p.join(p.dirname(__file__), ref_file)
-        with open(fpath) as reference:
-            reference_content = reference.read()
-
-    if check:
-        assert TSV(result) == TSV(reference_content)
-    else:
-        return TSV(result) == TSV(reference_content)
+def kafka_check_result(result, check=False, ref_file="test_kafka_json.reference"):
+    fpath = p.join(p.dirname(__file__), ref_file)
+    with open(fpath) as reference:
+        if check:
+            assert TSV(result) == TSV(reference)
+        else:
+            return TSV(result) == TSV(reference)
 
 
 def decode_avro(message):
@@ -489,31 +465,6 @@ def describe_consumer_group(kafka_cluster, name):
         member_info["assignment"] = member_topics_assignment
         res.append(member_info)
     return res
-
-def clean_test_database_and_topics(instance, cluster):
-    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
-    admin_client = get_admin_client(cluster)
-
-    def get_topics_to_delete():
-        return [t for t in admin_client.list_topics() if not t.startswith("_")]
-
-    topics = get_topics_to_delete()
-    logging.debug(f"Deleting topics: {topics}")
-    result = admin_client.delete_topics(topics)
-    for topic, error in result.topic_error_codes:
-        if error != 0:
-            logging.warning(f"Received error {error} while deleting topic {topic}")
-        else:
-            logging.info(f"Deleted topic {topic}")
-
-    retries = 0
-    topics = get_topics_to_delete()
-    while len(topics) != 0:
-        logging.info(f"Existing topics: {topics}")
-        if retries >= 5:
-            raise Exception(f"Failed to delete topics {topics}")
-        retries += 1
-        time.sleep(0.5)
 
 
 KAFKA_TOPIC_OLD = "old_t"

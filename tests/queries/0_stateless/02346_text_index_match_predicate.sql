@@ -2,7 +2,7 @@
 
 -- Tests that match() utilizes the text index
 
-SET enable_full_text_index = true;
+SET allow_experimental_full_text_index = true;
 
 DROP TABLE IF EXISTS tab;
 
@@ -10,7 +10,7 @@ CREATE TABLE tab
 (
     id UInt32,
     str String,
-    INDEX inv_idx(str) TYPE text(tokenizer = 'splitByNonAlpha')
+    INDEX inv_idx(str) TYPE text(tokenizer = 'default') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id

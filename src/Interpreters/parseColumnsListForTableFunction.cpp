@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
@@ -17,8 +16,8 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool enable_time_time64_type;
-    extern const SettingsBool allow_experimental_nullable_tuple_type;
+    extern const SettingsBool allow_experimental_object_type;
+    extern const SettingsBool allow_experimental_time_time64_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
@@ -38,11 +37,11 @@ extern const int ILLEGAL_COLUMN;
 
 DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & settings)
     : allow_suspicious_low_cardinality_types(settings[Setting::allow_suspicious_low_cardinality_types])
+    , allow_experimental_object_type(settings[Setting::allow_experimental_object_type])
     , allow_suspicious_fixed_string_types(settings[Setting::allow_suspicious_fixed_string_types])
     , allow_suspicious_variant_types(settings[Setting::allow_suspicious_variant_types])
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
-    , enable_time_time64_type(settings[Setting::enable_time_time64_type])
-    , allow_experimental_nullable_tuple_type(settings[Setting::allow_experimental_nullable_tuple_type])
+    , enable_time_time64_type(settings[Setting::allow_experimental_time_time64_type])
 {
 }
 
@@ -66,6 +65,18 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                         "Creating columns of type {} is prohibited by default due to expected negative impact on performance. "
                         "It can be enabled with the `allow_suspicious_low_cardinality_types` setting",
                         lc_type->getName());
+            }
+        }
+
+        if (!settings.allow_experimental_object_type)
+        {
+            if (data_type.hasDynamicSubcolumnsDeprecated())
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because experimental Object type is not allowed. "
+                    "Set setting allow_experimental_object_type = 1 in order to allow it",
+                    data_type.getName());
             }
         }
 
@@ -95,10 +106,6 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                     {
                         /// Don't consider bool as similar to something (like number).
                         if (isBool(variants[i]) || isBool(variants[j]))
-                            continue;
-
-                        const auto * custom_name = variant_type->getCustomName();
-                        if (custom_name && custom_name->getName() == "Geometry")
                             continue;
 
                         if (auto supertype = tryGetLeastSupertype(DataTypes{variants[i], variants[j]}))
@@ -136,21 +143,6 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                     "Cannot create column with type '{}' because Time64 type is not allowed. "
                     "Set setting enable_time_time64_type = 1 in order to allow it",
                     data_type.getName());
-            }
-        }
-
-        if (!settings.allow_experimental_nullable_tuple_type)
-        {
-            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&data_type))
-            {
-                if (isTuple(nullable_type->getNestedType()))
-                {
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_COLUMN,
-                        "Cannot create column with type '{}' because Nullable Tuple type is not allowed. "
-                        "Set setting allow_experimental_nullable_tuple_type = 1 in order to allow it",
-                        data_type.getName());
-                }
             }
         }
     };

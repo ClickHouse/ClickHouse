@@ -33,7 +33,6 @@ IMergeTreeReader::IMergeTreeReader(
     const NamesAndTypesList & columns_,
     const VirtualFields & virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
-    const MergeTreeSettingsPtr & storage_settings_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
     const MarkRanges & all_mark_ranges_,
@@ -47,22 +46,21 @@ IMergeTreeReader::IMergeTreeReader(
     , uncompressed_cache(uncompressed_cache_)
     , mark_cache(mark_cache_)
     , settings(settings_)
-    , storage_settings(storage_settings_)
     , storage_snapshot(storage_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(data_part_info_for_read->getAlterConversions())
+    /// For wide parts convert plain arrays of Nested to subcolumns
+    /// to allow to use shared offset column from cache.
     , original_requested_columns(columns_)
-    , converted_requested_columns(Nested::convertToSubcolumns(columns_))
+    , requested_columns(data_part_info_for_read->isWidePart()
+        ? Nested::convertToSubcolumns(columns_)
+        : columns_)
     , virtual_fields(virtual_fields_)
 {
-    /// Check the memory consumption before doing all the heavy-lifting such as
-    /// initializing buffers, reading marks, etc. Maybe that's not needed?
-    CurrentMemoryTracker::check();
+    columns_to_read.reserve(requested_columns.size());
+    serializations.reserve(requested_columns.size());
 
-    columns_to_read.reserve(getColumns().size());
-    serializations.reserve(getColumns().size());
-
-    for (const auto & column : getColumns())
+    for (const auto & column : requested_columns)
     {
         const auto & column_to_read = columns_to_read.emplace_back(getColumnInPart(column));
         serializations.emplace_back(getSerializationInPart(column));
@@ -82,7 +80,7 @@ const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
 
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
 {
-    chassert(columns.size() == getColumns().size());
+    chassert(columns.size() == requested_columns.size());
 
     const auto * loaded_part_info = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
     if (!loaded_part_info)
@@ -92,7 +90,7 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
     const auto & storage_columns = storage_snapshot->metadata->getColumns();
     const auto & virtual_columns = storage_snapshot->virtual_columns;
 
-    auto it = getColumns().begin();
+    auto it = requested_columns.begin();
     for (size_t pos = 0; pos < columns.size(); ++pos, ++it)
     {
         if (columns[pos] || storage_columns.has(it->name))
@@ -126,38 +124,15 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
 {
     try
     {
-        /// Do a quick check to see if doing any work is necessary to begin with
-        size_t num_columns_to_read = res_columns.size();
-        bool missing = false;
-        auto requested_column = converted_requested_columns.begin();
-        for (size_t i = 0; i < num_columns_to_read; i++, requested_column++)
-        {
-            if (!res_columns[i] || partially_read_columns.contains(requested_column->name))
-            {
-                missing = true;
-                break;
-            }
-        }
+        NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
 
-        if (!missing)
-        {
-            should_evaluate_missing_defaults = false;
-        }
-        else
-        {
-            NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
+        DB::fillMissingColumns(
+            res_columns, num_rows, Nested::convertToSubcolumns(requested_columns),
+            Nested::convertToSubcolumns(available_columns),
+            partially_read_columns, storage_snapshot->metadata);
 
-            DB::fillMissingColumns(
-                res_columns,
-                num_rows,
-                converted_requested_columns,
-                Nested::convertToSubcolumns(available_columns),
-                partially_read_columns,
-                storage_snapshot->metadata);
-
-            should_evaluate_missing_defaults
-                = std::any_of(res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });
-        }
+        should_evaluate_missing_defaults = std::any_of(
+            res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });
     }
     catch (Exception & e)
     {
@@ -212,7 +187,6 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         /// Default/materialized expression can contain experimental/suspicious types that can be disabled in current context.
         /// We should not perform any checks during reading from an existing table.
         enableAllExperimentalSettings(context_copy);
-        context_copy->setSetting("enable_analyzer", settings.enable_analyzer);
         auto dag = DB::evaluateMissingDefaults(
             additional_columns, full_requested_columns,
             storage_snapshot->metadata->getColumns(),
@@ -332,15 +306,14 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
         return IDataType::getSerialization(*column_in_part, *it->second);
 
-    return IDataType::getSerialization(*column_in_part, infos.getSettings());
+    return IDataType::getSerialization(*column_in_part);
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
 {
     try
     {
-        const NamesAndTypesList & required_columns = getColumns();
-        size_t num_columns = required_columns.size();
+        size_t num_columns = requested_columns.size();
 
         if (res_columns.size() != num_columns)
         {
@@ -349,28 +322,21 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
                             "Expected {}, got {}", num_columns, res_columns.size());
         }
 
-        /// We check types manually while iterating to avoid unnecessary copies
         Block copy_block;
-        auto name_and_type = getColumns().begin();
+        auto name_and_type = requested_columns.begin();
+
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
             if (res_columns[pos] == nullptr)
                 continue;
-            auto column_in_part = getColumnInPart(*name_and_type);
-            if (column_in_part.type->equals(*name_and_type->type))
-                continue;
-            copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
+
+            copy_block.insert({res_columns[pos], getColumnInPart(*name_and_type).type, name_and_type->name});
         }
 
-        if (copy_block.empty())
-            return;
-
-        DB::performRequiredConversions(copy_block, getColumns(),
-            data_part_info_for_read->getContext(),
-            storage_snapshot->metadata->getColumns().getDefaults());
+        DB::performRequiredConversions(copy_block, requested_columns, data_part_info_for_read->getContext());
 
         /// Move columns from block.
-        name_and_type = getColumns().begin();
+        name_and_type = requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
             if (copy_block.has(name_and_type->name))
                 res_columns[pos] = std::move(copy_block.getByName(name_and_type->name).column);
@@ -446,13 +412,9 @@ IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) 
 
 void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
 {
-    if (num_columns_to_read != getColumns().size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "invalid number of columns passed to MergeTreeReader::readRows. "
-            "Expected {}, got {}",
-            converted_requested_columns.size(),
-            num_columns_to_read);
+    if (num_columns_to_read != requested_columns.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "invalid number of columns passed to MergeTreeReader::readRows. "
+                        "Expected {}, got {}", requested_columns.size(), num_columns_to_read);
 }
 
 String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const
@@ -473,7 +435,6 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
-    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
@@ -487,7 +448,6 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
-    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
@@ -501,7 +461,6 @@ MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
-    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
@@ -516,7 +475,6 @@ MergeTreeReaderPtr createMergeTreeReader(
             read_info,
             columns_to_read,
             storage_snapshot,
-            storage_settings,
             mark_ranges,
             virtual_fields,
             uncompressed_cache,
@@ -531,7 +489,6 @@ MergeTreeReaderPtr createMergeTreeReader(
             read_info,
             columns_to_read,
             storage_snapshot,
-            storage_settings,
             mark_ranges,
             virtual_fields,
             uncompressed_cache,
@@ -542,24 +499,6 @@ MergeTreeReaderPtr createMergeTreeReader(
             profile_callback);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type");
-}
-
-MergeTreeReaderPtr createMergeTreeReaderTextIndex(
-    const IMergeTreeReader * main_reader,
-    const MergeTreeIndexWithCondition & index,
-    const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark);
-
-MergeTreeReaderPtr createMergeTreeReaderIndex(
-    const IMergeTreeReader * main_reader,
-    const MergeTreeIndexWithCondition & index,
-    const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark)
-{
-    if (index.index->index.type == "text")
-        return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read, can_skip_mark);
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create reader for index with type {}", index.index->index.type);
 }
 
 }

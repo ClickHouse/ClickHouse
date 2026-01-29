@@ -1,7 +1,0 @@
-<clickhouse>
-    <delta_lake_metadata_log>
-        <database>system</database>
-        <table>delta_lake_metadata_log</table>
-        <flush_interval_milliseconds>2000</flush_interval_milliseconds>
-    </delta_lake_metadata_log>
-</clickhouse>

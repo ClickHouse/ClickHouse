@@ -17,7 +17,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = make_intrusive<ASTForeignKeyDeclaration>();
+        auto res = std::make_shared<ASTForeignKeyDeclaration>();
         res->name = name;
         return res;
     }

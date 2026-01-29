@@ -3,7 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
-#include <IO/HTTPRequestThrottler.h>
+#include <Common/IThrottler.h>
 
 namespace Poco::Util
 {
@@ -68,7 +68,8 @@ struct S3RequestSettings
     void updateIfChanged(const S3RequestSettings & settings);
     void validateUploadSettings();
 
-    HTTPRequestThrottler request_throttler;
+    ThrottlerPtr get_request_throttler;
+    ThrottlerPtr put_request_throttler;
     std::shared_ptr<ProxyConfigurationResolver> proxy_resolver;
 
     void serialize(WriteBuffer & out, ContextPtr context) const;
