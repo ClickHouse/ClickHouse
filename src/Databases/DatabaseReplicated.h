@@ -5,11 +5,12 @@
 
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
-#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/defines.h>
 #include <Interpreters/QueryFlags.h>
 #include <Parsers/SyncReplicaMode.h>
+#include <QueryPipeline/BlockIO.h>
+#include <base/defines.h>
+#include <Common/ZooKeeper/IKeeper.h>
 
 
 namespace zkutil
@@ -133,7 +134,7 @@ public:
         const String & replica,
         bool throw_if_noop);
 
-    void restoreDatabaseMetadataInKeeper(ContextPtr ctx);
+    void restoreDatabaseInKeeper(ContextPtr ctx);
 
     ReplicasInfo tryGetReplicasInfo(const ClusterPtr & cluster_) const;
 
@@ -155,6 +156,8 @@ protected:
 
 private:
     void tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode);
+    void initDatabaseReplica(const ZooKeeperPtr & current_zookeeper, LoadingStrictnessLevel mode);
+    Coordination::Requests buildDatabaseNodesInZooKeeper();
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
     static bool looksLikeReplicatedDatabasePath(const ZooKeeperPtr & current_zookeeper, const String & path);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
@@ -215,8 +218,7 @@ private:
 
     void initDDLWorkerUnlocked() TSA_REQUIRES(ddl_worker_mutex);
 
-    void restoreTablesMetadataInKeeper();
-
+    void restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper);
     void reinitializeDDLWorker();
 
     BlockIO
