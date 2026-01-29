@@ -115,11 +115,12 @@ OneTimePasswordSecret::OneTimePasswordSecret(const String & key_, OneTimePasswor
 
 String getOneTimePasswordSecretLink(const OneTimePasswordSecret & secret)
 {
+    constexpr auto issuer_name = "ClickHouse";
     if (secret.params == OneTimePasswordParams{})
-        return fmt::format("otpauth://totp/ClickHouse?issuer=ClickHouse&secret={}", secret.key);
+        return fmt::format("otpauth://totp/ClickHouse?issuer={}&secret={}", issuer_name, secret.key);
 
-    return fmt::format("otpauth://totp/ClickHouse?issuer=ClickHouse&secret={}&digits={}&period={}&algorithm={}",
-        secret.key, secret.params.num_digits, secret.params.period, toString(secret.params.algorithm));
+    return fmt::format("otpauth://totp/ClickHouse?issuer={}&secret={}&digits={}&period={}&algorithm={}",
+        issuer_name, secret.key, secret.params.num_digits, secret.params.period, toString(secret.params.algorithm));
 }
 
 struct CStringDeleter { void operator()(char * ptr) const { std::free(ptr); } };

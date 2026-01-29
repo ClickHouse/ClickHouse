@@ -1,6 +1,8 @@
 option (ENABLE_LIBCOTP "Enable libcotp" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_LIBCOTP OR NOT ENABLE_SSL)
+if (NOT ENABLE_LIBCOTP OR NOT ENABLE_SSL OR OS_FREEBSD)
+  # OpenSSL is required for libcotp for hmac calculations
+  # FreeBSD: skip due to libcotp build issues
   message (STATUS "Not using libcotp")
   return()
 endif()
