@@ -3403,7 +3403,7 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
         resolveWindow(node, scope);
 }
 
-NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, const NameSet & interpolate_list)
+NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
 {
     ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -3422,25 +3422,6 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
                 "Projection node must be constant, function, column, query or union");
 
         projection_columns.emplace_back(projection_names[i], projection_node->getResultType());
-
-        if (interpolate_list.contains(projection_names[i]))
-        {
-            if (const auto * function_node = projection_nodes[i]->as<FunctionNode>(); !function_node || function_node->getFunctionName() != "__interpolate")
-            {
-                auto f = std::make_shared<FunctionNode>("__interpolate");
-                f->getArguments().getNodes().push_back(projection_nodes[i]);
-                f->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(projection_names[i]));
-                resolveOrdinaryFunctionNodeByName(*f, f->getFunctionName(), scope.context);
-                projection_nodes[i] = f;
-                scope.expression_argument_name_to_node.emplace(projection_names[i], projection_nodes[i]);
-
-                /// Update cache entry to point to wrapped node, so subsequent lookups
-                /// (e.g., in resolveInterpolateColumnsNodeList) get the wrapped version.
-                IdentifierLookup cache_key{Identifier{projection_names[i]}, IdentifierLookupContext::EXPRESSION};
-                scope.identifier_to_resolved_expression_cache.insert(cache_key,
-                    {projection_nodes[i], IdentifierResolvePlace::EXPRESSION_ARGUMENTS});
-            }
-        }
     }
 
     return projection_columns;
@@ -4892,18 +4873,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
 
     /// Enable cache after join tree is resolved and all table expressions are registered.
-    /// INTERPOLATE columns are handled via clone-if-shared at the wrapping site.
     /// group_by_use_nulls is handled by not caching nodes in nullable_group_by_keys.
     scope.identifier_to_resolved_expression_cache.enable();
-
-    /// Build set of column names that need INTERPOLATE wrapping
-    NameSet interpolate_list;
-    if (query_node_typed.hasInterpolate())
-    {
-        auto & interpolate_node_list = query_node_typed.getInterpolate()->as<ListNode &>();
-        for (const auto & interpolate_node : interpolate_node_list.getNodes())
-            interpolate_list.insert(interpolate_node->as<InterpolateNode &>().getExpressionName());
-    }
 
     /// Resolve query node sections.
 
@@ -4911,7 +4882,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (!scope.group_by_use_nulls)
     {
-        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope, interpolate_list);
+        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
