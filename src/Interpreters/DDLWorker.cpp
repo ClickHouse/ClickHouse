@@ -189,6 +189,13 @@ ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
     return current_zookeeper;
 }
 
+void DDLWorker::requestToResetState()
+{
+    LOG_INFO(log, "Request to reinitialize DDLWorker");
+    reset_state_requested = true;
+    queue_updated_event->set();
+}
+
 void DDLWorker::notifyHostIDsUpdated()
 {
     LOG_INFO(log, "Host IDs updated");
@@ -514,7 +521,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
     String query_to_show_in_logs = query_prefix + task.query_for_logging;
 
     ReadBufferFromString istr(query_to_execute);
-    std::optional<CurrentThread::QueryScope> query_scope;
+    CurrentThread::QueryScope query_scope;
 
     try
     {
@@ -531,7 +538,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         query_context->setInitialQueryId(task.entry.initial_query_id);
 
         if (!task.is_initial_query)
-            query_scope.emplace(query_context);
+            query_scope = CurrentThread::QueryScope::create(query_context);
 
         NullWriteBuffer nullwb;
         executeQuery(istr, nullwb, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
@@ -1223,6 +1230,12 @@ void DDLWorker::runMainThread()
     {
         try
         {
+            if (reset_state_requested.exchange(false))
+            {
+                LOG_INFO(log, "Resetting state as requested");
+                reset_state();
+            }
+
             bool reinitialized = !initialized;
 
             /// Reinitialize DDLWorker state (including ZooKeeper connection) if required

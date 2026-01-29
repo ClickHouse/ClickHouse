@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <csignal>
 #include <filesystem>
-#include <variant>
 #include <unistd.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
@@ -24,7 +23,9 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DeltaMetadataLog.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -36,7 +37,6 @@
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -59,7 +59,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/ActionLock.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
@@ -70,6 +69,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -869,7 +869,10 @@ BlockIO InterpreterSystemQuery::execute()
 
             std::vector<StorageID> tables;
             for (const auto & [database, table]: query.tables)
+            {
                 tables.push_back(getContext()->resolveStorageID({database, table}, Context::ResolveOrdinary));
+                getContext()->getQueryContext()->addQueryAccessInfo(tables.back(), {});
+            }
 
             queue->flush(tables);
             break;
@@ -927,6 +930,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
             LOG_TRACE(log, "Notifying failpoint {}", query.fail_point_name);
             FailPointInjection::notifyFailPoint(query.fail_point_name);
+            LOG_TRACE(log, "Notified failpoint {}", query.fail_point_name);
             break;
         }
 #else // USE_LIBFIU
@@ -1007,6 +1011,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::JEMALLOC_FLUSH_PROFILE:
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without JEMalloc");
 #endif
+
+        case Type::RESET_DDL_WORKER:
+            getContext()->getDDLWorker().requestToResetState();
+            break;
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of SYSTEM query");
     }
@@ -1057,7 +1065,7 @@ void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
 StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
 {
     LOG_TRACE(log, "Restarting replica {}", replica);
-    auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName());
+    auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName(), nullptr);
 
     auto restart_replica_lock = DatabaseCatalog::instance().tryGetLockForRestartReplica(replica.getDatabaseName());
     if (!restart_replica_lock)
@@ -1852,7 +1860,7 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
-    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
+    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
     if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
@@ -2312,6 +2320,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
         case Type::UNKNOWN:
+        case Type::RESET_DDL_WORKER:
         case Type::END: break;
     }
     return required_access;

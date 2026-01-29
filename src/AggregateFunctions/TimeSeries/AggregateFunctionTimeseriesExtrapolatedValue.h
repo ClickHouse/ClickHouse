@@ -8,13 +8,14 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Common/ContainersWithMemoryTracking.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 
@@ -113,7 +114,7 @@ public:
 
 private:
     void fillResultValue(const TimestampType current_timestamp,
-        const std::deque<std::pair<TimestampType, ValueType>> & samples_in_window,
+        const DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> & samples_in_window,
         Float64 accumulated_resets_in_window,
         ValueType & result, UInt8 & null) const
     {
@@ -148,11 +149,11 @@ private:
         /// https://github.com/prometheus/prometheus/blob/5e124cf4f2b9467e4ae1c679840005e727efd599/promql/functions.go#L127
         /// which is licensed under the Apache License 2.0
         // Duration between first/last samples and boundary of range.
-        Float64 duration_to_start = first_timestamp - range_start;
-        Float64 duration_to_end = range_end - last_timestamp;
+        Float64 duration_to_start = static_cast<Float64>(first_timestamp - range_start);
+        Float64 duration_to_end = static_cast<Float64>(range_end - last_timestamp);
 
         const auto sampled_interval = time_difference;
-        const Float64 average_duration_between_samples = sampled_interval / Float64(samples_in_window.size() - 1);
+        const Float64 average_duration_between_samples = static_cast<Float64>(sampled_interval) / static_cast<Float64>(samples_in_window.size() - 1);
 
         // If samples are close enough to the (lower or upper) boundary of the
         // range, we extrapolate the rate all the way to the boundary in
@@ -167,7 +168,7 @@ private:
         // (which is our guess for where the series actually starts or ends).
 
         const auto extrapolation_threshold = average_duration_between_samples * 1.1;
-        Float64 extrapolate_to_interval = sampled_interval;
+        Float64 extrapolate_to_interval = static_cast<Float64>(sampled_interval);
 
         if (duration_to_start >= extrapolation_threshold)
             duration_to_start = average_duration_between_samples / 2;
@@ -180,7 +181,7 @@ private:
             // than the durationToStart, we take the zero point as the start
             // of the series, thereby avoiding extrapolation to negative
             // counter values.
-            Float64 duration_to_zero = sampled_interval * (first_value / value_difference);
+            Float64 duration_to_zero = static_cast<Float64>(sampled_interval) * (first_value / value_difference);
             duration_to_start = std::min(duration_to_zero, duration_to_start);
         }
 
@@ -190,10 +191,10 @@ private:
             duration_to_end = average_duration_between_samples / 2;
         extrapolate_to_interval += duration_to_end;
 
-        Float64 factor = extrapolate_to_interval / sampled_interval;
+        Float64 factor = extrapolate_to_interval / static_cast<Float64>(sampled_interval);
 
         if constexpr (is_rate)
-            factor = factor * Base::timestamp_scale_multiplier / Base::window;
+            factor = factor * static_cast<Float64>(Base::timestamp_scale_multiplier) / static_cast<Float64>(Base::window);
 
         value_difference *= factor;
 
@@ -228,8 +229,8 @@ public:
 
         const auto & buckets = Base::data(place)->buckets;
 
-        std::deque<std::pair<TimestampType, ValueType>> samples_in_window;
-        std::vector<std::pair<TimestampType, ValueType>> timestamps_buffer;
+        DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> samples_in_window;
+        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> timestamps_buffer;
         Float64 accumulated_resets_in_window = 0;
 
         /// Resets must be take into account for `rate` function because it expects counter timeseries that only increase.

@@ -16,7 +16,7 @@ bool equals(const Field & lhs, const Field & rhs);
 class FillingRow
 {
     /// finds last value <= to
-    std::optional<Field> doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
+    Field doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
 
     bool hasSomeConstraints(size_t pos) const;
     bool isConstraintsSatisfied(size_t pos) const;

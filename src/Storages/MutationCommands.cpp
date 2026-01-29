@@ -151,10 +151,10 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     {
         res.type = MutationCommand::Type::READ_COLUMN;
         const auto & ast_col_decl = command.col_decl->as<ASTColumnDeclaration &>();
-        if (nullptr == ast_col_decl.type)
+        if (nullptr == ast_col_decl.getType())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "MODIFY COLUMN mutation command doesn't specify type: {}", command.formatForErrorMessage());
         res.column_name = ast_col_decl.name;
-        res.data_type = DataTypeFactory::instance().get(ast_col_decl.type);
+        res.data_type = DataTypeFactory::instance().get(ast_col_decl.getType());
         return res;
     }
     if (parse_alter_commands && command.type == ASTAlterCommand::DROP_COLUMN)

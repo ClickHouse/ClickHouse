@@ -644,6 +644,32 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
     return ReturnType(true);
 }
 
+void SerializationArray::readArraySafe(DB::IColumn & column, std::function<void()> && read_func)
+{
+    size_t initial_size = column.size();
+
+    try
+    {
+        read_func();
+    }
+    catch (...)
+    {
+        ColumnArray & column_array = assert_cast<ColumnArray &>(column);
+        ColumnArray::Offsets & offsets = column_array.getOffsets();
+        IColumn & nested_column = column_array.getData();
+
+        if (offsets.size() > initial_size)
+        {
+            chassert(offsets.size() - initial_size == 1);
+            offsets.pop_back();
+        }
+
+        if (nested_column.size() > offsets.back())
+            nested_column.popBack(nested_column.size() - offsets.back());
+
+        throw;
+    }
+}
 
 void SerializationArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {

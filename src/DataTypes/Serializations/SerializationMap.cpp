@@ -91,6 +91,37 @@ void SerializationMap::serializeForHashCalculation(const IColumn & column, size_
     nested->serializeForHashCalculation(extractNestedColumn(column), row_num, ostr);
 }
 
+void SerializationMap::readMapSafe(DB::IColumn & column, std::function<void()> && read_func)
+{
+    size_t initial_size = column.size();
+    try
+    {
+        read_func();
+    }
+    catch (...)
+    {
+        ColumnMap & column_map = assert_cast<ColumnMap &>(column);
+        ColumnArray & column_array = column_map.getNestedColumn();
+        ColumnArray::Offsets & offsets = column_array.getOffsets();
+        ColumnTuple & nested_columns = column_map.getNestedData();
+        IColumn & keys_column = nested_columns.getColumn(0);
+        IColumn & values_column = nested_columns.getColumn(1);
+
+        if (offsets.size() > initial_size)
+        {
+            chassert(offsets.size() - initial_size == 1);
+            offsets.pop_back();
+        }
+
+        if (keys_column.size() > offsets.back())
+            keys_column.popBack(keys_column.size() - offsets.back());
+
+        if (values_column.size() > offsets.back())
+            values_column.popBack(values_column.size() - offsets.back());
+
+        throw;
+    }
+}
 
 template <typename KeyWriter, typename ValueWriter>
 void SerializationMap::serializeTextImpl(
