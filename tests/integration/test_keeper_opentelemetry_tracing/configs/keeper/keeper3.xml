@@ -16,20 +16,20 @@
         <raft_configuration>
             <server>
                 <id>1</id>
-                <hostname>keeper1</hostname>
+                <hostname>clickhouseKeeper1</hostname>
                 <port>9234</port>
                 <can_become_leader>true</can_become_leader>
             </server>
             <server>
                 <id>2</id>
-                <hostname>keeper2</hostname>
+                <hostname>clickhouseKeeper2</hostname>
                 <port>9234</port>
                 <can_become_leader>false</can_become_leader>
                 <start_as_follower>true</start_as_follower>
             </server>
             <server>
                 <id>3</id>
-                <hostname>keeper3</hostname>
+                <hostname>clickhouseKeeper3</hostname>
                 <port>9234</port>
                 <can_become_leader>false</can_become_leader>
                 <start_as_follower>true</start_as_follower>
