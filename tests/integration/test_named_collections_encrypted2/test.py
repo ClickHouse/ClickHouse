@@ -338,8 +338,10 @@ def test_user_recreation_loses_grants(cluster):
     node1.query("DROP USER recreate_user")
     node1.query("CREATE USER recreate_user")
     node1.query("GRANT SELECT ON *.* TO recreate_user")
-
     assert node1.query("SELECT count() FROM system.named_collections", user="recreate_user").strip() == "0"
+
+    node1.query("GRANT SHOW NAMED COLLECTIONS ON recreate_coll TO recreate_user")
+    assert node1.query("SELECT count() FROM system.named_collections", user="recreate_user").strip() == "1"
 
     node1.query("DROP NAMED COLLECTION recreate_coll")
     node1.query("DROP USER recreate_user")
