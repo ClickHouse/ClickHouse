@@ -47,6 +47,40 @@ endif ()
 
 if (USE_MUSL)
     set (CMAKE_DL_LIBS "")
+    # Musl provides these functions, but CMake's check_symbol_exists can't find them
+    # because musl headers aren't in the include path during CMake configuration time.
+    # Force-define these so LLVM's config-ix.cmake doesn't fail to detect them.
+    set (HAVE_GETPAGESIZE 1 CACHE INTERNAL "")
+    set (HAVE_SYSCONF 1 CACHE INTERNAL "")
+    set (HAVE_GETAUXVAL 1 CACHE INTERNAL "")
+    set (HAVE_GETRUSAGE 1 CACHE INTERNAL "")
+    set (HAVE_ISATTY 1 CACHE INTERNAL "")
+    set (HAVE_FUTIMENS 1 CACHE INTERNAL "")
+    set (HAVE_PREAD 1 CACHE INTERNAL "")
+    set (HAVE_SBRK 1 CACHE INTERNAL "")
+    set (HAVE_STRERROR_R 1 CACHE INTERNAL "")
+    set (HAVE_SETENV 1 CACHE INTERNAL "")
+    set (HAVE_DLOPEN 1 CACHE INTERNAL "")
+    set (HAVE_POSIX_SPAWN 1 CACHE INTERNAL "")
+    set (HAVE_PTHREAD_GETNAME_NP 1 CACHE INTERNAL "")
+    set (HAVE_PTHREAD_SETNAME_NP 1 CACHE INTERNAL "")
+    set (HAVE_SIGALTSTACK 1 CACHE INTERNAL "")
+    set (HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC 1 CACHE INTERNAL "")
+    set (HAVE__UNWIND_BACKTRACE 1 CACHE INTERNAL "")
+    # These are either not in musl or we don't have them
+    set (HAVE_MALLINFO 0 CACHE INTERNAL "")
+    set (HAVE_MALLINFO2 0 CACHE INTERNAL "")
+    set (HAVE_MALLCTL 0 CACHE INTERNAL "")
+    set (HAVE_MALLOC_ZONE_STATISTICS 0 CACHE INTERNAL "")
+    # pthread is built into musl
+    set (HAVE_LIBPTHREAD 0 CACHE INTERNAL "")
+    set (PTHREAD_IN_LIBC 1 CACHE INTERNAL "")
+    set (HAVE_PTHREAD_RWLOCK_INIT 1 CACHE INTERNAL "")
+    set (HAVE_PTHREAD_MUTEX_LOCK 1 CACHE INTERNAL "")
+    # dlopen is in libc for musl
+    set (HAVE_LIBDL 0 CACHE INTERNAL "")
+    # rt functions (shm_open, etc.) are in libc for musl, no separate librt
+    set (HAVE_LIBRT 0 CACHE INTERNAL "")
 endif()
 
 if (NOT ENABLE_EMBEDDED_COMPILER AND NOT ENABLE_DWARF_PARSER)
@@ -149,6 +183,12 @@ message (STATUS "LLVM CMAKE CROSS COMPILING ${CMAKE_CROSSCOMPILING}")
 if (CMAKE_CROSSCOMPILING)
     set (LLVM_HOST_TRIPLE "${CMAKE_C_COMPILER_TARGET}" CACHE INTERNAL "")
     message (STATUS "CROSS COMPILING SET LLVM HOST TRIPLE ${LLVM_HOST_TRIPLE}")
+endif()
+
+# When using musl, we need LLVM build tools (tblgen etc.) to be built natively for the host
+# because our musl toolchain uses -nostartfiles which breaks standalone executables
+if (USE_MUSL)
+    set (LLVM_USE_HOST_TOOLS ON CACHE INTERNAL "")
 endif()
 
 # llvm-project/llvm/cmake/config-ix.cmake does a weird thing: it defines _LARGEFILE64_SOURCE,
