@@ -135,6 +135,7 @@ The supported formats are:
 | [DWARF](./formats/DWARF.md)                                                                                | ✔   | ✗     |
 | [Markdown](./formats/Markdown.md)                                                                          | ✗   | ✔     |
 | [Form](./formats/Form.md)                                                                                  | ✔   | ✗     |
+| [PGN](./formats/PGN.md)                                                                                    | ✔   | ✗     |
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/operations/settings/settings-formats.md) section.
 
