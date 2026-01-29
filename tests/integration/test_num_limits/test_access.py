@@ -30,6 +30,7 @@ node2 = cluster.add_instance(
 )
 
 limit = 10
+warn_limit = 5
 get_metric_query = "select value from system.metrics where metric = 'AccessEntities'"
 
 
@@ -151,7 +152,6 @@ def test_access_limit_replicated(started_cluster):
 
 def test_warnings(started_cluster):
     users = limit - get_metric_value(node)
-    warn_limit = limit // 2
 
     for i in range(users):
         node.query("create user u{}".format(i))
