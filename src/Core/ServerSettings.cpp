@@ -706,6 +706,15 @@ namespace
     <max_part_num_to_warn>400</max_part_num_to_warn>
     ```
     )", 0) \
+    DECLARE(UInt64, max_access_entity_num_to_warn, 10000lu, R"(
+    If number of access entities exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+
+    **Example**
+
+    ```xml
+    <max_access_entity_num_to_warn>400</max_access_entity_num_to_warn>
+    ```
+    )", 0) \
     DECLARE(UInt64, max_named_collection_num_to_throw, 0lu, R"(
     If number of named collections is greater than this value, server will throw an exception.
 
@@ -1667,6 +1676,8 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"max_part_num_to_warn", {std::to_string(context->getMaxPartNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_pending_mutations_to_warn", {std::to_string(context->getMaxPendingMutationsToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_pending_mutations_execution_time_to_warn", {std::to_string(context->getMaxPendingMutationsExecutionTimeToWarn()), ChangeableWithoutRestart::Yes}},
+            {"max_access_entity_num_to_warn", {std::to_string(context->getMaxAccessEntitiesNumToWarn()), ChangeableWithoutRestart::Yes}},
+
             {"max_partition_size_to_drop", {std::to_string(context->getMaxPartitionSizeToDrop()), ChangeableWithoutRestart::Yes}},
 
             {"min_os_cpu_wait_time_ratio_to_drop_connection", {std::to_string(context->getMinOSCPUWaitTimeRatioToDropConnection()), ChangeableWithoutRestart::Yes}},
