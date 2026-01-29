@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -11,6 +11,10 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
+
+#include <constants.h>
+#include <h3api.h>
+
 
 namespace DB
 {
@@ -99,8 +103,6 @@ namespace
                     toString(data_resolution[row]),
                     getName(),
                     toString(MAX_H3_RES));
-
-            validateH3Cell(data_hindex[row]);
 
             UInt64 res = cellToCenterChild(data_hindex[row], data_resolution[row]);
 

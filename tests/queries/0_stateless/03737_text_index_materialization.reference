@@ -1,0 +1,29 @@
+Before OPTIMIZE FINAL
+0
+1
+111
+Filter column: like(__table1.text, \'%v322%\'_String) (removed)
+Granules: 196/196
+Granules: 98/196
+1
+After OPTIMIZE FINAL
+1
+111
+Filter column: like(__table1.text, \'%v322%\'_String) (removed)
+Granules: 196/196
+Granules: 4/196
+1
+After CLEAR INDEX idx_text
+0
+111
+Filter column: like(__table1.text, \'%v322%\'_String) (removed)
+Granules: 196/196
+Granules: 196/196
+1
+After MATERIALIZIZE INDEX idx_text
+1
+111
+Filter column: like(__table1.text, \'%v322%\'_String) (removed)
+Granules: 196/196
+Granules: 4/196
+1

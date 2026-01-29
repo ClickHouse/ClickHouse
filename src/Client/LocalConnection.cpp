@@ -35,9 +35,6 @@ namespace Setting
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
-    extern const SettingsUInt64 max_insert_block_size_bytes;
-    extern const SettingsUInt64 min_insert_block_size_rows;
-    extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -168,7 +165,7 @@ void LocalConnection::sendQuery(
 
     state->query_id = query_id;
     state->query = query;
-    state->query_scope_holder = CurrentThread::QueryScope::create(query_context);
+    state->query_scope_holder = std::make_unique<CurrentThread::QueryScope>(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
     state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
     CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
@@ -245,16 +242,7 @@ void LocalConnection::sendQuery(
         }
 
         chassert(in, "ReadBuffer should be initialized");
-
-        auto source = context->getInputFormat(
-            current_format,
-            *in,
-            sample,
-            settings[Setting::max_insert_block_size],
-            std::nullopt,
-            settings[Setting::max_insert_block_size_bytes],
-            settings[Setting::min_insert_block_size_rows],
-            settings[Setting::min_insert_block_size_bytes]);
+        auto source = context->getInputFormat(current_format, *in, sample, context->getSettingsRef()[Setting::max_insert_block_size]);
         Pipe pipe(source);
 
         auto columns_description = metadata_snapshot->getColumns();

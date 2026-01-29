@@ -149,7 +149,7 @@ private:
         HTMLForm & params,
         HTTPServerResponse & response,
         Output & used_output,
-        CurrentThread::QueryScope & query_scope,
+        std::optional<CurrentThread::QueryScope> & query_scope,
         const ProfileEvents::Event & write_event);
 
     bool trySendExceptionToClient(

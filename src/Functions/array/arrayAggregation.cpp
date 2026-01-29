@@ -255,7 +255,7 @@ struct ArrayAggregateImpl
                     }
                     else
                     {
-                        res[i] = static_cast<ResultType>(x);
+                        res[i] = x;
                     }
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::product)
@@ -288,7 +288,7 @@ struct ArrayAggregateImpl
                         for (size_t array_index = 1; array_index < array_size; ++array_index)
                             product = product * x;
 
-                        res[i] = static_cast<ResultType>(product);
+                        res[i] = product;
                     }
                 }
 
@@ -320,7 +320,7 @@ struct ArrayAggregateImpl
                 if constexpr (is_decimal<AggregationType>)
                     res[i] = aggregate_value.value;
                 else
-                    res[i] = static_cast<ResultType>(aggregate_value);
+                    res[i] = aggregate_value;
                 continue;
             }
 
@@ -366,7 +366,7 @@ struct ArrayAggregateImpl
                 }
                 else
                 {
-                    res[i] = static_cast<ResultType>(aggregate_value) / static_cast<ResultType>(count);
+                    res[i] = static_cast<ResultType>(aggregate_value) / count;
                 }
             }
             else if constexpr (aggregate_operation == AggregateOperation::product && is_decimal<Element>)
@@ -381,7 +381,7 @@ struct ArrayAggregateImpl
             }
             else
             {
-                res[i] = static_cast<ResultType>(aggregate_value);
+                res[i] = aggregate_value;
             }
         }
 

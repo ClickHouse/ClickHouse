@@ -30,10 +30,6 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
         use_persistent_processing_nodes_,
         log_)
 {
-    LOG_TEST(log, "Path: {}, node_name: {}, max_loading_retries: {}, "
-             "processed_path: {}, processing_path: {}, failed_path: {}",
-             path, node_name, max_loading_retries,
-             processed_node_path, processing_node_path, failed_node_path);
 }
 
 ObjectStorageQueueUnorderedFileMetadata::SetProcessingResponseIndexes
@@ -117,9 +113,14 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         "Failed to set file processing, last error: {}", code);
 }
 
-void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(
-    Coordination::Requests & requests,
-    LastProcessedFileInfoMapPtr /* created_nodes */)
+void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedAtStartRequests(Coordination::Requests & requests)
+{
+    requests.push_back(
+        zkutil::makeCreateRequest(
+            processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
+}
+
+void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests)
 {
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
     requests.push_back(

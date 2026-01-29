@@ -307,18 +307,18 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
 
 ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingChange & new_setting)
 {
-    auto set = make_intrusive<ASTSetQuery>();
+    auto set = std::make_shared<ASTSetQuery>();
     set->is_standalone = false;
     set->changes = {new_setting};
 
-    auto command = make_intrusive<ASTAlterCommand>();
+    auto command = std::make_shared<ASTAlterCommand>();
     command->type = ASTAlterCommand::Type::MODIFY_DATABASE_SETTING;
     command->settings_changes = command->children.emplace_back(std::move(set)).get();
 
-    auto command_list = make_intrusive<ASTExpressionList>();
+    auto command_list = std::make_shared<ASTExpressionList>();
     command_list->children.push_back(command);
 
-    auto query = make_intrusive<ASTAlterQuery>();
+    auto query = std::make_shared<ASTAlterQuery>();
     auto * alter = query->as<ASTAlterQuery>();
 
     alter->alter_object = ASTAlterQuery::AlterObjectType::DATABASE;

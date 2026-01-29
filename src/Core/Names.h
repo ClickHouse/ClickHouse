@@ -22,8 +22,4 @@ using NameToIndexMap = std::unordered_map<std::string, size_t>;
 using NameWithAlias = std::pair<std::string, std::string>;
 using NamesWithAliases = std::vector<NameWithAlias>;
 
-struct NamesHash
-{
-    size_t operator()(const Names & column_names) const;
-};
 }

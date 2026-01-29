@@ -16,7 +16,6 @@ FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
             "_debug, parallel",
             "_binary, parallel",
             "_asan, distributed plan, parallel",
-            "_tsan, parallel",
         )
     )
 ]
@@ -135,7 +134,6 @@ workflow = Workflow.Config(
     enable_gh_summary_comment=True,
     enable_commit_status_on_failure=False,
     enable_open_issues_check=True,
-    enable_slack_feed=True,
     pre_hooks=[
         can_be_trusted,
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
@@ -156,7 +154,6 @@ workflow = Workflow.Config(
             0
         ].name,  # plain integration test job, no old analyzer, no dist plan
         "functional": PLAIN_FUNCTIONAL_TEST_JOB.name,
-        "build": "Build (amd_binary)",
     },
 )
 

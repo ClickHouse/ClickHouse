@@ -102,8 +102,7 @@ void SerializationVariant::enumerateStreams(
     settings.path.push_back(Substream::VariantElements);
     settings.path.back().data = data;
 
-    chassert(variant_serializations.size() <= std::numeric_limits<ColumnVariant::Discriminator>::max());
-    for (ColumnVariant::Discriminator i = 0; i < static_cast<ColumnVariant::Discriminator>(variant_serializations.size()); ++i)
+    for (size_t i = 0; i < variant_serializations.size(); ++i)
     {
         DataTypePtr type = type_variant ? type_variant->getVariant(i) : nullptr;
         settings.path.back().creator = std::make_shared<SerializationVariantElement::VariantSubcolumnCreator>(
@@ -133,8 +132,7 @@ void SerializationVariant::enumerateStreams(
                              .withType(type_variant ? std::make_shared<DataTypeUInt8>() : nullptr)
                              .withColumn(column_variant ? ColumnUInt8::create() : nullptr);
 
-    chassert(variant_serializations.size() <= std::numeric_limits<ColumnVariant::Discriminator>::max());
-    for (ColumnVariant::Discriminator i = 0; i < static_cast<ColumnVariant::Discriminator>(variant_serializations.size()); ++i)
+    for (size_t i = 0; i < variant_serializations.size(); ++i)
     {
         if (!variant_types[i]->canBeInsideNullable())
             continue;
@@ -485,9 +483,6 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     if (!col.hasGlobalVariantsOrder())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to deserialize data into Variant column with not global variants order");
 
-    if (col.getNumVariants() != variant_serializations.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of variants in column doesn't match number of variant serializations: {} != {}", col.getNumVariants(), variant_serializations.size());
-
     /// First, deserialize discriminators.
     settings.path.push_back(Substream::VariantDiscriminators);
 
@@ -607,13 +602,9 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     settings.path.push_back(Substream::VariantElements);
     for (size_t i = 0; i != variant_serializations.size(); ++i)
     {
-        auto & variant_column = col.getVariantPtrByLocalDiscriminator(i);
-        if (!variant_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column for variant {} is invalid", variant_names[i]);
-
         addVariantElementToPath(settings.path, i);
         variant_serializations[i]->deserializeBinaryBulkWithMultipleStreams(
-            variant_column, variant_rows_offsets[i], variant_limits[i],
+            col.getVariantPtrByLocalDiscriminator(i), variant_rows_offsets[i], variant_limits[i],
             settings, variant_state->variant_states[i], cache);
         settings.path.pop_back();
 
@@ -640,7 +631,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         variant_offsets.reserve(variant_serializations.size());
         size_t num_non_empty_variants = 0;
         ColumnVariant::Discriminator last_non_empty_discr = 0;
-        for (ColumnVariant::Discriminator i = 0; i != variant_serializations.size(); ++i)
+        for (size_t i = 0; i != variant_serializations.size(); ++i)
         {
             if (variant_limits[i])
             {
@@ -1032,7 +1023,7 @@ bool SerializationVariant::tryDeserializeImpl(
         size_t prev_size = variant_column.size();
         if (try_deserialize_nested(variant_column, variant_serializations[global_discr], variant_buf, modified_settings) && variant_buf.eof())
         {
-            column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(static_cast<ColumnVariant::Discriminator>(global_discr)));
+            column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(global_discr));
             column_variant.getOffsets().push_back(prev_size);
             return true;
         }

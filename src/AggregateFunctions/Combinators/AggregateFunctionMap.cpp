@@ -10,11 +10,11 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
-#include <Common/ContainersWithMemoryTracking.h>
 
 
 namespace DB
@@ -33,7 +33,7 @@ template <typename KeyType>
 struct AggregateFunctionMapCombinatorData
 {
     using SearchType = KeyType;
-    UnorderedMapWithMemoryTracking<KeyType, AggregateDataPtr> merged_maps;
+    std::unordered_map<KeyType, AggregateDataPtr> merged_maps;
 
     static void writeKey(KeyType key, WriteBuffer & buf) { writeBinaryLittleEndian(key, buf); }
     static void readKey(KeyType & key, ReadBuffer & buf) { readBinaryLittleEndian(key, buf); }
@@ -51,7 +51,7 @@ struct AggregateFunctionMapCombinatorData<String>
     };
 
     using SearchType = std::string_view;
-    UnorderedMapWithMemoryTracking<String, AggregateDataPtr, StringHash, std::equal_to<>> merged_maps;
+    std::unordered_map<String, AggregateDataPtr, StringHash, std::equal_to<>> merged_maps;
 
     static void writeKey(String key, WriteBuffer & buf)
     {
@@ -76,7 +76,7 @@ struct AggregateFunctionMapCombinatorData<IPv6>
     };
 
     using SearchType = IPv6;
-    UnorderedMapWithMemoryTracking<IPv6, AggregateDataPtr, IPv6Hash, std::equal_to<>> merged_maps;
+    std::unordered_map<IPv6, AggregateDataPtr, IPv6Hash, std::equal_to<>> merged_maps;
 
     static void writeKey(const IPv6 & key, WriteBuffer & buf)
     {
@@ -298,7 +298,7 @@ public:
         auto & merged_maps = this->data(place).merged_maps;
 
         // sort the keys
-        VectorWithMemoryTracking<KeyType> keys;
+        std::vector<KeyType> keys;
         keys.reserve(merged_maps.size());
         for (auto & it : merged_maps)
         {
