@@ -29,6 +29,7 @@ The following actions are supported:
 - [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
 - [MODIFY COLUMN MODIFY SETTING](#modify-column-modify-setting) - Changes column settings.
 - [MODIFY COLUMN RESET SETTING](#modify-column-reset-setting) - Reset column settings.
+- [MODIFY COLUMN ADD ENUM VALUES](#modify-column-add-enum-values) - Adds new values to Enum.
 - [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
 These actions are described in detail below.
 
@@ -141,8 +142,12 @@ ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used fo
 ## MODIFY COLUMN {#modify-column}
 
 ```sql
-MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
-ALTER COLUMN [IF EXISTS] name TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+MODIFY COLUMN [IF EXISTS] name
+    [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+	| ADD ENUM VALUES ( 'name' [= number] [, ...] )
+ALTER COLUMN [IF EXISTS] name
+    TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+	| ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ```
 
 This query changes the `name` column properties:
@@ -156,6 +161,8 @@ This query changes the `name` column properties:
 - TTL
 
 - Column-level Settings
+
+- Enum Values for Enum/Enum8/Enum16 types
 
 For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md/#column_compression_codec).
 
@@ -273,6 +280,24 @@ Reset column setting `max_compress_block_size` to it's default value:
 
 ```sql
 ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_block_size;
+```
+
+## MODIFY COLUMN ADD ENUM VALUES {#modify-column-add-enum-values}
+
+Adds new values to a column of type `Enum`, `Enum8` or `Enum16`.
+
+Syntax:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('EnumName' [= number] , ...]);
+```
+
+**Example**
+
+Add two values to column `enum_column_name`:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('Hundred' = 100, 'HundredOne');
 ```
 
 ## MATERIALIZE COLUMN {#materialize-column}

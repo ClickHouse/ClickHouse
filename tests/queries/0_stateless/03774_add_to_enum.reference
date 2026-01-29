@@ -1,0 +1,68 @@
+======= NULLABLE   ===============
+======= Enum ===============
+======================
+Zero
+Four
+CREATE TABLE default.enum\n(\n    `x` Enum8(\'Zero\' = 0, \'One\' = 1, \'Two\' = 2, \'Three\' = 3, \'Four\' = 4, \'Hundred\' = 100, \'ThousandOne\' = 101)\n)\nENGINE = Memory
+======================
+Zero
+Three
+Four
+Hundred
+Hundred
+======= Enum8 ===============
+======================
+Zero
+Four
+CREATE TABLE default.enum\n(\n    `x` Enum8(\'Zero\' = 0, \'One\' = 1, \'Two\' = 2, \'Three\' = 3, \'Four\' = 4, \'Hundred\' = 100, \'ThousandOne\' = 101)\n)\nENGINE = Memory
+======================
+Zero
+Three
+Four
+Hundred
+Hundred
+======= Enum16 ===============
+======================
+Zero
+Four
+CREATE TABLE default.enum\n(\n    `x` Enum16(\'Zero\' = 0, \'One\' = 1, \'Two\' = 2, \'Three\' = 3, \'Four\' = 4, \'Hundred\' = 100, \'Thousand\' = 1000, \'ThousandOne\' = 1001)\n)\nENGINE = Memory
+======================
+Zero
+Three
+Four
+Hundred
+Hundred
+======= NULLABLE Nullable( ) ===============
+======= Enum ===============
+======================
+Zero
+Four
+CREATE TABLE default.enum\n(\n    `x` Nullable(Enum8(\'Zero\' = 0, \'One\' = 1, \'Two\' = 2, \'Three\' = 3, \'Four\' = 4, \'Hundred\' = 100, \'ThousandOne\' = 101))\n)\nENGINE = Memory
+======================
+Zero
+Three
+Four
+Hundred
+Hundred
+======= Enum8 ===============
+======================
+Zero
+Four
+CREATE TABLE default.enum\n(\n    `x` Nullable(Enum8(\'Zero\' = 0, \'One\' = 1, \'Two\' = 2, \'Three\' = 3, \'Four\' = 4, \'Hundred\' = 100, \'ThousandOne\' = 101))\n)\nENGINE = Memory
+======================
+Zero
+Three
+Four
+Hundred
+Hundred
+======= Enum16 ===============
+======================
+Zero
+Four
+CREATE TABLE default.enum\n(\n    `x` Nullable(Enum16(\'Zero\' = 0, \'One\' = 1, \'Two\' = 2, \'Three\' = 3, \'Four\' = 4, \'Hundred\' = 100, \'Thousand\' = 1000, \'ThousandOne\' = 1001))\n)\nENGINE = Memory
+======================
+Zero
+Three
+Four
+Hundred
+Hundred

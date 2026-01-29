@@ -1,0 +1,45 @@
+{% for NULLABLE_START, NULLABLE_END in {'' : '', 'Nullable(' : ')'}.items() -%}
+SELECT '======= NULLABLE {{ NULLABLE_START }} {{ NULLABLE_END }} ===============';
+{% for ENUM_TYPE in ['Enum', 'Enum8', 'Enum16'] -%}
+
+SELECT '======= {{ ENUM_TYPE }} ===============';
+DROP TABLE IF EXISTS enum;
+CREATE TABLE enum (x {{ NULLABLE_START }}{{ ENUM_TYPE }}('One' = 1, 'Two', 'Three'){{ NULLABLE_END }}) ENGINE = Memory;
+INSERT INTO enum VALUES (0); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Zero' = 0, 'Four' = 4);
+INSERT INTO enum VALUES (0);
+INSERT INTO enum VALUES (4);
+SELECT '======================';
+SELECT * FROM enum ORDER BY x;
+{% if ENUM_TYPE != 'Enum16' -%}
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('ThousanD' = 1000); -- { serverError ARGUMENT_OUT_OF_BOUND }
+{% else %}
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Thousand' = 1000);
+{% endif %}
+{% if ENUM_TYPE == 'Enum8' -%}
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Thousand' = 1000); -- { serverError ARGUMENT_OUT_OF_BOUND }
+{% endif %}
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Hundred' = 100);
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Four' = 44, 'Five' = 5); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('FortyFour' = 4, 'Five' = 5); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('ThousandOne');
+SHOW CREATE TABLE enum;
+INSERT INTO enum VALUES (100);
+INSERT INTO enum VALUES ('Hundred');
+INSERT INTO enum VALUES ('Three');
+SELECT '======================';
+SELECT * FROM enum ORDER BY x;
+
+DROP TABLE enum;
+{% endfor -%}
+{% endfor -%}
+
+
+CREATE TABLE nonenum (x Int8) ENGINE = Memory;
+ALTER TABLE nonenum MODIFY COLUMN x ADD ENUM VALUES('A' = 1); -- { serverError ILLEGAL_COLUMN }
+ALTER TABLE nonenum ADD COLUMN z ADD ENUM VALUES('A' = 1); -- { clientError SYNTAX_ERROR }
+DROP TABLE nonenum;
+
+CREATE TABLE enumoverflow (x Enum8('a' = 127)) ENGINE = Memory;
+ALTER TABLE enumoverflow MODIFY COLUMN x ADD ENUM VALUES('b'); -- { serverError ARGUMENT_OUT_OF_BOUND }
+DROP TABLE enumoverflow;

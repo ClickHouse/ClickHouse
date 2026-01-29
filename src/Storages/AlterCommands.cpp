@@ -90,6 +90,13 @@ AlterCommand::RemoveProperty removePropertyFromString(const String & property)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
 }
 
+DataTypePtr tryCreateAddToEnumType(const ASTPtr & type_ast, bool is_enum16)
+{
+    if (!type_ast || !type_ast->as<ASTExpressionList>())
+         return {};
+
+    return createEnumAdd(type_ast, is_enum16);
+}
 }
 
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
@@ -203,6 +210,9 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
                 command.settings_resets.emplace(identifier.name());
             }
         }
+
+        if (command_ast->add_enum_values)
+            command.add_enum_values = command_ast->add_enum_values;
 
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
@@ -1363,6 +1373,76 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                     command.default_expression = column_from_table.default_desc.expression;
                 }
 
+                struct EnumTypeInfo
+                {
+                    const IDataTypeEnum * enum_type = nullptr;
+                    bool is_nullale = false;
+                    bool is_enum16 = false;
+                };
+
+
+                auto get_enum_type = [](const IDataType * dt) -> EnumTypeInfo
+                {
+                    const auto * column_enum_type = dynamic_cast<const IDataTypeEnum *>(dt);
+                    if (column_enum_type)
+                    {
+                        bool is_enum16 = typeid_cast<const DataTypeEnum16 *>(column_enum_type);
+                        return {column_enum_type, false, is_enum16};
+                    }
+
+                    const auto * column_nullable_type = dynamic_cast<const DataTypeNullable *>(dt);
+                    if (column_nullable_type)
+                    {
+                        const auto * column_nullable_enum_type = dynamic_cast<const IDataTypeEnum *>(column_nullable_type->getNestedType().get());
+                        if (column_nullable_enum_type)
+                        {
+                            bool is_enum16 = typeid_cast<const DataTypeEnum16 *>(column_nullable_enum_type);
+                            return {column_nullable_enum_type, true, is_enum16};
+                        }
+                    }
+                    return {};
+                };
+
+                if (command.add_enum_values)
+                {
+                    EnumTypeInfo eti = get_enum_type(column_from_table.type.get());
+                    DataTypePtr enum_dt = tryCreateAddToEnumType(command.add_enum_values, eti.is_enum16);
+                    if (enum_dt)
+                    {
+                        const auto * column_enum_type = eti.enum_type;
+                        if (!column_enum_type)
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot ADD ENUM VALUES to column {}", command.column_name);
+
+                        if (const auto * alter_enum_type = dynamic_cast<const IDataTypeEnum *>(enum_dt.get());
+                            alter_enum_type && alter_enum_type->isAdd())
+                        {
+                            if (const auto * base_enum8 = typeid_cast<const DataTypeEnum8 *>(column_enum_type))
+                            {
+                                if (const auto * add_enum8 = typeid_cast<const DataTypeEnum8 *>(alter_enum_type))
+                                    command.data_type = mergeEnumTypes<Int8>(*base_enum8, *add_enum8);
+                                else
+                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");
+                            }
+                            else if (const auto * base_enum16 = typeid_cast<const DataTypeEnum16 *>(column_enum_type))
+                            {
+                                if (const auto * add_enum16 = typeid_cast<const DataTypeEnum16 *>(alter_enum_type))
+                                    command.data_type = mergeEnumTypes<Int16>(*base_enum16, *add_enum16);
+                                else
+                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");
+                            }
+                            else
+                            {
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");
+                            }
+
+
+                            if (eti.is_nullale)
+                            {
+                                command.data_type = std::make_shared<DataTypeNullable>(command.data_type);
+                            }
+                        }
+                    }
+                }
             }
         }
         else if (command.type == AlterCommand::ADD_COLUMN)

@@ -3,6 +3,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/EnumValues.h>
 #include <Columns/ColumnVector.h>
+#include <Parsers/IAST.h>
 
 
 namespace DB
@@ -25,6 +26,8 @@ public:
     bool isComparable() const override { return true; }
 
     virtual bool contains(const IDataType & rhs) const = 0;
+    virtual bool isAdd() const = 0;
+    virtual bool isRelative() const = 0;
 };
 
 
@@ -42,9 +45,11 @@ public:
 private:
     std::string type_name;
     static std::string generateName(const Values & values);
+    bool is_add; // created by ALTER ... ADD ENUM VALUES
+    bool is_relative; // ADD ENUM VALUES is able to renumber
 
 public:
-    explicit DataTypeEnum(const Values & values_);
+    explicit DataTypeEnum(const Values & values_, bool is_add_ = false, bool is_relative_ = false);
 
     std::string doGetName() const override { return type_name; }
     const char * getFamilyName() const override;
@@ -75,8 +80,15 @@ public:
     SerializationPtr doGetDefaultSerialization() const override;
 
     void updateHashImpl(SipHash & hash) const override;
+
+    bool isAdd() const override  { return is_add; }
+    bool isRelative() const override  { return is_relative; }
 };
 
+template <typename TypeBase>
+DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEnum<TypeBase> & add);
+
+DataTypePtr createEnumAdd(const ASTPtr & arguments, bool is_enum16);
 
 using DataTypeEnum8 = DataTypeEnum<Int8>;
 using DataTypeEnum16 = DataTypeEnum<Int16>;
