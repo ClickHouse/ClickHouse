@@ -111,7 +111,7 @@ nbproject/*
 
 # Microsoft Visual Studio Code
 .vscode
-.history
+.devcontainer/
 
 config-preprocessed.xml
 
