@@ -1388,3 +1388,95 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
                 assert False
             except NoNodeError:
                 pass
+
+
+@pytest.mark.parametrize("mode", ["unordered"])
+def test_deduplication(started_cluster, mode):
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = (
+        f"test_deduplication_{mode}_{generate_random_string()}"
+    )
+    dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    format = "a Int32, b String"
+
+    processing_threads = 16
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 1000,
+            "use_persistent_processing_nodes": 1,
+            "persistent_processing_node_ttl_seconds": 60,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 500,
+            "polling_max_timeout_ms": 200,
+            "polling_backoff_ms": 100,
+            "processing_threads_num": processing_threads,
+        },
+    )
+    i = [0]
+
+    num_rows = 5
+    def insert():
+        i[0] += 1
+        file_name = f"file_{table_name}_{i[0]}.csv"
+        s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
+        node.query(
+            f"INSERT INTO FUNCTION {s3_function} select number, toString({i[0]}) FROM numbers({num_rows})"
+        )
+
+    files_num = 10
+    for _ in range(files_num):
+        insert()
+
+    node.query(
+        f"""
+        CREATE TABLE {dst_table_name} ({format}, _path String)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table_name}', 'node')
+        ORDER BY a;
+    """
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit")
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {table_name} WHERE NOT sleepEachRow(0.5);
+        """
+    )
+
+    found = False
+    for _ in range(50):
+        if node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 16/16"
+        ):
+            found = True
+            break
+        time.sleep(1)
+    assert found
+
+    node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit")
+
+    found = False
+    for _ in range(50):
+        if node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Successfully committed"
+        ):
+            found = True
+            break
+        time.sleep(1)
+    assert found
+
+    assert node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Failed to process data:"
+    )
+    expected_rows = files_num * num_rows
+    assert expected_rows == int(node.query(f"SELECT count() FROM {dst_table_name}"))
