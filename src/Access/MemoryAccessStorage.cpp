@@ -79,7 +79,8 @@ bool MemoryAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & ne
 }
 
 
-UUID MemoryAccessStorage::insertIgnoreLimit(const AccessEntityPtr & entity) {
+UUID MemoryAccessStorage::insertIgnoreLimit(const AccessEntityPtr & entity)
+{
     UUID id = generateRandomID();
     insertIgnoreLimit(id, entity, /* replace_if_exists = */ false, /* throw_if_exists = */ true);
     return id;
