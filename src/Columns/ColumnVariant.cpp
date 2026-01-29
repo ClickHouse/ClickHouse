@@ -729,6 +729,9 @@ void ColumnVariant::insertManyDefaults(size_t length)
 
 void ColumnVariant::popBack(size_t n)
 {
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
     /// If we have only NULLs, just pop back from local_discriminators and offsets.
     if (hasOnlyNulls())
     {
