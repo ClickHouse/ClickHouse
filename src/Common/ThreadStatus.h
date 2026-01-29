@@ -3,6 +3,7 @@
 #include <Core/LogsLevel.h>
 #include <IO/Progress.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/StringRef.h>
 #include <Common/IThrottler.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
@@ -42,8 +43,6 @@ struct PerfEventsCounters;
 class InternalTextLogsQueue;
 struct ViewRuntimeData;
 class QueryViewsLog;
-enum class ThreadName : uint8_t;
-
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 
@@ -67,10 +66,10 @@ using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class ThreadGroup
 {
 public:
+    ThreadGroup();
     using FatalErrorCallback = std::function<void()>;
-    ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
+    explicit ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
     explicit ThreadGroup(ThreadGroupPtr parent);
-    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -80,8 +79,6 @@ public:
     const ContextWeakPtr global_context;
 
     const FatalErrorCallback fatal_error_callback;
-
-    const Int32 os_threads_nice_value;
 
     MemorySpillScheduler::Ptr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
@@ -125,14 +122,13 @@ public:
     static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
-    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
-    UInt64 getGroupElapsedMs() const;
+    UInt64 getThreadsTotalElapsedMs() const;
 
     void linkThread(UInt64 thread_id);
-    void unlinkThread();
+    void unlinkThread(UInt64 elapsed_thread_counter_ms);
 
 private:
     mutable std::mutex mutex;
@@ -149,10 +145,9 @@ private:
     /// Peak threads count in the group
     size_t peak_threads_usage TSA_GUARDED_BY(mutex) = 0;
 
-    Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex) = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
-    UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
+    UInt64 elapsed_total_threads_counter_ms TSA_GUARDED_BY(mutex) = 0;
 
-    static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
+    static ThreadGroupPtr create(ContextPtr context);
 };
 
 /**
@@ -174,7 +169,7 @@ public:
     ///    Use this when running a task in a thread pool.
     ///  * If true, remembers the current group and restores it in destructor.
     /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
-    ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
+    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group_, const char * thread_name, bool allow_existing_group = false) noexcept;
     ~ThreadGroupSwitcher();
 
 private:
@@ -206,6 +201,8 @@ class ThreadStatus : public boost::noncopyable
 public:
     /// Linux's PID (or TGID) (the same id is shown by ps util)
     const UInt64 thread_id = 0;
+    /// Also called "nice" value. If it was changed to non-zero (when attaching query) - will be reset to zero when query is detached.
+    Int32 os_thread_priority = 0;
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
@@ -249,8 +246,6 @@ protected:
     bool performance_counters_finalized = false;
 
     String query_id;
-
-    [[maybe_unused]] bool jemalloc_profiler_enabled = false;
 
     struct TimePoint
     {

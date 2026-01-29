@@ -4,7 +4,6 @@
 #include <Core/Settings.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
-#include <Common/Config/parseConnectionCredentials.h>
 #include <Common/ThreadStatus.h>
 
 #include <Access/AccessControl.h>
@@ -24,9 +23,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
-#include <Client/JWTProvider.h>
-#include <Client/ClientBaseHelpers.h>
-
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
@@ -35,7 +31,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Poco/Util/Application.h>
-#include <Poco/URI.h>
 
 #include <filesystem>
 
@@ -65,6 +60,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
     extern const int REQUIRED_PASSWORD;
+    extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int USER_EXPIRED;
 }
 
@@ -140,6 +136,81 @@ void Client::showWarnings()
     }
 }
 
+void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name)
+{
+    std::optional<String> default_connection_name;
+    if (hosts_and_ports.empty())
+    {
+        if (config.has("host"))
+            default_connection_name = config.getString("host");
+    }
+    else
+    {
+        default_connection_name = hosts_and_ports.front().host;
+    }
+
+    String connection;
+    if (!connection_name.empty())
+        connection = connection_name;
+    else
+        connection = default_connection_name.value_or("localhost");
+
+    Strings keys;
+    config.keys("connections_credentials", keys);
+    bool connection_found = false;
+    for (const auto & key : keys)
+    {
+        const String & prefix = "connections_credentials." + key;
+
+        const String & name = config.getString(prefix + ".name", "");
+        if (name != connection)
+            continue;
+        connection_found = true;
+
+        String connection_hostname;
+        if (config.has(prefix + ".hostname"))
+            connection_hostname = config.getString(prefix + ".hostname");
+        else
+            connection_hostname = name;
+
+        config.setString("host", connection_hostname);
+        if (config.has(prefix + ".port"))
+            config.setInt("port", config.getInt(prefix + ".port"));
+        if (config.has(prefix + ".secure"))
+        {
+            bool secure = config.getBool(prefix + ".secure");
+            if (secure)
+                config.setBool("secure", true);
+            else
+                config.setBool("no-secure", true);
+        }
+        if (config.has(prefix + ".user"))
+            config.setString("user", config.getString(prefix + ".user"));
+        if (config.has(prefix + ".password"))
+            config.setString("password", config.getString(prefix + ".password"));
+        if (config.has(prefix + ".database"))
+            config.setString("database", config.getString(prefix + ".database"));
+        if (config.has(prefix + ".history_file"))
+        {
+            String history_file = config.getString(prefix + ".history_file");
+            if (history_file.starts_with("~") && !home_path.empty())
+                history_file = home_path + "/" + history_file.substr(1);
+            config.setString("history_file", history_file);
+        }
+        if (config.has(prefix + ".history_max_entries"))
+        {
+            config.setUInt("history_max_entries", history_max_entries);
+        }
+        if (config.has(prefix + ".accept-invalid-certificate"))
+            config.setBool("accept-invalid-certificate", config.getBool(prefix + ".accept-invalid-certificate"));
+        if (config.has(prefix + ".prompt"))
+            config.setString("prompt", config.getString(prefix + ".prompt"));
+    }
+
+    if (!connection_name.empty() && !connection_found)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No such connection '{}' in connections_credentials", connection);
+}
+
 /// Make query to get all server warnings
 std::vector<String> Client::loadWarningMessages()
 {
@@ -211,8 +282,6 @@ void Client::initialize(Poco::Util::Application & self)
     if (home_path_cstr)
         home_path = home_path_cstr;
 
-    const char * env_host = getenv("CLICKHOUSE_HOST"); // NOLINT(concurrency-mt-unsafe)
-
     std::optional<std::string> config_path;
     if (config().has("config-file"))
         config_path.emplace(config().getString("config-file"));
@@ -222,68 +291,8 @@ void Client::initialize(Poco::Util::Application & self)
     {
         ConfigProcessor config_processor(*config_path);
         auto loaded_config = config_processor.loadConfig();
-        auto & configuration = *loaded_config.configuration;
-
-        std::string default_host;
-        if (!hosts_and_ports.empty())
-            default_host = hosts_and_ports.front().host;
-        else if (config().has("host"))
-            default_host = config().getString("host");
-        else if (configuration.has("host"))
-            default_host = configuration.getString("host");
-        else if (env_host)
-            default_host = env_host;
-        else
-            default_host = "localhost";
-
-        std::optional<std::string> connection_name;
-        if (config().has("connection"))
-            connection_name.emplace(config().getString("connection"));
-
-        /// Connection credentials overrides should be set via loaded_config.configuration to have proper order.
-        auto overrides = parseConnectionsCredentials(configuration, default_host, connection_name);
-        if (overrides.hostname.has_value())
-            configuration.setString("host", overrides.hostname.value());
-        if (overrides.port.has_value())
-            configuration.setInt("port", overrides.port.value());
-        if (overrides.secure.has_value())
-        {
-            if (overrides.secure.value())
-                configuration.setBool("secure", true);
-            else
-                configuration.setBool("no-secure", true);
-        }
-        if (overrides.user.has_value())
-            configuration.setString("user", overrides.user.value());
-        if (overrides.password.has_value())
-            configuration.setString("password", overrides.password.value());
-        if (overrides.database.has_value())
-            configuration.setString("database", overrides.database.value());
-        if (overrides.history_file.has_value())
-        {
-            auto history_file = overrides.history_file.value();
-            if (history_file.starts_with("~/") && !home_path.empty())
-                history_file = home_path / history_file.substr(2);
-            configuration.setString("history_file", history_file);
-        }
-        if (overrides.history_max_entries.has_value())
-            configuration.setUInt("history_max_entries", overrides.history_max_entries.value());
-        if (overrides.accept_invalid_certificate.has_value())
-            configuration.setBool("accept-invalid-certificate", overrides.accept_invalid_certificate.value());
-        if (overrides.prompt.has_value())
-            configuration.setString("prompt", overrides.prompt.value());
-
+        parseConnectionsCredentials(*loaded_config.configuration, config().getString("connection", ""));
         config().add(loaded_config.configuration);
-
-#if USE_JWT_CPP && USE_SSL
-        /// If config file has user/password credentials, don't use auto-detected OAuth login for cloud endpoints
-        if (login_was_auto_added &&
-            (loaded_config.configuration->has("user") || loaded_config.configuration->has("password")))
-        {
-            /// Config file has auth credentials, so disable the auto-added login flag
-            config().setBool("login", false);
-        }
-#endif
     }
     else if (config().has("connection"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exist");
@@ -315,6 +324,7 @@ void Client::initialize(Poco::Util::Application & self)
     if (env_password && !config().has("password"))
         config().setString("password", env_password);
 
+    const char * env_host = getenv("CLICKHOUSE_HOST"); // NOLINT(concurrency-mt-unsafe)
     if (env_host && !config().has("host"))
         config().setString("host", env_host);
 
@@ -333,14 +343,6 @@ void Client::initialize(Poco::Util::Application & self)
     /// Set the path for google proto files
     if (config().has("google_protos_path"))
         client_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
-
-    /// Use <server_client_version_message/> unless --server-client-version-message is specified
-    if (!config().has("no-server-client-version-message") && !config().getBool("server_client_version_message", true))
-        config().setBool("no-server-client-version-message", true);
-
-    /// Use <warnings/> unless --no-warnings is specified
-    if (!config().has("no-warnings") && !config().getBool("warnings", true))
-        config().setBool("no-warnings", true);
 }
 
 
@@ -369,13 +371,6 @@ try
         clearTerminal();
         showClientVersion();
     }
-
-#if USE_JWT_CPP && USE_SSL
-    if (config().getBool("login", false))
-    {
-        login();
-    }
-#endif
 
     try
     {
@@ -446,38 +441,6 @@ catch (...)
     return getCurrentExceptionCode();
 }
 
-#if USE_JWT_CPP && USE_SSL
-void Client::login()
-{
-    std::string host = hosts_and_ports.front().host;
-    std::string auth_url = getClientConfiguration().getString("oauth-url", "");
-    std::string client_id = getClientConfiguration().getString("oauth-client-id", "");
-    std::string audience = getClientConfiguration().getString("oauth-audience", "");
-
-    if ((auth_url.empty() || client_id.empty()) && !isCloudEndpoint(host))
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Could not retrieve authentication endpoints for host '{}'. Please specify --oauth-url and --oauth-client-id if you are "
-            "not using ClickHouse Cloud.",
-            host);
-    }
-
-    jwt_provider = createJwtProvider(auth_url, client_id, audience, host, output_stream, error_stream);
-    if (jwt_provider)
-    {
-        std::string jwt = jwt_provider->getJWT();
-        if (!jwt.empty())
-        {
-            getClientConfiguration().setString("jwt", jwt);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Login failed. Please check your credentials and try again.");
-        }
-    }
-}
-#endif
 
 void Client::connect()
 {
@@ -502,10 +465,6 @@ void Client::connect()
 
             connection_parameters = ConnectionParameters(
                 config(), host, database, hosts_and_ports[attempted_address_index].port);
-
-#if USE_JWT_CPP && USE_SSL
-            connection_parameters.jwt_provider = jwt_provider;
-#endif
 
             if (is_interactive)
                 output_stream << "Connecting to "
@@ -574,23 +533,20 @@ void Client::connect()
         output_stream << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
 #if not CLICKHOUSE_CLOUD
-        if (!config().has("no-server-client-version-message"))
-        {
-            auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
-            auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
+        auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
+        auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
 
-            if (client_version_tuple < server_version_tuple)
-            {
-                output_stream << "ClickHouse client version is older than ClickHouse server. "
-                          << "It may lack support for new features." << std::endl
-                          << std::endl;
-            }
-            else if (client_version_tuple > server_version_tuple && server_display_name != "clickhouse-cloud")
-            {
-                output_stream << "ClickHouse server version is older than ClickHouse client. "
-                          << "It may indicate that the server is out of date and can be upgraded." << std::endl
-                          << std::endl;
-            }
+        if (client_version_tuple < server_version_tuple)
+        {
+            output_stream << "ClickHouse client version is older than ClickHouse server. "
+                      << "It may lack support for new features." << std::endl
+                      << std::endl;
+        }
+        else if (client_version_tuple > server_version_tuple && server_display_name != "clickhouse-cloud")
+        {
+            output_stream << "ClickHouse server version is older than ClickHouse client. "
+                      << "It may indicate that the server is out of date and can be upgraded." << std::endl
+                      << std::endl;
         }
 #endif
     }
@@ -680,7 +636,7 @@ void Client::printChangedSettings() const
             {
                 if (i)
                     fmt::print(stderr, ", ");
-                fmt::print(stderr, "{} = '{}'", changes[i].name, fieldToString(changes[i].value));
+                fmt::print(stderr, "{} = '{}'", changes[i].name, toString(changes[i].value));
             }
 
             fmt::print(stderr, "\n");
@@ -714,74 +670,65 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
 void Client::addExtraOptions(OptionsDescription & options_description)
 {
     /// Main commandline options related to client functionality and all parameters from Settings.
-    options_description.main_description->add_options()
-        ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
-        ("connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")
-        ("secure,s", "Use TLS connection")
-        ("tls-sni-override", po::value<std::string>(), "Override the SNI host name used for TLS connections")
-        ("no-secure", "Don't use TLS connection")
-        ("user,u", po::value<std::string>()->default_value("default"), "user")
-        ("password", po::value<std::string>(), "password")
-        ("ask-password", "ask-password")
-        ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")
-        ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
-        ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-        ("jwt", po::value<std::string>(), "Use JWT for authentication")
-#if USE_JWT_CPP && USE_SSL
-        ("login", po::bool_switch(), "Use OAuth 2.0 to login")
-        ("oauth-url", po::value<std::string>(), "The base URL for the OAuth 2.0 authorization server")
-        ("oauth-client-id", po::value<std::string>(), "The client ID for the OAuth 2.0 application")
-        ("oauth-audience", po::value<std::string>(), "The audience for the OAuth 2.0 token")
-#endif
+    options_description.main_description->add_options()("config,c", po::value<std::string>(), "config-file path (another shorthand)")(
+        "connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")(
+        "secure,s", "Use TLS connection")("no-secure", "Don't use TLS connection")(
+        "user,u", po::value<std::string>()->default_value("default"), "user")("password", po::value<std::string>(), "password")(
+        "ask-password",
+        "ask-password")("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")(
+        "ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")(
+        "quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")(
+        "jwt", po::value<std::string>(), "Use JWT for authentication")
+
         ("max_client_network_bandwidth",
-            po::value<int>(),
-            "the maximum speed of data exchange over the network for the client in bytes per second.")
-        ("compression",
+         po::value<int>(),
+         "the maximum speed of data exchange over the network for the client in bytes per second.")(
+            "compression",
             po::value<bool>(),
             "enable or disable compression (enabled by default for remote communication and disabled for localhost communication).")
-        ("query-fuzzer-runs",
-            po::value<int>()->default_value(0),
-            "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for "
-            "testing to discover unexpected corner cases.")
-        ("create-query-fuzzer-runs", po::value<int>()->default_value(0), "")
-        ("buzz-house-config", po::value<std::string>(), "Path to configuration file for BuzzHouse")
-        ("interleave-queries-file",
-            po::value<std::vector<std::string>>()->multitoken(),
-            "file path with queries to execute before every file from 'queries-file'; multiple files can be specified (--queries-file "
-            "file1 file2...); this is needed to enable more aggressive fuzzing of newly added tests (see 'query-fuzzer-runs' option)")
-        ("opentelemetry-traceparent",
-            po::value<std::string>(),
-            "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
-        ("opentelemetry-tracestate",
-            po::value<std::string>(),
-            "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
-        ("no-warnings", "disable warnings when client connects to server")
-        ("no-server-client-version-message", "suppress server-client version mismatch message")
+
+            ("query-fuzzer-runs",
+             po::value<int>()->default_value(0),
+             "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for "
+             "testing to discover unexpected corner cases.")("create-query-fuzzer-runs", po::value<int>()->default_value(0), "")(
+                "buzz-house-config", po::value<std::string>(), "Path to configuration file for BuzzHouse")(
+                "interleave-queries-file",
+                po::value<std::vector<std::string>>()->multitoken(),
+                "file path with queries to execute before every file from 'queries-file'; multiple files can be specified (--queries-file "
+                "file1 file2...); this is needed to enable more aggressive fuzzing of newly added tests (see 'query-fuzzer-runs' option)")
+
+                ("opentelemetry-traceparent",
+                 po::value<std::string>(),
+                 "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")(
+                    "opentelemetry-tracestate",
+                    po::value<std::string>(),
+                    "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
+
+                    ("no-warnings", "disable warnings when client connects to server")
         /// TODO: Left for compatibility as it's used in upgrade check, remove after next release and use server setting ignore_drop_queries_probability
-        ("fake-drop", "Ignore all DROP queries, should be used only for testing")
-        ("accept-invalid-certificate",
+        ("fake-drop", "Ignore all DROP queries, should be used only for testing")(
+            "accept-invalid-certificate",
             "Ignore certificate verification errors, equal to config parameters "
             "openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none");
 
     /// Commandline options related to external tables.
 
     options_description.external_description.emplace(createOptionsDescription("External tables options", terminal_width));
-    options_description.external_description->add_options()
-        ("file", po::value<std::string>(), "data file or - for stdin")
-        ("name", po::value<std::string>()->default_value("_data"), "name of the table")
-        ("format", po::value<std::string>()->default_value("TabSeparated"), "data format")
-        ("structure", po::value<std::string>(), "structure")
-        ("types", po::value<std::string>(), "types");
+    options_description.external_description->add_options()("file", po::value<std::string>(), "data file or - for stdin")(
+        "name", po::value<std::string>()->default_value("_data"), "name of the table")(
+        "format", po::value<std::string>()->default_value("TabSeparated"), "data format")(
+        "structure", po::value<std::string>(), "structure")("types", po::value<std::string>(), "types");
 
     /// Commandline options related to hosts and ports.
     options_description.hosts_and_ports_description.emplace(createOptionsDescription("Hosts and ports options", terminal_width));
-    options_description.hosts_and_ports_description->add_options()
-        ("host,h", po::value<String>()->default_value("localhost"),
-            "Server hostname. Multiple hosts can be passed via multiple arguments"
-            "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'"
-            "Each '--port port' will be attached to the last seen host that doesn't have a port yet,"
-            "if there is no such host, the port will be attached to the next first host or to default host.")
-        ("port", po::value<UInt16>(), "server ports");
+    options_description.hosts_and_ports_description->add_options()(
+        "host,h",
+        po::value<String>()->default_value("localhost"),
+        "Server hostname. Multiple hosts can be passed via multiple arguments"
+        "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'"
+        "Each '--port port' will be attached to the last seen host that doesn't have a port yet,"
+        "if there is no such host, the port will be attached to the next first host or to default host.")(
+        "port", po::value<UInt16>(), "server ports");
 }
 
 
@@ -847,68 +794,47 @@ void Client::processOptions(
     /// TODO: Is this code necessary?
     global_context->getSettingsRef().addToClientOptions(config(), options, allow_repeated_settings);
 
-    if (options.contains("config-file") && options.contains("config"))
+    if (options.count("config-file") && options.count("config"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more configuration files referenced in arguments");
 
-    if (options.contains("config"))
+    if (options.count("config"))
         config().setString("config-file", options["config"].as<std::string>());
-    if (options.contains("connection"))
+    if (options.count("connection"))
         config().setString("connection", options["connection"].as<std::string>());
-    if (options.contains("interleave-queries-file"))
+    if (options.count("interleave-queries-file"))
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
-    if (options.contains("secure"))
+    if (options.count("secure"))
         config().setBool("secure", true);
-    if (options.contains("tls-sni-override"))
-        config().setString("tls-sni-override", options["tls-sni-override"].as<std::string>());
-    if (options.contains("no-secure"))
+    if (options.count("no-secure"))
         config().setBool("no-secure", true);
-    if (options.contains("user") && !options["user"].defaulted())
+    if (options.count("user") && !options["user"].defaulted())
         config().setString("user", options["user"].as<std::string>());
-    if (options.contains("password"))
+    if (options.count("password"))
         config().setString("password", options["password"].as<std::string>());
-    if (options.contains("ask-password"))
+    if (options.count("ask-password"))
         config().setBool("ask-password", true);
-    if (options.contains("ssh-key-file"))
+    if (options.count("ssh-key-file"))
         config().setString("ssh-key-file", options["ssh-key-file"].as<std::string>());
-    if (options.contains("ssh-key-passphrase"))
+    if (options.count("ssh-key-passphrase"))
         config().setString("ssh-key-passphrase", options["ssh-key-passphrase"].as<std::string>());
-    if (options.contains("quota_key"))
+    if (options.count("quota_key"))
         config().setString("quota_key", options["quota_key"].as<std::string>());
-    if (options.contains("max_client_network_bandwidth"))
+    if (options.count("max_client_network_bandwidth"))
         max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
-    if (options.contains("compression"))
+    if (options.count("compression"))
         config().setBool("compression", options["compression"].as<bool>());
-    if (options.contains("no-warnings"))
+    if (options.count("no-warnings"))
         config().setBool("no-warnings", true);
-    if (options.contains("no-server-client-version-message"))
-        config().setBool("no-server-client-version-message", true);
-    if (options.contains("fake-drop"))
+    if (options.count("fake-drop"))
         config().setString("ignore_drop_queries_probability", "1");
-    if (options.contains("jwt"))
+    if (options.count("jwt"))
     {
         if (!options["user"].defaulted())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and JWT flags can't be specified together");
         config().setString("jwt", options["jwt"].as<std::string>());
         config().setString("user", "");
     }
-#if USE_JWT_CPP && USE_SSL
-    if (options["login"].as<bool>())
-    {
-        if (!options["user"].defaulted())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and login flags can't be specified together");
-        if (config().has("jwt"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "JWT and login flags can't be specified together");
-        config().setBool("login", true);
-        config().setString("user", "");
-    }
-    if (options.contains("oauth-url"))
-        config().setString("oauth-url", options["oauth-url"].as<std::string>());
-    if (options.contains("oauth-client-id"))
-        config().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
-    if (options.contains("oauth-audience"))
-        config().setString("oauth-audience", options["oauth-audience"].as<std::string>());
-#endif
-    if (options.contains("accept-invalid-certificate"))
+    if (options.count("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
         config().setString("openSSL.client.verificationMode", "none");
@@ -917,7 +843,7 @@ void Client::processOptions(
         config().setString("openSSL.client.invalidCertificateHandler.name", "RejectCertificateHandler");
 
     query_fuzzer_runs = options["query-fuzzer-runs"].as<int>();
-    buzz_house_options_path = options.contains("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
+    buzz_house_options_path = options.count("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
     buzz_house = !query_fuzzer_runs && !buzz_house_options_path.empty();
     if (query_fuzzer_runs || !buzz_house_options_path.empty())
     {
@@ -951,7 +877,7 @@ void Client::processOptions(
         ignore_error = true;
     }
 
-    if (options.contains("opentelemetry-traceparent"))
+    if (options.count("opentelemetry-traceparent"))
     {
         String traceparent = options["opentelemetry-traceparent"].as<std::string>();
         String error;
@@ -959,12 +885,12 @@ void Client::processOptions(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse OpenTelemetry traceparent '{}': {}", traceparent, error);
     }
 
-    if (options.contains("opentelemetry-tracestate"))
+    if (options.count("opentelemetry-tracestate"))
         global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
 
     initClientContext(Context::createCopy(global_context));
     /// Initialize query context for the current thread to avoid sharing global context (i.e. for obtaining session_timezone)
-    query_scope = CurrentThread::QueryScope::create(client_context);
+    query_scope.emplace(client_context);
 
 
     /// Allow to pass-through unknown settings to the server.
@@ -1013,7 +939,13 @@ void Client::processConfig()
         if (config().has("history_file"))
             history_file = config().getString("history_file");
         else
-            history_file = ClientBase::getHistoryFilePath();
+        {
+            auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
+            if (history_file_from_env)
+                history_file = history_file_from_env;
+            else if (!home_path.empty())
+                history_file = home_path + "/.clickhouse-client-history";
+        }
     }
 
     pager = config().getString("pager", "");
@@ -1033,74 +965,9 @@ void Client::readArguments(
     std::vector<Arguments> & external_tables_arguments,
     std::vector<Arguments> & hosts_and_ports_arguments)
 {
-    // Default to oauth authentication for ClickHouse Cloud for a hostname argument.
-    bool is_hostname_argument = false;
-#if USE_JWT_CPP && USE_SSL
-    if (argc >= 2)
-    {
-        std::string_view first_arg(argv[1]);
-
-        /// Only process as positional hostname if it doesn't start with '-' (i.e., it's not a flag)
-        if (!first_arg.starts_with('-'))
-        {
-            std::string hostname(argv[1]);
-            std::string port;
-            bool has_auth_in_connection_string = false;
-
-            try
-            {
-                Poco::URI uri{hostname};
-                if (const auto & host = uri.getHost(); !host.empty())
-                {
-                    hostname = host;
-                    port = std::to_string(uri.getPort());
-                }
-                /// Check if connection string contains user credentials (e.g., clickhouse://user:password@host)
-                has_auth_in_connection_string = !uri.getUserInfo().empty();
-            }
-            catch (const Poco::URISyntaxException &) // NOLINT(bugprone-empty-catch)
-            {
-                // intentionally ignored. argv[1] is not a uri, but could be a query.
-            }
-
-            if (isCloudEndpoint(hostname) && !has_auth_in_connection_string)
-            {
-                is_hostname_argument = true;
-
-                /// Check if user provided authentication credentials via command line
-                bool has_auth_in_cmdline = false;
-                for (int i = 1; i < argc; ++i)
-                {
-                    std::string_view arg(argv[i]);
-                    if (arg.starts_with("--user") || arg.starts_with("--password") ||
-                        arg.starts_with("--jwt") || arg.starts_with("--ssh-key-file") ||
-                        arg == "-u")
-                    {
-                        has_auth_in_cmdline = true;
-                        break;
-                    }
-                }
-
-                /// Only auto-add --login if no authentication credentials provided via command line or connection string
-                if (!has_auth_in_cmdline && !has_auth_in_connection_string)
-                {
-                    common_arguments.emplace_back("--login");
-                    login_was_auto_added = true;
-                }
-                common_arguments.emplace_back("--secure");
-
-                std::vector<std::string> host_and_port;
-                host_and_port.push_back("--host=" + hostname);
-                if (!port.empty())
-                    host_and_port.push_back("--port=" + port);
-                hosts_and_ports_arguments.push_back(std::move(host_and_port));
-            }
-        }
-    }
-#endif
-
-    bool has_connection_string = !is_hostname_argument && argc >= 2 && tryParseConnectionString(std::string_view(argv[1]), common_arguments, hosts_and_ports_arguments);
-    int start_argument_index = (has_connection_string || is_hostname_argument) ? 2 : 1;
+    bool has_connection_string
+        = argc >= 2 && tryParseConnectionString(std::string_view(argv[1]), common_arguments, hosts_and_ports_arguments);
+    int start_argument_index = has_connection_string ? 2 : 1;
 
     /** We allow different groups of arguments:
         * - common arguments;
@@ -1118,24 +985,7 @@ void Client::readArguments(
     {
         std::string_view arg = argv[arg_num];
 
-        /// Support arguments with a space on both sides of equals sign.
-        /// Ex: --param = value
-        std::string fused_arg;
-        if (arg.starts_with('-') && arg_num + 2 < argc)
-        {
-            std::string_view next_arg = argv[arg_num + 1];
-            if (next_arg == "=" && !arg.contains('='))
-            {
-                fused_arg = std::string(arg);
-                fused_arg += "=";
-                fused_arg += argv[arg_num + 2];
-
-                arg = fused_arg;
-                arg_num += 2;
-            }
-        }
-
-        if (has_connection_string || is_hostname_argument)
+        if (has_connection_string)
             checkIfCmdLineOptionCanBeUsedWithConnectionString(arg);
 
         if (arg == "--external")

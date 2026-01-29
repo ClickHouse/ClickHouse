@@ -5,7 +5,6 @@ sidebar_label: 'postgresql'
 sidebar_position: 160
 slug: /sql-reference/table-functions/postgresql
 title: 'postgresql'
-doc_type: 'reference'
 ---
 
 # postgresql Table Function

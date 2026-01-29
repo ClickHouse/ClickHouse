@@ -91,39 +91,31 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
 }
 
 
-BlockIO PostgreSQLDictionarySource::loadAll()
+QueryPipeline PostgreSQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
-    BlockIO io;
-    io.pipeline = loadBase(load_all_query);
-    return io;
+    return loadBase(load_all_query);
 }
 
 
-BlockIO PostgreSQLDictionarySource::loadUpdatedAll()
+QueryPipeline PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, fmt::runtime(load_update_query));
-    BlockIO io;
-    io.pipeline = loadBase(load_update_query);
-    return io;
+    return loadBase(load_update_query);
 }
 
-BlockIO PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    BlockIO io;
-    io.pipeline = loadBase(query);
-    return io;
+    return loadBase(query);
 }
 
 
-BlockIO PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    BlockIO io;
-    io.pipeline = loadBase(query);
-    return io;
+    return loadBase(query);
 }
 
 
@@ -151,9 +143,7 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-
-    QueryPipeline pipeline(std::make_unique<PostgreSQLSource<>>(pool->get(), request, std::make_shared<const Block>(std::move(invalidate_sample_block)), 1));
-    return readInvalidateQuery(pipeline);
+    return readInvalidateQuery(QueryPipeline(std::make_unique<PostgreSQLSource<>>(pool->get(), request, std::make_shared<const Block>(std::move(invalidate_sample_block)), 1)));
 }
 
 
@@ -238,7 +228,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
             StoragePostgreSQL::Configuration common_configuration;
             common_configuration.host = named_collection->getOrDefault<String>("host", "");
-            common_configuration.port = static_cast<UInt16>(named_collection->getOrDefault<UInt64>("port", 0));
+            common_configuration.port = named_collection->getOrDefault<UInt64>("port", 0);
             common_configuration.username = named_collection->getOrDefault<String>("user", "");
             common_configuration.password = named_collection->getOrDefault<String>("password", "");
             common_configuration.database = named_collection->getAnyOrDefault<String>({"database", "db"}, "");
@@ -266,7 +256,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
             StoragePostgreSQL::Configuration common_configuration;
             common_configuration.host = config.getString(settings_config_prefix + ".host", "");
-            common_configuration.port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", 0));
+            common_configuration.port = config.getUInt(settings_config_prefix + ".port", 0);
             common_configuration.username = config.getString(settings_config_prefix + ".user", "");
             common_configuration.password = config.getString(settings_config_prefix + ".password", "");
             common_configuration.database = config.getString(fmt::format("{}.database", settings_config_prefix), config.getString(fmt::format("{}.db", settings_config_prefix), ""));
@@ -301,7 +291,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
                         size_t priority = config.getInt(replica_name + ".priority", 0);
                         replica_configuration.host = config.getString(replica_name + ".host", common_configuration.host);
-                        replica_configuration.port = static_cast<UInt16>(config.getUInt(replica_name + ".port", common_configuration.port));
+                        replica_configuration.port = config.getUInt(replica_name + ".port", common_configuration.port);
                         replica_configuration.username = config.getString(replica_name + ".user", common_configuration.username);
                         replica_configuration.password = config.getString(replica_name + ".password", common_configuration.password);
 

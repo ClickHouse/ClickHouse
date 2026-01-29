@@ -3,16 +3,28 @@
 #include <Core/SettingsTierType.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Processors/LimitTransform.h>
+#include <Processors/Port.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/SelectQueryInfo.h>
+#include <base/Decimal.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -25,7 +37,6 @@ extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
 namespace ErrorCodes
 {
 extern const int CANNOT_CLOCK_GETTIME;
-extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -66,7 +77,8 @@ ColumnsDescription IcebergMetadataLogElement::getColumnsDescription()
 void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_index = 0;
-    columns[column_index++]->insert(DateLUT::instance().toDayNum(current_time).toUnderType());
+    auto event_time_seconds = current_time / 1000000;
+    columns[column_index++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
     columns[column_index++]->insert(current_time);
     columns[column_index++]->insert(query_id);
     columns[column_index++]->insert(content_type);
@@ -93,14 +105,7 @@ void insertRowToLogTable(
     if (clock_gettime(CLOCK_REALTIME, &spec))
         throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
 
-    auto iceberg_metadata_log = Context::getGlobalContextInstance()->getIcebergMetadataLog();
-
-    if (!iceberg_metadata_log)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg metadata log table is not configured");
-    }
-
-    iceberg_metadata_log->add(
+    Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(
         DB::IcebergMetadataLogElement{
             .current_time = spec.tv_sec,
             .query_id = local_context->getCurrentQueryId(),

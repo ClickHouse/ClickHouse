@@ -20,7 +20,7 @@ function thread1()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&max_execution_time=10" -d "SELECT * FROM system.parts FORMAT Null" >& /dev/null
+        $CLICKHOUSE_CLIENT --max-execution-time 10 --query "SELECT * FROM system.parts FORMAT Null" 2> /dev/null
     done
 }
 
@@ -29,9 +29,7 @@ function thread2()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&max_execution_time=10" -d "ALTER TABLE alter_table ADD COLUMN h String DEFAULT '0'" >& /dev/null
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&max_execution_time=10" -d "ALTER TABLE alter_table MODIFY COLUMN h UInt64" >& /dev/null
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&max_execution_time=10" -d "ALTER TABLE alter_table DROP COLUMN h" >& /dev/null
+        $CLICKHOUSE_CLIENT --max-execution-time 10 --query "ALTER TABLE alter_table ADD COLUMN h String '0'; ALTER TABLE alter_table MODIFY COLUMN h UInt64; ALTER TABLE alter_table DROP COLUMN h;" 2> /dev/null
     done
 }
 
@@ -40,7 +38,7 @@ function thread3()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&max_execution_time=10" -d "INSERT INTO alter_table SELECT rand(1), rand(2), 1 / rand(3), toString(rand(4)), [rand(5), rand(6)], rand(7) % 2 ? NULL : generateUUIDv4(), (rand(8), rand(9)) FROM numbers(1000)" >& /dev/null
+        $CLICKHOUSE_CLIENT --max-execution-time 10 -q "INSERT INTO alter_table SELECT rand(1), rand(2), 1 / rand(3), toString(rand(4)), [rand(5), rand(6)], rand(7) % 2 ? NULL : generateUUIDv4(), (rand(8), rand(9)) FROM numbers(1000)" 2> /dev/null
     done
 }
 
@@ -49,7 +47,7 @@ function thread4()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&max_execution_time=10" -d "OPTIMIZE TABLE alter_table FINAL" >& /dev/null
+        $CLICKHOUSE_CLIENT --max-execution-time 10 -q "OPTIMIZE TABLE alter_table FINAL" 2> /dev/null
     done
 }
 
@@ -58,7 +56,7 @@ function thread5()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&max_execution_time=10&mutations_sync=1" -d "ALTER TABLE alter_table DELETE WHERE rand() % 2 = 1" >& /dev/null
+        $CLICKHOUSE_CLIENT --mutations-sync 1 --max-execution-time 10 -q "ALTER TABLE alter_table DELETE WHERE rand() % 2 = 1" 2> /dev/null
     done
 }
 

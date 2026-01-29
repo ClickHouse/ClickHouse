@@ -28,7 +28,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM START MERGES test_with_ttl"
 
 iterations=30
 for _ in $(seq 1 $iterations); do
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS part_log"
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
     merge_type=$($CLICKHOUSE_CLIENT --query "SELECT merge_algorithm FROM system.part_log WHERE table = 'test_with_ttl' and database='${CLICKHOUSE_DATABASE}' and event_type = 'MergeParts' LIMIT 1")
     if [[ "$merge_type" != "" && "$merge_type" != "Undecided" ]]; then
         break;
