@@ -682,6 +682,9 @@ void ColumnAggregateFunction::skipSerializedInArena(ReadBuffer &) const
 
 void ColumnAggregateFunction::popBack(size_t n)
 {
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
     size_t size = data.size();
     size_t new_size = size - n;
 

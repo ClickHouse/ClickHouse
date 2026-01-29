@@ -1309,18 +1309,7 @@ try
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
 #endif
 
-    bool has_trace_collector = false;
-    /// Disable it if we collect test coverage information, because it will work extremely slow.
-#if !WITH_COVERAGE
-    /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
-    has_trace_collector = hasPHDRCache() && config().has("trace_log");
-#endif
-
-    /// Describe multiple reasons when query profiler cannot work.
-
-#if WITH_COVERAGE
-    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they work extremely slow with test coverage.");
-#endif
+    bool has_trace_collector = hasPHDRCache() && config().has("trace_log");
 
 #if defined(SANITIZER)
     LOG_INFO(log, "Query Profiler is disabled because it cannot work under sanitizers"
@@ -2936,7 +2925,6 @@ try
                     global_context,
                     &config(),
                     "distributed_ddl",
-                    "default",
                     "DDLWorker",
                     &CurrentMetrics::MaxDDLEntryID,
                     &CurrentMetrics::MaxPushedDDLEntryID),
