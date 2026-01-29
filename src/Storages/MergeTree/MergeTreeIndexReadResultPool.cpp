@@ -296,7 +296,6 @@ bool ProjectionIndexBitmap::rangeAllZero(size_t begin, size_t end) const
     }
 }
 
-
 bool ProjectionIndexBitmap::appendToFilter(PaddedPODArray<UInt8> & filter, size_t starting_row, size_t num_rows) const
 {
     size_t old_size = filter.size();
@@ -306,6 +305,11 @@ bool ProjectionIndexBitmap::appendToFilter(PaddedPODArray<UInt8> & filter, size_
 
     if (type == BitmapType::Bitmap32)
     {
+        if (roaring::api::roaring_bitmap_contains_range(data.bitmap32, starting_row, ending_row))
+        {
+            memset(pos, 1, num_rows);
+            return true;
+        }
         roaring::api::roaring_uint32_iterator_t it;
         roaring_iterator_init(data.bitmap32, &it);
         if (!roaring_uint32_iterator_move_equalorlarger(&it, static_cast<UInt32>(starting_row)))
@@ -324,6 +328,11 @@ bool ProjectionIndexBitmap::appendToFilter(PaddedPODArray<UInt8> & filter, size_
     else
     {
         chassert(type == BitmapType::Bitmap64);
+        if (roaring::api::roaring64_bitmap_contains_range(data.bitmap64, starting_row, ending_row))
+        {
+            memset(pos, 1, num_rows);
+            return true;
+        }
         /// NOTE: roaring64 requires a heap-allocated opaque iterator (unlike 32-bit)
         auto * it = roaring::api::roaring64_iterator_create(data.bitmap64);
         /// There is no way to recover a failed allocation inside roaring64.
