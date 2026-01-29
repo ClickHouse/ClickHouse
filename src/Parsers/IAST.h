@@ -64,6 +64,7 @@ public:
     template <typename BitfieldStruct>
     BitfieldStruct & flags()
     {
+        static_assert(std::is_standard_layout_v<BitfieldStruct>);
         static_assert(sizeof(BitfieldStruct) == sizeof(flags_storage), "Bitfield struct must be the same size as flags_storage");
         static_assert(BitfieldStruct::RESERVED_BITS <= 32, "RESERVED_BITS exceeds 32");
 
@@ -81,6 +82,7 @@ public:
     template <typename BitfieldStruct>
     const BitfieldStruct & flags() const
     {
+        static_assert(std::is_standard_layout_v<BitfieldStruct>);
         static_assert(sizeof(BitfieldStruct) == sizeof(flags_storage), "Bitfield struct must be the same size as flags_storage");
         static_assert(BitfieldStruct::RESERVED_BITS <= 32, "RESERVED_BITS exceeds 32");
 

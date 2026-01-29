@@ -12,7 +12,7 @@ class ASTQueryParameter;
   */
 class ASTWithAlias : public IAST
 {
-public:
+protected:
     struct ASTWithAliasFlags
     {
         using ParentFlags = void;
