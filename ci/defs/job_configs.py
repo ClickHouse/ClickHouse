@@ -794,9 +794,14 @@ class JobConfigs:
     integration_test_asan_flaky_pr_jobs = (
         common_integration_test_job_config.parametrize(
             Job.ParamSet(
-                parameter=f"amd_asan, flaky",
+                parameter=f"amd_binary, flaky",
                 runs_on=RunnerLabels.AMD_MEDIUM,
-                requires=[ArtifactNames.CH_AMD_ASAN],
+                requires=[ArtifactNames.CH_AMD_BINARY],
+            ),
+            Job.ParamSet(
+                parameter=f"arm_binary, flaky",
+                runs_on=RunnerLabels.ARM_MEDIUM,
+                requires=[ArtifactNames.CH_ARM_BINARY],
             )
         )
     )

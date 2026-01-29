@@ -156,9 +156,8 @@ def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
             print(result.stderr, flush=True)
 
 
-FLAKY_CHECK_TEST_REPEAT_COUNT = 3
+FLAKY_CHECK_TEST_REPEAT_COUNT = 4000
 FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
-
 
 def get_parallel_sequential_tests_to_run(
     batch_num: int,
@@ -428,7 +427,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     elif is_parallel:
         sequential_test_modules = []
         assert not is_sequential
-    
+
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():
         tag = info.docker_tag(image_name)
