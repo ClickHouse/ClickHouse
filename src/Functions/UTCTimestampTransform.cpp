@@ -56,9 +56,8 @@ namespace
             if (dynamic_cast<const TimezoneMixin *>(arguments[0].type.get())->hasExplicitTimeZone())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument should not have explicit time zone.", name);
 
-            WhichDataType which_type_first(arguments[0].type);
             DataTypePtr date_time_type;
-            if (which_type_first.isDateTime())
+            if (WhichDataType{arguments[0].type}.isDateTime())
                 date_time_type = std::make_shared<DataTypeDateTime>();
             else
             {

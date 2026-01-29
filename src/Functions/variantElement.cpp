@@ -65,8 +65,6 @@ public:
 
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
-        const size_t number_of_arguments = arguments.size();
-
         size_t count_arrays = 0;
         const IDataType * input_type = arguments[0].type.get();
         while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(input_type))
@@ -77,7 +75,7 @@ public:
 
         const DataTypeVariant * variant_type = checkAndGetDataType<DataTypeVariant>(input_type);
 
-        std::optional<size_t> variant_global_discr = getVariantGlobalDiscriminator(arguments[1].column, *variant_type, number_of_arguments);
+        std::optional<size_t> variant_global_discr = getVariantGlobalDiscriminator(arguments[1].column, *variant_type, arguments.size());
         if (variant_global_discr.has_value())
         {
             DataTypePtr return_type = makeNullableOrLowCardinalityNullableSafe(variant_type->getVariant(variant_global_discr.value()));
