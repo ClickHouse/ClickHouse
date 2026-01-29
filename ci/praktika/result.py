@@ -745,10 +745,42 @@ class Result(MetaClasses.Serializable):
         # Apply truncation if info_lines exceeds MAX_LINES_IN_INFO
         truncated = False
         if len(info_lines) > MAX_LINES_IN_INFO:
-            truncated_count = len(info_lines) - MAX_LINES_IN_INFO
-            info_lines = [
-                f"~~~~~ truncated {truncated_count} lines ~~~~~"
-            ] + info_lines[-MAX_LINES_IN_INFO:]
+            # For clang-tidy and similar builds, find the first error/warning
+            # and show context around it instead of just the last lines
+            first_error_idx = None
+            for idx, line in enumerate(info_lines):
+                # Match clang-tidy format: "file:line:col: error:" or "file:line:col: warning:"
+                if ": error:" in line or ": warning:" in line:
+                    first_error_idx = idx
+                    break
+
+            if first_error_idx is not None:
+                # Show context around the first error (lines before and after)
+                CONTEXT_BEFORE = 50
+                CONTEXT_AFTER = MAX_LINES_IN_INFO - CONTEXT_BEFORE - 1
+                start_idx = max(0, first_error_idx - CONTEXT_BEFORE)
+                end_idx = min(len(info_lines), first_error_idx + CONTEXT_AFTER + 1)
+
+                truncated_before = start_idx
+                truncated_after = len(info_lines) - end_idx
+
+                new_info_lines = []
+                if truncated_before > 0:
+                    new_info_lines.append(
+                        f"~~~~~ truncated {truncated_before} lines at the beginning ~~~~~"
+                    )
+                new_info_lines.extend(info_lines[start_idx:end_idx])
+                if truncated_after > 0:
+                    new_info_lines.append(
+                        f"~~~~~ truncated {truncated_after} lines at the end ~~~~~"
+                    )
+                info_lines = new_info_lines
+            else:
+                # Default behavior: keep the last MAX_LINES_IN_INFO lines
+                truncated_count = len(info_lines) - MAX_LINES_IN_INFO
+                info_lines = [
+                    f"~~~~~ truncated {truncated_count} lines ~~~~~"
+                ] + info_lines[-MAX_LINES_IN_INFO:]
             truncated = True
 
         # Create and return the result object with status and log file (if any)
