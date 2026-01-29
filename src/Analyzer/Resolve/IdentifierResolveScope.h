@@ -183,7 +183,6 @@ struct IdentifierResolveScope
     bool group_by_use_nulls = false;
     /// Join retutns NULLs instead of default values
     bool join_use_nulls = false;
-    bool allow_resolve_from_using = true;
 
     /// JOINs count
     size_t joins_count = 0;
@@ -198,6 +197,14 @@ struct IdentifierResolveScope
 
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
+
+    struct ResolvedFunctionsCache
+    {
+        FunctionOverloadResolverPtr resolver;
+        FunctionBasePtr function_base;
+    };
+
+    std::map<IQueryTreeNode::Hash, ResolvedFunctionsCache> functions_cache;
 
     [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const;
 

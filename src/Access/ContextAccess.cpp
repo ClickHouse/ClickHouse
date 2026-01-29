@@ -13,7 +13,6 @@
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <Common/re2.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Logger.h>
@@ -39,24 +38,24 @@ namespace ErrorCodes
 
 namespace
 {
-    const std::vector<String> source_table_engines = {
-        "File",
-        "URL",
-        "Distributed",
-        "MongoDB",
-        "Redis",
-        "MySQL",
-        "PostgreSQL",
-        "SQLite",
-        "ODBC",
-        "JDBC",
-        "HDFS",
-        "S3",
-        "Hive",
-        "AzureBlobStorage",
-        "Kafka",
-        "NATS",
-        "RabbitMQ",
+    const std::vector<std::tuple<AccessFlags, std::string>> source_and_table_engines = {
+        {AccessType::FILE, "File"},
+        {AccessType::URL, "URL"},
+        {AccessType::REMOTE, "Distributed"},
+        {AccessType::MONGO, "MongoDB"},
+        {AccessType::REDIS, "Redis"},
+        {AccessType::MYSQL, "MySQL"},
+        {AccessType::POSTGRES, "PostgreSQL"},
+        {AccessType::SQLITE, "SQLite"},
+        {AccessType::ODBC, "ODBC"},
+        {AccessType::JDBC, "JDBC"},
+        {AccessType::HDFS, "HDFS"},
+        {AccessType::S3, "S3"},
+        {AccessType::HIVE, "Hive"},
+        {AccessType::AZURE, "AzureBlobStorage"},
+        {AccessType::KAFKA, "Kafka"},
+        {AccessType::NATS, "NATS"},
+        {AccessType::RABBITMQ, "RabbitMQ"}
     };
 
 
@@ -80,6 +79,11 @@ namespace
 
     template <typename... OtherArgs>
     std::string_view getDatabase(std::string_view arg1, const OtherArgs &...) { return arg1; }
+
+    std::string_view getTableEngine() { return {}; }
+
+    template <typename... OtherArgs>
+    std::string_view getTableEngine(std::string_view arg1, const OtherArgs &...) { return arg1; }
 }
 
 
@@ -122,11 +126,6 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         static const AccessFlags create_arbitrary_temporary_table = AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE;
         if ((level == 0) && (max_flags_with_children & create_table))
             res |= create_arbitrary_temporary_table;
-
-        /// CREATE VIEW (on any database/table) => CREATE_TEMPORARY_VIEW (global)
-        static const AccessFlags create_temporary_view = AccessType::CREATE_TEMPORARY_VIEW;
-        if ((level == 0) && (max_flags_with_children & create_view))
-            res |= create_temporary_view;
 
         /// ALTER_TTL => ALTER_MATERIALIZE_TTL
         static const AccessFlags alter_ttl = AccessType::ALTER_TTL;
@@ -207,7 +206,6 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             "table_engines",
             "table_functions",
             "aggregate_function_combinators",
-            "completions",
 
             "functions", /// Can contain user-defined functions
 
@@ -253,23 +251,33 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
     }
 
-    /// Sync SOURCE_READ/WRITE and TABLE_ENGINE, so only need to check TABLE_ENGINE later.
+    /// There is overlap between AccessType sources and table engines, so the following code avoids user granting twice.
+
+    /// Sync SOURCE and TABLE_ENGINE, so only need to check TABLE_ENGINE later.
     if (access_control.doesTableEnginesRequireGrant())
     {
-        for (const auto & table_engine : source_table_engines)
+        for (const auto & source_and_table_engine : source_and_table_engines)
         {
-            if (res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
+            const auto & source = std::get<0>(source_and_table_engine);
+            if (res.isGranted(source))
+            {
+                const auto & table_engine = std::get<1>(source_and_table_engine);
                 res.grant(AccessType::TABLE_ENGINE, table_engine);
+            }
         }
     }
     else
     {
         /// Add TABLE_ENGINE on * and then remove TABLE_ENGINE on particular engines.
         res.grant(AccessType::TABLE_ENGINE);
-        for (const auto & table_engine : source_table_engines)
+        for (const auto & source_and_table_engine : source_and_table_engines)
         {
-            if (!res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
+            const auto & source = std::get<0>(source_and_table_engine);
+            if (!res.isGranted(source))
+            {
+                const auto & table_engine = std::get<1>(source_and_table_engine);
                 res.revoke(AccessType::TABLE_ENGINE, table_engine);
+            }
         }
     }
 
@@ -510,7 +518,8 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
         }
         else
         {
-            return nullptr;
+            static const auto unlimited_quota = EnabledQuota::getUnlimitedQuota();
+            return unlimited_quota;
         }
     }
 
@@ -520,11 +529,7 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 
 std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 {
-    auto quota = getQuota();
-    if (!quota) /// Detected by fuzzer
-        return {};
-    else
-        return quota->getUsage();
+    return getQuota()->getUsage();
 }
 
 SettingsChanges ContextAccess::getDefaultSettings() const
@@ -678,6 +683,30 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
                 difference.getElements().toStringWithoutOptions(),
                 grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
         };
+
+        /// As we check the SOURCES from the Table Engine logic, direct prompt about Table Engine would be misleading
+        /// since SOURCES is not granted actually. In order to solve this, turn the prompt logic back to Sources.
+        if (flags & AccessType::TABLE_ENGINE && !access_control->doesTableEnginesRequireGrant())
+        {
+            AccessFlags new_flags;
+
+            String table_engine_name{getTableEngine(args...)};
+            for (const auto & source_and_table_engine : source_and_table_engines)
+            {
+                const auto & table_engine = std::get<1>(source_and_table_engine);
+                if (table_engine != table_engine_name) continue;
+                const auto & source = std::get<0>(source_and_table_engine);
+                /// Set the flags from Table Engine to SOURCES so that prompts can be meaningful.
+                new_flags = source;
+                break;
+            }
+
+            /// Might happen in the case of grant Table Engine on A (but not source), then revoke A.
+            if (new_flags.isEmpty())
+                return access_denied_no_grant(flags, args...);
+
+            return access_denied_no_grant(new_flags);
+        }
 
         return access_denied_no_grant(flags, args...);
     }
@@ -976,26 +1005,6 @@ void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_id
             checkGranteeIsAllowed(id, *user_entity);
     }
 }
-
-void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
-{
-    if (isGranted(context, flags, parameter))
-        return;
-
-    if (!to_check_by_filter.empty())
-    {
-        auto access_rights = getAccessRights();
-        auto filters = access_rights->getFilters(parameter);
-        for (const auto & filter : filters)
-        {
-            if (re2::RE2::FullMatch(to_check_by_filter, filter.path) && filter.access_flags.contains(flags))
-                return;
-        }
-    }
-
-    checkAccess(context, flags, parameter);
-}
-
 
 std::shared_ptr<const ContextAccessWrapper> ContextAccessWrapper::fromContext(const ContextPtr & context)
 {

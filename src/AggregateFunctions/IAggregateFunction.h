@@ -11,7 +11,6 @@
 #include <Core/ValuesWithType.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/ThreadPool_fwd.h>
 
 #include <IO/ReadBuffer.h>
@@ -92,10 +91,6 @@ public:
     virtual size_t getVersionFromRevision(size_t /* revision */) const { return 0; }
 
     virtual size_t getDefaultVersion() const { return 0; }
-
-    /// Some aggregate functions have more efficient implementation for merging final states.
-    /// See AggregateFunctionAny for example.
-    virtual AggregateFunctionPtr getAggregateFunctionForMergingFinal() const { return shared_from_this(); }
 
     ~IAggregateFunction() override = default;
 
@@ -250,8 +245,6 @@ public:
         AggregateDataPtr * places,
         size_t place_offset,
         const AggregateDataPtr * rhs,
-        ThreadPool & thread_pool,
-        std::atomic<bool> & is_cancelled,
         Arena * arena) const = 0;
 
     /** The same for single place.
@@ -347,7 +340,10 @@ public:
     /// For most functions if one of arguments is always NULL, we return NULL (it's implemented in combinator Null),
     /// but in some functions we can want to process this argument somehow (for example condition argument in If combinator).
     /// This method returns the set of argument indexes that can be always NULL, they will be skipped in combinator Null.
-    virtual UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const { return {}; }
+    virtual std::unordered_set<size_t> getArgumentsThatCanBeOnlyNull() const
+    {
+        return {};
+    }
 
     /** Return the nested function if this is an Aggregate Function Combinator.
       * Otherwise return nullptr.
@@ -373,6 +369,8 @@ public:
     /// Description of AggregateFunction in form of name(parameters)(argument_types).
     String getDescription() const;
 
+#if USE_EMBEDDED_COMPILER
+
     /// Is function JIT compilable
     virtual bool isCompilable() const { return false; }
 
@@ -380,7 +378,8 @@ public:
     virtual void compileCreate(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
 
     /// compileAdd should generate code for updating aggregate function state stored in aggregate_data_ptr
-    virtual void compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const ValuesWithType & /*arguments*/) const;
+    virtual void
+    compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const ValuesWithType & /*arguments*/) const;
 
     /// compileMerge should generate code for merging aggregate function states stored in aggregate_data_dst_ptr and aggregate_data_src_ptr
     virtual void compileMerge(
@@ -388,6 +387,8 @@ public:
 
     /// compileGetResult should generate code for getting result value from aggregate function state stored in aggregate_data_ptr
     virtual llvm::Value * compileGetResult(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
+
+#endif
 
 protected:
     DataTypes argument_types;
@@ -498,9 +499,8 @@ public:
         auto offset_it = column_sparse.getIterator(row_begin);
 
         for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
-            if (places[offset_it.getCurrentRow()])
-                static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
-                                                        &values, offset_it.getValueIndex(), arena);
+            static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
+                                                    &values, offset_it.getValueIndex(), arena);
     }
 
     void mergeBatch(
@@ -509,20 +509,11 @@ public:
         AggregateDataPtr * places,
         size_t place_offset,
         const AggregateDataPtr * rhs,
-        ThreadPool & thread_pool,
-        std::atomic<bool> & is_cancelled,
         Arena * arena) const override
     {
         for (size_t i = row_begin; i < row_end; ++i)
-        {
             if (places[i])
-            {
-                if constexpr (Derived::parallelizeMergeWithKey())
-                    static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], thread_pool, is_cancelled, arena);
-                else
-                    static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
-            }
-        }
+                static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
     }
 
     void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * rhs_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
@@ -542,14 +533,13 @@ public:
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr __restrict place,
-        const IColumn ** __restrict columns,
+        const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
         if (if_argument_pos >= 0)
         {
-            alignas(32) const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 if (flags[i])

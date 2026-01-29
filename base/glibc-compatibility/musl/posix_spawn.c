@@ -2,10 +2,7 @@
 /// This is Ok, because for now, this function is used only from clang driver.
 
 #define _GNU_SOURCE
-
-/// For complete posix_spawnattr_t struct
-#include "../spawn.h"
-
+#include <spawn.h>
 #include <sched.h>
 #include <unistd.h>
 #include <signal.h>
@@ -14,6 +11,7 @@
 #include <syscall.h>
 #include <sys/signal.h>
 #include <pthread.h>
+#include <spawn.h>
 #include <errno.h>
 #include "syscall.h"
 
@@ -56,15 +54,15 @@ static int child(void *args_vp)
 	_exit(127);
 }
 
-typedef int (*posix_spawn_exec_fn)(const char *, char *const *, char *const *);
-static int __posix_spawnx(pid_t *restrict res, const char *restrict path,
-	posix_spawn_exec_fn exec,
+
+int __posix_spawnx(pid_t *restrict res, const char *restrict path,
+	int (*exec)(const char *, char *const *, char *const *),
 	const posix_spawn_file_actions_t *fa,
 	const posix_spawnattr_t *restrict attr,
 	char *const argv[restrict], char *const envp[restrict])
 {
 	pid_t pid;
-	char stack[16384];
+	char stack[1024];
 	int ec=0, cs;
 	struct args args;
 
@@ -105,8 +103,5 @@ int posix_spawn(pid_t *restrict res, const char *restrict path,
 	const posix_spawnattr_t *restrict attr,
 	char *const argv[restrict], char *const envp[restrict])
 {
-	posix_spawn_exec_fn fn = execve;
-	if (attr && attr->__fn)
-		fn = (posix_spawn_exec_fn)attr->__fn;
-	return __posix_spawnx(res, path, fn, fa, attr, argv, envp);
+	return __posix_spawnx(res, path, execve, fa, attr, argv, envp);
 }

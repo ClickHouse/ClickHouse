@@ -65,7 +65,6 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
         min_value = ast.min_value;
         max_value = ast.max_value;
         writability = ast.writability;
-        disallowed_values = ast.disallowed_values;
 
         if (value)
             value = Settings::castValueUtil(setting_name, *value);
@@ -73,19 +72,17 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
             min_value = Settings::castValueUtil(setting_name, *min_value);
         if (max_value)
             max_value = Settings::castValueUtil(setting_name, *max_value);
-        for (auto & allowed_value : disallowed_values)
-            value = Settings::castValueUtil(setting_name, allowed_value);
     }
 }
 
 bool SettingsProfileElement::isConstraint() const
 {
-    return this->writability || this->min_value || this->max_value || !this->disallowed_values.empty();
+    return this->writability || this->min_value || this->max_value;
 }
 
-boost::intrusive_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
+std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
 {
-    auto ast = make_intrusive<ASTSettingsProfileElement>();
+    auto ast = std::make_shared<ASTSettingsProfileElement>();
     ast->id_mode = true;
 
     if (parent_profile)
@@ -95,16 +92,15 @@ boost::intrusive_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() 
     ast->value = value;
     ast->min_value = min_value;
     ast->max_value = max_value;
-    ast->disallowed_values = disallowed_values;
     ast->writability = writability;
 
     return ast;
 }
 
 
-boost::intrusive_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithNames(const AccessControl & access_control) const
+std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithNames(const AccessControl & access_control) const
 {
-    auto ast = make_intrusive<ASTSettingsProfileElement>();
+    auto ast = std::make_shared<ASTSettingsProfileElement>();
 
     if (parent_profile)
     {
@@ -117,7 +113,6 @@ boost::intrusive_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWit
     ast->value = value;
     ast->min_value = min_value;
     ast->max_value = max_value;
-    ast->disallowed_values = disallowed_values;
     ast->writability = writability;
 
     return ast;
@@ -141,9 +136,9 @@ SettingsProfileElements::SettingsProfileElements(const ASTSettingsProfileElement
 }
 
 
-boost::intrusive_ptr<ASTSettingsProfileElements> SettingsProfileElements::toAST() const
+std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toAST() const
 {
-    auto res = make_intrusive<ASTSettingsProfileElements>();
+    auto res = std::make_shared<ASTSettingsProfileElements>();
     for (const auto & element : *this)
     {
         auto element_ast = element.toAST();
@@ -153,9 +148,9 @@ boost::intrusive_ptr<ASTSettingsProfileElements> SettingsProfileElements::toAST(
     return res;
 }
 
-boost::intrusive_ptr<ASTSettingsProfileElements> SettingsProfileElements::toASTWithNames(const AccessControl & access_control) const
+std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toASTWithNames(const AccessControl & access_control) const
 {
-    auto res = make_intrusive<ASTSettingsProfileElements>();
+    auto res = std::make_shared<ASTSettingsProfileElements>();
     for (const auto & element : *this)
     {
         auto element_ast = element.toASTWithNames(access_control);
@@ -282,7 +277,6 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
                 elem.setting_name,
                 elem.min_value ? *elem.min_value : Field{},
                 elem.max_value ? *elem.max_value : Field{},
-                elem.disallowed_values,
                 elem.writability ? *elem.writability : SettingConstraintWritability::WRITABLE);
     return res;
 }
@@ -366,8 +360,6 @@ void SettingsProfileElements::normalize()
                     first_element.min_value = element.min_value;
                 if (element.max_value)
                     first_element.max_value = element.max_value;
-                if (!element.disallowed_values.empty())
-                    first_element.disallowed_values = element.disallowed_values;
                 if (element.writability)
                     first_element.writability = element.writability;
                 element.setting_name.clear();
@@ -492,7 +484,6 @@ void SettingsProfileElements::applyChanges(const AlterSettingsProfileElements & 
         new_element.value = modify.value;
         new_element.min_value = modify.min_value;
         new_element.max_value = modify.max_value;
-        new_element.disallowed_values = modify.disallowed_values;
         new_element.writability = modify.writability;
         push_back(new_element); /// normalizeProfileElements() will merge this new element with the previous elements.
     };

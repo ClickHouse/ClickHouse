@@ -20,7 +20,7 @@ done
 function thread {
     i=0 retries=300
     while [[ $i -lt $retries ]]; do # server can be dead
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "INSERT INTO r$1 SELECT $2 SETTINGS insert_quorum=3, insert_quorum_parallel=1" && break
+        $CLICKHOUSE_CLIENT --insert_quorum 3 --insert_quorum_parallel 1 --query "INSERT INTO r$1 SELECT $2" && break
         ((++i))
         sleep 0.1
     done
@@ -32,7 +32,7 @@ for i in $(seq 1 $NUM_REPLICAS); do
 
         # Note: making 30 connections simultaneously is a mini-DoS when server is build with sanitizers and CI environment is overloaded.
         # That's why we repeat "socket timeout" errors.
-        thread $i $a 2>&1 | tr '\n' ' ' | grep -v -P 'SOCKET_TIMEOUT|NETWORK_ERROR|Timeout while waiting for quorum|^$' &
+        thread $i $a 2>&1 | grep -v -P 'SOCKET_TIMEOUT|NETWORK_ERROR|^$' &
     done
 done
 

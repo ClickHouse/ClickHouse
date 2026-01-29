@@ -2,7 +2,7 @@
 
 
 #include <Core/Block.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -41,17 +41,17 @@ public:
     ExecutablePoolDictionarySource(const ExecutablePoolDictionarySource & other);
     ExecutablePoolDictionarySource & operator=(const ExecutablePoolDictionarySource &) = delete;
 
-    BlockIO loadAll() override;
+    QueryPipeline loadAll() override;
 
     /** The logic of this method is flawed, absolutely incorrect and ignorant.
       * It may lead to skipping some values due to clock sync or timezone changes.
       * The intended usage of "update_field" is totally different.
       */
-    BlockIO loadUpdatedAll() override;
+    QueryPipeline loadUpdatedAll() override;
 
-    BlockIO loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 

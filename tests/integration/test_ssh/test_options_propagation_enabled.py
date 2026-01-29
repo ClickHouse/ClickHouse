@@ -27,7 +27,7 @@ def started_cluster():
 
 def test_options_and_settings_propagation(started_cluster):
     # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
-    ssh_command = f'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null lucy@{instance.ip_address} -o SetEnv="max_threads=42 format=JSONEachRow" -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 "SELECT getSetting(\'max_threads\');"'
+    ssh_command = f'ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -o SetEnv="max_threads=42 format=JSONEachRow" -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 "SELECT getSetting(\'max_threads\');"'
 
     completed_process = subprocess.run(
         ssh_command,
@@ -42,7 +42,7 @@ def test_options_and_settings_propagation(started_cluster):
 
 def test_no_server_logs_file(started_cluster):
     # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
-    ssh_command = f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null lucy@{instance.ip_address} -o SetEnv=\"server_logs_file='logs.log'\" -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 \"SELECT * FROM system.numbers SETTINGS send_logs_level='trace' FORMAT Null;\""
+    ssh_command = f"ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -o SetEnv=\"server_logs_file='logs.log'\" -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 \"SELECT * FROM system.numbers SETTINGS send_logs_level='trace' FORMAT Null;\""
 
     completed_process = subprocess.run(
         ssh_command,

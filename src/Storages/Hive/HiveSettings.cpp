@@ -36,11 +36,11 @@ struct HiveSettingsImpl : public BaseSettings<HiveSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) HiveSettings##TYPE NAME = &HiveSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) HiveSettings##TYPE NAME = &HiveSettingsImpl ::NAME;
 
 namespace HiveSetting
 {
-LIST_OF_HIVE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+LIST_OF_HIVE_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -99,7 +99,7 @@ void HiveSettings::loadFromQuery(ASTStorage & storage_def)
     }
     else
     {
-        auto settings_ast = make_intrusive<ASTSetQuery>();
+        auto settings_ast = std::make_shared<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }

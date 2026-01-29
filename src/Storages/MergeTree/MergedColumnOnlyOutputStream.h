@@ -2,7 +2,6 @@
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/Statistics/Statistics.h>
-#include <Storages/MergeTree/ColumnsSubstreams.h>
 
 namespace DB
 {
@@ -17,7 +16,6 @@ public:
     ///  if you want to serialize elements of Nested data structure in different instances of MergedColumnOnlyOutputStream.
     MergedColumnOnlyOutputStream(
         const MergeTreeMutableDataPartPtr & data_part,
-        MergeTreeSettingsPtr data_settings,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & indices_to_recalc,
@@ -33,7 +31,6 @@ public:
     fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
 
     const Block & getColumnsSample() const { return writer->getColumnsSample(); }
-    const ColumnsSubstreams & getColumnsSubstreams() const { return writer->getColumnsSubstreams(); }
     void finish(bool sync);
     void cancel() noexcept override;
 };

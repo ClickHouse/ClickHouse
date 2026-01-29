@@ -1,18 +1,22 @@
 #include <Common/Allocator.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
-#include <Common/VersionNumber.h>
+#include <Common/GWPAsan.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include <Common/AllocationInterceptors.h>
 
 #include <base/errnoToString.h>
 #include <base/getPageSize.h>
 
-#include <Poco/Environment.h>
 #include <Poco/Logger.h>
 #include <sys/mman.h> /// MADV_POPULATE_WRITE
 
+namespace ProfileEvents
+{
+    extern const Event GWPAsanAllocateSuccess;
+    extern const Event GWPAsanAllocateFailed;
+    extern const Event GWPAsanFree;
+}
 
 namespace DB
 {
@@ -38,20 +42,6 @@ auto adjustToPageSize(void * buf, size_t len, size_t page_size)
     const size_t next_page_start = ((address_numeric + page_size - 1) / page_size) * page_size;
     return std::make_pair(reinterpret_cast<void *>(next_page_start), len - (next_page_start - address_numeric));
 }
-
-bool madviseSupportsMadvPopulateWrite()
-{
-    /// Can't rely for detection on madvise(MADV_POPULATE_WRITE) == EINVAL, since this will be returned in many other cases.
-    VersionNumber linux_version(Poco::Environment::osVersion());
-    VersionNumber supported_version(5, 14, 0);
-    bool is_supported = linux_version >= supported_version;
-    if (!is_supported)
-        LOG_TRACE(getLogger("Allocator"), "Disabled page pre-faulting (kernel is too old).");
-    return is_supported;
-}
-
-const bool is_supported_by_kernel = madviseSupportsMadvPopulateWrite();
-
 #endif
 
 void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
@@ -60,11 +50,16 @@ void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
     if (len_ < POPULATE_THRESHOLD)
         return;
 
-    if (unlikely(!is_supported_by_kernel))
+    static const size_t page_size = ::getPageSize();
+    if (len_ < page_size) /// Rounded address should be still within [buf, buf + len).
         return;
 
-    auto [buf, len] = adjustToPageSize(buf_, len_, staticPageSize);
-    ::madvise(buf, len, MADV_POPULATE_WRITE);
+    auto [buf, len] = adjustToPageSize(buf_, len_, page_size);
+    if (::madvise(buf, len, MADV_POPULATE_WRITE) < 0)
+        LOG_TRACE(
+            LogFrequencyLimiter(getLogger("Allocator"), 1),
+            "Attempt to populate pages failed: {} (EINVAL is expected for kernels < 5.14)",
+            errnoToString(errno));
 #endif
 }
 
@@ -72,22 +67,41 @@ template <bool clear_memory, bool populate>
 void * allocNoTrack(size_t size, size_t alignment)
 {
     void * buf;
-    if (likely(alignment <= MALLOC_MIN_ALIGNMENT))
+#if USE_GWP_ASAN
+    if (unlikely(GWPAsan::shouldSample()))
+    {
+        if (void * ptr = GWPAsan::GuardedAlloc.allocate(size, alignment))
+        {
+            if constexpr (clear_memory)
+                memset(ptr, 0, size);
+
+            if constexpr (populate)
+                prefaultPages(ptr, size);
+
+            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
+
+            return ptr;
+        }
+
+        ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+    }
+#endif
+    if (alignment <= MALLOC_MIN_ALIGNMENT)
     {
         if constexpr (clear_memory)
-            buf = __real_calloc(size, 1);
+            buf = ::calloc(size, 1);
         else
-            buf = __real_malloc(size);
+            buf = ::malloc(size);
 
-        if (unlikely(nullptr == buf))
-            throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot malloc {}.", ReadableSize(static_cast<double>(size)));
+        if (nullptr == buf)
+            throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot malloc {}.", ReadableSize(size));
     }
     else
     {
         buf = nullptr;
-        int res = __real_posix_memalign(&buf, alignment, size);
+        int res = posix_memalign(&buf, alignment, size);
 
-        if (unlikely(0 != res))
+        if (0 != res)
             throw DB::ErrnoException(
                 DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate memory (posix_memalign) {}.", ReadableSize(size));
 
@@ -103,13 +117,22 @@ void * allocNoTrack(size_t size, size_t alignment)
 
 void freeNoTrack(void * buf)
 {
-    __real_free(buf);
+#if USE_GWP_ASAN
+    if (unlikely(GWPAsan::GuardedAlloc.pointerIsMine(buf)))
+    {
+        ProfileEvents::increment(ProfileEvents::GWPAsanFree);
+        GWPAsan::GuardedAlloc.deallocate(buf);
+        return;
+    }
+#endif
+
+    ::free(buf);
 }
 
 void checkSize(size_t size)
 {
     /// More obvious exception in case of possible overflow (instead of just "Cannot mmap").
-    if (unlikely(size >= 0x8000000000000000ULL))
+    if (size >= 0x8000000000000000ULL)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Too large size ({}) passed to allocator. It indicates an error.", size);
 }
 
@@ -117,7 +140,7 @@ void checkSize(size_t size)
 
 
 /// Constant is chosen almost arbitrarily, what I observed is 128KB is too small, 1MB is almost indistinguishable from 64MB and 1GB is too large.
-extern const size_t POPULATE_THRESHOLD = std::max(Int64{16 * 1024 * 1024}, ::getPageSize());
+extern const size_t POPULATE_THRESHOLD = 16 * 1024 * 1024;
 
 template <bool clear_memory_, bool populate>
 void * Allocator<clear_memory_, populate>::alloc(size_t size, size_t alignment)
@@ -159,7 +182,47 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         return buf;
     }
 
-    if (likely(alignment <= MALLOC_MIN_ALIGNMENT))
+#if USE_GWP_ASAN
+    if (unlikely(GWPAsan::shouldSample()))
+    {
+        auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
+        if (void * ptr = GWPAsan::GuardedAlloc.allocate(new_size, alignment))
+        {
+            memcpy(ptr, buf, std::min(old_size, new_size));
+            free(buf, old_size);
+            trace_alloc.onAlloc(buf, new_size);
+
+            if constexpr (clear_memory)
+                if (new_size > old_size)
+                    memset(reinterpret_cast<char *>(ptr) + old_size, 0, new_size - old_size);
+
+            if constexpr (populate)
+                prefaultPages(ptr, new_size);
+
+            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
+            return ptr;
+        }
+
+        [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
+        ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+    }
+
+    if (unlikely(GWPAsan::GuardedAlloc.pointerIsMine(buf)))
+    {
+        /// Big allocs that requires a copy. MemoryTracker is called inside 'alloc', 'free' methods.
+        void * new_buf = alloc(new_size, alignment);
+        memcpy(new_buf, buf, std::min(old_size, new_size));
+        free(buf, old_size);
+        buf = new_buf;
+
+        if constexpr (populate)
+            prefaultPages(buf, new_size);
+
+        return buf;
+    }
+#endif
+
+    if (alignment <= MALLOC_MIN_ALIGNMENT)
     {
         /// Resize malloc'd memory region with no special alignment requirement.
         /// Realloc can do 2 possible things:
@@ -169,8 +232,8 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         /// memory for all options
         auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
 
-        void * new_buf = __real_realloc(buf, new_size);
-        if (unlikely(nullptr == new_buf))
+        void * new_buf = ::realloc(buf, new_size);
+        if (nullptr == new_buf)
         {
             [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
             throw DB::ErrnoException(

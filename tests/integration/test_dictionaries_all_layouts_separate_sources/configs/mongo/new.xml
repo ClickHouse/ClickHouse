@@ -1,0 +1,3 @@
+<clickhouse>
+    <use_legacy_mongodb_integration>0</use_legacy_mongodb_integration>
+</clickhouse>

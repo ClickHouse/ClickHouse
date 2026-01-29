@@ -1,4 +1,4 @@
-#include <Client/ConnectionString.h>
+#include "ConnectionString.h"
 
 #include <Common/Exception.h>
 #include <Client/ConnectionParameters.h>

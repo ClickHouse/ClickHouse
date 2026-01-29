@@ -1,9 +1,4 @@
-import logging
-import time
-
 import pytest
-
-from concurrent.futures import ThreadPoolExecutor
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -58,23 +53,13 @@ node7 = cluster.add_instance(
     ipv6_address="2001:3984:3989::1:1117",
     ipv4_address="10.5.95.17",
 )
-node8 = cluster.add_instance(
-    "node8",
-    main_configs=[
-        "configs/remote_servers_with_disable_dns_setting.xml",
-        "configs/listen_host.xml"
-    ],
-    stay_alive=True,
-    ipv6_address="2001:3984:3989::1:1118",
-)
 
 
 def _fill_nodes(nodes, table_name):
     for node in nodes:
         node.query(
             """
-            DROP DATABASE IF EXISTS test;
-            CREATE DATABASE test;
+            CREATE DATABASE IF NOT EXISTS test;
             CREATE TABLE IF NOT EXISTS {0}(date Date, id UInt32)
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{0}', '{1}')
             ORDER BY id PARTITION BY toYYYYMM(date);
@@ -109,7 +94,7 @@ def cluster_ready(cluster_start):
     Many failures were found after the random-order + flaky testing were run on the file
     """
     try:
-        for node in cluster_start.instances.values():
+        for node in (node1, node2, node3, node4, node5, node6, node7):
             node.wait_for_start(10)
 
         yield cluster
@@ -270,24 +255,14 @@ def test_user_access_ip_change(cluster_ready, node_name):
         user="root",
     )
 
-    assert_eq_with_retry(
-        node3,
-        f"SELECT * FROM remote('{node_name}', 'system', 'one')",
-        "0",
-        retry_count=10,
-        sleep_time=10,
+    assert (
+        node3.query("SELECT * FROM remote('{}', 'system', 'one')".format(node_name))
+        == "0\n"
     )
-
-    assert_eq_with_retry(
-        node4,
-        f"SELECT * FROM remote('{node_name}', 'system', 'one')",
-        "0",
-        retry_count=10,
-        sleep_time=10,
+    assert (
+        node4.query("SELECT * FROM remote('{}', 'system', 'one')".format(node_name))
+        == "0\n"
     )
-
-    node3_ipv6 = node3.ipv6_address
-    node4_ipv6 = node4.ipv6_address
 
     node.set_hosts(
         [
@@ -296,39 +271,13 @@ def test_user_access_ip_change(cluster_ready, node_name):
         ],
     )
 
-    # restart the node and return the time taken for restart
-    def restart_with_timing(node, new_ip):
-        """Restart a single node and return the time taken"""
-        start_time = time.time()
-        cluster.restart_instance_with_ip_change(node, new_ip)
-        elapsed = time.time() - start_time
-        return node.name, elapsed
+    node3_ipv6 = node3.ipv6_address
+    cluster.restart_instance_with_ip_change(node3, f"2001:3984:3989::1:88{node_num}3")
+    node4_ipv6 = node4.ipv6_address
+    cluster.restart_instance_with_ip_change(node4, f"2001:3984:3989::1:88{node_num}4")
 
-    # restart the nodes concurrently and time each node separately
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(
-            pool.map(
-                lambda x: restart_with_timing(x[0], x[1]),
-                [
-                    (node3, f"2001:3984:3989::1:88{node_num}3"),
-                    (node4, f"2001:3984:3989::1:88{node_num}4"),
-                ],
-            )
-        )
-
-    # choose the maximum individual restart time for the timing decision
-    max_individual_restart = max(elapsed for _, elapsed in results)
-    logging.info(f"Slowest node restart: {max_individual_restart:.2f}s")
-
-    if max_individual_restart < 5:
-        # Add small buffer to ensure container networking is stable
-        time.sleep(1)
-        with pytest.raises(QueryRuntimeException):
-            node3.query(f"SELECT * FROM remote('{node_name}', 'system', 'one')")
-    else:
-        # The server restart took more time than expected, so it's probable that the DNS cache has already been reloaded
-        logging.warning("Spent too much time on restart, skip short-update test")
-
+    with pytest.raises(QueryRuntimeException):
+        node3.query(f"SELECT * FROM remote('{node_name}', 'system', 'one')")
     with pytest.raises(QueryRuntimeException):
         node4.query(f"SELECT * FROM remote('{node_name}', 'system', 'one')")
     # now wrong addresses are cached
@@ -351,14 +300,14 @@ def test_user_access_ip_change(cluster_ready, node_name):
 
     assert_eq_with_retry(
         node3,
-        f"SELECT * FROM remote('{node_name}', 'system', 'one')",
+        "SELECT * FROM remote('{}', 'system', 'one')".format(node_name),
         "0",
         retry_count=retry_count,
         sleep_time=1,
     )
     assert_eq_with_retry(
         node4,
-        f"SELECT * FROM remote('{node_name}', 'system', 'one')",
+        "SELECT * FROM remote('{}', 'system', 'one')".format(node_name),
         "0",
         retry_count=retry_count,
         sleep_time=1,
@@ -383,6 +332,7 @@ def test_host_is_drop_from_cache_after_consecutive_failures(cluster_ready):
         regexp="Code: 198. DB::NetException: Not found address of host: InvalidHostThatDoesNotExist.",
         # There's noize in a normal log, let's search the error log for the exception
         filename="/var/log/clickhouse-server/clickhouse-server.err.log",
+        look_behind_lines=300,
     )
     assert node4.wait_for_log_line(
         "Cached hosts not found:.*InvalidHostThatDoesNotExist**",
@@ -458,21 +408,3 @@ def test_dns_resolver_filter(cluster_ready, allow_ipv4, allow_ipv6):
         user="root",
     )
     node.query("SYSTEM RELOAD CONFIG")
-
-
-@pytest.mark.parametrize("disable_internal_dns_cache", [1, 0])
-def test_setting_disable_internal_dns_cache(cluster_ready, disable_internal_dns_cache):
-    node = node8
-    # DNSCacheUpdater has to be created before any scenario that requires
-    # DNS resolution (e.g. the loading of tables and clusters config).
-    node.replace_in_config(
-        "/etc/clickhouse-server/config.d/remote_servers_with_disable_dns_setting.xml",
-        "<disable_internal_dns_cache>[10]</disable_internal_dns_cache>",
-        f"<disable_internal_dns_cache>{disable_internal_dns_cache}</disable_internal_dns_cache>"
-    )
-    node.restart_clickhouse()
-
-    if disable_internal_dns_cache == 1:
-        assert node.query("SELECT count(*) from system.dns_cache;") == "0\n"
-    else:
-        assert node.query("SELECT count(*) from system.dns_cache;") != "0\n"

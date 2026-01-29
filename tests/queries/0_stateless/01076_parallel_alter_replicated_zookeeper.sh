@@ -51,9 +51,7 @@ INITIAL_SUM=$($CLICKHOUSE_CLIENT --query "SELECT SUM(value1) FROM concurrent_mut
 # Run mutation on random replica
 function correct_alter_thread()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         REPLICA=$(($RANDOM % 5 + 1))
         $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_mt_$REPLICA UPDATE value1 = value1 + 1 WHERE 1";
         sleep 1
@@ -63,10 +61,9 @@ function correct_alter_thread()
 # This thread add some data to table.
 function insert_thread()
 {
+
     VALUES=(7 8 9)
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         REPLICA=$(($RANDOM % 5 + 1))
         VALUE=${VALUES[$RANDOM % ${#VALUES[@]} ]}
         $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_mutate_mt_$REPLICA VALUES($RANDOM, $VALUE, toString($VALUE))"
@@ -76,9 +73,7 @@ function insert_thread()
 
 function detach_attach_thread()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         REPLICA=$(($RANDOM % 5 + 1))
         $CLICKHOUSE_CLIENT --query "DETACH TABLE concurrent_mutate_mt_$REPLICA"
         sleep 0.$RANDOM
@@ -91,20 +86,24 @@ function detach_attach_thread()
 
 echo "Starting alters"
 
+export -f correct_alter_thread;
+export -f insert_thread;
+export -f detach_attach_thread;
+
 # We assign a lot of mutations so timeout shouldn't be too big
 TIMEOUT=15
 
-detach_attach_thread 2> /dev/null &
+timeout $TIMEOUT bash -c detach_attach_thread 2> /dev/null &
 
-correct_alter_thread 2> /dev/null &
+timeout $TIMEOUT bash -c correct_alter_thread 2> /dev/null &
 
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 
 wait
 

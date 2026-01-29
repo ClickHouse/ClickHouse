@@ -7,9 +7,15 @@ set -x
 
 # Avoid overlaps with previous runs
 dmesg --clear
+# shellcheck disable=SC1091
+source /setup_export_logs.sh
 
 ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 
+# Stress tests and upgrade check uses similar code that was placed
+# in a separate bash library. See tests/ci/stress_tests.lib
+# shellcheck source=../stateless/attach_gdb.lib
+source /repo/tests/docker_scripts/attach_gdb.lib
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
@@ -42,21 +48,18 @@ export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX=10000
 export THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY=0.01
 export THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY=0.01
 
-export USE_ENCRYPTED_STORAGE=$((RANDOM % 2))
-
 export ZOOKEEPER_FAULT_INJECTION=1
 # Initial run without S3 to create system.*_log on local file system to make it
 # available for dump via clickhouse-local
 configure
 
-# run before start_minio to have valid aws creds
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config || echo "ERROR: Failed to create log export config"
+/repo/tests/docker_scripts/setup_minio.sh stateless # to have a proper environment
 
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
+config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
-start_server || { echo "Failed to start server"; exit 1; }
+start_server
 
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_start || echo "ERROR: Failed to start log exports"
+setup_logs_replication
 
 clickhouse-client --query "CREATE DATABASE datasets"
 clickhouse-client < /repo/tests/docker_scripts/create.sql
@@ -78,7 +81,10 @@ fi
 echo "Using cache policy: $cache_policy"
 
 if [ "$cache_policy" = "SLRU" ]; then
-    sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
+    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+    | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
+    > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+    mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
 fi
 
 # Disable experimental WINDOW VIEW tests for stress tests, since they may be
@@ -100,7 +106,7 @@ sudo cat /etc/clickhouse-server/users.d/stress_tests_overrides.xml <<EOL
 </clickhouse>
 EOL
 
-start_server || { echo "Failed to start server"; exit 1; }
+start_server
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
@@ -110,19 +116,7 @@ if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
 elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     TEMP_POLICY="azure_cache"
 else
-    random=$((RANDOM % 3))
-    if [[ $random -eq 0 ]]; then
-        TEMP_POLICY="default"
-        echo "Using local storage policy"
-    elif [[ $random -eq 1 ]]; then
-        TEMP_POLICY="s3_cache"
-        export USE_S3_STORAGE_FOR_MERGE_TREE=1
-        echo "Using s3 storage policy"
-    elif [[ $random -eq 2 ]]; then
-        TEMP_POLICY="azure_cache"
-        export USE_AZURE_STORAGE_FOR_MERGE_TREE=1
-        echo "Using azure storage policy"
-    fi
+    TEMP_POLICY="default"
 fi
 
 
@@ -213,9 +207,9 @@ clickhouse-client --query "CREATE TABLE test.visits (CounterID UInt32,  StartDat
     ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
     SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='$TEMP_POLICY'"
 
-clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
 
 clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
 clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
@@ -232,56 +226,53 @@ export ZOOKEEPER_FAULT_INJECTION=1
 export THREAD_POOL_FAULT_INJECTION=1
 configure
 
-if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" || "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     # But we still need default disk because some tables loaded only into it
-    if [[ $USE_S3_STORAGE_FOR_MERGE_TREE == "1" ]]; then
-        if [[ $USE_ENCRYPTED_STORAGE == "1" ]]; then
-            file=/etc/clickhouse-server/config.d/s3_encrypted_storage_policy_for_merge_tree_by_default.xml
-        else
-            file=/etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
-        fi
-    elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
-        if [[ $USE_ENCRYPTED_STORAGE == "1" ]]; then
-            file=/etc/clickhouse-server/config.d/azure_encrypted_storage_policy_by_default.xml
-        else
-            file=/etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
-        fi
-    else
-        echo "ERROR: Failed to find azure storage policy by default file"
-        exit 1
-    fi
-
-    sed -i.tmp "s|<main><disk>cached_azure</disk></main>|<main><disk>cached_azure</disk></main><default><disk>default</disk></default>|" "$file"
-
-    sudo chown clickhouse "$file"
-    sudo chgrp clickhouse "$file"
+    sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
+      | sed "s|<main><disk>cached_s3</disk></main>|<main><disk>cached_s3</disk></main><default><disk>default</disk></default>|" \
+      > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
+    mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+    sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+    sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+    # But we still need default disk because some tables loaded only into it
+    sudo cat /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml \
+      | sed "s|<main><disk>cached_azure</disk></main>|<main><disk>cached_azure</disk></main><default><disk>default</disk></default>|" \
+      > /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml.tmp
+    mv /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
+    sudo chown clickhouse /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
+    sudo chgrp clickhouse /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
 fi
 
 
-sed -i.tmp "s|<level>trace</level>|<level>test</level>|" /etc/clickhouse-server/config.d/logger_trace.xml
+sudo cat /etc/clickhouse-server/config.d/logger_trace.xml \
+   | sed "s|<level>trace</level>|<level>test</level>|" \
+   > /etc/clickhouse-server/config.d/logger_trace.xml.tmp
+mv /etc/clickhouse-server/config.d/logger_trace.xml.tmp /etc/clickhouse-server/config.d/logger_trace.xml
 
 if [ "$cache_policy" = "SLRU" ]; then
-    sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
+    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+    | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
+    > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+    mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
 fi
 
 # Randomize async_load_databases
-if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
-    sudo echo "<clickhouse><async_load_databases>false</async_load_databases></clickhouse>" \
+if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
+    sudo echo "<clickhouse><async_load_databases>true</async_load_databases></clickhouse>" \
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
 
-# Randomize concurrent_threads_scheduler (default is fair_round_robin)
-if [ $((RANDOM % 2)) -eq 1 ]; then
-    sudo echo "<clickhouse><concurrent_threads_scheduler>max_min_fair</concurrent_threads_scheduler></clickhouse>" \
-        > /etc/clickhouse-server/config.d/enable_max_min_fair_scheduler.xml
-fi
-
-start_server || { echo "Failed to start server"; exit 1; }
+start_server
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
-python3 /repo/ci/jobs/scripts/stress/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
+python3 /repo/tests/ci/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
+
+# NOTE Hung check is implemented in docker/tests/stress/stress
+rg -Fa "No queries hung" /test_output/test_results.tsv | grep -Fa "OK" \
+  || echo -e "Hung check failed, possible deadlock found (see hung_check.log)$FAIL$(head_escaped /test_output/hung_check.log)" >> /test_output/test_results.tsv
 
 stop_server
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
@@ -294,7 +285,7 @@ unset "${!THREAD_@}"
 # running with fault injection.
 rm /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
 
-start_server || { echo "Failed to start server"; exit 1; }
+start_server
 
 check_server_start
 
@@ -313,5 +304,27 @@ tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 collect_query_and_trace_logs
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
+
+# Write check result into check_status.tsv
+# Try to choose most specific error for the whole check status
+clickhouse-local --structure "test String, res String, time Nullable(Float32), desc String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by
+(test like '%Sanitizer%') DESC,
+(test like '%Killed by signal%') DESC,
+(test like '%gdb.log%') DESC,
+(test ilike '%possible deadlock%') DESC,
+(test like '%start%') DESC,
+(test like '%dmesg%') DESC,
+(test like '%OOM%') DESC,
+(test like '%Signal 9%') DESC,
+(test like '%Fatal message%') DESC,
+rowNumberInAllBlocks()
+LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo -e "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
+[ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
+
+# But OOMs in stress test are allowed
+if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
+then
+    sed -i 's/failure/success/' /test_output/check_status.tsv
+fi
 
 collect_core_dumps

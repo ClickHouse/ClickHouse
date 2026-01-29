@@ -176,8 +176,6 @@ public:
     /// Compatibility setting
     void setEnableUserNameAccessType(bool enable_user_name_access_type_);
     bool isEnabledUserNameAccessType() const;
-    void setEnableReadWriteGrants(bool enable_read_write_grants_);
-    bool isEnabledReadWriteGrants() const;
 
     /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
     /// For example, if there are two users A, B and a row policy is defined only for A, then
@@ -200,9 +198,6 @@ public:
 
     void setTableEnginesRequireGrant(bool enable) { table_engines_require_grant = enable; }
     bool doesTableEnginesRequireGrant() const { return table_engines_require_grant; }
-
-    void setThrowOnInvalidReplicatedAccessEntities(bool enable) { throw_on_invalid_replicated_access_entities = enable; }
-    bool shouldThrowOnInvalidReplicatedAccessEntities() const { return throw_on_invalid_replicated_access_entities; }
 
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
@@ -289,13 +284,11 @@ private:
     std::atomic_bool select_from_information_schema_requires_grant = false;
     std::atomic_bool settings_constraints_replace_previous = false;
     std::atomic_bool table_engines_require_grant = false;
-    std::atomic_bool throw_on_invalid_replicated_access_entities = false;
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
     std::atomic_bool allow_experimental_tier_settings = true;
     std::atomic_bool allow_beta_tier_settings = true;
     std::atomic_bool enable_user_name_access_type = true;
-    std::atomic_bool enable_read_write_grants = false;
 };
 
 }

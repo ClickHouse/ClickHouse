@@ -8,8 +8,5 @@
 42
 SELECT
     x,
-    if((
-        SELECT hasColumnInTable(currentDatabase(), \'test\', \'y\')
-        FROM system.one
-    ), y, concat(x, \'_\'))
+    concat(x, \'_\')
 FROM test

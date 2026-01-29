@@ -32,6 +32,7 @@
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
 #    include <openssl/ssl.h>
+#    include <Poco/Crypto/EVPPKey.h>
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/Utility.h>
@@ -63,7 +64,6 @@ namespace CoordinationSetting
     extern const CoordinationSettingsMilliseconds heart_beat_interval_ms;
     extern const CoordinationSettingsMilliseconds leadership_expiry_ms;
     extern const CoordinationSettingsUInt64 max_requests_append_size;
-    extern const CoordinationSettingsUInt64 max_requests_append_bytes_size;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool quorum_reads;
     extern const CoordinationSettingsUInt64 raft_limits_reconnect_limit;
@@ -159,14 +159,12 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
             if (auto err = SSL_CTX_clear_chain_certs(ssl_ctx); err != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "Clear certificates {}", Poco::Net::Utility::getLastError());
 
-            const auto * root_certificate = static_cast<const X509 *>(certificate_data->certs_chain.front());
-            if (auto err = SSL_CTX_use_certificate(ssl_ctx, const_cast<X509 *>(root_certificate)); err != 1)
+            if (auto err = SSL_CTX_use_certificate(ssl_ctx, const_cast<X509 *>(certificate_data->certs_chain[0].certificate())); err != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "Use certificate {}", Poco::Net::Utility::getLastError());
 
             for (auto cert = certificate_data->certs_chain.begin() + 1; cert != certificate_data->certs_chain.end(); cert++)
             {
-                const auto * certificate = static_cast<const X509 *>(*cert);
-                if (auto err = SSL_CTX_add1_chain_cert(ssl_ctx, const_cast<X509 *>(certificate)); err != 1)
+                if (auto err = SSL_CTX_add1_chain_cert(ssl_ctx, const_cast<X509 *>(cert->certificate())); err != 1)
                     throw Exception(ErrorCodes::OPENSSL_ERROR, "Add certificate to chain {}", Poco::Net::Utility::getLastError());
             }
 
@@ -176,6 +174,7 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
             if (auto err = SSL_CTX_check_private_key(ssl_ctx); err != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "Unusable key-pair {}", Poco::Net::Utility::getLastError());
         }
+
 
         return context.takeSslContext();
     };
@@ -477,7 +476,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds() * 2, "operation_timeout_ms", log);
     params.max_append_size_
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::max_requests_append_size], "max_requests_append_size", log);
-    params.max_append_size_bytes_ = coordination_settings[CoordinationSetting::max_requests_append_bytes_size];
 
     params.return_method_ = nuraft::raft_params::async_handler;
 
@@ -526,21 +524,16 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     if (listen_hosts.empty())
     {
-        auto asio_listener = asio_service->create_rpc_listener(static_cast<ushort>(state_manager->getPort()), logger, enable_ipv6);
+        auto asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
         if (!asio_listener)
-        {
-            LOG_WARNING(log, "Failed to create listener with IPv6 enabled, falling back to IPv4 only.");
-            asio_listener = asio_service->create_rpc_listener(static_cast<ushort>(state_manager->getPort()), logger, /*_enable_ipv6=*/false);
-            if (!asio_listener)
-                throw Exception(ErrorCodes::RAFT_ERROR, "Cannot create interserver listener on port {} after trying both IPv6 and IPv4.", state_manager->getPort());
-        }
+            throw Exception(ErrorCodes::RAFT_ERROR, "Cannot create interserver listener on port {}", state_manager->getPort());
         asio_listeners.emplace_back(std::move(asio_listener));
     }
     else
     {
         for (const auto & listen_host : listen_hosts)
         {
-            auto asio_listener = asio_service->create_rpc_listener(listen_host, static_cast<ushort>(state_manager->getPort()), logger);
+            auto asio_listener = asio_service->create_rpc_listener(listen_host, state_manager->getPort(), logger);
             if (asio_listener)
                 asio_listeners.emplace_back(std::move(asio_listener));
         }
@@ -566,7 +559,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     nuraft::raft_server::limits raft_limits;
     raft_limits.reconnect_limit_ = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::raft_limits_reconnect_limit], "raft_limits_reconnect_limit", log);
     raft_limits.response_limit_ = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::raft_limits_response_limit], "response_limit", log);
-    raft_limits.busy_connection_limit_ = 0;
     KeeperRaftServer::set_raft_limits(raft_limits);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
@@ -587,7 +579,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
 
-    state_manager->loadLogStore(state_machine->last_commit_index(), coordination_settings[CoordinationSetting::reserved_log_items]);
+    state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings[CoordinationSetting::reserved_log_items]);
 
     auto log_store = state_manager->load_log_store();
     last_log_idx_on_disk = log_store->next_slot() - 1;
@@ -655,6 +647,11 @@ void KeeperServer::shutdown()
     state_machine->shutdownStorage();
 }
 
+namespace
+{
+
+
+}
 
 void KeeperServer::putLocalReadRequest(const KeeperRequestForSession & request_for_session)
 {
@@ -1048,25 +1045,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
             const auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
             return follower_preappend(entry);
         }
-        case nuraft::cb_func::ReceivedMisbehavingMessage:
-        {
-            auto & req = *static_cast<nuraft::req_msg *>(param->ctx);
-
-            if (req.get_src() == server_id)
-            {
-                LOG_FATAL
-                (
-                    log,
-                    "Raft received its own message intended for another peer, this indicates misconfiguration; server_id: {}, src: {}, dst: {}",
-                    server_id,
-                    req.get_src(),
-                    req.get_dst()
-                );
-                std::terminate();
-            }
-
-            return nuraft::cb_func::ReturnCode::Ok;
-        }
         default: /// ignore other events
             return nuraft::cb_func::ReturnCode::Ok;
     }
@@ -1140,15 +1118,8 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         if (ptr->get_priority() == update->priority)
             return Accepted;
 
-        raft_instance->set_priority_v2(update->id, update->priority);
+        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/ true);
         return Accepted;
-    }
-    if (const auto * transfer_leader = std::get_if<TransferLeadership>(&action))
-    {
-        if (raft_instance->request_leadership(transfer_leader->target_server_id))
-            return Accepted;
-        else
-            return Declined;
     }
     std::unreachable();
 }
@@ -1222,7 +1193,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
     }
     else if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
     {
-        raft_instance->set_priority_v2(update->id, update->priority);
+        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
         return;
     }
 
@@ -1326,11 +1297,6 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
 bool KeeperServer::requestLeader()
 {
     return isLeader() || raft_instance->request_leadership();
-}
-
-int64_t KeeperServer::getLeaderID() const
-{
-    return raft_instance->get_leader();
 }
 
 void KeeperServer::yieldLeadership()

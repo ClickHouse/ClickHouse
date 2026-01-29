@@ -8,7 +8,7 @@ namespace DB
 
 ASTPtr ASTSelectIntersectExceptQuery::clone() const
 {
-    auto res = make_intrusive<ASTSelectIntersectExceptQuery>(*this);
+    auto res = std::make_shared<ASTSelectIntersectExceptQuery>(*this);
 
     res->children.clear();
     for (const auto & child : children)
@@ -26,9 +26,9 @@ void ASTSelectIntersectExceptQuery::formatImpl(WriteBuffer & ostr, const FormatS
     {
         if (it != children.begin())
         {
-            ostr << settings.nl_or_ws << indent_str
+            ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
                           << fromOperator(final_operator)
-
+                          << (settings.hilite ? hilite_none : "")
                           << settings.nl_or_ws;
         }
 

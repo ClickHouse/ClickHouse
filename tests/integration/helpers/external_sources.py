@@ -127,9 +127,7 @@ class SourceMySQL(ExternalSource):
         self.execute_mysql_query(
             "create database if not exists test default character set 'utf8'"
         )
-        self.execute_mysql_query(
-            "drop table if exists test.{}".format(table_name)
-        )
+        self.execute_mysql_query("drop table if exists test.{}".format(table_name))
         fields_strs = []
         for field in (
             structure.keys + structure.ordinary_fields + structure.range_fields
@@ -175,6 +173,7 @@ class SourceMongo(ExternalSource):
         user,
         password,
         secure=False,
+        legacy=False,
     ):
         ExternalSource.__init__(
             self,
@@ -187,10 +186,13 @@ class SourceMongo(ExternalSource):
             password,
         )
         self.secure = secure
+        self.legacy = legacy
 
     def get_source_str(self, table_name):
         options = ""
-        if self.secure:
+        if self.secure and self.legacy:
+            options = "<options>ssl=true</options>"
+        if self.secure and not self.legacy:
             options = "<options>tls=true&amp;tlsAllowInvalidCertificates=true</options>"
 
         return """
@@ -264,7 +266,9 @@ class SourceMongoURI(SourceMongo):
 
     def get_source_str(self, table_name):
         options = ""
-        if self.secure:
+        if self.secure and self.legacy:
+            options = "ssl=true"
+        if self.secure and not self.legacy:
             options = "tls=true&amp;tlsAllowInvalidCertificates=true"
 
         return """
@@ -304,7 +308,6 @@ class SourceClickHouse(ExternalSource):
     def prepare(self, structure, table_name, cluster):
         self.node = cluster.instances[self.docker_hostname]
         self.node.query("CREATE DATABASE IF NOT EXISTS test")
-        self.node.query("DROP TABLE IF EXISTS test.{}".format(table_name))
         fields_strs = []
         for field in (
             structure.keys + structure.ordinary_fields + structure.range_fields
@@ -493,12 +496,11 @@ class SourceHTTPBase(ExternalSource):
             [
                 "bash",
                 "-c",
-                "python3 /http_server.py --data-path={tbl} --schema={schema} --host={host} --port={port} --cert-path=/fake_cert.pem {logs}".format(
+                "python3 /http_server.py --data-path={tbl} --schema={schema} --host={host} --port={port} --cert-path=/fake_cert.pem".format(
                     tbl=path,
                     schema=self._get_schema(),
                     host=self.docker_hostname,
                     port=self.http_port,
-                    logs='>> /var/log/clickhouse-server/http_server.py.log 2>&1'
                 ),
             ],
             detach=True,

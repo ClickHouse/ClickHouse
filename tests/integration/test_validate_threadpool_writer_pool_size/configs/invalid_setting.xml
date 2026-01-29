@@ -1,3 +1,0 @@
-<clickhouse>
-    <threadpool_writer_pool_size>0</threadpool_writer_pool_size>
-</clickhouse>

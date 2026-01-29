@@ -29,7 +29,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = make_intrusive<ASTUseQuery>(*this);
+        auto res = std::make_shared<ASTUseQuery>(*this);
         res->children.clear();
         if (database)
             res->set(res->database, database->clone());
@@ -41,7 +41,7 @@ public:
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        ostr << "USE ";
+        ostr << (settings.hilite ? hilite_keyword : "") << "USE " << (settings.hilite ? hilite_none : "");
         database->format(ostr, settings, state, frame);
     }
 };

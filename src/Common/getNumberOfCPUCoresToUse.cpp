@@ -1,4 +1,4 @@
-#include <Common/getNumberOfCPUCoresToUse.h>
+#include "getNumberOfCPUCoresToUse.h"
 
 #if defined(OS_LINUX)
 #    include <cmath>
@@ -13,7 +13,6 @@
 #include <filesystem>
 #include <thread>
 #include <set>
-#include <vector>
 
 namespace
 {

@@ -7,8 +7,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/Regexps.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
@@ -51,19 +53,22 @@ private:
         /// With a small margin - as if the separator goes after the last string of the array.
         dst_chars.resize(
             src_chars.size()
-            + delimiter_size * src_string_offsets.size()); /// Separators after each string...
+            + delimiter_size * src_string_offsets.size()    /// Separators after each string...
+            + src_array_offsets.size()                      /// Zero byte after each joined string
+            - src_string_offsets.size());                   /// The former zero byte after each string of the array
 
         /// There will be as many strings as there were arrays.
         dst_string_offsets.resize(src_array_offsets.size());
 
         ColumnArray::Offset current_src_array_offset = 0;
+
         ColumnString::Offset current_dst_string_offset = 0;
 
         /// Loop through the array of strings.
         for (size_t i = 0; i < size; ++i)
         {
             bool first_non_null = true;
-            /// Loop through the string within the array. /// NOTE You can do everything in one copy, if the separator is empty.
+            /// Loop through the rows within the array. /// NOTE You can do everything in one copy, if the separator has a size of 1.
             for (auto next_src_array_offset = src_array_offsets[i]; current_src_array_offset < next_src_array_offset; ++current_src_array_offset)
             {
                 if (null_map && null_map[current_src_array_offset]) [[unlikely]]
@@ -77,13 +82,16 @@ private:
                 first_non_null = false;
 
                 const auto current_src_string_offset = current_src_array_offset ? src_string_offsets[current_src_array_offset - 1] : 0;
-                size_t bytes_to_copy = src_string_offsets[current_src_array_offset] - current_src_string_offset;
+                size_t bytes_to_copy = src_string_offsets[current_src_array_offset] - current_src_string_offset - 1;
 
                 memcpySmallAllowReadWriteOverflow15(
                     &dst_chars[current_dst_string_offset], &src_chars[current_src_string_offset], bytes_to_copy);
 
                 current_dst_string_offset += bytes_to_copy;
             }
+
+            dst_chars[current_dst_string_offset] = 0;
+            ++current_dst_string_offset;
 
             dst_string_offsets[i] = current_dst_string_offset;
         }
@@ -193,31 +201,7 @@ public:
 
 REGISTER_FUNCTION(ArrayStringConcat)
 {
-    FunctionDocumentation::Description description = R"(
-Concatenates string representations of values listed in the array with the provided separator, which is an optional parameter set to an empty string by default.
-)";
-    FunctionDocumentation::Syntax syntax = "arrayStringConcat(arr[, separator])";
-    FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to concatenate.", {"Array(T)"}},
-        {"separator", "Optional. Separator string. By default an empty string.", {"const String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the concatenated string.", {"String"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        "SELECT arrayStringConcat(['12/05/2021', '12:50:00'], ' ') AS DateString;",
-        R"(
-┌─DateString──────────┐
-│ 12/05/2021 12:50:00 │
-└─────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionArrayStringConcat>(documentation);
+    factory.registerFunction<FunctionArrayStringConcat>();
 }
 
 }

@@ -25,8 +25,6 @@ struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranul
 
     bool empty() const override { return !has_elems; }
 
-    size_t memoryUsageBytes() const override;
-
     const String index_name;
     const BloomFilterParameters params;
 
@@ -73,9 +71,7 @@ public:
     ~MergeTreeConditionBloomFilterText() override = default;
 
     bool alwaysUnknownOrTrue() const override;
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
-    std::string getDescription() const override { return ""; }
-
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
 private:
     struct KeyTuplePositionMapping
     {
@@ -98,7 +94,6 @@ private:
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
             FUNCTION_HAS_ANY,
-            FUNCTION_HAS_ALL,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -165,7 +160,7 @@ public:
     ~MergeTreeIndexBloomFilterText() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
             const ActionsDAG::Node * predicate, ContextPtr context) const override;

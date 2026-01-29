@@ -232,8 +232,8 @@ public:
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
             {
-                auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, static_cast<UInt8>(0), timezone_x);
-                auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, static_cast<UInt8>(0), timezone_y);
+                auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, 0, timezone_x);
+                auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, 0, timezone_y);
                 if ((x_day_of_week > y_day_of_week)
                     || ((x_day_of_week == y_day_of_week) && (a_comp.time.hour > b_comp.time.hour))
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
@@ -315,15 +315,15 @@ private:
 };
 
 
-/** dateDiff('unit', t1, t2[, timezone])
-  * age('unit', t1, t2[, timezone])
+/** dateDiff('unit', t1, t2, [timezone])
+  * age('unit', t1, t2, [timezone])
   * t1 and t2 can be Date, Date32, DateTime or DateTime64
   *
-  * If timezone is specified, it is applied to both arguments.
+  * If timezone is specified, it applied to both arguments.
   * If not, timezones from datatypes t1 and t2 are used.
-  * If those timezones are not the same, the result is unspecified.
+  * If that timezones are not the same, the result is unspecified.
   *
-  * The timezone matters because days can have different lengths.
+  * Timezone matters because days can have different length.
   */
 template <bool is_relative>
 class FunctionDateDiff : public IFunction
@@ -463,72 +463,7 @@ private:
 
 REGISTER_FUNCTION(DateDiff)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the count of the specified `unit` boundaries crossed between the `startdate` and the `enddate`.
-The difference is calculated using relative units. For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for unit day
-(see [`toRelativeDayNum`](#toRelativeDayNum)), 1 month for unit month (see [`toRelativeMonthNum`](#toRelativeMonthNum)) and 1 year for unit year
-(see [`toRelativeYearNum`](#toRelativeYearNum)).
-
-If the unit `week` was specified, then `dateDiff` assumes that weeks start on Monday.
-Note that this behavior is different from that of function `toWeek()` in which weeks start by default on Sunday.
-
-For an alternative to `dateDiff`, see function [`age`](#age).
-    )";
-    FunctionDocumentation::Syntax syntax = R"(
-dateDiff(unit, startdate, enddate[, timezone])
-    )";
-    FunctionDocumentation::Arguments arguments =
-    {
-        {"unit", R"(The type of interval for result.
-
-| Unit        | Possible values                           |
-|-------------|-------------------------------------------|
-| nanosecond  | `nanosecond`, `nanoseconds`, `ns`         |
-| microsecond | `microsecond`, `microseconds`, `us`, `u`  |
-| millisecond | `millisecond`, `milliseconds`, `ms`       |
-| second      | `second`, `seconds`, `ss`, `s`            |
-| minute      | `minute`, `minutes`, `mi`, `n`            |
-| hour        | `hour`, `hours`, `hh`, `h`                |
-| day         | `day`, `days`, `dd`, `d`                  |
-| week        | `week`, `weeks`, `wk`, `ww`               |
-| month       | `month`, `months`, `mm`, `m`              |
-| quarter     | `quarter`, `quarters`, `qq`, `q`          |
-| year        | `year`, `years`, `yyyy`, `yy`             |
-)"},
-        {"startdate", "The first time value to subtract (the subtrahend).", {"Date", "Date32", "DateTime", "DateTime64"}},
-        {"enddate", "The second time value to subtract from (the minuend).", {"Date", "Date32", "DateTime", "DateTime64"}},
-        {"timezone", "Optional. Timezone name. If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the difference between `enddate` and `startdate` expressed in `unit`.", {"Int64"}};
-    FunctionDocumentation::Examples examples =
-    {
-        {"Calculate date difference in hours", R"(
-SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00')) AS res
-        )",
-        R"(
-┌─res─┐
-│  25 │
-└─────┘
-        )"},
-        {"Calculate date difference in different units", R"(
-SELECT
-    toDate('2022-01-01') AS e,
-    toDate('2021-12-29') AS s,
-    dateDiff('day', s, e) AS day_diff,
-    dateDiff('month', s, e) AS month_diff,
-    dateDiff('year', s, e) AS year_diff
-        )",
-        R"(
-┌──────────e─┬──────────s─┬─day_diff─┬─month_diff─┬─year_diff─┐
-│ 2022-01-01 │ 2021-12-29 │        3 │          1 │         1 │
-└────────────┴────────────┴──────────┴────────────┴───────────┘
-        )"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {23, 4};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionDateDiff<true>>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionDateDiff<true>>({}, FunctionFactory::Case::Insensitive);
     factory.registerAlias("date_diff", FunctionDateDiff<true>::name);
     factory.registerAlias("DATE_DIFF", FunctionDateDiff<true>::name);
     factory.registerAlias("timestampDiff", FunctionDateDiff<true>::name);
@@ -538,125 +473,21 @@ SELECT
 
 REGISTER_FUNCTION(TimeDiff)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the difference between two dates or dates with time values in seconds.
-The difference is calculated as `enddate` - `startdate`.
+    factory.registerFunction<FunctionTimeDiff>(FunctionDocumentation{.description=R"(
+Returns the difference between two dates or dates with time values. The difference is calculated in seconds units (see toRelativeSecondNum).
+It is same as `dateDiff` and was added only for MySQL support. `dateDiff` is preferred.
 
-This function is equivalent to `dateDiff('second', startdate, enddate)`.
-
-For calculating time differences in other units (hours, days, months, etc.), use the [`dateDiff`](#dateDiff) function instead.
-    )";
-    FunctionDocumentation::Syntax syntax = R"(
-timeDiff(startdate, enddate)
-    )";
-    FunctionDocumentation::Arguments arguments =
-    {
-        {"startdate", "The first time value to subtract (the subtrahend).", {"Date", "Date32", "DateTime", "DateTime64"}},
-        {"enddate", "The second time value to subtract from (the minuend).", {"Date", "Date32", "DateTime", "DateTime64"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the difference between `enddate` and `startdate` expressed in seconds.", {"Int64"}};
-    FunctionDocumentation::Examples examples =
-    {
-        {"Calculate time difference in seconds", R"(
-SELECT timeDiff(toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00')) AS res
-        )",
-        R"(
-┌───res─┐
-│ 90000 │
-└───────┘
-        )"},
-        {"Calculate time difference and convert to hours", R"(
-SELECT timeDiff(toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00')) / 3600 AS hours
-        )",
-        R"(
-┌─hours─┐
-│    25 │
-└───────┘
-        )"},
-        {"Equivalent to dateDiff with seconds", R"(
-SELECT
-    timeDiff(toDateTime('2021-12-29'), toDateTime('2022-01-01')) AS time_diff_result,
-    dateDiff('second', toDateTime('2021-12-29'), toDateTime('2022-01-01')) AS date_diff_result
-        )",
-        R"(
-┌─time_diff_result─┬─date_diff_result─┐
-│           259200 │           259200 │
-└──────────────────┴──────────────────┘
-        )"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {23, 4};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionTimeDiff>(documentation, FunctionFactory::Case::Insensitive);
+Example:
+[example:typical]
+)",
+    .examples{
+        {"typical", "SELECT timeDiff(UTCTimestamp(), now());", ""}},
+    .category{"Dates and Times"}}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(Age)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the unit component of the difference between `startdate` and `enddate`.
-The difference is calculated using a precision of 1 nanosecond.
-
-For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for the day unit,
-0 months for the month unit, and 0 years for the year unit.
-
-For an alternative to age, see function [`dateDiff`](#dateDiff).
-    )";
-    FunctionDocumentation::Syntax syntax = R"(
-age('unit', startdate, enddate[, timezone])
-    )";
-    FunctionDocumentation::Arguments arguments =
-    {
-        {"unit", R"(The type of interval for result.
-
-| Unit        | Possible values                          |
-|-------------|------------------------------------------|
-| nanosecond  | `nanosecond`, `nanoseconds`, `ns`        |
-| microsecond | `microsecond`, `microseconds`, `us`, `u` |
-| millisecond | `millisecond`, `milliseconds`, `ms`      |
-| second      | `second`, `seconds`, `ss`, `s`           |
-| minute      | `minute`, `minutes`, `mi`, `n`           |
-| hour        | `hour`, `hours`, `hh`, `h`               |
-| day         | `day`, `days`, `dd`, `d`                 |
-| week        | `week`, `weeks`, `wk`, `ww`              |
-| month       | `month`, `months`, `mm`, `m`             |
-| quarter     | `quarter`, `quarters`, `qq`, `q`         |
-| year        | `year`, `years`, `yyyy`, `yy`            |
-)"},
-        {"startdate", "The first time value to subtract (the subtrahend).", {"Date", "Date32", "DateTime", "DateTime64"}},
-        {"enddate", "The second time value to subtract from (the minuend).", {"Date", "Date32", "DateTime", "DateTime64"}},
-        {"timezone", "Optional. Timezone name. If specified, it is applied to both startdate and enddate. If not specified, timezones of startdate and enddate are used. If they are not the same, the result is unspecified.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the difference between enddate and startdate expressed in unit.", {"Int32"}};
-    FunctionDocumentation::Examples examples =
-    {
-        {"Calculate age in hours", R"(
-SELECT age('hour', toDateTime('2018-01-01 22:30:00'), toDateTime('2018-01-02 23:00:00'))
-        )",
-        R"(
-┌─age('hour', toDateTime('2018-01-01 22:30:00'), toDateTime('2018-01-02 23:00:00'))─┐
-│                                                                                24 │
-└───────────────────────────────────────────────────────────────────────────────────┘
-        )"},
-        {"Calculate age in different units", R"(
-SELECT
-    toDate('2022-01-01') AS e,
-    toDate('2021-12-29') AS s,
-    age('day', s, e) AS day_age,
-    age('month', s, e) AS month_age,
-    age('year', s, e) AS year_age
-        )",
-        R"(
-┌──────────e─┬──────────s─┬─day_age─┬─month_age─┬─year_age─┐
-│ 2022-01-01 │ 2021-12-29 │       3 │         0 │        0 │
-└────────────┴────────────┴─────────┴───────────┴──────────┘
-        )"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {23, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionDateDiff<false>>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionDateDiff<false>>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

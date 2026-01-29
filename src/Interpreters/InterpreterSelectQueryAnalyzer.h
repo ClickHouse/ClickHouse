@@ -3,13 +3,12 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
+#include <Analyzer/QueryTreePassManager.h>
 #include <Planner/Planner.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
-
-class QueryPlan;
 
 class InterpreterSelectQueryAnalyzer : public IInterpreter
 {
@@ -42,18 +41,18 @@ public:
         return context;
     }
 
-    SharedHeader getSampleBlock();
-    std::pair<SharedHeader, PlannerContextPtr> getSampleBlockAndPlannerContext();
+    Block getSampleBlock();
+    std::pair<Block, PlannerContextPtr> getSampleBlockAndPlannerContext();
 
-    static SharedHeader getSampleBlock(const ASTPtr & query,
+    static Block getSampleBlock(const ASTPtr & query,
         const ContextPtr & context,
         const SelectQueryOptions & select_query_options = {});
 
-    static SharedHeader getSampleBlock(const QueryTreeNodePtr & query_tree,
+    static Block getSampleBlock(const QueryTreeNodePtr & query_tree,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options = {});
 
-    static std::pair<SharedHeader, PlannerContextPtr> getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
+    static std::pair<Block, PlannerContextPtr> getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options = {});
 
@@ -87,8 +86,6 @@ private:
     SelectQueryOptions select_query_options;
     QueryTreeNodePtr query_tree;
     Planner planner;
-
-    std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 };
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage);

@@ -5,29 +5,28 @@ sidebar_label: 'Backup'
 sidebar_position: 60
 slug: /engines/database-engines/backup
 title: 'Backup'
-doc_type: 'reference'
 ---
 
 # Backup
 
-Database backup allows to instantly attach table/database from [backups](/operations/backup/overview) in read-only mode.
+Database backup allows to instantly attach table/database from [backups](../../operations/backup) in read-only mode.
 
 Database backup works with both incremental and non-incremental backups.
 
-## Creating a database {#creating-a-database}
+## Creating a Database {#creating-a-database}
 
-```sql
-CREATE DATABASE backup_database
-ENGINE = Backup('database_name_inside_backup', 'backup_destination')
+``` sql
+    CREATE DATABASE backup_database
+    ENGINE = Backup('database_name_inside_backup', 'backup_destination')
 ```
 
-Backup destination can be any valid backup [destination](/operations/backup/disk#configure-backup-destinations-for-disk) like `Disk`, `S3`, `File`.
+Backup destination can be any valid backup [destination](../../operations/backup#configure-a-backup-destination) like `Disk`, `S3`, `File`.
 
 With `Disk` backup destination, query to create database from backup looks like this:
 
-```sql
-CREATE DATABASE backup_database
-ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))
+``` sql
+    CREATE DATABASE backup_database
+    ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name')
 ```
 
 **Engine Parameters**
@@ -35,11 +34,11 @@ ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))
 - `database_name_inside_backup` — Name of the database inside the backup.
 - `backup_destination` — Backup destination.
 
-## Usage example {#usage-example}
+## Usage Example {#usage-example}
 
 Let's make an example with a `Disk` backup destination. Let's first setup backups disk in `storage.xml`:
 
-```xml
+``` xml
 <storage_configuration>
     <disks>
         <backups>
@@ -56,7 +55,7 @@ Let's make an example with a `Disk` backup destination. Let's first setup backup
 
 Example of usage. Let's create test database, tables, insert some data and then create a backup:
 
-```sql
+``` sql
 CREATE DATABASE test_database;
 
 CREATE TABLE test_database.test_table_1 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
@@ -73,13 +72,13 @@ BACKUP DATABASE test_database TO Disk('backups', 'test_database_backup');
 
 So now we have `test_database_backup` backup, let's create database Backup:
 
-```sql
+``` sql
 CREATE DATABASE test_database_backup ENGINE = Backup('test_database', Disk('backups', 'test_database_backup'));
 ```
 
 Now we can query any table from database:
 
-```sql
+``` sql
 SELECT id, value FROM test_database_backup.test_table_1;
 
 ┌─id─┬─value──────────────────────┐
@@ -101,7 +100,7 @@ SELECT id, value FROM test_database_backup.test_table_3;
 
 It is also possible to work with this database Backup as with any ordinary database. For example query tables in it:
 
-```sql
+``` sql
 SELECT database, name FROM system.tables WHERE database = 'test_database_backup':
 
 ┌─database─────────────┬─name─────────┐

@@ -155,58 +155,49 @@ public:
         res.x = x ^ 0b1000000000000000;
         return res;
     }
-
-    constexpr const UInt16 & raw() const
-    {
-        return x;
-    }
 };
 
-/// we cast BFloat16 to Float32 which is common type for all integral types
-/// if the other type is Float64, we want to cast to Float64 instead
-template <typename T>
-using BFloat16CommonType = std::conditional_t<std::is_same_v<T, Float64>, Float64, Float32>;
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator==(const BFloat16 & a, const T & b)
 {
-    return Float32(a) == static_cast<BFloat16CommonType<T>>(b);
+    return Float32(a) == b;
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator==(const T & a, const BFloat16 & b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) == Float32(b);
+    return a == Float32(b);
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator!=(const BFloat16 & a, const T & b)
 {
-    return Float32(a) != static_cast<BFloat16CommonType<T>>(b);
+    return Float32(a) != b;
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator!=(const T & a, const BFloat16 & b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) != Float32(b);
+    return a != Float32(b);
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator<(const BFloat16 & a, const T & b)
 {
-    return Float32(a) < static_cast<BFloat16CommonType<T>>(b);
+    return Float32(a) < b;
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator<(const T & a, const BFloat16 & b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) < Float32(b);
+    return a < Float32(b);
 }
 
 constexpr inline bool operator<(BFloat16 a, BFloat16 b)
@@ -218,14 +209,14 @@ template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator>(const BFloat16 & a, const T & b)
 {
-    return Float32(a) > static_cast<BFloat16CommonType<T>>(b);
+    return Float32(a) > b;
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator>(const T & a, const BFloat16 & b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) > Float32(b);
+    return a > Float32(b);
 }
 
 constexpr inline bool operator>(BFloat16 a, BFloat16 b)
@@ -238,14 +229,14 @@ template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator<=(const BFloat16 & a, const T & b)
 {
-    return Float32(a) <= static_cast<BFloat16CommonType<T>>(b);
+    return Float32(a) <= b;
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator<=(const T & a, const BFloat16 & b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) <= Float32(b);
+    return a <= Float32(b);
 }
 
 constexpr inline bool operator<=(BFloat16 a, BFloat16 b)
@@ -257,14 +248,14 @@ template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator>=(const BFloat16 & a, const T & b)
 {
-    return Float32(a) >= static_cast<BFloat16CommonType<T>>(b);
+    return Float32(a) >= b;
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator>=(const T & a, const BFloat16 & b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) >= Float32(b);
+    return a >= Float32(b);
 }
 
 constexpr inline bool operator>=(BFloat16 a, BFloat16 b)
@@ -277,56 +268,56 @@ template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator+(T a, BFloat16 b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) + Float32(b);
+    return a + Float32(b);
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator+(BFloat16 a, T b)
 {
-    return Float32(a) + static_cast<BFloat16CommonType<T>>(b);
+    return Float32(a) + b;
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator-(T a, BFloat16 b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) - Float32(b);
+    return a - Float32(b);
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator-(BFloat16 a, T b)
 {
-    return Float32(a) - static_cast<BFloat16CommonType<T>>(b);
+    return Float32(a) - b;
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator*(T a, BFloat16 b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) * Float32(b);
+    return a * Float32(b);
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator*(BFloat16 a, T b)
 {
-    return Float32(a) * static_cast<BFloat16CommonType<T>>(b);
+    return Float32(a) * b;
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator/(T a, BFloat16 b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) / Float32(b);
+    return a / Float32(b);
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr inline auto operator/(BFloat16 a, T b)
 {
-    return Float32(a) / static_cast<BFloat16CommonType<T>>(b);
+    return Float32(a) / b;
 }
 
 namespace std

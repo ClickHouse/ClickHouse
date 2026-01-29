@@ -1,7 +1,6 @@
 import contextlib
 import time
 from string import Template
-import uuid
 
 import pymysql.cursors
 import pytest
@@ -14,7 +13,7 @@ from helpers.network import PartitionManager
 cluster = ClickHouseCluster(__file__)
 clickhouse_node = cluster.add_instance(
     "node1",
-    main_configs=["configs/remote_servers.xml", "configs/named_collections.xml", "configs/backups.xml"],
+    main_configs=["configs/remote_servers.xml", "configs/named_collections.xml"],
     user_configs=["configs/users.xml"],
     with_mysql8=True,
     stay_alive=True,
@@ -31,21 +30,13 @@ def started_cluster():
 
 
 class MySQLNodeInstance:
-    def __init__(self, cluster, name, user, password, hostname, port):
-        self.cluster = cluster
-        self.name = name
-        self.docker_id = self.cluster.get_instance_docker_id(self.name)
-        self.ipv6_address = None
-
+    def __init__(self, user, password, hostname, port):
         self.user = user
         self.port = port
         self.hostname = hostname
         self.password = password
         self.mysql_connection = None  # lazy init
         self.ip_address = hostname
-
-    def exec_in_container(self, cmd, **kwargs):
-        return self.cluster.exec_in_container(self.docker_id, cmd, **kwargs)
 
     def query(self, execution_query):
         if self.mysql_connection is None:
@@ -81,8 +72,6 @@ class MySQLNodeInstance:
 def test_mysql_ddl_for_mysql_database(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            started_cluster,
-            "mysql80",
             "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
@@ -134,8 +123,6 @@ def test_mysql_ddl_for_mysql_database(started_cluster):
 def test_clickhouse_ddl_for_mysql_database(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            started_cluster,
-            "mysql80",
             "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
@@ -173,8 +160,6 @@ def test_clickhouse_ddl_for_mysql_database(started_cluster):
 def test_clickhouse_dml_for_mysql_database(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            started_cluster,
-            "mysql80",
             "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
@@ -214,8 +199,6 @@ def test_clickhouse_dml_for_mysql_database(started_cluster):
 def test_clickhouse_join_for_mysql_database(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            started_cluster,
-            "mysql80",
             "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
@@ -265,8 +248,6 @@ def test_clickhouse_join_for_mysql_database(started_cluster):
 def test_bad_arguments_for_mysql_database_engine(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            started_cluster,
-            "mysql80",
             "root",
             mysql_pass,
             started_cluster.mysql8_ip,
@@ -274,9 +255,8 @@ def test_bad_arguments_for_mysql_database_engine(started_cluster):
         )
     ) as mysql_node:
         with pytest.raises(QueryRuntimeException) as exception:
-            mysql_node.query("DROP DATABASE IF EXISTS test_bad_arguments")
             mysql_node.query(
-                "CREATE DATABASE test_bad_arguments DEFAULT CHARACTER SET 'utf8'"
+                "CREATE DATABASE IF NOT EXISTS test_bad_arguments DEFAULT CHARACTER SET 'utf8'"
             )
             clickhouse_node.query(
                 f"CREATE DATABASE test_database_bad_arguments ENGINE = MySQL('mysql80:3306', test_bad_arguments, root, '{mysql_pass}')"
@@ -290,8 +270,6 @@ def test_bad_arguments_for_mysql_database_engine(started_cluster):
 def test_column_comments_for_mysql_database_engine(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            started_cluster,
-            "mysql80",
             "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
@@ -328,14 +306,12 @@ def test_column_comments_for_mysql_database_engine(started_cluster):
 def test_data_types_support_level_for_mysql_database_engine(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            started_cluster,
-            "mysql80",
             "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
         mysql_node.query("DROP DATABASE IF EXISTS test")
         mysql_node.query(
-            "CREATE DATABASE test DEFAULT CHARACTER SET 'utf8'"
+            "CREATE DATABASE IF NOT EXISTS test DEFAULT CHARACTER SET 'utf8'"
         )
         clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
@@ -841,8 +817,6 @@ def test_mysql_types(
 
     with contextlib.closing(
         MySQLNodeInstance(
-            started_cluster,
-            "mysql80",
             "root",
             mysql_pass,
             started_cluster.mysql8_ip,
@@ -947,8 +921,6 @@ def test_mysql_types(
 def test_predefined_connection_configuration(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            started_cluster,
-            "mysql80",
             "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
@@ -1001,8 +973,6 @@ def test_predefined_connection_configuration(started_cluster):
 def test_restart_server(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            started_cluster,
-            "mysql80",
             "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
@@ -1036,8 +1006,6 @@ def test_restart_server(started_cluster):
 def test_memory_leak(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            started_cluster,
-            "mysql80",
             "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
@@ -1060,8 +1028,6 @@ def test_memory_leak(started_cluster):
 def test_password_leak(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            started_cluster,
-            "mysql80",
             "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
@@ -1078,74 +1044,3 @@ def test_password_leak(started_cluster):
         assert "clickhouse" not in clickhouse_node.query(
             "SHOW CREATE test_database.test_table"
         )
-
-
-def test_mysql_database_engine_comment(started_cluster):
-    with contextlib.closing(
-        MySQLNodeInstance(
-            started_cluster,
-            "mysql80",
-            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
-        )
-    ) as mysql_node:
-        mysql_node.query("DROP DATABASE IF EXISTS test_database")
-        mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
-
-        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
-        clickhouse_node.query(
-            f"CREATE DATABASE test_database ENGINE = MySQL('mysql80:3306', 'test_database', 'root', '{mysql_pass}') \
-            comment 'test mysql database engine comment'"
-        )
-        assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-
-        assert (
-            clickhouse_node.query("SELECT comment FROM system.databases WHERE name='test_database'").rstrip()
-            == "test mysql database engine comment"
-        )
-
-        clickhouse_node.query(
-           "ALTER DATABASE test_database MODIFY COMMENT 'new comment on mysql database engine'"
-        )
-
-        assert (
-            clickhouse_node.query("SELECT comment FROM system.databases WHERE name='test_database'").rstrip()
-            == "new comment on mysql database engine"
-        )
-
-        clickhouse_node.query("DROP DATABASE test_database")
-        assert "test_database" not in clickhouse_node.query("SHOW DATABASES")
-
-        mysql_node.query("DROP DATABASE test_database")
-
-
-def test_backup_database(started_cluster):
-    with contextlib.closing(
-        MySQLNodeInstance(
-            started_cluster,
-            "mysql80",
-            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
-        )
-    ) as mysql_node:
-        mysql_node.query("DROP DATABASE IF EXISTS backup_database")
-        mysql_node.query("CREATE DATABASE backup_database DEFAULT CHARACTER SET 'utf8'")
-
-        clickhouse_node.query("DROP DATABASE IF EXISTS backup_database")
-        clickhouse_node.query(
-            f"CREATE DATABASE backup_database ENGINE = MySQL('mysql80:3306', 'backup_database', 'root', '{mysql_pass}')"
-        )
-
-        backup_id = uuid.uuid4().hex
-        backup_name = f"File('/backups/test_backup_{backup_id}/')"
-
-        clickhouse_node.query(f"BACKUP DATABASE backup_database TO {backup_name}")
-        clickhouse_node.query("DROP DATABASE backup_database SYNC")
-        assert "backup_database" not in clickhouse_node.query("SHOW DATABASES")
-
-        clickhouse_node.query(f"RESTORE DATABASE backup_database FROM {backup_name}")
-        assert (
-            clickhouse_node.query("SHOW CREATE DATABASE backup_database")
-            == "CREATE DATABASE backup_database\\nENGINE = MySQL(\\'mysql80:3306\\', \\'backup_database\\', \\'root\\', \\'[HIDDEN]\\')\n"
-        )
-
-        clickhouse_node.query("DROP DATABASE backup_database")
-        mysql_node.query("DROP DATABASE backup_database")

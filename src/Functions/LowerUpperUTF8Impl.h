@@ -59,52 +59,32 @@ struct LowerUpperUTF8Impl
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
             const auto * src = reinterpret_cast<const char *>(&data[offsets[row_i - 1]]);
-            size_t src_size = offsets[row_i] - offsets[row_i - 1];
+            size_t src_size = offsets[row_i] - offsets[row_i - 1] - 1;
 
             int32_t dst_size;
             if constexpr (upper)
                 dst_size = ucasemap_utf8ToUpper(
-                    case_map,
-                    reinterpret_cast<char *>(&res_data[curr_offset]),
-                    static_cast<int32_t>(res_data.size() - curr_offset),
-                    src,
-                    static_cast<int32_t>(src_size),
-                    &error_code);
+                    case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
             else
                 dst_size = ucasemap_utf8ToLower(
-                    case_map,
-                    reinterpret_cast<char *>(&res_data[curr_offset]),
-                    static_cast<int32_t>(res_data.size() - curr_offset),
-                    src,
-                    static_cast<int32_t>(src_size),
-                    &error_code);
+                    case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
 
-            if (error_code == U_BUFFER_OVERFLOW_ERROR)
+            if (error_code == U_BUFFER_OVERFLOW_ERROR || error_code == U_STRING_NOT_TERMINATED_WARNING)
             {
-                size_t new_size = curr_offset + dst_size;
+                size_t new_size = curr_offset + dst_size + 1;
                 res_data.resize(new_size);
 
                 error_code = U_ZERO_ERROR;
                 if constexpr (upper)
                     dst_size = ucasemap_utf8ToUpper(
-                        case_map,
-                        reinterpret_cast<char *>(&res_data[curr_offset]),
-                        static_cast<int32_t>(res_data.size() - curr_offset),
-                        src,
-                        static_cast<int32_t>(src_size),
-                        &error_code);
+                        case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
                 else
                     dst_size = ucasemap_utf8ToLower(
-                        case_map,
-                        reinterpret_cast<char *>(&res_data[curr_offset]),
-                        static_cast<int32_t>(res_data.size() - curr_offset),
-                        src,
-                        static_cast<int32_t>(src_size),
-                        &error_code);
+                        case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
             }
 
-            if (error_code != U_ZERO_ERROR && error_code != U_STRING_NOT_TERMINATED_WARNING)
-                throw Exception(
+            if (error_code != U_ZERO_ERROR)
+                throw DB::Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Error calling {}: {} input: {} input_size: {}",
                     upper ? "ucasemap_utf8ToUpper" : "ucasemap_utf8ToLower",
@@ -112,7 +92,8 @@ struct LowerUpperUTF8Impl
                     std::string_view(src, src_size),
                     src_size);
 
-            curr_offset += dst_size;
+            res_data[curr_offset + dst_size] = 0;
+            curr_offset += dst_size + 1;
             res_offsets[row_i] = curr_offset;
         }
 

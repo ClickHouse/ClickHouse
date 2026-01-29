@@ -1,7 +1,5 @@
-#include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
-#include <Storages/MergeTree/MergeTreeMutationStatus.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
@@ -48,23 +46,12 @@ std::expected<void, PreformattedMessage> ReplicatedMergeTreeBaseMergePredicate::
     return MergeCore::canUsePartInMerges(part->name, part->info);
 }
 
-PartsRange ReplicatedMergeTreeBaseMergePredicate::getPatchesToApplyOnMerge(const PartsRange & range) const
-{
-    std::lock_guard lock(queue.state_mutex);
-    return MergeCore::getPatchesToApplyOnMerge(range);
-}
-
 ReplicatedMergeTreeLocalMergePredicate::ReplicatedMergeTreeLocalMergePredicate(ReplicatedMergeTreeQueue & queue_)
     : ReplicatedMergeTreeBaseMergePredicate(queue_, std::nullopt)
 {
     /// Use only information that can be quickly accessed locally without querying ZooKeeper
     virtual_parts_ptr = &queue_.virtual_parts;
     mutations_state_ptr = &queue_;
-
-    {
-        std::lock_guard lock(queue_.state_mutex);
-        patches_by_partition = getPatchPartsByPartition(virtual_parts_ptr->getPatchPartInfos(), {});
-    }
 }
 
 ReplicatedMergeTreeZooKeeperMergePredicate::ReplicatedMergeTreeZooKeeperMergePredicate(
@@ -81,7 +68,8 @@ ReplicatedMergeTreeZooKeeperMergePredicate::ReplicatedMergeTreeZooKeeperMergePre
 
     /// Load current quorum status.
     auto quorum_status_future = zookeeper->asyncTryGet(fs::path(queue.zookeeper_path) / "quorum" / "status");
-    committing_blocks = std::make_shared<CommittingBlocks>(getCommittingBlocks(zookeeper, queue.zookeeper_path, partition_ids_hint, /*with_data=*/ false));
+
+    committing_blocks = std::make_shared<CommittingBlocks>(getCommittingBlocks(zookeeper, queue.zookeeper_path, partition_ids_hint));
 
     std::tie(merges_version, std::ignore) = queue_.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::MERGE_PREDICATE);
 
@@ -111,11 +99,6 @@ ReplicatedMergeTreeZooKeeperMergePredicate::ReplicatedMergeTreeZooKeeperMergePre
     committing_blocks_ptr = committing_blocks.get();
     mutations_state_ptr = &queue;
 
-    {
-        std::lock_guard lock(queue.state_mutex);
-        patches_by_partition = getPatchPartsByPartition(virtual_parts_ptr->getPatchPartInfos(), *committing_blocks_ptr);
-    }
-
     /// Initialize ReplicatedMergeTree Merge preconditions
     pinned_part_uuids_ptr = pinned_part_uuids.get();
     inprogress_quorum_part_ptr = inprogress_quorum_part.get();
@@ -143,7 +126,7 @@ bool ReplicatedMergeTreeZooKeeperMergePredicate::partParticipatesInReplaceRange(
     return false;
 }
 
-std::optional<std::pair<Int64, int>> ReplicatedMergeTreeZooKeeperMergePredicate::getExpectedMutationVersion(const MergeTreeData::DataPartPtr & part) const
+std::optional<std::pair<Int64, int>> ReplicatedMergeTreeZooKeeperMergePredicate::getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const
 {
     /// Assigning mutations is easier than assigning merges because mutations appear in the same order as
     /// the order of their version numbers (see StorageReplicatedMergeTree::mutate).
@@ -155,40 +138,27 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeZooKeeperMergePredicate:
     /// We cannot mutate part if it's being inserted with quorum and it's not
     /// already reached.
     if (inprogress_quorum_part && part->name == *inprogress_quorum_part)
-    {
-        queue.addPartsPostponeReasons(part->name, PostponeReasons::QUORUM_NOT_REACHED);
         return {};
-    }
 
     std::lock_guard lock(queue.state_mutex);
 
     if (queue.virtual_parts.getContainingPart(part->info) != part->name)
         return {};
 
-    auto in_partition = queue.mutations_by_partition.find(part->info.getPartitionId());
+    auto in_partition = queue.mutations_by_partition.find(part->info.partition_id);
     if (in_partition == queue.mutations_by_partition.end())
         return {};
 
     UInt64 mutations_limit = (*queue.storage.getSettings())[MergeTreeSetting::replicated_max_mutations_in_one_entry];
     UInt64 mutations_count = 0;
 
-    Int64 current_version = queue.getCurrentMutationVersion(part->info.getPartitionId(), part->info.getDataVersion());
+    Int64 current_version = queue.getCurrentMutationVersion(part->info.partition_id, part->info.getDataVersion());
     Int64 max_version = in_partition->second.begin()->first;
-
-    std::set<Int64> versions_of_patches;
-    if (auto it = patches_by_partition.find(part->info.getPartitionId()); it != patches_by_partition.end())
-    {
-        for (const auto & patch_part : it->second)
-            versions_of_patches.insert(patch_part.getDataVersion());
-    }
 
     int alter_version = -1;
     bool barrier_found = false;
-
-    for (auto it = in_partition->second.begin(); it != in_partition->second.end(); ++it)
+    for (auto [mutation_version, mutation_status] : in_partition->second)
     {
-        const auto & [mutation_version, mutation_status] = *it;
-
         /// Some commands cannot stick together with other commands
         if (mutation_status->entry->commands.containBarrierCommand())
         {
@@ -199,23 +169,6 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeZooKeeperMergePredicate:
             /// This mutations is fresh, but it's barrier, let's execute only it
             if (mutation_version > current_version)
                 barrier_found = true;
-        }
-
-        if (it != in_partition->second.begin())
-        {
-            auto prev_version = std::prev(it)->first;
-
-            if (prev_version > current_version)
-            {
-                auto prev_pos = versions_of_patches.lower_bound(prev_version);
-                auto cur_pos = versions_of_patches.upper_bound(mutation_version);
-
-                /// If there are patch parts between two mutation versions
-                /// we cannot execute mutations together because the order
-                /// of applying mutations and patches may be violated.
-                if (prev_pos != cur_pos)
-                    break;
-            }
         }
 
         max_version = mutation_version;

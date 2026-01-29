@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings, no-random-settings, no-fasttest, no-parallel, no-shared-catalog, no-shared-merge-tree
+# Tags: no-random-merge-tree-settings, no-random-settings, no-fasttest, no-parallel, no-shared-catalog
 # FIXME no-shared-catalog: STOP MERGES will only stop them on the current replica, the second one will continue to merge
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -24,7 +24,6 @@ SETTINGS
     primary_key_lazy_load = 0,
     merge_selecting_sleep_ms = 200,
     max_merge_selecting_sleep_ms = 200,
-    serialization_info_version = 'basic',
     storage_policy = 's3_cache';
 
 SYSTEM STOP MERGES t_lightweight_mut_1;
@@ -38,25 +37,25 @@ ALTER TABLE t_lightweight_mut_1 DELETE WHERE v = 'e';
 
 SYSTEM SYNC REPLICA t_lightweight_mut_1 PULL;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SELECT id FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SELECT v FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SELECT id, v FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SELECT id, v, s FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SELECT id FROM t_lightweight_mut_1 ORDER BY id SETTINGS apply_mutations_on_fly = 0;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SELECT id, v FROM t_lightweight_mut_1 ORDER BY id SETTINGS apply_mutations_on_fly = 0;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT query, ProfileEvents['S3GetObject'] FROM system.query_log
 WHERE

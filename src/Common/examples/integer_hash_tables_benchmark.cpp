@@ -11,7 +11,7 @@
 #include <Common/Stopwatch.h>
 
 #include <base/types.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -31,7 +31,7 @@ void NO_INLINE test(const Key * data, size_t size, const std::string & name, std
     watch.stop();
     std::cerr << name
         << ":\nElapsed: " << watch.elapsedSeconds()
-        << " (" << static_cast<double>(size) / watch.elapsedSeconds() << " elem/sec.)"
+        << " (" << size / watch.elapsedSeconds() << " elem/sec.)"
         << ", map size: " << map.size() << "\n";
 }
 

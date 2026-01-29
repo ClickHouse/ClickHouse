@@ -31,7 +31,7 @@ public:
 
     BlockIO execute() override;
 
-    SharedHeader getSampleBlock() { return result_header; }
+    Block getSampleBlock() { return result_header; }
 
     void ignoreWithTotals() override;
 

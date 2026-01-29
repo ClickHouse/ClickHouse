@@ -36,7 +36,7 @@ struct QuantileInterpolatedWeighted
     {
         size_t operator()(Int128 x) const
         {
-            return CityHash_v1_0_2::Hash128to64({static_cast<UInt64>(x >> 64), static_cast<UInt64>(x & 0xffffffffffffffffll)});
+            return CityHash_v1_0_2::Hash128to64({x >> 64, x & 0xffffffffffffffffll});
         }
     };
 
@@ -118,7 +118,7 @@ private:
 
         /// Maintain a vector of pair of values and weights for easier sorting and for building
         /// a cumulative distribution using the provided weights.
-        VectorWithMemoryTracking<Pair> value_weight_pairs;
+        std::vector<Pair> value_weight_pairs;
         value_weight_pairs.reserve(size);
 
         /// Note: weight provided must be a 64-bit integer
@@ -130,7 +130,7 @@ private:
         Float64 sum_weight = 0;
         for (const auto & pair : map)
         {
-            sum_weight += static_cast<Float64>(pair.getMapped());
+            sum_weight += pair.getMapped();
             auto value = pair.getKey();
             auto weight = pair.getMapped();
             value_weight_pairs.push_back({value, weight});
@@ -142,7 +142,7 @@ private:
 
         /// vector for populating and storing the cumulative sum using the provided weights.
         /// example: [0,1,2,3,4,5] -> [0,1,3,6,10,15]
-        VectorWithMemoryTracking<Float64> weights_cum_sum;
+        std::vector<Float64> weights_cum_sum;
         weights_cum_sum.reserve(size);
 
         for (size_t idx = 0; idx < size; ++idx)
@@ -189,20 +189,20 @@ private:
             }
         }
 
-        size_t left_idx = idx;
-        size_t right_idx = idx + 1 < size ? idx + 1 : idx;
+        size_t l = idx;
+        size_t u = idx + 1 < size ? idx + 1 : idx;
 
-        Float64 lower_percentile = value_weight_pairs[left_idx].second;
-        Float64 upper_percentile = value_weight_pairs[right_idx].second;
-        UnderlyingType lower_value = value_weight_pairs[left_idx].first;
-        UnderlyingType upper_value = value_weight_pairs[right_idx].first;
+        Float64 xl = value_weight_pairs[l].second;
+        Float64 xr = value_weight_pairs[u].second;
+        UnderlyingType yl = value_weight_pairs[l].first;
+        UnderlyingType yr = value_weight_pairs[u].first;
 
-        if (level < lower_percentile)
-            upper_value = lower_value;
-        if (level > upper_percentile)
-            lower_value = upper_value;
+        if (level < xl)
+            yr = yl;
+        if (level > xr)
+            yl = yr;
 
-        return static_cast<T>(interpolate(level, lower_percentile, upper_percentile, lower_value, upper_value));
+        return static_cast<T>(interpolate(level, xl, xr, yl, yr));
     }
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
@@ -219,13 +219,13 @@ private:
             return;
         }
 
-        VectorWithMemoryTracking<Pair> value_weight_pairs;
+        std::vector<Pair> value_weight_pairs;
         value_weight_pairs.reserve(size);
 
         Float64 sum_weight = 0;
         for (const auto & pair : map)
         {
-            sum_weight += static_cast<Float64>(pair.getMapped());
+            sum_weight += pair.getMapped();
             auto value = pair.getKey();
             auto weight = pair.getMapped();
             value_weight_pairs.push_back({value, weight});
@@ -237,7 +237,7 @@ private:
 
         /// vector for populating and storing the cumulative sum using the provided weights.
         /// example: [0,1,2,3,4,5] -> [0,1,3,6,10,15]
-        VectorWithMemoryTracking<Float64> weights_cum_sum;
+        std::vector<Float64> weights_cum_sum;
         weights_cum_sum.reserve(size);
 
         for (size_t idx = 0; idx < size; ++idx)
@@ -289,39 +289,39 @@ private:
                 }
             }
 
-            size_t left_idx = idx;
-            size_t right_idx = idx + 1 < size ? idx + 1 : idx;
+            size_t l = idx;
+            size_t u = idx + 1 < size ? idx + 1 : idx;
 
-            Float64 lower_percentile = value_weight_pairs[left_idx].second;
-            Float64 upper_percentile = value_weight_pairs[right_idx].second;
-            UnderlyingType lower_value = value_weight_pairs[left_idx].first;
-            UnderlyingType upper_value = value_weight_pairs[right_idx].first;
+            Float64 xl = value_weight_pairs[l].second;
+            Float64 xr = value_weight_pairs[u].second;
+            UnderlyingType yl = value_weight_pairs[l].first;
+            UnderlyingType yr = value_weight_pairs[u].first;
 
-            if (level < lower_percentile)
-                upper_value = lower_value;
-            if (level > upper_percentile)
-                lower_value = upper_value;
+            if (level < xl)
+                yr = yl;
+            if (level > xr)
+                yl = yr;
 
-            result[indices[level_index]] = static_cast<T>(interpolate(level, lower_percentile, upper_percentile, lower_value, upper_value));
+            result[indices[level_index]] = static_cast<T>(interpolate(level, xl, xr, yl, yr));
         }
     }
 
     /// This ignores overflows or NaN's that might arise during add, sub and mul operations and doesn't aim to provide exact
     /// results since `the quantileInterpolatedWeighted` function itself relies mainly on approximation.
-    UnderlyingType NO_SANITIZE_UNDEFINED interpolate(Float64 level, Float64 lower_percentile, Float64 upper_percentile, UnderlyingType lower_value, UnderlyingType upper_value) const
+    UnderlyingType NO_SANITIZE_UNDEFINED interpolate(Float64 level, Float64 xl, Float64 xr, UnderlyingType yl, UnderlyingType yr) const
     {
-        UnderlyingType value_diff = upper_value - lower_value;
-        Float64 percentile_diff = upper_percentile - lower_percentile;
-        percentile_diff = percentile_diff == 0 ? 1 : percentile_diff; /// to handle NaN behavior that might arise during integer division below.
+        UnderlyingType dy = yr - yl;
+        Float64 dx = xr - xl;
+        dx = dx == 0 ? 1 : dx; /// to handle NaN behavior that might arise during integer division below.
 
         /// yl + (dy / dx) * (level - xl)
-        return static_cast<UnderlyingType>(static_cast<Float64>(lower_value) + (static_cast<Float64>(value_diff) / percentile_diff) * (level - lower_percentile));
+        return static_cast<UnderlyingType>(yl + (dy / dx) * (level - xl));
     }
 };
 
 
-template <typename Value, bool _> using FuncQuantileInterpolatedWeighted = AggregateFunctionQuantile<Value, QuantileInterpolatedWeighted<Value>, NameQuantileInterpolatedWeighted, UInt64, void, false, false>;
-template <typename Value, bool _> using FuncQuantilesInterpolatedWeighted = AggregateFunctionQuantile<Value, QuantileInterpolatedWeighted<Value>, NameQuantilesInterpolatedWeighted, UInt64, void, true, false>;
+template <typename Value, bool _> using FuncQuantileInterpolatedWeighted = AggregateFunctionQuantile<Value, QuantileInterpolatedWeighted<Value>, NameQuantileInterpolatedWeighted, true, void, false, false>;
+template <typename Value, bool _> using FuncQuantilesInterpolatedWeighted = AggregateFunctionQuantile<Value, QuantileInterpolatedWeighted<Value>, NameQuantilesInterpolatedWeighted, true, void, true, false>;
 
 template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(
@@ -362,51 +362,7 @@ void registerAggregateFunctionsQuantileInterpolatedWeighted(AggregateFunctionFac
     /// For aggregate functions returning array we cannot return NULL on empty set.
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
-    FunctionDocumentation::Description description = R"(
-Computes [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation, taking into account the weight of each element.
-
-To get the interpolated value, all the passed values are combined into an array, which are then sorted by their corresponding weights.
-Quantile interpolation is then performed using the [weighted percentile method](https://en.wikipedia.org/wiki/Percentile#The_weighted_percentile_method) by building a cumulative distribution based on weights and then a linear interpolation is performed using the weights and the values to compute the quantiles.
-
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
-In this case, use the [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
-    )";
-    FunctionDocumentation::Syntax syntax = R"(
-quantileInterpolatedWeighted(level)(expr, weight)
-    )";
-    FunctionDocumentation::Arguments arguments = {
-        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}},
-        {"weight", "Column with weights of sequence members. Weight is a number of value occurrences.", {"UInt*"}}
-    };
-    FunctionDocumentation::Parameters parameters = {
-        {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float*"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Quantile of the specified level.", {"Float64", "Date", "DateTime"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Computing interpolated weighted quantile",
-        R"(
-CREATE TABLE t (
-    n Int32,
-    val Int32
-) ENGINE = Memory;
-
-INSERT INTO t VALUES (0, 3), (1, 2), (2, 1), (5, 4);
-
-SELECT quantileInterpolatedWeighted(n, val) FROM t;
-        )",
-        R"(
-┌─quantileInterpolatedWeighted(n, val)─┐
-│                                    1 │
-└──────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {23, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction(NameQuantileInterpolatedWeighted::name, {createAggregateFunctionQuantile<FuncQuantileInterpolatedWeighted>, {}, documentation});
+    factory.registerFunction(NameQuantileInterpolatedWeighted::name, createAggregateFunctionQuantile<FuncQuantileInterpolatedWeighted>);
     factory.registerFunction(NameQuantilesInterpolatedWeighted::name, { createAggregateFunctionQuantile<FuncQuantilesInterpolatedWeighted>, properties });
 
     /// 'median' is an alias for 'quantile'

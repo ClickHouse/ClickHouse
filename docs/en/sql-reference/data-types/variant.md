@@ -4,7 +4,6 @@ sidebar_label: 'Variant(T1, T2, ...)'
 sidebar_position: 40
 slug: /sql-reference/data-types/variant
 title: 'Variant(T1, T2, ...)'
-doc_type: 'reference'
 ---
 
 # Variant(T1, T2, ...)
@@ -42,7 +41,7 @@ SELECT v FROM test;
 Using CAST from ordinary columns:
 
 ```sql
-SELECT toTypeName(variant) AS type_name, 'Hello, World!'::Variant(UInt64, String, Array(UInt64)) as variant;
+SELECT toTypeName(variant) as type_name, 'Hello, World!'::Variant(UInt64, String, Array(UInt64)) as variant;
 ```
 
 ```text
@@ -167,7 +166,7 @@ Example:
 ```sql
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
-SELECT variantType(v) FROM test;
+SELECT variantType(v) from test;
 ```
 
 ```text
@@ -198,7 +197,7 @@ There are 4 possible conversions that can be performed with a column of type `Va
 Conversion from `String` to `Variant` is performed by parsing a value of `Variant` type from the string value:
 
 ```sql
-SELECT '42'::Variant(String, UInt64) AS variant, variantType(variant) AS variant_type
+SELECT '42'::Variant(String, UInt64) as variant, variantType(variant) as variant_type
 ```
 
 ```text
@@ -218,7 +217,7 @@ SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(varia
 ```
 
 ```sql
-SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String, Variant(UInt64, Bool, Date))') AS map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) AS map_of_variant_types```
+SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String, Variant(UInt64, Bool, Date))') as map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) as map_of_variant_types```
 ```
 
 ```text
@@ -227,25 +226,12 @@ SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String
 └─────────────────────────────────────────────┴───────────────────────────────────────────────┘
 ```
 
-To disable parsing during conversion from `String` to `Variant` you can disable setting `cast_string_to_dynamic_use_inference`:
-
-```sql
-SET cast_string_to_variant_use_inference = 0;
-SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(variant) as variant_type
-```
-
-```text
-┌─variant───┬─variant_type─┐
-│ [1, 2, 3] │ String       │
-└───────────┴──────────────┘
-```
-
 ### Converting an ordinary column to a Variant column {#converting-an-ordinary-column-to-a-variant-column}
 
 It is possible to convert an ordinary column with type `T` to a `Variant` column containing this type:
 
 ```sql
-SELECT toTypeName(variant) AS type_name, [1,2,3]::Array(UInt64)::Variant(UInt64, String, Array(UInt64)) as variant, variantType(variant) as variant_name
+SELECT toTypeName(variant) as type_name, [1,2,3]::Array(UInt64)::Variant(UInt64, String, Array(UInt64)) as variant, variantType(variant) as variant_name
  ```
 
 ```text
@@ -301,6 +287,7 @@ SELECT v::Variant(UInt64, String, Array(UInt64)) FROM test;
 └───────────────────────────────────────────────────┘
 ```
 
+
 ## Reading Variant type from the data {#reading-variant-type-from-the-data}
 
 All text formats (TSV, CSV, CustomSeparated, Values, JSONEachRow, etc) supports reading `Variant` type. During data parsing ClickHouse tries to insert value into most appropriate variant type.
@@ -334,15 +321,10 @@ $$)
 └─────────────────────┴───────────────┴──────┴───────┴─────────────────────┴─────────┘
 ```
 
+
 ## Comparing values of Variant type {#comparing-values-of-variant-data}
 
 Values of a `Variant` type can be compared only with values with the same `Variant` type.
-
-By default, comparison operators use [default implementation for Variant](#functions-with-variant-arguments),
-applying comparison to each variant type separately. This can be disabled using setting `use_variant_default_implementation_for_comparisons = 0`
-to use native Variant comparison rules described below. **Note** that `ORDER BY` always uses native comparison.
-
-**Native Variant comparison rules:**
 
 The result of operator `<` for values `v1` with underlying type `T1` and `v2` with underlying type `T2`  of a type `Variant(..., T1, ... T2, ...)` is defined as follows:
 - If `T1 = T2 = T`, the result will be `v1.T < v2.T` (underlying values will be compared).
@@ -350,13 +332,12 @@ The result of operator `<` for values `v1` with underlying type `T1` and `v2` wi
 
 Examples:
 ```sql
-SET allow_suspicious_types_in_order_by = 1;
 CREATE TABLE test (v1 Variant(String, UInt64, Array(UInt32)), v2 Variant(String, UInt64, Array(UInt32))) ENGINE=Memory;
 INSERT INTO test VALUES (42, 42), (42, 43), (42, 'abc'), (42, [1, 2, 3]), (42, []), (42, NULL);
 ```
 
 ```sql
-SELECT v2, variantType(v2) AS v2_type FROM test ORDER BY v2;
+SELECT v2, variantType(v2) as v2_type from test order by v2;
 ```
 
 ```text
@@ -371,7 +352,7 @@ SELECT v2, variantType(v2) AS v2_type FROM test ORDER BY v2;
 ```
 
 ```sql
-SELECT v1, variantType(v1) AS v1_type, v2, variantType(v2) AS v2_type, v1 = v2, v1 < v2, v1 > v2 FROM test;
+SELECT v1, variantType(v1) as v1_type, v2, variantType(v2) as v2_type, v1 = v2, v1 < v2, v1 > v2 from test;
 ```
 
 ```text
@@ -493,68 +474,3 @@ SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Var
 │ [('a',42),('b','Hello'),('c',[1,2,3])] │ [('a','UInt32'),('b','String'),('c','Array(UInt32)')] │
 └────────────────────────────────────────┴───────────────────────────────────────────────────────┘
 ```
-
-## Functions with Variant arguments {#functions-with-variant-arguments}
-
-Most functions in ClickHouse automatically support `Variant` type arguments through a **default implementation for Variant**. 
-Starting from version `26.1` onwards, when a function that doesn't explicitly handle Variant types receives a Variant column, ClickHouse:
-
-1. Extracts each variant type from the Variant column
-2. Executes the function separately for each variant type
-3. Combines results appropriately based on result types
-
-This allows you to use regular functions with Variant columns without special handling.
-
-**Example:**
-
-```sql
-CREATE TABLE test (v Variant(UInt32, String)) ENGINE = Memory;
-INSERT INTO test VALUES (42), ('hello'), (NULL);
-SELECT *, toTypeName(v) FROM test WHERE v = 42;
-```
-
-```text
-   ┌─v──┬─toTypeName(v)───────────┐
-1. │ 42 │ Variant(String, UInt32) │
-   └────┴─────────────────────────┘
-```
-
-The comparison operator is automatically applied to each variant type separately, allowing filtering on Variant columns.
-
-**Result type behavior:**
-
-The result type depends on what the function returns for each variant:
-
-- **Different result types**: `Variant(T1, T2, ...)`
-  ```sql
-  CREATE TABLE test2 (v Variant(UInt64, Float64)) ENGINE = Memory;
-  INSERT INTO test2 VALUES (42::UInt64), (42.42);
-  SELECT v + 1 AS result, toTypeName(result) FROM test2;
-  ```
-
-  ```text
-  ┌─result─┬─toTypeName(plus(v, 1))──┐
-  │     43 │ Variant(Float64, UInt64) │
-  │  43.42 │ Variant(Float64, UInt64) │
-  └────────┴─────────────────────────┘
-  ```
-
-- **Type incompatibility**: `NULL` for incompatible variants
-  ```sql
-  CREATE TABLE test3 (v Variant(Array(UInt32), UInt32)) ENGINE = Memory;
-  INSERT INTO test3 VALUES ([1,2,3]), (42);
-  SELECT v + 10 AS result, toTypeName(result) FROM test3;
-  ```
-
-  ```text
-  ┌─result─┬─toTypeName(plus(v, 10))─┐
-  │   ᴺᵁᴸᴸ │ Nullable(UInt64)        │
-  │     52 │ Nullable(UInt64)        │
-  └────────┴─────────────────────────┘
-  ```
-
-:::note
-**Error handling:** When a function cannot process a variant type, only type-related errors (ILLEGAL_TYPE_OF_ARGUMENT, 
-TYPE_MISMATCH, CANNOT_CONVERT_TYPE, NO_COMMON_TYPE) are caught and result in NULL for those rows. Other errors like 
-division by zero or out of memory are raised normally to prevent silently hiding real problems.
-:::

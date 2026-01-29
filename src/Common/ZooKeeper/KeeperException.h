@@ -1,6 +1,5 @@
 #pragma once
 
-#include <utility>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
 
@@ -22,7 +21,7 @@ private:
     /// Message must be a compile-time constant
     template <typename T>
     requires std::is_convertible_v<T, String>
-    Exception(T && message, Error code_) : DB::Exception(message, DB::ErrorCodes::KEEPER_EXCEPTION, /* format_string= */"", /* remote_= */ false), code(code_)
+    Exception(T && message, Error code_) : DB::Exception(std::forward<T>(message), DB::ErrorCodes::KEEPER_EXCEPTION, /* remote_= */ false), code(code_)
     {
         incrementErrorMetrics(code);
     }

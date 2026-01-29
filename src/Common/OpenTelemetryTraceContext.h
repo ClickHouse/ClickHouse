@@ -1,12 +1,9 @@
 #pragma once
 
 #include <Common/OpenTelemetryTracingContext.h>
-#include <IO/WriteHelpers.h>
 #include <Core/Field.h>
 
-#include <chrono>
 #include <exception>
-
 
 namespace DB
 {
@@ -73,22 +70,7 @@ struct Span
     }
 
 private:
-    template <class T>
-    bool addAttributeImpl(std::string_view name, T value) noexcept
-    {
-        try
-        {
-            if constexpr (std::is_same_v<T, std::string_view> || std::is_same_v<T, String> || std::is_same_v<T, const char *>)
-                this->attributes.push_back(Tuple{name, std::move(value)});
-            else
-                this->attributes.push_back(Tuple{name, toString(value)});
-        }
-        catch (...)
-        {
-            return false;
-        }
-        return true;
-    }
+    bool addAttributeImpl(std::string_view name, std::string_view value) noexcept;
 };
 
 
@@ -171,7 +153,7 @@ private:
 using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
 
 /// A span holder that creates span automatically in a (function) scope if tracing is enabled.
-/// Once it's created or destructed, it automatically maintains the tracing context on the thread that it lives.
+/// Once it's created or destructed, it automatically maitains the tracing context on the thread that it lives.
 struct SpanHolder : public Span
 {
     explicit SpanHolder(std::string_view, SpanKind _kind = SpanKind::INTERNAL);
@@ -179,7 +161,7 @@ struct SpanHolder : public Span
 
     /// Finish a span explicitly if needed.
     /// It's safe to call it multiple times
-    void finish(std::chrono::system_clock::time_point time) noexcept;
+    void finish() noexcept;
 };
 
 }

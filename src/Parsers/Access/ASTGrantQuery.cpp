@@ -12,10 +12,10 @@ namespace ErrorCodes
 
 namespace
 {
-    void formatCurrentGrantsElements(const AccessRightsElements & elements, WriteBuffer & ostr, const IAST::FormatSettings &)
+    void formatCurrentGrantsElements(const AccessRightsElements & elements, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
         ostr << "(";
-        elements.formatElementsWithoutOptions(ostr);
+        elements.formatElementsWithoutOptions(ostr, settings.hilite);
         ostr << ")";
     }
 }
@@ -29,13 +29,13 @@ String ASTGrantQuery::getID(char) const
 
 ASTPtr ASTGrantQuery::clone() const
 {
-    auto res = make_intrusive<ASTGrantQuery>(*this);
+    auto res = std::make_shared<ASTGrantQuery>(*this);
 
     if (roles)
-        res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
+        res->roles = std::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
 
     if (grantees)
-        res->grantees = boost::static_pointer_cast<ASTRolesOrUsersSet>(grantees->clone());
+        res->grantees = std::static_pointer_cast<ASTRolesOrUsersSet>(grantees->clone());
 
     return res;
 }
@@ -43,9 +43,9 @@ ASTPtr ASTGrantQuery::clone() const
 
 void ASTGrantQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr << (attach_mode ? "ATTACH " : "")
-                  << (is_revoke ? "REVOKE" : "GRANT")
-                 ;
+    ostr << (settings.hilite ? IAST::hilite_keyword : "") << (attach_mode ? "ATTACH " : "")
+                  << (settings.hilite ? hilite_keyword : "") << (is_revoke ? "REVOKE" : "GRANT")
+                  << (settings.hilite ? IAST::hilite_none : "");
 
     if (!access_rights_elements.sameOptions())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Elements of an ASTGrantQuery are expected to have the same options");
@@ -58,9 +58,9 @@ void ASTGrantQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
     if (is_revoke)
     {
         if (grant_option)
-            ostr << " GRANT OPTION FOR";
+            ostr << (settings.hilite ? hilite_keyword : "") << " GRANT OPTION FOR" << (settings.hilite ? hilite_none : "");
         else if (admin_option)
-            ostr << " ADMIN OPTION FOR";
+            ostr << (settings.hilite ? hilite_keyword : "") << " ADMIN OPTION FOR" << (settings.hilite ? hilite_none : "");
     }
 
     ostr << " ";
@@ -74,27 +74,27 @@ void ASTGrantQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
     }
     else if (current_grants)
     {
-        ostr << "CURRENT GRANTS";
+        ostr << (settings.hilite ? hilite_keyword : "") << "CURRENT GRANTS" << (settings.hilite ? hilite_none : "");
         formatCurrentGrantsElements(access_rights_elements, ostr, settings);
     }
     else
     {
-        access_rights_elements.formatElementsWithoutOptions(ostr);
+        access_rights_elements.formatElementsWithoutOptions(ostr, settings.hilite);
     }
 
-    ostr << (is_revoke ? " FROM " : " TO ")
-                 ;
+    ostr << (settings.hilite ? IAST::hilite_keyword : "") << (is_revoke ? " FROM " : " TO ")
+                  << (settings.hilite ? IAST::hilite_none : "");
     grantees->format(ostr, settings);
 
     if (!is_revoke)
     {
         if (grant_option)
-            ostr << " WITH GRANT OPTION";
+            ostr << (settings.hilite ? hilite_keyword : "") << " WITH GRANT OPTION" << (settings.hilite ? hilite_none : "");
         else if (admin_option)
-            ostr << " WITH ADMIN OPTION";
+            ostr << (settings.hilite ? hilite_keyword : "") << " WITH ADMIN OPTION" << (settings.hilite ? hilite_none : "");
 
         if (replace_access || replace_granted_roles)
-            ostr << " WITH REPLACE OPTION";
+            ostr << (settings.hilite ? hilite_keyword : "") << " WITH REPLACE OPTION" << (settings.hilite ? hilite_none : "");
     }
 }
 

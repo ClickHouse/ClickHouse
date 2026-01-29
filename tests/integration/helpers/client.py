@@ -1,6 +1,5 @@
 import logging
 import os
-import signal
 import subprocess as sp
 import tempfile
 from threading import Timer
@@ -110,18 +109,8 @@ class Client:
             command += ["--password", password]
         if database is not None:
             command += ["--database", database]
-
         if host is not None:
-            replaced = False
-            for i, token in enumerate(command):
-                if token == "--host" and i + 1 < len(command):
-                    command[i + 1] = host
-                    replaced = True
-                    break
-            if not replaced:
-                # Should not happen normally, but keep fallback
-                command += ["--host", host]
-
+            command += ["--host", host]
         if query_id is not None:
             command += ["--query_id", query_id]
         if parse:
@@ -189,25 +178,26 @@ class QueryRuntimeException(Exception):
 
 class CommandRequest:
     def __init__(
-        self, command, stdin=None, timeout=None, ignore_error=False, parse=False, stdout_file_path=None, stderr_file_path=None, env = {}
+        self, command, stdin=None, timeout=None, ignore_error=False, parse=False
     ):
         # Write data to tmp file to avoid PIPEs and execution blocking
-        self.stdin_file = tempfile.TemporaryFile(mode="w+")
-        self.stdin_file.write(stdin)
-        self.stdin_file.seek(0)
-        self.stdout_file = tempfile.TemporaryFile() if stdout_file_path is None else stdout_file_path
-        self.stderr_file = tempfile.TemporaryFile() if stderr_file_path is None else stderr_file_path
+        stdin_file = tempfile.TemporaryFile(mode="w+")
+        stdin_file.write(stdin)
+        stdin_file.seek(0)
+        self.stdout_file = tempfile.TemporaryFile()
+        self.stderr_file = tempfile.TemporaryFile()
         self.ignore_error = ignore_error
         self.parse = parse
         # print " ".join(command)
 
         # we suppress stderror on client becase sometimes thread sanitizer
         # can print some debug information there
+        env = {}
         env["ASAN_OPTIONS"] = "use_sigaltstack=0"
         env["TSAN_OPTIONS"] = "use_sigaltstack=0 verbosity=0"
         self.process = sp.Popen(
             command,
-            stdin=self.stdin_file,
+            stdin=stdin_file,
             stdout=self.stdout_file,
             stderr=self.stderr_file,
             env=env,
@@ -236,24 +226,13 @@ class CommandRequest:
         ]
         return "\n".join(lines)
 
-    def wait_and_read_output(self):
-        try:
-            self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
-            self.stdout_file.seek(0)
-            self.stderr_file.seek(0)
-
-            stdout = self.stdout_file.read().decode("utf-8", errors="replace")
-            stderr = self.stderr_file.read().decode("utf-8", errors="replace")
-
-            return stdout, stderr
-
-        finally:
-            self.stdin_file.close()
-            self.stdout_file.close()
-            self.stderr_file.close()
-
     def get_answer(self):
-        stdout, stderr = self.wait_and_read_output()
+        self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
+        self.stdout_file.seek(0)
+        self.stderr_file.seek(0)
+
+        stdout = self.stdout_file.read().decode("utf-8", errors="replace")
+        stderr = self.stderr_file.read().decode("utf-8", errors="replace")
 
         if (
             self.timer is not None
@@ -286,7 +265,12 @@ class CommandRequest:
         return stdout
 
     def get_error(self):
-        stdout, stderr = self.wait_and_read_output()
+        self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
+        self.stdout_file.seek(0)
+        self.stderr_file.seek(0)
+
+        stdout = self.stdout_file.read().decode("utf-8", errors="replace")
+        stderr = self.stderr_file.read().decode("utf-8", errors="replace")
 
         if (
             self.timer is not None
@@ -305,7 +289,12 @@ class CommandRequest:
         return stderr
 
     def get_answer_and_error(self):
-        stdout, stderr = self.wait_and_read_output()
+        self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
+        self.stdout_file.seek(0)
+        self.stderr_file.seek(0)
+
+        stdout = self.stdout_file.read().decode("utf-8", errors="replace")
+        stderr = self.stderr_file.read().decode("utf-8", errors="replace")
 
         if (
             self.timer is not None
@@ -315,9 +304,3 @@ class CommandRequest:
             raise QueryTimeoutExceedException("Client timed out!")
 
         return (stdout, stderr)
-
-    def pause_process(self):
-        self.process.send_signal(signal.SIGSTOP)
-
-    def resume_process(self):
-        self.process.send_signal(signal.SIGCONT)

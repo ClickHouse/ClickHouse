@@ -14,7 +14,7 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
         CacheDictionary.cpp
         RangeHashedDictionary.cpp
         DirectDictionary.cpp
-        PROPERTIES COMPILE_FLAGS -g1)
+        PROPERTIES COMPILE_FLAGS -g0)
 endif()
 
 extract_into_parent_list(clickhouse_dictionaries_sources dbms_sources
@@ -38,6 +38,10 @@ target_link_libraries(clickhouse_dictionaries
         dbms
         Poco::Redis
 )
+
+if (USE_MONGODB)
+    target_link_libraries(clickhouse_dictionaries PRIVATE Poco::MongoDB)
+endif()
 
 target_link_libraries(clickhouse_dictionaries PUBLIC ch_contrib::abseil_swiss_tables)
 

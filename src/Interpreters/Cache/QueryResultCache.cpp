@@ -1,4 +1,4 @@
-#include <Interpreters/Cache/QueryResultCache.h>
+#include "Interpreters/Cache/QueryResultCache.h"
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -10,14 +10,12 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Columns/IColumn.h>
 #include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
@@ -30,18 +28,7 @@ namespace ProfileEvents
 {
     extern const Event QueryCacheHits;
     extern const Event QueryCacheMisses;
-    extern const Event QueryCacheAgeSeconds;
-    extern const Event QueryCacheReadRows;
-    extern const Event QueryCacheReadBytes;
-    extern const Event QueryCacheWrittenRows;
-    extern const Event QueryCacheWrittenBytes;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric QueryCacheBytes;
-    extern const Metric QueryCacheEntries;
-}
+};
 
 namespace DB
 {
@@ -147,7 +134,7 @@ struct HasSystemTablesMatcher
                             if (const auto * literal = expression_list_children[1]->as<ASTLiteral>())
                             {
                                 const auto & value = literal->value;
-                                database_table = fieldToString(value);
+                                database_table = toString(value);
                             }
                         }
                     }
@@ -194,24 +181,6 @@ bool isQueryResultCacheRelatedSetting(const String & setting_name)
     return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
 }
 
-bool settingDoesNotAffectQueryResultCache(const String & setting_name)
-{
-    return setting_name == "log_comment"
-        /// As of today, the output format settings only affect the final output.
-        /// However, it should be taken with caution - we should not use these settings in deterministic SQL functions.
-        || setting_name.starts_with("output_format_")
-        /// This setting is used to tune the server response, but does not affect the query behavior.
-        /// An example why it should not affect query caching:
-        /// - if you run a query as usual, and then run the same query with asking the server
-        /// for Content-Disposition: attachment to download the result.
-        || setting_name == "http_response_headers";
-}
-
-bool isSettingIgnoredInQueryResultCache(const String & setting_name)
-{
-    return isQueryResultCacheRelatedSetting(setting_name) || settingDoesNotAffectQueryResultCache(setting_name);
-}
-
 class RemoveQueryResultCacheSettingsMatcher
 {
 public:
@@ -227,15 +196,10 @@ public:
 
             auto is_query_cache_related_setting = [](const auto & change)
             {
-                return isSettingIgnoredInQueryResultCache(change.name);
+                return isQueryResultCacheRelatedSetting(change.name);
             };
 
             std::erase_if(set_clause->changes, is_query_cache_related_setting);
-        }
-        else
-        {
-            /// Output options don't affect the cached data, as we do caching on a result block level.
-            ASTQueryWithOutput::resetOutputASTIfExist(*ast);
         }
     }
 
@@ -268,7 +232,7 @@ ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
-IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Settings & settings)
+IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
 {
     ast = removeQueryResultCacheSettings(ast);
 
@@ -288,7 +252,7 @@ IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Set
     for (const auto & change : changed_settings)
     {
         const String & name = change.name;
-        if (!isSettingIgnoredInQueryResultCache(name)) /// see removeQueryResultCacheSettings() why this is a good idea
+        if (!isQueryResultCacheRelatedSetting(name)) /// see removeQueryResultCacheSettings() why this is a good idea
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
     }
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
@@ -312,20 +276,18 @@ QueryResultCache::Key::Key(
     ASTPtr ast_,
     const String & current_database,
     const Settings & settings,
-    SharedHeader header_,
+    Block header_,
     const String & query_id_,
     std::optional<UUID> user_id_,
     const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
-    std::chrono::time_point<std::chrono::system_clock> created_at_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
-    : ast_hash(calculateASTHash(ast_, current_database, settings))
+    : ast_hash(calculateAstHash(ast_, current_database, settings))
     , header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
     , is_shared(is_shared_)
-    , created_at(created_at_)
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
     , query_string(queryStringFromAST(ast_))
@@ -341,18 +303,7 @@ QueryResultCache::Key::Key(
     const String & query_id_,
     std::optional<UUID> user_id_,
     const std::vector<UUID> & current_user_roles_)
-    : QueryResultCache::Key(
-            ast_,
-            current_database,
-            settings,
-            std::make_shared<const Block>(Block{}),
-            query_id_,
-            user_id_,
-            current_user_roles_,
-            false,
-            std::chrono::system_clock::from_time_t(1),
-            std::chrono::system_clock::from_time_t(1),
-            false)
+    : QueryResultCache::Key(ast_, current_database, settings, {}, query_id_, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
     /// ^^ dummy values for everything except AST, current database, query_id, user name/roles
 {
 }
@@ -367,7 +318,7 @@ size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
     return key.ast_hash.low64;
 }
 
-size_t QueryResultCache::EntryWeight::operator()(const Entry & entry) const
+size_t QueryResultCache::QueryResultCacheEntryWeight::operator()(const Entry & entry) const
 {
     size_t res = 0;
     for (const auto & chunk : entry.chunks)
@@ -429,9 +380,6 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
     if (chunk.empty())
         return;
 
-    ProfileEvents::increment(ProfileEvents::QueryCacheWrittenRows, chunk.getNumRows());
-    ProfileEvents::increment(ProfileEvents::QueryCacheWrittenBytes, chunk.bytes());
-
     std::lock_guard lock(mutex);
 
     switch (chunk_type)
@@ -449,7 +397,7 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
             /// such chunks are expected).
             auto & buffered_chunk = (chunk_type == ChunkType::Totals) ? query_result->totals : query_result->extremes;
 
-            removeSpecialColumnRepresentations(chunk);
+            convertToFullIfSparse(chunk);
             convertToFullIfConst(chunk);
 
             if (!buffered_chunk.has_value())
@@ -498,7 +446,7 @@ void QueryResultCacheWriter::finalizeWrite()
 
         for (auto & chunk : query_result->chunks)
         {
-            removeSpecialColumnRepresentations(chunk);
+            convertToFullIfSparse(chunk);
             convertToFullIfConst(chunk);
 
             const size_t rows_chunk = chunk.getNumRows();
@@ -561,7 +509,7 @@ void QueryResultCacheWriter::finalizeWrite()
         return res;
     };
 
-    size_t new_entry_size_in_bytes = QueryResultCache::EntryWeight()(*query_result);
+    size_t new_entry_size_in_bytes = QueryResultCache::QueryResultCacheEntryWeight()(*query_result);
     size_t new_entry_size_in_rows = count_rows_in_chunks(*query_result);
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
@@ -579,19 +527,8 @@ void QueryResultCacheWriter::finalizeWrite()
 }
 
 /// Creates a source processor which serves result chunks stored in the query result cache, and separate sources for optional totals/extremes.
-void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes)
+void QueryResultCacheReader::buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes)
 {
-    /// Some bookkeeping for profile events
-    size_t total_rows = 0;
-    size_t total_bytes = 0;
-    for (const auto & chunk : chunks)
-    {
-        total_rows += chunk.getNumRows();
-        total_bytes += chunk.bytes();
-    }
-    ProfileEvents::increment(ProfileEvents::QueryCacheReadRows, total_rows);
-    ProfileEvents::increment(ProfileEvents::QueryCacheReadBytes, total_bytes);
-
     source_from_chunks = std::make_unique<SourceFromChunks>(header, std::move(chunks));
 
     if (totals.has_value())
@@ -636,9 +573,6 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
         return;
     }
 
-    auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - entry_key.created_at).count();
-    ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
-
     if (!entry_key.is_compressed)
     {
         // Cloning chunks isn't exactly great. It could be avoided by another indirection, i.e. wrapping Entry's members chunks, totals and
@@ -673,38 +607,19 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
         buildSourceFromChunks(entry_key.header, std::move(decompressed_chunks), entry_mapped->totals, entry_mapped->extremes);
     }
 
-    created_at = entry_key.created_at;
-    expires_at = entry_key.expires_at;
-
     LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
 }
 
-bool QueryResultCacheReader::hasCacheEntryForKey(bool update_profile_events) const
+bool QueryResultCacheReader::hasCacheEntryForKey() const
 {
     bool has_entry = (source_from_chunks != nullptr);
 
-    if (update_profile_events)
-    {
-        if (has_entry)
-            ProfileEvents::increment(ProfileEvents::QueryCacheHits);
-        else
-            ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
-    }
+    if (has_entry)
+        ProfileEvents::increment(ProfileEvents::QueryCacheHits);
+    else
+        ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
 
     return has_entry;
-}
-
-
-std::chrono::time_point<std::chrono::system_clock> QueryResultCacheReader::entryCreatedAt()
-{
-    chassert(hasCacheEntryForKey(false));
-    return created_at;
-}
-
-std::chrono::time_point<std::chrono::system_clock> QueryResultCacheReader::entryExpiresAt()
-{
-    chassert(hasCacheEntryForKey(false));
-    return expires_at;
 }
 
 std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSource()
@@ -723,8 +638,8 @@ std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSourceExtremes()
 }
 
 QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
-    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, EntryWeight, IsStale>>(
-            CurrentMetrics::QueryCacheBytes, CurrentMetrics::QueryCacheEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryResultCacheEntryWeight, IsStale>>(
+          std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
     updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
 }

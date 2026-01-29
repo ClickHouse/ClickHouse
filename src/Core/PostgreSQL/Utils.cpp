@@ -1,4 +1,4 @@
-#include <Core/PostgreSQL/Utils.h>
+#include "Utils.h"
 
 #if USE_LIBPQXX
 

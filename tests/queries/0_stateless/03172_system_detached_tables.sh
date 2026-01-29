@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tags: log-engine
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -33,5 +33,36 @@ SELECT database, table, is_permanently FROM system.detached_tables WHERE databas
 SELECT database, table, is_permanently FROM system.detached_tables WHERE database='${DATABASE_ATOMIC}' AND table='test_table';
 
 DROP DATABASE ${DATABASE_ATOMIC} SYNC;
+
+"
+
+$CLICKHOUSE_CLIENT "
+
+SELECT '-----------------------';
+SELECT 'database lazy tests';
+
+DROP DATABASE IF EXISTS ${DATABASE_LAZY};
+CREATE DATABASE ${DATABASE_LAZY} Engine=Lazy(10);
+
+CREATE TABLE ${DATABASE_LAZY}.test_table (number UInt64) engine=Log;
+INSERT INTO ${DATABASE_LAZY}.test_table SELECT * FROM numbers(100);
+DETACH TABLE ${DATABASE_LAZY}.test_table;
+
+CREATE TABLE ${DATABASE_LAZY}.test_table_perm (number UInt64) engine=Log;
+INSERT INTO ${DATABASE_LAZY}.test_table_perm SELECT * FROM numbers(100);
+DETACH table ${DATABASE_LAZY}.test_table_perm PERMANENTLY;
+
+SELECT 'before attach', database, table, is_permanently FROM system.detached_tables WHERE database='${DATABASE_LAZY}';
+
+ATTACH TABLE ${DATABASE_LAZY}.test_table;
+ATTACH TABLE ${DATABASE_LAZY}.test_table_perm;
+
+SELECT 'after attach', database, table, is_permanently FROM system.detached_tables WHERE database='${DATABASE_LAZY}';
+
+SELECT 'DROP TABLE';
+DROP TABLE  ${DATABASE_LAZY}.test_table SYNC;
+DROP TABLE  ${DATABASE_LAZY}.test_table_perm SYNC;
+
+DROP DATABASE ${DATABASE_LAZY} SYNC;
 
 "

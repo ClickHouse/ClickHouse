@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
+#include "CHColumnToArrowColumn.h"
 
 #if USE_ARROW || USE_PARQUET
 
@@ -183,51 +183,23 @@ namespace DB
         auto scale = datetime64_type->getScale();
         bool need_rescale = scale % 3;
         auto rescale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(3 - scale % 3);
-        if (null_bytemap)
+        for (size_t value_i = start; value_i < end; ++value_i)
         {
-            for (size_t value_i = start; value_i < end; ++value_i)
+            if (null_bytemap && (*null_bytemap)[value_i])
             {
-                if ((*null_bytemap)[value_i])
-                {
-                    status = builder.AppendNull();
-                }
-                else
-                {
-                    auto value = static_cast<Int64>(column[value_i].safeGet<DecimalField<DateTime64>>().getValue());
-                    if (need_rescale)
-                    {
-                        if (common::mulOverflow(value, rescale_multiplier, value))
-                            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
-                    }
-                    status = builder.Append(value);
-                }
-                checkStatus(status, write_column->getName(), format_name);
+                status = builder.AppendNull();
             }
-        }
-        else if (!need_rescale)
-        {
-            PaddedPODArray<Int64> values;
-            values.reserve(end - start);
-
-            for (size_t value_i = start; value_i < end; ++value_i)
-            {
-                values.emplace_back(static_cast<Int64>(column[value_i].safeGet<DecimalField<DateTime64>>().getValue()));
-            }
-
-            status = builder.AppendValues(values.data(), values.size());
-            checkStatus(status, write_column->getName(), format_name);
-        }
-        else
-        {
-            for (size_t value_i = start; value_i < end; ++value_i)
+            else
             {
                 auto value = static_cast<Int64>(column[value_i].safeGet<DecimalField<DateTime64>>().getValue());
-                if (common::mulOverflow(value, rescale_multiplier, value))
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
-
+                if (need_rescale)
+                {
+                    if (common::mulOverflow(value, rescale_multiplier, value))
+                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+                }
                 status = builder.Append(value);
-                checkStatus(status, write_column->getName(), format_name);
             }
+            checkStatus(status, write_column->getName(), format_name);
         }
     }
 
@@ -453,7 +425,8 @@ namespace DB
         /// Convert dictionary values to arrow array.
         auto value_type = assert_cast<arrow::DictionaryType *>(builder->type().get())->value_type();
         std::unique_ptr<arrow::ArrayBuilder> values_builder;
-        arrow::Status status = MakeBuilder(arrow::default_memory_pool(), value_type, &values_builder);
+        arrow::MemoryPool* pool = ArrowMemoryPool::instance();
+        arrow::Status status = MakeBuilder(pool, value_type, &values_builder);
         checkStatus(status, column->getName(), format_name);
 
         auto dict_column = dynamic_cast<IColumnUnique &>(*dict_values).getNestedNotNullableColumn();
@@ -469,7 +442,6 @@ namespace DB
         /// AppendIndices in DictionaryBuilder works only with int64_t data, so we cannot use
         /// fillArrowArray here and should copy all indexes to int64_t container.
         PaddedPODArray<Int64> indexes;
-        indexes.reserve(end - start);
         if (mapping)
             indexes = extractIndexesWithRemapping(column_lc->getIndexesPtr(), mapping, start, end, is_nullable);
         else
@@ -530,30 +502,18 @@ namespace DB
         ArrowBuilder & builder = assert_cast<ArrowBuilder &>(*array_builder);
         arrow::Status status;
 
-        if (null_bytemap)
+        for (size_t string_i = start; string_i < end; ++string_i)
         {
-            for (size_t string_i = start; string_i < end; ++string_i)
+            if (null_bytemap && (*null_bytemap)[string_i])
             {
-                if ((*null_bytemap)[string_i])
-                {
-                    status = builder.AppendNull();
-                }
-                else
-                {
-                    std::string_view string_ref = internal_column.getDataAt(string_i);
-                    status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
-                }
-                checkStatus(status, write_column->getName(), format_name);
+                status = builder.AppendNull();
             }
-        }
-        else
-        {
-            for (size_t string_i = start; string_i < end; ++string_i)
+            else
             {
-                std::string_view string_ref = internal_column.getDataAt(string_i);
+                std::string_view string_ref = internal_column.getDataAt(string_i).toView();
                 status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
-                checkStatus(status, write_column->getName(), format_name);
             }
+            checkStatus(status, write_column->getName(), format_name);
         }
     }
 
@@ -628,20 +588,12 @@ namespace DB
         arrow::UInt16Builder & builder = assert_cast<arrow::UInt16Builder &>(*array_builder);
         arrow::Status status;
 
-        if (null_bytemap)
+        for (size_t value_i = start; value_i < end; ++value_i)
         {
-            for (size_t value_i = start; value_i < end; ++value_i)
-            {
-                if ((*null_bytemap)[value_i])
-                    status = builder.AppendNull();
-                else
-                    status = builder.Append(internal_data[value_i]);
-                checkStatus(status, write_column->getName(), format_name);
-            }
-        }
-        else
-        {
-            status = builder.AppendValues(internal_data.data() + start, end - start);
+            if (null_bytemap && (*null_bytemap)[value_i])
+                status = builder.AppendNull();
+            else
+                status = builder.Append(internal_data[value_i]);
             checkStatus(status, write_column->getName(), format_name);
         }
     }
@@ -658,21 +610,13 @@ namespace DB
         arrow::UInt32Builder & builder = assert_cast<arrow::UInt32Builder &>(*array_builder);
         arrow::Status status;
 
-        if (null_bytemap)
+        for (size_t value_i = start; value_i < end; ++value_i)
         {
-            for (size_t value_i = start; value_i < end; ++value_i)
-            {
-                if ((*null_bytemap)[value_i])
-                    status = builder.AppendNull();
-                else
-                    status = builder.Append(internal_data[value_i]);
+            if (null_bytemap && (*null_bytemap)[value_i])
+                status = builder.AppendNull();
+            else
+                status = builder.Append(internal_data[value_i]);
 
-                checkStatus(status, write_column->getName(), format_name);
-            }
-        }
-        else
-        {
-            status = builder.AppendValues(internal_data.data() + start, end - start);
             checkStatus(status, write_column->getName(), format_name);
         }
     }
@@ -689,20 +633,12 @@ namespace DB
         arrow::Date32Builder & builder = assert_cast<arrow::Date32Builder &>(*array_builder);
         arrow::Status status;
 
-        if (null_bytemap)
+        for (size_t value_i = start; value_i < end; ++value_i)
         {
-            for (size_t value_i = start; value_i < end; ++value_i)
-            {
-                if ((*null_bytemap)[value_i])
-                    status = builder.AppendNull();
-                else
-                    status = builder.Append(internal_data[value_i]);
-                checkStatus(status, write_column->getName(), format_name);
-            }
-        }
-        else
-        {
-            status = builder.AppendValues(internal_data.data() + start, end - start);
+            if (null_bytemap && (*null_bytemap)[value_i])
+                status = builder.AppendNull();
+            else
+                status = builder.Append(internal_data[value_i]);
             checkStatus(status, write_column->getName(), format_name);
         }
     }
@@ -720,30 +656,19 @@ namespace DB
         ArrowBuilder & builder = assert_cast<ArrowBuilder &>(*array_builder);
         arrow::Status status;
 
-        if (null_bytemap)
+        for (size_t value_i = start; value_i < end; ++value_i)
         {
-            for (size_t value_i = start; value_i < end; ++value_i)
-            {
-                if ((*null_bytemap)[value_i])
-                    status = builder.AppendNull();
-                else
-                {
-                    FieldType element = FieldType(column.getElement(value_i).value);
-                    status = builder.Append(ArrowDecimalType(reinterpret_cast<const uint8_t *>(&element))); // TODO: try copy column
-                }
-
-                checkStatus(status, write_column->getName(), format_name);
-            }
-        }
-        else
-        {
-            for (size_t value_i = start; value_i < end; ++value_i)
+            if (null_bytemap && (*null_bytemap)[value_i])
+                status = builder.AppendNull();
+            else
             {
                 FieldType element = FieldType(column.getElement(value_i).value);
-                status = builder.Append(ArrowDecimalType(reinterpret_cast<const uint8_t *>(&element)));
-                checkStatus(status, write_column->getName(), format_name);
+                status = builder.Append(ArrowDecimalType(reinterpret_cast<const uint8_t *>(&element))); // TODO: try copy column
             }
+
+            checkStatus(status, write_column->getName(), format_name);
         }
+        checkStatus(status, write_column->getName(), format_name);
     }
 
     template <typename ColumnType>
@@ -977,9 +902,8 @@ namespace DB
         {
             auto nested_type = assert_cast<const DataTypeArray *>(column_type.get())->getNestedType();
             auto nested_column = assert_cast<const ColumnArray *>(column.get())->getDataPtr();
-            bool is_item_nullable = false;
-            auto nested_arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, settings, &is_item_nullable);
-            return arrow::list(std::make_shared<arrow::Field>("item", nested_arrow_type, is_item_nullable));
+            auto nested_arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, settings, out_is_column_nullable);
+            return arrow::list(nested_arrow_type);
         }
 
         if (isTuple(column_type))
@@ -991,9 +915,8 @@ namespace DB
             std::vector<std::shared_ptr<arrow::Field>> nested_fields;
             for (size_t i = 0; i != nested_types.size(); ++i)
             {
-                bool is_field_nullable = false;
-                auto nested_arrow_type = getArrowType(nested_types[i], tuple_column->getColumnPtr(i), nested_names[i], format_name, settings, &is_field_nullable);
-                nested_fields.push_back(std::make_shared<arrow::Field>(nested_names[i], nested_arrow_type, is_field_nullable));
+                auto nested_arrow_type = getArrowType(nested_types[i], tuple_column->getColumnPtr(i), nested_names[i], format_name, settings, out_is_column_nullable);
+                nested_fields.push_back(std::make_shared<arrow::Field>(nested_names[i], nested_arrow_type, *out_is_column_nullable));
             }
             return arrow::struct_(nested_fields);
         }
@@ -1014,16 +937,11 @@ namespace DB
             const auto * map_type = assert_cast<const DataTypeMap *>(column_type.get());
             const auto & key_type = map_type->getKeyType();
             const auto & val_type = map_type->getValueType();
+
             const auto & columns =  assert_cast<const ColumnMap *>(column.get())->getNestedData().getColumns();
-
-            bool _is_key_nullable = false;
-            auto key_arrow_type = getArrowType(key_type, columns[0], column_name, format_name, settings, &_is_key_nullable);
-            bool is_val_nullable = false;
-            auto val_arrow_type = getArrowType(val_type, columns[1], column_name, format_name, settings, &is_val_nullable);
-
             return arrow::map(
-                key_arrow_type,
-                std::make_shared<arrow::Field>("value", val_arrow_type, is_val_nullable));
+                getArrowType(key_type, columns[0], column_name, format_name, settings, out_is_column_nullable),
+                getArrowType(val_type, columns[1], column_name, format_name, settings, out_is_column_nullable));
         }
 
         if (isDateTime64(column_type))
@@ -1066,101 +984,33 @@ namespace DB
     }
 
     CHColumnToArrowColumn::CHColumnToArrowColumn(const Block & header, const std::string & format_name_, const Settings & settings_)
-        : CHColumnToArrowColumn(header.getColumnsWithTypeAndName(), format_name_, settings_)
+        : format_name(format_name_), settings(settings_)
     {
-    }
+        arrow_fields.reserve(header.columns());
+        header_columns.reserve(header.columns());
+        for (auto column : header.getColumnsWithTypeAndName())
+        {
+            if (!settings.low_cardinality_as_dictionary)
+            {
+                column.type = recursiveRemoveLowCardinality(column.type);
+                column.column = recursiveRemoveLowCardinality(column.column);
+            }
 
-    CHColumnToArrowColumn::CHColumnToArrowColumn(
-        const ColumnsWithTypeAndName & header_columns_, const std::string & format_name_, const Settings & settings_)
-        : format_name(format_name_)
-        , settings(settings_)
-    {
-        if (settings.low_cardinality_as_dictionary)
-        {
-            header_columns = header_columns_;
-            return;
-        }
-        header_columns.reserve(header_columns_.size());
-        for (auto column : header_columns_)
-        {
-            column.type = recursiveRemoveLowCardinality(column.type);
-            column.column = recursiveRemoveLowCardinality(column.column);
             header_columns.emplace_back(std::move(column));
         }
-    }
-
-    std::unique_ptr<CHColumnToArrowColumn> CHColumnToArrowColumn::clone(bool copy_arrow_schema) const
-    {
-        auto res = std::make_unique<CHColumnToArrowColumn>(header_columns, format_name, settings);
-        if (copy_arrow_schema)
-            res->arrow_schema = arrow_schema;
-        return res;
-    }
-
-    void CHColumnToArrowColumn::initializeArrowSchema(
-        const Chunk * chunk, std::optional<size_t> columns_num, const std::optional<std::unordered_map<String, Int64>> & column_to_field_id)
-    {
-        if (arrow_schema)
-            return;
-
-        if (!columns_num)
-            columns_num = header_columns.size();
-
-        std::vector<std::shared_ptr<arrow::Field>> arrow_fields;
-        arrow_fields.reserve(*columns_num);
-
-        for (size_t column_i = 0; column_i < *columns_num; ++column_i)
-        {
-            const ColumnWithTypeAndName & header_column = header_columns[column_i];
-            auto column = chunk ? chunk->getColumns()[column_i] : header_column.column;
-
-            if (!settings.low_cardinality_as_dictionary)
-                column = recursiveRemoveLowCardinality(column);
-
-            bool is_column_nullable = false;
-            auto arrow_type = getArrowType(
-                header_column.type,
-                column,
-                header_column.name,
-                format_name,
-                settings,
-                &is_column_nullable);
-            if (column_to_field_id && column_to_field_id->contains(header_column.name))
-            {
-                Int64 field_id = column_to_field_id->at(header_column.name);
-                auto key_value_metadata = arrow::key_value_metadata({"PARQUET:field_id"},
-                            {std::to_string(field_id)});
-                arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable, key_value_metadata));
-            }
-            else
-                arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
-        }
-
-        arrow_schema = std::make_shared<arrow::Schema>(arrow_fields);
-    }
-
-    std::shared_ptr<arrow::Schema> CHColumnToArrowColumn::getArrowSchema() const
-    {
-        if (!arrow_schema)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Arrow schema is not initialized");
-        return arrow_schema;
     }
 
     void CHColumnToArrowColumn::chChunkToArrowTable(
         std::shared_ptr<arrow::Table> & res,
         const std::vector<Chunk> & chunks,
-        size_t columns_num,
-        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id)
+        size_t columns_num)
     {
+        std::shared_ptr<arrow::Schema> arrow_schema;
         std::vector<arrow::ArrayVector> table_data(columns_num);
-
-        /// We use the first chunk to initialize the arrow schema.
-        const Chunk * chunk_to_initialize_schema = chunks.empty() ? nullptr : chunks.data();
-        initializeArrowSchema(chunk_to_initialize_schema, columns_num, column_to_field_id);
 
         for (const auto & chunk : chunks)
         {
-            /// For arrow::Table creation
+            /// For arrow::Schema and arrow::Table creation
             for (size_t column_i = 0; column_i < columns_num; ++column_i)
             {
                 const ColumnWithTypeAndName & header_column = header_columns[column_i];
@@ -1169,8 +1019,22 @@ namespace DB
                 if (!settings.low_cardinality_as_dictionary)
                     column = recursiveRemoveLowCardinality(column);
 
+                if (!is_arrow_fields_initialized)
+                {
+                    bool is_column_nullable = false;
+                    auto arrow_type = getArrowType(
+                        header_column.type,
+                        column,
+                        header_column.name,
+                        format_name,
+                        settings,
+                        &is_column_nullable);
+                    arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
+                }
+
+                arrow::MemoryPool * pool = ArrowMemoryPool::instance();
                 std::unique_ptr<arrow::ArrayBuilder> array_builder;
-                arrow::Status status = MakeBuilder(arrow::default_memory_pool(), arrow_schema->field(static_cast<int>(column_i))->type(), &array_builder);
+                arrow::Status status = MakeBuilder(pool, arrow_fields[column_i]->type(), &array_builder);
                 checkStatus(status, column->getName(), format_name);
 
                 fillArrowArray(
@@ -1191,6 +1055,10 @@ namespace DB
 
                 table_data.at(column_i).emplace_back(std::move(arrow_array));
             }
+
+            is_arrow_fields_initialized = true;
+            if (!arrow_schema)
+                arrow_schema = std::make_shared<arrow::Schema>(arrow_fields);
         }
 
         std::vector<std::shared_ptr<arrow::ChunkedArray>> columns;
@@ -1200,6 +1068,7 @@ namespace DB
 
         res = arrow::Table::Make(arrow_schema, columns);
     }
+
 }
 
 #endif

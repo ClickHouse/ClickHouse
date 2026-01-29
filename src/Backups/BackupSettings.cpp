@@ -5,12 +5,12 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <IO/ReadHelpers.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
-
+#include <Backups/SettingsFieldOptionalUInt64.h>
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_BACKUP_SETTINGS;
@@ -27,7 +27,6 @@ namespace ErrorCodes
     M(Bool, async) \
     M(Bool, decrypt_files_from_encrypted_disks) \
     M(Bool, deduplicate_files) \
-    M(Bool, allow_s3_native_copy) \
     M(Bool, allow_azure_native_copy) \
     M(Bool, use_same_s3_credentials_for_base_backup) \
     M(Bool, use_same_password_for_base_backup) \
@@ -40,8 +39,6 @@ namespace ErrorCodes
     M(Bool, allow_backup_broken_projections) \
     M(Bool, write_access_entities_dependents) \
     M(Bool, allow_checksums_from_remote_paths) \
-    M(BackupDataFileNameGeneratorType, data_file_name_generator) \
-    M(Bool, backup_data_from_refreshable_materialized_view_targets) \
     M(Bool, internal) \
     M(Bool, experimental_lightweight_snapshot) \
     M(String, host_id) \
@@ -59,8 +56,6 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
         {
             if (setting.name == "compression_level")
                 res.compression_level = static_cast<int>(SettingFieldInt64{setting.value}.value);
-            else if (setting.name == "data_file_name_prefix_length")
-                res.data_file_name_prefix_length = setting.value.safeGet<UInt64>();
             else
 #define GET_BACKUP_SETTINGS_FROM_QUERY(TYPE, NAME) \
             if (setting.name == #NAME) \
@@ -68,7 +63,13 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
             else
 
             LIST_OF_BACKUP_SETTINGS(GET_BACKUP_SETTINGS_FROM_QUERY)
-            /// else
+
+            if (setting.name == "allow_s3_native_copy")
+            {
+                SettingFieldBoolAuto bool_auto{setting.value};
+                res.allow_s3_native_copy = bool_auto.is_auto ? std::nullopt : std::make_optional(bool_auto.base.value);
+            }
+            else
             {
                 /// (if setting.name is not the name of a field of BackupSettings)
                 res.core_settings.emplace_back(setting);
@@ -98,7 +99,7 @@ bool BackupSettings::isAsync(const ASTBackupQuery & query)
 
 void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
 {
-    auto query_settings = make_intrusive<ASTSetQuery>();
+    auto query_settings = std::make_shared<ASTSetQuery>();
     query_settings->is_standalone = false;
 
     /// Copy the fields of the BackupSettings to the query.
@@ -109,6 +110,9 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
         query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME})); \
 
     LIST_OF_BACKUP_SETTINGS(COPY_BACKUP_SETTINGS_TO_QUERY)
+
+    if (allow_s3_native_copy)
+        query_settings->changes.emplace_back("allow_s3_native_copy", static_cast<Field>(SettingFieldBool{*allow_s3_native_copy}));
 
     /// Copy the core settings to the query too.
     query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
@@ -171,10 +175,9 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
     if (cluster_host_ids.empty())
         return nullptr;
 
-    auto res = make_intrusive<ASTFunction>();
+    auto res = std::make_shared<ASTFunction>();
     res->name = "array";
-    res->is_operator = true;
-    auto res_replicas = make_intrusive<ASTExpressionList>();
+    auto res_replicas = std::make_shared<ASTExpressionList>();
     res->arguments = res_replicas;
     res->children.push_back(res_replicas);
     res_replicas->children.resize(cluster_host_ids.size());
@@ -188,7 +191,7 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
         for (size_t j = 0; j != shard.size(); ++j)
             res_shard[j] = Field{shard[j]};
 
-        res_replicas->children[i] = make_intrusive<ASTLiteral>(Field{std::move(res_shard)});
+        res_replicas->children[i] = std::make_shared<ASTLiteral>(Field{std::move(res_shard)});
     }
 
     return res;

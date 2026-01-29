@@ -1,6 +1,8 @@
 #include <Parsers/ParserCreateFunctionQuery.h>
 
 #include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -54,7 +56,7 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     if (!lambda_p.parse(pos, function_core, expected))
         return false;
 
-    auto create_function_query = make_intrusive<ASTCreateFunctionQuery>();
+    auto create_function_query = std::make_shared<ASTCreateFunctionQuery>();
     node = create_function_query;
 
     create_function_query->function_name = function_name;

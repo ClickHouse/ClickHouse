@@ -1,5 +1,3 @@
--- Tags: no-async-insert
--- no-async-insert: 1 part is inserted with async inserts
 DROP TABLE IF EXISTS t_parts_profile_events;
 
 CREATE TABLE t_parts_profile_events (a UInt32)

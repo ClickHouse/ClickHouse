@@ -14,7 +14,7 @@ namespace
 class ExecutableFunctionToday : public IExecutableFunction
 {
 public:
-    explicit ExecutableFunctionToday(time_t time_) : day_value(static_cast<UInt16>(time_)) {}
+    explicit ExecutableFunctionToday(time_t time_) : day_value(time_) {}
 
     String getName() const override { return "today"; }
 
@@ -75,7 +75,7 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
-        return std::make_unique<FunctionBaseToday>(DayNum(static_cast<UInt16>(DateLUT::instance().toDayNum(time(nullptr)))));
+        return std::make_unique<FunctionBaseToday>(DayNum(DateLUT::instance().toDayNum(time(nullptr)).toUnderType()));
     }
 };
 
@@ -83,28 +83,7 @@ public:
 
 REGISTER_FUNCTION(Today)
 {
-    FunctionDocumentation::Description description = "Returns the current date at moment of query analysis. Same as `toDate(now())`.";
-    FunctionDocumentation::Syntax syntax = "today()";
-    FunctionDocumentation::Arguments arguments = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current date", {"Date"}};
-    FunctionDocumentation::Examples example = {
-        {
-            "Usage example",
-            "SELECT today() AS today, curdate() AS curdate, current_date() AS current_date FORMAT Pretty",
-R"(
-┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
-┃      today ┃    curdate ┃ current_date ┃
-┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2025-03-03 │ 2025-03-03 │   2025-03-03 │
-└────────────┴────────────┴──────────────┘
-)"
-        }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
-
-    factory.registerFunction<TodayOverloadResolver>(documentation);
+    factory.registerFunction<TodayOverloadResolver>();
     factory.registerAlias("current_date", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("curdate", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }

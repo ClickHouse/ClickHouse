@@ -19,15 +19,15 @@ class IMergingTransformBase : public IProcessor
 public:
     IMergingTransformBase(
         size_t num_inputs,
-        SharedHeader & input_header,
-        SharedHeader & output_header,
+        const Block & input_header,
+        const Block & output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_);
 
     IMergingTransformBase(
-        SharedHeaders & input_headers,
-        SharedHeader & output_header,
+        const Blocks & input_headers,
+        const Block & output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_);
@@ -87,8 +87,8 @@ public:
     template <typename ... Args>
     IMergingTransform(
         size_t num_inputs,
-        SharedHeader input_header,
-        SharedHeader output_header,
+        const Block & input_header,
+        const Block & output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_,
@@ -100,8 +100,8 @@ public:
 
     template <typename ... Args>
     IMergingTransform(
-        SharedHeaders input_headers,
-        SharedHeader output_header,
+        const Blocks & input_headers,
+        const Block & output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_,
@@ -189,7 +189,7 @@ protected:
         {
             LOG_DEBUG(log, "{}, {} blocks, {} rows, {} bytes in {} sec., {} rows/sec., {}/sec.",
                 transform_message, stats.blocks, stats.rows, stats.bytes,
-                seconds, static_cast<double>(stats.rows) / seconds, ReadableSize(static_cast<double>(stats.bytes) / seconds));
+                seconds, stats.rows / seconds, ReadableSize(stats.bytes / seconds));
         }
     }
 

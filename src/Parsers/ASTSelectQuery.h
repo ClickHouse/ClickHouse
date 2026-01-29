@@ -99,7 +99,6 @@ public:
     bool group_by_with_grouping_sets = false;
     bool order_by_all = false;
     bool limit_with_ties = false;
-    bool limit_by_all = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
     ASTPtr & refTables()    { return getExpression(Expression::TABLES); }
@@ -154,7 +153,7 @@ public:
     bool withFill() const;
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
     void replaceDatabaseAndTable(const StorageID & table_id);
-    void addTableFunction(const ASTPtr & table_function_ptr);
+    void addTableFunction(ASTPtr & table_function_ptr);
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     void setFinal();
@@ -162,20 +161,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Select; }
     bool hasQueryParameters() const;
 
-    NameToNameMap getQueryParameters() const;
-
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-
-    bool isLimitByAll() const
-    {
-        return limit_by_all;
-    }
-
-    /// Set query node LIMIT BY ALL modifier value
-    void setIsLimitByAll(bool is_limit_by_all_value)
-    {
-        limit_by_all = is_limit_by_all_value;
-    }
 
 private:
     std::unordered_map<Expression, size_t> positions;

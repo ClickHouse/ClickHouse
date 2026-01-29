@@ -1,4 +1,4 @@
-#include <Dictionaries/MySQLDictionarySource.h>
+#include "MySQLDictionarySource.h"
 
 
 #if USE_MYSQL
@@ -6,11 +6,10 @@
 #endif
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Dictionaries/DictionarySourceFactory.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/registerDictionaries.h>
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
+#include "registerDictionaries.h"
 #include <Core/Settings.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
@@ -25,7 +24,7 @@
 #include <Common/LocalDateTime.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
-#include <Dictionaries/readInvalidateQuery.h>
+#include "readInvalidateQuery.h"
 
 
 namespace DB
@@ -67,8 +66,7 @@ static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allow
 
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const String & /*name*/,
-                                   [[maybe_unused]] const DictionaryStructure & dict_struct,
+    auto create_table_source = [=]([[maybe_unused]] const DictionaryStructure & dict_struct,
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
@@ -235,39 +233,31 @@ QueryPipeline MySQLDictionarySource::loadFromQuery(const String & query)
             pool, query, sample_block, settings));
 }
 
-BlockIO MySQLDictionarySource::loadAll()
+QueryPipeline MySQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
-    BlockIO io;
-    io.pipeline = loadFromQuery(load_all_query);
-    return io;
+    return loadFromQuery(load_all_query);
 }
 
-BlockIO MySQLDictionarySource::loadUpdatedAll()
+QueryPipeline MySQLDictionarySource::loadUpdatedAll()
 {
     std::string load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, fmt::runtime(load_update_query));
-    BlockIO io;
-    io.pipeline = loadFromQuery(load_update_query);
-    return io;
+    return loadFromQuery(load_update_query);
 }
 
-BlockIO MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    BlockIO io;
-    io.pipeline = loadFromQuery(query);
-    return io;
+    return loadFromQuery(query);
 }
 
-BlockIO MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    BlockIO io;
-    io.pipeline = loadFromQuery(query);
-    return io;
+    return loadFromQuery(query);
 }
 
 bool MySQLDictionarySource::isModified() const
@@ -329,9 +319,7 @@ std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-
-    QueryPipeline pipeline(std::make_unique<MySQLSource>(pool->get(), request, invalidate_sample_block, settings));
-    return readInvalidateQuery(pipeline);
+    return readInvalidateQuery(QueryPipeline(std::make_unique<MySQLSource>(pool->get(), request, invalidate_sample_block, settings)));
 }
 
 }

@@ -1,5 +1,4 @@
 -- Tests merge tree 'setting' materialize_skip_indexes_on_merge
--- add_minmax_index_for_numeric_columns=0: Different indices and plans on b
 
 SET enable_analyzer = 1;
 
@@ -12,7 +11,7 @@ CREATE TABLE tab
     INDEX idx_a a TYPE minmax,
     INDEX idx_b b TYPE set(3)
 )
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns=0;
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 
 SELECT 'Regular merge';
 
@@ -23,10 +22,7 @@ OPTIMIZE TABLE tab FINAL;
 
 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2;
 
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2
-)
-WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+EXPLAIN indexes = 1 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2;
 
 SELECT database, table, name, data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab';
 
@@ -42,14 +38,11 @@ OPTIMIZE TABLE tab FINAL;
 
 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2;
 
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2
-)
-WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+EXPLAIN indexes = 1 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2;
 
 SELECT database, table, name, data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab';
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT count(), sum(ProfileEvents['MergeTreeDataWriterSkipIndicesCalculationMicroseconds'])
 FROM system.query_log
 WHERE current_database = currentDatabase()
@@ -63,10 +56,7 @@ ALTER TABLE tab MATERIALIZE INDEX idx_a;
 ALTER TABLE tab MATERIALIZE INDEX idx_b;
 
 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2;
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2
-)
-WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+EXPLAIN indexes = 1 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2;
 SELECT database, table, name, data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab';
 
 SELECT 'Merge after resetting materialize_skip_indexes_on_merge to default';
@@ -79,10 +69,7 @@ INSERT INTO tab SELECT number, number / 50 FROM numbers(100, 100);
 OPTIMIZE TABLE tab FINAL;
 
 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2;
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2
-)
-WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+EXPLAIN indexes = 1 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2;
 SELECT database, table, name, data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab';
 
 DROP TABLE tab;
