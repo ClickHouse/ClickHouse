@@ -38,6 +38,8 @@ struct AsynchronousInsertLogElement
     String flush_query_id;
     UInt64 timeout_milliseconds = 0;
 
+    UUID log_marker{};
+
     static std::string name() { return "AsynchronousInsertLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }

@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -74,6 +75,8 @@ ColumnsDescription QueryMetricLogElement::getColumnsDescription()
         result.add({std::move(name), std::make_shared<DataTypeUInt64>(), std::string(comment)});
     }
 
+    result.add({"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."});
+
     return result;
 }
 
@@ -91,6 +94,8 @@ void QueryMetricLogElement::appendToBlock(MutableColumns & columns) const
 
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
         columns[column_idx++]->insert(profile_events[i]);
+
+    columns[column_idx++]->insert(log_marker);
 }
 
 void QueryMetricLog::shutdown()

@@ -88,6 +88,7 @@ void AsynchronousReadBufferFromFileDescriptor::appendToPrefetchLog(FilesystemPre
         .state = state,
         .thread_id = getThreadId(),
         .reader_id = current_reader_id,
+        .log_marker = {},
     };
 
     prefetches_log->add(std::move(elem));

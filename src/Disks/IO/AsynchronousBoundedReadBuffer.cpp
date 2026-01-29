@@ -200,6 +200,7 @@ void AsynchronousBoundedReadBuffer::appendToPrefetchLog(
         .state = state,
         .thread_id = getThreadId(),
         .reader_id = current_reader_id,
+        .log_marker = {},
     };
 
     if (prefetches_log)

@@ -57,6 +57,8 @@ struct TraceLogElement
     std::optional<Instrumentation::EntryType> entry_type{};
     std::optional<UInt64> duration_nanoseconds{};
 
+    UUID log_marker{};
+
     static std::string name() { return "TraceLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases();

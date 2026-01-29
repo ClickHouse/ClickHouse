@@ -980,6 +980,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Bool, database_replicated_allow_detach_permanently, true, R"(Allow detaching tables permanently in Replicated databases)", 0) \
     DECLARE(Bool, database_replicated_drop_broken_tables, false, R"(Drop unexpected tables from Replicated databases instead of moving them to a separate local database)", 0) \
     DECLARE(Bool, distributed_ddl_use_initial_user_and_roles, false, R"(If enabled, ON CLUSTER queries will preserve and use the initiator's user and roles for execution on remote shards. This ensures consistent access control across the cluster but requires that the user and roles exist on all nodes.)", 0) \
+    DECLARE(Bool, enable_system_log_marker, false, R"(If enabled, system log tables will include a log_marker column containing a UUID v4 identifier that is the same for all rows in a single flush batch. This allows grouping log entries that were written together.)", 0) \
     DECLARE(String, default_replica_path, "/clickhouse/tables/{uuid}/{shard}", R"(
     The path to the table in ZooKeeper.
 

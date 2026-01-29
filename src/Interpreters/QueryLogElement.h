@@ -109,6 +109,8 @@ struct QueryLogElement
 
     QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::Unknown;
 
+    UUID log_marker{};
+
     static std::string name() { return "QueryLog"; }
 
     static ColumnsDescription getColumnsDescription();

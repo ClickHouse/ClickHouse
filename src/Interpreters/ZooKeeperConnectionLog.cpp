@@ -53,6 +53,8 @@ ColumnsDescription ZooKeeperConnectionLogElement::getColumnsDescription()
         {"enabled_feature_flags", std::make_shared<DataTypeArray>(std::move(feature_flags_enum)), "Feature flags which are enabled. Only applicable to ClickHouse Keeper."},
         {"availability_zone", std::make_shared<DataTypeString>(), "Availability zone"},
         {"reason", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Reason for the connection or disconnection."}, // Updated field
+        // TODO @bharatnc: Skip log_marker column to try fix arm_asan targeted stateless tests zookeeper timeout
+        // {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -108,6 +110,8 @@ void ZooKeeperConnectionLogElement::appendToBlock(MutableColumns & columns) cons
     columns[i++]->insert(enabled_feature_flags);
     columns[i++]->insert(availability_zone);
     columns[i++]->insert(reason);
+    // TODO @bharatnc: Skip log_marker column to try fix arm_asan targeted stateless tests zookeeper timeout
+    // columns[i++]->insert(log_marker);
 }
 
 void ZooKeeperConnectionLog::addWithEventType(

@@ -135,6 +135,7 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
         .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(
             current_file_segment_counters.getPartiallyAtomicSnapshot()),
         .user_id = user.user_id,
+        .log_marker = {},
     };
 
     current_file_segment_counters.reset();

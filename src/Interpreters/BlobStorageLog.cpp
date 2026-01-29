@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeUUID.h>
 
 #include <Interpreters/Context.h>
 
@@ -53,6 +54,7 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
 
         {"error_code", std::make_shared<DataTypeInt32>(), "Error code of the operation. 0 if there was no error."},
         {"error", std::make_shared<DataTypeString>(), "Error message associated with the event, if any."},
+        {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -77,6 +79,7 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(elapsed_microseconds);
     columns[i++]->insert(error_code);
     columns[i++]->insert(error_message);
+    columns[i++]->insert(log_marker);
 }
 
 void BlobStorageLog::addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const

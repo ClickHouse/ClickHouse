@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ProfileEventsExt.h>
@@ -79,6 +80,8 @@ ColumnsDescription QueryThreadLogElement::getColumnsDescription()
         {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse revision."},
 
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "ProfileEvents that measure different metrics for this thread. The description of them could be found in the table system.events."},
+
+        {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -133,6 +136,8 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
     {
         columns[i++]->insertDefault();
     }
+
+    columns[i++]->insert(log_marker);
 }
 
 }

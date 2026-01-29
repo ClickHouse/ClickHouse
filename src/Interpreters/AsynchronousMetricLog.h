@@ -19,6 +19,8 @@ struct AsynchronousMetricLogElement
     std::string metric_name;
     double value;
 
+    UUID log_marker{};
+
     static std::string name() { return "AsynchronousMetricLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }

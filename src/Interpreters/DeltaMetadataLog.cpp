@@ -54,7 +54,8 @@ ColumnsDescription DeltaMetadataLogElement::getColumnsDescription()
         {"query_id", std::make_shared<DataTypeString>(), "Query id."},
         {"table_path", std::make_shared<DataTypeString>(), "Table path."},
         {"file_path", std::make_shared<DataTypeString>(), "File path."},
-        {"content", std::make_shared<DataTypeString>(), "Content in a JSON format."}};
+        {"content", std::make_shared<DataTypeString>(), "Content in a JSON format."},
+        {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."}};
 }
 
 void DeltaMetadataLogElement::appendToBlock(MutableColumns & columns) const
@@ -66,6 +67,7 @@ void DeltaMetadataLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_index++]->insert(table_path);
     columns[column_index++]->insert(file_path);
     columns[column_index++]->insert(metadata_content);
+    columns[column_index++]->insert(log_marker);
 }
 
 void insertDeltaRowToLogTable(
@@ -90,6 +92,7 @@ void insertDeltaRowToLogTable(
             .query_id = local_context->getCurrentQueryId(),
             .table_path = table_path,
             .file_path = file_path,
-            .metadata_content = row});
+            .metadata_content = row,
+            .log_marker = {}});
 }
 }

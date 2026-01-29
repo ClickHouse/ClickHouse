@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -60,7 +61,8 @@ ColumnsDescription IcebergMetadataLogElement::getColumnsDescription()
         {"file_path", std::make_shared<DataTypeString>(), "File path."},
         {"content", std::make_shared<DataTypeString>(), "Content in a JSON format (json file content, avro metadata or avro entry)."},
         {"row_in_file", rowType, "Row in file."},
-        {"pruning_status", iceberg_pruning_status_datatype_nullable, "Status of partition pruning or min-max index pruning for the file."}};
+        {"pruning_status", iceberg_pruning_status_datatype_nullable, "Status of partition pruning or min-max index pruning for the file."},
+        {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."}};
 }
 
 void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
@@ -75,6 +77,7 @@ void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_index++]->insert(metadata_content);
     columns[column_index++]->insert(row_in_file ? *row_in_file : rowType->getDefault());
     columns[column_index++]->insert(pruning_status ? *pruning_status : iceberg_pruning_status_datatype_nullable->getDefault());
+    columns[column_index++]->insert(log_marker);
 }
 
 void insertRowToLogTable(
@@ -109,6 +112,7 @@ void insertRowToLogTable(
             .file_path = file_path,
             .metadata_content = row,
             .row_in_file = row_in_file,
-            .pruning_status = pruning_status});
+            .pruning_status = pruning_status,
+            .log_marker = {}});
 }
 }

@@ -1582,6 +1582,7 @@ void ObjectStorageQueueSource::appendLogElement(
             .commit_time = commit_time,
             .transaction_start_time = transaction_start_time_,
             .get_object_time_ms = file_status.get_object_time_ms,
+            .log_marker = {},
         };
     }
     system_queue_log->add(std::move(elem));

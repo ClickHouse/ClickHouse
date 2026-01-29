@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MetricLog.h>
 
@@ -35,6 +36,8 @@ ColumnsDescription MetricLogElement::getColumnsDescription()
         result.add({std::move(name), std::make_shared<DataTypeInt64>(), std::string(comment)});
     }
 
+    result.add({"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."});
+
     return result;
 }
 
@@ -53,6 +56,8 @@ void MetricLogElement::appendToBlock(MutableColumns & columns) const
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
         columns[column_idx++]->insert(current_metrics[i].toUnderType());
+
+    columns[column_idx++]->insert(log_marker);
 }
 
 void MetricLog::stepFunction(const std::chrono::system_clock::time_point current_time)

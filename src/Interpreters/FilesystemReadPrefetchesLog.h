@@ -32,6 +32,8 @@ struct FilesystemReadPrefetchesLogElement
     UInt64 thread_id;
     String reader_id;
 
+    UUID log_marker{};
+
     static std::string name() { return "FilesystemReadPrefetchesLog"; }
 
     static ColumnsDescription getColumnsDescription();

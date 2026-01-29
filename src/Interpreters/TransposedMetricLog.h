@@ -26,6 +26,8 @@ struct TransposedMetricLogElement
     Int64 value;
     UInt8 is_event;
 
+    UUID log_marker{};
+
     static std::string name() { return "TransposedMetricLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }

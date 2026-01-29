@@ -35,6 +35,8 @@ struct QueryMetricLogElement
     UInt64 peak_memory_usage{};
     std::vector<ProfileEvents::Count> profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
 
+    UUID log_marker{};
+
     static std::string name() { return "QueryMetricLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }

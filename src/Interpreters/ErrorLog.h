@@ -23,6 +23,9 @@ struct ErrorLogElement
     String last_error_message{};
     String last_error_query_id{};
     std::vector<void *> last_error_trace{};
+
+    UUID log_marker{};
+
     static std::string name() { return "ErrorLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }

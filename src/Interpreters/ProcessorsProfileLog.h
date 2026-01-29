@@ -40,6 +40,8 @@ struct ProcessorProfileLogElement
     size_t output_rows{};
     size_t output_bytes{};
 
+    UUID log_marker{};
+
     static std::string name() { return "ProcessorsProfileLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
