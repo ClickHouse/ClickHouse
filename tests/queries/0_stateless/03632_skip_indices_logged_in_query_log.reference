@@ -1,0 +1,8 @@
+SELECT * FROM children FORMAT `Null` SETTINGS log_comment = \'1\'	[]
+SELECT * FROM children WHERE age = 3 FORMAT `Null` SETTINGS log_comment = \'2\'	['default.children.age_i']
+SELECT * FROM children WHERE startsWith(name, \'Al\') FORMAT `Null` SETTINGS log_comment = \'3\'	['default.children.name_i']
+SELECT * FROM children WHERE (age = 3) AND (name = \'Alice\') FORMAT `Null` SETTINGS log_comment = \'4\'	['default.children.age_i','default.children.name_i']
+SELECT * FROM children LEFT JOIN parents ON children.parent_id = parents.uid WHERE (parents.age >= 25) AND (children.name = \'Alice\') FORMAT `Null` SETTINGS log_comment = \'5\'	['default.children.name_i','default.parents.age_i']
+SELECT count() FROM merged_indices FORMAT `Null` SETTINGS log_comment = \'6\'	[]
+SELECT count() FROM merged_indices WHERE first_num_val > second_num_val FORMAT `Null` SETTINGS log_comment = \'7\'	['default.merged_indices.fnv','default.merged_indices.snv']
+SELECT count() FROM merged_indices WHERE (second_num_val < 10) AND (extra LIKE \'%s%\') FORMAT `Null` SETTINGS log_comment = \'8\'	['default.merged_indices.extra_i','default.merged_indices.fnv','default.merged_indices.snv']

@@ -91,6 +91,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"partitions", array_low_cardinality_string, "Names of the partitions present in the query."},
         {"projections", array_low_cardinality_string, "Names of the projections used during the query execution."},
         {"views", array_low_cardinality_string, "Names of the (materialized or live) views present in the query."},
+        {"skip_indices", array_low_cardinality_string, "Names of the skip indexes used during the query execution."},
         {"exception_code", std::make_shared<DataTypeInt32>(), "Code of an exception."},
         {"exception", std::make_shared<DataTypeString>(), "Exception message."},
         {"stack_trace", std::make_shared<DataTypeString>(), "Stack trace. An empty string, if the query was completed successfully."},
@@ -213,6 +214,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_partitions = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_projections = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_views = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_skip_indices = typeid_cast<ColumnArray &>(*columns[i++]);
 
         auto fill_column = [](const std::set<String> & data, ColumnArray & column)
         {
@@ -234,6 +236,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(query_partitions, column_partitions);
         fill_column(query_projections, column_projections);
         fill_column(query_views, column_views);
+        fill_column(query_skip_indices, column_skip_indices);
     }
 
     typeid_cast<ColumnInt32 &>(*columns[i++]).getData().push_back(exception_code);

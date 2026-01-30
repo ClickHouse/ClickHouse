@@ -912,6 +912,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             log);
                     }
 
+                    context->getQueryContext()->addSkipIndexAccessInfo(
+                        ranges.data_part->storage.getStorageID().getFullTableName(),
+                        index_and_condition.index->index.name
+                    );
+
                     stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
                     if (ranges.ranges.empty())
                         stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
@@ -959,6 +964,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             uncompressed_cache.get(),
                             vector_similarity_index_cache.get(),
                             log);
+                    }
+
+                    for (const auto & index : indices_and_condition.indices)
+                    {
+                        context->getQueryContext()->addSkipIndexAccessInfo(
+                        ranges.data_part->storage.getStorageID().getFullTableName(),
+                        index->index.name
+                        );
                     }
 
                     stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
