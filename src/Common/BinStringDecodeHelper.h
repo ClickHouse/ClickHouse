@@ -1,9 +1,23 @@
 #pragma once
 
 #include <base/hex.h>
+#include <base/types.h>
 
 namespace DB
 {
+
+static void inline hexStringDecode2(const char * pos, const char * end, char *& out)
+{
+    if ((end - pos) & 1)
+    {
+        *out = unhex(*pos);
+        ++out;
+        ++pos;
+    }
+    const auto raw_size = (end - pos) / 2;
+    unHexString(reinterpret_cast<UInt8*>(out), reinterpret_cast<const UInt8*>(pos), raw_size);
+    out += raw_size;
+}
 
 static void inline hexStringDecode(const char * pos, const char * end, char *& out, size_t word_size)
 {
