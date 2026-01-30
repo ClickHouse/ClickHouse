@@ -117,7 +117,7 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
 
 OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
-    "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
+    "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas --replace-log-memory-with-mergetree",
     "AsyncInsert": " --no-async-insert",
     "DatabaseReplicated": " --no-stateful --replicated-database",
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
