@@ -19,17 +19,16 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_timeout (id UInt64, data 
             echo "{\"id\":$(( (iteration*100) + i )),\"data\":\"batch_${iteration}\"}"
         done
         
-        sleep 1.5
+        sleep 3
         
         echo "{\"id\":$(( (iteration*100) + 99 )),\"data\":\"trigger_${iteration}\"}"
     done
 }  | ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_timeout FORMAT JSONEachRow" \
     --max_insert_block_size=1000 \
-    --input_format_max_block_wait_ms=600 \
-    --input_format_parallel_parsing=0 \
-    --min_insert_block_size_bytes=1 \
-    --max_query_size=1000
-
+    --input_format_max_block_wait_ms=1000 \
+    --min_insert_block_size_bytes=0 \
+    --min_insert_block_size_rows=0 \
+    --input_format_parallel_parsing=0
 sleep 1
 record_count=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM test_insert_timeout")
 echo "Total records inserted: ${record_count}"
