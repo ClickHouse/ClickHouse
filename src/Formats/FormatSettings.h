@@ -203,6 +203,7 @@ struct FormatSettings
         bool use_default_on_bad_values = false;
         bool try_infer_numbers_from_strings = true;
         bool try_infer_strings_from_quoted_tuples = true;
+        bool write_bom = false;
     } csv{};
 
     struct HiveText
@@ -456,6 +457,7 @@ struct FormatSettings
         bool skip_trailing_empty_lines = false;
         bool allow_variable_number_of_columns = false;
         bool crlf_end_of_line_input = false;
+        bool write_bom = false;
     } tsv{};
 
     struct
