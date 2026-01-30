@@ -1,5 +1,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 
+#include <unordered_set>
+
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
 
@@ -932,6 +934,53 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 auto node = buildSelectWithUnionExpression(select_with_union_query, true /*is_subquery*/, {} /*cte_name*/, select_query.aliases(), context);
                 node->setAlias(subquery_expression.tryGetAlias());
                 node->setOriginalAST(select_with_union_query);
+
+                /// Apply column aliases from AS alias(col1, col2, ...) syntax
+                if (table_expression.column_aliases)
+                {
+                    const auto & column_aliases_list = table_expression.column_aliases->as<ASTExpressionList &>();
+                    Names column_alias_names;
+                    column_alias_names.reserve(column_aliases_list.children.size());
+
+                    std::unordered_set<std::string> seen_aliases;
+                    for (const auto & column_alias : column_aliases_list.children)
+                    {
+                        const auto & alias_name = column_alias->as<ASTIdentifier &>().name();
+                        if (!seen_aliases.insert(alias_name).second)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Duplicate column alias '{}' in table expression column list", alias_name);
+                        column_alias_names.push_back(alias_name);
+                    }
+
+                    if (auto * query_node = node->as<QueryNode>())
+                    {
+                        query_node->setProjectionAliasesToOverride(std::move(column_alias_names));
+                    }
+                    else if (auto * union_node = node->as<UnionNode>())
+                    {
+                        /// for UNIONs, apply aliases to the first query in the union, projection column names come from the first query (see UnionNode::computeProjectionColumns)
+                        /// we find the first QueryNode in case of nested UNIONs
+                        const auto & queries = union_node->getQueries().getNodes();
+                        QueryTreeNodePtr current = queries.empty() ? nullptr : queries[0];
+                        while (current)
+                        {
+                            if (auto * inner_query = current->as<QueryNode>())
+                            {
+                                inner_query->setProjectionAliasesToOverride(std::move(column_alias_names));
+                                break;
+                            }
+                            else if (auto * inner_union = current->as<UnionNode>())
+                            {
+                                const auto & inner_queries = inner_union->getQueries().getNodes();
+                                current = inner_queries.empty() ? nullptr : inner_queries[0];
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+                    }
+                }
 
                 if (table_expression_modifiers)
                 {
