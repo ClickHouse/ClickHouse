@@ -357,6 +357,8 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         }
         case ReadStage::ColumnData:
         {
+            if (row_subgroup.filter.rows_pass == 0)
+                break;
             if (step_idx > 0 && step_idx <= reader.steps.size())
             {
                 reader.applyPrewhere(row_subgroup, row_group, step_idx);
