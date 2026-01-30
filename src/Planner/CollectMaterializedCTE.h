@@ -1,14 +1,13 @@
 #pragma once
 
 #include <memory>
-#include <vector>
+#include <unordered_map>
 
 namespace DB
 {
 
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
-using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
 
 struct TemporaryTableHolder;
 using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;

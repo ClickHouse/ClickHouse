@@ -6,11 +6,19 @@
 namespace DB
 {
 
-MaterializingCTEStep::MaterializingCTEStep(
-    SharedHeader input_header_,
-    TemporaryTableHolderPtr temporary_table_holder_
-)
-    : ITransformingStep(std::move(input_header_), std::make_shared<const Block>(Block{}), Traits{
+namespace ErrorCodes
+{
+
+extern const int LOGICAL_ERROR;
+
+}
+
+namespace
+{
+
+constexpr ITransformingStep::Traits getMaterializingCTETraits()
+{
+    return ITransformingStep::Traits{
         {
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
@@ -19,7 +27,16 @@ MaterializingCTEStep::MaterializingCTEStep(
         {
             .preserves_number_of_rows = false,
         }
-    })
+    };
+}
+
+}
+
+MaterializingCTEStep::MaterializingCTEStep(
+    SharedHeader input_header_,
+    TemporaryTableHolderPtr temporary_table_holder_
+)
+    : ITransformingStep(std::move(input_header_), std::make_shared<const Block>(Block{}), getMaterializingCTETraits())
     , temporary_table_holder(std::move(temporary_table_holder_))
 {
 }
