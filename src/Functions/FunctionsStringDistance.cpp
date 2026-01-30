@@ -240,6 +240,7 @@ template<bool is_utf8>
 struct ByteEditDistanceImpl
 {
     using ResultType = UInt64;
+    using WorkingType = UInt32;
 
     static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
@@ -263,41 +264,87 @@ struct ByteEditDistanceImpl
             needle_size = needle_utf8.size();
         }
 
-        PaddedPODArray<ResultType> distances0(haystack_size + 1, 0);
-        PaddedPODArray<ResultType> distances1(haystack_size + 1, 0);
+        PaddedPODArray<WorkingType> distances0(haystack_size + 1);
+        PaddedPODArray<WorkingType> distances1(haystack_size + 1);
+        auto* __restrict prev = distances0.data();
+        auto* __restrict curr = distances1.data();
 
-        ResultType substitution = 0;
-        ResultType insertion = 0;
-        ResultType deletion = 0;
+        WorkingType substitution = 0;
+        WorkingType insertion = 0;
+        WorkingType deletion = 0;
 
-        iota(distances0.data(), haystack_size + 1, ResultType(0));
+        iota(distances0.data(), haystack_size + 1, WorkingType(0));
+
+        const auto has_tail = (haystack_size % 2) == 1;
 
         for (size_t pos_needle = 0; pos_needle < needle_size; ++pos_needle)
         {
-            distances1[0] = pos_needle + 1;
+            curr[0] = static_cast<WorkingType>(pos_needle + 1);
 
-            for (size_t pos_haystack = 0; pos_haystack < haystack_size; pos_haystack++)
+            const auto needle_char = [&]{
+                if constexpr (is_utf8)
+                    return needle_utf8[pos_needle];
+                else
+                    return *(needle + pos_needle);
+            }();
+
+            size_t pos_haystack = 0;
+            for (; pos_haystack + 1 < haystack_size; pos_haystack += 2)
             {
-                deletion = distances0[pos_haystack + 1] + 1;
-                insertion = distances1[pos_haystack] + 1;
-                substitution = distances0[pos_haystack];
+                // First:
+                deletion = prev[pos_haystack + 1] + 1;
+                insertion = curr[pos_haystack] + 1;
+                substitution = prev[pos_haystack];
 
                 if constexpr (is_utf8)
                 {
-                    if (needle_utf8[pos_needle] != haystack_utf8[pos_haystack])
+                    if (needle_char != haystack_utf8[pos_haystack])
                         substitution += 1;
                 }
                 else
                 {
-                    if (*(needle + pos_needle) != *(haystack + pos_haystack))
+                    if (needle_char != *(haystack + pos_haystack))
                         substitution += 1;
                 }
-                distances1[pos_haystack + 1] = std::min({deletion, substitution, insertion});
+                curr[pos_haystack + 1] = std::min({deletion, substitution, insertion});
+                // Second:
+                deletion = prev[pos_haystack + 2] + 1;
+                insertion = curr[pos_haystack + 1] + 1;
+                substitution = prev[pos_haystack + 1];
+
+                if constexpr (is_utf8)
+                {
+                    if (needle_char != haystack_utf8[pos_haystack + 1])
+                        substitution += 1;
+                }
+                else
+                {
+                    if (needle_char != *(haystack + pos_haystack + 1))
+                        substitution += 1;
+                }
+                curr[pos_haystack + 2] = std::min({deletion, substitution, insertion});
             }
-            distances0.swap(distances1);
+            if (has_tail)
+            {
+                deletion = prev[pos_haystack + 1] + 1;
+                insertion = curr[pos_haystack] + 1;
+                substitution = prev[pos_haystack];
+                if constexpr (is_utf8)
+                {
+                    if (needle_char != haystack_utf8[pos_haystack])
+                        substitution += 1;
+                }
+                else
+                {
+                    if (needle_char != *(haystack + pos_haystack))
+                        substitution += 1;
+                }
+                curr[pos_haystack + 1] = std::min({deletion, substitution, insertion});
+            }
+            std::swap(curr, prev);
         }
 
-        return distances0[haystack_size];
+        return prev[haystack_size];
     }
 };
 
