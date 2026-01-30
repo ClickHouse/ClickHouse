@@ -69,7 +69,7 @@
 -- Test excess arguments for tuple-by-number operators
 -- Test wrong type (non-tuple) for tuple-by-number operators
 (2,1)
-    (3,2)
+(3,2)
 (4,3)
 2.220446049250313e-16
 0.007722123286332261
