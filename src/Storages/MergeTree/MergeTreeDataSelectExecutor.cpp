@@ -1727,12 +1727,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                 ++steps;
 
-                auto result = check_in_range(
-                    range, exact_ranges && range.end == range.begin + 1 ? BoolMask() : BoolMask::consider_only_can_be_true);
+                auto result = check_in_range(range, BoolMask());
                 if (!result.can_be_true)
                     continue;
 
-                if (range.end == range.begin + 1)
+                if (!result.can_be_false || range.end == range.begin + 1)
                 {
                     /// We saw a useful gap between neighboring marks. Either add it to the last range, or start a new range.
                     if (res.empty() || range.begin - res.back().end > min_marks_for_seek)
