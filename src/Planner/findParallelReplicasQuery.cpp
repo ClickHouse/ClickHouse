@@ -501,7 +501,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     const PlannerContextPtr & planner_context,
     std::shared_ptr<const StorageLimitsList> storage_limits)
 {
-    auto processed_stage = QueryProcessingStage::WithMergeableState;
+    const auto processed_stage = QueryProcessingStage::WithMergeableState;
     auto context = planner_context->getQueryContext();
 
     QueryTreeNodePtr modified_query_tree = query_node.clone();
@@ -550,7 +550,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     step->setStepDescription("Convert distributed names");
     query_plan.addStep(std::move(step));
 
-    return {std::move(query_plan), std::move(processed_stage), {}, {}, {}};
+    return {std::move(query_plan), processed_stage, {}, {}, {}};
 }
 
 }
