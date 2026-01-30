@@ -26,9 +26,9 @@ using namespace DB;
 namespace DB::Iceberg
 {
 
-DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name)
+DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name, const String & time_zone)
 {
-    auto transform_and_argument = parseTransformAndArgument(transform_name_src);
+    auto transform_and_argument = parseTransformAndArgument(transform_name_src, time_zone);
     if (!transform_and_argument)
     {
         LOG_WARNING(&Poco::Logger::get("Iceberg Partition Pruning"), "Cannot parse iceberg transform name: {}.", transform_name_src);
@@ -46,6 +46,13 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
     {
         return makeASTFunction(
                 transform_and_argument->transform_name, make_intrusive<ASTLiteral>(*transform_and_argument->argument), make_intrusive<ASTIdentifier>(column_name));
+    }
+    if (transform_and_argument->time_zone)
+    {
+        return makeASTFunction(
+            transform_and_argument->transform_name,
+            make_intrusive<ASTIdentifier>(column_name),
+            make_intrusive<ASTLiteral>(*transform_and_argument->time_zone));
     }
     return makeASTFunction(transform_and_argument->transform_name, make_intrusive<ASTIdentifier>(column_name));
 }

@@ -224,6 +224,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"os_threads_nice_value_query", 0, 0, "New setting."},
             {"os_threads_nice_value_materialized_view", 0, 0, "New setting."},
             {"os_thread_priority", 0, 0, "Alias for os_threads_nice_value_query."},
+            {"iceberg_partition_timezone", "", "", "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {

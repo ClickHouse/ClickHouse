@@ -81,6 +81,7 @@ namespace ProfileEvents
 namespace DB::Setting
 {
     extern const SettingsUInt64 output_format_compression_level;
+    extern const SettingsTimezone iceberg_partition_timezone;
 }
 
 /// Hard to imagine a hint file larger than 10 MB
@@ -240,27 +241,31 @@ bool writeMetadataFileAndVersionHint(
 }
 
 
-std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src)
+std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src, const String & time_zone)
 {
     std::string transform_name = Poco::toLower(transform_name_src);
 
+    std::optional<String> time_zone_opt;
+    if (!time_zone.empty())
+        time_zone_opt = time_zone;
+
     if (transform_name == "year" || transform_name == "years")
-        return TransformAndArgument{"toYearNumSinceEpoch", std::nullopt};
+        return TransformAndArgument{"toYearNumSinceEpoch", std::nullopt, time_zone_opt};
 
     if (transform_name == "month" || transform_name == "months")
-        return TransformAndArgument{"toMonthNumSinceEpoch", std::nullopt};
+        return TransformAndArgument{"toMonthNumSinceEpoch", std::nullopt, time_zone_opt};
 
     if (transform_name == "day" || transform_name == "date" || transform_name == "days" || transform_name == "dates")
-        return TransformAndArgument{"toRelativeDayNum", std::nullopt};
+        return TransformAndArgument{"toRelativeDayNum", std::nullopt, time_zone_opt};
 
     if (transform_name == "hour" || transform_name == "hours")
-        return TransformAndArgument{"toRelativeHourNum", std::nullopt};
+        return TransformAndArgument{"toRelativeHourNum", std::nullopt, time_zone_opt};
 
     if (transform_name == "identity")
-        return TransformAndArgument{"identity", std::nullopt};
+        return TransformAndArgument{"identity", std::nullopt, std::nullopt};
 
     if (transform_name == "void")
-        return TransformAndArgument{"tuple", std::nullopt};
+        return TransformAndArgument{"tuple", std::nullopt, std::nullopt};
 
     if (transform_name.starts_with("truncate") || transform_name.starts_with("bucket"))
     {
@@ -284,11 +289,11 @@ std::optional<TransformAndArgument> parseTransformAndArgument(const String & tra
 
         if (transform_name.starts_with("truncate"))
         {
-            return TransformAndArgument{"icebergTruncate", argument};
+            return TransformAndArgument{"icebergTruncate", argument, std::nullopt};
         }
         else if (transform_name.starts_with("bucket"))
         {
-            return TransformAndArgument{"icebergBucket", argument};
+            return TransformAndArgument{"icebergBucket", argument, std::nullopt};
         }
     }
     return std::nullopt;
@@ -1138,7 +1143,8 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             auto column_name = source_id_to_column_name[source_id];
             int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
             auto iceberg_transform_name = field->getValue<String>(f_transform);
-            auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
+            auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name,
+                local_context->getSettingsRef()[Setting::iceberg_partition_timezone]);
             String full_argument;
             if (clickhouse_transform_name->transform_name != "identity")
             {
@@ -1147,7 +1153,10 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
                 {
                     full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
                 }
-                full_argument += column_name + ")";
+                full_argument += column_name;
+                if (clickhouse_transform_name->time_zone)
+                    full_argument += ", " + *clickhouse_transform_name->time_zone;
+                full_argument += ")";
             }
             else
             {
