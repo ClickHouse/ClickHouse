@@ -144,7 +144,7 @@ namespace DB
     M(SYSTEM_LOG_FLUSH, "SystemLogFlush") \
     M(SYSTEM_REPLICAS, "SysReplicas") \
     M(TCP_HANDLER, "TCPHandler") \
-    M(TCP_PROTOCOL_STACK, "TcpProtStack") \
+    M(TCP_PROTOCOL_STACK, "TCPProtStack") \
     M(TEST_KEEPER_PROC, "TestKeeperProc") \
     M(TEST_SCHEDULER, "TestScheduler") \
     M(TRACE_COLLECTOR, "TraceCollector") \

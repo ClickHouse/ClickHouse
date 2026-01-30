@@ -237,7 +237,6 @@ MySQLHandler::~MySQLHandler() = default;
 
 void MySQLHandler::run()
 {
-    ThreadStatus thread_status;
     DB::setThreadName(ThreadName::MYSQL_HANDLER);
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);

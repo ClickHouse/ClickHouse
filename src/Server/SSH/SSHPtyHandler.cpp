@@ -15,8 +15,6 @@
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Server/SSH/SSHChannel.h>
 #include <Server/SSH/SSHEvent.h>
-#include <Common/ThreadStatus.h>
-#include <Common/setThreadName.h>
 
 #if defined(USE_MUSL)
 #   include <poll.h>
@@ -479,8 +477,6 @@ SSHPtyHandler::~SSHPtyHandler()
 
 void SSHPtyHandler::run()
 {
-    ThreadStatus thread_status;
-    DB::setThreadName(ThreadName::SSH_HANDLER);
     ::ssh::SSHEvent event;
     auto peer_addr = socket().peerAddress();
     socket().close();

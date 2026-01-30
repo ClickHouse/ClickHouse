@@ -12,8 +12,6 @@
 #include <Server/TCPProtocolStackData.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
-#include <Common/ThreadStatus.h>
-#include <Common/setThreadName.h>
 
 namespace DB
 {
@@ -48,9 +46,6 @@ public:
 
     void run() override
     {
-        DB::setThreadName(ThreadName::TCP_PROTOCOL_STACK);
-        ThreadStatus thread_status;
-
         const auto & conf = server.config();
         TCPProtocolStackData stack_data;
         stack_data.socket = socket();
