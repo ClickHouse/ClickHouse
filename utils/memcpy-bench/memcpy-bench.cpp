@@ -897,8 +897,8 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
     VARIANT(30, sz_copy_haswell_cast)
     VARIANT(31, sz_copy_skylake_cast)
 
-    // VARIANT(40, ch_memcpy_sse)      /// ClickHouse SSE memcpy with no dispatching
-    // VARIANT(41, ch_memcpy_avx512)   /// ClickHouse AVX512 memcpy with no dispatching
+    VARIANT(40, ch_memcpy_sse) /// ClickHouse SSE memcpy with no dispatching
+    VARIANT(41, ch_memcpy_avx512) /// ClickHouse AVX512 memcpy with no dispatching
 
     return 0;
 }

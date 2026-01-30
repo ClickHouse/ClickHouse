@@ -6,26 +6,6 @@
 
 #include <stddef.h>
 
-namespace
-{
-
-bool runtimeDetectAVX512F_BMI2()
-{
-    unsigned int eax, ebx, ecx, edx;
-    if (__get_cpuid_max(0, nullptr) < 7)
-        return false;
-    __cpuid_count(7, 0, eax, ebx, ecx, edx);
-    // AVX512F is bit 16 of EBX from CPUID with EAX=7, ECX=0
-    // BMI2 is bit 8 of EBX from CPUID with EAX=7, ECX=0
-    bool has_avx512 = ((ebx & (1 << 16)) != 0) && ((ebx & (1 << 8)) != 0);
-
-    if (!has_avx512)
-        return false;
-
-    return true;
-}
-
-
 /** Custom memcpy implementation for ClickHouse.
   * It has the following benefits over using glibc's implementation:
   * 1. Avoiding dependency on specific version of glibc's symbol, like memcpy@@GLIBC_2.14 for portability.
@@ -116,20 +96,7 @@ bool runtimeDetectAVX512F_BMI2()
   * See https://habr.com/en/company/yandex/blog/457612/
   */
 
-
-__attribute__((no_sanitize("coverage")))
-__attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,bmi2"))) void
-copy_less_than_64_avx512(char * __restrict dst, const char * __restrict src, size_t size)
-{
-    /// Copy 0-63 bytes using AVX-512 masked operations
-    /// Intrinsics are the proper way - inline asm doesn't handle masking well
-    __mmask64 mask = (__mmask64)_bzhi_u64(0xFFFFFFFFFFFFFFFFull, size);
-    _mm512_mask_storeu_epi8(dst, mask, _mm512_maskz_loadu_epi8(mask, src));
-}
-
-
-__attribute__((no_sanitize("coverage"))) __attribute__((always_inline)) void *
-ch_memcpy_sse(void * __restrict dst_, const void * __restrict src_, size_t size)
+__attribute__((no_sanitize("coverage"))) void * ch_memcpy_sse(void * __restrict dst_, const void * __restrict src_, size_t size)
 {
     /// We will use pointer arithmetic, so char pointer will be used.
     /// Note that __restrict makes sense (otherwise compiler will reload data from memory
@@ -249,20 +216,140 @@ tail:
     return ret;
 }
 
+namespace
+{
+__attribute__((no_sanitize("coverage"))) __attribute__((always_inline)) void
+unaligned_store_unaligned_load_64_sse(char * __restrict dst, const char * __restrict src)
+{
+    /// Use inline assembly to ensure SSE2 instructions are used and not converted to AVX-512.
+    /// movdqu = unaligned load, movups = unaligned store (better assembler compatibility)
+    __asm__ __volatile__("movdqu   (%[src]), %%xmm0\n\t"
+                         "movdqu 16(%[src]), %%xmm1\n\t"
+                         "movdqu 32(%[src]), %%xmm2\n\t"
+                         "movdqu 48(%[src]), %%xmm3\n\t"
+                         "movups %%xmm0,   (%[dst])\n\t"
+                         "movups %%xmm1, 16(%[dst])\n\t"
+                         "movups %%xmm2, 32(%[dst])\n\t"
+                         "movups %%xmm3, 48(%[dst])\n\t"
+                         :
+                         : [src] "r"(src), [dst] "r"(dst)
+                         : "xmm0", "xmm1", "xmm2", "xmm3", "memory");
+}
+
+__attribute__((no_sanitize("coverage"))) __attribute__((always_inline)) void
+aligned_store_unaligned_load_128_sse(char * __restrict dst, const char * __restrict src)
+{
+    /// Use inline assembly to ensure SSE2 instructions are used and not converted to AVX-512.
+    /// /// movdqu = unaligned load, movdqa = aligned store
+    __asm__ __volatile__("movdqu   (%[src]), %%xmm0\n"
+                         "movdqu 16(%[src]), %%xmm1\n"
+                         "movdqu 32(%[src]), %%xmm2\n"
+                         "movdqu 48(%[src]), %%xmm3\n"
+                         "movdqu 64(%[src]), %%xmm4\n"
+                         "movdqu 80(%[src]), %%xmm5\n"
+                         "movdqu 96(%[src]), %%xmm6\n"
+                         "movdqu 112(%[src]), %%xmm7\n"
+                         "movdqa %%xmm0,   (%[dst])\n"
+                         "movdqa %%xmm1, 16(%[dst])\n"
+                         "movdqa %%xmm2, 32(%[dst])\n"
+                         "movdqa %%xmm3, 48(%[dst])\n"
+                         "movdqa %%xmm4, 64(%[dst])\n"
+                         "movdqa %%xmm5, 80(%[dst])\n"
+                         "movdqa %%xmm6, 96(%[dst])\n"
+                         "movdqa %%xmm7, 112(%[dst])\n"
+                         :
+                         : [src] "r"(src), [dst] "r"(dst)
+                         : "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "memory");
+}
+}
+
+__attribute__((no_sanitize("coverage")))
+__attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,bmi2"))) void *
+ch_memcpy_avx512(void * __restrict dst_, const void * __restrict src_, size_t size)
+{
+    char * __restrict dst = reinterpret_cast<char * __restrict>(dst_);
+    const char * __restrict src = reinterpret_cast<const char * __restrict>(src_);
+    void * ret = dst;
+
+
+    if (size < 64) [[likely]]
+    {
+    tail_64:
+        __mmask64 mask = (__mmask64)_bzhi_u64(0xFFFFFFFFFFFFFFFFull, size);
+        _mm512_mask_storeu_epi8(dst, mask, _mm512_maskz_loadu_epi8(mask, src));
+    }
+    else if (size < (256 + 64)) [[likely]]
+    {
+    tail_512:
+        while (size > 64)
+        {
+            unaligned_store_unaligned_load_64_sse(dst, src);
+            src += 64;
+            dst += 64;
+            size -= 64;
+        }
+
+        goto tail_64;
+    }
+    else
+    {
+        /// Align destination to 64 bytes boundary.
+        size_t padding = (64 - (reinterpret_cast<size_t>(dst) & 63)) & 63;
+        if (padding)
+        {
+            size -= padding;
+            __mmask64 mask = (__mmask64)_bzhi_u64(0xFFFFFFFFFFFFFFFFull, padding);
+            _mm512_mask_storeu_epi8(dst, mask, _mm512_maskz_loadu_epi8(mask, src));
+            dst += padding;
+            src += padding;
+        }
+
+        do
+        {
+            size -= 256;
+            aligned_store_unaligned_load_128_sse(dst + 0, src + 0);
+            aligned_store_unaligned_load_128_sse(dst + 128, src + 128);
+            src += 256;
+            dst += 256;
+        } while (size >= 256);
+
+        goto tail_512;
+    }
+
+    return ret;
+}
+
+namespace
+{
+
+bool runtimeDetectAVX512F_BMI2()
+{
+    unsigned int eax, ebx, ecx, edx;
+    if (__get_cpuid_max(0, nullptr) < 7)
+        return false;
+    __cpuid_count(7, 0, eax, ebx, ecx, edx);
+    // AVX512F is bit 16 of EBX from CPUID with EAX=7, ECX=0
+    // BMI2 is bit 8 of EBX from CPUID with EAX=7, ECX=0
+    bool has_avx512 = ((ebx & (1 << 16)) != 0) && ((ebx & (1 << 8)) != 0);
+
+    if (!has_avx512)
+        return false;
+
+    return true;
+}
+
+using memcpy_func = void * (*)(void *, const void *, size_t);
+__attribute__((noinline)) memcpy_func get_memcpy_impl()
+{
+    return runtimeDetectAVX512F_BMI2() ? ch_memcpy_avx512 : ch_memcpy_sse;
+}
+
 }
 
 extern "C" void * memcpy(void * __restrict dst, const void * __restrict src, size_t size)
 {
-    static const bool avx512_available = runtimeDetectAVX512F_BMI2();
-
-    /// Use AVX-512 masked operation for small sizes - much faster than branchy SSE path
-    if (avx512_available && size < 64)
-    {
-        copy_less_than_64_avx512(reinterpret_cast<char *>(dst), reinterpret_cast<const char *>(src), size);
-        return dst;
-    }
-
-    return ch_memcpy_sse(dst, src, size);
+    static const memcpy_func impl = get_memcpy_impl();
+    return impl(dst, src, size);
 }
 
 #endif
