@@ -6927,6 +6927,9 @@ Replace table function engines with their -Cluster alternatives
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
 Allow usage of materialized views with parallel replicas
 )", 0) \
+    DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
+Allow pushing down filters to part of query which parallel replicas choose to execute
+)", BETA) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
 )", BETA, allow_database_iceberg) \
