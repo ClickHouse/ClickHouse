@@ -503,6 +503,7 @@ protected:
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
+    mutable std::mutex table_function_results_mutex;
 
     ContextWeakMutablePtr query_context;
     ContextWeakMutablePtr session_context;  /// Session context or nullptr. Could be equal to this.
