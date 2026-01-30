@@ -825,6 +825,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// The name could be non-unique in case of stale files from previous runs.
     String full_path = new_data_part->getDataPartStorage().getFullPath();
 
+    data.commitToManifest(new_data_part, ManifestOpType::PreCommit);
+
     if (new_data_part->getDataPartStorage().exists())
     {
         LOG_WARNING(log, "Removing old temporary directory {}", full_path);

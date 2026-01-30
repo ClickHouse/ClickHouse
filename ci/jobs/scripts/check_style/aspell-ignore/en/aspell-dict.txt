@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3453
+personal_ws-1.1 en 3457
 aarch
 AArch
 ACLs
@@ -734,6 +734,7 @@ MergeTreePartsLoaderThreads
 MergeTreePartsLoaderThreadsActive
 MergeTreeReadTaskRequestsSent
 MergeTreeSettings
+MergeTreeWithManifest
 MergerMutator
 Mersenne
 MessagePack
@@ -924,6 +925,9 @@ PartsOutdated
 PartsPreActive
 PartsPreCommitted
 PartsTemporary
+PreCommit
+PreDetach
+PreRemove
 PartsWide
 PeerDB
 PendingAsyncInsert

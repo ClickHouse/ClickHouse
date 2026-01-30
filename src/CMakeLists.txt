@@ -158,8 +158,11 @@ if (USE_LIBPQXX)
     add_headers_and_sources(dbms Storages/PostgreSQL)
 endif()
 
+add_headers_and_sources(dbms Storages/MergeTree/Manifest)
+
 if (TARGET ch_contrib::rocksdb)
     add_headers_and_sources(dbms Storages/RocksDB)
+    add_headers_and_sources(dbms Storages/MergeTree/Manifest/RocksDB)
 endif()
 
 if (TARGET ch_contrib::aws_s3)
