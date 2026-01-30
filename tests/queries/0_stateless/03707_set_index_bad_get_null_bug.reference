@@ -1,0 +1,14 @@
+Expression
+  Filter
+    ReadFromMergeTree
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 1/1
+      Skip
+        Name: v
+        Description: set GRANULARITY 1
+        Parts: 0/1
+        Granules: 0/1
+      Ranges: 0
