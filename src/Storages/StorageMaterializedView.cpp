@@ -3,6 +3,7 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -24,6 +25,7 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -367,7 +369,62 @@ void StorageMaterializedView::read(
         query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
 
     if (!getInMemoryMetadataPtr()->select.select_table_id.empty())
-        context->checkAccess(AccessType::SELECT, getInMemoryMetadataPtr()->select.select_table_id, column_names);
+    {
+        /// Build a mapping from MV column names to their required source columns.
+        /// For each SELECT expression in the MV query, we extract:
+        /// - The output column name (alias or expression name)
+        /// - The source columns required to compute that expression
+        ///
+        /// This handles cases like:
+        /// - SELECT a FROM src -> MV column "a" needs source column "a"
+        /// - SELECT b AS x FROM src -> MV column "x" needs source column "b"
+        /// - SELECT c+1 AS y FROM src -> MV column "y" needs source column "c"
+        ///
+        /// For JOINs, the left table is considered the source table that triggers
+        /// the MV (select_table_id). We only check access on that table here.
+        /// Columns from joined tables are not checked.
+        std::unordered_map<String, NameSet> mv_column_to_source_columns;
+
+        const auto * select_with_union = getInMemoryMetadataPtr()->select.select_query->as<ASTSelectWithUnionQuery>();
+        if (select_with_union && select_with_union->list_of_selects)
+        {
+            for (const auto & select_ast : select_with_union->list_of_selects->children)
+            {
+                const auto * select_query = select_ast->as<ASTSelectQuery>();
+                if (select_query && select_query->select())
+                {
+                    for (const auto & expr : select_query->select()->children)
+                    {
+                        String mv_column_name = expr->getAliasOrColumnName();
+                        RequiredSourceColumnsData expr_columns_data;
+                        RequiredSourceColumnsVisitor(expr_columns_data).visit(expr);
+                        NameSet required = expr_columns_data.requiredColumns();
+                        /// Merge with existing columns for this MV column (from other UNION parts)
+                        mv_column_to_source_columns[mv_column_name].insert(required.begin(), required.end());
+                    }
+                }
+            }
+        }
+
+        /// Collect source columns needed for the requested MV columns
+        NameSet source_columns_needed;
+        for (const auto & name : column_names)
+        {
+            auto it = mv_column_to_source_columns.find(name);
+            if (it != mv_column_to_source_columns.end())
+                source_columns_needed.insert(it->second.begin(), it->second.end());
+        }
+
+        /// Filter to only columns that exist in the source table
+        Names select_table_column_names;
+        StorageInMemoryMetadata select_table_metadata = DatabaseCatalog::instance().getTable(getInMemoryMetadataPtr()->select.select_table_id, context)->getInMemoryMetadata();
+        for (const auto & name : source_columns_needed)
+        {
+            if (select_table_metadata.columns.has(name))
+                select_table_column_names.push_back(name);
+        }
+        context->checkAccess(AccessType::SELECT, getInMemoryMetadataPtr()->select.select_table_id, select_table_column_names);
+    }
 
     auto storage_id = storage->getStorageID();
 
