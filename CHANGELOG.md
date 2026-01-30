@@ -14,7 +14,7 @@
 
 # 2026 Changelog
 
-### <a id="261"></a> ClickHouse release 26.1, 2026-01-29. [Presentation](https://presentations.clickhouse.com/2026-release-26.1/), [Video](TODO)
+### <a id="261"></a> ClickHouse release 26.1, 2026-01-29. [Presentation](https://presentations.clickhouse.com/2026-release-26.1/), [Video](https://www.youtube.com/watch?v=fWuYt4M0xE4)
 
 #### Backward Incompatible Change
 * Fix inconsistent formatting caused by an incorrect substitution of aliases in the formatter. This closes [#82833](https://github.com/ClickHouse/ClickHouse/issues/82833). This closes [#82832](https://github.com/ClickHouse/ClickHouse/issues/82832). This closes [#68296](https://github.com/ClickHouse/ClickHouse/issues/68296). This change is potentially backward incompatible: when the analyzer is disabled, certain CREATE VIEW queries with IN referencing an alias cannot be processed. To prevent the incompatibility, enable the analyzer (it is enabled by default since 24.3). [#82838](https://github.com/ClickHouse/ClickHouse/pull/82838) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
