@@ -69,6 +69,10 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// Don't allow constant folding. In some cases we might need to collapse chain of tupleElement functions
+    /// into a single tupleElement function with combined element name. And to do so after function resolution,
+    /// we should not execute nested tupleElement functions on constants.
+    bool isSuitableForConstantFolding() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForDynamic() const override { return true; }
@@ -101,11 +105,22 @@ public:
 
         if (const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(input_type))
         {
-            std::optional<size_t> index = getTupleElementIndex(arguments[1].column, *tuple, number_of_arguments);
-            if (index.has_value())
+            DataTypePtr element_type;
+            if (const auto * element_name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
             {
-                DataTypePtr element_type = tuple->getElements()[index.value()];
+                element_type = tuple->tryGetSubcolumnType(element_name_col->getValue<String>());
+                if (!element_type && number_of_arguments == 2)
+                    throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", element_name_col->getValue<String>());
+            }
+            else
+            {
+                std::optional<size_t> index = getTupleElementIndex(arguments[1].column, *tuple, number_of_arguments);
+                if (index.has_value())
+                    element_type = tuple->getElements()[index.value()];
+            }
 
+            if (element_type)
+            {
                 if (is_input_type_nullable && element_type->canBeInsideNullable())
                     element_type = std::make_shared<DataTypeNullable>(element_type);
 
@@ -201,17 +216,29 @@ public:
         if (const DataTypeTuple * input_type_as_tuple = checkAndGetDataType<DataTypeTuple>(input_type))
         {
             const ColumnTuple & input_col_as_tuple = checkAndGetColumn<ColumnTuple>(*input_col);
-            std::optional<size_t> index = getTupleElementIndex(arguments[1].column, *input_type_as_tuple, arguments.size());
+            DataTypePtr element_type;
+            if (const auto * element_name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
+            {
+                res = input_type_as_tuple->tryGetSubcolumn(element_name_col->getValue<String>(), input_col_as_tuple.getPtr());
+                element_type =  input_type_as_tuple->tryGetSubcolumnType(element_name_col->getValue<String>());
+                if (!res && arguments.size() == 2)
+                    throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", element_name_col->getValue<String>());
+            }
+            else
+            {
+                std::optional<size_t> index = getTupleElementIndex(arguments[1].column, *input_type_as_tuple, arguments.size());
+                if (index.has_value())
+                {
+                    res = input_col_as_tuple.getColumnPtr(index.value());
+                    element_type = input_type_as_tuple->getElements()[index.value()];
+                }
+            }
 
-            if (!index.has_value())
+            if (!res)
                 return arguments[2].column;
-
-            res = input_col_as_tuple.getColumnPtr(index.value());
 
             if (null_map_column)
             {
-                DataTypePtr element_type = input_type_as_tuple->getElements()[index.value()];
-
                 if (const auto * res_nullable = typeid_cast<const ColumnNullable *>(res.get()))
                 {
                     ColumnPtr merged_null_map = mergeNullMaps(null_map_column, res_nullable->getNullMapColumnPtr());
@@ -335,18 +362,6 @@ private:
             return std::nullopt;
         }
 
-        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(index_column.get()))
-        {
-            std::optional<size_t> index = tuple.tryGetPositionByName(name_col->getValue<String>());
-
-            if (index.has_value())
-                return index;
-
-            if (argument_size == 2)
-                throw Exception(
-                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
-            return std::nullopt;
-        }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant Int, UInt or String", getName());
     }
 
