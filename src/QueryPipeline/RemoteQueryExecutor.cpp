@@ -776,7 +776,7 @@ void RemoteQueryExecutor::finish()
       * - received an unknown packet from one replica;
       * then you do not need to read anything.
       */
-    if (!isQueryPending() || hasThrownException())
+    if (!isQueryPending() || hasThrownException() || was_cancelled)
         return;
 
     /** If you have not read all the data yet, but they are no longer needed.
