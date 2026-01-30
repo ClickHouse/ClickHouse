@@ -858,6 +858,13 @@ void * sz_copy_skylake_cast(void * __restrict destination, const void * __restri
     return dst;
 }
 
+void * sz_copy_cast(void * __restrict destination, const void * __restrict source, size_t size)
+{
+    void * dst = destination;
+    sz_copy(static_cast<sz_ptr_t>(destination), static_cast<sz_cptr_t>(source), size);
+    return dst;
+}
+
 #define VARIANT(N, NAME) \
     if (memcpy_variant == (N)) \
         return test(dst, src, size, iterations, num_threads, std::forward<F>(generator), NAME, #NAME);
@@ -896,6 +903,7 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
 
     VARIANT(30, sz_copy_haswell_cast)
     VARIANT(31, sz_copy_skylake_cast)
+    VARIANT(32, sz_copy_cast)
 
     VARIANT(40, ch_memcpy_sse) /// ClickHouse SSE memcpy with no dispatching
     VARIANT(41, ch_memcpy_avx512) /// ClickHouse AVX512 memcpy with no dispatching

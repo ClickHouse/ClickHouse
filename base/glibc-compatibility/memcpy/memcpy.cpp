@@ -322,4 +322,15 @@ extern "C" void * memcpy(void * __restrict dst, const void * __restrict src, siz
     return impl(dst, src, size);
 }
 
+#elif defined(__aarch64__)
+
+#include <stringzilla/stringzilla.h>
+
+extern "C" void * memcpy(void * __restrict dst, const void * __restrict src, size_t size)
+{
+    auto * destination = dst;
+    sz_copy_neon(static_cast<sz_ptr_t>(dst), static_cast<sz_cptr_t>(src), size);
+    return destination;
+}
+
 #endif
