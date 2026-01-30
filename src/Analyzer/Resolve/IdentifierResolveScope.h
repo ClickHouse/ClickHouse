@@ -125,6 +125,41 @@ using ProjectionName = String;
 using ProjectionNames = std::vector<ProjectionName>;
 constexpr auto PROJECTION_NAME_PLACEHOLDER = "__projection_name_placeholder";
 
+struct IdentifierResolveCache
+{
+    /// Disable cache during join tree resolution when table expressions aren't fully initialized
+    void disable() { enabled = false; }
+    void enable() { enabled = true; }
+
+    const IdentifierResolveResult * find(const IdentifierLookup & lookup) const
+    {
+        if (!enabled)
+            return nullptr;
+
+        auto it = identifier_to_resolved_expression.find(lookup);
+        if (it == identifier_to_resolved_expression.end())
+            return nullptr;
+
+        return &it->second;
+    }
+
+    void insert(const IdentifierLookup & lookup, const IdentifierResolveResult & result)
+    {
+        if (!enabled)
+            return;
+
+        identifier_to_resolved_expression[lookup] = result;
+    }
+
+    void clear() { identifier_to_resolved_expression.clear(); }
+
+private:
+    /// Cached resolved identifiers
+    std::unordered_map<IdentifierLookup, IdentifierResolveResult, IdentifierLookupHash> identifier_to_resolved_expression;
+
+    bool enabled = true;
+};
+
 struct IdentifierResolveScope
 {
     /// Construct identifier resolve scope using scope node, and parent scope
@@ -163,6 +198,9 @@ struct IdentifierResolveScope
 
     /// Table expressions in resolve process
     std::unordered_set<const IQueryTreeNode *> table_expressions_in_resolve_process;
+
+    /// Cached resolved identifiers
+    IdentifierResolveCache identifier_to_resolved_expression_cache;
 
     /// Table expression node to data
     std::unordered_map<QueryTreeNodePtr, AnalysisTableExpressionData> table_expression_node_to_data;

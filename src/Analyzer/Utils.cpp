@@ -839,6 +839,23 @@ bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_na
     return visitor.hasFunction();
 }
 
+bool hasSubqueryNode(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    if (isSubqueryNodeType(node->getNodeType()))
+        return true;
+
+    for (const auto & child : node->getChildren())
+    {
+        if (hasSubqueryNode(child))
+            return true;
+    }
+
+    return false;
+}
+
 namespace
 {
 

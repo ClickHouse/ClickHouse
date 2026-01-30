@@ -208,7 +208,7 @@ private:
 
     IdentifierResolveResult tryResolveIdentifier(const IdentifierLookup & identifier_lookup,
         IdentifierResolveScope & scope,
-        IdentifierResolveContext identifier_resolve_settings = {});
+        IdentifierResolveContext identifier_resolve_context = {});
 
     /// Resolve query tree nodes functions
 

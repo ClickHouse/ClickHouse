@@ -4,6 +4,7 @@
 #include <IO/Operators.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
 
 namespace DB
 {

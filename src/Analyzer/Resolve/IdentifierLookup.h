@@ -69,7 +69,8 @@ struct IdentifierLookup
 
 inline bool operator==(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
 {
-    return lhs.identifier.getFullName() == rhs.identifier.getFullName() && lhs.lookup_context == rhs.lookup_context;
+    return lhs.identifier.getFullName() == rhs.identifier.getFullName()
+        && lhs.lookup_context == rhs.lookup_context;
 }
 
 [[maybe_unused]] inline bool operator!=(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
@@ -81,7 +82,8 @@ struct IdentifierLookupHash
 {
     size_t operator()(const IdentifierLookup & identifier_lookup) const
     {
-        return std::hash<std::string>()(identifier_lookup.identifier.getFullName()) ^ static_cast<uint8_t>(identifier_lookup.lookup_context);
+        return std::hash<std::string>()(identifier_lookup.identifier.getFullName())
+            ^ static_cast<uint8_t>(identifier_lookup.lookup_context);
     }
 };
 
@@ -211,6 +213,11 @@ struct IdentifierResolveContext
     /// Initial scope where identifier resolution started.
     /// Should be used to resolve aliased expressions.
     IdentifierResolveScope * scope_to_resolve_alias_expression = nullptr;
+
+    bool isInitialContext() const
+    {
+        return scope_to_resolve_alias_expression == nullptr;
+    }
 
     IdentifierResolveContext & resolveAliasesAt(IdentifierResolveScope * scope_to_resolve_alias_expression_)
     {
