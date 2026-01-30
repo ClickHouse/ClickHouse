@@ -176,7 +176,12 @@ QueryConditionCache::Entry::Entry(size_t mark_count)
 
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-QueryConditionCache::Entry::Entry(size_t mark_count_, const UUID & table_id_, const String & part_name_, const UInt64 condition_hash_, const String & condition_)
+QueryConditionCache::Entry::Entry(
+    size_t mark_count_,
+    const UUID & table_id_,
+    const String & part_name_,
+    UInt64 condition_hash_,
+    const String & condition_)
     : table_id(table_id_)
     , part_name(part_name_)
     , condition_hash(condition_hash_)

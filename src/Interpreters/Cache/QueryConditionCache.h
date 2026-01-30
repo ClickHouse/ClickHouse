@@ -51,7 +51,7 @@ private:
         explicit Entry(size_t mark_count); /// (**)
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-        Entry(size_t mark_count_, const UUID & table_id_, const String & part_name_, const UInt64 condition_hash_, const String & condition_);
+        Entry(size_t mark_count_, const UUID & table_id_, const String & part_name_, UInt64 condition_hash_, const String & condition_);
 #endif
 
         /// (*) You might wonder why Entry has its own mutex considering that CacheBase locks internally already. The reason is that
