@@ -8018,6 +8018,20 @@ std::vector<std::string_view> Settings::getAllRegisteredNames() const
     return setting_names;
 }
 
+std::vector<std::string_view> Settings::getAllAliases() const
+{
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+    {
+        for (const auto & alias : aliases)
+        {
+            alias_names.emplace_back(alias);
+        }
+    }
+    return alias_names;
+}
+
 std::vector<std::string_view> Settings::getChangedAndObsoleteNames() const
 {
     std::vector<std::string_view> setting_names;
