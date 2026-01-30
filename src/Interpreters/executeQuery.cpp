@@ -1966,7 +1966,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
             res.null_format = true;
     }
 
-    /// Skip the 'SYSTEM ENABLE FAILPOINT' query itself
+    /// The 'SYSTEM ENABLE FAILPOINT terminate_with_exception' query itself should succeed.
     if (ast && !ast->as<ASTSystemQuery>())
     {
         fiu_do_on(FailPoints::terminate_with_exception,
