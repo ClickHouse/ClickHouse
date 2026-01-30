@@ -15,11 +15,16 @@ namespace ErrorCodes
 }
 
 SerializationObjectDynamicPath::SerializationObjectDynamicPath(
-    const DB::SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_)
+    const DB::SerializationPtr & nested_,
+    const String & path_,
+    const String & path_subcolumn_,
+    const DataTypePtr & dynamic_type_,
+    const SerializationPtr & dynamic_serialization_,
+    const DataTypePtr & subcolumn_type_)
     : SerializationWrapper(nested_)
     , path(path_)
     , path_subcolumn(path_subcolumn_)
-    , dynamic_serialization(std::make_shared<SerializationDynamic>())
+    , dynamic_serialization(dynamic_serialization_)
     , dynamic_type(dynamic_type_)
     , subcolumn_type(subcolumn_type_)
 {
@@ -122,6 +127,7 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkStatePrefix(
             path,
             path_subcolumn,
             dynamic_type,
+            dynamic_serialization,
             subcolumn_type,
             getSharedDataPathBucket(path, object_structure_state->shared_data_buckets));
         dynamic_path_state->shared_data_path_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_path_state->nested_state, cache);

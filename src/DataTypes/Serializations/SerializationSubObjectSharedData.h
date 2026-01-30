@@ -17,7 +17,12 @@ namespace ErrorCodes
 class SerializationSubObjectSharedData final : public SimpleTextSerialization
 {
 public:
-    SerializationSubObjectSharedData(SerializationObjectSharedData::SerializationVersion serialization_version_, size_t buckets_, const String & paths_prefix_, const DataTypePtr & dynamic_type_);
+    SerializationSubObjectSharedData(
+        SerializationObjectSharedData::SerializationVersion serialization_version_,
+        size_t buckets_,
+        const String & paths_prefix_,
+        const DataTypePtr & dynamic_type_,
+        const SerializationPtr & dynamic_serialization_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

@@ -17,12 +17,13 @@ SerializationSubObjectSharedData::SerializationSubObjectSharedData(
     SerializationObjectSharedData::SerializationVersion serialization_version_,
     size_t buckets_,
     const String & paths_prefix_,
-    const DataTypePtr & dynamic_type_)
+    const DataTypePtr & dynamic_type_,
+    const SerializationPtr & dynamic_serialization_)
     : serialization_version(serialization_version_)
     , buckets(buckets_)
     , paths_prefix(paths_prefix_)
     , dynamic_type(dynamic_type_)
-    , dynamic_serialization(dynamic_type->getDefaultSerialization())
+    , dynamic_serialization(dynamic_serialization_)
     , serialization_map(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
 {
 }

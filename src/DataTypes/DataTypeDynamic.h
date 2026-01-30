@@ -48,7 +48,7 @@ public:
     void updateHashImpl(SipHash & hash) const override;
 
 private:
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
     String doGetName() const override;
 
     size_t max_dynamic_types;

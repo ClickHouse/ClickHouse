@@ -12,7 +12,13 @@ namespace DB
 class SerializationObjectDynamicPath final : public SerializationWrapper
 {
 public:
-    SerializationObjectDynamicPath(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_);
+    SerializationObjectDynamicPath(
+        const SerializationPtr & nested_,
+        const String & path_,
+        const String & path_subcolumn_,
+        const DataTypePtr & dynamic_type_,
+        const SerializationPtr & dynamic_serialization_,
+        const DataTypePtr & subcolumn_type_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

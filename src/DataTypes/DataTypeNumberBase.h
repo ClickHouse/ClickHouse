@@ -54,7 +54,7 @@ public:
 
     void updateHashImpl(SipHash &) const override { /* For numeric types, the type ID is sufficient */ }
 
-    SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationNumber<T>>(); }
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return std::make_shared<SerializationNumber<T>>(); }
 };
 
 /// Prevent implicit template instantiation of DataTypeNumberBase for common numeric types
