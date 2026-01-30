@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -175,14 +176,80 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
     }
 
+    template <typename EnumType, typename ColumnType>
+    static void processEnumColumn(const ColumnType * enum_col, const EnumType * enum_type, ColumnString & res, std::unordered_map<Int32, Int32> & enum_to_string_map, bool & need_transform)
+    {
+        /// Calculate the average size of enum names and compare it with the total size of all enum names.
+        Float64 avg_enum_name_size{};
+        size_t total_enum_name_size{};
+        for (const auto & [n, _] : enum_type->getValues())
+            total_enum_name_size += n.size();
+        avg_enum_name_size = static_cast<Float64>(total_enum_name_size) / enum_type->getValues().size();
+        need_transform = (avg_enum_name_size * enum_col->size() > static_cast<Float64>(total_enum_name_size));
+
+        if (need_transform)
+        {
+            const auto size = enum_type->getValues().size();
+            res.reserve(size);
+            enum_to_string_map.reserve(size);
+            Int32 i = 0;
+            for (const auto & [ename, v] : enum_type->getValues())
+            {
+                enum_to_string_map.emplace(v, i++);
+                res.insertData(ename.data(), ename.size());
+            }
+        }
+        else
+        {
+            const auto size = enum_col->size();
+            res.reserve(size);
+            for (size_t i = 0; i < size; ++i)
+            {
+                StringRef value = enum_type->getNameForValue(enum_col->getData()[i]);
+                res.insertData(value.data, value.size);
+            }
+        }
+    }
+
+    /// Process Enum8 or Enum16 column and generate a string column from it.
+    /// need_transform is set to true if the average size of enum names multiplied by the number of rows is greater than the total size of all enum names, and use the enum_to_string_map to store the mapping from enum value to string value.
+    template <typename EnumType>
+    static ColumnPtr genStringColumnFromEnumColumn(const ColumnWithTypeAndName & argument, bool & need_transform, std::unordered_map<Int32, Int32> & enum_to_string_map)
+    {
+        const auto * col = argument.column.get();
+        const auto * type = argument.type.get();
+        auto res = ColumnString::create();
+
+        if constexpr (std::is_same_v<DataTypeEnum8, EnumType>)
+        {
+            const auto * enum_col = typeid_cast<const ColumnInt8 *>(col);
+            const auto * enum_type = typeid_cast<const DataTypeEnum8 *>(type);
+            processEnumColumn(enum_col, enum_type, *res, enum_to_string_map, need_transform);
+        }
+        else if constexpr (std::is_same_v<DataTypeEnum16, EnumType>)
+        {
+            const auto * enum_col = typeid_cast<const ColumnInt16 *>(col);
+            const auto * enum_type = typeid_cast<const DataTypeEnum16 *>(type);
+            processEnumColumn(enum_col, enum_type, *res, enum_to_string_map, need_transform);
+        }
+        return res;
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto & haystack_argument = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0] : arguments[1];
         ColumnPtr column_haystack = haystack_argument.column;
         const ColumnPtr & column_needle = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[1].column : arguments[0].column;
 
-        if (isEnum(haystack_argument.type))
-            column_haystack = castColumn(haystack_argument, std::make_shared<DataTypeString>());
+
+        size_t origin_input_rows_count = input_rows_count;
+        bool need_transform = false;
+        std::unordered_map<Int32, Int32> enum_to_string_map{};
+        if (isEnum8(haystack_argument.type))
+            column_haystack = genStringColumnFromEnumColumn<DataTypeEnum8>(haystack_argument, need_transform, enum_to_string_map);
+
+        if (isEnum16(haystack_argument.type))
+            column_haystack = genStringColumnFromEnumColumn<DataTypeEnum16>(haystack_argument, need_transform, enum_to_string_map);
 
         ColumnPtr column_start_pos = nullptr;
         if (arguments.size() >= 3)
@@ -237,6 +304,7 @@ public:
         }
 
         vec_res.resize(column_haystack->size());
+        input_rows_count = column_haystack->size();
         auto null_map = create_null_map();
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
@@ -296,6 +364,58 @@ public:
                 arguments[0].column->getName(),
                 arguments[1].column->getName(),
                 getName());
+
+        /// Process the result if the haystack column is an Enum column.
+        if (need_transform)
+        {
+            auto final_res = ColumnVector<ResultType>::create();
+            auto & final_vec_res = final_res->getData();
+            final_vec_res.resize(origin_input_rows_count);
+            column_haystack = haystack_argument.column;
+
+            auto processEnumColumn = [&](const auto * enum_col)
+            {
+                const auto & enum_col_data = enum_col->getData();
+                auto processRow = [&](size_t i, ColumnUInt8::Container * final_null_map_data = nullptr, const ColumnUInt8::Container * null_map_data = nullptr)
+                {
+                    size_t idx = enum_to_string_map[enum_col_data[i]];
+                    final_vec_res[i] = vec_res[idx];
+                    if constexpr (execution_error_policy == ExecutionErrorPolicy::Null)
+                        (*final_null_map_data)[i] = (*null_map_data)[idx];
+                };
+
+                if constexpr (execution_error_policy == ExecutionErrorPolicy::Null)
+                {
+                    auto final_null_map = create_null_map();
+                    auto & final_null_map_data = final_null_map->getData();
+                    final_null_map_data.resize(origin_input_rows_count);
+                    const auto & null_map_data = null_map->getData();
+
+                    for (size_t i = 0; i < origin_input_rows_count; ++i)
+                        processRow(i, &final_null_map_data, &null_map_data);
+
+                    null_map = std::move(final_null_map);
+                }
+                else
+                {
+                    for (size_t i = 0; i < origin_input_rows_count; ++i)
+                        processRow(i);
+                }
+
+            };
+
+            if (isEnum8(haystack_argument.type))
+            {
+                const auto * enum_col = typeid_cast<const ColumnInt8 *>(column_haystack.get());
+                processEnumColumn(enum_col);
+            }
+            else if (isEnum16(haystack_argument.type))
+            {
+                const auto * enum_col = typeid_cast<const ColumnInt16 *>(column_haystack.get());
+                processEnumColumn(enum_col);
+            }
+            col_res = std::move(final_res);
+        }
 
         if constexpr (execution_error_policy == ExecutionErrorPolicy::Null)
             return ColumnNullable::create(std::move(col_res), std::move(null_map));
