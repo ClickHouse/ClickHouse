@@ -30,6 +30,7 @@ namespace DB::ErrorCodes
     extern const int WASM_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace DB::WebAssembly
@@ -440,7 +441,7 @@ public:
     {
         auto export_it = function_exports_map.find(function_name);
         if (export_it == function_exports_map.end())
-            throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' is not found in module exports", function_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' is not found in module exports", function_name);
         return buildFunctionDeclaration(function_name, export_it->second);
     }
 

@@ -39,6 +39,7 @@ namespace DB::ErrorCodes
 extern const int TOO_LARGE_STRING_SIZE;
 extern const int WASM_ERROR;
 extern const int NOT_IMPLEMENTED;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace DB::WebAssembly
@@ -541,7 +542,7 @@ public:
     {
         auto export_it = exports.find(function_name);
         if (export_it == exports.end() || export_it->second == nullptr)
-            throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' is not found in module exports", function_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' is not found in module exports", function_name);
         const auto * function_type = WasmEdge_ExportTypeGetFunctionType(ast_module.get(), export_it->second);
         if (!function_type)
             throw Exception(ErrorCodes::WASM_ERROR, "Cannot get function for export '{}'", function_name);
