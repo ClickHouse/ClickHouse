@@ -739,7 +739,8 @@ void Reader::preparePrewhere()
             for (size_t i = 0; i < prewhere_expr_info.steps.size(); ++i)
             {
                 auto filter = prewhere_expr_info.steps[i];
-                add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
+                if (needs_filter)
+                    add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
             }
         }
         else
