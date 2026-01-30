@@ -1,0 +1,74 @@
+Test 1: Schema inference
+Magnus Carlsen	Ian Nepomniachtchi	1-0
+Fabiano Caruana	Praggnanandhaa R	0-1
+Ding Liren	Alireza Firouzja	1/2-1/2
+Test 2: Select all columns with full schema
+World Chess Championship	Magnus Carlsen	Ian Nepomniachtchi	1-0	2859	2793
+London Chess Classic	Fabiano Caruana	Praggnanandhaa R	0-1	2770	2709
+Sinquefield Cup	Ding Liren	Alireza Firouzja	1/2-1/2	2787	2703
+Test 3: Filter by result
+Magnus Carlsen	Ian Nepomniachtchi	1-0
+Test 4: Count games
+3
+Test 5: Describe table
+event	String					
+site	String					
+date	String					
+round	String					
+white	String					
+black	String					
+result	String					
+white_elo	Int32					
+black_elo	Int32					
+moves	String					
+Test 6: Aggregation - Count by result
+0-1	1
+1-0	1
+1/2-1/2	1
+Test 7: Minimal columns
+World Chess Championship	Magnus Carlsen	Ian Nepomniachtchi
+London Chess Classic	Fabiano Caruana	Praggnanandhaa R
+Sinquefield Cup	Ding Liren	Alireza Firouzja
+Test 8: Filter by ELO rating
+Magnus Carlsen	Ian Nepomniachtchi	2859	2793
+Fabiano Caruana	Praggnanandhaa R	2770	2709
+Ding Liren	Alireza Firouzja	2787	2703
+Test 9: Group by site
+London, England	1
+Saint Louis, USA	1
+Moscow, Russia	1
+Test 10: Sort by round
+London Chess Classic	2	Fabiano Caruana	Praggnanandhaa R
+Sinquefield Cup	3	Ding Liren	Alireza Firouzja
+World Chess Championship	1	Magnus Carlsen	Ian Nepomniachtchi
+Test 11: Get moves
+Magnus Carlsen	Ian Nepomniachtchi	1
+Fabiano Caruana	Praggnanandhaa R	1
+Ding Liren	Alireza Firouzja	1
+Test 12: Extract dates
+2023.11.15	World Chess Championship
+2023.11.20	London Chess Classic
+2023.11.25	Sinquefield Cup
+Test 13: Create table and insert from PGN
+3
+Sinquefield Cup	Ding Liren	Alireza Firouzja	1/2-1/2	2787	2703
+Test 14: Partial column selection
+Magnus Carlsen	Ian Nepomniachtchi
+Fabiano Caruana	Praggnanandhaa R
+Ding Liren	Alireza Firouzja
+Test 15: Aggregation - Average ELO
+2805	2735
+Test 16: Order by result
+Fabiano Caruana	Praggnanandhaa R	0-1
+Magnus Carlsen	Ian Nepomniachtchi	1-0
+Ding Liren	Alireza Firouzja	1/2-1/2
+Test 17: Limit 1
+	
+Test 18: Offset
+	
+Test 19: NULL handling for missing/default values
+Magnus Carlsen	Ian Nepomniachtchi	2859
+Fabiano Caruana	Praggnanandhaa R	2770
+Ding Liren	Alireza Firouzja	2787
+Test 20: Format registered
+PGN

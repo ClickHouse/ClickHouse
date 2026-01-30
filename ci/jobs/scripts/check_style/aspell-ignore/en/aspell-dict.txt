@@ -896,6 +896,7 @@ OverflowMode
 OverflowModeGroupBy
 PAAMAYIM
 PCRE
+PGN
 PRCP
 PREWHERE
 PROCESSLIST

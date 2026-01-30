@@ -1,0 +1,27 @@
+=== Test 1: Basic select with explicit schema ===
+Player A	Player B	1-0
+Player C	Player D	0-1
+=== Test 2: Full schema (describe) ===
+event	String					
+site	String					
+date	String					
+round	String					
+white	String					
+black	String					
+result	String					
+white_elo	Int32					
+black_elo	Int32					
+moves	String					
+=== Test 3: With ELO ratings ===
+Player A	Player B	2500	2400
+Player C	Player D	2600	2550
+=== Test 4: Count games ===
+2
+=== Test 5: Filter by result ===
+Player A	Player B	1-0
+=== Test 6: Insert into table ===
+2
+Player C	0-1
+=== Test 7: All columns ===
+Test Event	Test Site	2024.01.01	1	Player A	Player B	1-0	2500	2400	1
+Test Event 2	Test Site 2	2024.01.02	2	Player C	Player D	0-1	2600	2550	1

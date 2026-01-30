@@ -1,0 +1,15 @@
+Test 1: Missing optional tags
+Player A	Player B	1-0	
+Player C	Player D	0-1	
+Alice	Bob	1/2-1/2	
+Charlie	Diana	*	
+Test 2: Multiple games count
+4
+Test 3: Group by result
+*	1
+0-1	1
+1-0	1
+1/2-1/2	1
+Test 4: Missing ELO values
+Player A	0	0
+Player C	0	0
