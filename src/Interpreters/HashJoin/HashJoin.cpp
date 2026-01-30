@@ -1380,11 +1380,28 @@ struct AdderNonJoined
 /// Based on:
 ///   - map offsetInternal saved in used_flags for single disjuncts
 ///   - flags in BlockWithFlags for multiple disjuncts
+///
+/// For parallel iteration over two-level hash maps, bucket_idx and num_buckets
+/// can be specified to process only buckets where (bucket % num_buckets == bucket_idx)
 class NotJoinedHash final : public NotJoinedBlocks::RightColumnsFiller
 {
 public:
+    /// Constructor for iterating over all buckets
     NotJoinedHash(const HashJoin & parent_, UInt64 max_block_size_, bool flag_per_row_)
-        : parent(parent_), max_block_size(max_block_size_), flag_per_row(flag_per_row_), current_block_start(0)
+        : NotJoinedHash(parent_, max_block_size_, flag_per_row_, 0, 1)
+    {
+    }
+
+    /// Constructor for iterating over a subset of buckets (for parallel non-joined emission)
+    /// Processes buckets {bucket_idx, bucket_idx + num_buckets, bucket_idx + 2*num_buckets, ...}
+    NotJoinedHash(const HashJoin & parent_, UInt64 max_block_size_, bool flag_per_row_,
+                  size_t bucket_idx_, size_t num_buckets_)
+        : parent(parent_)
+        , max_block_size(max_block_size_)
+        , flag_per_row(flag_per_row_)
+        , bucket_idx(bucket_idx_)
+        , num_buckets(num_buckets_)
+        , current_block_start(0)
     {
         if (parent.data == nullptr)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
@@ -1421,12 +1438,19 @@ private:
     const HashJoin & parent;
     UInt64 max_block_size;
     bool flag_per_row;
+    size_t bucket_idx;      /// Which bucket subset this stream handles
+    size_t num_buckets;     /// Total number of parallel streams (1 = all buckets)
 
     size_t current_block_start;
 
     std::any position;
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
     std::optional<HashJoin::ScatteredColumnsList::const_iterator> used_position;
+
+    bool isBucketInRange(size_t bucket) const
+    {
+        return num_buckets == 1 || (bucket % num_buckets) == bucket_idx;
+    }
 
     size_t fillColumnsFromData(const HashJoin::ScatteredColumnsList & columns, MutableColumns & columns_right)
     {
@@ -1495,6 +1519,11 @@ private:
 
         if (flag_per_row)
         {
+            /// For parallel iteration with flag_per_row mode, only stream 0 processes the columns data
+            /// The data in parent.data->columns is not partitioned by hash buckets, so we can't distribute across streams
+            if (bucket_idx != 0)
+                return rows_added;
+
             if (!used_position.has_value())
                 used_position = parent.data->columns.begin();
 
@@ -1533,19 +1562,62 @@ private:
             Iterator & it = std::any_cast<Iterator &>(position);
             auto end = map.end();
 
-            for (; it != end; ++it)
+            /// case: two-level hash tables with parallel iteration
+            if constexpr (requires { it.getBucket(); map.NUM_BUCKETS; })
             {
-                size_t offset = map.offsetInternal(it.getPtr());
-                if (parent.isUsed(offset))
-                    continue;
-
-                const Mapped & mapped = it->getMapped();
-                AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
-
-                if (rows_added >= max_block_size)
+                auto skipToNextValidBucket = [&]() -> bool
                 {
+                    while (it != end && !isBucketInRange(it.getBucket()))
+                    {
+                        size_t current_bucket = it.getBucket();
+                        /// Calculate next bucket in our range: bucket_idx, bucket_idx + num_buckets, ..
+                        /// her we just find smallest bucket >= current_bucket that is ≡ bucket_idx (mod num_buckets)
+                        size_t next_bucket = current_bucket - (current_bucket % num_buckets) + bucket_idx;
+                        if (next_bucket <= current_bucket)
+                            next_bucket += num_buckets;
+                        it = map.iteratorAt(next_bucket);
+                    }
+                    return it != end;
+                };
+
+                /// skipping to first bucket in our range
+                if (!skipToNextValidBucket())
+                    return rows_added;
+
+                while (it != end && rows_added < max_block_size)
+                {
+                    size_t offset = map.offsetInternal(it.getPtr());
+                    if (!parent.isUsed(offset))
+                    {
+                        const Mapped & mapped = it->getMapped();
+                        AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
+                    }
+
                     ++it;
-                    break;
+
+                    /// After advancing, check if we need to skip to next valid bucket
+                    if (it != end && !isBucketInRange(it.getBucket()))
+                        if (!skipToNextValidBucket())
+                            break;
+                }
+            }
+            else
+            {
+                /// for not two-level map iterate normally, without bucket filtering
+                for (; it != end; ++it)
+                {
+                    size_t offset = map.offsetInternal(it.getPtr());
+                    if (parent.isUsed(offset))
+                        continue;
+
+                    const Mapped & mapped = it->getMapped();
+                    AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
+
+                    if (rows_added >= max_block_size)
+                    {
+                        ++it;
+                        break;
+                    }
                 }
             }
         }
@@ -1555,6 +1627,11 @@ private:
 
     void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
     {
+        /// For parallel iteration, only the first bucket stream (bucket_idx == 0) handles nullmaps
+        /// to avoid duplicates across streams
+        if (bucket_idx != 0)
+            return;
+
         if (!nulls_position.has_value())
             nulls_position = parent.data->nullmaps.begin();
 
@@ -1620,6 +1697,23 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
     }
 
     auto non_joined = std::make_unique<NotJoinedHash>(*this, max_block_size, flag_per_row);
+    return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
+}
+
+IBlocksStreamPtr
+HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
+                             size_t bucket_idx, size_t num_buckets) const
+{
+    if (!JoinCommon::hasNonJoinedBlocks(*table_join))
+        return {};
+
+    size_t left_columns_count = left_sample_block.columns();
+    if (canRemoveColumnsFromLeftBlock())
+        left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
+
+    bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
+
+    auto non_joined = std::make_unique<NotJoinedHash>(*this, max_block_size, flag_per_row, bucket_idx, num_buckets);
     return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
 }
 
