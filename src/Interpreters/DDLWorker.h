@@ -63,7 +63,7 @@ public:
         ContextPtr context_,
         const Poco::Util::AbstractConfiguration * config,
         const String & prefix,
-        const String & zookeeper_name_ = "default",
+        const String & zookeeper_name_,
         const String & logger_name = "DDLWorker",
         const CurrentMetrics::Metric * max_entry_metric_ = nullptr,
         const CurrentMetrics::Metric * max_pushed_entry_metric_ = nullptr);
