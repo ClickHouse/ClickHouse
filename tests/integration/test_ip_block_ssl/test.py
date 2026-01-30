@@ -56,7 +56,7 @@ def check_ip_blocked(port, secure=False):
         # - Empty response or connection closed: close() executes before TCP transmits the message
         # Race condition: send() is async (returns after copying to kernel buffer), close() may execute
         # before TCP layer actually sends the data, causing RST to be sent instead.
-        # See: https://github.com/ClickHouse/ClickHouse/pull/93539
+        # See: https://github.com/ClickHouse/ClickHouse/pull/93539 for similar fix
         assert "IP address not allowed" in response or response == "", f"Unexpected response: {response}"
         
     finally:
