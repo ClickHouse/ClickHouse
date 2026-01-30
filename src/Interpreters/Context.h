@@ -1307,7 +1307,7 @@ public:
     void allowSystemAllocateMemory(bool allow);
 
     /// See users_to_ignore_early_memory_limit_check in ServerSettings
-    std::shared_ptr<std::unordered_set<std::string_view>> getUsersToIgnoreEarlyMemoryLimitCheck() const;
+    std::shared_ptr<std::unordered_set<std::string>> getUsersToIgnoreEarlyMemoryLimitCheck() const;
     void setUsersToIgnoreEarlyMemoryLimitCheck(std::string users);
 
     void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);

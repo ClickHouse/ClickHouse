@@ -128,7 +128,6 @@
 
 #include <Common/Jemalloc.h>
 
-#include "Interpreters/Context.h"
 #include "config.h"
 #include <Common/config_version.h>
 

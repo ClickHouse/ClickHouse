@@ -9,6 +9,7 @@
 namespace DB
 {
 
+/// This is a helper class for SYSTEM ALLOCATE MEMORY / SYSTEM FREE MEMORY commands
 class SystemAllocatedMemoryHolder
 {
     std::mutex mutex;
@@ -44,8 +45,6 @@ class SystemAllocatedMemoryHolder
     std::list<Memory> memory_list;
 
 public:
-
-    /// This code is not exception safe, but it's for testing only.
 
     void alloc(size_t size)
     {
