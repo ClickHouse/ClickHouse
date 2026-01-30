@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- Tag no-parallel: Depends on the query condition cache content (queries executed in parallel may overflow the cache size or straight away call "clear cache")
+
 DROP TABLE IF EXISTS t;
 
 -- TODO(nickitat): Enforcing wide parts is a temporary workaround, not sure why collection doesn't work otherwise
