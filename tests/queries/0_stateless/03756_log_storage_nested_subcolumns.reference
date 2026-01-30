@@ -1,0 +1,27 @@
+-- { echoOn }
+SELECT c0.c1.null, c0.c2 FROM nested_null_Log;
+[0]	[2]
+SELECT c0.null, c0.c2 FROM null_name_Log;
+[3]	[4]
+SELECT c0.null.null, c0.c2 FROM nested_null_clash_Log;
+[0]	[6]
+SELECT n.c1, n.n2.c2 FROM nested_in_nested_Log;
+[1,3,2]	[[1],[2],[3]]
+-- { echoOn }
+SELECT c0.c1.null, c0.c2 FROM nested_null_TinyLog;
+[0]	[2]
+SELECT c0.null, c0.c2 FROM null_name_TinyLog;
+[3]	[4]
+SELECT c0.null.null, c0.c2 FROM nested_null_clash_TinyLog;
+[0]	[6]
+SELECT n.c1, n.n2.c2 FROM nested_in_nested_TinyLog;
+[1,3,2]	[[1],[2],[3]]
+-- { echoOn }
+SELECT c0.c1.null, c0.c2 FROM nested_null_StripeLog;
+[0]	[2]
+SELECT c0.null, c0.c2 FROM null_name_StripeLog;
+[3]	[4]
+SELECT c0.null.null, c0.c2 FROM nested_null_clash_StripeLog;
+[0]	[6]
+SELECT n.c1, n.n2.c2 FROM nested_in_nested_StripeLog;
+[1,3,2]	[[1],[2],[3]]
