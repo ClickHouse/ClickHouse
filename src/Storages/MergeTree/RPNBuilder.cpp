@@ -236,6 +236,19 @@ bool RPNBuilderTreeNode::isConstant() const
     return node_without_alias->column && isColumnConst(*node_without_alias->column);
 }
 
+bool RPNBuilderTreeNode::isNullable() const
+{
+    if (ast_node)
+    {
+        Field value;
+        DataTypePtr type;
+        return tryGetConstant(value, type) && type && type->isNullable();
+    }
+
+    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    return node_without_alias->result_type && node_without_alias->result_type->isNullable();
+}
+
 bool RPNBuilderTreeNode::isSubqueryOrSet() const
 {
     if (ast_node)

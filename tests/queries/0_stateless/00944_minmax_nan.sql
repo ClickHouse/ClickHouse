@@ -1,6 +1,12 @@
+-- Tags: no-replicated-database, no-parallel-replicas
+-- no-replicated-database: EXPLAIN output differs for replicated database.
+-- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
+
 SET parallel_replicas_local_plan = 1;
 
 -- Test for issue #75523
+
+-- { echo }
 
 DROP TABLE IF EXISTS tab;
 
@@ -10,7 +16,8 @@ CREATE TABLE tab (
   INDEX col_idx col TYPE minmax
 )
 ENGINE = MergeTree()
-ORDER BY id; -- This is important. We want to have additional primary index that does not use the column `col`.
+ORDER BY id
+SETTINGS index_granularity = 1;
 
 INSERT INTO tab VALUES
     (1, 1.0),
@@ -21,42 +28,67 @@ INSERT INTO tab VALUES
     (6, nan),
     (7, -nan);
 
-SELECT 'NaN comparison';
+-- MinMax is not used anymore because NaN handling optimization happens in Primary Key analysis phase
+SELECT count() FROM tab WHERE col <> nan SETTINGS force_data_skipping_indices='col_idx'; -- { serverError INDEX_NOT_USED }
+
 SELECT count() FROM tab WHERE col = nan;
+EXPLAIN indexes=1
+SELECT count() FROM tab WHERE col = nan;
+
+SELECT count() FROM tab WHERE col = -nan;
+EXPLAIN indexes=1
+SELECT count() FROM tab WHERE col = -nan;
+
 SELECT count() FROM tab WHERE col <> nan;
+EXPLAIN indexes=1
+SELECT count() FROM tab WHERE col <> nan;
+
+SELECT count() FROM tab WHERE col < nan;
+EXPLAIN indexes=1
+SELECT count() FROM tab WHERE col < nan;
+
+SELECT count() FROM tab WHERE col <> -nan;
+EXPLAIN indexes=1
+SELECT count() FROM tab WHERE col <> -nan;
+
+SELECT count() FROM tab WHERE isNaN(col);
+SELECT count() FROM tab WHERE NOT isNaN(col);
+
+SELECT 'Nullable Float NaN comparison';
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab (
+  col Nullable(Float)
+)
+ENGINE = MergeTree()
+ORDER BY col
+SETTINGS allow_nullable_key = 1, index_granularity = 1;
+
+INSERT INTO tab VALUES
+    (NULL),
+    (inf),
+    (2.0),
+    (-inf),
+    (3.0),
+    (nan),
+    (-nan),
+    (NULL);
+
+SELECT count() FROM tab WHERE col = nan;
+EXPLAIN indexes = 1
+SELECT count() FROM tab WHERE col = nan;
+
+SELECT count() FROM tab WHERE col < nan;
+EXPLAIN indexes = 1
+SELECT count() FROM tab WHERE col < nan;
+
+SELECT count() FROM tab WHERE col <> nan;
+EXPLAIN indexes = 1
+SELECT count() FROM tab WHERE col <> nan;
+
+SELECT count() FROM tab WHERE col < nan;
 SELECT count() FROM tab WHERE col = -nan;
 SELECT count() FROM tab WHERE col <> -nan;
 SELECT count() FROM tab WHERE isNaN(col);
 SELECT count() FROM tab WHERE NOT isNaN(col);
-
-SELECT 'MinMax index should skip all granules for column = NaN comparison';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE col = nan
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3; -- Skip the primary index parts and granules.
-
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE col = -nan
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3; -- Skip the primary index parts and granules.
-
-SELECT 'MinMax index should use all granules for column <> NaN comparison';
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE col <> nan
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3; -- Skip the primary index parts and granules.
-
-SELECT trimLeft(explain) AS explain FROM (
-    EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE col <> -nan
-)
-WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 2, 3; -- Skip the primary index parts and granules.
-
-DROP TABLE tab;

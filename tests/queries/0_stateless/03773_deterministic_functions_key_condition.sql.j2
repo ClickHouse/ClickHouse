@@ -1,0 +1,178 @@
+-- { echoOn }
+
+{% for analyzer in [1, 0] -%}
+SET enable_analyzer = {{ analyzer }};
+
+DROP TABLE IF EXISTS events;
+
+CREATE TABLE events
+(
+    uuid UUID,
+    person_id UUID,
+    event String,
+    timestamp DateTime64(6, 'UTC'),
+    team_id Int64
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(timestamp)
+ORDER BY (team_id, toDate(timestamp), event, cityHash64(person_id), cityHash64(uuid));
+
+INSERT INTO events (uuid, person_id, event, timestamp, team_id)
+VALUES (
+    '017adbc0-98b5-0000-3f74-619a368fe65d',
+    '017adbc0-98b5-0000-3f74-619a368fe65d',
+    'page_view',
+    toDateTime64('2026-01-01 00:00:00', 6, 'UTC'),
+    1
+);
+
+INSERT INTO events (uuid, person_id, event, timestamp, team_id)
+VALUES (
+    '017adbc0-98b5-0000-3f74-619a368fe65g',
+    '017adbc0-98b5-0000-3f74-619a368fe65a',
+    'page_view',
+    toDateTime64('2026-01-01 00:00:01', 6, 'UTC'),
+    3
+);
+
+SELECT count()
+FROM events e
+WHERE person_id = '017adbc0-98b5-0000-3f74-619a368fe65e';
+
+SELECT count()
+FROM events e
+WHERE person_id < '017adbc0-98b5-0000-3f74-619a368fe65e';
+
+SELECT count()
+FROM events e
+WHERE person_id != '017adbc0-98b5-0000-3f74-619a368fe65e';
+
+SELECT count()
+FROM events e
+WHERE person_id IN (toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
+
+SELECT count()
+FROM events e
+WHERE has([toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id);
+
+SELECT count()
+FROM events e
+WHERE person_id NOT IN (toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
+
+SELECT count()
+FROM events e
+WHERE NOT has([toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id);
+
+SELECT count()
+FROM events e
+WHERE person_id IN ('017adbc0-98b5-0000-3f74-619a368fe65d', toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
+
+SELECT count()
+FROM events e
+WHERE has(['017adbc0-98b5-0000-3f74-619a368fe65d', toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id); -- { serverError NO_COMMON_TYPE}
+
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (
+    pod String
+)
+ENGINE = MergeTree()
+ORDER BY (left(pod, length(pod) - length(substringIndex(pod, '-', -1)) - 1))
+SETTINGS index_granularity = 1000;
+
+INSERT INTO test
+SELECT
+    arrayElement(
+            ['vector-abc-001', 'vector-abc-002', 'metrics-def-003', 'metrics-def-004', 'logs-ghi-005', 'logs-ghi-006', 'traces-jkl-007', 'traces-jkl-008', 'events-mno-009', 'events-mno-010'],
+            (number % 10) + 1
+    )
+FROM numbers(100000);
+
+SELECT count()
+FROM test
+WHERE pod = 'vector-abc-001';
+
+SELECT count()
+FROM test
+WHERE NOT pod = 'vector-abc-001';
+
+SELECT count()
+FROM test
+WHERE pod IN ('vector-abc-001', 'metrics-def-003');
+
+SELECT count()
+FROM test
+WHERE has(['vector-abc-001', 'metrics-def-003'], pod);
+
+SELECT count()
+FROM test
+WHERE pod NOT IN ('vector-abc-001', 'metrics-def-003');
+
+SELECT count()
+FROM test
+WHERE NOT has(['vector-abc-001', 'metrics-def-003'], pod);
+
+DROP TABLE IF EXISTS test_expr;
+CREATE TABLE test_expr (
+    pod String
+)
+ENGINE = MergeTree()
+ORDER BY (left(lower(pod), length(lower(pod)) - length(substringIndex(lower(pod), '-', -1)) - 1))
+SETTINGS index_granularity = 1000;
+
+
+INSERT INTO test_expr
+SELECT
+    arrayElement(
+            ['vector-abC-001', 'vector-abC-002', 'metrics-deF-003', 'metrics-deF-004', 'logs-ghI-005', 'logs-ghI-006', 'traces-jkL-007', 'traces-jkL-008', 'events-mnO-009', 'events-mnO-010'],
+            (number % 10) + 1
+    )
+FROM numbers(100000);
+
+SELECT count()
+FROM test_expr
+WHERE lower(pod) = 'vector-abc-001';
+
+SELECT count()
+FROM test_expr
+WHERE NOT lower(pod) = 'vector-abc-001';
+
+SELECT count()
+FROM test_expr
+WHERE lower(pod) IN ('vector-abc-001', 'metrics-def-003');
+
+SELECT count()
+FROM test_expr
+WHERE has(['vector-abc-001', 'metrics-def-003'], lower(pod));
+
+SELECT count()
+FROM test_expr
+WHERE lower(pod) NOT IN ('vector-abc-001', 'metrics-def-003');
+
+SELECT count()
+FROM test_expr
+WHERE NOT has(['vector-abc-001', 'metrics-def-003'], lower(pod));
+
+DROP TABLE IF EXISTS test_dag_execution;
+
+CREATE TABLE test_dag_execution
+(
+    p String
+)
+ENGINE = MergeTree
+ORDER BY toUUID(p);
+
+INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65d');
+
+INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65a');
+
+SELECT count() FROM test_dag_execution WHERE p = 'NOT-a-uuid';
+
+SELECT count() FROM test_dag_execution WHERE p IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
+
+SELECT count() FROM test_dag_execution WHERE has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
+
+SELECT count() FROM test_dag_execution WHERE p NOT IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
+
+SELECT count() FROM test_dag_execution WHERE NOT has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
+
+{% endfor -%}

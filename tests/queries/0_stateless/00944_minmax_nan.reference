@@ -1,21 +1,163 @@
-NaN comparison
+-- Test for issue #75523
+
+-- { echo }
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (
+  id UInt64,
+  col Float,
+  INDEX col_idx col TYPE minmax
+)
+ENGINE = MergeTree()
+ORDER BY id
+SETTINGS index_granularity = 1;
+INSERT INTO tab VALUES
+    (1, 1.0),
+    (2, inf),
+    (3, 2.0),
+    (4, -inf),
+    (5, 3.0),
+    (6, nan),
+    (7, -nan);
+-- MinMax is not used anymore because NaN handling optimization happens in Primary Key analysis phase
+SELECT count() FROM tab WHERE col <> nan SETTINGS force_data_skipping_indices='col_idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM tab WHERE col = nan;
 0
-7
+EXPLAIN indexes=1
+SELECT count() FROM tab WHERE col = nan;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.tab)
+SELECT count() FROM tab WHERE col = -nan;
 0
+EXPLAIN indexes=1
+SELECT count() FROM tab WHERE col = -nan;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.tab)
+SELECT count() FROM tab WHERE col <> nan;
 7
+EXPLAIN indexes=1
+SELECT count() FROM tab WHERE col <> nan;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 7/7
+          Ranges: 1
+SELECT count() FROM tab WHERE col < nan;
+0
+EXPLAIN indexes=1
+SELECT count() FROM tab WHERE col < nan;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 7/7
+          Ranges: 1
+SELECT count() FROM tab WHERE col <> -nan;
+7
+EXPLAIN indexes=1
+SELECT count() FROM tab WHERE col <> -nan;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 7/7
+          Ranges: 1
+SELECT count() FROM tab WHERE isNaN(col);
 2
+SELECT count() FROM tab WHERE NOT isNaN(col);
 5
-MinMax index should skip all granules for column = NaN comparison
-Description: minmax GRANULARITY 1
-Parts: 0/1
-Granules: 0/1
-Description: minmax GRANULARITY 1
-Parts: 0/1
-Granules: 0/1
-MinMax index should use all granules for column <> NaN comparison
-Description: minmax GRANULARITY 1
-Parts: 1/1
-Granules: 1/1
-Description: minmax GRANULARITY 1
-Parts: 1/1
-Granules: 1/1
+SELECT 'Nullable Float NaN comparison';
+Nullable Float NaN comparison
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (
+  col Nullable(Float)
+)
+ENGINE = MergeTree()
+ORDER BY col
+SETTINGS allow_nullable_key = 1, index_granularity = 1;
+INSERT INTO tab VALUES
+    (NULL),
+    (inf),
+    (2.0),
+    (-inf),
+    (3.0),
+    (nan),
+    (-nan),
+    (NULL);
+SELECT count() FROM tab WHERE col = nan;
+0
+EXPLAIN indexes = 1
+SELECT count() FROM tab WHERE col = nan;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 8/8
+          Ranges: 1
+SELECT count() FROM tab WHERE col < nan;
+0
+EXPLAIN indexes = 1
+SELECT count() FROM tab WHERE col < nan;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 8/8
+          Ranges: 1
+SELECT count() FROM tab WHERE col <> nan;
+6
+EXPLAIN indexes = 1
+SELECT count() FROM tab WHERE col <> nan;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 8/8
+          Ranges: 1
+SELECT count() FROM tab WHERE col < nan;
+0
+SELECT count() FROM tab WHERE col = -nan;
+0
+SELECT count() FROM tab WHERE col <> -nan;
+6
+SELECT count() FROM tab WHERE isNaN(col);
+2
+SELECT count() FROM tab WHERE NOT isNaN(col);
+4
