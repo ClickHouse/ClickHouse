@@ -110,3 +110,4 @@ urllib3==2.2.2
 websocket-client==1.8.0
 wheel==0.46.1
 filelock==3.18.0
+flightsql-dbapi==0.2.2

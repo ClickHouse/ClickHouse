@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package arrow.flight.protocol.sql;
+
+message CommandStatementIngest {
+  // Options for table definition behavior
+  message TableDefinitionOptions {
+    enum TableNotExistOption {
+      TABLE_NOT_EXIST_OPTION_UNSPECIFIED = 0;
+      TABLE_NOT_EXIST_OPTION_CREATE = 1;
+      TABLE_NOT_EXIST_OPTION_FAIL = 2;
+    }
+    enum TableExistsOption {
+      TABLE_EXISTS_OPTION_UNSPECIFIED = 0;
+      TABLE_EXISTS_OPTION_FAIL = 1;
+      TABLE_EXISTS_OPTION_APPEND = 2;
+      TABLE_EXISTS_OPTION_REPLACE = 3;
+    }
+
+    TableNotExistOption if_not_exist = 1;
+    TableExistsOption if_exists = 2;
+  }
+
+  // The behavior for handling the table definition.
+  TableDefinitionOptions table_definition_options = 1;
+  // The table to load data into.
+  string table = 2;
+  // Destination DB schema (optional).
+  optional string schema = 3;
+  // Destination catalog (optional).
+  optional string catalog = 4;
+  // Whether to use a temporary table.
+  bool temporary = 5;
+  // Transaction to associate this ingestion with (optional).
+  optional bytes transaction_id = 6;
+
+  // Future extensions go here…
+
+  // Backend-specific options.
+  map<string, string> options = 1000;
+}
