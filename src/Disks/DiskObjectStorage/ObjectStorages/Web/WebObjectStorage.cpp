@@ -85,7 +85,8 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
                 continue;
             }
 
-            children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry));
+            auto metadata = tryGetObjectMetadata(entry, /* with_tags */ false);
+            children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry, std::move(metadata)));
         }
     }
 }
