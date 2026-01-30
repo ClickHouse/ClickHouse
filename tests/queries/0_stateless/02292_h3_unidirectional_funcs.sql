@@ -17,13 +17,13 @@ SELECT h3GetUnidirectionalEdgeBoundary(1248204388774707199);
 SELECT h3GetUnidirectionalEdgeBoundary(599686042433355773);
 SELECT h3GetUnidirectionalEdgeBoundary(stringToH3('85283473ffffff'));
 
-SELECT h3GetUnidirectionalEdgesFromHexagon(1248204388774707199);
-SELECT h3GetUnidirectionalEdgesFromHexagon(599686042433355773);
-SELECT h3GetUnidirectionalEdgesFromHexagon(stringToH3('85283473ffffff'));
+SELECT h3GetUnidirectionalEdgesFromHexagon(1248204388774707199); -- { serverError INCORRECT_DATA }
+SELECT h3GetUnidirectionalEdgesFromHexagon(599686042433355773); -- { serverError INCORRECT_DATA }
+SELECT h3GetUnidirectionalEdgesFromHexagon(stringToH3('85283473ffffff')); -- { serverError INCORRECT_DATA }
 
 select h3GetUnidirectionalEdge(stringToH3('85283473fffffff'), stringToH3('85283477fffffff'));
 select h3GetUnidirectionalEdge(stringToH3('85283473fffffff'), stringToH3('85283473fffffff'));
-SELECT h3GetUnidirectionalEdge(stringToH3('85283473ffffff'), stringToH3('852\03477fffffff')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT h3GetUnidirectionalEdge(stringToH3('85283473ffffff'), stringToH3('852\03477fffffff')); -- { serverError INCORRECT_DATA }
 
 SELECT h3UnidirectionalEdgeIsValid(1248204388774707199) as edge;
 SELECT h3UnidirectionalEdgeIsValid(1248204388774707197) as edge;

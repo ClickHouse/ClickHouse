@@ -7,15 +7,10 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/Utils.h>
 
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
 #include <Functions/logical.h>
 
-#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 
 

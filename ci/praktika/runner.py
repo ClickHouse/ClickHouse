@@ -106,15 +106,7 @@ class Runner:
             FORK_NAME="",
             PR_LABELS=[],
             EVENT_TIME="",
-            WORKFLOW_STATUS_DATA={
-                Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
-                    "outputs": {
-                        "data": json.dumps(
-                            {"workflow_config": dataclasses.asdict(workflow_config)}
-                        )
-                    }
-                }
-            },
+            WORKFLOW_CONFIG=workflow_config,
         ).dump()
 
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
@@ -135,8 +127,18 @@ class Runner:
             os.environ[key] = value
             print(f"Set environment variable {key}.")
 
-        print("Read GH Environment")
-        env = _Environment.from_env()
+        if (
+            job.name == Settings.CI_CONFIG_JOB_NAME
+            or _workflow.jobs[0].name != Settings.CI_CONFIG_JOB_NAME
+        ):
+            # Settings.CI_CONFIG_JOB_NAME initializes the workflow environment by reading it
+            # directly from the GitHub context. For workflows without this config job, each
+            # job reads the environment from the GitHub context independently.
+            print("Read GH Environment from GH context")
+            env = _Environment.from_env()
+        else:
+            print("Read GH Environment from workflow data")
+            env = _Environment.from_workflow_data()
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
@@ -307,6 +309,7 @@ class Runner:
 
             docker = docker or f"{docker_name}:{docker_tag}"
             current_dir = os.getcwd()
+            workdir = f"--workdir={current_dir}"
             for setting in settings:
                 if setting.startswith("--volume"):
                     volume = setting.removeprefix("--volume=").split(":")[0]
@@ -315,6 +318,11 @@ class Runner:
                             "WARNING: Create mount dir point in advance to have the same owner"
                         )
                         Shell.check(f"mkdir -p {volume}", verbose=True, strict=True)
+                elif setting.startswith("--workdir"):
+                    print(
+                        f"NOTE: Job [{job.name}] use custom workdir - praktika won't control workdir"
+                    )
+                    workdir = ""
             Shell.check(
                 "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
                 verbose=True,
@@ -334,7 +342,7 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -479,16 +487,13 @@ class Runner:
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
 
+        if result.is_error() and result.get_on_error_hook():
+            print(f"--- Run on_error_hook [{result.get_on_error_hook()}]")
+            # Add hook timeout once it's needed
+            Shell.check(result.get_on_error_hook(), verbose=True)
+
         result.update_duration()
         result.set_files([Settings.RUN_LOG])
-
-        job_outputs = env.JOB_KV_DATA
-        print(f"Job's output: [{list(job_outputs.keys())}]")
-        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-            print(
-                f"data={json.dumps(job_outputs)}",
-                file=f,
-            )
 
         if job.post_hooks:
             sw_ = Utils.Stopwatch()
@@ -503,7 +508,24 @@ class Runner:
                 Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
             )
 
-        if run_exit_code == 0:
+        is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+        is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
+
+        # run after post hooks as they might modify workflow kv data
+        job_outputs = env.JOB_KV_DATA
+        print(f"Job's output: [{list(job_outputs.keys())}]")
+        if is_initial_job:
+            output = dataclasses.asdict(env)
+            output["pipeline_status"] = "success"
+        else:
+            output = job_outputs
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"data={json.dumps(output)}",
+                file=f,
+            )
+
+        if run_exit_code == 0 or "amd_llvm_coverage" in job.name:
             providing_artifacts = []
             if job.provides and workflow.artifacts:
                 for provides_artifact_name in job.provides:
@@ -521,11 +543,11 @@ class Runner:
                     if artifact.compress_zst:
                         if isinstance(artifact.path, (tuple, list)):
                             Utils.raise_with_error(
-                                "TODO: list of paths is not supported with comress = True"
+                                "TODO: list of paths is not supported with compress = True"
                             )
                         if "*" in artifact.path:
                             Utils.raise_with_error(
-                                "TODO: globe is not supported with comress = True"
+                                "TODO: globe is not supported with compress = True"
                             )
                         print(f"Compress artifact file [{artifact.path}]")
                         artifact.path = Utils.compress_zst(artifact.path)
@@ -629,8 +651,6 @@ class Runner:
             if result.is_ok():
                 CacheRunnerHooks.post_run(workflow, job)
 
-        is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
-        is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
         if workflow.enable_open_issues_check:
             # should be done before HtmlRunnerHooks.post_run(workflow, job, info_errors)
             #   to upload updated job and workflow results to S3
@@ -650,7 +670,17 @@ class Runner:
         # Always run report generation at the end to finalize workflow status with latest job result
         if workflow.enable_report:
             print(f"Run html report hook")
-            HtmlRunnerHooks.post_run(workflow, job, info_errors)
+            status_updated = HtmlRunnerHooks.post_run(workflow, job, info_errors)
+            if status_updated:
+                print(f"Update GH commit status [{result.name}]: [{status_updated}]")
+                _GH_Auth(workflow)
+                GH.post_commit_status(
+                    name=workflow.name,
+                    status=GH.convert_to_gh_status(status_updated),
+                    description="",
+                    url=Info().get_report_url(latest=False),
+                )
+
             workflow_result = Result.from_fs(workflow.name)
             if is_final_job and ci_db:
                 # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
@@ -671,7 +701,8 @@ class Runner:
                     )
                     ci_db.insert_compute_usage(workflow_compute_usage)
 
-        report_url = Info().get_job_report_url(latest=False)
+        info = Info()
+        report_url = info.get_job_report_url(latest=False)
 
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
@@ -742,23 +773,30 @@ class Runner:
             )
 
         # Send Slack notifications after workflow status is finalized by HtmlRunnerHooks.post_run()
-        # Updates are sent on initial job and final job
-        if (
-            workflow.enable_slack_feed
-            and env.COMMIT_AUTHORS
-            and (is_final_job or is_initial_job or not result.is_ok())
+        if workflow.enable_slack_feed and (
+            is_final_job or is_initial_job or not result.is_ok()
         ):
-            for commit_author in env.COMMIT_AUTHORS:
+            updated_emails = []
+            commit_authors = info.get_kv_data("commit_authors")
+            for commit_author in commit_authors:
                 try:
                     EventFeed.update(
                         commit_author,
-                        workflow_result.to_event(),
-                        s3_path=Settings.EVENTS_S3_PATH,
-                        notify_slack=True,
+                        workflow_result.to_event(info=info),
+                        s3_path=Settings.EVENT_FEED_S3_PATH,
                     )
+                    updated_emails.append(commit_author)
                 except Exception as e:
                     traceback.print_exc()
                     print(f"ERROR: failed to update events for {commit_author}: {e}")
+
+            # Invoke Lambda once with all successfully updated emails
+            if updated_emails:
+                try:
+                    EventFeed.notify_slack_users(updated_emails)
+                except Exception as e:
+                    traceback.print_exc()
+                    print(f"ERROR: failed to notify Slack users: {e}")
 
         return is_ok
 

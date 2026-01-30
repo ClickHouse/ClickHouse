@@ -1,7 +1,8 @@
-personal_ws-1.1 en 3452
+personal_ws-1.1 en 3453
 aarch
 AArch
 ACLs
+ADLS
 ALTERs
 AMPLab
 AMQP
@@ -179,6 +180,7 @@ ClickHouseClient
 ClickHouseMigrator
 ClickHouseNIO
 ClickHouseVapor
+ClickLens
 ClickPipes
 ClickVisual
 ClickableSquare
@@ -665,6 +667,7 @@ LogQL
 LogQueriesType
 LogsLevel
 Logstash
+LongestRunningMerge
 LookML
 LoongArch
 LowCardinality
@@ -732,6 +735,7 @@ MergeTreePartsLoaderThreadsActive
 MergeTreeReadTaskRequestsSent
 MergeTreeSettings
 MergerMutator
+Mersenne
 MessagePack
 Metastore
 MetroHash
@@ -1203,6 +1207,7 @@ TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Tauri
+TcpExtListenOverflows
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation

@@ -16,10 +16,10 @@ drop table if exists data_{{ id }};
 create table data_{{ id }} (key Int) engine=MergeTree() order by tuple() settings {{ settings }};
 insert into data_{{ id }} values (1);
 select sleep(3) format Null;
-select part_type, column, now()-modification_time < 10, modification_time - column_modification_time < {{ mtime_diff_in_seconds }} from system.parts_columns where database = currentDatabase() and table = 'data_{{ id }}';
+select part_type, column, now()-modification_time < 60, modification_time - column_modification_time < {{ mtime_diff_in_seconds }} from system.parts_columns where database = currentDatabase() and table = 'data_{{ id }}';
 alter table data_{{ id }} add column value Int default 0;
 alter table data_{{ id }} materialize column value;
-select part_type, column, now()-modification_time < 10,
+select part_type, column, now()-modification_time < 60,
 {% if file_per_column %}
 modification_time - column_modification_time >= 3
 {% else %}

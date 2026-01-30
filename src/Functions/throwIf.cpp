@@ -159,7 +159,7 @@ private:
             size_t result_size = in_untyped->size();
 
             /// We return non constant to avoid constant folding.
-            return ColumnUInt8::create(result_size, 0);
+            return ColumnUInt8::create(result_size, static_cast<UInt8>(0));
         }
 
         return nullptr;

@@ -205,9 +205,9 @@ private:
     static char digitToChar(int digit)
     {
         if (digit >= 0 && digit <= 9)
-            return '0' + digit;
+            return static_cast<char>('0' + digit);
         if (digit >= 10 && digit <= 35)
-            return 'A' + digit - 10;
+            return static_cast<char>('A' + digit - 10);
         return '0'; // Should never happen
     }
 };

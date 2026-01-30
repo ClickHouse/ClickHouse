@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -11,10 +10,12 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 
-#include <Common/FieldVisitorSum.h>
-#include <Common/assert_cast.h>
-#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/FieldVisitorSum.h>
+#include <Common/ContainersWithMemoryTracking.h>
+#include <Common/assert_cast.h>
+
 #include <map>
 
 
@@ -37,7 +38,7 @@ namespace
 struct AggregateFunctionMapData
 {
     // Map needs to be ordered to maintain function properties
-    std::map<Field, Array> merged_maps;
+    MapWithMemoryTracking<Field, Array> merged_maps;
 };
 
 /** Aggregate function, that takes at least two arguments: keys and values, and as a result, builds a tuple of at least 2 arrays -
@@ -508,7 +509,7 @@ private:
     using Self = AggregateFunctionSumMapFiltered<overflow, tuple_argument>;
     using Base = AggregateFunctionMapBase<Self, FieldVisitorSum, overflow, tuple_argument, true>;
 
-    using ContainerT = std::set<Field>;
+    using ContainerT = SetWithMemoryTracking<Field>;
     ContainerT keys_to_keep;
 
 public:

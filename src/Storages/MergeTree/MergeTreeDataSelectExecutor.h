@@ -217,31 +217,26 @@ public:
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 
+    struct IndexAnalysisContext
+    {
+        StorageMetadataPtr metadata_snapshot;
+        MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
+        const SelectQueryInfo & query_info;
+        const ContextPtr & context;
+        const ReadFromMergeTree::Indexes & indexes;
+        const std::optional<TopKFilterInfo> & top_k_filter_info;
+        const MergeTreeReaderSettings & reader_settings;
+        LoggerPtr log;
+        size_t num_streams;
+        bool find_exact_ranges;
+        bool is_parallel_reading_from_replicas;
+        bool has_projections;
+        ReadFromMergeTree::AnalysisResult & result;
+    };
+
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
-    /// If 'check_limits = true' it will throw exception if the amount of data exceed the limits from settings.
-    static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
-        RangesInDataParts parts_with_ranges,
-        StorageMetadataPtr metadata_snapshot,
-        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
-        const SelectQueryInfo & query_info,
-        const ContextPtr & context,
-        const KeyCondition & key_condition,
-        const std::optional<KeyCondition> & part_offset_condition,
-        const std::optional<KeyCondition> & total_offset_condition,
-        const std::optional<KeyCondition> & key_condition_rpn_template,
-        const UsefulSkipIndexes & skip_indexes,
-        const std::optional<TopKFilterInfo> & top_k_filter_info,
-        const MergeTreeReaderSettings & reader_settings,
-        LoggerPtr log,
-        size_t num_streams,
-        ReadFromMergeTree::IndexStats & index_stats,
-        bool use_skip_indexes,
-        bool use_skip_indexes_for_disjunctions_,
-        bool find_exact_ranges,
-        bool is_final_query,
-        bool is_parallel_reading_from_replicas,
-        ReadFromMergeTree::AnalysisResult & result);
+    static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(

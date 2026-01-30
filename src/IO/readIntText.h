@@ -161,7 +161,7 @@ handle_digit:
                 {
                     if (negative)
                     {
-                        T signed_res = -res;
+                        T signed_res = static_cast<T>(-res);
                         if (common::mulOverflow<T>(signed_res, base, signed_res) ||
                             common::subOverflow<T>(signed_res, digit, signed_res))
                         {
@@ -171,7 +171,7 @@ handle_digit:
                                 return ReturnType(false);
                         }
 
-                        res = -static_cast<UnsignedT>(signed_res);
+                        res = static_cast<UnsignedT>(-static_cast<UnsignedT>(signed_res));
                     }
                     else
                     {
@@ -219,7 +219,7 @@ end:
                 }
             }
             else
-                x = -res;
+                x = static_cast<T>(-res);
         }
     }
 
@@ -365,7 +365,7 @@ ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
     }
 
     /// See note about undefined behaviour above.
-    x = is_signed_v<T> && negative ? -res : res;
+    x = static_cast<T>(is_signed_v<T> && negative ? -res : res);
     return ReturnType(true);
 }
 

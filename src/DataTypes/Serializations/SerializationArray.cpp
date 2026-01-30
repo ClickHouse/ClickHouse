@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -643,6 +644,32 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
     return ReturnType(true);
 }
 
+void SerializationArray::readArraySafe(DB::IColumn & column, std::function<void()> && read_func)
+{
+    size_t initial_size = column.size();
+
+    try
+    {
+        read_func();
+    }
+    catch (...)
+    {
+        ColumnArray & column_array = assert_cast<ColumnArray &>(column);
+        ColumnArray::Offsets & offsets = column_array.getOffsets();
+        IColumn & nested_column = column_array.getData();
+
+        if (offsets.size() > initial_size)
+        {
+            chassert(offsets.size() - initial_size == 1);
+            offsets.pop_back();
+        }
+
+        if (nested_column.size() > offsets.back())
+            nested_column.popBack(nested_column.size() - offsets.back());
+
+        throw;
+    }
+}
 
 void SerializationArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
@@ -728,16 +755,34 @@ void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t 
         return;
     }
 
-    writeCString("[\n", ostr);
+    auto nested_column_type = removeNullable(column_array.getDataPtr())->getDataType();
+    bool print_each_element_on_separate_line =
+        nested_column_type == TypeIndex::Array ||
+        nested_column_type == TypeIndex::Map ||
+        nested_column_type == TypeIndex::Object ||
+        nested_column_type == TypeIndex::Tuple;
+
+
+    writeChar('[', ostr);
     for (size_t i = offset; i < next_offset; ++i)
     {
         if (i != offset)
-            writeCString(",\n", ostr);
-        writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+            writeChar(',', ostr);
+
+        if (print_each_element_on_separate_line)
+        {
+            writeChar('\n', ostr);
+            writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+        }
+
         nested->serializeTextJSONPretty(nested_column, i, ostr, settings, indent + 1);
     }
-    writeChar('\n', ostr);
-    writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+
+    if (print_each_element_on_separate_line)
+    {
+        writeChar('\n', ostr);
+        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+    }
     writeChar(']', ostr);
 }
 

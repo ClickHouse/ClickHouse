@@ -50,6 +50,7 @@
 #define HAVE_SELECT_H
 #define HAVE_SETJMP_H
 #define HAVE_SETJMP_H
+#define HAVE_STDINT_H
 #define HAVE_UNISTD_H
 #define HAVE_POLL_H
 #define HAVE_PTHREAD_H

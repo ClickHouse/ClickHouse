@@ -119,7 +119,7 @@ class _Settings:
     AWS_REGION: str = ""
     # S3 path for Slack feed events storage (format: bucket/prefix)
     # Used by EventFeed and FeedSubscription for PR notification subscriptions
-    EVENTS_S3_PATH: str = ""
+    EVENT_FEED_S3_PATH: str = ""
 
 
 _USER_DEFINED_SETTINGS = [
@@ -127,7 +127,7 @@ _USER_DEFINED_SETTINGS = [
     "CACHE_S3_PATH",
     "HTML_S3_PATH",
     "CLOUD_INFRASTRUCTURE_CONFIG_PATH",
-    "EVENTS_S3_PATH",
+    "EVENT_FEED_S3_PATH",
     "AWS_REGION",
     "S3_BUCKET_TO_HTTP_ENDPOINT",
     "TEXT_CONTENT_EXTENSIONS",

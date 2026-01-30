@@ -47,9 +47,6 @@ public:
     StoragePtr getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
     StoragePtr tryGetTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
 
-    void startup() override;
-    void shutdown(bool is_drop) override;
-
     void read(
         QueryPlan & query_plan,
         const Names & column_names,

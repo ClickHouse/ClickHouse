@@ -19,9 +19,11 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 
 #include <Storages/StorageMerge.h>
 
@@ -422,9 +424,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     }
     else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
     {
-        /// In this case we can also push down to left side of JOIN using equivalent sets.
-        for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
-            equivalent_columns_to_push_down.push_back(name);
+        if (!logical_join->typeChangingSides().contains(JoinTableSide::Left))
+        {
+            /// In this case we can also push down to left side of JOIN using equivalent sets.
+            for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
+                equivalent_columns_to_push_down.push_back(name);
+        }
     }
 
     if (right_stream_filter_push_down_input_columns_available)
@@ -434,9 +439,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     }
     else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
     {
-        /// In this case we can also push down to right side of JOIN using equivalent sets.
-        for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
-            equivalent_columns_to_push_down.push_back(name);
+        if (!logical_join->typeChangingSides().contains(JoinTableSide::Right))
+        {
+            /// In this case we can also push down to right side of JOIN using equivalent sets.
+            for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
+                equivalent_columns_to_push_down.push_back(name);
+        }
     }
 
     const bool is_filter_column_const_before = isFilterColumnConst(*filter);
@@ -601,7 +609,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     return updated_steps;
 }
 
-size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -779,8 +787,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Union does not change header.
         /// We can push down filter and update header.
         auto union_input_headers = child->getInputHeaders();
+        auto expected_output = filter->getOutputHeader();
+
         for (auto & input_header : union_input_headers)
-            input_header = filter->getOutputHeader();
+            input_header = expected_output;
 
         ///                - Something
         /// Filter - Union - Something
@@ -814,6 +824,18 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         ///       - Filter - Something
 
         return 3;
+    }
+
+    if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
+    {
+        if (!settings.parallel_replicas_filter_pushdown)
+            return 0;
+
+        // actual push down will be done when plan for local parallel replica will be optimized
+        FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
+        parallel_replicas_local_plan->addFilter(std::move(info));
+        std::swap(*parent_node, *child_node);
+        return 1;
     }
 
     if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(child.get()))

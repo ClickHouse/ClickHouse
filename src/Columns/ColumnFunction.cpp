@@ -412,6 +412,41 @@ ColumnPtr ColumnFunction::recursivelyConvertResultToFullColumnIfLowCardinality()
     return ColumnFunction::create(elements_size, function, captured_columns, is_short_circuit_argument, is_function_compiled, true);
 }
 
+void ColumnFunction::forEachMutableSubcolumn(MutableColumnCallback callback)
+{
+    for (auto & column : captured_columns)
+    {
+        WrappedPtr wrapped = column.column;
+        callback(wrapped);
+        column.column = std::move(wrapped).detach();
+    }
+}
+
+void ColumnFunction::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+{
+    for (auto & column : captured_columns)
+    {
+        auto & mutable_column = column.column->assumeMutableRef();
+        callback(mutable_column);
+        mutable_column.forEachMutableSubcolumnRecursively(callback);
+    }
+}
+
+void ColumnFunction::forEachSubcolumn(ColumnCallback callback) const
+{
+    for (const auto & column : captured_columns)
+        callback(column.column);
+}
+
+void ColumnFunction::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+{
+    for (const auto & column : captured_columns)
+    {
+        callback(*column.column);
+        column.column->forEachSubcolumnRecursively(callback);
+    }
+}
+
 const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column)
 {
     const ColumnFunction * column_function;

@@ -334,7 +334,7 @@ void PaimonRestCatalog::forEachDatabase(DB::Strings & databases, StopCondition s
     while (first_iteration || !next_page_token.empty())
     {
         first_iteration = false;
-        for (size_t i = 0; i < databases_array->size(); ++i)
+        for (unsigned int i = 0; i < databases_array->size(); ++i)
         {
             const String & database_name = databases_array->getElement<String>(i);
             databases.emplace_back(database_name);
@@ -388,7 +388,7 @@ void PaimonRestCatalog::forEachTables(
     while (first_iteration || !next_page_token.empty())
     {
         first_iteration = false;
-        for (size_t i = 0; i < tables_array->size(); ++i)
+        for (unsigned int i = 0; i < tables_array->size(); ++i)
         {
             String table_name = tables_array->getElement<String>(i);
             table_name = database + "." + table_name;

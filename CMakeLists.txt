@@ -91,6 +91,7 @@ if (ENABLE_FUZZING)
     set (ENABLE_CHECK_HEAVY_BUILDS 1)
     set (GLIBC_COMPATIBILITY OFF)
     set (ENABLE_BENCHMARKS 0)
+    set (ENABLE_CLICKHOUSE_KEEPER 0)
 
     # For codegen_select_fuzzer
     set (ENABLE_PROTOBUF 1)
@@ -356,6 +357,10 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
+
+    if(LINKER_NAME MATCHES "lld")
+        set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
+    endif()
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
 endif ()
@@ -389,6 +394,8 @@ elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
 elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
+elseif (OS_SUNOS)
+    include(cmake/sunos/default_libs.cmake)
 endif ()
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
@@ -508,7 +515,7 @@ macro (clickhouse_add_executable target)
     # to inject memory tracking mechanism into them.
     # Sanitizers have their own way of intercepting the
     # allocations and deallocations, so we skip this step for them.
-    if (NOT (SANITIZE OR SANITIZE_COVERAGE OR OS_DARWIN OR OS_FREEBSD))
+    if (NOT (SANITIZE OR SANITIZE_COVERAGE OR OS_DARWIN OR OS_FREEBSD OR OS_SUNOS))
         target_link_options(${target} PRIVATE
             "LINKER:--wrap=malloc"
             "LINKER:--wrap=free"
@@ -617,12 +624,6 @@ if (FUZZER)
                 get_target_filename(${target} target_bin_name)
                 get_target_property(target_bin_dir ${target} BINARY_DIR)
                 add_custom_command(TARGET fuzzers POST_BUILD COMMAND mv "${target_bin_dir}/${target_bin_name}" "${CMAKE_CURRENT_BINARY_DIR}/programs/" VERBATIM)
-            endif()
-            if (target STREQUAL "clickhouse")
-                message(STATUS "${target} instrumented with fuzzer")
-                target_link_libraries(${target} PUBLIC ch_contrib::fuzzer_no_main)
-                # Add to fuzzers bundle
-                add_dependencies(fuzzers ${target})
             endif()
         endif()
     endforeach()

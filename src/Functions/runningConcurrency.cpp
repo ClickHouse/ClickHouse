@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>

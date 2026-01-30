@@ -47,6 +47,7 @@ CREATE TABLE tab
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
+                                [, posting_list_codec = 'none' | 'bitpacking' ]
                             )
 )
 ENGINE = MergeTree
@@ -116,6 +117,24 @@ Examples:
 Also, the preprocessor expression must only reference the column on top of which the text index is defined.
 Using non-deterministic functions is not allowed.
 
+The preprocessor can also be used with [Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md) columns.
+In this case, the preprocessor expression transforms the array elements individually.
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    col Array(String),
+    INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))
+
+    -- This is not legal:
+    INDEX idx_illegal col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arraySort(col))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) use the preprocessor to first transform the search term before tokenizing it.
 
 For example,
@@ -147,7 +166,6 @@ ORDER BY tuple();
 
 SELECT count() FROM tab WHERE hasToken(str, lower('Foo'));
 ```
-
 **Other arguments (optional)**. Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
 However, unlike other skipping indexes, text indexes have an infinite granularity, i.e. the text index is created for the entire part and explicitly specified index granularity is ignored.
 This value has been chosen empirically and it provides a good trade-off between speed and index size for most use cases.
@@ -165,6 +183,10 @@ Optional parameter `dictionary_block_size` (default: 512) specifies the size of 
 Optional parameter `dictionary_block_frontcoding_compression` (default: 1) specifies if the dictionary blocks use front coding as compression.
 
 Optional parameter `posting_list_block_size` (default: 1048576) specifies the size of posting list blocks in rows.
+
+Optional parameter `posting_list_codec` (default: `none`) specifies the codec for posting list:
+- `none` - the posting lists are stored without additional compression.
+- `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size).
 
 </details>
 
@@ -204,7 +226,7 @@ The text index supports `=` and `!=`, yet equality and inequality search only ma
 
 #### `IN` and `NOT IN` {#functions-example-in-notin}
 
-`IN` ([in](/sql-reference/functions/in-functions)) and `NOT IN` ([notIn](/sql-reference/functions/in-functions)) are similar to functions `equals` and `notEquals` but they match all (`IN`) or no (`NOT IN`) search terms
+`IN` ([in](/sql-reference/functions/in-functions)) and `NOT IN` ([notIn](/sql-reference/functions/in-functions)) are similar to functions `equals` and `notEquals` but they match all (`IN`) or no (`NOT IN`) search terms.
 
 Example:
 
@@ -221,7 +243,7 @@ These functions currently use the text index for filtering only if the index tok
 :::
 
 In order to use `LIKE` ([like](/sql-reference/functions/string-search-functions.md/#like)), `NOT LIKE` ([notLike](/sql-reference/functions/string-search-functions.md/#notLike)), and the [match](/sql-reference/functions/string-search-functions.md/#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
-For the index with `ngrams` tokenizer, it is the case if the searched strings between special characters are longer or equal to the ngram length.
+For the index with `ngrams` tokenizer, this is the case if the length of the searched strings between wildcards is equal or longer than the ngram length.
 
 Example for the text index with `splitByNonAlpha` tokenizer:
 
@@ -243,7 +265,7 @@ The spaces left and right of `support` make sure that the term can be extracted 
 #### `startsWith` and `endsWith` {#functions-example-startswith-endswith}
 
 Similar to `LIKE`, functions [startsWith](/sql-reference/functions/string-functions.md/#startsWith) and [endsWith](/sql-reference/functions/string-functions.md/#endsWith) can only use a text index, if complete tokens can be extracted from the search term.
-For text index with `ngrams` tokenizer, it is the case if the searched prefix or suffix is longer or equal to the ngram length.
+For the index with `ngrams` tokenizer, this is the case if the length of the searched strings between wildcards is equal or longer than the ngram length.
 
 Example for the text index with `splitByNonAlpha` tokenizer:
 
@@ -311,7 +333,9 @@ SELECT count() FROM tab WHERE has(array, 'clickhouse');
 
 #### `mapContains` {#functions-example-mapcontains}
 
-Function [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map. The behaviour is similar to the `equals` function with a `String` column. The text index is only used if it is created on `mapKeys(map)` expression.
+Function [mapContains](/sql-reference/functions/tuple-map-functions#mapContainsKey) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map.
+The behaviour is similar to the `equals` function with a `String` column.
+The text index is only used if it was created on a `mapKeys(map)` expression.
 
 Example:
 
@@ -323,7 +347,9 @@ SELECT count() FROM tab WHERE mapContains(map, 'clickhouse');
 
 #### `mapContainsValue` {#functions-example-mapcontainsvalue}
 
-Function [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapcontainsvalue) matches against tokens extracted from the searched string in the values of a map. The behaviour is similar to the `equals` function with a `String` column. The text index is only used if it is created on `mapValues(map)` expression.
+Function [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue) matches against tokens extracted from the searched string in the values of a map.
+The behaviour is similar to the `equals` function with a `String` column.
+The text index is only used if it was created on a `mapValues(map)` expression.
 
 Example:
 
@@ -467,16 +493,16 @@ The direct read optimization in ClickHouse answers the query exclusively using t
 Text index lookups read relatively little data and are therefore much faster than usual skip indexes in ClickHouse (which do a skip index lookup, followed by loading and filtering remaining granules).
 
 Direct read is controlled by two settings:
-- Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) which specifies if direct read is generally enabled.
-- Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) which is another prerequisite for direct read. Note that on ClickHouse databases with [compatibility](../../../operations/settings/settings#compatibility) < 25.10, `use_skip_indexes_on_data_read` is disabled, so you either need to raise the compatibility setting value or `SET use_skip_indexes_on_data_read = 1` explicitly.
+- Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) (true by default) which specifies if direct read is generally enabled.
+- Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read), another prerequisite for direct read. In ClickHouse versions >= 26.1, the setting is enabled by default. In earlier versions, you need to run `SET use_skip_indexes_on_data_read = 1` explicitly.
 
 Also, the text index must be fully materialized to use direct reading (use `ALTER TABLE ... MATERIALIZE INDEX` for that).
 
 **Supported functions**
 
 The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
-If text index is created with an `array` tokenizer, the direct read is also supported for functions `equals`, `has`, `mapContainsKey`, and `mapContainsValue`.
-These functions can also be combined by AND, OR, and NOT operators.
+If the text index is defined with an `array` tokenizer, direct read is also supported for functions `equals`, `has`, `mapContainsKey`, and `mapContainsValue`.
+These functions can also be combined by `AND`, `OR`, and `NOT` operators.
 The `WHERE` or `PREWHERE` clauses can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 
 To understand a query utilizes direct read, run the query with `EXPLAIN PLAN actions = 1`.
@@ -529,15 +555,17 @@ Positions:
 The second EXPLAIN PLAN output contains a virtual column `__text_index_<index_name>_<function_name>_<id>`.
 If this column is present, then direct read is used.
 
-The performance benefit of the direct read optimization is greatest when the text column is used exclusively within text search functions, as this allows the query to avoid reading the column data entirely. However, even if the text column is accessed elsewhere in the query and must be read, the direct read optimization will still provide performance improvement.
+If the WHERE filter clause only contains text search functions, the query can avoid reading the column data entirely and has the greatest performance benefit by direct read.
+However, even if the text column is accessed elsewhere in the query, direct read will still provide performance improvement.
 
 **Direct read as a hint**
 
-Direct read as a hint uses the same principles as normal direct read, but instead adds an additional filter build from the text index data without removing the underlying text column. It is used for functions when accessing only the text index may produce false positives.
+Direct read as a hint is based on the same principles as normal direct read, but instead adds an additional filter build from the text index data without removing the underlying text column.
+It is used for functions when reading only from the text index would produce false positives.
 
 Supported functions are: `like`, `startsWith`, `endsWith`, `equals`, `has`, `mapContainsKey`, and `mapContainsValue`.
 
-A hint filter can provide additional selectivity to further restrict the result set in combination with other filters, helping to reduce the amount of data read from other columns.
+The additional filter can provide additional selectivity to restrict the result set in combination with other filters further, helping to reduce the amount of data read from other columns.
 
 Direct read as a hint is controlled by setting [query_plan_text_index_add_hint](../../../operations/settings/settings#query_plan_text_index_add_hint) (enabled by default).
 
@@ -578,7 +606,10 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 [...]
 ```
 
-In the second EXPLAIN PLAN output, you can see that an additional conjunct (`__text_index_...`) has been added to the filter condition. Thanks to the [PREWHERE](docs/sql-reference/statements/select/prewhere) optimization, the filter condition is broken down into three separate conjuncts, which are applied in order of increasing computational complexity. For this query, the application order is `__text_index_...`, then `greaterOrEquals(...)`, and finally `like(...)`. This ordering enables skipping even more data granules than the granules skipped by the text index and the original filter, before reading the heavy columns used in the query after `WHERE` clause further reducing the amount of data to read.
+In the second EXPLAIN PLAN output, you can see that an additional conjunct (`__text_index_...`) has been added to the filter condition.
+Thanks to the [PREWHERE](/sql-reference/statements/select/prewhere) optimization, the filter condition is broken down into three separate conjuncts, which are applied in order of increasing computational complexity.
+For this query, the application order is `__text_index_...`, then `greaterOrEquals(...)`, and finally `like(...)`.
+This ordering enables skipping even more data granules than the granules skipped by the text index and the original filter, before reading the heavy columns used in the query after `WHERE` clause further reducing the amount of data to read.
 
 ### Caching {#caching}
 
@@ -617,13 +648,21 @@ Please refer the following server settings to configure the caches.
 | [text_index_postings_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_postings_cache_max_entries)   | Maximum number of deserialized postings in cache.                                                       |
 | [text_index_postings_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_postings_cache_size_ratio)     | The size of the protected queue in the text index postings cache relative to the cache\'s total size.   |
 
+## Limitations {#limitations}
+
+The text index currently has the following limitations:
+- The materialization of text indexes with a high number of tokens (e.g. 10 billion tokens) can consume significant amounts of memory. Text
+  index materialization can happen directly (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) or indirectly in part merges.
+- It is not possible to materialize text indexes on parts with more than 4.294.967.296 (= 2^32 = ca. 4.2 billion) rows. Without a materialized text index, queries fall back to slow brute-force search within the part. As a worst case estimation, assume a part contains a single column of type String and MergeTree setting `max_bytes_to_merge_at_max_space_in_pool` (default: 150 GB) was not changed. In this case, the situation happens if the column contains less than 29.5 characters per row on average. In practice, tables also contain other columns and the threshold is multiples times smaller than that (depending on the number, type and size of the other columns).
+
 ## Implementation Details {#implementation}
 
 Each text index consists of two (abstract) data structures:
 - a dictionary which maps each token to a postings list, and
 - a set of postings lists, each representing a set of row numbers.
 
-Text index is built for the whole part. Unlike other skip indexes, text index can be merged instead of rebuilt on merge of the data parts.
+Text index is built for the whole part.
+Unlike other skip indexes, text index can be merged instead of rebuilt on merge of the data parts (see below).
 
 During index creation, three files are created (per part):
 
@@ -646,7 +685,11 @@ If the posting list is larger than `posting_list_block_size`, it is split into m
 
 **Merging of text indexes**
 
-When data parts are merged, the text index does not need to be rebuilt from scratch; instead, it can be merged efficiently in a separate step of the merge process. During this step, the sorted dictionaries from each part are read and combined into a new unified dictionary. The row numbers in the postings lists are also recalculated to reflect their new positions in the merged data part, using a mapping of old to new row numbers that is created during the initial merge phase. This method of merging text indexes is similar to how [projections](/docs/sql-reference/statements/alter/projection#normal-projection-with-part-offset-field) with `_part_offset` column are merged. If index is not materialized in the source part, it is built, written into a temporary file and then merged together with indexes from the other parts and from other temporary index files.
+When data parts are merged, the text index does not need to be rebuilt from scratch; instead, it can be merged efficiently in a separate step of the merge process.
+During this step, the sorted dictionaries of the text indexes of each input part are read and combined into a new unified dictionary.
+The row numbers in the postings lists are also recalculated to reflect their new positions in the merged data part, using a mapping of old to new row numbers that is created during the initial merge phase.
+This method of merging text indexes is similar to how [projections](/docs/sql-reference/statements/alter/projection#normal-projection-with-part-offset-field) with `_part_offset` column are merged.
+If index is not materialized in the source part, it is built, written into a temporary file and then merged together with indexes from the other parts and from other temporary index files.
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 

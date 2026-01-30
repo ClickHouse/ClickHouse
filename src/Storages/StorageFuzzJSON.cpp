@@ -14,7 +14,6 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/checkStackSize.h>
 #include <Common/escapeString.h>

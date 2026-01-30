@@ -293,6 +293,9 @@ void ColumnTuple::insertDefault()
 
 void ColumnTuple::popBack(size_t n)
 {
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
     column_length -= n;
     for (auto & column : columns)
         column->popBack(n);

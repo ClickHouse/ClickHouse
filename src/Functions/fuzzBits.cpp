@@ -28,7 +28,7 @@ namespace
         UInt8 res = 0;
         for (int i = 0; i < 8; ++i)
         {
-            UInt8 rand8 = rand;
+            UInt8 rand8 = static_cast<UInt8>(rand);
             rand >>= 8;
             res <<= 1;
             res |= (rand8 < prob * (1u << 8));

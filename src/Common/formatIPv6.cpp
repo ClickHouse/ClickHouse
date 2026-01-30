@@ -324,7 +324,7 @@ int parseIPv4SSE(const char * ipv4_string, const size_t ipv4_string_length, uint
         const __m128i dot = _mm_set1_epi8('.');
         const __m128i t0 = _mm_cmpeq_epi8(input, dot);
         dotmask = static_cast<uint16_t>(_mm_movemask_epi8(t0));
-        uint16_t mask = static_cast<uint16_t>(1) << ipv4_string_length;
+        uint16_t mask = static_cast<uint16_t>(1 << ipv4_string_length);
         dotmask &= mask - 1;
         dotmask |= mask;
     }
@@ -390,7 +390,7 @@ int parseIPv4SSE(const char * ipv4_string, const size_t ipv4_string_length, uint
     // pack and we are done!
     const __m128i t6 = _mm_packus_epi16(t5, t5);
     *destination = __builtin_bswap32(static_cast<uint32_t>(_mm_cvtsi128_si32(t6)));
-    return ipv4_string_length - pat[6];
+    return static_cast<int>(ipv4_string_length) - pat[6];
 }
 
 #endif

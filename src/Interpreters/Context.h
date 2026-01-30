@@ -27,6 +27,7 @@
 #include <Backups/BackupsInMemoryHolder.h>
 
 #include <Poco/AutoPtr.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include "config.h"
 
@@ -530,18 +531,23 @@ protected:
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
+    mutable std::mutex table_function_results_mutex;
 
     ContextWeakMutablePtr query_context;
-    ContextWeakMutablePtr session_context;  /// Session context or nullptr. Could be equal to this.
-    ContextWeakMutablePtr global_context;   /// Global context. Could be equal to this.
+    ContextWeakMutablePtr session_context;      /// Session context or nullptr. Could be equal to this.
+    ContextWeakMutablePtr global_context;       /// Global context. Could be equal to this.
+    ContextWeakMutablePtr background_context;   /// Context of background operations or a copy of global context. Could be equal to this.
 
     /// XXX: move this stuff to shared part instead.
     ContextMutablePtr buffer_context;  /// Buffer context. Could be equal to this.
 
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
+    /// A flag, used to detect sub-operations of background operations - in this case we won't need to build another background contexts
+    bool is_background_operation = false;
 
     inline static ContextPtr global_context_instance;
+    inline static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
 
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
@@ -919,8 +925,8 @@ public:
     void addSpecialScalar(const String & name, const Block & block);
 
     /// Mapping between identifiers and time series tags collected in the context of the currently executed query.
-    const ContextTimeSeriesTagsCollector & getTimeSeriesTagsCollector() const;
-    ContextTimeSeriesTagsCollector & getTimeSeriesTagsCollector();
+    std::shared_ptr<const ContextTimeSeriesTagsCollector> getTimeSeriesTagsCollector() const;
+    std::shared_ptr<ContextTimeSeriesTagsCollector> getTimeSeriesTagsCollector();
 
     const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
     QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
@@ -976,7 +982,7 @@ public:
     /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
 
-    StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values);
+    StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values) const;
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
@@ -995,12 +1001,6 @@ public:
     /// exists because it should be set before databases loading.
     void setCurrentDatabaseNameInGlobalContext(const String & name);
     void setCurrentQueryId(const String & query_id);
-
-    /// FIXME: for background operations (like Merge and Mutation) we also use the same Context object and even setup
-    /// query_id for it (table_uuid::result_part_name). We can distinguish queries from background operation in some way like
-    /// bool is_background = query_id.contains("::"), but it's much worse than just enum check with more clear purpose
-    void setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType setBackgroundOperationTypeForContextbackground_operation);
-    bool isBackgroundOperationContext() const;
 
     void killCurrentQuery() const;
     bool isCurrentQueryKilled() const;
@@ -1176,6 +1176,13 @@ public:
         return ptr && ptr.get() == this;
     }
 
+    bool hasBackgroundContext() const { return !background_context.expired(); }
+    bool isBackgroundContext() const
+    {
+        return is_background_operation;
+    }
+    ContextMutablePtr getBackgroundContext() const;
+
     ContextMutablePtr getBufferContext() const;
 
     void setQueryContext(ContextMutablePtr context_) { query_context = context_; }
@@ -1186,6 +1193,7 @@ public:
     void makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings);
     void makeSessionContext();
     void makeGlobalContext();
+    void makeBackgroundContext(const Poco::Util::AbstractConfiguration & config);
 
     void setProgressCallback(ProgressCallback callback);
     /// Used in executeQuery() to pass it to the QueryPipeline.
@@ -1613,8 +1621,6 @@ public:
 
     BlockMarshallingCallback getBlockMarshallingCallback() const;
     void setBlockMarshallingCallback(BlockMarshallingCallback && callback);
-
-    RuntimeDataflowStatisticsCacheUpdaterPtr getRuntimeDataflowStatisticsCacheUpdater() const;
 
     UUID getParallelReplicasGroupUUID() const;
     void setParallelReplicasGroupUUID(UUID uuid);
