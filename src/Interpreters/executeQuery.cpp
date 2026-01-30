@@ -1380,9 +1380,8 @@ static BlockIO executeQueryImpl(
 
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
-    BlockIO res;
-    /// May use storage that is protected by pipeline (res.pipeline), so should be destroyed first
     QueryMetadataCachePtr query_metadata_cache;
+    BlockIO res;
     String query_database;
     String query_table;
 
@@ -1834,6 +1833,9 @@ static BlockIO executeQueryImpl(
         /// Hold element of process list till end of query execution.
         res.process_list_entries.push_back(process_list_entry);
 
+        /// Hold query metadata cache till end of query execution.
+        res.query_metadata_cache = std::move(query_metadata_cache);
+
         if (query_plan)
         {
             auto plan = QueryPlan::makeSets(std::move(*query_plan), context);
@@ -1852,9 +1854,6 @@ static BlockIO executeQueryImpl(
 
             res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline));
         }
-
-        /// Hold query metadata cache till end of query execution.
-        res.query_metadata_cache = std::move(query_metadata_cache);
 
         auto & pipeline = res.pipeline;
 
