@@ -1167,6 +1167,13 @@ namespace ErrorCodes
     Possible values:
     - Any positive integer.
     )", 0) \
+    DECLARE(UInt64, execute_merges_on_single_replica_min_blocks, 0, R"(
+    When this setting has a value greater than zero and execute_merges_on_single_replica_time_threshold
+    is set, only merges involving at least this many blocks will be executed on a single replica.
+
+    Possible values:
+    - Any positive integer.
+    )", 0) \
     DECLARE(Seconds, remote_fs_execute_merges_on_single_replica_time_threshold, 3 * 60 * 60, R"(
     When this setting has a value greater than zero only a single replica starts
     the merge immediately if merged part on shared storage.
