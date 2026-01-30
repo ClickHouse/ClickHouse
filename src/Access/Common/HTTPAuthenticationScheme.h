@@ -8,6 +8,7 @@ namespace DB
 enum class HTTPAuthenticationScheme
 {
     BASIC,
+    BEARER
 };
 
 

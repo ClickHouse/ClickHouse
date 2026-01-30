@@ -83,6 +83,7 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
+#include <Access/OpenPolicyAgentAccess.h>
 #include <Backups/BackupsWorker.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -1145,6 +1146,8 @@ ContextData::ContextData(const ContextData &o) :
     settings_constraints_and_current_profiles(o.settings_constraints_and_current_profiles),
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
+    opa_enabled(o.opa_enabled),
+    open_policy_agent(o.open_policy_agent),
     current_database(o.current_database),
     settings(std::make_unique<Settings>(*o.settings)),
     progress_callback(o.progress_callback),
@@ -1955,7 +1958,10 @@ ALWAYS_INLINE inline void contextSanityClampSettings(const Context & context, Se
 template <typename... Args>
 void Context::checkAccessImpl(const Args &... args) const
 {
-    return getAccess()->checkAccess(args...);
+    if (auto opa = getOpenPolicyAgent())
+        opa->checkAccess(shared_from_this(), args...);
+
+    getAccess()->checkAccess(args...);
 }
 
 void Context::checkAccess(const AccessFlags & flags) const { checkAccessImpl(flags); }
@@ -1970,6 +1976,27 @@ void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id,
 void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const Strings & columns) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), columns); }
 void Context::checkAccess(const AccessRightsElement & element) const { checkAccessImpl(element); }
 void Context::checkAccess(const AccessRightsElements & elements) const { checkAccessImpl(elements); }
+
+std::shared_ptr<const OpenPolicyAgentAccess> Context::getOpenPolicyAgent() const
+{
+    if (!opa_enabled)
+        return {};
+
+    if (!open_policy_agent)
+    {
+        open_policy_agent = OpenPolicyAgentAccess::create(shared_from_this());
+        opa_enabled = open_policy_agent.get();
+    }
+
+    if (open_policy_agent && getRolesInfo())
+    {
+        auto roles = getRolesInfo()->getEnabledRolesNames();
+        const bool has_opa_role = roles.end() != std::find(roles.begin(), roles.end(), open_policy_agent->getRole());
+        return has_opa_role ? open_policy_agent : std::shared_ptr<const OpenPolicyAgentAccess>{};
+    }
+
+    return {};
+}
 
 std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
 {

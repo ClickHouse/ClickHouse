@@ -266,6 +266,25 @@ HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration
 
 }
 
+HTTPAuthClientParams HTTPAuthClientParams::createDefault(const String & uri_, size_t max_tries_)
+{
+    constexpr size_t connection_timeout_ms = 1000;
+    constexpr size_t receive_timeout_ms = 1000;
+    constexpr size_t send_timeout_ms = 1000;
+
+    return HTTPAuthClientParams{
+        .uri = Poco::URI(uri_),
+        .timeouts = ConnectionTimeouts()
+                        .withConnectionTimeout(Poco::Timespan(connection_timeout_ms * 1000))
+                        .withReceiveTimeout(Poco::Timespan(receive_timeout_ms * 1000))
+                        .withSendTimeout(Poco::Timespan(send_timeout_ms * 1000)),
+        .max_tries = max_tries_,
+        .retry_initial_backoff_ms = 50,
+        .retry_max_backoff_ms = 1000,
+        .forward_headers = {}
+    };
+}
+
 void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
     parseLDAPSearchParams(params, config, prefix);
@@ -561,13 +580,28 @@ bool ExternalAuthenticators::checkHTTPBasicCredentials(
     const String & server, const BasicCredentials & credentials, const ClientInfo & client_info, SettingsChanges & settings) const
 {
     auto params = getHTTPAuthenticationParams(server);
-    HTTPBasicAuthClient<SettingsAuthResponseParser> client(params);
+    HTTPAuthClient<SettingsAuthResponseParser> client(params);
 
-    auto [is_ok, settings_from_auth_server] = client.authenticate(credentials.getUserName(), credentials.getPassword(), client_info.http_headers);
+    auto [is_ok, settings_from_auth_server] = client.authenticateBasic(credentials.getUserName(), credentials.getPassword(), client_info.http_headers);
 
     if (is_ok)
         std::ranges::move(settings_from_auth_server, std::back_inserter(settings));
 
     return is_ok;
 }
+
+bool ExternalAuthenticators::checkHTTPBearerCredentials(
+    const String & server, const String & token, const ClientInfo & client_info, SettingsChanges & settings) const
+{
+    auto params = getHTTPAuthenticationParams(server);
+    HTTPAuthClient<SettingsAuthResponseParser> client(params);
+
+    auto [is_ok, settings_from_auth_server] = client.authenticateBearer(token, client_info.http_headers);
+
+    if (is_ok)
+        std::ranges::move(settings_from_auth_server, std::back_inserter(settings));
+
+    return is_ok;
+}
+
 }

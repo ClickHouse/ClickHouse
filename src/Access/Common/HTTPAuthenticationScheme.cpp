@@ -22,7 +22,7 @@ HTTPAuthenticationScheme parseHTTPAuthenticationScheme(const String & scheme_str
 {
     auto scheme = magic_enum::enum_cast<HTTPAuthenticationScheme>(Poco::toUpper(scheme_str));
     if (!scheme)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown HTTP authentication scheme: {}. Possible value is 'BASIC'", scheme_str);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown HTTP authentication scheme: {}. Possible values are 'BASIC', 'BEARER'", scheme_str);
     return *scheme;
 }
 

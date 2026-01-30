@@ -44,6 +44,7 @@ public:
         const LDAPClient::RoleSearchParamsList * role_search_params = nullptr, LDAPClient::SearchResultsList * role_search_results = nullptr) const;
     bool checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const;
     bool checkHTTPBasicCredentials(const String & server, const BasicCredentials & credentials, const ClientInfo & client_info, SettingsChanges & settings) const;
+    bool checkHTTPBearerCredentials(const String & server, const String & token, const ClientInfo & client_info, SettingsChanges & settings) const;
 
     GSSAcceptorContext::Params getKerberosParams() const;
 
