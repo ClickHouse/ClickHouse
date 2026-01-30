@@ -625,6 +625,11 @@ bool ASTAlterQuery::isDropPartitionAlter() const
     return isOneCommandTypeOnly(ASTAlterCommand::DROP_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::DROP_DETACHED_PARTITION);
 }
 
+bool ASTAlterQuery::isReplacePartition() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::REPLACE_PARTITION);
+}
+
 bool ASTAlterQuery::isCommentAlter() const
 {
     return isOneCommandTypeOnly(ASTAlterCommand::COMMENT_COLUMN) || isOneCommandTypeOnly(ASTAlterCommand::MODIFY_COMMENT);

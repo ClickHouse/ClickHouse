@@ -1995,3 +1995,36 @@ def test_ignore_cluster_name_setting(started_cluster):
     # Cleanup
     for node in [main_node, dummy_node]:
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_attach_from(started_cluster):
+    db_name_replicated = "test_attach_from_replicated"
+    db_name_atomic = "test_attach_from_atomic"
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name_replicated} SYNC")
+        node.query(f"DROP DATABASE IF EXISTS {db_name_atomic} SYNC")
+
+        node.query(
+            f"CREATE DATABASE {db_name_replicated} ENGINE = Replicated('/clickhouse/databases/{db_name_replicated}', '{{shard}}', '{{replica}}')"
+        )
+        node.query(f"CREATE DATABASE {db_name_atomic} ENGINE = Atomic")
+        node.query(
+            f"CREATE TABLE {db_name_atomic}.src (a UInt32) ENGINE=MergeTree() ORDER BY a"
+        )
+        node.query(f"INSERT INTO {db_name_atomic}.src SELECT 1")
+
+    main_node.query(
+        f"CREATE TABLE {db_name_replicated}.dst (a UInt32) ENGINE=MergeTree() ORDER BY a"
+    )
+    main_node.query(
+        f"ALTER TABLE {db_name_replicated}.dst ATTACH PARTITION tuple() FROM {db_name_atomic}.src"
+    )
+
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name_replicated}")
+
+    assert main_node.query(f"SELECT count(*) FROM {db_name_replicated}.dst") == "1\n"
+    assert dummy_node.query(f"SELECT count(*) FROM {db_name_replicated}.dst") == "0\n"
+
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name_replicated} SYNC")
+        node.query(f"DROP DATABASE IF EXISTS {db_name_atomic} SYNC")
