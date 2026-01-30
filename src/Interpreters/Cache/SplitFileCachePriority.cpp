@@ -42,7 +42,7 @@ SplitFileCachePriority::SplitFileCachePriority(
              max_data_segment_size,
              max_data_segment_elements,
              size_ratio,
-             0, // Overcommit avaliable only for CH Cloud
+             0, // Overcommit available only for CH Cloud
              description_ + "_" + getKeyTypePrefix(SegmentType::Data))});
     priorities_holder.insert(
         {SegmentType::System,
@@ -50,7 +50,7 @@ SplitFileCachePriority::SplitFileCachePriority(
              max_system_segment_size,
              max_system_segment_elements,
              size_ratio,
-             0, // Overcommit avaliable only for CH Cloud
+             0, // Overcommit available only for CH Cloud
              description_ + "_" + getKeyTypePrefix(SegmentType::System))});
 }
 
