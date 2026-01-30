@@ -1,7 +1,10 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/Net/HTTPRequest.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Databases/DataLake/Common.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -957,6 +960,56 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     }
 }
 
+ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCallback()
+{
+    return [this] () -> std::shared_ptr<IStorageCredentials>
+    {
+        LOG_DEBUG(log, "Update credentials in the catalog");
+
+        DB::HTTPHeaderEntries headers;
+        headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
+
+        auto [namespace_name, table_name] = DataLake::parseTableName(getTables()[0]);
+        const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
+        auto buf = createReadBuffer(config.prefix / endpoint, /* params */{}, headers);
+
+        if (buf->eof())
+        {
+            LOG_DEBUG(log, "Table doesn't exist (endpoint: {})", endpoint);
+            return nullptr;
+        }
+
+        String json_str;
+        readJSONObjectPossiblyInvalid(json_str, *buf);
+        LOG_DEBUG(log, "Receiving table metadata {} {}", table_name, json_str);
+
+        Poco::JSON::Parser parser;
+        Poco::Dynamic::Var json = parser.parse(json_str);
+        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+        auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
+
+        static constexpr auto access_key_id_str = "s3.access-key-id";
+        static constexpr auto secret_access_key_str = "s3.secret-access-key";
+        static constexpr auto session_token_str = "s3.session-token";
+        static constexpr auto storage_endpoint_str = "s3.endpoint";
+
+        std::string access_key_id;
+        std::string secret_access_key;
+        std::string session_token;
+        std::string storage_endpoint;
+        if (config_object->has(access_key_id_str))
+            access_key_id = config_object->get(access_key_id_str).extract<String>();
+        if (config_object->has(secret_access_key_str))
+            secret_access_key = config_object->get(secret_access_key_str).extract<String>();
+        if (config_object->has(session_token_str))
+            session_token = config_object->get(session_token_str).extract<String>();
+        if (config_object->has(storage_endpoint_str))
+            storage_endpoint = config_object->get(storage_endpoint_str).extract<String>();
+
+        return std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token);
+    };
+}
 
 }
 

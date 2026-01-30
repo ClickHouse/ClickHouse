@@ -23,7 +23,7 @@ namespace DB
 class ReadBufferFromS3 : public ReadBufferFromFileBase
 {
 private:
-    std::shared_ptr<const S3::Client> client_ptr;
+    mutable std::shared_ptr<const S3::Client> client_ptr;
     String bucket;
     String key;
     String version_id;
@@ -42,6 +42,8 @@ private:
     LoggerPtr log = getLogger("ReadBufferFromS3");
 
 public:
+    using S3CredentialsRefreshCallback = std::function<std::unique_ptr<const S3::Client>()>;
+
     ReadBufferFromS3(
         std::shared_ptr<const S3::Client> client_ptr_,
         const String & bucket_,
@@ -53,7 +55,9 @@ public:
         size_t offset_ = 0,
         size_t read_until_position_ = 0,
         bool restricted_seek_ = false,
-        std::optional<size_t> file_size = std::nullopt);
+        std::optional<size_t> file_size = std::nullopt,
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] {return nullptr;}
+        );
 
     ~ReadBufferFromS3() override = default;
 
@@ -109,6 +113,8 @@ private:
     bool restricted_seek;
 
     bool read_all_range_successfully = false;
+
+    const S3CredentialsRefreshCallback credentials_refresh_callback;
 };
 
 }
