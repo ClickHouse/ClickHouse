@@ -422,6 +422,7 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
             case COMP_Delta:
             case COMP_DoubleDelta:
             case COMP_Gorilla:
+            case COMP_ALP:
                 if (rg.nextBool())
                 {
                     cp->add_params()->set_ival(UINT32_C(1) << rg.randomInt<uint32_t>(0, 3));

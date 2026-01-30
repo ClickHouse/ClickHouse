@@ -3251,6 +3251,7 @@ enum CompressionCodec {
     /// COMP_ZSTD_QAT = 14;
     /// COMP_DEFLATE_QPL = 15;
     /// COMP_SZ3 = 16;
+    COMP_ALP = 17;
 }
 
 message IndexKeyVal {
