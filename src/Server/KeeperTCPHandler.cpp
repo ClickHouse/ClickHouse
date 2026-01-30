@@ -23,7 +23,6 @@
 #    include <Common/ZooKeeper/ZooKeeperConstants.h>
 #    include <Common/ZooKeeper/ZooKeeperIO.h>
 #    include <Common/logger_useful.h>
-#    include <Common/ThreadStatus.h>
 #    include <Common/setThreadName.h>
 #    include <Common/HistogramMetrics.h>
 
@@ -372,7 +371,6 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
 
 void KeeperTCPHandler::runImpl()
 {
-    ThreadStatus thread_status;
     DB::setThreadName(ThreadName::KEEPER_HANDLER);
 
     socket().setReceiveTimeout(receive_timeout);
