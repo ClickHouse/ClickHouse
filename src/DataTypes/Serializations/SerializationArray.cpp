@@ -263,7 +263,7 @@ void SerializationArray::enumerateStreams(
     const auto * column_array = data.column ? &assert_cast<const ColumnArray &>(*data.column) : nullptr;
     auto offsets = column_array ? column_array->getOffsetsPtr() : nullptr;
 
-    auto subcolumn_name = "size" + std::to_string(getArrayLevel(settings.path));
+    auto subcolumn_name = "size" + std::to_string(settings.array_level);
     auto offsets_serialization = std::make_shared<SerializationNamed>(
         std::make_shared<SerializationArrayOffsets>(),
         subcolumn_name, SubstreamType::NamedOffsets);
@@ -283,6 +283,7 @@ void SerializationArray::enumerateStreams(
     settings.path.back() = Substream::ArrayElements;
     settings.path.back().data = data;
     settings.path.back().creator = std::make_shared<SubcolumnCreator>(offsets);
+    ++settings.array_level;
 
     auto next_data = SubstreamData(nested)
         .withType(type_array ? type_array->getNestedType() : nullptr)
@@ -291,6 +292,7 @@ void SerializationArray::enumerateStreams(
         .withDeserializeState(data.deserialize_state);
 
     nested->enumerateStreams(settings, callback, next_data);
+    --settings.array_level;
     settings.path.pop_back();
 }
 
