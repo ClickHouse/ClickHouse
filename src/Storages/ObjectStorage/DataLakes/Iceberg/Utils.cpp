@@ -1143,7 +1143,8 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             auto column_name = source_id_to_column_name[source_id];
             int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
             auto iceberg_transform_name = field->getValue<String>(f_transform);
-            auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
+            auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name,
+                local_context->getSettingsRef()[Setting::iceberg_partition_timezone]);
             String full_argument;
             if (clickhouse_transform_name->transform_name != "identity")
             {
@@ -1152,7 +1153,10 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
                 {
                     full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
                 }
-                full_argument += column_name + ")";
+                full_argument += column_name;
+                if (clickhouse_transform_name->time_zone)
+                    full_argument += ", " + *clickhouse_transform_name->time_zone;
+                full_argument += ")";
             }
             else
             {

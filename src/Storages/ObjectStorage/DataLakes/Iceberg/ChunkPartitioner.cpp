@@ -18,6 +18,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 iceberg_insert_max_partitions;
+    extern const SettingsTimezone iceberg_partition_timezone;
 }
 
 namespace ErrorCodes
@@ -53,7 +54,7 @@ ChunkPartitioner::ChunkPartitioner(
 
         auto & factory = FunctionFactory::instance();
 
-        auto transform_and_argument = Iceberg::parseTransformAndArgument(transform_name);
+        auto transform_and_argument = Iceberg::parseTransformAndArgument(transform_name, context->getSettingsRef()[Setting::iceberg_partition_timezone]);
         if (!transform_and_argument)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown transform {}", transform_name);
 
@@ -67,6 +68,7 @@ ChunkPartitioner::ChunkPartitioner(
         result_data_types.push_back(function->getReturnType(columns_for_function));
         functions.push_back(function);
         function_params.push_back(transform_and_argument->argument);
+        function_time_zones.push_back(transform_and_argument->time_zone);
         columns_to_apply.push_back(column_name);
     }
 }
@@ -103,6 +105,14 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
             arguments.push_back(ColumnWithTypeAndName(const_column->clone(), type, "#"));
         }
         arguments.push_back(name_to_column[columns_to_apply[transform_ind]]);
+        if (function_time_zones[transform_ind].has_value())
+        {
+            auto type = std::make_shared<DataTypeString>();
+            auto column_value = ColumnString::create();
+            column_value->insert(*function_time_zones[transform_ind]);
+            auto const_column = ColumnConst::create(std::move(column_value), chunk.getNumRows());
+            arguments.push_back(ColumnWithTypeAndName(const_column->clone(), type, "PartitioningTimezone"));
+        }
         auto result
             = functions[transform_ind]->build(arguments)->execute(arguments, std::make_shared<DataTypeString>(), chunk.getNumRows(), false);
         for (size_t i = 0; i < chunk.getNumRows(); ++i)
