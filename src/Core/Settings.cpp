@@ -5281,16 +5281,6 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(Bool, query_condition_cache_store_conditions_as_plaintext, false, R"(
-Stores the filter condition for the [query condition cache](/operations/query-condition-cache) in plaintext.
-If enabled, system.query_condition_cache shows the verbatim filter condition which makes it easier to debug issues with the cache.
-Disabled by default because plaintext filter conditions may expose sensitive information.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
@@ -7591,6 +7581,7 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_r
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
+    MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false) \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0) \
     MAKE_OBSOLETE(M, UInt64, max_memory_usage_for_all_queries, 0) \
     MAKE_OBSOLETE(M, UInt64, multiple_joins_rewriter_version, 0) \
