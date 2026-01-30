@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 CLICKHOUSE_TABLE="test_insert_on_connection_drop"
-SETTINGS="input_format_parallel_parsing=0,async_insert=0,min_insert_block_size_bytes=1"
+SETTINGS="input_format_parallel_parsing=0,async_insert=0,min_insert_block_size_bytes=1,max_insert_delayed_streams_for_parallel_write=0"
 CLICKHOUSE_INSERT_URL="${CLICKHOUSE_URL}&max_query_size=1000&query=INSERT%20INTO%20${CLICKHOUSE_TABLE}%20SETTINGS%20${SETTINGS//,/%2C}%20FORMAT%20CSV"
 
 echo "DROP TABLE IF EXISTS ${CLICKHOUSE_TABLE}" | \
@@ -32,12 +32,14 @@ done
 
 PIPELINE_PID=$!
 
-sleep 3
+sleep 12
 
 kill -9 $PIPELINE_PID 2>/dev/null
 
 wait $PIPELINE_PID 2>/dev/null
 
+
+sleep 2
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, part_log;"
 
