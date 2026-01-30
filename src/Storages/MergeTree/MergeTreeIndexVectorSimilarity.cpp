@@ -21,8 +21,18 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Common/CurrentThread.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include <limits>
 #include <ranges>
+#include <random>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <algorithm>
+#include <Common/randomSeed.h>
+#include <pcg_random.hpp>
 
 #include <fmt/ranges.h>
 
@@ -45,6 +55,11 @@ namespace Setting
     extern const SettingsFloat vector_search_index_fetch_multiplier;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsBool vector_search_with_rescoring;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool allow_experimental_leann_optimization_for_hnsw;
 }
 
 namespace ServerSetting
@@ -104,6 +119,26 @@ String joinByComma(const T & t)
         return fmt::format("{}", fmt::join(keys, ", "));
     }
     std::unreachable();
+}
+
+template <typename ScheduleFunc>
+void runBuildIndexTasks(ScheduleFunc && schedule_tasks)
+{
+    auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
+
+    schedule_tasks(runner);
+
+    runner.waitForAllToFinishAndRethrowFirstError();
+}
+
+inline void reserveIndexForSize(USearchIndexWithSerializationPtr & index, size_t target_size)
+{
+    size_t max_thread_pool_size = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
+    if (max_thread_pool_size == 0)
+        max_thread_pool_size = getNumberOfCPUCoresToUse();
+    unum::usearch::index_limits_t limits(roundUpToPowerOfTwoOrZero(target_size), max_thread_pool_size);
+    index->reserve(limits);
 }
 
 }
@@ -214,8 +249,9 @@ MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     const String & index_name_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
-    UsearchHnswParams usearch_hnsw_params_)
-    : MergeTreeIndexGranuleVectorSimilarity(index_name_, metric_kind_, scalar_kind_, usearch_hnsw_params_, nullptr)
+    UsearchHnswParams usearch_hnsw_params_,
+    LeaNNParams leann_params_)
+    : MergeTreeIndexGranuleVectorSimilarity(index_name_, metric_kind_, scalar_kind_, usearch_hnsw_params_, nullptr, leann_params_)
 {
 }
 
@@ -224,11 +260,13 @@ MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
     UsearchHnswParams usearch_hnsw_params_,
-    USearchIndexWithSerializationPtr index_)
+    USearchIndexWithSerializationPtr index_,
+    LeaNNParams leann_params_)
     : index_name(index_name_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
     , usearch_hnsw_params(usearch_hnsw_params_)
+    , leann_params(leann_params_)
     , index(std::move(index_))
 {
 }
@@ -282,19 +320,172 @@ MergeTreeIndexAggregatorVectorSimilarity::MergeTreeIndexAggregatorVectorSimilari
     UInt64 dimensions_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
-    UsearchHnswParams usearch_hnsw_params_)
+    UsearchHnswParams usearch_hnsw_params_,
+    LeaNNParams leann_params_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , dimensions(dimensions_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
     , usearch_hnsw_params(usearch_hnsw_params_)
+    , leann_params(leann_params_)
 {
+}
+
+namespace
+{
+
+/// Perform hub node pruning on the HNSW graph (LeaNN, Section 5 of https://arxiv.org/pdf/2506.08276).
+void performHubPruning(
+    USearchIndexWithSerializationPtr & index,
+    const std::vector<std::vector<Float32>> & stored_vectors,
+    size_t dimensions,
+    unum::usearch::metric_kind_t metric_kind,
+    unum::usearch::scalar_kind_t scalar_kind,
+    UsearchHnswParams usearch_hnsw_params,
+    double hub_pruning_ratio,
+    size_t sample_size)
+{
+    if (!index || index->size() == 0 || stored_vectors.empty() || stored_vectors.size() != index->size())
+        return;
+
+    LoggerPtr logger = getLogger("VectorSimilarityIndex");
+    LOG_TRACE(logger, "Starting hub node pruning. Index size before pruning: {}", index->size());
+
+    if (stored_vectors.empty() || stored_vectors[0].empty())
+        return;
+
+    std::vector<Float32> min_values(dimensions, std::numeric_limits<Float32>::max());
+    std::vector<Float32> max_values(dimensions, std::numeric_limits<Float32>::lowest());
+
+    for (const auto & vec : stored_vectors)
+    {
+        if (vec.size() != dimensions)
+            continue;
+        for (size_t dim = 0; dim < dimensions; ++dim)
+        {
+            min_values[dim] = std::min(min_values[dim], vec[dim]);
+            max_values[dim] = std::max(max_values[dim], vec[dim]);
+        }
+    }
+
+    const size_t num_samples = std::min(sample_size, index->size());
+    std::unordered_map<USearchIndex::vector_key_t, size_t> node_visit_counts;
+
+    pcg64_fast rng{randomSeed()};
+    std::vector<Float32> random_query_vector(dimensions);
+    const size_t search_limit = std::min(static_cast<size_t>(50), index->size() / 2);
+
+    for (size_t i = 0; i < num_samples; ++i)
+    {
+        for (size_t dim = 0; dim < dimensions; ++dim)
+        {
+            std::uniform_real_distribution<Float32> dim_dist(min_values[dim], max_values[dim]);
+            random_query_vector[dim] = dim_dist(rng);
+        }
+        auto search_result = index->search(random_query_vector.data(), search_limit, USearchIndex::any_thread(), false, default_expansion_search);
+        if (search_result)
+        {
+            std::vector<USearchIndex::vector_key_t> result_keys(search_result.size());
+            search_result.dump_to(result_keys.data());
+
+            for (auto key : result_keys)
+            {
+                node_visit_counts[key]++;
+            }
+        }
+    }
+
+    std::vector<std::pair<USearchIndex::vector_key_t, size_t>> node_scores;
+    for (const auto & [key, count] : node_visit_counts)
+    {
+        node_scores.emplace_back(key, count);
+    }
+
+    /// Sort by visit count (descending)
+    std::sort(node_scores.begin(), node_scores.end(),
+              [](const auto & a, const auto & b) { return a.second > b.second; });
+
+    const size_t target_hub_nodes = std::max(static_cast<size_t>(1), static_cast<size_t>(index->size() * hub_pruning_ratio));
+    const size_t num_hub_nodes = std::min(target_hub_nodes, node_scores.size());
+    std::unordered_set<USearchIndex::vector_key_t> hub_node_keys;
+    for (size_t i = 0; i < num_hub_nodes && i < node_scores.size(); ++i)
+    {
+        hub_node_keys.insert(node_scores[i].first);
+    }
+
+    if (hub_node_keys.size() < target_hub_nodes)
+    {
+        for (size_t i = index->size(); i > 0 && hub_node_keys.size() < target_hub_nodes; --i)
+        {
+            hub_node_keys.insert(static_cast<USearchIndex::vector_key_t>(i - 1));
+        }
+    }
+
+    LOG_TRACE(logger, "Identified {} hub nodes out of {} total nodes", hub_node_keys.size(), index->size());
+
+    auto pruned_index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+
+    reserveIndexForSize(pruned_index, hub_node_keys.size());
+
+    runBuildIndexTasks([&](auto & runner)
+    {
+        size_t hub_index = 0;
+        for (auto key : hub_node_keys)
+        {
+            if (key >= stored_vectors.size())
+                continue;
+
+            const auto & vector = stored_vectors[key];
+            auto new_key = static_cast<USearchIndex::vector_key_t>(hub_index++);
+
+            runner.enqueueAndKeepTrack([&pruned_index, &vector, new_key]
+            {
+                auto result = pruned_index->add(new_key, vector.data());
+                if (!result)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add hub node to pruned index. Error: {}", result.error.release());
+            });
+        }
+    });
+
+    /// Replace original index with pruned index
+    index = pruned_index;
+
+    auto stats_after = index->getStatistics();
+    LOG_TRACE(logger, "Hub pruning complete. Pruned index: {} nodes (reduced from {}), {} edges",
+              stats_after.nodes, node_scores.size(), stats_after.edges);
+}
+
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAndReset()
 {
-    auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index_name, metric_kind, scalar_kind, usearch_hnsw_params, index);
+    /// Check experimental setting guard
+    bool leann_enabled = false;
+    if (leann_params.hub_pruning_ratio > 0.0)
+    {
+        auto query_context = CurrentThread::get().getQueryContext();
+        if (query_context)
+        {
+            const auto & merge_tree_settings = query_context->getMergeTreeSettings();
+            if (merge_tree_settings[MergeTreeSetting::allow_experimental_leann_optimization_for_hnsw])
+                leann_enabled = true;
+        }
+    }
+
+    if (leann_enabled && index && index->size() > 0 && !stored_vectors.empty())
+    {
+        performHubPruning(index, stored_vectors, dimensions, metric_kind, scalar_kind, usearch_hnsw_params, leann_params.hub_pruning_ratio, leann_params.sample_size);
+    }
+
+    LeaNNParams effective_leann_params = leann_params;
+    if (!leann_enabled)
+        effective_leann_params.hub_pruning_ratio = 0.0;
+
+    auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index_name, metric_kind, scalar_kind, usearch_hnsw_params, index, effective_leann_params);
+
+    /// Clear stored vectors after use
+    stored_vectors.clear();
     index = nullptr;
     return granule;
 }
@@ -315,17 +506,10 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
             throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
 
     /// Reserving space is mandatory
-    size_t max_thread_pool_size = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
-    if (max_thread_pool_size == 0)
-        max_thread_pool_size = getNumberOfCPUCoresToUse();
-    unum::usearch::index_limits_t limits(roundUpToPowerOfTwoOrZero(index->size() + rows), max_thread_pool_size);
-    index->reserve(limits);
+    reserveIndexForSize(index, index->size() + rows);
 
     /// Vector index creation is slooooow. Add the new rows in parallel. The threadpool is global to avoid oversubscription when multiple
     /// indexes are build simultaneously (e.g. multiple merges run at the same time).
-    auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
-
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
     auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row)
     {
         const typename Column::ValueType & value = column_array_data_float_data[column_array_offsets[row - 1]];
@@ -354,13 +538,14 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
 
     size_t index_size = index->size();
 
-    for (size_t row = 0; row < rows; ++row)
+    runBuildIndexTasks([&](auto & runner)
     {
-        auto key = static_cast<USearchIndex::vector_key_t>(index_size + row);
-        runner.enqueueAndKeepTrack([&add_vector_to_index, key, row] { add_vector_to_index(key, row); });
-    }
-
-    runner.waitForAllToFinishAndRethrowFirstError();
+        for (size_t row = 0; row < rows; ++row)
+        {
+            auto key = static_cast<USearchIndex::vector_key_t>(index_size + row);
+            runner.enqueueAndKeepTrack([&add_vector_to_index, key, row] { add_vector_to_index(key, row); });
+        }
+    });
 }
 
 }
@@ -417,6 +602,55 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
 
     const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
     WhichDataType which(nested_type_index);
+
+    /// Store vectors for hub pruning if enabled
+    if (leann_params.hub_pruning_ratio > 0.0)
+    {
+        stored_vectors.reserve(stored_vectors.size() + rows);
+
+        if (which.isFloat32())
+        {
+            const auto * column_float32 = typeid_cast<const ColumnFloat32 *>(&column_array->getData());
+            const auto & data = column_float32->getData();
+            for (size_t row = 0; row < rows; ++row)
+            {
+                size_t start = (row == 0) ? 0 : column_array_offsets[row - 1];
+                size_t end = column_array_offsets[row];
+                stored_vectors.emplace_back(data.begin() + start, data.begin() + end);
+            }
+        }
+        else if (which.isFloat64())
+        {
+            const auto * column_float64 = typeid_cast<const ColumnFloat64 *>(&column_array->getData());
+            const auto & data = column_float64->getData();
+            for (size_t row = 0; row < rows; ++row)
+            {
+                size_t start = (row == 0) ? 0 : column_array_offsets[row - 1];
+                size_t end = column_array_offsets[row];
+                std::vector<Float32> vec;
+                vec.reserve(end - start);
+                for (size_t i = start; i < end; ++i)
+                    vec.push_back(static_cast<Float32>(data[i]));
+                stored_vectors.push_back(std::move(vec));
+            }
+        }
+        else if (which.isBFloat16())
+        {
+            const auto * column_bf16 = typeid_cast<const ColumnBFloat16 *>(&column_array->getData());
+            const auto & data = column_bf16->getData();
+            for (size_t row = 0; row < rows; ++row)
+            {
+                size_t start = (row == 0) ? 0 : column_array_offsets[row - 1];
+                size_t end = column_array_offsets[row];
+                std::vector<Float32> vec;
+                vec.reserve(end - start);
+                for (size_t i = start; i < end; ++i)
+                    vec.push_back(static_cast<Float32>(data[i]));
+                stored_vectors.push_back(std::move(vec));
+            }
+        }
+    }
+
     if (which.isFloat32())
         updateImpl<ColumnFloat32>(column_array, column_array_offsets, index, dimensions, rows);
     else if (which.isFloat64())
@@ -531,23 +765,25 @@ MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
     UInt64 dimensions_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
-    UsearchHnswParams usearch_hnsw_params_)
+    UsearchHnswParams usearch_hnsw_params_,
+    LeaNNParams leann_params_)
     : IMergeTreeIndex(index_)
     , dimensions(dimensions_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
     , usearch_hnsw_params(usearch_hnsw_params_)
+    , leann_params(leann_params_)
 {
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexVectorSimilarity::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index.name, metric_kind, scalar_kind, usearch_hnsw_params);
+    return std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index.name, metric_kind, scalar_kind, usearch_hnsw_params, leann_params);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+    return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, usearch_hnsw_params, leann_params);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const ActionsDAG::Node * /*predicate*/, ContextPtr /*context*/) const
@@ -569,10 +805,11 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
     unum::usearch::metric_kind_t metric_kind = distanceFunctionToMetricKind.at(index.arguments[1].safeGet<String>());
     unum::usearch::scalar_kind_t scalar_kind = unum::usearch::scalar_kind_t::bf16_k;
     UsearchHnswParams usearch_hnsw_params;
+    LeaNNParams leann_params;
 
-    /// Optional parameters:
-    const bool has_six_args = (index.arguments.size() == 6);
-    if (has_six_args)
+    /// Optional parameters (only when 7 arguments are provided):
+    const bool has_seven_args = (index.arguments.size() == 7);
+    if (has_seven_args)
     {
         scalar_kind = quantizationToScalarKind.at(index.arguments[3].safeGet<String>());
         usearch_hnsw_params = {.connectivity  = index.arguments[4].safeGet<UInt64>(),
@@ -581,26 +818,114 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
         /// Special handling for binary quantization:
         if (scalar_kind == unum::usearch::scalar_kind_t::b1x8_k)
             metric_kind = unum::usearch::metric_kind_t::hamming_k;
+
+        /// Parse LeaNN parameters (7th argument)
+        String leann_arg = index.arguments[6].safeGet<String>();
+
+        if (leann_arg == "true" || leann_arg == "enable_hub_pruning")
+        {
+            /// Default to 0.5 (50%) for backward compatibility
+            leann_params.hub_pruning_ratio = 0.5;
+        }
+        else if (leann_arg == "false" || leann_arg.empty())
+        {
+            leann_params.hub_pruning_ratio = 0.0;
+        }
+        else if (leann_arg.find('=') != String::npos)
+        {
+            /// Parse key-value pairs (e.g., "ratio=0.5,sample_size=200")
+            size_t start = 0;
+            while (start < leann_arg.size())
+            {
+                size_t comma_pos = leann_arg.find(',', start);
+                String pair;
+                if (comma_pos == String::npos)
+                {
+                    pair = leann_arg.substr(start);
+                    start = leann_arg.size();
+                }
+                else
+                {
+                    pair = leann_arg.substr(start, comma_pos - start);
+                    start = comma_pos + 1;
+                }
+
+                size_t eq_pos = pair.find('=');
+                if (eq_pos == String::npos)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid key-value pair format in seventh argument: {}", pair);
+
+                String key = pair.substr(0, eq_pos);
+                String value = pair.substr(eq_pos + 1);
+
+                if (key == "ratio")
+                {
+                    try
+                    {
+                        double ratio = std::stod(value);
+                        if (ratio < 0.0 || ratio > 1.0)
+                            throw Exception(ErrorCodes::INCORRECT_DATA, "hub_pruning_ratio must be between 0.0 and 1.0");
+                        leann_params.hub_pruning_ratio = ratio;
+                    }
+                    catch (const std::exception &)
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid numeric value for hub_pruning_ratio: {}", value);
+                    }
+                }
+                else if (key == "sample_size")
+                {
+                    try
+                    {
+                        size_t sample_size = std::stoull(value);
+                        if (sample_size == 0)
+                            throw Exception(ErrorCodes::INCORRECT_DATA, "sample_size must be greater than 0");
+                        leann_params.sample_size = sample_size;
+                    }
+                    catch (const std::exception &)
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid numeric value for sample_size: {}", value);
+                    }
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown parameter in seventh argument: {}", key);
+                }
+            }
+        }
+        else
+        {
+            /// Try to parse as numeric ratio (0.0 to 1.0) for backward compatibility
+            try
+            {
+                double ratio = std::stod(leann_arg);
+                if (ratio < 0.0 || ratio > 1.0)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument (hub_pruning_ratio) must be between 0.0 and 1.0");
+                leann_params.hub_pruning_ratio = ratio;
+            }
+            catch (const std::exception &)
+            {
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument must be a numeric value between 0.0 and 1.0, key-value pairs (e.g., 'ratio=0.5,sample_size=200'), or 'true'/'enable_hub_pruning'/'false'");
+            }
+        }
     }
 
-    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, dimensions, metric_kind, scalar_kind, usearch_hnsw_params, leann_params);
 }
 
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */)
 {
     const bool has_three_args = (index.arguments.size() == 3);
-    const bool has_six_args = (index.arguments.size() == 6);
+    const bool has_seven_args = (index.arguments.size() == 7);
 
     /// Check number and type of arguments
-    if (!has_three_args && !has_six_args)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index must have three or six arguments");
+    if (!has_three_args && !has_seven_args)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index must have three or seven arguments");
     if (index.arguments[0].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of vector similarity index (method) must be of type String");
     if (index.arguments[1].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of vector similarity index (metric) must be of type String");
     if (index.arguments[2].getType() != Field::Types::UInt64)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Third argument of vector similarity index (dimensions) must be of type UInt64");
-    if (has_six_args)
+    if (has_seven_args)
     {
         if (index.arguments[3].getType() != Field::Types::String)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Fourth argument of vector similarity index (quantization) must be of type String");
@@ -617,7 +942,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         throw Exception(ErrorCodes::INCORRECT_DATA, "Second argument (distance function) of vector similarity index is not supported. Supported distance function are: {}", joinByComma(distanceFunctionToMetricKind));
     if (index.arguments[2].safeGet<UInt64>() == 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Third argument (dimensions) of vector similarity index must be > 0");
-    if (has_six_args)
+    if (has_seven_args)
     {
         if (!quantizationToScalarKind.contains(index.arguments[3].safeGet<String>()))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Fourth argument (quantization) of vector similarity index is not supported. Supported quantizations are: {}", joinByComma(quantizationToScalarKind));
@@ -638,6 +963,90 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         unum::usearch::index_dense_config_t config(connectivity, expansion_add, expansion_search);
         if (auto error = config.validate(); error)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parameters passed to vector similarity index. Error: {}", error.release());
+    }
+
+    /// Validate LeaNN parameters (7th argument):
+    if (has_seven_args)
+    {
+        if (index.arguments[6].getType() != Field::Types::String)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Seventh argument of vector similarity index (hub_pruning_ratio) must be of type String");
+
+        String leann_arg = index.arguments[6].safeGet<String>();
+        if (leann_arg != "enable_hub_pruning" && leann_arg != "true" && leann_arg != "false" && !leann_arg.empty())
+        {
+            if (leann_arg.find('=') != String::npos)
+            {
+                /// Validate key-value pairs
+                size_t start = 0;
+                while (start < leann_arg.size())
+                {
+                    size_t comma_pos = leann_arg.find(',', start);
+                    String pair;
+                    if (comma_pos == String::npos)
+                    {
+                        pair = leann_arg.substr(start);
+                        start = leann_arg.size();
+                    }
+                    else
+                    {
+                        pair = leann_arg.substr(start, comma_pos - start);
+                        start = comma_pos + 1;
+                    }
+
+                    size_t eq_pos = pair.find('=');
+                    if (eq_pos == String::npos)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid key-value pair format in seventh argument: {}", pair);
+
+                    String key = pair.substr(0, eq_pos);
+                    String value = pair.substr(eq_pos + 1);
+
+                    if (key == "ratio")
+                    {
+                        try
+                        {
+                            double ratio = std::stod(value);
+                            if (ratio < 0.0 || ratio > 1.0)
+                                throw Exception(ErrorCodes::INCORRECT_DATA, "hub_pruning_ratio must be between 0.0 and 1.0");
+                        }
+                        catch (const std::exception &)
+                        {
+                            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid numeric value for hub_pruning_ratio: {}", value);
+                        }
+                    }
+                    else if (key == "sample_size")
+                    {
+                        try
+                        {
+                            size_t sample_size = std::stoull(value);
+                            if (sample_size == 0)
+                                throw Exception(ErrorCodes::INCORRECT_DATA, "sample_size must be greater than 0");
+                        }
+                        catch (const std::exception &)
+                        {
+                            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid numeric value for sample_size: {}", value);
+                        }
+                    }
+                    else
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown parameter in seventh argument: {}", key);
+                    }
+                }
+            }
+            else
+            {
+                /// Check if it's a valid numeric value (backward compatibility)
+                try
+                {
+                    double ratio = std::stod(leann_arg);
+                    if (ratio < 0.0 || ratio > 1.0)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument (hub_pruning_ratio) must be between 0.0 and 1.0");
+                }
+                catch (const std::exception &)
+                {
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument must be a numeric value between 0.0 and 1.0, key-value pairs (e.g., 'ratio=0.5,sample_size=200'), or 'true'/'enable_hub_pruning'/'false'");
+                }
+            }
+        }
     }
 
     /// Check that the index is created on a single column

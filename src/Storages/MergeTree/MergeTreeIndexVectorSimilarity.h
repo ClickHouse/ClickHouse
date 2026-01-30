@@ -30,6 +30,13 @@ struct UsearchHnswParams
     size_t expansion_add = default_expansion_add;
 };
 
+/// Parameters for LeaNN (LeanNN) optimization techniques.
+struct LeaNNParams
+{
+    double hub_pruning_ratio = 0.0;  /// Ratio of hub nodes to keep (0.0 = disabled, 0.5 = keep 50%, etc.). Controls aggressiveness of pruning.
+    size_t sample_size = 100;  /// Number of random search samples to use for identifying hub nodes.
+};
+
 using USearchIndex = unum::usearch::index_dense_t;
 
 class USearchIndexWithSerialization : public USearchIndex
@@ -78,14 +85,16 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
         const String & index_name_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
-        UsearchHnswParams usearch_hnsw_params_);
+        UsearchHnswParams usearch_hnsw_params_,
+        LeaNNParams leann_params_ = LeaNNParams{});
 
     MergeTreeIndexGranuleVectorSimilarity(
         const String & index_name_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         UsearchHnswParams usearch_hnsw_params_,
-        USearchIndexWithSerializationPtr index_);
+        USearchIndexWithSerializationPtr index_,
+        LeaNNParams leann_params_ = LeaNNParams{});
 
     ~MergeTreeIndexGranuleVectorSimilarity() override = default;
 
@@ -100,6 +109,7 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const UsearchHnswParams usearch_hnsw_params;
+    const LeaNNParams leann_params;
     USearchIndexWithSerializationPtr index;
 
     LoggerPtr logger = getLogger("VectorSimilarityIndex");
@@ -109,7 +119,8 @@ private:
     /// Note: USearch prefixes the serialized data with its own version header. We can't rely on that because 1. the index in ClickHouse
     /// is (at least in theory) agnostic of specific vector search libraries, and 2. additional data (e.g. the number of dimensions)
     /// outside USearch exists which we should version separately.
-    static constexpr UInt64 FILE_FORMAT_VERSION = 1;
+    /// Version 2: Added LeaNN parameters (hub pruning support)
+    static constexpr UInt64 FILE_FORMAT_VERSION = 2;
 };
 
 
@@ -121,7 +132,8 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
         UInt64 dimensions_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
-        UsearchHnswParams usearch_hnsw_params_);
+        UsearchHnswParams usearch_hnsw_params_,
+        LeaNNParams leann_params_ = LeaNNParams{});
 
     ~MergeTreeIndexAggregatorVectorSimilarity() override = default;
 
@@ -135,7 +147,12 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const UsearchHnswParams usearch_hnsw_params;
+    const LeaNNParams leann_params;
     USearchIndexWithSerializationPtr index;
+
+    /// Store vectors for hub pruning (if hub_pruning_ratio > 0.0)
+    /// We store vectors as Float32 for simplicity, converting from original type as needed
+    std::vector<std::vector<Float32>> stored_vectors;
 };
 
 
@@ -174,7 +191,8 @@ public:
         UInt64 dimensions_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
-        UsearchHnswParams usearch_hnsw_params_);
+        UsearchHnswParams usearch_hnsw_params_,
+        LeaNNParams leann_params_ = LeaNNParams{});
 
     ~MergeTreeIndexVectorSimilarity() override = default;
 
@@ -189,6 +207,7 @@ private:
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const UsearchHnswParams usearch_hnsw_params;
+    const LeaNNParams leann_params;
 };
 
 }
