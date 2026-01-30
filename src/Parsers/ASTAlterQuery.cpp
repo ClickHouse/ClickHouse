@@ -65,6 +65,8 @@ ASTPtr ASTAlterCommand::clone() const
         res->sql_security = res->children.emplace_back(sql_security->clone()).get();
     if (rename_to)
         res->rename_to = res->children.emplace_back(rename_to->clone()).get();
+    if (add_enum_values)
+        res->add_enum_values = res->children.emplace_back(add_enum_values->clone());
 
     return res;
 }
@@ -127,6 +129,12 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         {
             ostr << " RESET SETTING ";
             settings_resets->format(ostr, settings, state, frame);
+        }
+        else if (add_enum_values)
+        {
+            ostr << " ADD ENUM VALUES ( ";
+            add_enum_values->format(ostr, settings, state, frame);
+            ostr << " ) ";
         }
         else
         {

@@ -45,6 +45,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_materialize_ttl(Keyword::MATERIALIZE_TTL);
     ParserKeyword s_rewrite_parts(Keyword::REWRITE_PARTS);
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
+    ParserKeyword s_add_enum_values(Keyword::ADD_ENUM_VALUES);
     ParserKeyword s_reset_setting(Keyword::RESET_SETTING);
     ParserKeyword s_modify_query(Keyword::MODIFY_QUERY);
     ParserKeyword s_modify_sql_security(Keyword::MODIFY_SQL_SECURITY);
@@ -150,6 +151,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserList parser_reset_setting(
         std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma),
         /* allow_empty = */ false);
+
+    ParserExpressionList parser_add_enum_values(false);
     ParserSelectWithUnionQuery select_p;
     ParserSQLSecurity sql_security_p;
     ParserRefreshStrategy refresh_p;
@@ -173,6 +176,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_ttl;
     ASTPtr command_settings_changes;
     ASTPtr command_settings_resets;
+    ASTPtr command_add_enum_values;
     ASTPtr command_select;
     ASTPtr command_rename_to;
     ASTPtr command_sql_security;
@@ -818,6 +822,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     if (!parser_reset_setting.parse(pos, command_settings_resets, expected))
                         return false;
                 }
+                else if (s_add_enum_values.ignore(pos, expected))
+                {
+                    check_no_type(s_add_enum_values.getName());
+
+                    ParserToken open(TokenType::OpeningRoundBracket);
+                    ParserToken close(TokenType::ClosingRoundBracket);
+
+                    if (!open.ignore(pos, expected) || !parser_add_enum_values.parse(pos, command_add_enum_values, expected)
+                        || !close.ignore(pos, expected))
+                        return false;
+                }
                 else
                 {
                     if (s_first.ignore(pos, expected))
@@ -1078,6 +1093,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->settings_changes = command->children.emplace_back(std::move(command_settings_changes)).get();
     if (command_settings_resets)
         command->settings_resets = command->children.emplace_back(std::move(command_settings_resets)).get();
+    if (command_add_enum_values)
+        command->add_enum_values = command->children.emplace_back(std::move(command_add_enum_values));
     if (command_select)
         command->select = command->children.emplace_back(std::move(command_select)).get();
     if (command_sql_security)

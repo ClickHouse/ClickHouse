@@ -164,3 +164,26 @@ Enum values are also convertible to numeric types using the `toT` function, wher
 The Enum type can be changed without cost using ALTER, if only the set of values is changed. It is possible to both add and remove members of the Enum using ALTER (removing is safe only if the removed value has never been used in the table). As a safeguard, changing the numeric value of a previously defined Enum member will throw an exception.
 
 Using ALTER, it is possible to change an Enum8 to an Enum16 or vice versa, just like changing an Int8 to Int16.
+
+## ADD ENUM VALUES {#add-enum-values}
+
+There is a syntax sugar to add new values to enum using ALTER [modify-column-add-enum-values](../../sql-reference/statements/alter/column.md)
+
+```sql
+CREATE TABLE enum
+(
+	x Enum('One' = 1, 'Two', 'Three')
+) ENGINE = Memory;
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES ('Zero' = 0, 'Four' = 4);
+SHOW CREATE TABLE enum;
+```
+
+```text
+┌─statement────────────────────────────────────────────────────────────────┐
+│CREATE TABLE default.enum                                                 │
+│(                                                                         │
+│    `x` Enum8('Zero' = 0, 'One' = 1, 'Two' = 2, 'Three' = 3, 'Four' = 4)  │
+│)                                                                         │
+│ENGINE = Memory                                                           │
+└──────────────────────────────────────────────────────────────────────────┘
+```
