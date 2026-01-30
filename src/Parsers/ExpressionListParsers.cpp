@@ -1337,8 +1337,46 @@ class ArrayElementLayer : public LayerWithSeparator<TokenType::Comma, TokenType:
 public:
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
+        /// Track if we see a question mark (potential ternary operator)
+        if (pos->type == TokenType::QuestionMark)
+            has_question_mark = true;
+
+        /// Only treat colon as a slice separator if:
+        /// - We're expecting an operator (have completed parsing an operand)
+        /// - We haven't already used a slice separator
+        /// - We have at most one element (to ensure we're at the right parsing level)
+        /// - We haven't seen a question mark (which would indicate a ternary operator)
+        if (action == Action::OPERATOR && !used_slice_separator && elements.size() <= 1 && !has_question_mark)
+        {
+            if (ParserToken(TokenType::Colon).ignore(pos, expected))
+            {
+                used_slice_separator = true;
+                action = Action::OPERAND;
+                return mergeElement();
+            }
+        }
+
         return LayerWithSeparator::parse(pos, expected, action);
     }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        if (!used_slice_separator)
+            return Layer::getResultImpl(node);
+
+        if (elements.size() != 2)
+            return false;
+
+        auto first = std::move(elements[0]);
+        auto second = std::move(elements[1]);
+        node = makeASTOperator("tuple", std::move(first), std::move(second));
+        return true;
+    }
+
+private:
+    bool used_slice_separator = false;
+    bool has_question_mark = false;
 };
 
 class CastLayer : public Layer
