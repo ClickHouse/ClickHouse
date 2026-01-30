@@ -12,6 +12,8 @@
 #include <Server/TCPProtocolStackData.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/ThreadStatus.h>
+#include <Common/setThreadName.h>
 
 namespace DB
 {
@@ -46,6 +48,9 @@ public:
 
     void run() override
     {
+        setThreadName("TCPProtocolStack");
+        ThreadStatus thread_status;
+
         const auto & conf = server.config();
         TCPProtocolStackData stack_data;
         stack_data.socket = socket();
@@ -106,7 +111,7 @@ public:
 
                     /// Wait for the client to close the connection or timeout, while draining the socket to prevent RST.
                     auto start = std::chrono::steady_clock::now();
-                    while (std::chrono::steady_clock::now() - start < std::chrono::seconds(2))
+                    while (!server.isCancelled() && std::chrono::steady_clock::now() - start < std::chrono::seconds(2))
                     {
                         if (stack_data.socket.poll(Poco::Timespan(100000), Poco::Net::Socket::SELECT_READ))
                         {
