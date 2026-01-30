@@ -3,11 +3,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE __table1.name = \'alpha\'
-)
+WHERE __table1.id = _CAST(1, \'UInt64\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -18,11 +14,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE __table1.name = \'alpha\'
-)
+WHERE __table1.id = _CAST(1, \'UInt64\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -34,9 +26,9 @@ SELECT
     __table1.payload AS payload
 FROM default.tab AS __table1
 WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE _CAST(__table1.i32, \'Int32\') = -32
+    SELECT id AS id
+    FROM dictionary(\'dictionary_all\')
+    WHERE _CAST(i32, \'Int32\') = -32
 )
 ORDER BY
     __table1.id ASC,
@@ -49,9 +41,9 @@ SELECT
     __table1.payload AS payload
 FROM default.tab AS __table1
 WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE _CAST(__table1.u64, \'UInt64\') = 64
+    SELECT id AS id
+    FROM dictionary(\'dictionary_all\')
+    WHERE _CAST(u64, \'UInt64\') = 64
 )
 ORDER BY
     __table1.id ASC,
@@ -64,9 +56,9 @@ SELECT
     __table1.payload AS payload
 FROM default.tab AS __table1
 WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE _CAST(__table1.f64, \'Float64\') = 20.
+    SELECT id AS id
+    FROM dictionary(\'dictionary_all\')
+    WHERE _CAST(f64, \'Float64\') = 20.
 )
 ORDER BY
     __table1.id ASC,
@@ -79,9 +71,9 @@ SELECT
     __table1.payload AS payload
 FROM default.tab AS __table1
 WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE _CAST(__table1.d, \'Date\') = _CAST(\'2025-01-01\', \'Date\')
+    SELECT id AS id
+    FROM dictionary(\'dictionary_all\')
+    WHERE _CAST(d, \'Date\') = _CAST(\'2025-01-01\', \'Date\')
 )
 ORDER BY
     __table1.id ASC,
@@ -94,9 +86,9 @@ SELECT
     __table1.payload AS payload
 FROM default.tab AS __table1
 WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE _CAST(__table1.dt, \'DateTime\') = _CAST(\'2025-01-01 10:00:00\', \'DateTime\')
+    SELECT id AS id
+    FROM dictionary(\'dictionary_all\')
+    WHERE _CAST(dt, \'DateTime\') = _CAST(\'2025-01-01 10:00:00\', \'DateTime\')
 )
 ORDER BY
     __table1.id ASC,
@@ -109,9 +101,9 @@ SELECT
     __table1.payload AS payload
 FROM default.tab AS __table1
 WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE _CAST(__table1.uid, \'UUID\') = _CAST(\'00000000-0000-0000-0000-000000000001\', \'UUID\')
+    SELECT id AS id
+    FROM dictionary(\'dictionary_all\')
+    WHERE _CAST(uid, \'UUID\') = _CAST(\'00000000-0000-0000-0000-000000000001\', \'UUID\')
 )
 ORDER BY
     __table1.id ASC,
@@ -124,9 +116,9 @@ SELECT
     __table1.payload AS payload
 FROM default.tab AS __table1
 WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE _CAST(__table1.ip4, \'IPv4\') = _CAST(\'192.168.0.1\', \'IPv4\')
+    SELECT id AS id
+    FROM dictionary(\'dictionary_all\')
+    WHERE _CAST(ip4, \'IPv4\') = _CAST(\'192.168.0.1\', \'IPv4\')
 )
 ORDER BY
     __table1.id ASC,
@@ -139,9 +131,9 @@ SELECT
     __table1.payload AS payload
 FROM default.tab AS __table1
 WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE _CAST(__table1.ip6, \'IPv6\') = _CAST(\'2001:db8::1\', \'IPv6\')
+    SELECT id AS id
+    FROM dictionary(\'dictionary_all\')
+    WHERE _CAST(ip6, \'IPv6\') = _CAST(\'2001:db8::1\', \'IPv6\')
 )
 ORDER BY
     __table1.id ASC,
@@ -154,9 +146,9 @@ SELECT
     __table1.payload AS payload
 FROM default.tab AS __table1
 WHERE _CAST((__table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE _CAST(__table1.name, \'Nullable(String)\') = \'alpha\'
+    SELECT id AS id
+    FROM dictionary(\'dictionary_all\')
+    WHERE _CAST(name, \'Nullable(String)\') = \'alpha\'
 )), \'Nullable(UInt8)\')
 ORDER BY
     __table1.id ASC,
