@@ -62,15 +62,15 @@ def started_cluster():
         cluster.shutdown()
 
 
-def get_memory_usage_from_client_output_and_close(client_output):
+def get_memory_usage_from_client_output_and_close(client_output, shard_name):
     client_output.seek(0)
     client_memory_value = None
     server_memory_value = None
     peak_memory_usage_found = False
 
     for line in client_output:
-        # Peak memory usage should be on shard_2
-        if server_memory_value is None and "shard_2" in line:
+        # Peak memory usage should be on the specified shard
+        if server_memory_value is None and shard_name in line:
             server_match = re.search(r"Query peak memory usage: ([0-9.]+)", line)
             if server_match:
                 server_memory_value = float(server_match.group(1))
@@ -88,6 +88,10 @@ def get_memory_usage_from_client_output_and_close(client_output):
                 peak_memory_usage_found = False
     
     client_output.close()
+    
+    assert client_memory_value is not None, "Client peak memory usage not found"
+    assert server_memory_value is not None, "Server peak memory usage not found"
+    
     return client_memory_value, server_memory_value
 
 
@@ -104,10 +108,7 @@ def test_clickhouse_client_max_peak_memory_usage_distributed(started_cluster):
         client1.expect("Peak memory usage", timeout=60)
         client1.expect(prompt)
 
-    client_memory_value, server_memory_value = get_memory_usage_from_client_output_and_close(client_output)
-    
-    assert client_memory_value is not None, "Client peak memory usage not found"
-    assert server_memory_value is not None, "Server peak memory usage not found"
+    client_memory_value, server_memory_value = get_memory_usage_from_client_output_and_close(client_output, "shard_2")
     
     # Assert difference is less than 1 MB
     memory_diff = abs(client_memory_value - server_memory_value)
@@ -128,10 +129,7 @@ def test_clickhouse_client_max_peak_memory_single_node(started_cluster):
         client1.expect("Peak memory usage", timeout=60)
         client1.expect(prompt)
 
-    client_memory_value, server_memory_value = get_memory_usage_from_client_output_and_close(client_output)
-    
-    assert client_memory_value is not None, "Client peak memory usage not found"
-    assert server_memory_value is not None, "Server peak memory usage not found"
+    client_memory_value, server_memory_value = get_memory_usage_from_client_output_and_close(client_output, "shard_1")
     
     # Assert difference is less than 1 MB
     memory_diff = abs(client_memory_value - server_memory_value)
