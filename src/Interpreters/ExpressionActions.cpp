@@ -842,32 +842,28 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
         }
     }
 
-    if (project_inputs)
-    {
-        block.clear();
-    }
-    else if (allow_duplicates_in_input)
-    {
-        /// This case is the same as when the input is projected
-        /// since we do not need any input columns.
-        block.clear();
-    }
-    else
-    {
-        ::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
-        for (auto input : execution_context.inputs_pos)
-            if (input >= 0)
-                block.erase(input);
-    }
-
     Block res;
 
     for (auto pos : result_positions)
         if (execution_context.columns[pos].column)
             res.insert(execution_context.columns[pos]);
 
-    for (auto && item : block)
-        res.insert(std::move(item));
+    /// allow_duplicates_in_input is the same as when the input is projected  since we do not need any input columns.
+    if (!project_inputs && !allow_duplicates_in_input)
+    {
+        std::vector<bool> discard_input(block.columns(), false);
+        for (auto input : execution_context.inputs_pos)
+        {
+            if (input >= 0)
+                discard_input[input] = true;
+        }
+
+        for (size_t i = 0; i < block.columns(); i++)
+        {
+            if (!discard_input[i])
+                res.insert(std::move(block.getByPosition(i)));
+        }
+    }
 
     block.swap(res);
 
