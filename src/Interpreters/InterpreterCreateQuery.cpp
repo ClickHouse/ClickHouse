@@ -25,6 +25,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
 
+
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
@@ -143,6 +144,11 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
+    extern const ServerSettingsUInt64 max_database_num_to_warn;
+    extern const ServerSettingsUInt64 max_dictionary_num_to_warn;
+    extern const ServerSettingsUInt64 max_table_num_to_warn;
+    extern const ServerSettingsUInt64 max_replicated_table_num_to_warn;
+    extern const ServerSettingsUInt64 max_view_num_to_warn;
     extern const ServerSettingsUInt64 max_database_num_to_throw;
     extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
     extern const ServerSettingsUInt64 max_table_num_to_throw;
@@ -201,8 +207,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
     }
 
-    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
-    if (db_num_limit > 0 && !internal)
+    auto db_warning_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_warn].value;
+    auto db_throw_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
+
+    if (db_throw_limit > 0 && !internal)
     {
         size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true}).size();
         std::initializer_list<std::string_view> system_databases =
@@ -219,11 +227,21 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                 --db_count;
         }
 
-        if (db_count >= db_num_limit)
+        if (db_count >= db_throw_limit)
             throw Exception(ErrorCodes::TOO_MANY_DATABASES,
-                            "Too many databases. "
+                            "Too many databases. All further CREATE queries will be rejected. "
                             "The limit (server configuration parameter `max_database_num_to_throw`) is set to {}, the current number of databases is {}",
-                            db_num_limit, db_count);
+                            db_throw_limit, db_count);
+
+        if (db_count >= db_warning_limit && db_count < db_throw_limit)
+        {
+            Float64 probability = (db_count - db_warning_limit) / (db_throw_limit - db_warning_limit);
+            if (std::bernoulli_distribution(probability)(thread_local_rng))
+                throw Exception(ErrorCodes::TOO_MANY_DATABASES,
+                                "The soft limit for the number of databases was exceeded. You can still retry the CREATE query and it may succeed. "
+                                "The soft limit is {}, the hard limit is {}, the current number is {}",
+                                db_warning_limit, db_throw_limit, db_count);
+        }
     }
 
     auto default_db_disk = getContext()->getDatabaseDisk();
@@ -2077,28 +2095,40 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
 void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create) const
 {
-    auto check_and_throw = [&](auto setting, CurrentMetrics::Metric metric, String setting_name, String entity_name)
-        {
-            UInt64 num_limit = getContext()->getGlobalContext()->getServerSettings()[setting];
-            UInt64 attached_count = CurrentMetrics::get(metric);
-            if (num_limit > 0 && attached_count >= num_limit)
-                throw Exception(ErrorCodes::TOO_MANY_TABLES,
-                                "Too many {}. "
-                                "The limit (server configuration parameter `{}`) is set to {}, the current number is {}",
-                                entity_name, setting_name, num_limit, attached_count);
-        };
+    auto check_and_throw = [&](auto warning_limit, auto throw_limit, CurrentMetrics::Metric metric, String entity_name)
+    {
+        UInt64 warning_limit_num = getContext()->getGlobalContext()->getServerSettings()[warning_limit];
+        UInt64 throw_limit_num = getContext()->getGlobalContext()->getServerSettings()[throw_limit];
+        UInt64 attached_count = CurrentMetrics::get(metric);
+
+        if (throw_limit_num == 0 || attached_count < warning_limit_num)
+            return;
+
+        if (attached_count >= throw_limit_num)
+            throw Exception(ErrorCodes::TOO_MANY_TABLES,
+                            "Too many {}. All further CREATE queries will be rejected. "
+                            "The soft limit is {}, the hard limit is {}, the current number is {}",
+                            entity_name, warning_limit_num, throw_limit_num, attached_count);
+
+        Float64 probability = (attached_count - warning_limit_num) / (throw_limit_num - warning_limit_num);
+        if (std::bernoulli_distribution(probability)(thread_local_rng))
+            throw Exception(ErrorCodes::TOO_MANY_TABLES,
+                            "The soft limit for the number of {} was exceeded. You can still retry the CREATE query and it may succeed. "
+                            "The soft limit is {}, the hard limit is {}, the current number is {}",
+                            entity_name, warning_limit_num, throw_limit_num, attached_count);
+    };
 
     String engine_name = create.storage && create.storage->engine ? create.storage->engine->name : "";
     bool is_replicated = engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree");
 
     if (create.is_dictionary)
-        check_and_throw(ServerSetting::max_dictionary_num_to_throw, CurrentMetrics::AttachedDictionary, "max_dictionary_num_to_throw", "dictionaries");
+        check_and_throw(ServerSetting::max_dictionary_num_to_warn, ServerSetting::max_dictionary_num_to_throw, CurrentMetrics::AttachedDictionary, "dictionaries");
     else if (create.isView())
-        check_and_throw(ServerSetting::max_view_num_to_throw, CurrentMetrics::AttachedView, "max_view_num_to_throw", "views");
+        check_and_throw(ServerSetting::max_view_num_to_warn, ServerSetting::max_view_num_to_throw, CurrentMetrics::AttachedView, "views");
     else if (is_replicated)
-        check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
+        check_and_throw(ServerSetting::max_replicated_table_num_to_warn, ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "replicated tables");
     else
-        check_and_throw(ServerSetting::max_table_num_to_throw, CurrentMetrics::AttachedTable, "max_table_num_to_throw", "tables");
+        check_and_throw(ServerSetting::max_table_num_to_warn, ServerSetting::max_table_num_to_throw, CurrentMetrics::AttachedTable, "tables");
 }
 
 
