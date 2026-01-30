@@ -344,6 +344,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
 
 static void explainStep(
     IQueryPlanStep & step,
+    const std::optional<CostEstimationInfo> & cost_estimation,
     IQueryPlanStep::FormatSettings & settings,
     const ExplainPlanOptions & options,
     size_t max_description_length)
@@ -357,6 +358,14 @@ static void explainStep(
         description = description.substr(0, max_description_length);
     if (options.description && !description.empty())
         settings.out <<" (" << description << ')';
+
+    if (options.estimates)
+    {
+        if (cost_estimation.has_value())
+            settings.out << fmt::format(" (rows: ~{:.1f}, cost: {:.1f})", cost_estimation->rows, cost_estimation->cost);
+        else
+            settings.out << " (rows: <unknown>, cost: <unknown>)";
+    }
 
     settings.out.write('\n');
 
@@ -461,7 +470,7 @@ std::string debugExplainStep(IQueryPlanStep & step)
     WriteBufferFromOwnString out;
     ExplainPlanOptions options{.actions = true};
     IQueryPlanStep::FormatSettings settings{.out = out};
-    explainStep(step, settings, options, 0);
+    explainStep(step, std::nullopt, settings, options, 0);
     return out.str();
 }
 
@@ -496,7 +505,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
         if (!frame.is_description_printed)
         {
             settings.offset = (indent + stack.size() - 1) * settings.indent;
-            explainStep(*frame.node->step, settings, options, max_description_length);
+            explainStep(*frame.node->step, frame.node->cost_estimation, settings, options, max_description_length);
             frame.is_description_printed = true;
         }
 

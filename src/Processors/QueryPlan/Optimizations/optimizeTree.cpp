@@ -1,4 +1,5 @@
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -562,6 +563,12 @@ void optimizeTreeSecondPass(
         {
             optimizeUnusedCommonSubplans(frame_node);
         });
+    }
+
+    if (optimization_settings.enable_cascades_optimizer)
+    {
+        CascadesOptimizer cascades_optimizer(query_plan);
+        cascades_optimizer.optimize();
     }
 
     bool join_runtime_filters_were_added = false;

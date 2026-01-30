@@ -1103,6 +1103,8 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             auto & new_node = nodes.emplace_back();
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};
+            if (entry->estimated_rows)
+                new_node.cost_estimation = CostEstimationInfo{.rows = Float64(*entry->estimated_rows)};
             nodeStack.push(&new_node);
         }
     }

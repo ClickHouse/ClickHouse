@@ -268,6 +268,7 @@ struct QueryPlanSettings
             {"sorting", query_plan_options.sorting},
             {"distributed", query_plan_options.distributed},
             {"keep_logical_steps", keep_logical_steps},
+            {"estimates", query_plan_options.estimates},
             {"input_headers", query_plan_options.input_headers},
             {"column_structure", query_plan_options.column_structure},
     };
