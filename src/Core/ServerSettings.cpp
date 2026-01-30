@@ -706,6 +706,15 @@ namespace
     <max_part_num_to_warn>400</max_part_num_to_warn>
     ```
     )", 0) \
+    DECLARE(UInt64, max_access_entity_num_to_warn, 10000lu, R"(
+    If number of access entities exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+
+    **Example**
+
+    ```xml
+    <max_access_entity_num_to_warn>400</max_access_entity_num_to_warn>
+    ```
+    )", 0) \
     DECLARE(UInt64, max_named_collection_num_to_throw, 0lu, R"(
     If number of named collections is greater than this value, server will throw an exception.
 
@@ -797,6 +806,18 @@ namespace
     ```
     )", 0) \
     DECLARE(UInt64, max_database_num_to_throw, 0lu, R"(If number of databases is greater than this value, server will throw an exception. 0 means no limitation.)", 0) \
+    DECLARE(UInt64, max_access_entities_num_to_throw, 0lu, R"(
+    If number of access entities is greater than this value, the server will throw an exception.
+
+    :::note
+    A value of `0` means no limitation.
+    :::
+
+    **Example**
+    ```xml
+    <max_access_entities_num_to_throw>400</max_access_entities_num_to_throw>
+    ```
+    )", 0) \
     DECLARE(UInt64, max_authentication_methods_per_user, 100, R"(
     The maximum number of authentication methods a user can be created with or altered to.
     Changing this setting does not affect existing users. Create/alter authentication-related queries will fail if they exceed the limit specified in this setting.
@@ -1663,6 +1684,8 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"max_part_num_to_warn", {std::to_string(context->getMaxPartNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_pending_mutations_to_warn", {std::to_string(context->getMaxPendingMutationsToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_pending_mutations_execution_time_to_warn", {std::to_string(context->getMaxPendingMutationsExecutionTimeToWarn()), ChangeableWithoutRestart::Yes}},
+            {"max_access_entity_num_to_warn", {std::to_string(context->getMaxAccessEntitiesNumToWarn()), ChangeableWithoutRestart::Yes}},
+
             {"max_partition_size_to_drop", {std::to_string(context->getMaxPartitionSizeToDrop()), ChangeableWithoutRestart::Yes}},
 
             {"min_os_cpu_wait_time_ratio_to_drop_connection", {std::to_string(context->getMinOSCPUWaitTimeRatioToDropConnection()), ChangeableWithoutRestart::Yes}},

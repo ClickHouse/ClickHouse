@@ -1,0 +1,4 @@
+<clickhouse>
+    <max_access_entities_num_to_throw>10</max_access_entities_num_to_throw>
+    <max_access_entity_num_to_warn>5</max_access_entity_num_to_warn>
+</clickhouse>

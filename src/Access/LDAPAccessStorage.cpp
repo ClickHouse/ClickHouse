@@ -21,8 +21,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControl & access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
-    : IAccessStorage(storage_name_), access_control(access_control_), memory_storage(storage_name_, access_control.getChangesNotifier(), false)
+LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControl & access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix, UInt64 access_entities_num_limit_)
+    : IAccessStorage(storage_name_), access_control(access_control_), memory_storage(storage_name_, access_control.getChangesNotifier(), false, access_entities_num_limit_)
 {
     setConfiguration(config, prefix);
 }
@@ -480,8 +480,11 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
         // TODO: if these were AlwaysAllowCredentials, then mapped external roles are not available here,
         // since without a password we can't authenticate and retrieve roles from the LDAP server.
 
+        if (memory_storage.entityLimitReached())
+            memory_storage.throwTooManyEntities();
+
         assignRolesNoLock(*new_user, external_roles);
-        id = memory_storage.insert(new_user);
+        id = memory_storage.insertIgnoreLimit(new_user);
     }
     else
     {

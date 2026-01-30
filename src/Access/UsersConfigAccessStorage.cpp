@@ -15,10 +15,10 @@
 
 namespace DB
 {
-UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_, bool allow_backup_)
+UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_, bool allow_backup_, UInt64 access_entities_num_limit_)
     : IAccessStorage(storage_name_)
     , access_control(access_control_)
-    , memory_storage(storage_name_, access_control.getChangesNotifier(), false)
+    , memory_storage(storage_name_, access_control.getChangesNotifier(), false, access_entities_num_limit_)
     , backup_allowed(allow_backup_)
 {
 }

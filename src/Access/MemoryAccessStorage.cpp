@@ -3,12 +3,23 @@
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 #include <boost/range/adaptor/map.hpp>
+#include <Common/CurrentMetrics.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric AccessEntities;
+}
 
 
 namespace DB
 {
-MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_, bool allow_backup_)
-    : IAccessStorage(storage_name_), changes_notifier(changes_notifier_), backup_allowed(allow_backup_)
+namespace ErrorCodes
+{
+    extern const int TOO_MANY_ACCESS_ENTITIES;
+}
+
+MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_, bool allow_backup_, UInt64 access_entities_num_limit_)
+    : IAccessStorage(storage_name_), changes_notifier(changes_notifier_), backup_allowed(allow_backup_), access_entities_num_limit(access_entities_num_limit_)
 {
 }
 
@@ -68,7 +79,23 @@ bool MemoryAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & ne
 }
 
 
-bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id, bool notify)
+UUID MemoryAccessStorage::insertIgnoreLimit(const AccessEntityPtr & entity)
+{
+    UUID id = generateRandomID();
+    insertIgnoreLimit(id, entity, /* replace_if_exists = */ false, /* throw_if_exists = */ true);
+    return id;
+}
+
+
+bool MemoryAccessStorage::insertIgnoreLimit(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+{
+    std::lock_guard lock{mutex};
+    UUID conflicting_id;
+    return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists, &conflicting_id, /* notify = */ true, /* ignore_limit = */ true);
+}
+
+
+bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id, bool notify, bool ignore_limit)
 {
     const String & name = new_entity->getName();
     AccessEntityType type = new_entity->getType();
@@ -112,6 +139,9 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
         }
     }
 
+    if (!ignore_limit && !(name_collision && (id_by_name != id)) && !id_collision && entityLimitReached())
+        throwTooManyEntities();
+
     /// Remove collisions if necessary.
     if (name_collision && (id_by_name != id))
     {
@@ -147,6 +177,9 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     entry.id = id;
     entry.entity = new_entity;
     entries_by_name[name] = &entry;
+
+    CurrentMetrics::add(CurrentMetrics::AccessEntities);
+
     if (notify)
         changes_notifier.onEntityAdded(id, new_entity);
     return true;
@@ -180,6 +213,8 @@ bool MemoryAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists
     auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
     entries_by_name.erase(name);
     entries_by_id.erase(it);
+
+    CurrentMetrics::sub(CurrentMetrics::AccessEntities);
 
     if (notify)
         changes_notifier.onEntityRemoved(removed_id, type);
@@ -294,7 +329,22 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
 
     /// Insert or update entities.
     for (const auto & [id, entity] : entities_without_conflicts)
-        insertNoLock(id, entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false, /* conflicting_id = */ nullptr, /* notify= */ notify);
+        insertNoLock(id, entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false, /* conflicting_id = */ nullptr, /* notify= */ notify, /* ignore_limit= */true);
+}
+
+bool MemoryAccessStorage::entityLimitReached() const
+{
+    return access_entities_num_limit > 0 && CurrentMetrics::get(CurrentMetrics::AccessEntities) >= static_cast<Int64>(access_entities_num_limit);
+}
+
+void MemoryAccessStorage::throwTooManyEntities() const
+{
+    auto current_number = CurrentMetrics::get(CurrentMetrics::AccessEntities);
+    auto result_number = current_number + 1;
+    throw Exception(ErrorCodes::TOO_MANY_ACCESS_ENTITIES,
+                                    "Too many access entities. "
+                                    "The limit (server configuration parameter `max_access_entities_num_to_throw`) is set to {}, the current number is {}, the result number will be {}",
+                                        access_entities_num_limit, current_number, result_number);
 }
 
 }

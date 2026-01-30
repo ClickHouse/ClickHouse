@@ -701,6 +701,7 @@ public:
         LINUX_MAX_THREADS_COUNT_TOO_LOW,
         LINUX_MEMORY_OVERCOMMIT_DISABLED,
         LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
+        MAX_ACCESS_ENTITIES,
         MAX_ACTIVE_PARTS,
         MAX_ATTACHED_DATABASES,
         MAX_ATTACHED_DICTIONARIES,
@@ -1125,6 +1126,7 @@ public:
     size_t getMaxPartNumToWarn() const;
     size_t getMaxPendingMutationsToWarn() const;
     size_t getMaxPendingMutationsExecutionTimeToWarn() const;
+    size_t getMaxAccessEntitiesNumToWarn() const;
 
     void setMaxNamedCollectionNumToWarn(size_t max_named_collection_to_warn);
     void setMaxTableNumToWarn(size_t max_table_to_warn);
@@ -1132,6 +1134,7 @@ public:
     void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
     void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
     void setMaxPartNumToWarn(size_t max_part_to_warn);
+    void setMaxAccessEntitiesNumToWarn(size_t max_access_entity_to_warn);
     // Based on asynchronous metrics
     void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
     void setMaxPendingMutationsExecutionTimeToWarn(size_t max_pending_mutations_execution_time_to_warn);
