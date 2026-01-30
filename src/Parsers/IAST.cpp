@@ -12,87 +12,78 @@
 
 #include <algorithm>
 
-namespace boost::sp_adl_block
-{
-    template<>
-    inline void intrusive_ptr_release(const intrusive_ref_counter< DB::IAST, boost::thread_safe_counter> * p) BOOST_SP_NOEXCEPT
-    {
-        if (thread_safe_counter::decrement(p->m_ref_counter) == 0)
-        {
-            struct LinkedList
-            {
-                DB::ASTs children;
-                LinkedList * next = nullptr;
-
-                static LinkedList * create(DB::IAST * ptr)
-                {
-                    if (ptr->children.empty())
-                    {
-                        delete ptr;
-                        return nullptr;
-                    }
-
-                    DB::ASTs children;
-                    children.swap(ptr->children);
-                    ptr->~IAST();
-                    LinkedList * elem = new (dynamic_cast<void *>(ptr)) LinkedList;
-                    elem->children.swap(children);
-                    return elem;
-                }
-            };
-
-            static_assert(sizeof(LinkedList) <= sizeof(DB::IAST));
-
-            const DB::IAST * const_ptr = static_cast<const DB::IAST *>(p);
-            DB::IAST * ptr = const_cast<DB::IAST *>(const_ptr);
-
-            LinkedList * list_head = LinkedList::create(ptr);
-
-            while (list_head)
-            {
-                DB::ASTs children;
-                children.swap(list_head->children);
-                {
-                    LinkedList * next = list_head->next;
-                    list_head->~LinkedList();
-                    operator delete(list_head);
-                    list_head = next;
-                }
-
-                for (auto & child : children)
-                {
-                    if (child == nullptr || child->use_count() != 1)
-                        continue;
-
-                    ptr = child.detach();
-                    chassert(thread_safe_counter::decrement(ptr->m_ref_counter) == 0);
-
-                    LinkedList * elem = LinkedList::create(ptr);
-                    if (elem)
-                    {
-                        elem->next = list_head;
-                        list_head = elem;
-                    }
-                }
-            }
-        }
-    }
-}
-
 namespace DB
 {
 
 /// Verify that we did not increase the size of IAST by accident.
 static_assert(sizeof(IAST) <= 32);
 
-void intrusive_ptr_add_ref(const IAST* p)
+void intrusive_ptr_add_ref(const IAST * p) noexcept
 {
-    boost::sp_adl_block::intrusive_ptr_add_ref<IAST, boost::thread_safe_counter>(p);
+    p->ref_counter.fetch_add(1, std::memory_order_relaxed);
 }
 
-void intrusive_ptr_release(const IAST * p)
+void intrusive_ptr_release(const IAST * p) noexcept
 {
-    intrusive_ptr_release<IAST, boost::thread_safe_counter>(p);
+    if (p->ref_counter.fetch_sub(1, std::memory_order_acq_rel) == 1)
+    {
+        struct LinkedList
+        {
+            ASTs children;
+            LinkedList * next = nullptr;
+
+            static LinkedList * create(IAST * ptr)
+            {
+                if (ptr->children.empty())
+                {
+                    delete ptr;
+                    return nullptr;
+                }
+
+                ASTs children;
+                children.swap(ptr->children);
+                ptr->~IAST();
+                LinkedList * elem = new (dynamic_cast<void *>(ptr)) LinkedList;
+                elem->children.swap(children);
+                return elem;
+            }
+        };
+
+        static_assert(sizeof(LinkedList) <= sizeof(IAST));
+
+        const IAST * const_ptr = p;
+        IAST * ptr = const_cast<IAST *>(const_ptr);
+
+        LinkedList * list_head = LinkedList::create(ptr);
+
+        while (list_head)
+        {
+            ASTs children;
+            children.swap(list_head->children);
+            {
+                LinkedList * next = list_head->next;
+                list_head->~LinkedList();
+                operator delete(list_head);
+                list_head = next;
+            }
+
+            for (auto & child : children)
+            {
+                if (child == nullptr || child->use_count() != 1)
+                    continue;
+
+                ptr = child.detach();
+                chassert(ptr->ref_counter.fetch_sub(1, std::memory_order_acq_rel) == 1);
+
+                LinkedList * elem = LinkedList::create(ptr);
+                if (elem)
+                {
+                    elem->next = list_head;
+                    list_head = elem;
+                }
+            }
+        }
+    }
 }
 
 namespace ErrorCodes
@@ -101,6 +92,23 @@ namespace ErrorCodes
     extern const int TOO_DEEP_AST;
     extern const int UNKNOWN_ELEMENT_IN_AST;
     extern const int BAD_ARGUMENTS;
+}
+
+IAST::IAST(const IAST & other)
+    : TypePromotion<IAST>()
+    , children(other.children)
+    , ref_counter(0)
+    , flags_storage(other.flags_storage)
+{
+}
+
+IAST & IAST::operator=(const IAST & other)
+{
+    if (this == &other)
+        return *this;
+    children = other.children;
+    flags_storage = other.flags_storage;
+    return *this;
 }
 
 IAST::~IAST() = default;

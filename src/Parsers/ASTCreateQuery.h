@@ -93,53 +93,51 @@ protected:
 class ASTCreateQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    bool attach{false};    /// Query ATTACH TABLE, not CREATE TABLE.
-    bool if_not_exists{false};
-    bool is_ordinary_view{false};
-    bool is_materialized_view{false};
-    bool is_window_view{false};
-    bool is_time_series_table{false}; /// CREATE TABLE ... ENGINE=TimeSeries() ...
-    bool is_populate{false};
-    bool is_create_empty{false};    /// CREATE TABLE ... EMPTY AS SELECT ...
-    bool is_clone_as{false};    /// CREATE TABLE ... CLONE AS ...
-    bool replace_view{false}; /// CREATE OR REPLACE VIEW
-    bool has_uuid{false}; // CREATE TABLE x UUID '...'
-
+    /// Pointers (8 bytes each, grouped for alignment)
     ASTColumns * columns_list = nullptr;
     ASTExpressionList * aliases_list = nullptr; /// Aliases such as "(a, b)" in "CREATE VIEW my_view (a, b) AS SELECT 1, 2"
     ASTStorage * storage = nullptr;
-
-    IAST * watermark_function;
-    IAST * lateness_function;
-    String as_database;
-    String as_table;
+    IAST * watermark_function = nullptr;
+    IAST * lateness_function = nullptr;
     IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
     ASTViewTargets * targets = nullptr;
     IAST * comment = nullptr;
     IAST * sql_security = nullptr;
-
     ASTTableOverrideList * table_overrides = nullptr; /// For CREATE DATABASE with engines that automatically create tables
-
-    bool is_dictionary{false}; /// CREATE DICTIONARY
-    ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of
+    ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of dictionary
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
+    ASTRefreshStrategy * refresh_strategy = nullptr; /// For CREATE MATERIALIZED VIEW ... REFRESH ...
 
-    ASTRefreshStrategy * refresh_strategy = nullptr; // For CREATE MATERIALIZED VIEW ... REFRESH ...
+    /// Strings
+    String as_database;
+    String as_table;
+    String attach_from_path;
 
-    bool is_watermark_strictly_ascending{false}; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
-    bool is_watermark_ascending{false}; /// ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
-    bool is_watermark_bounded{false}; /// BOUNDED OUT OF ORDERNESS WATERMARK STRATEGY FOR WINDOW VIEW
-    bool allowed_lateness{false}; /// ALLOWED LATENESS FOR WINDOW VIEW
-
-    bool attach_short_syntax{false};
-
-    std::optional<String> attach_from_path = std::nullopt;
-
+    /// Optional bool (3 states)
     std::optional<bool> attach_as_replicated = std::nullopt;
 
-    bool replace_table{false};
-    bool create_or_replace{false};
+    /// Bit-packed bools (20 bools packed into ~3 bytes instead of 20 bytes)
+    bool attach : 1 = false;               /// Query ATTACH TABLE, not CREATE TABLE.
+    bool if_not_exists : 1 = false;
+    bool is_ordinary_view : 1 = false;
+    bool is_materialized_view : 1 = false;
+    bool is_window_view : 1 = false;
+    bool is_time_series_table : 1 = false; /// CREATE TABLE ... ENGINE=TimeSeries() ...
+    bool is_populate : 1 = false;
+    bool is_create_empty : 1 = false;      /// CREATE TABLE ... EMPTY AS SELECT ...
+    bool is_clone_as : 1 = false;          /// CREATE TABLE ... CLONE AS ...
+    bool replace_view : 1 = false;         /// CREATE OR REPLACE VIEW
+    bool has_uuid : 1 = false;             /// CREATE TABLE x UUID '...'
+    bool is_dictionary : 1 = false;        /// CREATE DICTIONARY
+    bool is_watermark_strictly_ascending : 1 = false; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
+    bool is_watermark_ascending : 1 = false;          /// ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
+    bool is_watermark_bounded : 1 = false;            /// BOUNDED OUT OF ORDERNESS WATERMARK STRATEGY FOR WINDOW VIEW
+    bool allowed_lateness : 1 = false;     /// ALLOWED LATENESS FOR WINDOW VIEW
+    bool attach_short_syntax : 1 = false;
+    bool replace_table : 1 = false;
+    bool create_or_replace : 1 = false;
+    bool has_attach_from_path : 1 = false; /// Whether attach_from_path is set
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override;

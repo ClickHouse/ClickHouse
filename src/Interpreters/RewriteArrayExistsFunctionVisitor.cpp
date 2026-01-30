@@ -16,7 +16,7 @@ void RewriteArrayExistsFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * func = ast->as<ASTFunction>())
     {
-        if (func->is_window_function)
+        if (func->isWindowFunction())
             return;
 
         visit(*func, ast, data);
@@ -56,7 +56,7 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
 
     /// lambda function must be like: x -> x = elem
     const auto * lambda_func = array_exists_arguments[0]->as<ASTFunction>();
-    if (!lambda_func || !lambda_func->is_lambda_function)
+    if (!lambda_func || !lambda_func->isLambdaFunction())
         return;
 
     const auto & lambda_func_arguments = lambda_func->arguments->children;

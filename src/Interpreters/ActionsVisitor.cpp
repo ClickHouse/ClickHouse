@@ -678,7 +678,7 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Dat
         }
 
         /// Special check for WITH statement alias. Add alias action to be able to use this alias.
-        if (identifier.prefer_alias_to_column_name && !identifier.alias.empty())
+        if (identifier.preferAliasToColumnName() && !identifier.alias.empty())
             data.addAlias(identifier.name(), identifier.alias);
     }
 }
@@ -687,12 +687,12 @@ namespace
 {
 void checkFunctionHasEmptyNullsAction(const ASTFunction & node)
 {
-    if (node.nulls_action != NullsAction::EMPTY)
+    if (node.getNullsAction() != NullsAction::EMPTY)
         throw Exception(
             ErrorCodes::SYNTAX_ERROR,
             "Function {} cannot use {} NULLS",
             node.name,
-            node.nulls_action == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
+            node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
 }
 
@@ -858,7 +858,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     }
 
     // Now we need to correctly process window functions and any expression which depend on them.
-    if (node.is_window_function)
+    if (node.isWindowFunction())
     {
         // Also add columns from PARTITION BY and ORDER BY of window functions.
         if (node.window_definition)
@@ -883,7 +883,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         // aggregate functions.
         return;
     }
-    if (node.compute_after_window_functions)
+    if (node.computeAfterWindowFunctions())
     {
         if (!data.build_expression_with_window_functions)
         {

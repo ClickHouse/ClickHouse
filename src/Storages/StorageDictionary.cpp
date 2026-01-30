@@ -13,6 +13,8 @@
 #include <Core/Settings.h>
 #include <QueryPipeline/Pipe.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Core/ServerSettings.h>

@@ -130,14 +130,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 {
     /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
-    if (query.temporary || table_id.database_name.empty())
+    if (query.isTemporary() || table_id.database_name.empty())
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
             return executeToTemporaryTable(table_id.getTableName(), query.kind);
         query.setDatabase(table_id.database_name = context_->getCurrentDatabase());
     }
 
-    if (query.temporary)
+    if (query.isTemporary())
     {
         if (query.if_exists)
             return {};
@@ -678,7 +678,7 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
         else if (drop.kind == ASTDropQuery::Kind::Drop)
             required_access.emplace_back(AccessType::DROP_DICTIONARY, drop.getDatabase(), drop.getTable());
     }
-    else if (!drop.temporary)
+    else if (!drop.isTemporary())
     {
         /// It can be view or table.
         if (drop.kind == ASTDropQuery::Kind::Drop)
@@ -738,7 +738,7 @@ bool InterpreterDropQuery::supportsTransactions() const
     auto & drop = query_ptr->as<ASTDropQuery &>();
 
     return drop.cluster.empty()
-            && !drop.temporary
+            && !drop.isTemporary()
             && drop.kind == ASTDropQuery::Kind::Truncate
             && drop.table;
 }

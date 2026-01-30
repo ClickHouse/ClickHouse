@@ -49,8 +49,8 @@ ASTPtr BackupInfo::toAST() const
 {
     auto func = make_intrusive<ASTFunction>();
     func->name = backup_engine_name;
-    func->no_empty_args = true;
-    func->kind = ASTFunction::Kind::BACKUP_NAME;
+    func->setNoEmptyArgs(true);
+    func->setKind(ASTFunction::Kind::BACKUP_NAME);
 
     auto list = make_intrusive<ASTExpressionList>();
     func->arguments = list;

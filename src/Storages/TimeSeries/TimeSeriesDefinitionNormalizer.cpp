@@ -419,7 +419,7 @@ void TimeSeriesDefinitionNormalizer::setInnerEngineByDefault(ViewTarget::Kind in
         case ViewTarget::Data:
         {
             inner_storage_def.set(inner_storage_def.engine, makeASTFunction("MergeTree"));
-            inner_storage_def.engine->no_empty_args = false;
+            inner_storage_def.engine->setNoEmptyArgs(false);
 
             if (!inner_storage_def.order_by && !inner_storage_def.primary_key && inner_storage_def.engine->name.ends_with("MergeTree"))
             {
@@ -440,7 +440,7 @@ void TimeSeriesDefinitionNormalizer::setInnerEngineByDefault(ViewTarget::Kind in
                 engine_name = "ReplacingMergeTree";
 
             inner_storage_def.set(inner_storage_def.engine, makeASTFunction(engine_name));
-            inner_storage_def.engine->no_empty_args = false;
+            inner_storage_def.engine->setNoEmptyArgs(false);
 
             if (!inner_storage_def.order_by && !inner_storage_def.primary_key && inner_storage_def.engine->name.ends_with("MergeTree"))
             {
@@ -470,7 +470,7 @@ void TimeSeriesDefinitionNormalizer::setInnerEngineByDefault(ViewTarget::Kind in
         case ViewTarget::Metrics:
         {
             inner_storage_def.set(inner_storage_def.engine, makeASTFunction("ReplacingMergeTree"));
-            inner_storage_def.engine->no_empty_args = false;
+            inner_storage_def.engine->setNoEmptyArgs(false);
 
             if (!inner_storage_def.order_by && !inner_storage_def.primary_key && inner_storage_def.engine->name.ends_with("MergeTree"))
             {
