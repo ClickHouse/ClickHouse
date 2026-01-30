@@ -198,11 +198,6 @@ const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getSt
     return metadata_storage;
 }
 
-std::optional<StoredObjects> MetadataStorageFromPlainObjectStorageTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
-{
-    return metadata_storage.getStorageObjectsIfExist(path);
-}
-
 void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path)
 {
     if (metadata_storage.object_metadata_cache)

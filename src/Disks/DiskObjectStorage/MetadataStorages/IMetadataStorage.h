@@ -172,9 +172,6 @@ public:
         throwNotImplemented();
     }
 
-    /// Get objects that are going to be created inside transaction if they exists
-    virtual std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string &) const = 0;
-
     virtual ~IMetadataTransaction() = default;
 
 protected:

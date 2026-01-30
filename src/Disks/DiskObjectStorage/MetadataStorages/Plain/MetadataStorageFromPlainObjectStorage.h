@@ -84,7 +84,6 @@ public:
     explicit MetadataStorageFromPlainObjectStorageTransaction(MetadataStorageFromPlainObjectStorage & metadata_storage_, ObjectStoragePtr object_storage_);
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const override;
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 
     void createMetadataFile(const std::string & /*path*/, const StoredObjects & /* objects */) override {}
     void createDirectory(const std::string & /*path*/) override {}
