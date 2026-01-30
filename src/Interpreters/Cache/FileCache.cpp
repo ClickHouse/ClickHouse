@@ -100,9 +100,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
     extern const FileCacheSettingsBool use_split_cache;
     extern const FileCacheSettingsDouble split_cache_ratio;
-#if ENABLE_DISTRIBUTED_CACHE
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
-#endif
 }
 
 namespace
@@ -220,7 +218,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     {
         case FileCachePolicy::LRU:
         {
-            creator_function = [](size_t max_size, size_t max_elements, size_t /*size_ratio*/, String description) -> IFileCachePriorityPtr
+            creator_function = [](size_t max_size, size_t max_elements, size_t /*size_ratio*/, size_t /*overcommit_eviction_evict_step*/, String description) -> IFileCachePriorityPtr
             {
                 return std::make_unique<LRUFileCachePriority>(
                     max_size,
@@ -231,7 +229,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         }
         case FileCachePolicy::SLRU:
         {
-            creator_function = [](size_t max_size, size_t max_elements, double size_ratio, String description) -> IFileCachePriorityPtr
+            creator_function = [](size_t max_size, size_t max_elements, double size_ratio, size_t /*overcommit_eviction_evict_step*/, String description) -> IFileCachePriorityPtr
             {
                 return std::make_unique<SLRUFileCachePriority>(
                     max_size,
@@ -244,21 +242,27 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 #if ENABLE_DISTRIBUTED_CACHE
         case FileCachePolicy::LRU_OVERCOMMIT:
         {
-            main_priority = std::make_unique<OvercommitFileCachePriority<LRUFileCachePriority>>(
-                settings[FileCacheSetting::overcommit_eviction_evict_step],
-                settings[FileCacheSetting::max_size],
-                settings[FileCacheSetting::max_elements],
-                "overcommit");
+            creator_function = [](size_t max_size, size_t max_elements, double /*size_ratio*/, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
+            {
+                return std::make_unique<OvercommitFileCachePriority<LRUFileCachePriority>>(
+                    overcommit_eviction_evict_steps,
+                    max_size,
+                    max_elements,
+                    "overcommit");
+            };
             break;
         }
         case FileCachePolicy::SLRU_OVERCOMMIT:
         {
-            main_priority = std::make_unique<OvercommitFileCachePriority<SLRUFileCachePriority>>(
-                settings[FileCacheSetting::overcommit_eviction_evict_step],
-                settings[FileCacheSetting::max_size],
-                settings[FileCacheSetting::max_elements],
-                settings[FileCacheSetting::slru_size_ratio],
-                "overcommit");
+            creator_function = [](size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
+            {
+                return std::make_unique<OvercommitFileCachePriority<SLRUFileCachePriority>>(
+                    overcommit_eviction_evict_step,
+                    max_size,
+                    max_elements,
+                    size_ratio,
+                    "overcommit");
+            };
             break;
         }
 #endif
@@ -276,7 +280,13 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     }
     else
     {
-        main_priority = creator_function(settings[FileCacheSetting::max_size],settings[FileCacheSetting::max_elements], settings[FileCacheSetting::slru_size_ratio], cache_name);
+        main_priority = creator_function(
+            settings[FileCacheSetting::max_size],
+            settings[FileCacheSetting::max_elements],
+            settings[FileCacheSetting::slru_size_ratio],
+            settings[FileCacheSetting::overcommit_eviction_evict_step],
+            cache_name
+        );
     }
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
@@ -298,8 +308,8 @@ FileCache::OriginInfo FileCache::getCommonOriginWithSegmentKeyType(const fs::pat
     if (!use_split_cache)
         return origin;
 
-    static std::array<std::string, 5> system_cache_type = {".txt", ".json", ".idx", ".cidx", ".dat"};
-    origin.segment_type = std::find(system_cache_type.begin(), system_cache_type.end(), fs::path(filename).extension()) != system_cache_type.end() ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
+    const static std::set<std::string> system_cache_type = {".txt", ".json", ".idx", ".cidx", ".dat"};
+    origin.segment_type = system_cache_type.contains(fs::path(filename).extension()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
     return origin;
 }
 
@@ -1588,8 +1598,7 @@ void FileCache::loadMetadataImpl()
         if (pos == std::string::npos)
             return std::nullopt;
 
-        auto origin = OriginInfo(filename.substr(0, pos), parse<UInt64>(filename.substr(pos + 1)));
-        return origin;
+        return OriginInfo(filename.substr(0, pos), parse<UInt64>(filename.substr(pos + 1)));
     };
 
     auto get_keys_dir_to_process_with_user_dir = [
@@ -1662,7 +1671,7 @@ void FileCache::loadMetadataImpl()
         }
     };
 
-    std::vector<FileSegmentKeyType> key_types_to_load{FileSegmentKeyType::Data,FileSegmentKeyType::System};
+    std::vector<FileSegmentKeyType> key_types_to_load{FileSegmentKeyType::Data, FileSegmentKeyType::System};
     if (!use_split_cache)
         key_types_to_load.push_back(FileSegmentKeyType::General);
 
@@ -1696,9 +1705,10 @@ void FileCache::loadMetadataImpl()
 
             auto path = key_prefix_it->path();
 
+            const std::string key_dir = path.filename();
             if (key_prefix_it->is_directory() &&
-                key_prefix_it->path().filename().string() != getKeyTypePrefix(FileSegmentKeyType::Data) &&
-                key_prefix_it->path().filename().string() != getKeyTypePrefix(FileSegmentKeyType::System)
+                key_dir != getKeyTypePrefix(FileSegmentKeyType::Data) &&
+                key_dir != getKeyTypePrefix(FileSegmentKeyType::System)
             )
             {
                 key_prefix_it++;

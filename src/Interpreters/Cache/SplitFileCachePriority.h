@@ -23,7 +23,7 @@ class SplitFileCachePriority : public IFileCachePriority
 public:
     class SplitIterator;
     using CachePriorityCreatorFunction
-        = std::function<IFileCachePriorityPtr(size_t max_size, size_t max_elements, double size_ratio, String description)>;
+        = std::function<IFileCachePriorityPtr(size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String description)>;
     using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
     using SegmentType = FileSegmentKeyType;
     using PriorityPerType = std::unordered_map<SegmentType, IFileCachePriorityPtr>;
