@@ -75,6 +75,35 @@ namespace
         return ids;
     }
 
+    /// Filter access-denied hint output (the "required grant"/"missing permissions" text in ACCESS_DENIED errors).
+    /// Column names from implicit expansion (e.g. SELECT *) require SHOW_COLUMNS to be shown in hints.
+    AccessRightsElement filterAccessElementForHints(const AccessRightsElement & element, const AccessRights & access)
+    {
+        if (element.columns.empty())
+            return element;
+
+        // Columns imply a resolved table and database (current DB is already substituted upstream).
+        assert(!element.table.empty());
+        assert(!element.database.empty());
+
+        if (access.isGranted(AccessType::SHOW_COLUMNS, element.database, element.table, element.columns))
+            return element;
+
+        // Hide column names unless SHOW_COLUMNS covers all required columns.
+        AccessRightsElement res = element;
+        res.columns.clear();
+        return res;
+    }
+
+    AccessRightsElements filterAccessElementsForHints(const AccessRightsElements & elements, const AccessRights & access)
+    {
+        AccessRightsElements filtered;
+        filtered.reserve(elements.size());
+        for (const auto & element : elements)
+            filtered.push_back(filterAccessElementForHints(element, access));
+        return filtered;
+    }
+
     /// Helper for using in templates.
     std::string_view getDatabase() { return {}; }
 
@@ -647,6 +676,17 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
     if (!granted)
     {
+        auto format_required_access = [&](AccessFlags access_flags, const auto & ... fmt_args)
+        {
+            AccessRightsElement required_access{access_flags, fmt_args...};
+            return filterAccessElementForHints(required_access, *acs).toStringWithoutOptions();
+        };
+
+        auto format_missing_permissions = [&](const AccessRights & difference)
+        {
+            return filterAccessElementsForHints(difference.getElements(), *acs).toStringWithoutOptions();
+        };
+
         auto access_denied_no_grant = [&]<typename... FmtArgs>(AccessFlags access_flags, FmtArgs && ...fmt_args)
         {
             if (grant_option && acs->isGranted(access_flags, fmt_args...))
@@ -655,7 +695,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
                     "{}: Not enough privileges. "
                     "The required privileges have been granted, but without grant option. "
                     "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
-                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions());
+                    format_required_access(access_flags, fmt_args...));
             }
 
             AccessRights difference;
@@ -667,15 +707,15 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
             {
                 return access_denied(ErrorCodes::ACCESS_DENIED,
                     "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+                    format_required_access(access_flags, fmt_args...) + (grant_option ? " WITH GRANT OPTION" : ""));
             }
 
 
             return access_denied(ErrorCodes::ACCESS_DENIED,
                 "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}. "
                 "(Missing permissions: {}){}",
-                AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
-                difference.getElements().toStringWithoutOptions(),
+                format_required_access(access_flags, fmt_args...) + (grant_option ? " WITH GRANT OPTION" : ""),
+                format_missing_permissions(difference),
                 grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
         };
 
