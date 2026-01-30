@@ -99,10 +99,12 @@ void printPipeline(const Processors & processors, WriteBuffer & out, bool with_p
 {
     printPipeline(processors, std::vector<IProcessor::Status>(), out, with_profile);
 }
-
 /// Prints pipeline in compact representation.
 /// Group processors by it's name, QueryPlanStep and QueryPlanStepGroup.
 /// If QueryPlanStep wasn't set for processor, representation may be not correct.
 /// If with_header is set, prints block header for each edge.
 void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool with_header);
+
+// Prints the execution analysis in graph Format
+void printExecutionAnalysis(const Processors & processors, WriteBuffer & out);
 }

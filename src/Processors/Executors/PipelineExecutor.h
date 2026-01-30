@@ -40,6 +40,7 @@ public:
     /// QueryPlanResourceHolder may hold some resources referenced by processors and used in
     /// processor destructors.
     explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem);
+    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, bool profile_processors_);
     ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.
@@ -93,7 +94,8 @@ private:
 
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
-    /// system.processors_profile_log
+    ///  Whether execution statistics need to br written to
+    ///  system.processors_profile_log or reported as part of `EXPLAIN ANALYZE`
     bool profile_processors = false;
     /// system.opentelemetry_span_log
     bool trace_processors = false;
