@@ -19,6 +19,11 @@ SerializationDetached::SerializationDetached(const SerializationPtr & nested_) :
 {
 }
 
+String SerializationDetached::getName() const
+{
+    return "Detached(" + nested->getName() + ")";
+}
+
 ISerialization::KindStack SerializationDetached::getKindStack() const
 {
     auto kind_stack = nested->getKindStack();

@@ -17,6 +17,8 @@ public:
 
     const SerializationPtr & getNested() const  { return nested_serialization; }
 
+    String getName() const override;
+
     KindStack getKindStack() const override { return nested_serialization->getKindStack(); }
 
     void enumerateStreams(

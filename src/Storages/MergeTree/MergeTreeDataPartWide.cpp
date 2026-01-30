@@ -219,14 +219,14 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
 
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
-    if (columns.empty())
+    if (columns->empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-    auto any_column_filename = getFileNameForColumn(columns.front());
+    auto any_column_filename = getFileNameForColumn(columns->front());
     if (!any_column_filename)
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
             "There are no files for column {} in part {}",
-            columns.front().name, getDataPartStorage().getFullPath());
+            columns->front().name, getDataPartStorage().getFullPath());
 
     loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), *any_column_filename, *storage.getSettings());
 }
@@ -331,7 +331,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
     {
         if (require_part_metadata)
         {
-            for (const auto & name_type : columns)
+            for (const auto & name_type : getColumns())
             {
                 getSerialization(name_type.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
                 {
@@ -363,7 +363,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
     {
         /// Check that all marks are nonempty and have the same size.
         std::optional<UInt64> marks_size;
-        for (const auto & name_type : columns)
+        for (const auto & name_type : getColumns())
         {
             getSerialization(name_type.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
@@ -458,7 +458,7 @@ std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndT
 void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
 {
     std::unordered_set<String> processed_substreams;
-    for (const auto & column : columns)
+    for (const auto & column : getColumns())
     {
         ColumnSize size = getColumnSizeImpl(column, &processed_substreams);
         each_columns_size[column.name] = size;

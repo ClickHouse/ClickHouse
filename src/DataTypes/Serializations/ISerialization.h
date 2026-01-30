@@ -61,6 +61,9 @@ public:
     ISerialization() = default;
     virtual ~ISerialization() = default;
 
+    /// Get the name of the serialization (used as a unique identifier/hash).
+    virtual String getName() const = 0;
+
     enum class Kind : UInt8
     {
         DEFAULT = 0,

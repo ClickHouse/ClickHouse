@@ -19,6 +19,8 @@ class SerializationObjectDistinctPaths final : public SimpleTextSerialization
 public:
     explicit SerializationObjectDistinctPaths(const std::vector<String> & typed_paths_);
 
+    String getName() const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

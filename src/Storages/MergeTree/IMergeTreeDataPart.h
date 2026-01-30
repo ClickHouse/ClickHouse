@@ -19,6 +19,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
+#include <Storages/MergeTree/MergeTreeDataPartSharedInfo.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
@@ -82,7 +83,7 @@ public:
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
-    using NameToNumber = std::unordered_map<std::string, size_t>;
+    using NameToNumber = ColumnsDescriptionCache::NameToPositionMap;
 
     using Index = Columns;
     using IndexPtr = std::shared_ptr<const Index>;
@@ -146,9 +147,9 @@ public:
     void setMetadataVersion(int32_t metadata_version_) noexcept { metadata_version = metadata_version_; }
     void writeMetadataVersion(ContextPtr local_context, int32_t metadata_version, bool sync);
 
-    const NamesAndTypesList & getColumns() const { return columns; }
-    const ColumnsDescription & getColumnsDescription() const { return *columns_description; }
-    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return *columns_description_with_collected_nested; }
+    const NamesAndTypesList & getColumns() const { chassert(columns); return *columns; }
+    const ColumnsDescription & getColumnsDescription() const { chassert(columns_description); return *columns_description; }
+    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { chassert(columns_description_with_collected_nested); return *columns_description_with_collected_nested; }
     const ColumnsSubstreams & getColumnsSubstreams() const { return columns_substreams; }
     StorageMetadataPtr getMetadataSnapshot() const;
 
@@ -201,7 +202,7 @@ public:
     /// take place, you must take original name of column for this part from
     /// storage and pass it to this method.
     std::optional<size_t> getColumnPosition(const String & column_name) const;
-    const NameToNumber & getColumnPositions() const { return column_name_to_position; }
+    const NameToNumber & getColumnPositions() const { return *column_name_to_position; }
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
@@ -674,7 +675,7 @@ protected:
     UInt64 bytes_uncompressed_on_disk{0};
 
     /// Columns description. Cannot be changed, after part initialization.
-    NamesAndTypesList columns;
+    std::shared_ptr<const NamesAndTypesList> columns;
 
     /// List of substreams in order of serialization/deserialization for each column.
     ColumnsSubstreams columns_substreams;
@@ -716,13 +717,16 @@ private:
     String mutable_name;
     mutable std::atomic<MergeTreeDataPartState> state{MergeTreeDataPartState::Temporary};
 
-    /// In compact parts order of columns is necessary
-    NameToNumber column_name_to_position;
+    /// In compact parts order of columns is necessary (shared across parts with same columns)
+    std::shared_ptr<const NameToNumber> column_name_to_position;
+
+    /// TODO: Make the serialization and serialization_infos also shared across parts with same columns
+    /// Currently that's difficult, because of the non-obvious way how to hash or compare these objects.
 
     /// Map from name of column to its serialization info.
     SerializationInfoByName serialization_infos{{}};
 
-    /// Serializations for every columns and subcolumns by their names.
+    /// Serializations for every columns and subcolumns by their names (shared when using default serializations)
     SerializationByName serializations;
 
     /// Columns description for more convenient access
@@ -800,6 +804,13 @@ private:
 
     /// Returns the name of the part state as a string.
     String stateToString() const;
+
+    /// Construct serializations for the given columns and serialization infos.
+    static SerializationByName constructSerializations(
+        const NameToNumber & column_name_to_position,
+        const NamesAndTypesList & columns,
+        const SerializationInfoByName & infos
+    );
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;

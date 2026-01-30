@@ -13,6 +13,8 @@ class SerializationDetached final : public ISerialization
 public:
     explicit SerializationDetached(const SerializationPtr & nested_);
 
+    String getName() const override;
+
     KindStack getKindStack() const override;
 
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;

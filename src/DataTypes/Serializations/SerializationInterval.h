@@ -14,6 +14,9 @@ class SerializationInterval : public SerializationNumber<typename DataTypeInterv
 {
 public:
     explicit SerializationInterval(IntervalKind kind_);
+
+    String getName() const override;
+
     void serializeText(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextJSON(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextCSV(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;

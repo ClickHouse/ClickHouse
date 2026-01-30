@@ -21,6 +21,11 @@ SerializationReplicated::SerializationReplicated(const SerializationPtr & nested
 {
 }
 
+String SerializationReplicated::getName() const
+{
+    return "Replicated(" + nested->getName() + ")";
+}
+
 ISerialization::KindStack SerializationReplicated::getKindStack() const
 {
     auto kind_stack = nested->getKindStack();

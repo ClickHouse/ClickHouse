@@ -8,6 +8,7 @@
 #include <Storages/ColumnDefault.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/NamePrompter.h>
 #include <Common/SettingsChanges.h>
 
@@ -232,6 +233,14 @@ public:
         return columns.size();
     }
 
+    size_t getBytesAllocated() const
+    {
+        size_t bytes = 0;
+        bytes += columns.get_allocator().getBytesAllocated();
+        bytes += subcolumns.get_allocator().getBytesAllocated();
+        return bytes;
+    }
+
     bool empty() const
     {
         return columns.empty();
@@ -244,13 +253,15 @@ public:
         ColumnDescription,
         boost::multi_index::indexed_by<
             boost::multi_index::sequenced<>,
-            boost::multi_index::ordered_unique<boost::multi_index::member<ColumnDescription, String, &ColumnDescription::name>>>>;
+            boost::multi_index::ordered_unique<boost::multi_index::member<ColumnDescription, String, &ColumnDescription::name>>>,
+        BytesAwareAllocatorWithMemoryTracking<ColumnDescription>>;
 
     using SubcolumnsContainter = boost::multi_index_container<
         NameAndTypePair,
         boost::multi_index::indexed_by<
             boost::multi_index::hashed_unique<boost::multi_index::member<NameAndTypePair, String, &NameAndTypePair::name>>,
-            boost::multi_index::hashed_non_unique<boost::multi_index::const_mem_fun<NameAndTypePair, String, &NameAndTypePair::getNameInStorage>>>>;
+            boost::multi_index::hashed_non_unique<boost::multi_index::const_mem_fun<NameAndTypePair, String, &NameAndTypePair::getNameInStorage>>>,
+        BytesAwareAllocatorWithMemoryTracking<NameAndTypePair>>;
 
 private:
     ColumnsContainer columns;

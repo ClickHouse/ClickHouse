@@ -11,6 +11,7 @@ class SimpleTextSerialization : public ISerialization
 protected:
     SimpleTextSerialization() = default;
 
+public:
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
         serializeText(column, row_num, ostr, settings);

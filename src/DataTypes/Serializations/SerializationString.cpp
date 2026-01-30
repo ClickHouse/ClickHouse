@@ -29,6 +29,11 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
+String SerializationString::getName() const
+{
+    return "String(" + std::to_string(static_cast<int>(version)) + ")";
+}
+
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const String & s = field.safeGet<String>();
