@@ -162,7 +162,7 @@ private:
     bool checkAccessImpl(const ContextPtr & context, const AccessRightsElements & elements) const;
 
     template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
-    bool checkAccessImplHelper(const ContextPtr & context, AccessFlags flags, const Args &... args) const;
+    bool checkAccessImplHelper(const ContextPtr & context, const AccessFlags & flags, const Args &... args) const;
 
     template <bool throw_if_denied, bool grant_option, bool wildcard>
     bool checkAccessImplHelper(const ContextPtr & context, const AccessRightsElement & element) const;
