@@ -291,7 +291,7 @@ def test_create_table():
         ),
         f"Kafka() SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', format_avro_schema_registry_url = 'http://schema_user:{password}@'",
         f"Kafka() SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', format_avro_schema_registry_url = 'http://schema_user:{password}@domain.com'",
-
+        f"Redis('localhost', 0, '{password}') PRIMARY KEY x;",
     ]
 
     def make_test_case(i):
@@ -370,6 +370,7 @@ def test_create_table():
             f"CREATE TABLE table32 (`x` int) ENGINE = AzureBlobStorage('{masked_sas_conn_string}', 'exampledatasets', 'example.csv')",
             "CREATE TABLE table33 (`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', format_avro_schema_registry_url = 'http://schema_user:[HIDDEN]@'",
             "CREATE TABLE table34 (`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', format_avro_schema_registry_url = 'http://schema_user:[HIDDEN]@domain.com'",
+            "CREATE TABLE table35 (`x` int) ENGINE = Redis('localhost', 0, '[HIDDEN]') PRIMARY KEY x",
         ],
         must_not_contain=[password],
     )
@@ -487,6 +488,7 @@ def test_table_functions():
         f"gcs('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"icebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
+        f"redis('localhost', 'key', 'key Int64', 0, '{password}')",
     ]
 
     def make_test_case(i):
@@ -570,6 +572,7 @@ def test_table_functions():
             "CREATE TABLE tablefunc40 (`x` int) AS gcs('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
             "CREATE TABLE tablefunc41 (`x` int) AS icebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
             f"CREATE TABLE tablefunc42 (`x` int) AS icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
+            "CREATE TABLE tablefunc43 (`x` int) AS redis('localhost', 'key', 'key Int64', 0, '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
