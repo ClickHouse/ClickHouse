@@ -71,4 +71,13 @@ void traverseQueryTree(const QueryTreeNodePtr & node, ShouldVisitPredicate shoul
     }
 }
 
+struct ExceptSubqueries
+{
+    bool operator()(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    {
+        auto child_node_type = child_node->getNodeType();
+        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
+    }
+};
+
 }
