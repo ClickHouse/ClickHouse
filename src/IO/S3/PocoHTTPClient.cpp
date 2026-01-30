@@ -799,6 +799,10 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
     request.add("metadata-flavor", "Google");
 
     auto log = getLogger("PocoHTTPClientGCPOAuth");
+
+    auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
+    auto session = makeHTTPSession(group, url, timeouts);
+
     if (enable_s3_requests_logging)
     {
         try
@@ -811,8 +815,6 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
         }
     }
 
-    auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
-    auto session = makeHTTPSession(group, url, timeouts);
     session->sendRequest(request);
 
     Poco::Net::HTTPResponse response;
