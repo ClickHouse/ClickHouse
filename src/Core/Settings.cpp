@@ -6886,7 +6886,6 @@ Enable automatic switching to execution with parallel replicas based on collecte
 )", EXPERIMENTAL) \
     DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 1_MiB, R"(
 Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
-The total number of bytes to read is estimated based on the collected statistics.
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.
