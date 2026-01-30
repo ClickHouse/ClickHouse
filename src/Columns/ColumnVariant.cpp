@@ -52,7 +52,7 @@ void ColumnVariant::initIdentityGlobalToLocalDiscriminatorsMapping()
 {
     local_to_global_discriminators.reserve(variants.size());
     global_to_local_discriminators.reserve(variants.size());
-    for (Discriminator i = 0; i != variants.size(); ++i)
+    for (size_t i = 0; i != variants.size(); ++i)
     {
         local_to_global_discriminators.push_back(i);
         global_to_local_discriminators.push_back(i);
@@ -207,7 +207,7 @@ ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::Mut
         local_to_global_discriminators = local_to_global_discriminators_;
         global_to_local_discriminators.resize(local_to_global_discriminators.size());
         /// Create mapping global discriminator -> local discriminator
-        for (Discriminator i = 0; i != local_to_global_discriminators.size(); ++i)
+        for (size_t i = 0; i != local_to_global_discriminators.size(); ++i)
         {
             if (local_to_global_discriminators[i] > variants.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid global discriminator {}. The number of variants: {}", UInt64(local_to_global_discriminators[i]), variants_.size());
@@ -465,7 +465,7 @@ bool ColumnVariant::tryInsert(const DB::Field & x)
         return true;
     }
 
-    for (Discriminator i = 0; i != variants.size(); ++i)
+    for (size_t i = 0; i != variants.size(); ++i)
     {
         if (variants[i]->tryInsert(x))
         {
@@ -580,7 +580,7 @@ void ColumnVariant::insertRangeFromImpl(const DB::IColumn & src_, size_t start, 
         }
     }
 
-    for (Discriminator src_local_discr = 0; src_local_discr != nested_ranges.size(); ++src_local_discr)
+    for (size_t src_local_discr = 0; src_local_discr != nested_ranges.size(); ++src_local_discr)
     {
         auto [nested_start, nested_length] = nested_ranges[src_local_discr];
         Discriminator src_global_discr = src.globalDiscriminatorByLocal(src_local_discr);
@@ -729,9 +729,6 @@ void ColumnVariant::insertManyDefaults(size_t length)
 
 void ColumnVariant::popBack(size_t n)
 {
-    if (n > size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
-
     /// If we have only NULLs, just pop back from local_discriminators and offsets.
     if (hasOnlyNulls())
     {
@@ -1552,7 +1549,7 @@ bool ColumnVariant::structureEquals(const IColumn & rhs) const
     if (num_variants != rhs_variant->variants.size())
         return false;
 
-    for (Discriminator i = 0; i < static_cast<Discriminator>(num_variants); ++i)
+    for (size_t i = 0; i < num_variants; ++i)
         if (!variants[i]->structureEquals(rhs_variant->getVariantByGlobalDiscriminator(globalDiscriminatorByLocal(i))))
             return false;
 
@@ -1569,7 +1566,7 @@ bool ColumnVariant::dynamicStructureEquals(const IColumn & rhs) const
     if (num_variants != rhs_variant->variants.size())
         return false;
 
-    for (Discriminator i = 0; i < static_cast<Discriminator>(num_variants); ++i)
+    for (size_t i = 0; i < num_variants; ++i)
         if (!variants[i]->dynamicStructureEquals(rhs_variant->getVariantByGlobalDiscriminator(globalDiscriminatorByLocal(i))))
             return false;
 
@@ -1604,7 +1601,7 @@ ColumnPtr ColumnVariant::compress(bool force_compression) const
 double ColumnVariant::getRatioOfDefaultRows(double) const
 {
     UInt64 num_defaults = getNumberOfDefaultRows();
-    return static_cast<double>(num_defaults) / static_cast<double>(local_discriminators->size());
+    return static_cast<double>(num_defaults) / local_discriminators->size();
 }
 
 UInt64 ColumnVariant::getNumberOfDefaultRows() const
@@ -1662,7 +1659,7 @@ std::optional<ColumnVariant::Discriminator> ColumnVariant::getGlobalDiscriminato
 std::optional<ColumnVariant::Discriminator> ColumnVariant::getGlobalDiscriminatorOfOneNoneEmptyVariant() const
 {
     std::optional<ColumnVariant::Discriminator> discr;
-    for (Discriminator i = 0; i != variants.size(); ++i)
+    for (size_t i = 0; i != variants.size(); ++i)
     {
         if (!variants[i]->empty())
         {
@@ -1726,12 +1723,12 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
             {
                 if (null_map[i])
                 {
-                    filter.push_back(static_cast<UInt8>(0));
+                    filter.push_back(0);
                     local_discriminators_data[i] = NULL_DISCRIMINATOR;
                 }
                 else
                 {
-                   filter.push_back(static_cast<UInt8>(1));
+                   filter.push_back(1);
                    offsets_data[i] = size_hint++;
                 }
             }

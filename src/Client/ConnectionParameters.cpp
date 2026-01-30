@@ -2,11 +2,13 @@
 
 #include <Core/Defines.h>
 #include <Core/Protocol.h>
+#include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
+#include <base/scope_guard.h>
 #include <Client/ClientBaseHelpers.h>
 
 #include <readpassphrase/readpassphrase.h>
@@ -68,7 +70,6 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     , default_database(database)
 {
     security = enableSecureConnection(config, host_) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
-    tls_sni_override = config.getString("tls-sni-override", "");
 
     bind_host = config.getString("bind_host", "");
 
@@ -176,9 +177,8 @@ UInt16 ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfigu
                                                const std::string & connection_host)
 {
     bool is_secure = enableSecureConnection(config, connection_host);
-    return static_cast<UInt16>(config.getInt(
-        "port",
-        static_cast<UInt16>(
-            config.getInt(is_secure ? "tcp_port_secure" : "tcp_port", is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT))));
+    return config.getInt("port",
+        config.getInt(is_secure ? "tcp_port_secure" : "tcp_port",
+            is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
 }
 }

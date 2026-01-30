@@ -102,13 +102,12 @@ public:
 #endif
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
+    int compareAt(size_t, size_t, const IColumn &, int) const override
 #else
-    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override
 #endif
     {
-        const auto & rhs = assert_cast<const ColumnQBit &>(rhs_);
-        return tuple->compareAt(n, m, rhs.getTupleColumn(), nan_direction_hint);
+        return 0;
     }
 
     void insertDefault() override { tuple->insertDefault(); }

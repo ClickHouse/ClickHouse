@@ -68,12 +68,14 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDis
 
 DiskObjectStorage::DiskObjectStorage(
     const String & name_,
+    const String & object_key_prefix_,
     MetadataStoragePtr metadata_storage_,
     ObjectStoragePtr object_storage_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     bool use_fake_transaction_)
     : IDisk(name_, config, config_prefix)
+    , object_key_prefix(object_key_prefix_)
     , log(getLogger("DiskObjectStorage(" + name + ")"))
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
@@ -469,96 +471,11 @@ void DiskObjectStorage::startupImpl()
 
 ReservationPtr DiskObjectStorage::reserve(UInt64 bytes)
 {
-    if (!tryReserve(bytes, std::nullopt))
+    if (!tryReserve(bytes))
         return {};
 
     return std::make_unique<DiskObjectStorageReservation>(
         std::static_pointer_cast<DiskObjectStorage>(shared_from_this()), bytes);
-}
-
-ReservationPtr DiskObjectStorage::reserve(UInt64 bytes, const ReservationConstraints & constraints)
-{
-    if (!tryReserve(bytes, constraints))
-        return {};
-
-    return std::make_unique<DiskObjectStorageReservation>(
-        std::static_pointer_cast<DiskObjectStorage>(shared_from_this()), bytes);
-}
-
-bool DiskObjectStorage::tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints)
-{
-    std::lock_guard lock(reservation_mutex);
-
-    auto available_space = getAvailableSpace();
-
-    /// Check constraints if specified
-    if (constraints.has_value())
-    {
-        auto total_space = getTotalSpace();
-
-        if (available_space.has_value() && total_space.has_value())
-        {
-            UInt64 unreserved_space = *available_space - std::min(*available_space, reserved_bytes);
-
-            /// Not enough space for reservation itself
-            if (bytes > unreserved_space)
-                return false;
-
-            UInt64 free_bytes_after = unreserved_space - bytes;
-
-            /// Check min_bytes constraint
-            if (constraints->min_bytes > 0 && free_bytes_after < constraints->min_bytes)
-            {
-                LOG_TRACE(log, "Could not reserve {} on disk {}. Free space after reservation ({}) would be less than min_bytes ({})",
-                    ReadableSize(bytes), backQuote(name), ReadableSize(free_bytes_after), ReadableSize(constraints->min_bytes));
-                return false;
-            }
-
-            /// Check min_ratio constraint
-            if (constraints->min_ratio > 0.0)
-            {
-                UInt64 min_bytes_from_ratio = static_cast<UInt64>(constraints->min_ratio * (static_cast<Float32>(*total_space)));
-                if (free_bytes_after < min_bytes_from_ratio)
-                {
-                    LOG_TRACE(log, "Could not reserve {} on disk {}. Free space after reservation ({}) would be less than min_ratio requirement ({})",
-                        ReadableSize(bytes), backQuote(name), ReadableSize(free_bytes_after), ReadableSize(min_bytes_from_ratio));
-                    return false;
-                }
-            }
-        }
-    }
-
-    if (!available_space)
-    {
-        ++reservation_count;
-        reserved_bytes += bytes;
-        return true;
-    }
-
-    UInt64 unreserved_space = *available_space - std::min(*available_space, reserved_bytes);
-
-    if (bytes == 0)
-    {
-        LOG_TRACE(log, "Reserved 0 bytes on remote disk {}", backQuote(name));
-        ++reservation_count;
-        return true;
-    }
-
-    if (unreserved_space >= bytes)
-    {
-        LOG_TRACE(
-            log,
-            "Reserved {} on remote disk {}, having unreserved {}.",
-            ReadableSize(bytes),
-            backQuote(name),
-            ReadableSize(unreserved_space));
-        ++reservation_count;
-        reserved_bytes += bytes;
-        return true;
-    }
-
-    LOG_TRACE(log, "Could not reserve {} on remote disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
-    return false;
 }
 
 void DiskObjectStorage::removeSharedFileIfExists(const String & path, bool delete_metadata_only)
@@ -635,6 +552,46 @@ void DiskObjectStorage::removeSharedRecursiveWithLimit(
     remove();
 }
 
+bool DiskObjectStorage::tryReserve(UInt64 bytes)
+{
+    std::lock_guard lock(reservation_mutex);
+
+    auto available_space = getAvailableSpace();
+    if (!available_space)
+    {
+        ++reservation_count;
+        reserved_bytes += bytes;
+        return true;
+    }
+
+    UInt64 unreserved_space = *available_space - std::min(*available_space, reserved_bytes);
+
+    if (bytes == 0)
+    {
+        LOG_TRACE(log, "Reserved 0 bytes on remote disk {}", backQuote(name));
+        ++reservation_count;
+        return true;
+    }
+
+    if (unreserved_space >= bytes)
+    {
+        LOG_TRACE(
+            log,
+            "Reserved {} on remote disk {}, having unreserved {}.",
+            ReadableSize(bytes),
+            backQuote(name),
+            ReadableSize(unreserved_space));
+        ++reservation_count;
+        reserved_bytes += bytes;
+        return true;
+    }
+
+    LOG_TRACE(log, "Could not reserve {} on remote disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
+
+
+    return false;
+}
+
 bool DiskObjectStorage::supportsCache() const
 {
     return object_storage->supportsCache();
@@ -688,6 +645,7 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
     const auto config_prefix = "storage_configuration.disks." + name;
     return std::make_shared<DiskObjectStorage>(
         getName(),
+        object_key_prefix,
         metadata_storage,
         object_storage,
         Context::getGlobalContextInstance()->getConfigRef(),

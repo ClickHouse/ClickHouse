@@ -39,6 +39,9 @@ void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistic
 
 RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 {
+    if (!cache_key)
+        return;
+
     if (unsupported_case)
     {
         LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "Unsupported case encountered, skipping statistics update.");
@@ -54,19 +57,19 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             stats.bytes,
             stats.sample_bytes,
             stats.compressed_bytes,
-            static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes),
+            static_cast<double>(stats.sample_bytes) / stats.compressed_bytes,
             stats.elapsed_microseconds);
     };
 
-    RuntimeDataflowStatistics res{.total_rows_to_read = total_rows_to_read};
+    RuntimeDataflowStatistics res;
     for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
     {
         const auto & stats = input_bytes_statistics[i];
         if (stats.compressed_bytes)
         {
             log_stats(stats, toString(static_cast<InputStatisticsType>(i)));
-            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
-            res.input_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
+            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / stats.compressed_bytes;
+            res.input_bytes += static_cast<size_t>(stats.bytes / compression_ratio);
         }
     }
     for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
@@ -75,8 +78,8 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
         if (stats.compressed_bytes)
         {
             log_stats(stats, toString(static_cast<OutputStatisticsType>(i)));
-            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
-            res.output_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
+            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / stats.compressed_bytes;
+            res.output_bytes += static_cast<size_t>(stats.bytes / compression_ratio);
         }
     }
 
@@ -93,7 +96,7 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
     }
 
     auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
-    dataflow_cache.update(cache_key, res);
+    dataflow_cache.update(*cache_key, res);
 }
 
 /// Tries to estimate compressed size of a column by serializing a sample of it.
@@ -112,6 +115,9 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
 
 void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
 {
+    if (!cache_key)
+        return;
+
     Stopwatch watch;
 
     size_t sample_bytes = 0;
@@ -141,6 +147,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chun
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket)
 {
+    if (!cache_key)
+        return;
+
     Stopwatch watch;
 
     /// We want to avoid situations when there is a single very large state (think of `SELECT uniqExact(col) FROM t`).
@@ -149,7 +158,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
         && std::ranges::any_of(
             variant.aggregator->getParams().aggregates, [](auto agg_func) { return !agg_func.function->hasTrivialDestructor(); }))
     {
-        markUnsupportedCase();
+        unsupported_case.store(true, std::memory_order_relaxed);
         return;
     }
 
@@ -165,6 +174,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggregator & aggregator, const Block & block)
 {
+    if (!cache_key)
+        return;
+
     Stopwatch watch;
 
     auto get_key_column_sizes = [&](bool compress)
@@ -211,6 +223,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes, size_t read_bytes)
 {
+    if (!cache_key)
+        return;
+
     Stopwatch watch;
 
     const auto type = read_bytes ? InputStatisticsType::WithByteHint : InputStatisticsType::WithoutByteHint;
@@ -230,10 +245,10 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
             if (!column_sizes.contains(column.name))
                 continue;
             const auto compressed_ratio = column_sizes.at(column.name).data_uncompressed
-                ? (static_cast<double>(column_sizes.at(column.name).data_compressed) / static_cast<double>(column_sizes.at(column.name).data_uncompressed))
+                ? (column_sizes.at(column.name).data_compressed / static_cast<double>(column_sizes.at(column.name).data_uncompressed))
                 : 1.0;
             statistics.sample_bytes += column.column->byteSize();
-            statistics.compressed_bytes += static_cast<size_t>(static_cast<double>(column.column->byteSize()) * compressed_ratio);
+            statistics.compressed_bytes += static_cast<size_t>(column.column->byteSize() * compressed_ratio);
         }
     }
     statistics.elapsed_microseconds += watch.elapsedMicroseconds();

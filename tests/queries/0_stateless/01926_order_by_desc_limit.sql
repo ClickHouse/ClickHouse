@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-azure-blob-storage
+-- Tags: no-random-settings
 
 DROP TABLE IF EXISTS order_by_desc;
 

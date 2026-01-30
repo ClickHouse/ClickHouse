@@ -41,11 +41,11 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     const MergeTreeReadTask::BlockSizeParams & block_size_params_,
     const ContextPtr & context_)
     : WithContext(context_)
-    , storage_snapshot(storage_snapshot_)
     , parts_ranges(std::move(parts_))
     , mutations_snapshot(std::move(mutations_snapshot_))
     , shared_virtual_fields(std::move(shared_virtual_fields_))
     , index_read_tasks(index_read_tasks_)
+    , storage_snapshot(storage_snapshot_)
     , row_level_filter(row_level_filter_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
@@ -74,8 +74,8 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     const MergeTreeReadTask::BlockSizeParams & block_size_params_,
     const ContextPtr & context_)
     : WithContext(context_)
-    , storage_snapshot(storage_snapshot_)
     , mutations_snapshot(std::move(mutations_snapshot_))
+    , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
     , reader_settings(reader_settings_)
@@ -153,7 +153,7 @@ calculateMinMarksPerTask(
             const size_t part_compressed_bytes = getSizeOfColumns(*part.data_part, columns);
 
             avg_mark_bytes = std::max<size_t>(part_compressed_bytes / part_marks_count, 1);
-            const auto & min_bytes_per_task = settings[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
+            const auto min_bytes_per_task = settings[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
             /// We're taking min here because number of tasks shouldn't be too low - it will make task stealing impossible.
             /// We also create at least two tasks per thread to have something to steal from a slow thread.
             const auto heuristic_min_marks = std::min<size_t>(

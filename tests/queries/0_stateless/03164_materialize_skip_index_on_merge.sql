@@ -1,5 +1,4 @@
 -- Tests merge tree 'setting' materialize_skip_indexes_on_merge
--- add_minmax_index_for_numeric_columns=0: Different indices and plans on b
 
 SET enable_analyzer = 1;
 
@@ -12,7 +11,7 @@ CREATE TABLE tab
     INDEX idx_a a TYPE minmax,
     INDEX idx_b b TYPE set(3)
 )
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns=0;
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 
 SELECT 'Regular merge';
 

@@ -12,9 +12,12 @@
 #include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/CubeStep.h>
+#include <Processors/QueryPlan/CustomMetricLogViewStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -23,7 +26,6 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 
 #include <Storages/StorageMerge.h>
 
@@ -414,22 +416,10 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_right_stream_column_to_left_stream_column[rhs_column.name] = lhs_column;
     }
 
-    Names left_stream_available_columns_to_push_down = get_available_columns_for_filter(true /*push_to_left_stream*/, left_stream_filter_push_down_input_columns_available);
-    Names right_stream_available_columns_to_push_down = get_available_columns_for_filter(false /*push_to_left_stream*/, right_stream_filter_push_down_input_columns_available);
-
     if (left_stream_filter_push_down_input_columns_available)
     {
         for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
             equivalent_columns_to_push_down.push_back(name);
-    }
-    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
-    {
-        if (!logical_join->typeChangingSides().contains(JoinTableSide::Left))
-        {
-            /// In this case we can also push down to left side of JOIN using equivalent sets.
-            for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
-                equivalent_columns_to_push_down.push_back(name);
-        }
     }
 
     if (right_stream_filter_push_down_input_columns_available)
@@ -437,15 +427,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
             equivalent_columns_to_push_down.push_back(name);
     }
-    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
-    {
-        if (!logical_join->typeChangingSides().contains(JoinTableSide::Right))
-        {
-            /// In this case we can also push down to right side of JOIN using equivalent sets.
-            for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
-                equivalent_columns_to_push_down.push_back(name);
-        }
-    }
+
+    Names left_stream_available_columns_to_push_down = get_available_columns_for_filter(true /*push_to_left_stream*/, left_stream_filter_push_down_input_columns_available);
+    Names right_stream_available_columns_to_push_down = get_available_columns_for_filter(false /*push_to_left_stream*/, right_stream_filter_push_down_input_columns_available);
 
     const bool is_filter_column_const_before = isFilterColumnConst(*filter);
     auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(
@@ -775,6 +759,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             return updated_steps;
     }
 
+    if (typeid_cast<CustomMetricLogViewStep *>(child.get()))
+    {
+        Names allowed_inputs = {"event_date", "event_time", "hostname"};
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, allowed_inputs))
+            return updated_steps;
+    }
+
     if (typeid_cast<CreateSetAndFilterOnTheFlyStep *>(child.get()))
     {
         Names allowed_inputs = child->getOutputHeader()->getNames();
@@ -787,10 +778,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Union does not change header.
         /// We can push down filter and update header.
         auto union_input_headers = child->getInputHeaders();
-        auto expected_output = filter->getOutputHeader();
-
         for (auto & input_header : union_input_headers)
-            input_header = expected_output;
+            input_header = filter->getOutputHeader();
 
         ///                - Something
         /// Filter - Union - Something

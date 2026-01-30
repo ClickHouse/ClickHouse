@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <Interpreters/castColumn.h>
 #include <Formats/EscapingRuleUtils.h>
 
 namespace DB
@@ -458,10 +459,6 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
 
         state = structure_state;
         addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
-
-        /// We won't read from this stream anymore so we can release it.
-        if (settings.release_stream_callback)
-            settings.release_stream_callback(settings.path);
     }
 
     settings.path.pop_back();
@@ -858,7 +855,7 @@ static void deserializeTextImpl(
     if (!checkIfTypeIsComplete(variant_type))
     {
         size_t shared_variant_discr = dynamic_column.getSharedVariantDiscriminator();
-        for (ColumnVariant::Discriminator i = 0; i != variant_types.size(); ++i)
+        for (size_t i = 0; i != variant_types.size(); ++i)
         {
             auto field_buf = std::make_unique<ReadBufferFromString>(field);
             if (i != shared_variant_discr

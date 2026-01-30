@@ -6,14 +6,13 @@ import select
 import socket
 import subprocess
 import time
-import struct
 from os import path as p
 from typing import Iterable, List, Optional, Sequence, Union
 
 from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import ConnectionLoss, OperationTimeoutError
 from kazoo.handlers.threading import KazooTimeoutError
-from kazoo.client import EventType, KazooClient
+from kazoo.client import KazooClient
 
 from helpers.client import CommandRequest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
@@ -78,9 +77,7 @@ class KeeperException(Exception):
 class KeeperClient(object):
     SEPARATOR = b"\a\a\a\a\n"
 
-    def __init__(
-        self, bin_path: str, host: str, port: int, connection_tries=30, identity=None
-    ):
+    def __init__(self, bin_path: str, host: str, port: int, connection_tries=30, identity=None):
         self.bin_path = bin_path
         self.host = host
         self.port = port
@@ -105,7 +102,7 @@ class KeeperClient(object):
                         "error",
                         "--tests-mode",
                         "--no-confirmation",
-                        *identity_arg,
+                        *identity_arg
                     ],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
@@ -258,25 +255,13 @@ class KeeperClient(object):
     @classmethod
     @contextlib.contextmanager
     def from_cluster(
-        cls,
-        cluster: ClickHouseCluster,
-        keeper_node: Optional[str] = None,
-        keeper_ip: Optional[str] = None,
-        port: Optional[int] = None,
-        identity: Optional[str] = None,
+        cls, cluster: ClickHouseCluster, keeper_node: str, port: Optional[int] = None, identity: Optional[str] = None
     ) -> "KeeperClient":
-        if keeper_node is None and keeper_ip is None:
-            raise ValueError("Must specify either keeper_node or keeper_ip")
-
-        instance_ip = keeper_ip
-        if instance_ip is None:
-            instance_ip = cluster.get_instance_ip(keeper_node)
-
         client = cls(
             cluster.server_bin_path,
-            instance_ip,
+            cluster.get_instance_ip(keeper_node),
             port or cluster.zookeeper_port,
-            identity=identity,
+            identity=identity
         )
 
         try:
@@ -285,26 +270,20 @@ class KeeperClient(object):
             client.stop()
 
 
-def get_keeper_socket(cluster, nodename, port=9181, timeout_sec=60):
+def get_keeper_socket(cluster, nodename, port=9181):
     host = cluster.get_instance_ip(nodename)
     client = socket.socket()
-    client.settimeout(timeout_sec)
+    client.settimeout(10)
     client.connect((host, port))
     return client
 
 
-def send_4lw_cmd(cluster, node, cmd="ruok", port=9181, argument=None, timeout_sec=60):
+def send_4lw_cmd(cluster, node, cmd="ruok", port=9181):
     client = None
     logging.debug("Sending %s to %s:%d", cmd, node, port)
     try:
-        client = get_keeper_socket(cluster, node.name, port, timeout_sec)
-        if argument is not None:
-            client.send(
-                cmd.encode() + struct.pack(">L", len(argument)) + argument.encode()
-            )
-        else:
-            client.send(cmd.encode())
-
+        client = get_keeper_socket(cluster, node.name, port)
+        client.send(cmd.encode())
         data = client.recv(100_000)
         data = data.decode()
         return data
@@ -346,7 +325,7 @@ def wait_until_connected(
         while True:
             zk_cli = None
             try:
-                time_passed = time.time() - start
+                time_passed = min(time.time() - start, 5.0)
                 if time_passed >= timeout:
                     raise Exception(
                         f"{timeout}s timeout while waiting for {node.name} to start serving requests"
@@ -357,7 +336,7 @@ def wait_until_connected(
 
                 zk_cli = KazooClient(
                     hosts=f"{host}:9181",
-                    timeout=min(timeout - time_passed, 5.0),
+                    timeout=timeout - time_passed,
                     client_id=client_id,
                 )
                 zk_cli.start()
@@ -367,11 +346,7 @@ def wait_until_connected(
                 pass
             finally:
                 if zk_cli:
-                    try:
-                        # stop() can raise if the connection is already broken
-                        zk_cli.stop()
-                    except Exception:
-                        pass
+                    zk_cli.stop()
                     zk_cli.close()
 
 
@@ -476,12 +451,3 @@ def reset_zookeeper_config(
     """Resets the keeper config to default or to a given path on the disk"""
     with open(file_path, "r", encoding="utf-8") as cf:
         replace_zookeeper_config(nodes, cf.read())
-
-
-def is_znode_watch_event(event: EventType) -> bool:
-    return event.type in [
-        EventType.CREATED,
-        EventType.DELETED,
-        EventType.CHANGED,
-        EventType.CHILD,
-    ]

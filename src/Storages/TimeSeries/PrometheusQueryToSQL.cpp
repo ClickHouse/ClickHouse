@@ -58,74 +58,92 @@ namespace
 
     /// Casts field to the timestamp data type or to the interval data type.
     template <is_decimal T>
-    T fieldToDecimal(const Field & field, UInt32 target_scale)
+    DecimalField<T> fieldToDecimal(const Field & field, const DataTypePtr & target_data_type)
     {
+        UInt32 target_scale = 0;
+        Int64 target_scale_multiplier = 1;
+        if (WhichDataType{*target_data_type}.isDateTime64() || WhichDataType{*target_data_type}.isDecimal())
+        {
+            target_scale = getDecimalScale(*target_data_type);
+            target_scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(target_scale);
+        }
+
         switch (field.getType())
         {
             case Field::Types::Int64:
-            {
-                return field.safeGet<Int64>() * DecimalUtils::scaleMultiplier<T>(target_scale);
-            }
+                return DecimalField<T>{field.safeGet<Int64>() * target_scale_multiplier, target_scale};
             case Field::Types::UInt64:
-            {
-                return field.safeGet<UInt64>() * DecimalUtils::scaleMultiplier<T>(target_scale);
-            }
+                return DecimalField<T>{field.safeGet<UInt64>() * target_scale_multiplier, target_scale};
             case Field::Types::Float64:
-            {
-                return static_cast<typename T::NativeType>(
-                    field.safeGet<Float64>() * static_cast<Float64>(DecimalUtils::scaleMultiplier<T>(target_scale)));
-            }
+                return DecimalField<T>{static_cast<Int64>(field.safeGet<Float64>() * target_scale_multiplier), target_scale};
             case Field::Types::Decimal32:
             {
                 auto x = field.safeGet<Decimal32>();
-                return DecimalUtils::convertTo<Decimal64>(target_scale, x.getValue(), x.getScale());
+                return DecimalField<T>{DecimalUtils::convertTo<Decimal64>(target_scale, x.getValue(), x.getScale()), target_scale};
             }
             case Field::Types::Decimal64:
             {
                 auto x = field.safeGet<Decimal64>();
-                return DecimalUtils::convertTo<Decimal64>(target_scale, x.getValue(), x.getScale());
+                return DecimalField<T>{DecimalUtils::convertTo<Decimal64>(target_scale, x.getValue(), x.getScale()), target_scale};
             }
             default:
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot cast field of type {} to duration", field.getType());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot cast field of type {} to data type {}", field.getType(), target_data_type);
         }
     }
 
     /// Converts a timestamp or an interval to AST.
     template <is_decimal T>
-    ASTPtr decimalToAST(T decimal, UInt32 scale, const DataTypePtr & data_type)
+    ASTPtr decimalToAST(const DecimalField<T> & decimal, const DataTypePtr & data_type)
     {
         auto data_type_idx = WhichDataType{*data_type}.idx;
         if (data_type_idx == TypeIndex::DateTime64)
         {
-            String str = toString(decimal, scale);
+            String str = toString(decimal);
             if (str.find_first_of(".eE") == String::npos)
                 str += "."; /// toDateTime64() doesn't accept an integer as its first argument, so we convert it to float.
-            return makeASTFunction("toDateTime64", make_intrusive<ASTLiteral>(str), make_intrusive<ASTLiteral>(scale));
+            return makeASTFunction("toDateTime64", std::make_shared<ASTLiteral>(str), std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
         }
         else if (data_type_idx == TypeIndex::Decimal64)
-            return makeASTFunction("toDecimal64", make_intrusive<ASTLiteral>(toString(decimal, scale)), make_intrusive<ASTLiteral>(scale));
+            return makeASTFunction("toDecimal64", std::make_shared<ASTLiteral>(toString(decimal)), std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
         else
-            return make_intrusive<ASTLiteral>(DecimalField<T>{decimal, scale});
+            return std::make_shared<ASTLiteral>(Field{decimal});
+    }
+
+    /// Subtracts an interval from a timestamp.
+    DecimalField<DateTime64> subtract(const DecimalField<DateTime64> & left, const DecimalField<Decimal64> & right)
+    {
+        UInt32 scale = left.getScale();
+        chassert(right.getScale() == scale);
+        return DecimalField<DateTime64>{left.getValue() - right.getValue(), scale};
+    }
+
+    /// Returns the previous interval value.
+    DecimalField<Decimal64> previous(const DecimalField<Decimal64> & interval)
+    {
+        chassert(interval.getValue() > 0);
+        return DecimalField<Decimal64>{interval.getValue() - 1, interval.getScale()};
     }
 
     /// Increases a timestamp to make it divisible by `step`.
-    DateTime64 alignUp(DateTime64 time, Decimal64 step)
+    DecimalField<DateTime64> alignUp(const DecimalField<DateTime64> & time, const DecimalField<Decimal64> & step)
     {
-        chassert(step > 0);
-        auto x = time % step;
+        UInt32 scale = step.getScale();
+        chassert((step.getValue() > 0) && (scale == time.getScale()));
+        auto x = time.getValue() % step.getValue();
         if (!x)
             return time;
-        return time + step - x;
+        return DecimalField<DateTime64>{time.getValue() + step.getValue() - x, scale};
     }
 
     /// Decreases a timestamp to make it divisible by `step`.
-    DateTime64 alignDown(DateTime64 time, Decimal64 step)
+    DecimalField<DateTime64> alignDown(const DecimalField<DateTime64> & time, const DecimalField<Decimal64> & step)
     {
-        chassert(step > 0);
-        auto x = time % step;
+        UInt32 scale = time.getScale();
+        chassert((step.getValue() > 0) && (scale == time.getScale()));
+        auto x = time.getValue() % step.getValue();
         if (!x)
             return time;
-        return time - x;
+        return DecimalField<DateTime64>{time.getValue() - x, scale};
     }
 }
 
@@ -137,12 +155,12 @@ public:
     explicit ASTBuilder(const PrometheusQueryToSQLConverter & converter_)
         : converter(converter_)
         , timestamp_data_type(getTimeSeriesTableInfo().timestamp_data_type)
-        , timestamp_scale((isDecimal(timestamp_data_type) || isDateTime64(timestamp_data_type)) ? getDecimalScale(*timestamp_data_type) : 0)
         , interval_data_type(getIntervalDataType(timestamp_data_type))
         , value_data_type(getTimeSeriesTableInfo().value_data_type)
         , lookback_delta(fieldToInterval(converter_.lookback_delta))
         , default_resolution(fieldToInterval(converter_.default_resolution))
         , result_type(converter_.result_type)
+        , interval_scale(lookback_delta.getScale())
     {
         if (!converter_.evaluation_time.isNull())
         {
@@ -168,20 +186,20 @@ public:
 private:
     const PrometheusQueryToSQLConverter & converter;
     DataTypePtr timestamp_data_type;
-    UInt32 timestamp_scale;
     DataTypePtr interval_data_type;
     DataTypePtr value_data_type;
-    Decimal64 lookback_delta;
-    Decimal64 default_resolution;
+    DecimalField<Decimal64> lookback_delta;
+    DecimalField<Decimal64> default_resolution;
     PrometheusQueryResultType result_type;
+    UInt32 interval_scale;
 
-    std::optional<DateTime64> evaluation_time;
+    std::optional<DecimalField<DateTime64>> evaluation_time;
 
     struct EvaluationRange
     {
-        DateTime64 start_time;
-        DateTime64 end_time;
-        Decimal64 step;
+        DecimalField<DateTime64> start_time;
+        DecimalField<DateTime64> end_time;
+        DecimalField<Decimal64> step;
     };
     std::optional<EvaluationRange> evaluation_range;
 
@@ -201,7 +219,7 @@ private:
         ResultType result_type;
 
         /// A window is extracted from a range selector. The window is used only by functions accepting range vectors, e.g. rate().
-        Decimal64 window;
+        DecimalField<Decimal64> window;
 
         /// Columns to select (nullptr if there is no such column).
         /// The names of these columns are always TimeSeriesColumnNames::Group, TimeSeriesColumnNames::Tags and so on.
@@ -255,9 +273,9 @@ private:
     static ASTPtr toAST(const Piece & piece)
     {
         chassert(!piece.empty());
-        auto select_query = make_intrusive<ASTSelectQuery>();
+        auto select_query = std::make_shared<ASTSelectQuery>();
 
-        auto select_list_exp = make_intrusive<ASTExpressionList>();
+        auto select_list_exp = std::make_shared<ASTExpressionList>();
         auto & select_list = select_list_exp->children;
         if (piece.group_column)
             select_list.push_back(piece.group_column);
@@ -277,12 +295,12 @@ private:
 
         if (!piece.from_subquery.empty() || piece.from_table_function)
         {
-            auto tables = make_intrusive<ASTTablesInSelectQuery>();
-            auto table = make_intrusive<ASTTablesInSelectQueryElement>();
-            auto table_exp = make_intrusive<ASTTableExpression>();
+            auto tables = std::make_shared<ASTTablesInSelectQuery>();
+            auto table = std::make_shared<ASTTablesInSelectQueryElement>();
+            auto table_exp = std::make_shared<ASTTableExpression>();
             if (!piece.from_subquery.empty())
             {
-                table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(piece.from_subquery);
+                table_exp->database_and_table_name = std::make_shared<ASTTableIdentifier>(piece.from_subquery);
                 table_exp->children.emplace_back(table_exp->database_and_table_name);
             }
             else if (piece.from_table_function)
@@ -297,7 +315,7 @@ private:
 
         if (!piece.group_by.empty())
         {
-            auto group_by_list = make_intrusive<ASTExpressionList>();
+            auto group_by_list = std::make_shared<ASTExpressionList>();
             select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_by_list);
             group_by_list->children = piece.group_by;
         }
@@ -307,20 +325,20 @@ private:
 
         if (!piece.with.empty())
         {
-            auto with_expression_list_ast = make_intrusive<ASTExpressionList>();
+            auto with_expression_list_ast = std::make_shared<ASTExpressionList>();
             for (const auto & [name, ast] : piece.with)
             {
-                auto with_element_ast = make_intrusive<ASTWithElement>();
+                auto with_element_ast = std::make_shared<ASTWithElement>();
                 with_element_ast->name = name;
-                with_element_ast->subquery = make_intrusive<ASTSubquery>(ast);
+                with_element_ast->subquery = std::make_shared<ASTSubquery>(ast);
                 with_element_ast->children.push_back(with_element_ast->subquery);
                 with_expression_list_ast->children.push_back(std::move(with_element_ast));
             }
             select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(with_expression_list_ast));
         }
 
-        auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
-        auto list_of_selects = make_intrusive<ASTExpressionList>();
+        auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+        auto list_of_selects = std::make_shared<ASTExpressionList>();
         list_of_selects->children.push_back(std::move(select_query));
         select_with_union_query->list_of_selects = list_of_selects;
         select_with_union_query->children.push_back(list_of_selects);
@@ -361,10 +379,10 @@ private:
 
         Piece res;
         res.result_type = PrometheusQueryResultType::STRING;
-        res.string_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::String);
+        res.string_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::String);
 
         if (piece.empty())
-            res.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(fmt::format("{} String", TimeSeriesColumnNames::String)));
+            res.from_table_function = makeASTFunction("null", std::make_shared<ASTLiteral>(fmt::format("{} String", TimeSeriesColumnNames::String)));
         else
             res.from_subquery = addSubquery(std::move(piece));
 
@@ -379,10 +397,10 @@ private:
 
         Piece res;
         res.result_type = PrometheusQueryResultType::SCALAR;
-        res.scalar_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Scalar);
+        res.scalar_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Scalar);
 
         if (piece.empty())
-            res.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(fmt::format("{} {}", TimeSeriesColumnNames::Scalar, getTimeSeriesTableInfo().value_data_type)));
+            res.from_table_function = makeASTFunction("null", std::make_shared<ASTLiteral>(fmt::format("{} {}", TimeSeriesColumnNames::Scalar, getTimeSeriesTableInfo().value_data_type)));
         else
             res.from_subquery = addSubquery(std::move(piece));
 
@@ -400,10 +418,10 @@ private:
 
         if (piece.empty())
         {
-            res.tags_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags);
-            res.timestamp_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
-            res.value_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value);
-            res.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(
+            res.tags_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Tags);
+            res.timestamp_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
+            res.value_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value);
+            res.from_table_function = makeASTFunction("null", std::make_shared<ASTLiteral>(
                 fmt::format("{} Array(Tuple(String, String)), {} {}, {} {}",
                             TimeSeriesColumnNames::Tags, TimeSeriesColumnNames::Timestamp, getTimeSeriesTableInfo().timestamp_data_type,
                             TimeSeriesColumnNames::Value, getTimeSeriesTableInfo().value_data_type)));
@@ -412,11 +430,11 @@ private:
 
         if (piece.tags_column)
         {
-            res.tags_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags);
+            res.tags_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Tags);
         }
         else if (piece.group_column)
         {
-            res.tags_column = makeASTFunction("timeSeriesTagsGroupToTags", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group));
+            res.tags_column = makeASTFunction("timeSeriesTagsGroupToTags", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
             res.tags_column->setAlias(TimeSeriesColumnNames::Tags);
         }
         else
@@ -429,17 +447,17 @@ private:
 
         if (piece.timestamp_column && piece.value_column)
         {
-            res.timestamp_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
-            res.value_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value);
+            res.timestamp_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
+            res.value_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value);
         }
         else if (piece.time_series_column)
         {
-            res.where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries));
-            auto array_element = makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries),
-                                                 make_intrusive<ASTLiteral>(Field{1u}));
-            res.timestamp_column = makeASTFunction("tupleElement", array_element, make_intrusive<ASTLiteral>(Field{1u}));
+            res.where = makeASTFunction("notEmpty", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries));
+            auto array_element = makeASTFunction("arrayElement", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries),
+                                                 std::make_shared<ASTLiteral>(Field{1u}));
+            res.timestamp_column = makeASTFunction("tupleElement", array_element, std::make_shared<ASTLiteral>(Field{1u}));
             res.timestamp_column->setAlias(TimeSeriesColumnNames::Timestamp);
-            res.value_column = makeASTFunction("tupleElement", array_element, make_intrusive<ASTLiteral>(Field{2u}));
+            res.value_column = makeASTFunction("tupleElement", array_element, std::make_shared<ASTLiteral>(Field{2u}));
             res.value_column->setAlias(TimeSeriesColumnNames::Value);
         }
         else
@@ -462,9 +480,9 @@ private:
 
         if (piece.empty())
         {
-            res.tags_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags);
-            res.time_series_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries);
-            res.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(
+            res.tags_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Tags);
+            res.time_series_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries);
+            res.from_table_function = makeASTFunction("null", std::make_shared<ASTLiteral>(
                 fmt::format("{} Array(Tuple(String, String)), {} Array(Tuple({}, {}))",
                             TimeSeriesColumnNames::Tags, TimeSeriesColumnNames::TimeSeries,
                             getTimeSeriesTableInfo().timestamp_data_type, getTimeSeriesTableInfo().value_data_type)));
@@ -473,11 +491,11 @@ private:
 
         if (piece.tags_column)
         {
-            res.tags_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags);
+            res.tags_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Tags);
         }
         else if (piece.group_column)
         {
-            res.tags_column = makeASTFunction("timeSeriesTagsGroupToTags", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group));
+            res.tags_column = makeASTFunction("timeSeriesTagsGroupToTags", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
             res.tags_column->setAlias(TimeSeriesColumnNames::Tags);
         }
         else
@@ -490,15 +508,15 @@ private:
 
         if (piece.time_series_column)
         {
-            res.time_series_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries);
+            res.time_series_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries);
         }
         else if (piece.timestamp_column && piece.value_column)
         {
             res.time_series_column = makeASTFunction("timeSeriesGroupArray",
-                                                     make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                                                     make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+                                                     std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                                                     std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value));
             res.time_series_column->setAlias(TimeSeriesColumnNames::TimeSeries);
-            res.group_by.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group));
+            res.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
         }
         else
         {
@@ -524,8 +542,8 @@ private:
             case NodeType::Subquery:
                 return buildPieceForSubquery(typeid_cast<const PrometheusQueryTree::Subquery *>(node));
 
-            case NodeType::Offset:
-                return buildPieceForOffset(typeid_cast<const PrometheusQueryTree::Offset *>(node));
+            case NodeType::At:
+                return buildPieceForAt(typeid_cast<const PrometheusQueryTree::At *>(node));
 
             case NodeType::Function:
                 return buildPieceForFunction(typeid_cast<const PrometheusQueryTree::Function *>(node));
@@ -549,15 +567,15 @@ private:
     /// Builds a piece to evaluate an instant selector.
     Piece buildPieceForInstantSelector(const PrometheusQueryTree::InstantSelector * instant_selector) const
     {
-        if (lookback_delta <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The lookback delta must be positive, got {}", toString(lookback_delta, timestamp_scale));
+        if (lookback_delta.getValue() <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The lookback delta must be positive, got {}", toString(lookback_delta));
 
         /// Lookback deltas are left-open (and right-closed), so we decrease `window` a little bit to consider both boundaries close.
         auto window = lookback_delta;
 
-        DateTime64 start_time;
-        DateTime64 end_time;
-        Decimal64 step;
+        DecimalField<DateTime64> start_time;
+        DecimalField<DateTime64> end_time;
+        DecimalField<Decimal64> step;
         extractRangeAndStep(instant_selector, start_time, end_time, step);
 
         /// We can get an empty interval here because of aligning in extractRangeAndStep().
@@ -567,21 +585,21 @@ private:
         Piece res;
 
         res.from_table_function = makeASTFunction("timeSeriesSelector",
-            make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getDatabaseName()),
-            make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getTableName()),
-            make_intrusive<ASTLiteral>(getPromQLText(instant_selector)),
-            timestampToAST(start_time - window + 1),
+            std::make_shared<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getDatabaseName()),
+            std::make_shared<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getTableName()),
+            std::make_shared<ASTLiteral>(getPromQLText(instant_selector)),
+            timestampToAST(subtract(start_time, previous(window))),
             timestampToAST(end_time));
 
-        res.group_column = makeASTFunction("timeSeriesIdToTagsGroup", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+        res.group_column = makeASTFunction("timeSeriesIdToTagsGroup", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::ID));
         res.group_column->setAlias(TimeSeriesColumnNames::Group);
 
         res.time_series_column = makeGridFunction("timeSeriesLastToGrid", start_time, end_time, step, window,
-                                                  make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                                                  make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+                                                  std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                                                  std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value));
 
         res.time_series_column->setAlias(TimeSeriesColumnNames::TimeSeries);
-        res.group_by.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group));
+        res.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
         res.result_type = ResultType::INSTANT_VECTOR;
 
         return res;
@@ -592,16 +610,16 @@ private:
     {
         const auto * instant_selector = range_selector->getInstantSelector();
 
-        auto range = range_selector->range;
-        if (range <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range specified in a range selector must be positive, got {}", toString(range, timestamp_scale));
+        auto range = nodeToInterval(range_selector->getRange());
+        if (range.getValue() <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range specified in a range selector must be positive, got {}", getPromQLText(range_selector->getRange()));
 
         /// Ranges are left-open (and right-closed), so we decrease `window` a little bit to consider both boundaries close.
         auto window = range;
 
-        DateTime64 start_time;
-        DateTime64 end_time;
-        Decimal64 step;
+        DecimalField<DateTime64> start_time;
+        DecimalField<DateTime64> end_time;
+        DecimalField<Decimal64> step;
         extractRangeAndStep(range_selector, start_time, end_time, step);
 
         /// We can get an empty interval here because of aligning in extractRangeAndStep().
@@ -611,16 +629,16 @@ private:
         Piece res;
 
         res.from_table_function = makeASTFunction("timeSeriesSelector",
-            make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getDatabaseName()),
-            make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getTableName()),
-            make_intrusive<ASTLiteral>(getPromQLText(instant_selector)),
-            timestampToAST(start_time - window + 1),
+            std::make_shared<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getDatabaseName()),
+            std::make_shared<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getTableName()),
+            std::make_shared<ASTLiteral>(getPromQLText(instant_selector)),
+            timestampToAST(subtract(start_time, previous(window))),
             timestampToAST(end_time));
 
-        res.group_column = makeASTFunction("timeSeriesIdToTagsGroup", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+        res.group_column = makeASTFunction("timeSeriesIdToTagsGroup", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::ID));
         res.group_column->setAlias(TimeSeriesColumnNames::Group);
-        res.timestamp_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
-        res.value_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value);
+        res.timestamp_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
+        res.value_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value);
         res.result_type = ResultType::RANGE_VECTOR;
         res.window = window;
 
@@ -636,7 +654,7 @@ private:
             return getEmptyPiece(ResultType::RANGE_VECTOR);
 
         piece.result_type = ResultType::RANGE_VECTOR;
-        piece.window = subquery->range;
+        piece.window = nodeToInterval(subquery->getRange());
         return piece;
     }
 
@@ -656,10 +674,10 @@ private:
     }
 
     /// Builds a piece to evaluate an offset.
-    Piece buildPieceForOffset(const PrometheusQueryTree::Offset * offset_node)
+    Piece buildPieceForAt(const PrometheusQueryTree::At * at_node)
     {
         /// Offsets are already taken into account - see extractRangeAndStep(). So here we just ignore them.
-        return buildPiece(offset_node->getExpression());
+        return buildPiece(at_node->getExpression());
     }
 
     /// Checks the number of arguments of a promql function.
@@ -707,9 +725,9 @@ private:
 
         Piece res;
         res.result_type = ResultType::INSTANT_VECTOR;
-        res.group_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group);
-        res.timestamp_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
-        res.value_column = makeASTFunction(ch_function_name, make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+        res.group_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group);
+        res.timestamp_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
+        res.value_column = makeASTFunction(ch_function_name, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value));
         res.value_column->setAlias(TimeSeriesColumnNames::Value);
         res.from_subquery = addSubquery(splitTimeSeriesColumnToTwoNonArrays(std::move(argument)));
         return res;
@@ -742,9 +760,9 @@ private:
 
         auto window = argument.window;
 
-        DateTime64 start_time;
-        DateTime64 end_time;
-        Decimal64 step;
+        DecimalField<DateTime64> start_time;
+        DecimalField<DateTime64> end_time;
+        DecimalField<Decimal64> step;
         extractRangeAndStep(func, start_time, end_time, step);
 
         /// We can get an empty interval here because of aligning in extractRangeAndStep().
@@ -753,14 +771,14 @@ private:
 
         Piece res;
         res.result_type = ResultType::INSTANT_VECTOR;
-        res.group_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group);
+        res.group_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group);
 
         res.time_series_column = makeGridFunction(grid_function_name, start_time, end_time, step, window,
-                                                  make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                                                  make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+                                                  std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                                                  std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value));
 
         res.time_series_column->setAlias(TimeSeriesColumnNames::TimeSeries);
-        res.group_by.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group));
+        res.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
         res.from_subquery = addSubquery(splitTimeSeriesColumnToTwoArrays(std::move(argument)));
         return res;
     }
@@ -779,12 +797,12 @@ private:
 
         Piece res;
         res.result_type = piece.result_type;
-        res.group_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group);
-        res.timestamp_column = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries),
-                                               make_intrusive<ASTLiteral>(Field{1u}));
+        res.group_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group);
+        res.timestamp_column = makeASTFunction("tupleElement", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries),
+                                               std::make_shared<ASTLiteral>(Field{1u}));
         res.timestamp_column->setAlias(TimeSeriesColumnNames::Timestamp);
-        res.value_column = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries),
-                                           make_intrusive<ASTLiteral>(Field{2u}));
+        res.value_column = makeASTFunction("tupleElement", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries),
+                                           std::make_shared<ASTLiteral>(Field{2u}));
         res.value_column->setAlias(TimeSeriesColumnNames::Value);
         res.from_subquery = addSubquery(std::move(piece));
         res.timestamp_column_is_array = true;
@@ -800,14 +818,14 @@ private:
 
         Piece res;
         res.result_type = piece.result_type;
-        res.group_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group);
+        res.group_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group);
         res.timestamp_column = makeASTFunction("tupleElement", makeASTFunction("arrayJoin",
-                                               make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries)),
-                                               make_intrusive<ASTLiteral>(Field{1u}));
+                                               std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries)),
+                                               std::make_shared<ASTLiteral>(Field{1u}));
         res.timestamp_column->setAlias(TimeSeriesColumnNames::Timestamp);
         res.value_column = makeASTFunction("tupleElement", makeASTFunction("arrayJoin",
-                                           make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries)),
-                                           make_intrusive<ASTLiteral>(Field{2u}));
+                                           std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries)),
+                                           std::make_shared<ASTLiteral>(Field{2u}));
         res.value_column->setAlias(TimeSeriesColumnNames::Value);
         res.from_subquery = addSubquery(std::move(piece));
         return res;
@@ -816,12 +834,12 @@ private:
     /// Builds an AST to call functions generating time series on a grid.
     /// Returns something like timeSeriesFromGrid(<start_time>, <step>, timeSeries*ToGrid(<start_time>, <end_time>, <step>, <window>)(<timestamp>, <value>)
     ASTPtr makeGridFunction(std::string_view grid_function_name,
-                            DateTime64 start_time, DateTime64 end_time,
-                            Decimal64 step, Decimal64 window,
+                            const DecimalField<DateTime64> & start_time, const DecimalField<DateTime64> & end_time,
+                            const DecimalField<Decimal64> & step, const DecimalField<Decimal64> & window,
                             ASTPtr timestamp_column, ASTPtr value_column) const
     {
         auto aggregate_function = makeASTFunction(grid_function_name, timestamp_column, value_column);
-        aggregate_function->parameters = make_intrusive<ASTExpressionList>();
+        aggregate_function->parameters = std::make_shared<ASTExpressionList>();
         aggregate_function->parameters->children.push_back(timestampToAST(start_time));
         aggregate_function->parameters->children.push_back(timestampToAST(end_time));
         aggregate_function->parameters->children.push_back(intervalToAST(step));
@@ -833,7 +851,7 @@ private:
     /// and determine the total time range and optionally the step used in the most inner subquery.
     /// The function always set `start_time` and `end_time`. If the node isn't used in any subquery the function sets `step` to 0.
     void extractRangeAndStep(const PrometheusQueryTree::Node * node,
-                             DateTime64 & start_time, DateTime64 & end_time, Decimal64 & step) const
+                             DecimalField<DateTime64> & start_time, DecimalField<DateTime64> & end_time, DecimalField<Decimal64> & step) const
     {
         parent_nodes.clear();
         for (const auto * parent = node; parent; parent = parent->parent)
@@ -843,7 +861,7 @@ private:
         {
             start_time = *evaluation_time;
             end_time = *evaluation_time;
-            step = 0;
+            step = getZeroInterval();
         }
         else
         {
@@ -855,42 +873,41 @@ private:
 
         for (const auto * parent : parent_nodes)
         {
-            if (parent->node_type == NodeType::Offset)
+            if (parent->node_type == NodeType::At)
             {
-                const auto * offset_node = typeid_cast<const PrometheusQueryTree::Offset *>(parent);
-                if (offset_node->at_timestamp)
+                const auto * at_node = typeid_cast<const PrometheusQueryTree::At *>(parent);
+                if (const auto * at = at_node->getAt())
                 {
-                    start_time = *offset_node->at_timestamp;
+                    start_time = nodeToTimestamp(at);
                     end_time = start_time;
-                    step = 0;
+                    step = getZeroInterval();
                 }
-                if (offset_node->offset_value)
+                if (const auto * offset = at_node->getOffset())
                 {
                     /// The "offset" modifier moves the evaluation time backward.
-                    auto offset = *offset_node->offset_value;
-                    start_time = start_time - offset;
-                    end_time = end_time - offset;
+                    start_time = subtract(start_time, nodeToInterval(offset));
+                    end_time = subtract(end_time, nodeToInterval(offset));
                 }
             }
             else if (parent->node_type == NodeType::Subquery)
             {
                 const auto * subquery_node = typeid_cast<const PrometheusQueryTree::Subquery *>(parent);
-                if (subquery_node->resolution)
+                if (const auto * resolution = subquery_node->getResolution())
                 {
-                    step = *subquery_node->resolution;
-                    if (step <= 0)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Resolution must be positive, got {}", toString(step, timestamp_scale));
+                    step = nodeToInterval(resolution);
+                    if (step.getValue() <= 0)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Resolution must be positive, got {}", getPromQLText(resolution));
                 }
                 else
                 {
-                    if (default_resolution <= 0)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The default resolution must be positive, got {}", toString(default_resolution, timestamp_scale));
                     step = default_resolution;
+                    if (step.getValue() <= 0)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The default resolution must be positive, got {}", toString(default_resolution));
                 }
-                auto subquery_range = subquery_node->range;
-                if (subquery_range <= 0)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subquery range must be positive, got {}", toString(subquery_range, timestamp_scale));
-                start_time = start_time - subquery_range + 1;
+                auto subquery_range = nodeToInterval(subquery_node->getRange());
+                if (subquery_range.getValue() <= 0)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subquery rangeResolution must be positive, got {}", getPromQLText(subquery_node->getRange()));
+                start_time = subtract(start_time, previous(subquery_range));
 
                 /// We need to align `start_time` and `end_time` by `step` if there is a subquery.
                 /// (See https://www.robustperception.io/promql-subqueries-and-alignment/)
@@ -900,28 +917,56 @@ private:
         }
     }
 
-    /// Converts a scalar or an interval value to a timestamp compatible with the data types used in the TimeSeries table.
-    DateTime64 fieldToTimestamp(const Field & field) const
+    /// Extracts a value from a scalar literal or an interval literal node.
+    Field nodeToField(const PrometheusQueryTree::Node * scalar_or_interval_node) const
     {
-        return fieldToDecimal<DateTime64>(field, timestamp_scale);
+        auto node_type = scalar_or_interval_node->node_type;
+        if (node_type == NodeType::ScalarLiteral)
+            return Field{typeid_cast<const PrometheusQueryTree::ScalarLiteral &>(*scalar_or_interval_node).scalar};
+        else if (node_type == NodeType::IntervalLiteral)
+            return Field{typeid_cast<const PrometheusQueryTree::IntervalLiteral &>(*scalar_or_interval_node).interval};
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a scalar literal or a interval literal node, got {} ({})", node_type, getPromQLText(scalar_or_interval_node));
+    }
+
+    /// Converts a scalar or an interval value to a timestamp compatible with the data types used in the TimeSeries table.
+    DecimalField<DateTime64> fieldToTimestamp(const Field & field) const
+    {
+        return fieldToDecimal<DateTime64>(field, timestamp_data_type);
+    }
+
+    DecimalField<DateTime64> nodeToTimestamp(const PrometheusQueryTree::Node * scalar_or_interval_node) const
+    {
+        return fieldToTimestamp(nodeToField(scalar_or_interval_node));
     }
 
     /// Converts a scalar or an interval value to an interval compatible with the data types used in the TimeSeries table.
-    Decimal64 fieldToInterval(const Field & field) const
+    DecimalField<Decimal64> fieldToInterval(const Field & field) const
     {
-        return fieldToDecimal<Decimal64>(field, timestamp_scale);
+        return fieldToDecimal<Decimal64>(field, interval_data_type);
+    }
+
+    DecimalField<Decimal64> nodeToInterval(const PrometheusQueryTree::Node * scalar_or_interval_node) const
+    {
+        return fieldToInterval(nodeToField(scalar_or_interval_node));
+    }
+
+    /// Returns a zero interval with the correct scale.
+    DecimalField<Decimal64> getZeroInterval() const
+    {
+        return DecimalField<Decimal64>{0, interval_scale};
     }
 
     /// Converts a timestamp to AST.
-    ASTPtr timestampToAST(DateTime64 timestamp) const
+    ASTPtr timestampToAST(const DecimalField<DateTime64> & field) const
     {
-        return decimalToAST(timestamp, timestamp_scale, timestamp_data_type);
+        return decimalToAST(field, timestamp_data_type);
     }
 
     /// Converts a interval to AST.
-    ASTPtr intervalToAST(Decimal64 interval) const
+    ASTPtr intervalToAST(const DecimalField<Decimal64> & field) const
     {
-        return decimalToAST(interval, timestamp_scale, interval_data_type);
+        return decimalToAST(field, interval_data_type);
     }
 };
 

@@ -78,7 +78,7 @@ public:
         {
             const UInt64 hindex = data[row];
 
-            auto res = static_cast<UInt8>(getBaseCellNumber(hindex));
+            UInt8 res = getBaseCellNumber(hindex);
 
             dst_data[row] = res;
         }

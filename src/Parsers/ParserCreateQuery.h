@@ -61,7 +61,7 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expect
     if (name_parser.parse(pos, name, expected)
         && type_parser.parse(pos, type, expected))
     {
-        auto name_type_pair = make_intrusive<ASTNameTypePair>();
+        auto name_type_pair = std::make_shared<ASTNameTypePair>();
         tryGetIdentifierNameInto(name, name_type_pair->name);
         name_type_pair->type = type;
         name_type_pair->children.push_back(type);
@@ -166,7 +166,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (!name_parser.parse(pos, name, expected))
         return false;
 
-    const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
+    const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
     tryGetIdentifierNameInto(name, column_declaration->name);
 
     /// This keyword may occur only in MODIFY COLUMN query. We check it here
@@ -189,7 +189,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
       *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS, COMMENT}
       */
     ASTPtr type;
-    ColumnDefaultSpecifier default_specifier = ColumnDefaultSpecifier::Empty;
+    String default_specifier;
     std::optional<bool> null_modifier;
     bool ephemeral_default = false;
     ASTPtr default_expression;
@@ -254,25 +254,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         && !collation_parser.parse(pos, collation_expression, expected))
         return false;
 
-    if (s_default.ignore(pos, expected))
+    Pos pos_before_specifier = pos;
+    if (s_default.ignore(pos, expected) || s_materialized.ignore(pos, expected) || s_alias.ignore(pos, expected))
     {
-        default_specifier = ColumnDefaultSpecifier::Default;
-
-        /// should be followed by an expression
-        if (!expr_parser.parse(pos, default_expression, expected))
-            return false;
-    }
-    else if (s_materialized.ignore(pos, expected))
-    {
-        default_specifier = ColumnDefaultSpecifier::Materialized;
-
-        /// should be followed by an expression
-        if (!expr_parser.parse(pos, default_expression, expected))
-            return false;
-    }
-    else if (s_alias.ignore(pos, expected))
-    {
-        default_specifier = ColumnDefaultSpecifier::Alias;
+        default_specifier = Poco::toUpper(std::string{pos_before_specifier->begin, pos_before_specifier->end});
 
         /// should be followed by an expression
         if (!expr_parser.parse(pos, default_expression, expected))
@@ -280,18 +265,18 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     }
     else if (s_ephemeral.ignore(pos, expected))
     {
-        default_specifier = ColumnDefaultSpecifier::Ephemeral;
+        default_specifier = s_ephemeral.getName();
         if (s_comment.ignore(pos, expected))
             is_comment = true;
         if ((is_comment || !expr_parser.parse(pos, default_expression, expected)) && type)
         {
             ephemeral_default = true;
 
-            auto default_function = make_intrusive<ASTFunction>();
+            auto default_function = std::make_shared<ASTFunction>();
             default_function->name = "defaultValueOfTypeName";
-            default_function->arguments = make_intrusive<ASTExpressionList>();
+            default_function->arguments = std::make_shared<ASTExpressionList>();
             /// Ephemeral columns don't really have secrets but we need to format into a String, hence the strange call
-            default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(type->formatForLogging()));
+            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTDataType>()->formatForLogging()));
             default_expression = default_function;
         }
 
@@ -300,7 +285,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     }
     else if (s_auto_increment.ignore(pos, expected))
     {
-        default_specifier = ColumnDefaultSpecifier::AutoIncrement;
+        default_specifier = s_auto_increment.getName();
         /// if type is not provided for a column with AUTO_INCREMENT then using INT by default
         if (!type)
         {
@@ -388,7 +373,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     node = column_declaration;
 
     if (type)
-        column_declaration->setType(std::move(type));
+    {
+        column_declaration->type = type;
+        column_declaration->children.push_back(std::move(type));
+    }
 
     column_declaration->null_modifier = null_modifier;
 
@@ -396,26 +384,45 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (default_expression)
     {
         column_declaration->ephemeral_default = ephemeral_default;
-        column_declaration->setDefaultExpression(std::move(default_expression));
+        column_declaration->default_expression = default_expression;
+        column_declaration->children.push_back(std::move(default_expression));
     }
 
     if (comment_expression)
-        column_declaration->setComment(std::move(comment_expression));
+    {
+        column_declaration->comment = comment_expression;
+        column_declaration->children.push_back(std::move(comment_expression));
+    }
 
     if (codec_expression)
-        column_declaration->setCodec(std::move(codec_expression));
+    {
+        column_declaration->codec = codec_expression;
+        column_declaration->children.push_back(std::move(codec_expression));
+    }
 
     if (settings)
-        column_declaration->setSettings(std::move(settings));
+    {
+        column_declaration->settings = settings;
+        column_declaration->children.push_back(std::move(settings));
+    }
 
     if (statistics_desc_expression)
-        column_declaration->setStatisticsDesc(std::move(statistics_desc_expression));
+    {
+        column_declaration->statistics_desc = statistics_desc_expression;
+        column_declaration->children.push_back(std::move(statistics_desc_expression));
+    }
 
     if (ttl_expression)
-        column_declaration->setTTL(std::move(ttl_expression));
+    {
+        column_declaration->ttl = ttl_expression;
+        column_declaration->children.push_back(std::move(ttl_expression));
+    }
 
     if (collation_expression)
-        column_declaration->setCollation(std::move(collation_expression));
+    {
+        column_declaration->collation = collation_expression;
+        column_declaration->children.push_back(std::move(collation_expression));
+    }
 
     column_declaration->primary_key_specifier = primary_key_specifier;
 

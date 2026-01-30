@@ -351,9 +351,9 @@ public:
         return current_metadata->optimize(metadata_snapshot, context, format_settings);
     }
 
-    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override
+    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override
     {
-        current_metadata->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, local_context);
+        current_metadata->addDeleteTransformers(object_info, builder, format_settings, local_context);
     }
 
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
@@ -364,15 +364,6 @@ public:
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
         auto disk = context->getDisk(disk_name);
         ready_object_storage = disk->getObjectStorage();
-    }
-
-    bool supportsPrewhere() const override
-    {
-#if USE_AVRO
-        return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
-#else
-        return false;
-#endif
     }
 
 private:

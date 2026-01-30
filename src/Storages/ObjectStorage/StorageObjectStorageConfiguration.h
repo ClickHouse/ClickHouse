@@ -163,7 +163,6 @@ public:
         ObjectInfoPtr object_info,
         QueryPipelineBuilder & builder,
         const std::optional<FormatSettings> & format_settings,
-        FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr local_context) const;
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(
@@ -256,11 +255,6 @@ public:
     virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
         return false;
-    }
-
-    virtual bool supportsPrewhere() const
-    {
-        return true;
     }
 
     virtual void drop(ContextPtr) {}

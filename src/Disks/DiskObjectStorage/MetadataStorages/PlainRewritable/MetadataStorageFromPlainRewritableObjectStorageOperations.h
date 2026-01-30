@@ -127,12 +127,9 @@ private:
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
 
-    std::filesystem::path remote_source_path;
-    std::filesystem::path remote_tmp_path;
+    std::filesystem::path remote_path;
     std::optional<FileRemoteInfo> file_remote_info;
-    bool copy_started = false;
-    bool remove_started = false;
-    bool remove_finished = false;
+    bool unlinked = false;
 
 public:
     MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
@@ -144,7 +141,6 @@ public:
 
     void execute() override;
     void undo() override;
-    void finalize() override;
 };
 
 /// Throws an exception if path_to_ already exists.

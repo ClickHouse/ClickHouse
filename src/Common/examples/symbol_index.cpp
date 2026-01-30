@@ -1,11 +1,10 @@
-#include <iostream>
-#include <dlfcn.h>
+#include <Common/SymbolIndex.h>
+#include <Common/Elf.h>
+#include <Common/Dwarf.h>
 #include <Core/Defines.h>
 #include <base/demangle.h>
-#include <Common/Dwarf.h>
-#include <Common/Elf.h>
-#include <Common/StackTrace.h>
-#include <Common/SymbolIndex.h>
+#include <iostream>
+#include <dlfcn.h>
 
 [[maybe_unused]] static NO_INLINE const void * getAddress()
 {

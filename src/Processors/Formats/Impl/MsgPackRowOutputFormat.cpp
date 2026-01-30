@@ -28,6 +28,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/MsgPackExtensionTypes.h>
 
+#include <Processors/Port.h>
 
 namespace DB
 {
