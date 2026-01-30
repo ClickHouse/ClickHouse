@@ -486,7 +486,7 @@ void executeQuery(
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 
-static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const UInt64 & shard_num)
+static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     auto context_mutable = Context::createCopy(context);
@@ -513,23 +513,10 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
         context_mutable->setSetting("use_hedged_requests", Field{false});
     }
 
-    /// If parallel replicas executed over distributed table i.e. in scope of a shard,
-    /// currently, local plan for parallel replicas is not created.
-    /// Having local plan is prerequisite to use projection with parallel replicas.
-    /// So, currently, we disable projection support with parallel replicas when reading over distributed table with parallel replicas
-    /// Otherwise, it can lead to incorrect results, in particular with use of implicit projection min_max_count
-    if (shard_num > 0 && settings[Setting::parallel_replicas_support_projection].value)
-    {
-        LOG_TRACE(
-            logger,
-            "Disabling 'parallel_replicas_support_projection'. Currently, it's not supported for queries with parallel replicas over distributed tables");
-        context_mutable->setSetting("parallel_replicas_support_projection", Field{false});
-    }
-
     return context_mutable;
 }
 
-static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context)
+static ClusterPtr prepareClusterForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context)
 {
     /// check cluster for parallel replicas
     auto not_optimized_cluster = context->getClusterForParallelReplicas();
@@ -575,10 +562,11 @@ static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const Log
                 "`cluster_for_parallel_replicas` setting refers to cluster with several shards. Expected a cluster with one shard");
     }
 
-    return {new_cluster, shard_num};
+    return new_cluster;
 }
 
-static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
+static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(
+    const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -643,10 +631,16 @@ static std::optional<size_t> findLocalReplicaIndexAndUpdatePools(std::vector<Con
         }
     }
     if (!local_replica_index)
+    {
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Address count: {}", shard.local_addresses.size());
+        for (const auto & addr : shard.local_addresses)
+            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}:{}", addr.host_name, addr.port);
+
         throw Exception(
             ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
             "Local replica is not found in '{}' cluster definition, see 'cluster_for_parallel_replicas' setting",
             cluster->getName());
+    }
 
     // resize the pool but keep local replicas in it (and update its index)
     chassert(max_replicas_to_use <= pools.size());
@@ -675,8 +669,8 @@ void executeQueryWithParallelReplicas(
     LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
         storage_id.getNameForLogs(), header->dumpStructure(), query_ast->formatForLogging(), processed_stage);
 
-    auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
-    auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
+    auto new_context = updateContextForParallelReplicas(logger, context);
+    auto cluster = prepareClusterForParallelReplicas(logger, new_context);
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
 
     auto external_tables = new_context->getExternalTables();
@@ -686,7 +680,7 @@ void executeQueryWithParallelReplicas(
 
     const auto & settings = new_context->getSettingsRef();
     /// do not build local plan for distributed queries for now (address it later)
-    if (settings[Setting::allow_experimental_analyzer] && settings[Setting::parallel_replicas_local_plan] && !shard_num)
+    if (settings[Setting::allow_experimental_analyzer] && settings[Setting::parallel_replicas_local_plan])
     {
         auto local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
 
@@ -1051,8 +1045,13 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
     const auto & settings = context->getSettingsRef();
 
+<<<<<<< HEAD
+    auto new_context = updateContextForParallelReplicas(logger, context);
+    auto cluster = prepareClusterForParallelReplicas(logger, new_context);
+=======
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
+>>>>>>> origin/master
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
     std::optional<size_t> local_replica_index;
 
