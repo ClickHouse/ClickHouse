@@ -31,12 +31,12 @@ INSERT INTO mt_datetime_test SELECT toDateTime(1705276800 + number * 60) AS ts, 
 -- Same day query (08:00-20:00, filtering 10:00-18:00) = 480 rows
 SELECT count() FROM mt_datetime_test
 WHERE ts >= toDateTime(1705276800 + 8*3600) AND ts < toDateTime(1705276800 + 20*3600)
-  AND toTime64(ts, 3) >= toTime64(toDateTime(1705276800 + 10*3600), 3) AND toTime64(ts, 3) < toTime64(toDateTime(1705276800 + 18*3600), 3);
+  AND toTime64(ts, 3) >= '10:00:00'::Time64(3) AND toTime64(ts, 3) < '18:00:00'::Time64(3);
 
 -- Cross-day query = 360 rows (correctly computed without monotonicity)
 SELECT count() FROM mt_datetime_test
 WHERE ts >= toDateTime(1705276800 + 20*3600) AND ts < toDateTime(1705276800 + 32*3600)
-  AND toTime64(ts, 3) >= toTime64(toDateTime(1705276800 + 6*3600), 3);
+  AND toTime64(ts, 3) >= '06:00:00'::Time64(3);
 
 DROP TABLE mt_datetime_test;
 
@@ -49,12 +49,12 @@ INSERT INTO mt_datetime64_test SELECT toDateTime64(1705276800, 3) + number * 60 
 -- Same day query
 SELECT count() FROM mt_datetime64_test
 WHERE ts >= toDateTime64(1705276800 + 8*3600, 3) AND ts < toDateTime64(1705276800 + 20*3600, 3)
-  AND toTime64(ts, 3) >= toTime64(toDateTime(1705276800 + 10*3600), 3) AND toTime64(ts, 3) < toTime64(toDateTime(1705276800 + 18*3600), 3);
+  AND toTime64(ts, 3) >= '10:00:00'::Time64(3) AND toTime64(ts, 3) < '18:00:00'::Time64(3);
 
 -- Cross-day query
 SELECT count() FROM mt_datetime64_test
 WHERE ts >= toDateTime64(1705276800 + 20*3600, 3) AND ts < toDateTime64(1705276800 + 32*3600, 3)
-  AND toTime64(ts, 3) >= toTime64(toDateTime(1705276800 + 6*3600), 3);
+  AND toTime64(ts, 3) >= '06:00:00'::Time64(3);
 
 DROP TABLE mt_datetime64_test;
 
@@ -68,12 +68,12 @@ INSERT INTO mt_uint32_test SELECT 1705276800 + number * 60, number FROM numbers(
 -- Same day query
 SELECT count() FROM mt_uint32_test
 WHERE ts >= 1705276800 + 8*3600 AND ts < 1705276800 + 20*3600
-  AND toTime64(toDateTime(ts), 3) >= toTime64(toDateTime(1705276800 + 10*3600), 3) AND toTime64(toDateTime(ts), 3) < toTime64(toDateTime(1705276800 + 18*3600), 3);
+  AND toTime64(ts, 3) >= toTime64(1705276800 + 10*3600, 3) AND toTime64(ts, 3) < toTime64(1705276800 + 18*3600, 3);
 
 -- Cross-day query
 SELECT count() FROM mt_uint32_test
 WHERE ts >= 1705276800 + 20*3600 AND ts < 1705276800 + 32*3600
-  AND toTime64(ts, 3) >= '06:00:00'::Time64(3);
+  AND toTime64(ts, 3) >= toTime64(1705276800 + 6*3600, 3);
 
 DROP TABLE mt_uint32_test;
 
@@ -81,9 +81,9 @@ DROP TABLE IF EXISTS mt_time_test;
 
 CREATE TABLE mt_time_test (t Time64(3), value UInt32) ENGINE = MergeTree ORDER BY t;
 
-INSERT INTO mt_time_test SELECT toTime64(toDateTime(1705276800 + number), 3) AS t, number FROM numbers(86400);
+INSERT INTO mt_time_test SELECT toTime64(number * 1000, 3) AS t, number FROM numbers(86400);
 
 -- Time64 to Time64 is always monotonic (scale conversion)
-SELECT count() > 0 FROM mt_time_test WHERE toTime64(t, 6) >= toTime64(toDateTime(1705276800 + 10*3600), 6);
+SELECT count() > 0 FROM mt_time_test WHERE toTime64(t, 6) >= toTime64(10*3600*1000, 6);
 
 DROP TABLE mt_time_test;
