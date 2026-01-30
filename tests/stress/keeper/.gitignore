@@ -9,6 +9,7 @@ __pycache__/
 /tests/configs/
 # Local virtualenvs
 .venv/
+.keeper-venv/
 tests/stress/keeper/tests/keeper*.txt
 tests/stress/keeper/tests/keeper*.yaml
 tests/stress/keeper/tests/keeper*.json
