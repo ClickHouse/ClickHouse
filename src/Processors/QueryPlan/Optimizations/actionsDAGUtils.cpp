@@ -16,9 +16,28 @@ extern const int LOGICAL_ERROR;
 
 namespace DB
 {
-MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag, const ActionsDAG & outer_dag, bool check_monotonicity)
+
+MatchedTrees::Matches matchTrees(
+    const ActionsDAG::NodeRawConstPtrs & inner_dag, const ActionsDAG & outer_dag, bool check_monotonicity, bool ignore_materialize_identity)
 {
     using Parents = std::set<const ActionsDAG::Node *>;
+
+    auto unwrap_node = [&](const ActionsDAG::Node * node) -> const ActionsDAG::Node *
+    {
+        if (!ignore_materialize_identity)
+            return node;
+
+        while (node && node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const auto & name = node->function_base->getName();
+            if ((name == "materialize" || name == "identity") && node->children.size() == 1)
+                node = node->children[0];
+            else
+                break;
+        }
+        return node;
+    };
+
     std::unordered_map<const ActionsDAG::Node *, Parents> inner_parents;
     std::unordered_map<std::string_view, const ActionsDAG::Node *> inner_inputs;
 
@@ -26,11 +45,12 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
         std::stack<const ActionsDAG::Node *> stack;
         for (const auto * out : inner_dag)
         {
-            if (inner_parents.contains(out))
+            const auto * unwrapped_out = unwrap_node(out);
+            if (inner_parents.contains(unwrapped_out))
                 continue;
 
-            stack.push(out);
-            inner_parents.emplace(out, Parents());
+            stack.push(unwrapped_out);
+            inner_parents.emplace(unwrapped_out, Parents());
             while (!stack.empty())
             {
                 const auto * node = stack.top();
@@ -39,8 +59,9 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
                 if (node->type == ActionsDAG::ActionType::INPUT)
                     inner_inputs.emplace(node->result_name, node);
 
-                for (const auto * child : node->children)
+                for (const auto * raw_child : node->children)
                 {
+                    const auto * child = unwrap_node(raw_child);
                     auto [it, inserted] = inner_parents.emplace(child, Parents());
                     it->second.emplace(node);
 
@@ -60,8 +81,9 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
     MatchedTrees::Matches matches;
     std::stack<Frame> stack;
 
-    for (const auto & node : outer_dag.getNodes())
+    for (const auto & node_ref : outer_dag.getNodes())
     {
+        const auto & node = *unwrap_node(&node_ref);
         if (matches.contains(&node))
             continue;
 
@@ -73,7 +95,9 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
 
             while (frame.mapped_children.size() < frame.node->children.size())
             {
-                const auto * child = frame.node->children[frame.mapped_children.size()];
+                const auto * raw_child = frame.node->children[frame.mapped_children.size()];
+                const auto * child = unwrap_node(raw_child);
+
                 auto it = matches.find(child);
                 if (it == matches.end())
                 {
@@ -108,20 +132,32 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
             }
             else if (frame.node->type == ActionsDAG::ActionType::ALIAS)
             {
-                match = matches[frame.node->children.at(0)];
+                match = matches[unwrap_node(frame.node->children.at(0))];
             }
             else if (frame.node->type == ActionsDAG::ActionType::FUNCTION)
             {
                 //std::cerr << "... Processing " << frame.node->function_base->getName() << std::endl;
+                auto func_name = frame.node->function_base->getName();
+                if (ignore_materialize_identity && (func_name == "materialize" || func_name == "identity"))
+                {
+                    const auto * child = unwrap_node(frame.node->children.at(0));
+                    auto it = matches.find(child);
+                    if (it != matches.end())
+                        match = it->second;
+                    stack.pop();
+                    continue;
+                }
 
                 bool found_all_children = true;
                 const ActionsDAG::Node * any_child = nullptr;
                 size_t num_children = frame.node->children.size();
                 for (size_t i = 0; i < num_children; ++i)
                 {
-                    if (frame.mapped_children[i])
-                        any_child = frame.mapped_children[i];
-                    else if (!frame.node->children[i]->column || !isColumnConst(*frame.node->children[i]->column))
+                    const auto * mapped_child = unwrap_node(frame.mapped_children[i]);
+                    const auto * raw_child = unwrap_node(frame.node->children[i]);
+                    if (mapped_child)
+                        any_child = mapped_child;
+                    else if (!raw_child->column || !isColumnConst(*raw_child->column))
                         found_all_children = false;
                 }
 
@@ -162,10 +198,11 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
 
                     if (!intersection->empty())
                     {
-                        auto func_name = frame.node->function_base->getName();
-                        for (const auto * parent : *intersection)
+                        for (const auto * parent_raw : *intersection)
                         {
                             //std::cerr << ".. candidate " << parent->result_name << std::endl;
+
+                            const auto * parent = unwrap_node(parent_raw);
                             if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName())
                             {
                                 const auto & children = parent->children;
@@ -174,14 +211,19 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
                                     bool all_children_matched = true;
                                     for (size_t i = 0; all_children_matched && i < num_children; ++i)
                                     {
-                                        if (frame.mapped_children[i] == nullptr)
+                                        const auto * mapped_child = unwrap_node(frame.mapped_children[i]);
+                                        const auto * parent_child = unwrap_node(children[i]);
+                                        const auto * outer_child = unwrap_node(frame.node->children[i]);
+
+                                        if (mapped_child == nullptr)
                                         {
-                                            all_children_matched = children[i]->column && isColumnConst(*children[i]->column)
-                                                && children[i]->result_type->equals(*frame.node->children[i]->result_type)
-                                                && assert_cast<const ColumnConst &>(*children[i]->column).getField() == assert_cast<const ColumnConst &>(*frame.node->children[i]->column).getField();
+                                            all_children_matched = parent_child->column && isColumnConst(*parent_child->column)
+                                                && parent_child->result_type->equals(*outer_child->result_type)
+                                                && assert_cast<const ColumnConst &>(*parent_child->column).getField()
+                                                    == assert_cast<const ColumnConst &>(*outer_child->column).getField();
                                         }
                                         else
-                                            all_children_matched = frame.mapped_children[i] == children[i];
+                                            all_children_matched = mapped_child == parent_child;
                                     }
 
                                     if (all_children_matched)
@@ -199,8 +241,9 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
                 {
                     size_t num_const_args = 0;
                     const ActionsDAG::Node * monotonic_child = nullptr;
-                    for (const auto * child : frame.node->children)
+                    for (const auto * raw_child : frame.node->children)
                     {
+                        const auto * child = unwrap_node(raw_child);
                         if (child->column)
                             ++num_const_args;
                         else

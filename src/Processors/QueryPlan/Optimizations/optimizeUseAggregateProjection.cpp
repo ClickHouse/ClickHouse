@@ -259,7 +259,10 @@ std::optional<ActionsDAG> analyzeAggregateProjection(
 {
     auto proj_index = buildDAGIndex(*info.before_aggregation);
 
-    MatchedTrees::Matches matches = matchTrees(info.before_aggregation->getOutputs(), *query.dag, false /* check_monotonicity */);
+    /// Skips matching over `materialize` and `identity` wrappers. This is necessary for projections and views, since
+    /// views automatically introduce these wrappers and skipping them preserves semantic equivalence.
+    MatchedTrees::Matches matches = matchTrees(
+        info.before_aggregation->getOutputs(), *query.dag, false /* check_monotonicity */, true /* ignore_materialize_identity */);
     auto matched_aggregates = matchAggregateFunctions(info, aggregates, matches, query_index, proj_index);
     if (!matched_aggregates)
         return {};
