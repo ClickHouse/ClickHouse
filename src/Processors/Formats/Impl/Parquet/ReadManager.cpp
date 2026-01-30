@@ -461,14 +461,10 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         if (*advanced_ptr == row_group.subgroups.size())
         {
             /// If we've read (not necessarily delivered) all subgroups, we can deallocate things
-            /// like dictionary page and offset index.
-            /// ReadStage::PrewhereData instead, which might be happening in parallel with us
-            /// (but doesn't prewhere happen before MainData read? yes, but the clearColumnChunk call
-            ///  happens after advancing prewhere_ptr, so another thread may do MainData+clearColumnChunk
-            ///  before the thread that did prewhere is still clearing the corresponding columns).
+            /// like dictionary page and offset index. Clear all columns (including PREWHERE-only),
+            /// since we scheduled ColumnData prefetches for all of them and must release the memory.
             for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
-                if (reader.primitive_columns[i].first_step_to_calculate == 0)
-                    clearColumnChunk(row_group.columns.at(i), diff);
+                clearColumnChunk(row_group.columns.at(i), diff);
         }
     }
 }
@@ -714,7 +710,8 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
             {
                 RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
                 ColumnSubchunk & subchunk = row_subgroup.columns.at(task.column_idx);
-
+                if (row_subgroup.filter.rows_pass == 0)
+                    break;
                 reader.determinePagesToPrefetch(column, row_subgroup, row_group, prefetches);
 
                 /// Side note: would be nice to avoid reading the dictionary if all dictionary-encoded
@@ -1035,6 +1032,16 @@ ReadManager::ReadResult ReadManager::read()
                     chassert(row_group.delivery_ptr.load(std::memory_order_relaxed) == row_group.subgroups.size());
                     for (const RowSubgroup & subgroup : row_group.subgroups)
                         chassert(subgroup.stage.load(std::memory_order_relaxed) == ReadStage::Deallocated);
+                    for (size_t i = 0; i < stages.size(); ++i)
+                    {
+                        size_t mem = stages[i].memory_usage.load(std::memory_order_relaxed);
+                        size_t batches = stages[i].batches_in_progress.load(std::memory_order_relaxed);
+                        size_t unsched = 0;
+                        for (const auto & tasks : stages[i].row_group_tasks_to_schedule)
+                            unsched += tasks.size();
+                        if (mem != 0 || batches != 0 || unsched != 0)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in memory or task accounting in parquet reader: got {} bytes, {} batches, {} tasks in stage {}", mem, batches, unsched, i);
+                    }
                 }
                 return {};
             }
