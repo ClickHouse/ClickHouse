@@ -7587,6 +7587,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         const String part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
         const String part_directory = command.from_path.empty() ? part_name : command.from_path;
         validateDetachedPartName(part_name);
+        validateDetachedPartName(part_directory);
 
         if (temporary_parts.contains(source_dir / part_directory))
         {
