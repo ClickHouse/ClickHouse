@@ -54,6 +54,10 @@ struct TransformAndArgument
 {
     String transform_name;
     std::optional<size_t> argument;
+    /// When Iceberg table is partitioned by time, splitting by partitions can be made using different timezone
+    /// (UTC in most cases). This timezone can be set with setting `iceberg_partition_timezone`, value is in this member.
+    /// When Iceberg partition condition converted to ClickHouse function in `parseTransformAndArgument` method
+    /// `time_zone` added as second argument to functions like `toRelativeDayNum`, `toYearNumSinceEpoch`, etc.
     std::optional<String> time_zone;
 };
 
