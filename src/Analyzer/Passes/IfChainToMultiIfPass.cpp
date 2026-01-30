@@ -12,6 +12,7 @@ namespace Setting
 {
     extern const SettingsBool allow_execute_multiif_columnar;
     extern const SettingsBool optimize_if_chain_to_multiif;
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -89,9 +90,10 @@ void IfChainToMultiIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr co
 {
     const auto & settings = context->getSettingsRef();
     auto multi_if_function_ptr = createInternalMultiIfOverloadResolver(
-        settings[Setting::allow_execute_multiif_columnar], settings[Setting::use_variant_as_common_type]);
+        settings[Setting::allow_execute_multiif_columnar],
+        settings[Setting::use_variant_as_common_type],
+        settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]);
     IfChainToMultiIfPassVisitor visitor(std::move(multi_if_function_ptr), std::move(context));
     visitor.visit(query_tree_node);
 }
-
 }

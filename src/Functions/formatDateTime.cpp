@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/NumberTraits.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 
 #include <Functions/DateTimeTransforms.h>
@@ -21,6 +22,7 @@
 
 #include <Common/Concepts.h>
 #include <Common/DateLUTImpl.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
@@ -930,6 +932,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
@@ -972,7 +976,7 @@ public:
                 "Illegal type {} of second argument of function {}. Must be String.",
                 arguments[1].type->getName(), getName());
 
-        if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
+        if (arguments.size() == 3 && !WhichDataType(removeLowCardinality(arguments[2].type)).isString())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of third argument of function {}. Must be String.",
                 arguments[2].type->getName(), getName());
@@ -1052,7 +1056,11 @@ public:
         if (arguments.size() == 2)
             time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         else if (arguments.size() > 2)
+        {
             const_time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[2].column.get());
+            if (!const_time_zone_column)
+                const_time_zone_column = checkAndGetColumnConst<ColumnLowCardinality>(arguments[2].column.get());
+        }
 
         UInt32 scale [[maybe_unused]] = 0;
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)

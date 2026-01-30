@@ -12,6 +12,7 @@
 #include <Columns/IColumn.h>
 
 #include <Common/assert_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Core/Field.h>
 
@@ -45,16 +46,24 @@ namespace
 
 constexpr auto FORMAT_NAME = "Prometheus";
 
-bool isDataTypeMapString(const DataTypePtr & type)
+bool isDataTypeMapString(const DataTypePtr & in_type, bool optional)
 {
+    const auto & type = optional ? removeNullable(in_type) : in_type;
     if (!isMap(type))
         return false;
     const auto * type_map = assert_cast<const DataTypeMap *>(type.get());
     return isStringOrFixedString(type_map->getKeyType()) && isStringOrFixedString(type_map->getValueType());
 }
 
-template <typename ResType>
-void getColumnPos(const Block & header, const String & col_name, bool (*pred)(const DataTypePtr &), ResType & res)
+bool isAcceptableString(const DataTypePtr & type, bool optional)
+{
+    const auto& t1 = removeLowCardinality(type);
+    const auto& t2 = optional ? removeNullable(t1) : t1;
+    return isStringOrFixedString(t2);
+}
+
+template <typename Pred, typename ResType>
+void getColumnPos(const Block & header, const String & col_name, Pred&& pred, ResType & res)
 {
     static_assert(std::is_same_v<ResType, size_t> || std::is_same_v<ResType, std::optional<size_t>>, "Illegal ResType");
 
@@ -64,7 +73,7 @@ void getColumnPos(const Block & header, const String & col_name, bool (*pred)(co
     {
         res = header.getPositionByName(col_name);
         const auto & col = header.getByName(col_name);
-        if (!pred(is_optional ? removeNullable(col.type) : col.type))
+        if (!pred(col.type, is_optional))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal type '{}' of column '{}' for output format '{}'",
                 col.type->getName(), col_name, FORMAT_NAME);
@@ -99,12 +108,17 @@ PrometheusTextOutputFormat::PrometheusTextOutputFormat(
 {
     const Block & header = getPort(PortKind::Main).getHeader();
 
-    getColumnPos(header, "name", isStringOrFixedString, pos.name);
-    getColumnPos(header, "value", isNumber, pos.value);
+    auto is_number = [](const DataTypePtr & type, bool optional)
+    {
+        return isNumber(optional ? removeNullable(type) : type);
+    };
 
-    getColumnPos(header, "help", isStringOrFixedString, pos.help);
-    getColumnPos(header, "type", isStringOrFixedString, pos.type);
-    getColumnPos(header, "timestamp", isNumber, pos.timestamp);
+    getColumnPos(header, "name", isAcceptableString, pos.name);
+    getColumnPos(header, "value", is_number, pos.value);
+
+    getColumnPos(header, "help", isAcceptableString, pos.help);
+    getColumnPos(header, "type", isAcceptableString, pos.type);
+    getColumnPos(header, "timestamp", is_number, pos.timestamp);
     getColumnPos(header, "labels", isDataTypeMapString, pos.labels);
 }
 

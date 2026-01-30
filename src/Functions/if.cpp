@@ -14,6 +14,7 @@
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -40,6 +41,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
 }
 
 namespace ErrorCodes
@@ -278,13 +281,22 @@ public:
     static constexpr auto name = "if";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIf>(context->getSettingsRef()[Setting::use_variant_as_common_type]);
+        auto const & settings = context->getSettingsRef();
+        auto const use_variant_as_common_type = settings[Setting::use_variant_as_common_type];
+        auto const use_low_cardinality_optimisation = settings[Setting::optimize_if_transform_const_strings_to_lowcardinality] && !settings[Setting::optimize_if_transform_strings_to_enum];
+        return std::make_shared<FunctionIf>(use_variant_as_common_type, use_low_cardinality_optimisation);
     }
 
-    explicit FunctionIf(bool use_variant_when_no_common_type_ = false) : FunctionIfBase(), use_variant_when_no_common_type(use_variant_when_no_common_type_) {}
+    explicit FunctionIf(bool use_variant_when_no_common_type_ = false, bool use_low_cardinality_optimisation_ = false)
+        : FunctionIfBase()
+        , use_variant_when_no_common_type(use_variant_when_no_common_type_)
+        , use_low_cardinality_optimisation(use_low_cardinality_optimisation_)
+    {
+    }
 
 private:
     bool use_variant_when_no_common_type = false;
+    bool use_low_cardinality_optimisation = false;
 
     template <typename T0, typename T1>
     static UInt32 decimalScale(const ColumnsWithTypeAndName & arguments [[maybe_unused]])
@@ -1195,24 +1207,48 @@ public:
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
-    /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!arguments[0]->onlyNull())
-        {
-            if (arguments[0]->isNullable())
-                return getReturnTypeImpl({
-                    removeNullable(arguments[0]), arguments[1], arguments[2]});
 
-            if (!WhichDataType(arguments[0]).isUInt8())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument (condition) of function if. "
-                    "Must be UInt8.", arguments[0]->getName());
+    static void checkConditionArgType(const DataTypePtr & type)
+    {
+        if (!type->onlyNull())
+        {
+            if (type->isNullable())
+            {
+                checkConditionArgType(removeNullable(type));
+                return;
+            }
+            if (!WhichDataType(type).isUInt8())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument (condition) of function if. "
+                    "Must be UInt8.",
+                    type->getName());
+        }
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        checkConditionArgType(arguments[0].type);
+
+        // Some processing - for constant strings - for LowCardinality
+        if (use_low_cardinality_optimisation && arguments[1].column && arguments[2].column && isColumnConst(*arguments[1].column)
+            && isColumnConst(*arguments[2].column))
+        {
+            auto const is_string1 = isString(arguments[1].type);
+            auto const is_string2 = isString(arguments[2].type);
+            if (is_string1 && is_string2)
+                return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+            // Still, might be a mix of string + null (or vice-versa)
+            auto const is_null1 = arguments[1].type->onlyNull();
+            auto const is_null2 = arguments[2].type->onlyNull();
+            if ((is_string1 && is_null2) || (is_string2 && is_null1))
+                return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
         }
 
         if (use_variant_when_no_common_type)
-            return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]});
+            return getLeastSupertypeOrVariant(DataTypes{arguments[1].type, arguments[2].type});
 
-        return getLeastSupertype(DataTypes{arguments[1], arguments[2]});
+        return getLeastSupertype(DataTypes{arguments[1].type, arguments[2].type});
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override

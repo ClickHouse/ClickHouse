@@ -130,6 +130,7 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /FunctionNaiveBayesClassifier.cpp
     -e /FunctionBinaryArithmetic.h
     -e /ITupleFunction.h
+    -e /toBool.cpp
 
     -e /FunctionJoinGet.cpp
     -e /FunctionsExternalDictionaries.cpp
