@@ -1,6 +1,5 @@
 #pragma once
 
-#include <string>
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
@@ -16,7 +15,6 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
-#include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 
 #include <Disks/StoragePolicy.h>
@@ -154,9 +152,6 @@ private:
 
     /// currently mutating parts with future version
     std::map<DataPartPtr, Int64> currently_mutating_part_future_versions;
-
-    /// current parts postpone reasons
-    std::map<std::string, std::string> current_parts_postpone_reasons;
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 

@@ -30,12 +30,12 @@ ReplicatedMergeTreeSinkPatch::ReplicatedMergeTreeSinkPatch(
     deduplicate = false;
 }
 
-void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper)
+void ReplicatedMergeTreeSinkPatch::finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
-    if (delayed_parts.empty())
+    if (!delayed_chunk)
         return;
 
-    for (auto & partition : delayed_parts)
+    for (auto & partition : delayed_chunk->partitions)
     {
         partition.temp_part->finalize();
         ProfileEventsScope profile_events_scope;
@@ -47,7 +47,7 @@ void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjecti
         auto deduplication_blocks = partition.deduplication_info->getBlockIds(partition.block_with_partition.partition_id, deduplicate);
         try
         {
-            auto conflicts = commitPart(zookeeper, part, deduplication_blocks);
+            auto conflicts = commitPart(zookeeper, part, deduplication_blocks, false);
             if (!conflicts.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);
 
@@ -63,7 +63,7 @@ void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjecti
         }
     }
 
-    delayed_parts.clear();
+    delayed_chunk.reset();
 }
 
 TemporaryPartPtr ReplicatedMergeTreeSinkPatch::writeNewTempPart(BlockWithPartition & block)

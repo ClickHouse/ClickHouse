@@ -182,7 +182,8 @@ missing_dependencies: [['test.mvother']]
         assert (
             instance.query_with_retry(
                 "SELECT count() FROM test.target2",
-                retry_count=100,
+                retry_count=500,
+                sleep_time=0.1,
                 check_callback=lambda x: int(x) == 2,
             ).strip()
             == "2"
@@ -190,7 +191,8 @@ missing_dependencies: [['test.mvother']]
         assert (
             instance.query_with_retry(
                 "SELECT count() FROM test.target1",
-                retry_count=100,
+                retry_count=500,
+                sleep_time=0.1,
                 check_callback=lambda x: int(x) == 2,
             ).strip()
             == "2"
@@ -287,25 +289,7 @@ missing_dependencies: []
 """
         )
 
-        # The old table engine will wait for assignment up to MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS after the consumer is
-        # created and that it won't be interrupted by flush interval (which make sense, we want to get assignment as
-        # soon as possible, because getting stuck in a rebalance loop is expensive for all consumers in the consumer
-        # group, not just for one). Therefore waiting the flush interval seconds will only ensure the new target is
-        # picked up the engine after the assignment is done.
-
-        # Here we have to make sure the kafka consumer got assignment, because it can wait more than the flush interval,
-        # so let's use `system.kafka_consumers` to ensure that.
-        assigned_partition_count = instance.query_with_retry(
-            "SELECT count() FROM system.kafka_consumers WHERE table='tkafkamiss' AND length(assignments.partition_id) > 0",
-            retry_count=100,
-            check_callback=lambda x: int(x) > 0,
-        )
-        assert (
-            int(assigned_partition_count) > 0
-        ), "Kafka consumer did not get assignment in time"
-
-        # After making sure we have an assignment, let's wait the flush interval to make sure the kafka table engine
-        # picked up the views, because it happens at the beginning of the streaming loop.
+        # make sure the kafka table engine picked up the views, because it happens at the beginning of the streaming loop
         time.sleep(flush_interval_seconds * 1.2)
 
         k.kafka_produce(kafka_cluster, topic, ["1|foo", "2|bar"])
@@ -313,7 +297,8 @@ missing_dependencies: []
         assert (
             instance.query_with_retry(
                 "SELECT count() FROM test.target2",
-                retry_count=100,
+                retry_count=500,
+                sleep_time=0.1,
                 check_callback=lambda x: int(x) == 2,
             ).strip()
             == "2"

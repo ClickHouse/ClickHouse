@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-async-insert, no-azure-blob-storage
+# Tags: long, no-async-insert
 # no-async-insert: Too many small inserts (each taking async_insert_busy_timeout_max_ms time)
 
 set -e

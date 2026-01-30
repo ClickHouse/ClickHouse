@@ -81,32 +81,29 @@ bool FillingRow::isNull() const
     return true;
 }
 
-Field FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to)
+std::optional<Field> FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to)
 {
     Field shifted_value = row[column_ind];
 
-    int64_t step_len = 1;
-    int64_t step_no = 0;
-    for (; step_no < 500 && step_len > 0; ++step_no)
+    if (less(to, shifted_value, getDirection(column_ind)))
+        return std::nullopt;
+
+    for (int32_t step_len = 1, step_no = 0; step_no < 100 && step_len > 0; ++step_no)
     {
         Field next_value = shifted_value;
         descr.step_func(next_value, step_len);
 
-        int direction = getDirection(column_ind);
-        bool overflowed = less(next_value, shifted_value, direction);
-        logDebug("doLongJump: shifted_value: {}, next_value: {}, to: {}, step_no: {}, step_len: {}", shifted_value, next_value, to, step_no, step_len);
-        if (overflowed || less(to, next_value, direction))
+        if (less(to, next_value, getDirection(0)))
         {
             step_len /= 2;
         }
         else
         {
             shifted_value = std::move(next_value);
-            step_len = step_len <= INT64_MAX/2 ? step_len * 2 : step_len;
+            step_len *= 2;
         }
     }
 
-    logDebug("doLongJump: {} (step_no: {}, step_len: {})", shifted_value, step_no, step_len);
     return shifted_value;
 }
 
@@ -247,9 +244,10 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
         if (less(next_original_row[pos], row[pos], getDirection(pos)))
             return false;
 
-        Field next_value = doLongJump(getFillDescription(pos), pos, next_original_row[pos]);
+        std::optional<Field> next_value = doLongJump(getFillDescription(pos), pos, next_original_row[pos]);
+        logDebug("jumped to next value: {}", next_value.value_or("Did not complete"));
 
-        row[pos] = std::move(next_value);
+        row[pos] = std::move(next_value.value());
 
         if (equals(row[pos], next_original_row[pos]))
         {

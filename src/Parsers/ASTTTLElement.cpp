@@ -84,13 +84,10 @@ void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
         /// It would be better to output "DELETE" here but that will break compatibility with earlier versions.
     }
 
-    if (auto where_expr = where())
+    if (where())
     {
         ostr << " WHERE ";
-        auto where_frame = frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(where_expr.get()); ast_alias && !ast_alias->tryGetAlias().empty())
-            where_frame.need_parens = true;
-        where_expr->format(ostr, settings, state, where_frame);
+        where()->format(ostr, settings, state, frame);
     }
 }
 

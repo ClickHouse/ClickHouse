@@ -1,4 +1,4 @@
--- Tags: stateful, no-parallel, no-msan
+-- Tags: stateful, no-parallel
 -- no-parallel: Heavy
 SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32152608;
 SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9627212;

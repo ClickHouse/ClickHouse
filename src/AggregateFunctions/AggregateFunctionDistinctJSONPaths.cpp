@@ -2,15 +2,14 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
-#include <Columns/ColumnDynamic.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnObject.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Common/ContainersWithMemoryTracking.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnMap.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -34,9 +33,9 @@ struct AggregateFunctionDistinctJSONPathsData
 {
     static constexpr auto name = "distinctJSONPaths";
 
-    UnorderedSetWithMemoryTracking<String> data;
+    std::unordered_set<String> data;
 
-    void add(const ColumnObject & column, size_t row_num, const UnorderedMapWithMemoryTracking<String, String> &)
+    void add(const ColumnObject & column, size_t row_num, const std::unordered_map<String, String> &)
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data.insert(path);
@@ -56,7 +55,7 @@ struct AggregateFunctionDistinctJSONPathsData
             data.insert(std::string{shared_data_paths->getDataAt(i)});
     }
 
-    void addWholeColumn(const ColumnObject & column, const UnorderedMapWithMemoryTracking<String, String> &)
+    void addWholeColumn(const ColumnObject & column, const std::unordered_map<String, String> &)
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data.insert(path);
@@ -106,7 +105,7 @@ struct AggregateFunctionDistinctJSONPathsData
         /// Insert paths in sorted order for better output.
         auto & array_column = assert_cast<ColumnArray &>(column);
         auto & string_column = assert_cast<ColumnString &>(array_column.getData());
-        VectorWithMemoryTracking<String> sorted_data(data.begin(), data.end());
+        std::vector<String> sorted_data(data.begin(), data.end());
         std::sort(sorted_data.begin(), sorted_data.end());
         for (const auto & path : sorted_data)
             string_column.insertData(path.data(), path.size());
@@ -123,9 +122,9 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
 {
     static constexpr auto name = "distinctJSONPathsAndTypes";
 
-    UnorderedMapWithMemoryTracking<String, std::unordered_set<String>> data;
+    std::unordered_map<String, std::unordered_set<String>> data;
 
-    void add(const ColumnObject & column, size_t row_num, const UnorderedMapWithMemoryTracking<String, String> & typed_paths_type_names)
+    void add(const ColumnObject & column, size_t row_num, const std::unordered_map<String, String> & typed_paths_type_names)
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data[path].insert(typed_paths_type_names.at(path));
@@ -152,7 +151,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         }
     }
 
-    void addWholeColumn(const ColumnObject & column, const UnorderedMapWithMemoryTracking<String, String> & typed_paths_type_names)
+    void addWholeColumn(const ColumnObject & column, const std::unordered_map<String, String> & typed_paths_type_names)
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data[path].insert(typed_paths_type_names.at(path));
@@ -231,11 +230,11 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         auto & key_column = assert_cast<ColumnString &>(tuple_column.getColumn(0));
         auto & value_column = assert_cast<ColumnArray &>(tuple_column.getColumn(1));
         auto & value_column_data = assert_cast<ColumnString &>(value_column.getData());
-        VectorWithMemoryTracking<std::pair<String, VectorWithMemoryTracking<String>>> sorted_data;
+        std::vector<std::pair<String, std::vector<String>>> sorted_data;
         sorted_data.reserve(data.size());
         for (const auto & [path, types] : data)
         {
-            VectorWithMemoryTracking<String> sorted_types(types.begin(), types.end());
+            std::vector<String> sorted_types(types.begin(), types.end());
             std::sort(sorted_types.begin(), sorted_types.end());
             sorted_data.emplace_back(path, std::move(sorted_types));
         }
@@ -326,7 +325,7 @@ public:
     }
 
 private:
-    UnorderedMapWithMemoryTracking<String, String> typed_paths_type_names;
+    std::unordered_map<String, String> typed_paths_type_names;
 };
 
 template <typename Data>

@@ -479,8 +479,7 @@ void Adam::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
     beta2_powered *= adam_rhs.beta2_powered;
 }
 
-void Adam::update(
-    UInt64 batch_size, VectorWithMemoryTracking<Float64> & weights, Float64 & bias, Float64 learning_rate, const VectorWithMemoryTracking<Float64> & batch_gradient)
+void Adam::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
 {
     average_gradient.resize(batch_gradient.size(), Float64{0.0});
     average_squared_gradient.resize(batch_gradient.size(), Float64{0.0});
@@ -506,14 +505,14 @@ void Adam::update(
 }
 
 void Adam::addToBatch(
-    VectorWithMemoryTracking<Float64> & batch_gradient,
-    IGradientComputer & gradient_computer,
-    const VectorWithMemoryTracking<Float64> & weights,
-    Float64 bias,
-    Float64 l2_reg_coef,
-    Float64 target,
-    const IColumn ** columns,
-    size_t row_num)
+        std::vector<Float64> & batch_gradient,
+        IGradientComputer & gradient_computer,
+        const std::vector<Float64> & weights,
+        Float64 bias,
+        Float64 l2_reg_coef,
+        Float64 target,
+        const IColumn ** columns,
+        size_t row_num)
 {
     if (average_gradient.empty())
     {
@@ -544,8 +543,7 @@ void Nesterov::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac
     }
 }
 
-void Nesterov::update(
-    UInt64 batch_size, VectorWithMemoryTracking<Float64> & weights, Float64 & bias, Float64 learning_rate, const VectorWithMemoryTracking<Float64> & batch_gradient)
+void Nesterov::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
 {
     accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
 
@@ -561,9 +559,9 @@ void Nesterov::update(
 }
 
 void Nesterov::addToBatch(
-    VectorWithMemoryTracking<Float64> & batch_gradient,
+    std::vector<Float64> & batch_gradient,
     IGradientComputer & gradient_computer,
-    const VectorWithMemoryTracking<Float64> & weights,
+    const std::vector<Float64> & weights,
     Float64 bias,
     Float64 l2_reg_coef,
     Float64 target,
@@ -575,7 +573,7 @@ void Nesterov::addToBatch(
         accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
     }
 
-    VectorWithMemoryTracking<Float64> shifted_weights(weights.size());
+    std::vector<Float64> shifted_weights(weights.size());
     for (size_t i = 0; i != shifted_weights.size(); ++i)
     {
         shifted_weights[i] = weights[i] + accumulated_gradient[i] * alpha;
@@ -604,8 +602,7 @@ void Momentum::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac
     }
 }
 
-void Momentum::update(
-    UInt64 batch_size, VectorWithMemoryTracking<Float64> & weights, Float64 & bias, Float64 learning_rate, const VectorWithMemoryTracking<Float64> & batch_gradient)
+void Momentum::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
 {
     /// batch_size is already checked to be greater than 0
     accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
@@ -622,7 +619,7 @@ void Momentum::update(
 }
 
 void StochasticGradientDescent::update(
-    UInt64 batch_size, VectorWithMemoryTracking<Float64> & weights, Float64 & bias, Float64 learning_rate, const VectorWithMemoryTracking<Float64> & batch_gradient)
+    UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
 {
     /// batch_size is already checked to be greater than  0
     for (size_t i = 0; i < weights.size(); ++i)
@@ -633,9 +630,9 @@ void StochasticGradientDescent::update(
 }
 
 void IWeightsUpdater::addToBatch(
-    VectorWithMemoryTracking<Float64> & batch_gradient,
+    std::vector<Float64> & batch_gradient,
     IGradientComputer & gradient_computer,
-    const VectorWithMemoryTracking<Float64> & weights,
+    const std::vector<Float64> & weights,
     Float64 bias,
     Float64 l2_reg_coef,
     Float64 target,
@@ -652,7 +649,7 @@ void LogisticRegression::predict(
     const ColumnsWithTypeAndName & arguments,
     size_t offset,
     size_t limit,
-    const VectorWithMemoryTracking<Float64> & weights,
+    const std::vector<Float64> & weights,
     Float64 bias,
     ContextPtr /*context*/) const
 {
@@ -663,7 +660,7 @@ void LogisticRegression::predict(
                         "Block has {} rows, but offset is {} and limit is {}",
                         rows_num, offset, toString(limit));
 
-    VectorWithMemoryTracking<Float64> results(limit, bias);
+    std::vector<Float64> results(limit, bias);
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
@@ -684,8 +681,8 @@ void LogisticRegression::predict(
 }
 
 void LogisticRegression::compute(
-    VectorWithMemoryTracking<Float64> & batch_gradient,
-    const VectorWithMemoryTracking<Float64> & weights,
+    std::vector<Float64> & batch_gradient,
+    const std::vector<Float64> & weights,
     Float64 bias,
     Float64 l2_reg_coef,
     Float64 target,
@@ -694,7 +691,7 @@ void LogisticRegression::compute(
 {
     Float64 derivative = bias;
 
-    VectorWithMemoryTracking<Float64> values(weights.size());
+    std::vector<Float64> values(weights.size());
 
     for (size_t i = 0; i < weights.size(); ++i)
     {
@@ -720,7 +717,7 @@ void LinearRegression::predict(
     const ColumnsWithTypeAndName & arguments,
     size_t offset,
     size_t limit,
-    const VectorWithMemoryTracking<Float64> & weights,
+    const std::vector<Float64> & weights,
     Float64 bias,
     ContextPtr /*context*/) const
 {
@@ -736,7 +733,7 @@ void LinearRegression::predict(
                         "Block has {} rows, but offset is {} and limit is {}",
                         rows_num, offset, toString(limit));
 
-    VectorWithMemoryTracking<Float64> results(limit, bias);
+    std::vector<Float64> results(limit, bias);
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
@@ -760,8 +757,8 @@ void LinearRegression::predict(
 }
 
 void LinearRegression::compute(
-    VectorWithMemoryTracking<Float64> & batch_gradient,
-    const VectorWithMemoryTracking<Float64> & weights,
+    std::vector<Float64> & batch_gradient,
+    const std::vector<Float64> & weights,
     Float64 bias,
     Float64 l2_reg_coef,
     Float64 target,
@@ -770,7 +767,7 @@ void LinearRegression::compute(
 {
     Float64 derivative = (target - bias);
 
-    VectorWithMemoryTracking<Float64> values(weights.size());
+    std::vector<Float64> values(weights.size());
 
 
     for (size_t i = 0; i < weights.size(); ++i)

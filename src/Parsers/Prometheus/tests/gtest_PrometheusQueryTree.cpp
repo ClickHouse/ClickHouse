@@ -19,43 +19,43 @@ TEST(PrometheusQueryTree, ParseComplianceQueries)
     /// Scalar literals.
     EXPECT_EQ(parseAndDumpTree("42"), R"(
 PrometheusQueryTree(SCALAR):
-    Scalar(42)
+    ScalarLiteral(42)
 )");
 
     EXPECT_EQ(parseAndDumpTree("1.234"), R"(
 PrometheusQueryTree(SCALAR):
-    Scalar(1.234)
+    ScalarLiteral(1.234)
 )");
 
     EXPECT_EQ(parseAndDumpTree(".123"), R"(
 PrometheusQueryTree(SCALAR):
-    Scalar(0.123)
+    ScalarLiteral(0.123)
 )");
 
     EXPECT_EQ(parseAndDumpTree("1.23e-3"), R"(
 PrometheusQueryTree(SCALAR):
-    Scalar(0.00123)
+    ScalarLiteral(0.00123)
 )");
 
     EXPECT_EQ(parseAndDumpTree("0x3d"), R"(
 PrometheusQueryTree(SCALAR):
-    Scalar(61)
+    ScalarLiteral(61)
 )");
 
     EXPECT_EQ(parseAndDumpTree("Inf"), R"(
 PrometheusQueryTree(SCALAR):
-    Scalar(inf)
+    ScalarLiteral(inf)
 )");
 
     EXPECT_EQ(parseAndDumpTree("-Inf"), R"(
 PrometheusQueryTree(SCALAR):
     UnaryOperator(-)
-        Scalar(inf)
+        ScalarLiteral(inf)
 )");
 
     EXPECT_EQ(parseAndDumpTree("NaN"), R"(
 PrometheusQueryTree(SCALAR):
-    Scalar(nan)
+    ScalarLiteral(nan)
 )");
 
     /// Vector selectors.
@@ -204,7 +204,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
     EXPECT_EQ(parseAndDumpTree("topk (3, demo_memory_usage_bytes)"), R"(
 PrometheusQueryTree(INSTANT_VECTOR):
     AggregationOperator(topk)
-        Scalar(3)
+        ScalarLiteral(3)
         InstantSelector:
             __name__ EQ 'demo_memory_usage_bytes'
 )");
@@ -213,7 +213,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 PrometheusQueryTree(INSTANT_VECTOR):
     AggregationOperator(topk)
         by instance
-        Scalar(2)
+        ScalarLiteral(2)
         InstantSelector:
             __name__ EQ 'demo_memory_usage_bytes'
 )");
@@ -222,7 +222,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 PrometheusQueryTree(INSTANT_VECTOR):
     AggregationOperator(topk)
         without instance
-        Scalar(2)
+        ScalarLiteral(2)
         InstantSelector:
             __name__ EQ 'demo_memory_usage_bytes'
 )");
@@ -231,7 +231,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 PrometheusQueryTree(INSTANT_VECTOR):
     AggregationOperator(topk)
         without
-        Scalar(2)
+        ScalarLiteral(2)
         InstantSelector:
             __name__ EQ 'demo_memory_usage_bytes'
 )");
@@ -239,7 +239,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
     EXPECT_EQ(parseAndDumpTree("quantile(0.5, demo_memory_usage_bytes)"), R"(
 PrometheusQueryTree(INSTANT_VECTOR):
     AggregationOperator(quantile)
-        Scalar(0.5)
+        ScalarLiteral(0.5)
         InstantSelector:
             __name__ EQ 'demo_memory_usage_bytes'
 )");
@@ -259,16 +259,16 @@ PrometheusQueryTree(SCALAR):
     BinaryOperator(-)
         BinaryOperator(+)
             BinaryOperator(*)
-                Scalar(1)
-                Scalar(2)
+                ScalarLiteral(1)
+                ScalarLiteral(2)
             BinaryOperator(/)
-                Scalar(4)
-                Scalar(6)
+                ScalarLiteral(4)
+                ScalarLiteral(6)
         BinaryOperator(%)
-            Scalar(10)
+            ScalarLiteral(10)
             BinaryOperator(^)
-                Scalar(2)
-                Scalar(2)
+                ScalarLiteral(2)
+                ScalarLiteral(2)
 )");
 
     EXPECT_EQ(parseAndDumpTree("demo_num_cpus + (1 == bool 2)"), R"(
@@ -278,8 +278,8 @@ PrometheusQueryTree(INSTANT_VECTOR):
             __name__ EQ 'demo_num_cpus'
         BinaryOperator(==)
             bool
-            Scalar(1)
-            Scalar(2)
+            ScalarLiteral(1)
+            ScalarLiteral(2)
 )");
 
     EXPECT_EQ(parseAndDumpTree("demo_memory_usage_bytes + 1.2345"), R"(
@@ -287,7 +287,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
     BinaryOperator(+)
         InstantSelector:
             __name__ EQ 'demo_memory_usage_bytes'
-        Scalar(1.2345)
+        ScalarLiteral(1.2345)
 )");
 
     EXPECT_EQ(parseAndDumpTree("demo_memory_usage_bytes == bool 1.2345"), R"(
@@ -296,14 +296,14 @@ PrometheusQueryTree(INSTANT_VECTOR):
         bool
         InstantSelector:
             __name__ EQ 'demo_memory_usage_bytes'
-        Scalar(1.2345)
+        ScalarLiteral(1.2345)
 )");
 
     EXPECT_EQ(parseAndDumpTree("1.2345 == bool demo_memory_usage_bytes"), R"(
 PrometheusQueryTree(INSTANT_VECTOR):
     BinaryOperator(==)
         bool
-        Scalar(1.2345)
+        ScalarLiteral(1.2345)
         InstantSelector:
             __name__ EQ 'demo_memory_usage_bytes'
 )");
@@ -311,7 +311,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
     EXPECT_EQ(parseAndDumpTree("0.12345 + demo_memory_usage_bytes"), R"(
 PrometheusQueryTree(INSTANT_VECTOR):
     BinaryOperator(+)
-        Scalar(0.12345)
+        ScalarLiteral(0.12345)
         InstantSelector:
             __name__ EQ 'demo_memory_usage_bytes'
 )");
@@ -322,16 +322,16 @@ PrometheusQueryTree(INSTANT_VECTOR):
         BinaryOperator(-)
             BinaryOperator(+)
                 BinaryOperator(*)
-                    Scalar(1)
-                    Scalar(2)
+                    ScalarLiteral(1)
+                    ScalarLiteral(2)
                 BinaryOperator(/)
-                    Scalar(4)
-                    Scalar(6)
+                    ScalarLiteral(4)
+                    ScalarLiteral(6)
             BinaryOperator(^)
                 BinaryOperator(%)
-                    Scalar(10)
-                    Scalar(7)
-                Scalar(2)
+                    ScalarLiteral(10)
+                    ScalarLiteral(7)
+                ScalarLiteral(2)
         InstantSelector:
             __name__ EQ 'demo_memory_usage_bytes'
 )");
@@ -344,12 +344,12 @@ PrometheusQueryTree(INSTANT_VECTOR):
         BinaryOperator(-)
             BinaryOperator(+)
                 BinaryOperator(*)
-                    Scalar(1)
-                    Scalar(2)
+                    ScalarLiteral(1)
+                    ScalarLiteral(2)
                 BinaryOperator(/)
-                    Scalar(4)
-                    Scalar(6)
-            Scalar(10)
+                    ScalarLiteral(4)
+                    ScalarLiteral(6)
+            ScalarLiteral(10)
 )");
 
     EXPECT_EQ(parseAndDumpTree("timestamp(demo_memory_usage_bytes * 1)"), R"(
@@ -358,7 +358,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
         BinaryOperator(*)
             InstantSelector:
                 __name__ EQ 'demo_memory_usage_bytes'
-            Scalar(1)
+            ScalarLiteral(1)
 )");
 
     EXPECT_EQ(parseAndDumpTree("timestamp(-demo_memory_usage_bytes)"), R"(
@@ -478,7 +478,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
     BinaryOperator(*)
         InstantSelector:
             __name__ EQ 'demo_num_cpus'
-        Scalar(inf)
+        ScalarLiteral(inf)
 )");
 
     EXPECT_EQ(parseAndDumpTree("demo_num_cpus * -Inf"), R"(
@@ -487,7 +487,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
         InstantSelector:
             __name__ EQ 'demo_num_cpus'
         UnaryOperator(-)
-            Scalar(inf)
+            ScalarLiteral(inf)
 )");
 
     EXPECT_EQ(parseAndDumpTree("demo_num_cpus * NaN"), R"(
@@ -495,7 +495,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
     BinaryOperator(*)
         InstantSelector:
             __name__ EQ 'demo_num_cpus'
-        Scalar(nan)
+        ScalarLiteral(nan)
 )");
 
     /// Unary expressions.
@@ -505,7 +505,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
         InstantSelector:
             __name__ EQ 'demo_memory_usage_bytes'
         UnaryOperator(-)
-            Scalar(1)
+            ScalarLiteral(1)
 )");
 
     EXPECT_EQ(parseAndDumpTree("-demo_memory_usage_bytes"), R"(
@@ -520,15 +520,15 @@ PrometheusQueryTree(INSTANT_VECTOR):
 PrometheusQueryTree(SCALAR):
     UnaryOperator(-)
         BinaryOperator(^)
-            Scalar(1)
-            Scalar(2)
+            ScalarLiteral(1)
+            ScalarLiteral(2)
 )");
 
     /// Binops involving non-const scalars.
     EXPECT_EQ(parseAndDumpTree("1 + time()"), R"(
 PrometheusQueryTree(SCALAR):
     BinaryOperator(+)
-        Scalar(1)
+        ScalarLiteral(1)
         Function(time)
 )");
 
@@ -536,7 +536,7 @@ PrometheusQueryTree(SCALAR):
 PrometheusQueryTree(SCALAR):
     BinaryOperator(+)
         Function(time)
-        Scalar(1)
+        ScalarLiteral(1)
 )");
 
     EXPECT_EQ(parseAndDumpTree("time() == bool 1"), R"(
@@ -544,14 +544,14 @@ PrometheusQueryTree(SCALAR):
     BinaryOperator(==)
         bool
         Function(time)
-        Scalar(1)
+        ScalarLiteral(1)
 )");
 
     EXPECT_EQ(parseAndDumpTree("1 == bool time()"), R"(
 PrometheusQueryTree(SCALAR):
     BinaryOperator(==)
         bool
-        Scalar(1)
+        ScalarLiteral(1)
         Function(time)
 )");
 
@@ -576,7 +576,8 @@ PrometheusQueryTree(INSTANT_VECTOR):
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(avg_over_time):
         RangeSelector:
-            range: 1200
+            range:
+                IntervalLiteral(1200)
             InstantSelector:
                 __name__ EQ 'demo_memory_usage_bytes'
 )");
@@ -584,9 +585,10 @@ PrometheusQueryTree(INSTANT_VECTOR):
     EXPECT_EQ(parseAndDumpTree("quantile_over_time(0.5, demo_memory_usage_bytes[20m])"), R"(
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(quantile_over_time):
-        Scalar(0.5)
+        ScalarLiteral(0.5)
         RangeSelector:
-            range: 1200
+            range:
+                IntervalLiteral(1200)
             InstantSelector:
                 __name__ EQ 'demo_memory_usage_bytes'
 )");
@@ -625,7 +627,8 @@ PrometheusQueryTree(INSTANT_VECTOR):
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(rate):
         RangeSelector:
-            range: 1200
+            range:
+                IntervalLiteral(1200)
             InstantSelector:
                 __name__ EQ 'demo_cpu_usage_seconds_total'
 )");
@@ -634,7 +637,8 @@ PrometheusQueryTree(INSTANT_VECTOR):
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(deriv):
         RangeSelector:
-            range: 1200
+            range:
+                IntervalLiteral(1200)
             InstantSelector:
                 __name__ EQ 'demo_disk_usage_bytes'
 )");
@@ -643,10 +647,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(predict_linear):
         RangeSelector:
-            range: 1200
+            range:
+                IntervalLiteral(1200)
             InstantSelector:
                 __name__ EQ 'demo_disk_usage_bytes'
-        Scalar(600)
+        ScalarLiteral(600)
 )");
 
     EXPECT_EQ(parseAndDumpTree("time()"), R"(
@@ -691,7 +696,8 @@ PrometheusQueryTree(INSTANT_VECTOR):
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(irate):
         RangeSelector:
-            range: 1200
+            range:
+                IntervalLiteral(1200)
             InstantSelector:
                 __name__ EQ 'demo_cpu_usage_seconds_total'
 )");
@@ -701,7 +707,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
     Function(clamp_max):
         InstantSelector:
             __name__ EQ 'demo_memory_usage_bytes'
-        Scalar(2)
+        ScalarLiteral(2)
 )");
 
     EXPECT_EQ(parseAndDumpTree("clamp(demo_memory_usage_bytes, 0, 1)"), R"(
@@ -709,8 +715,8 @@ PrometheusQueryTree(INSTANT_VECTOR):
     Function(clamp):
         InstantSelector:
             __name__ EQ 'demo_memory_usage_bytes'
-        Scalar(0)
-        Scalar(1)
+        ScalarLiteral(0)
+        ScalarLiteral(1)
 )");
 
     EXPECT_EQ(parseAndDumpTree("clamp(demo_memory_usage_bytes, 0, 1000000000000)"), R"(
@@ -718,15 +724,16 @@ PrometheusQueryTree(INSTANT_VECTOR):
     Function(clamp):
         InstantSelector:
             __name__ EQ 'demo_memory_usage_bytes'
-        Scalar(0)
-        Scalar(1000000000000)
+        ScalarLiteral(0)
+        ScalarLiteral(1000000000000)
 )");
 
     EXPECT_EQ(parseAndDumpTree("resets(demo_cpu_usage_seconds_total[20m])"), R"(
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(resets):
         RangeSelector:
-            range: 1200
+            range:
+                IntervalLiteral(1200)
             InstantSelector:
                 __name__ EQ 'demo_cpu_usage_seconds_total'
 )");
@@ -735,7 +742,8 @@ PrometheusQueryTree(INSTANT_VECTOR):
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(changes):
         RangeSelector:
-            range: 1200
+            range:
+                IntervalLiteral(1200)
             InstantSelector:
                 __name__ EQ 'demo_batch_last_success_timestamp_seconds'
 )");
@@ -743,7 +751,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
     EXPECT_EQ(parseAndDumpTree("vector(1.23)"), R"(
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(vector):
-        Scalar(1.23)
+        ScalarLiteral(1.23)
 )");
 
     EXPECT_EQ(parseAndDumpTree("vector(time())"), R"(
@@ -755,10 +763,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
     EXPECT_EQ(parseAndDumpTree("histogram_quantile(0.5, rate(demo_api_request_duration_seconds_bucket[1m]))"), R"(
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(histogram_quantile):
-        Scalar(0.5)
+        ScalarLiteral(0.5)
         Function(rate):
             RangeSelector:
-                range: 60
+                range:
+                    IntervalLiteral(60)
                 InstantSelector:
                     __name__ EQ 'demo_api_request_duration_seconds_bucket'
 )");
@@ -766,7 +775,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
     EXPECT_EQ(parseAndDumpTree("histogram_quantile(0.9, demo_memory_usage_bytes)"), R"(
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(histogram_quantile):
-        Scalar(0.9)
+        ScalarLiteral(0.9)
         InstantSelector:
             __name__ EQ 'demo_memory_usage_bytes'
 )");
@@ -776,7 +785,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
     )"), R"(
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(histogram_quantile):
-        Scalar(0.9)
+        ScalarLiteral(0.9)
         InstantSelector:
             __name__ RE 'demo_api_request_duration_seconds_.+'
 )");
@@ -802,29 +811,35 @@ PrometheusQueryTree(INSTANT_VECTOR):
     EXPECT_EQ(parseAndDumpTree("max_over_time((time() - max(demo_batch_last_success_timestamp_seconds) < 1000)[5m:10s] offset 5m)"), R"(
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(max_over_time):
-        Offset:
-            offset: 300
+        At:
+            offset:
+                IntervalLiteral(300)
             Subquery:
-                range: 300
-                resolution: 10
+                range:
+                    IntervalLiteral(300)
+                resolution:
+                    IntervalLiteral(10)
                 BinaryOperator(<)
                     BinaryOperator(-)
                         Function(time)
                         AggregationOperator(max)
                             InstantSelector:
                                 __name__ EQ 'demo_batch_last_success_timestamp_seconds'
-                    Scalar(1000)
+                    ScalarLiteral(1000)
 )");
 
     EXPECT_EQ(parseAndDumpTree("avg_over_time(rate(demo_cpu_usage_seconds_total[1m])[2m:10s])"), R"(
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(avg_over_time):
         Subquery:
-            range: 120
-            resolution: 10
+            range:
+                IntervalLiteral(120)
+            resolution:
+                IntervalLiteral(10)
             Function(rate):
                 RangeSelector:
-                    range: 60
+                    range:
+                        IntervalLiteral(60)
                     InstantSelector:
                         __name__ EQ 'demo_cpu_usage_seconds_total'
 )");
@@ -836,58 +851,58 @@ TEST(PrometheusQueryTree, ParseOtherQueries)
 {
     EXPECT_EQ(parseAndDumpTree("0.74"), R"(
 PrometheusQueryTree(SCALAR):
-    Scalar(0.74)
+    ScalarLiteral(0.74)
 )");
 
     EXPECT_EQ(parseAndDumpTree("2e-5"), R"(
 PrometheusQueryTree(SCALAR):
-    Scalar(0.00002)
+    ScalarLiteral(0.00002)
 )");
 
     EXPECT_EQ(parseAndDumpTree("1.5E4"), R"(
 PrometheusQueryTree(SCALAR):
-    Scalar(15000)
+    ScalarLiteral(15000)
 )");
 
     EXPECT_EQ(parseAndDumpTree("0xABcd"), R"(
 PrometheusQueryTree(SCALAR):
-    Scalar(43981)
+    ScalarLiteral(43981)
 )");
 
     EXPECT_EQ(parseAndDumpTree("3h20m10s5ms"), R"(
 PrometheusQueryTree(SCALAR):
-    Scalar(12010.005)
+    IntervalLiteral(12010.005)
 )");
 
     EXPECT_EQ(parseAndDumpTree("-1"), R"(
 PrometheusQueryTree(SCALAR):
     UnaryOperator(-)
-        Scalar(1)
+        ScalarLiteral(1)
 )");
 
     EXPECT_EQ(parseAndDumpTree("Inf+inf+iNf"), R"(
 PrometheusQueryTree(SCALAR):
     BinaryOperator(+)
         BinaryOperator(+)
-            Scalar(inf)
-            Scalar(inf)
-        Scalar(inf)
+            ScalarLiteral(inf)
+            ScalarLiteral(inf)
+        ScalarLiteral(inf)
 )");
 
     EXPECT_EQ(parseAndDumpTree("NaN+nan+nAn"), R"(
 PrometheusQueryTree(SCALAR):
     BinaryOperator(+)
         BinaryOperator(+)
-            Scalar(nan)
-            Scalar(nan)
-        Scalar(nan)
+            ScalarLiteral(nan)
+            ScalarLiteral(nan)
+        ScalarLiteral(nan)
 )");
 
     EXPECT_EQ(parseAndDumpTree("0x_1_2_3 * 0X_A_B"), R"(
 PrometheusQueryTree(SCALAR):
     BinaryOperator(*)
-        Scalar(291)
-        Scalar(171)
+        ScalarLiteral(291)
+        ScalarLiteral(171)
 )");
 
     EXPECT_EQ(parseAndDumpTree(R"(
@@ -915,7 +930,8 @@ PrometheusQueryTree(INSTANT_VECTOR):
     )"), R"(
 PrometheusQueryTree(RANGE_VECTOR):
     RangeSelector:
-        range: 300
+        range:
+            IntervalLiteral(300)
         InstantSelector:
             __name__ EQ 'http_requests_total'
             job EQ 'prometheus'
@@ -923,20 +939,25 @@ PrometheusQueryTree(RANGE_VECTOR):
 
     EXPECT_EQ(parseAndDumpTree("http_requests_total offset 5m @ 1609746000"), R"(
 PrometheusQueryTree(INSTANT_VECTOR):
-    Offset:
-        at: 1609746000
-        offset: 300
+    At:
+        at:
+            ScalarLiteral(1609746000)
+        offset:
+            IntervalLiteral(300)
         InstantSelector:
             __name__ EQ 'http_requests_total'
 )");
 
     EXPECT_EQ(parseAndDumpTree("http_requests_total[5m:1m] offset -10s"), R"(
 PrometheusQueryTree(RANGE_VECTOR):
-    Offset:
-        offset: -10
+    At:
+        offset:
+            IntervalLiteral(-10)
         Subquery:
-            range: 300
-            resolution: 60
+            range:
+                IntervalLiteral(300)
+            resolution:
+                IntervalLiteral(60)
             InstantSelector:
                 __name__ EQ 'http_requests_total'
 )");

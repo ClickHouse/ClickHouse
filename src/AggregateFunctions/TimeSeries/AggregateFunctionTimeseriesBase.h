@@ -8,14 +8,13 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnVector.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Common/ContainersWithMemoryTracking.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -59,7 +58,7 @@ public:
     struct State
     {
         /// Maps bucket index to the set of all timestamps and values
-        UnorderedMapWithMemoryTracking<size_t, Bucket> buckets;
+        std::unordered_map<size_t, Bucket> buckets;
     };
 
     explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_,

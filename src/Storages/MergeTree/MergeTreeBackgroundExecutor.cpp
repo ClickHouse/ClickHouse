@@ -213,15 +213,12 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         /// Erase storage related tasks from pending and select active tasks to wait for
         tasks_to_cancel = pending.removeTasks(id);
 
-        tasks_to_wait.reserve(active.size());
-        for (auto & item : active)
-        {
-            if (item->task->getStorageID() == id)
-            {
-                item->is_currently_deleting = true;
-                tasks_to_wait.push_back(item);
-            }
-        }
+        /// Copy items to wait for their completion
+        std::copy_if(active.begin(), active.end(), std::back_inserter(tasks_to_wait),
+            [&] (auto item) -> bool { return item->task->getStorageID() == id; });
+
+        for (auto & item : tasks_to_wait)
+            item->is_currently_deleting = true;
     }
 
     for (auto & item : tasks_to_cancel)

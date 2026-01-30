@@ -1,6 +1,5 @@
 #include <TableFunctions/TableFunctionPrometheusQuery.h>
 
-#include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -84,13 +83,7 @@ void TableFunctionPrometheusQuery<range>::parseArguments(const ASTPtr & ast_func
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
-    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, context)->getInMemoryMetadataPtr();
-    auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
-    UInt32 timestamp_scale = (isDecimal(timestamp_data_type) || isDateTime64(timestamp_data_type)) ? getDecimalScale(*timestamp_data_type) : 0;
-
-    String promql_query_str = checkAndGetLiteralArgument<String>(args[argument_index++], "promql_query");
-    promql_query.parse(promql_query_str, timestamp_scale);
+    promql_query.parse(checkAndGetLiteralArgument<String>(args[argument_index++], "promql_query"));
 
     if constexpr (range)
     {

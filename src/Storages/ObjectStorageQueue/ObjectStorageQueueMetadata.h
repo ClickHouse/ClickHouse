@@ -57,7 +57,6 @@ public:
 
     ObjectStorageQueueMetadata(
         ObjectStorageType storage_type_,
-        const std::string & zookeeper_name_,
         const fs::path & zookeeper_path_,
         const ObjectStorageQueueTableMetadata & table_metadata_,
         size_t cleanup_interval_min_ms_,
@@ -82,7 +81,6 @@ public:
     /// what is in keeper (for example, processing_threads_num is adjustable,
     /// because its default depends on the CPU cores on the server);
     static ObjectStorageQueueTableMetadata syncWithKeeper(
-        const String & zookeeper_name,
         const fs::path & zookeeper_path,
         const ObjectStorageQueueSettings & settings,
         const ColumnsDescription & columns,
@@ -145,7 +143,6 @@ public:
     bool useBucketsForProcessing() const;
     /// Get number of buckets in case of bucket-based processing.
     size_t getBucketsNum() const { return buckets_num; }
-    ObjectStorageQueueBucketingMode getBucketingMode() const { return bucketing_mode; }
     /// Get bucket by file path in case of bucket-based processing.
     Bucket getBucketForPath(const std::string & path) const;
     static Bucket getBucketForPath(
@@ -157,14 +154,13 @@ public:
     /// Acquire (take unique ownership of) bucket for processing.
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket);
 
-    const String & getZooKeeperName() const { return zookeeper_name; }
-    std::shared_ptr<ZooKeeperWithFaultInjection> getZooKeeper() const { return getZooKeeper(log, zookeeper_name); }
-    static std::shared_ptr<ZooKeeperWithFaultInjection> getZooKeeper(LoggerPtr log, const String & zookeeper_name);
+    static std::shared_ptr<ZooKeeperWithFaultInjection> getZooKeeper(LoggerPtr log);
     static ZooKeeperRetriesControl getKeeperRetriesControl(LoggerPtr log);
 
     /// Set local ref count for metadata.
     void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
 
+    ObjectStorageQueueBucketingMode getBucketingMode() const { return bucketing_mode; }
     ObjectStorageQueuePartitioningMode getPartitioningMode() const { return partitioning_mode; }
     const ObjectStorageQueueFilenameParser * getFilenameParser() const { return filename_parser.get(); }
 
@@ -194,7 +190,6 @@ private:
     const ObjectStorageQueueMode mode;
     const ObjectStorageQueueBucketingMode bucketing_mode;
     const ObjectStorageQueuePartitioningMode partitioning_mode;
-    const std::string zookeeper_name;
     const fs::path zookeeper_path;
     const size_t keeper_multiread_batch_size;
 

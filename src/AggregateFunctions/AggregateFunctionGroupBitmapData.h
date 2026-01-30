@@ -6,7 +6,6 @@
 #include <base/sort.h>
 #include <boost/noncopyable.hpp>
 #include <Common/HashTable/SmallTable.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/PODArray.h>
 
 // Include this header last, because it is an auto-generated dump of questionable
@@ -47,7 +46,7 @@ class RoaringBitmapWithSmallSet : private boost::noncopyable
 private:
     using UnsignedT = std::make_unsigned_t<T>;
     SmallSet<T, small_set_size> small;
-    using ValueBuffer = VectorWithMemoryTracking<T>;
+    using ValueBuffer = std::vector<T>;
     using RoaringBitmap = std::conditional_t<sizeof(T) >= 8, roaring::Roaring64Map, roaring::Roaring>;
     using Value = std::conditional_t<sizeof(T) >= 8, UInt64, UInt32>;
     std::shared_ptr<RoaringBitmap> roaring_bitmap;
@@ -535,7 +534,7 @@ public:
 
         if (isSmall())
         {
-            VectorWithMemoryTracking<T> answer;
+            std::vector<T> answer;
             for (const auto & x : small)
             {
                 T val = x.getValue();
@@ -672,7 +671,7 @@ public:
         }
         if (isSmall())
         {
-            SetWithMemoryTracking<UInt32> values;
+            std::set<UInt32> values;
             for (const auto & x : small)
                 if ((static_cast<UInt32>(x.getValue()) >> 16) == container_id)
                     values.insert((static_cast<UInt32>(x.getValue()) & 0xFFFFu) + base);
@@ -730,13 +729,13 @@ public:
      *  For larger ones, extracts from Roaring bitmap keys.
      * Returns sorted containers' ID.
      */
-    inline SetWithMemoryTracking<UInt16> ra_get_all_container_ids() /// NOLINT
+    inline std::set<UInt16> ra_get_all_container_ids() /// NOLINT
     {
         if (sizeof(T) >= 8)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported Roaring64Map");
         }
-        SetWithMemoryTracking<UInt16> container_ids;
+        std::set<UInt16> container_ids;
         if (isSmall())
         {
             for (const auto & x : small)
@@ -821,7 +820,7 @@ public:
         if (lhs_small && rhs_small)
         {
             /// Case 1: Both are small sets
-            SetWithMemoryTracking<T> lhs_values;
+            std::set<T> lhs_values;
             for (const auto & lhs_value : small)
                 lhs_values.insert(lhs_value.getValue());
             UInt32 num_added = 0;

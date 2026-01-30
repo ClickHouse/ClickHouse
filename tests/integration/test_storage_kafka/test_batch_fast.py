@@ -1103,9 +1103,7 @@ def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line)
             k.kafka_produce(kafka_cluster, topic_name, messages)
 
             instance.wait_for_log_line(current_log_line.format(offset=number_of_messages, topic=topic_name))
-            result = instance.query(
-                f"SELECT * FROM test.{kafka_table}_view ORDER BY key"
-            )
+            result = instance.query(f"SELECT * FROM test.{kafka_table}_view")
             assert TSV(result) == TSV(expected)
 
             instance.query(f"DROP TABLE test.{kafka_table} SYNC")
@@ -3099,11 +3097,7 @@ def test_system_kafka_consumers(kafka_cluster, create_query_generator, consumer_
             CREATE MATERIALIZED VIEW test.{kafka_table}_view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{kafka_table};
             """
         )
-        count = instance.query_with_retry(
-            f"SELECT count() FROM test.{kafka_table}_view",
-            check_callback=lambda res: int(res) == 6,
-        )
-        assert int(count) == 6
+        instance.query_with_retry(f"SELECT count() FROM test.{kafka_table}_view", check_callback=lambda res: int(res) == 4)
 
         instance.query_with_retry(f"DROP TABLE test.{kafka_table}_view SYNC")
 
@@ -3670,6 +3664,7 @@ def test_kafka_consumer_reschedule_validation(kafka_cluster, create_query_genera
         },
     )
     instance.query(create_query)
+
 
 
 if __name__ == "__main__":
