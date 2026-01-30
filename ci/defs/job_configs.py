@@ -105,7 +105,7 @@ common_stress_job_config = Job.Config(
 common_integration_test_job_config = Job.Config(
     name=JobNames.INTEGRATION,
     runs_on=[],  # from parametrize
-    command="python3 ./ci/jobs/integration_test_job.py --options '{PARAMETER}'",
+    command="python3 ./ci/jobs/integration_test_job.py --options '{PARAMETER}' --session-timeout 60",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/integration_test_job.py",

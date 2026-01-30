@@ -84,6 +84,12 @@ def parse_args():
         type=int,
     )
     parser.add_argument(
+        "--session-timeout",
+        help="Optional. Session timeout in seconds",
+        default=None,
+        type=int,
+    )
+    parser.add_argument(
         "--param",
         help=(
             "Optional. Comma-separated KEY=VALUE pairs to inject as environment "
@@ -470,6 +476,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
     failed_tests_files = []
 
     has_error = False
+    if args.session_timeout:
+        session_timeout = args.session_timeout
     if not is_targeted_check:
         session_timeout_parallel = 3600 * 2
         session_timeout_sequential = 3600
@@ -495,6 +503,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
+            print("2 session_timeout:", session_timeout) #REMOVEME
+            print("--session-timeout={session_timeout}")
             test_result_parallel = Result.from_pytest_run(
                 command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                 cwd="./tests/integration/",
