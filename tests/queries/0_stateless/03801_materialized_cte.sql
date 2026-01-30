@@ -22,3 +22,12 @@ SELECT REGEXP_REPLACE(explain, '_temporary_and_external_tables._tmp_\\w+\\-\\w+\
     a AS MATERIALIZED (SELECT * FROM users)
     SELECT count() FROM a as l JOIN a as r ON l.uid = r.uid
 );
+
+EXPLAIN header = 1
+WITH
+a AS MATERIALIZED (SELECT * FROM users)
+SELECT count() FROM a as l JOIN a as r ON l.uid = r.uid;
+
+WITH
+a AS MATERIALIZED (SELECT * FROM users)
+SELECT count() FROM a as l JOIN a as r ON l.uid = r.uid;

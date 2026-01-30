@@ -108,6 +108,11 @@ public:
         table_expression_modifiers = std::move(table_expression_modifiers_value);
     }
 
+    const TemporaryTableHolderPtr & getTemporaryTableHolder() const
+    {
+        return temporary_table_holder;
+    }
+
     bool isMaterializedCTE() const
     {
         return children[materialized_cte_subquery_index] != nullptr;

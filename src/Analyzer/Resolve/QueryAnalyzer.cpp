@@ -1408,6 +1408,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
                     true /*create_for_global_subquery*/);
 
                 auto table_node = std::make_shared<TableNode>(std::move(storage_holder), cte_node, scope.context);
+                table_node->setTemporaryTableName(full_name);
 
                 cte_node = table_node;
             }

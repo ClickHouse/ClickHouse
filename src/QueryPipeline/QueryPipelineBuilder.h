@@ -39,6 +39,9 @@ using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+struct TemporaryTableHolder;
+using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
+
 class QueryPipelineBuilder
 {
 public:
@@ -166,6 +169,10 @@ public:
         SetAndKeyPtr set_and_key,
         const SizeLimits & limits,
         PreparedSetsCachePtr prepared_sets_cache);
+
+    void addMaterializingCTETransform(
+        SharedHeader res_header,
+        TemporaryTableHolderPtr temporary_table_holder);
 
     PipelineExecutorPtr execute();
 
