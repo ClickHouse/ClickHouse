@@ -2,6 +2,7 @@
 
 #include <Core/Field.h>
 #include <Core/AccurateComparison.h>
+#include <Core/DecimalFunctions.h>
 #include <base/demangle.h>
 #include <Common/FieldVisitors.h>
 #include <IO/ReadBufferFromString.h>
@@ -14,6 +15,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
+}
+
+template <typename T>
+static Float64 decimalFieldToFloat64(const DecimalField<T> & decimal)
+{
+    return DecimalUtils::convertTo<Float64>(decimal.getValue(), decimal.getScale());
 }
 
 /** More precise comparison, used for index.
@@ -48,14 +55,22 @@ public:
             if constexpr (is_arithmetic_v<T> && is_arithmetic_v<U>)
                 return accurate::equalsOp(l, r);
 
-            /// TODO This is wrong (does not respect scale).
             if constexpr (is_decimal_field<T> && is_decimal_field<U>)
                 return l == r;
 
-            if constexpr (is_decimal_field<T> && is_arithmetic_v<U>)
+            /// When comparing Decimal with float types, convert both to Float64.
+            /// This follows the same approach as FunctionsComparison.
+            if constexpr (is_decimal_field<T> && is_floating_point<U>)
+                return accurate::equalsOp(decimalFieldToFloat64(l), static_cast<Float64>(r));
+
+            if constexpr (is_floating_point<T> && is_decimal_field<U>)
+                return accurate::equalsOp(static_cast<Float64>(l), decimalFieldToFloat64(r));
+
+            /// When comparing Decimal with Integer, convert integer to Decimal256 for precise comparison.
+            if constexpr (is_decimal_field<T> && is_integer<U>)
                 return l == DecimalField<Decimal256>(Decimal256(r), 0);
 
-            if constexpr (is_arithmetic_v<T> && is_decimal_field<U>)
+            if constexpr (is_integer<T> && is_decimal_field<U>)
                 return DecimalField<Decimal256>(Decimal256(l), 0) == r;
 
             if constexpr (std::is_same_v<T, String> && is_arithmetic_v<U>)
@@ -115,14 +130,22 @@ public:
             if constexpr (is_arithmetic_v<T> && is_arithmetic_v<U>)
                 return accurate::lessOp(l, r);
 
-            /// TODO This is wrong (does not respect scale).
             if constexpr (is_decimal_field<T> && is_decimal_field<U>)
                 return l < r;
 
-            if constexpr (is_decimal_field<T> && is_arithmetic_v<U>)
+            /// When comparing Decimal with float types, convert both to Float64.
+            /// This follows the same approach as FunctionsComparison.
+            if constexpr (is_decimal_field<T> && is_floating_point<U>)
+                return accurate::lessOp(decimalFieldToFloat64(l), static_cast<Float64>(r));
+
+            if constexpr (is_floating_point<T> && is_decimal_field<U>)
+                return accurate::lessOp(static_cast<Float64>(l), decimalFieldToFloat64(r));
+
+            /// When comparing Decimal with Integer, convert integer to Decimal256 for precise comparison.
+            if constexpr (is_decimal_field<T> && is_integer<U>)
                 return l < DecimalField<Decimal256>(Decimal256(r), 0);
 
-            if constexpr (is_arithmetic_v<T> && is_decimal_field<U>)
+            if constexpr (is_integer<T> && is_decimal_field<U>)
                 return DecimalField<Decimal256>(Decimal256(l), 0) < r;
 
             if constexpr (std::is_same_v<T, String> && is_arithmetic_v<U>)
