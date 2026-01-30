@@ -10,7 +10,7 @@ namespace DB
 
 ASTPtr ASTTableOverride::clone() const
 {
-    auto res = std::make_shared<ASTTableOverride>(*this);
+    auto res = make_intrusive<ASTTableOverride>(*this);
     res->children.clear();
     res->table_name = table_name;
     if (columns)
@@ -70,7 +70,7 @@ void ASTTableOverride::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 
 ASTPtr ASTTableOverrideList::clone() const
 {
-    auto res = std::make_shared<ASTTableOverrideList>(*this);
+    auto res = make_intrusive<ASTTableOverrideList>(*this);
     res->cloneChildren();
     return res;
 }

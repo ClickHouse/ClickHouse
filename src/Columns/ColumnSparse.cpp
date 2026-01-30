@@ -300,7 +300,8 @@ void ColumnSparse::insertManyDefaults(size_t length)
 
 void ColumnSparse::popBack(size_t n)
 {
-    assert(n <= _size);
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
 
     auto & offsets_data = getOffsetsData();
     size_t new_size = _size - n;
@@ -840,7 +841,7 @@ void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t
 
 double ColumnSparse::getRatioOfDefaultRows(double) const
 {
-    return static_cast<double>(getNumberOfDefaultRows()) / _size;
+    return static_cast<double>(getNumberOfDefaultRows()) / static_cast<double>(_size);
 }
 
 UInt64 ColumnSparse::getNumberOfDefaultRows() const

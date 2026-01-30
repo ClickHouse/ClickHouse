@@ -16,7 +16,7 @@ class ASTMoveAccessEntityQuery : public IAST, public ASTQueryWithOnCluster
 public:
     AccessEntityType type;
     Strings names;
-    std::shared_ptr<ASTRowPolicyNames> row_policy_names;
+    boost::intrusive_ptr<ASTRowPolicyNames> row_policy_names;
 
     String storage_name;
 

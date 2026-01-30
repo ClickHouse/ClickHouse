@@ -776,7 +776,7 @@ namespace
     template <bool is_json>
     DataTypePtr tryInferDataTypeForSingleFieldImpl(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth = 1);
 
-    bool tryInferDate(std::string_view field)
+    bool tryInferDate(std::string_view field, DayNum & date)
     {
         /// Minimum length of Date text representation is 8 (YYYY-M-D) and maximum is 10 (YYYY-MM-DD)
         if (field.size() < 8 || field.size() > 10)
@@ -789,74 +789,87 @@ namespace
             return false;
 
         ReadBufferFromString buf(field);
-        DayNum tmp;
-        return tryReadDateText(tmp, buf, DateLUT::instance(), /*allowed_delimiters=*/"-/:", /*saturate_on_overflow=*/false) && buf.eof();
+        return tryReadDateText(date, buf, DateLUT::instance(), /*allowed_delimiters=*/"-/:", /*saturate_on_overflow=*/false) && buf.eof();
     }
 
-    DataTypePtr tryInferDateTimeOrDateTime64(std::string_view field, const FormatSettings & settings)
+    bool fastCheckForInvalidDateTimeOrDateTime64(std::string_view field)
     {
         /// Don't try to infer DateTime if string is too long.
         /// It's difficult to say what is the real maximum length of
         /// DateTime we can parse using BestEffort approach.
         /// 50 symbols is more or less valid limit for date times that makes sense.
         if (field.empty() || field.size() > 50)
-            return nullptr;
+            return true;
 
         /// Check that we have at least one digit, don't infer datetime form strings like "Apr"/"May"/etc.
         if (!std::any_of(field.begin(), field.end(), isNumericASCII))
-            return nullptr;
+            return true;
 
         /// Check if it's just a number, and if so, don't try to infer DateTime from it,
         /// because we can interpret this number as a timestamp and it will lead to
         /// inferring DateTime instead of simple Int64 in some cases.
         if (std::all_of(field.begin(), field.end(), isNumericASCII))
-            return nullptr;
+            return true;
 
         ReadBufferFromString buf(field);
         Float64 tmp_float;
         /// Check if it's a float value, and if so, don't try to infer DateTime from it,
         /// because it will lead to inferring DateTime instead of simple Float64 in some cases.
         if (tryReadFloatText(tmp_float, buf) && buf.eof())
-            return nullptr;
+            return true;
 
-        buf.seek(0, SEEK_SET); /// Return position to the beginning
-        if (!settings.try_infer_datetimes_only_datetime64)
-        {
-            time_t tmp;
-            switch (settings.date_time_input_format)
-            {
-                case FormatSettings::DateTimeInputFormat::Basic:
-                    if (tryReadDateTimeText(tmp, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof())
-                        return std::make_shared<DataTypeDateTime>();
-                    break;
-                case FormatSettings::DateTimeInputFormat::BestEffort:
-                    if (tryParseDateTimeBestEffortStrict(tmp, buf, DateLUT::instance(), DateLUT::instance("UTC"), /*allowed_date_delimiters=*/"-/:") && buf.eof())
-                        return std::make_shared<DataTypeDateTime>();
-                    break;
-                case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                    if (tryParseDateTimeBestEffortUSStrict(tmp, buf, DateLUT::instance(), DateLUT::instance("UTC"), /*allowed_date_delimiters=*/"-/:") && buf.eof())
-                        return std::make_shared<DataTypeDateTime>();
-                    break;
-            }
-        }
+        return false;
+    }
 
-        buf.seek(0, SEEK_SET); /// Return position to the beginning
-        DateTime64 tmp;
+    bool tryInferDateTime(std::string_view field, time_t & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone = DateLUT::instance(), const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC"))
+    {
+        ReadBufferFromString buf(field);
         switch (settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadDateTime64Text(tmp, 9, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof())
-                    return std::make_shared<DataTypeDateTime64>(9);
-                break;
+                if (tryReadDateTimeText(date_time, buf,time_zone, /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof())
+                    return true;
+                return false;
             case FormatSettings::DateTimeInputFormat::BestEffort:
-                if (tryParseDateTime64BestEffortStrict(tmp, 9, buf, DateLUT::instance(), DateLUT::instance("UTC"), /*allowed_date_delimiters=*/"-/:") && buf.eof())
-                    return std::make_shared<DataTypeDateTime64>(9);
-                break;
+                if (tryParseDateTimeBestEffortStrict(date_time, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof())
+                    return true;
+                return false;
             case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                if (tryParseDateTime64BestEffortUSStrict(tmp, 9, buf, DateLUT::instance(), DateLUT::instance("UTC"), /*allowed_date_delimiters=*/"-/:") && buf.eof())
-                    return std::make_shared<DataTypeDateTime64>(9);
-                break;
+                if (tryParseDateTimeBestEffortUSStrict(date_time, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof())
+                    return true;
+                return false;
         }
+    }
+
+    bool tryInferDateTime64(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone = DateLUT::instance(), const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC"))
+    {
+        ReadBufferFromString buf(field);
+        switch (settings.date_time_input_format)
+        {
+            case FormatSettings::DateTimeInputFormat::Basic:
+                return tryReadDateTime64Text(date_time, 9, buf,time_zone, /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof();
+            case FormatSettings::DateTimeInputFormat::BestEffort:
+                return tryParseDateTime64BestEffortStrict(date_time, 9, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
+            case FormatSettings::DateTimeInputFormat::BestEffortUS:
+                return tryParseDateTime64BestEffortUSStrict(date_time, 9, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
+        }
+    }
+
+    DataTypePtr tryInferDateTimeOrDateTime64(std::string_view field, const FormatSettings & settings)
+    {
+        if (fastCheckForInvalidDateTimeOrDateTime64(field))
+            return nullptr;
+
+        if (!settings.try_infer_datetimes_only_datetime64)
+        {
+            time_t tmp;
+            if (tryInferDateTime(field, tmp, settings))
+                return std::make_shared<DataTypeDateTime>();
+        }
+
+        DateTime64 tmp;
+        if (tryInferDateTime64(field, tmp, settings))
+            return std::make_shared<DataTypeDateTime64>(9);
 
         return nullptr;
     }
@@ -1577,8 +1590,12 @@ DataTypePtr tryInferJSONNumberFromString(std::string_view field, const FormatSet
 
 DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const FormatSettings & settings)
 {
-    if (settings.try_infer_dates && tryInferDate(field))
-        return std::make_shared<DataTypeDate>();
+    if (settings.try_infer_dates)
+    {
+        DayNum tmp;
+        if (tryInferDate(field, tmp))
+            return std::make_shared<DataTypeDate>();
+    }
 
     if (settings.try_infer_datetimes)
     {
@@ -1587,6 +1604,25 @@ DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const Forma
     }
 
     return nullptr;
+}
+
+bool tryInferDateFromString(std::string_view field, DayNum & date)
+{
+    return tryInferDate(field, date);
+}
+
+bool tryInferDateTimeFromString(std::string_view field, time_t & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+{
+    if (fastCheckForInvalidDateTimeOrDateTime64(field))
+        return false;
+    return tryInferDateTime(field, date_time, settings, time_zone, utc_time_zone);
+}
+
+bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+{
+    if (fastCheckForInvalidDateTimeOrDateTime64(field))
+        return false;
+    return tryInferDateTime64(field, date_time, settings, time_zone, utc_time_zone);
 }
 
 DataTypePtr tryInferDataTypeForSingleField(ReadBuffer & buf, const FormatSettings & settings)
