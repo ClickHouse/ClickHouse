@@ -1,7 +1,7 @@
 #include <TableFunctions/TableFunctionPrometheusQuery.h>
 
 #include <Parsers/ASTFunction.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -32,7 +32,7 @@ template <bool over_range>
 ColumnsDescription
 TableFunctionPrometheusQuery<over_range>::getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const
 {
-    PrometheusQueryToSQLConverter converter{config.promql_query, config.evaluation_settings};
+    PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings};
     return converter.getResultColumns();
 }
 

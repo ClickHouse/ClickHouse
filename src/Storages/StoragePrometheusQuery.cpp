@@ -11,7 +11,7 @@
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 
 
@@ -157,7 +157,7 @@ void StoragePrometheusQuery::read(
     size_t /* num_streams */)
 {
     LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
-    PrometheusQueryToSQLConverter converter{config.promql_query, config.evaluation_settings};
+    PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings};
     ASTPtr select_query = converter.getSQL();
 
     LOG_INFO(log, "Will execute query:\n{}", select_query->formatForLogging());

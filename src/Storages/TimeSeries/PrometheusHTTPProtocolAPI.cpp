@@ -8,7 +8,7 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/PrometheusQueryResultType.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -77,7 +77,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
             .step = parseTimeSeriesDuration(params.step_param, timestamp_scale)};
     }
 
-    PrometheusQueryToSQLConverter converter{query_tree, evaluation_settings};
+    PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
 
     auto sql_query = converter.getSQL();
     if (!sql_query)
