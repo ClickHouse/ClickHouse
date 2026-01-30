@@ -144,3 +144,43 @@ def test_database_backup_table(backup_destination):
     instance.query("DROP DATABASE test_table_backup")
     instance.query("DROP DATABASE test_database")
     cleanup_backup_files(instance)
+
+
+@pytest.mark.parametrize(
+    "backup_destination",
+    [
+        "Disk('backup_disk_s3_plain', 'test_database_backup')",
+    ],
+)
+def test_database_backup_s3_unavailable_but_server_starts(backup_destination):
+    cleanup_backup_files(instance)
+
+    instance.query(f"""
+        DROP DATABASE IF EXISTS test_database;
+        DROP DATABASE IF EXISTS test_database_backup;
+
+        CREATE DATABASE test_database;
+
+        CREATE TABLE test_database.test_table (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+        INSERT INTO test_database.test_table VALUES (0, 'test_table');
+
+        BACKUP DATABASE test_database TO {backup_destination};
+        CREATE DATABASE test_database_backup ENGINE=Backup('test_database', {backup_destination});
+    """)
+
+    assert (
+        instance.query("SELECT id, value FROM test_database_backup.test_table")
+        == "0\ttest_table\n"
+    )
+
+    cleanup_backup_files(instance)
+
+    instance.restart_clickhouse()
+
+    assert (
+        instance.query("SELECT 1")
+        == "1\n"
+    )
+    
+    instance.query("DROP DATABASE IF EXISTS test_database_backup SYNC")
+    instance.query("DROP DATABASE IF EXISTS test_database SYNC")
