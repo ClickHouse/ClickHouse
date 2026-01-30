@@ -256,9 +256,9 @@ if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
 
-# Randomize concurrent_threads_scheduler (default is fair_round_robin)
+# Randomize concurrent_threads_scheduler (default is max_min_fair)
 if [ $((RANDOM % 2)) -eq 1 ]; then
-    sudo echo "<clickhouse><concurrent_threads_scheduler>max_min_fair</concurrent_threads_scheduler></clickhouse>" \
+    sudo echo "<clickhouse><concurrent_threads_scheduler>fair_round_robin</concurrent_threads_scheduler></clickhouse>" \
         > /etc/clickhouse-server/config.d/enable_max_min_fair_scheduler.xml
 fi
 
