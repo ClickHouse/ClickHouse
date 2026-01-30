@@ -67,6 +67,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool parallel_replicas_filter_pushdown;
 }
 
 namespace ErrorCodes
@@ -929,7 +930,7 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (filter_actions_dag)
+    if (context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown] && filter_actions_dag)
         addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag);
 
     Pipes pipes = addPipes(query_ast, output_header);
