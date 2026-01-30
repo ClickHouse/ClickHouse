@@ -357,7 +357,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             if (projection->with_parent_part_offset && column == "_part_offset")
                 continue;
 
-            key_columns.insert(getColumnNameInStorage(column, storage_columns));
+            key_columns.insert(column);
         }
     }
 
