@@ -1,5 +1,5 @@
 if (NOT OS_LINUX OR NOT ARCH_AMD64)
-    message (STATUS "Not building memcpy-bench due to PIC enabled or not Linux or not x86")
+    message (STATUS "Not building memcpy-bench because it's not Linux on x86")
     return ()
 endif ()
 

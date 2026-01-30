@@ -9,6 +9,23 @@
 namespace
 {
 
+bool runtimeDetectAVX512F_BMI2()
+{
+    unsigned int eax, ebx, ecx, edx;
+    if (__get_cpuid_max(0, nullptr) < 7)
+        return false;
+    __cpuid_count(7, 0, eax, ebx, ecx, edx);
+    // AVX512F is bit 16 of EBX from CPUID with EAX=7, ECX=0
+    // BMI2 is bit 8 of EBX from CPUID with EAX=7, ECX=0
+    bool has_avx512 = ((ebx & (1 << 16)) != 0) && ((ebx & (1 << 8)) != 0);
+
+    if (!has_avx512)
+        return false;
+
+    return true;
+}
+
+
 /** Custom memcpy implementation for ClickHouse.
   * It has the following benefits over using glibc's implementation:
   * 1. Avoiding dependency on specific version of glibc's symbol, like memcpy@@GLIBC_2.14 for portability.
@@ -99,8 +116,20 @@ namespace
   * See https://habr.com/en/company/yandex/blog/457612/
   */
 
+
 __attribute__((no_sanitize("coverage")))
-void * inline_memcpy_sse(void * __restrict dst_, const void * __restrict src_, size_t size)
+__attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,bmi2"))) void
+copy_less_than_64_avx512(char * __restrict dst, const char * __restrict src, size_t size)
+{
+    /// Copy 0-63 bytes using AVX-512 masked operations
+    /// Intrinsics are the proper way - inline asm doesn't handle masking well
+    __mmask64 mask = (__mmask64)_bzhi_u64(0xFFFFFFFFFFFFFFFFull, size);
+    _mm512_mask_storeu_epi8(dst, mask, _mm512_maskz_loadu_epi8(mask, src));
+}
+
+
+__attribute__((no_sanitize("coverage"))) __attribute__((always_inline)) void *
+ch_memcpy_sse(void * __restrict dst_, const void * __restrict src_, size_t size)
 {
     /// We will use pointer arithmetic, so char pointer will be used.
     /// Note that __restrict makes sense (otherwise compiler will reload data from memory
@@ -187,25 +216,17 @@ tail:
             /// Aligned unrolled copy. We will use half of available SSE registers.
             /// It's not possible to have both src and dst aligned.
             /// So, we will use aligned stores and unaligned loads.
-            __m128i c0;
-            __m128i c1;
-            __m128i c2;
-            __m128i c3;
-            __m128i c4;
-            __m128i c5;
-            __m128i c6;
-            __m128i c7;
 
             while (size >= 128)
             {
-                c0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 0);
-                c1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 1);
-                c2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 2);
-                c3 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 3);
-                c4 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 4);
-                c5 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 5);
-                c6 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 6);
-                c7 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src) + 7);
+                __m128i c0 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src) + 0);
+                __m128i c1 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src) + 1);
+                __m128i c2 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src) + 2);
+                __m128i c3 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src) + 3);
+                __m128i c4 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src) + 4);
+                __m128i c5 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src) + 5);
+                __m128i c6 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src) + 6);
+                __m128i c7 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src) + 7);
                 src += 128;
                 _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 0), c0);
                 _mm_store_si128((reinterpret_cast<__m128i*>(dst) + 1), c1);
@@ -228,121 +249,20 @@ tail:
     return ret;
 }
 
-
-__attribute__((no_sanitize("coverage")))
-__attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,bmi2")))
-static inline void * inline_memcpy_avx512(void * __restrict dst_, const void * __restrict src_, size_t size)
-{
-    char * __restrict dst = reinterpret_cast<char * __restrict>(dst_);
-    const char * __restrict src = reinterpret_cast<const char * __restrict>(src_);
-    void * ret = dst;
-
-tail:
-    if (size <= 64)
-    {
-        __mmask64 mask = (__mmask64)_bzhi_u64(0xFFFFFFFFFFFFFFFFull, size);
-        _mm512_mask_storeu_epi8(dst, mask, _mm512_maskz_loadu_epi8(mask, src));
-    }
-    else
-    {
-        if (size <= 512)
-        {
-            while (size > 64)
-            {
-                size -= 64;
-                _mm512_storeu_si512(dst, _mm512_loadu_si512(src));
-                dst += 64;
-                src += 64;
-            }
-
-            __mmask64 mask = (__mmask64)_bzhi_u64(0xFFFFFFFFFFFFFFFFull, size);
-            _mm512_mask_storeu_epi8(dst, mask, _mm512_maskz_loadu_epi8(mask, src));
-        }
-        else
-        {
-            /// Align destination to 64 bytes boundary.
-            size_t padding = (64 - (reinterpret_cast<size_t>(dst) & 63)) & 63;
-            if (padding > 0)
-            {
-                __mmask64 mask = (__mmask64)_bzhi_u64(0xFFFFFFFFFFFFFFFFull, padding);
-                _mm512_mask_storeu_epi8(dst, mask, _mm512_maskz_loadu_epi8(mask, src));
-                dst += padding;
-                src += padding;
-                size -= padding;
-            }
-
-            __m512i c0;
-            __m512i c1;
-            __m512i c2;
-            __m512i c3;
-            __m512i c4;
-            __m512i c5;
-            __m512i c6;
-            __m512i c7;
-
-            while (size >= 512)
-            {
-                c0 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 0);
-                c1 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 1);
-                c2 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 2);
-                c3 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 3);
-                c4 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 4);
-                c5 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 5);
-                c6 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 6);
-                c7 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 7);
-                src += 512;
-                _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 0), c0);
-                _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 1), c1);
-                _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 2), c2);
-                _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 3), c3);
-                _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 4), c4);
-                _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 5), c5);
-                _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 6), c6);
-                _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 7), c7);
-                dst += 512;
-
-                size -= 512;
-            }
-            goto tail;
-        }
-    }
-
-    return ret;
-}
-
-bool runtimeDetectAVX512F()
-{
-    unsigned int eax, ebx, ecx, edx;
-    if (__get_cpuid_max(0, nullptr) < 7)
-        return false;
-    __cpuid_count(7, 0, eax, ebx, ecx, edx);
-    // AVX512F is bit 16 of EBX from CPUID with EAX=7, ECX=0
-    return (ebx & (1 << 16)) != 0;
-}
-
-bool runtimeDetectBMI2()
-{
-    unsigned int eax, ebx, ecx, edx;
-    if (__get_cpuid_max(0, nullptr) < 7)
-        return false;
-    __cpuid_count(7, 0, eax, ebx, ecx, edx);
-    // BMI2 is bit 8 of EBX from CPUID with EAX=7, ECX=0
-    return (ebx & (1 << 8)) != 0;
-}
-
-using memcpy_func = void * (*)(void *, const void *, size_t);
-memcpy_func get_memcpy_impl()
-{
-    static const bool has_avx_512_bmi2 = runtimeDetectAVX512F() && runtimeDetectBMI2();
-    return has_avx_512_bmi2 ? inline_memcpy_avx512 : inline_memcpy_sse;
-}
-
 }
 
 extern "C" void * memcpy(void * __restrict dst, const void * __restrict src, size_t size)
 {
-    static const memcpy_func impl = get_memcpy_impl();
-    return impl(dst, src, size);
+    static const bool avx512_available = runtimeDetectAVX512F_BMI2();
+
+    /// Use AVX-512 masked operation for small sizes - much faster than branchy SSE path
+    if (avx512_available && size < 64)
+    {
+        copy_less_than_64_avx512(reinterpret_cast<char *>(dst), reinterpret_cast<const char *>(src), size);
+        return dst;
+    }
+
+    return ch_memcpy_sse(dst, src, size);
 }
 
 #endif

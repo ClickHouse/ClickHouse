@@ -862,12 +862,16 @@ void * sz_copy_skylake_cast(void * __restrict destination, const void * __restri
     if (memcpy_variant == (N)) \
         return test(dst, src, size, iterations, num_threads, std::forward<F>(generator), NAME, #NAME);
 
+
+extern void * ch_memcpy_sse(void * __restrict dst_, const void * __restrict src_, size_t size);
+extern void * ch_memcpy_avx512(void * __restrict dst_, const void * __restrict src_, size_t size);
+
 template <typename F>
 uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * src, size_t size, size_t iterations, size_t num_threads, F && generator)
 {
     memcpy_type memcpy_libc_old = reinterpret_cast<memcpy_type>(dlsym(RTLD_NEXT, "memcpy"));
 
-    VARIANT(1, memcpy)
+    VARIANT(1, memcpy) /// Current ClickHouse memcpy (with dispatching)
     VARIANT(2, memcpy_trivial)
     VARIANT(3, memcpy_libc_old)
     VARIANT(4, memcpy_erms)
@@ -892,6 +896,9 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
 
     VARIANT(30, sz_copy_haswell_cast)
     VARIANT(31, sz_copy_skylake_cast)
+
+    // VARIANT(40, ch_memcpy_sse)      /// ClickHouse SSE memcpy with no dispatching
+    // VARIANT(41, ch_memcpy_avx512)   /// ClickHouse AVX512 memcpy with no dispatching
 
     return 0;
 }
