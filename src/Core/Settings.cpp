@@ -1960,10 +1960,19 @@ Possible values:
 ```
 )", 0) \
 \
+    DECLARE(DeduplicateInsertMode, deduplicate_insert, DeduplicateInsertMode::BACKWARD_COMPATIBLE_CHOICE, R"(
+Enables or disables block deduplication of  `INSERT INTO` (for Replicated\* tables).
+The setting overrides `insert_deduplicate` and `async_insert_deduplicate` settings.
+That setting has three possible values:
+- disable — Deduplication is disabled for `INSERT INTO` query.
+- enable — Deduplication is enabled for `INSERT INTO` query.
+- backward_compatible_choice — Deduplication is enabled if `insert_deduplicate` or `async_insert_deduplicate` are enabled for specific insert type.
+    )", 0) \
+\
     DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE, R"(
 Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
-The setting overrids `insert_deduplicate` for `INSERT SELECT` queries.
-That setting has three possible values:
+The setting overrids `insert_deduplicate` and `deduplicate_insert` for `INSERT SELECT` queries.
+That setting has four possible values:
 - disable — Deduplication is disabled for `INSERT SELECT` query.
 - force_enable — Deduplication is enabled for `INSERT SELECT` query. If select result is not stable, exception is thrown.
 - enable_when_possible — Deduplication is enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
@@ -6992,6 +7001,9 @@ Replace table function engines with their -Cluster alternatives
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
 Allow usage of materialized views with parallel replicas
 )", 0) \
+    DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
+Allow pushing down filters to part of query which parallel replicas choose to execute
+)", BETA) \
     DECLARE(Bool, distributed_index_analysis, false, R"(
 Index analysis will be distributed across replicas.
 Beneficial for shared storage and huge amount of data in cluster.

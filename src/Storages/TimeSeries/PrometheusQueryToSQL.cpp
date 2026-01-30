@@ -58,92 +58,74 @@ namespace
 
     /// Casts field to the timestamp data type or to the interval data type.
     template <is_decimal T>
-    DecimalField<T> fieldToDecimal(const Field & field, const DataTypePtr & target_data_type)
+    T fieldToDecimal(const Field & field, UInt32 target_scale)
     {
-        UInt32 target_scale = 0;
-        Int64 target_scale_multiplier = 1;
-        if (WhichDataType{*target_data_type}.isDateTime64() || WhichDataType{*target_data_type}.isDecimal())
-        {
-            target_scale = getDecimalScale(*target_data_type);
-            target_scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(target_scale);
-        }
-
         switch (field.getType())
         {
             case Field::Types::Int64:
-                return DecimalField<T>{field.safeGet<Int64>() * target_scale_multiplier, target_scale};
+            {
+                return field.safeGet<Int64>() * DecimalUtils::scaleMultiplier<T>(target_scale);
+            }
             case Field::Types::UInt64:
-                return DecimalField<T>{field.safeGet<UInt64>() * target_scale_multiplier, target_scale};
+            {
+                return field.safeGet<UInt64>() * DecimalUtils::scaleMultiplier<T>(target_scale);
+            }
             case Field::Types::Float64:
-                return DecimalField<T>{static_cast<Int64>(field.safeGet<Float64>() * static_cast<double>(target_scale_multiplier)), target_scale};
+            {
+                return static_cast<typename T::NativeType>(
+                    field.safeGet<Float64>() * static_cast<Float64>(DecimalUtils::scaleMultiplier<T>(target_scale)));
+            }
             case Field::Types::Decimal32:
             {
                 auto x = field.safeGet<Decimal32>();
-                return DecimalField<T>{DecimalUtils::convertTo<Decimal64>(target_scale, x.getValue(), x.getScale()), target_scale};
+                return DecimalUtils::convertTo<Decimal64>(target_scale, x.getValue(), x.getScale());
             }
             case Field::Types::Decimal64:
             {
                 auto x = field.safeGet<Decimal64>();
-                return DecimalField<T>{DecimalUtils::convertTo<Decimal64>(target_scale, x.getValue(), x.getScale()), target_scale};
+                return DecimalUtils::convertTo<Decimal64>(target_scale, x.getValue(), x.getScale());
             }
             default:
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot cast field of type {} to data type {}", field.getType(), target_data_type);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot cast field of type {} to duration", field.getType());
         }
     }
 
     /// Converts a timestamp or an interval to AST.
     template <is_decimal T>
-    ASTPtr decimalToAST(const DecimalField<T> & decimal, const DataTypePtr & data_type)
+    ASTPtr decimalToAST(T decimal, UInt32 scale, const DataTypePtr & data_type)
     {
         auto data_type_idx = WhichDataType{*data_type}.idx;
         if (data_type_idx == TypeIndex::DateTime64)
         {
-            String str = toString(decimal);
+            String str = toString(decimal, scale);
             if (str.find_first_of(".eE") == String::npos)
                 str += "."; /// toDateTime64() doesn't accept an integer as its first argument, so we convert it to float.
-            return makeASTFunction("toDateTime64", make_intrusive<ASTLiteral>(str), make_intrusive<ASTLiteral>(getDecimalScale(*data_type)));
+            return makeASTFunction("toDateTime64", make_intrusive<ASTLiteral>(str), make_intrusive<ASTLiteral>(scale));
         }
         else if (data_type_idx == TypeIndex::Decimal64)
-            return makeASTFunction("toDecimal64", make_intrusive<ASTLiteral>(toString(decimal)), make_intrusive<ASTLiteral>(getDecimalScale(*data_type)));
+            return makeASTFunction("toDecimal64", make_intrusive<ASTLiteral>(toString(decimal, scale)), make_intrusive<ASTLiteral>(scale));
         else
-            return make_intrusive<ASTLiteral>(Field{decimal});
-    }
-
-    /// Subtracts an interval from a timestamp.
-    DecimalField<DateTime64> subtract(const DecimalField<DateTime64> & left, const DecimalField<Decimal64> & right)
-    {
-        UInt32 scale = left.getScale();
-        chassert(right.getScale() == scale);
-        return DecimalField<DateTime64>{left.getValue() - right.getValue(), scale};
-    }
-
-    /// Returns the previous interval value.
-    DecimalField<Decimal64> previous(const DecimalField<Decimal64> & interval)
-    {
-        chassert(interval.getValue() > 0);
-        return DecimalField<Decimal64>{interval.getValue() - 1, interval.getScale()};
+            return make_intrusive<ASTLiteral>(DecimalField<T>{decimal, scale});
     }
 
     /// Increases a timestamp to make it divisible by `step`.
-    DecimalField<DateTime64> alignUp(const DecimalField<DateTime64> & time, const DecimalField<Decimal64> & step)
+    DateTime64 alignUp(DateTime64 time, Decimal64 step)
     {
-        UInt32 scale = step.getScale();
-        chassert((step.getValue() > 0) && (scale == time.getScale()));
-        auto x = time.getValue() % step.getValue();
+        chassert(step > 0);
+        auto x = time % step;
         if (!x)
             return time;
-        return DecimalField<DateTime64>{time.getValue() + step.getValue() - x, scale};
+        return time + step - x;
     }
 
     /// Decreases a timestamp to make it divisible by `step`.
-    DecimalField<DateTime64> alignDown(const DecimalField<DateTime64> & time, const DecimalField<Decimal64> & step)
+    DateTime64 alignDown(DateTime64 time, Decimal64 step)
     {
-        UInt32 scale = time.getScale();
-        chassert((step.getValue() > 0) && (scale == time.getScale()));
-        auto x = time.getValue() % step.getValue();
+        chassert(step > 0);
+        auto x = time % step;
         if (!x)
             return time;
-        return DecimalField<DateTime64>{time.getValue() - x, scale};
+        return time - x;
     }
 }
 
@@ -155,12 +137,12 @@ public:
     explicit ASTBuilder(const PrometheusQueryToSQLConverter & converter_)
         : converter(converter_)
         , timestamp_data_type(getTimeSeriesTableInfo().timestamp_data_type)
+        , timestamp_scale((isDecimal(timestamp_data_type) || isDateTime64(timestamp_data_type)) ? getDecimalScale(*timestamp_data_type) : 0)
         , interval_data_type(getIntervalDataType(timestamp_data_type))
         , value_data_type(getTimeSeriesTableInfo().value_data_type)
         , lookback_delta(fieldToInterval(converter_.lookback_delta))
         , default_resolution(fieldToInterval(converter_.default_resolution))
         , result_type(converter_.result_type)
-        , interval_scale(lookback_delta.getScale())
     {
         if (!converter_.evaluation_time.isNull())
         {
@@ -186,20 +168,20 @@ public:
 private:
     const PrometheusQueryToSQLConverter & converter;
     DataTypePtr timestamp_data_type;
+    UInt32 timestamp_scale;
     DataTypePtr interval_data_type;
     DataTypePtr value_data_type;
-    DecimalField<Decimal64> lookback_delta;
-    DecimalField<Decimal64> default_resolution;
+    Decimal64 lookback_delta;
+    Decimal64 default_resolution;
     PrometheusQueryResultType result_type;
-    UInt32 interval_scale;
 
-    std::optional<DecimalField<DateTime64>> evaluation_time;
+    std::optional<DateTime64> evaluation_time;
 
     struct EvaluationRange
     {
-        DecimalField<DateTime64> start_time;
-        DecimalField<DateTime64> end_time;
-        DecimalField<Decimal64> step;
+        DateTime64 start_time;
+        DateTime64 end_time;
+        Decimal64 step;
     };
     std::optional<EvaluationRange> evaluation_range;
 
@@ -219,7 +201,7 @@ private:
         ResultType result_type;
 
         /// A window is extracted from a range selector. The window is used only by functions accepting range vectors, e.g. rate().
-        DecimalField<Decimal64> window;
+        Decimal64 window;
 
         /// Columns to select (nullptr if there is no such column).
         /// The names of these columns are always TimeSeriesColumnNames::Group, TimeSeriesColumnNames::Tags and so on.
@@ -542,8 +524,8 @@ private:
             case NodeType::Subquery:
                 return buildPieceForSubquery(typeid_cast<const PrometheusQueryTree::Subquery *>(node));
 
-            case NodeType::At:
-                return buildPieceForAt(typeid_cast<const PrometheusQueryTree::At *>(node));
+            case NodeType::Offset:
+                return buildPieceForOffset(typeid_cast<const PrometheusQueryTree::Offset *>(node));
 
             case NodeType::Function:
                 return buildPieceForFunction(typeid_cast<const PrometheusQueryTree::Function *>(node));
@@ -567,15 +549,15 @@ private:
     /// Builds a piece to evaluate an instant selector.
     Piece buildPieceForInstantSelector(const PrometheusQueryTree::InstantSelector * instant_selector) const
     {
-        if (lookback_delta.getValue() <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The lookback delta must be positive, got {}", toString(lookback_delta));
+        if (lookback_delta <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The lookback delta must be positive, got {}", toString(lookback_delta, timestamp_scale));
 
         /// Lookback deltas are left-open (and right-closed), so we decrease `window` a little bit to consider both boundaries close.
         auto window = lookback_delta;
 
-        DecimalField<DateTime64> start_time;
-        DecimalField<DateTime64> end_time;
-        DecimalField<Decimal64> step;
+        DateTime64 start_time;
+        DateTime64 end_time;
+        Decimal64 step;
         extractRangeAndStep(instant_selector, start_time, end_time, step);
 
         /// We can get an empty interval here because of aligning in extractRangeAndStep().
@@ -588,7 +570,7 @@ private:
             make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getDatabaseName()),
             make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getTableName()),
             make_intrusive<ASTLiteral>(getPromQLText(instant_selector)),
-            timestampToAST(subtract(start_time, previous(window))),
+            timestampToAST(start_time - window + 1),
             timestampToAST(end_time));
 
         res.group_column = makeASTFunction("timeSeriesIdToTagsGroup", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
@@ -610,16 +592,16 @@ private:
     {
         const auto * instant_selector = range_selector->getInstantSelector();
 
-        auto range = nodeToInterval(range_selector->getRange());
-        if (range.getValue() <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range specified in a range selector must be positive, got {}", getPromQLText(range_selector->getRange()));
+        auto range = range_selector->range;
+        if (range <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range specified in a range selector must be positive, got {}", toString(range, timestamp_scale));
 
         /// Ranges are left-open (and right-closed), so we decrease `window` a little bit to consider both boundaries close.
         auto window = range;
 
-        DecimalField<DateTime64> start_time;
-        DecimalField<DateTime64> end_time;
-        DecimalField<Decimal64> step;
+        DateTime64 start_time;
+        DateTime64 end_time;
+        Decimal64 step;
         extractRangeAndStep(range_selector, start_time, end_time, step);
 
         /// We can get an empty interval here because of aligning in extractRangeAndStep().
@@ -632,7 +614,7 @@ private:
             make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getDatabaseName()),
             make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getTableName()),
             make_intrusive<ASTLiteral>(getPromQLText(instant_selector)),
-            timestampToAST(subtract(start_time, previous(window))),
+            timestampToAST(start_time - window + 1),
             timestampToAST(end_time));
 
         res.group_column = makeASTFunction("timeSeriesIdToTagsGroup", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
@@ -654,7 +636,7 @@ private:
             return getEmptyPiece(ResultType::RANGE_VECTOR);
 
         piece.result_type = ResultType::RANGE_VECTOR;
-        piece.window = nodeToInterval(subquery->getRange());
+        piece.window = subquery->range;
         return piece;
     }
 
@@ -674,10 +656,10 @@ private:
     }
 
     /// Builds a piece to evaluate an offset.
-    Piece buildPieceForAt(const PrometheusQueryTree::At * at_node)
+    Piece buildPieceForOffset(const PrometheusQueryTree::Offset * offset_node)
     {
         /// Offsets are already taken into account - see extractRangeAndStep(). So here we just ignore them.
-        return buildPiece(at_node->getExpression());
+        return buildPiece(offset_node->getExpression());
     }
 
     /// Checks the number of arguments of a promql function.
@@ -760,9 +742,9 @@ private:
 
         auto window = argument.window;
 
-        DecimalField<DateTime64> start_time;
-        DecimalField<DateTime64> end_time;
-        DecimalField<Decimal64> step;
+        DateTime64 start_time;
+        DateTime64 end_time;
+        Decimal64 step;
         extractRangeAndStep(func, start_time, end_time, step);
 
         /// We can get an empty interval here because of aligning in extractRangeAndStep().
@@ -834,8 +816,8 @@ private:
     /// Builds an AST to call functions generating time series on a grid.
     /// Returns something like timeSeriesFromGrid(<start_time>, <step>, timeSeries*ToGrid(<start_time>, <end_time>, <step>, <window>)(<timestamp>, <value>)
     ASTPtr makeGridFunction(std::string_view grid_function_name,
-                            const DecimalField<DateTime64> & start_time, const DecimalField<DateTime64> & end_time,
-                            const DecimalField<Decimal64> & step, const DecimalField<Decimal64> & window,
+                            DateTime64 start_time, DateTime64 end_time,
+                            Decimal64 step, Decimal64 window,
                             ASTPtr timestamp_column, ASTPtr value_column) const
     {
         auto aggregate_function = makeASTFunction(grid_function_name, timestamp_column, value_column);
@@ -851,7 +833,7 @@ private:
     /// and determine the total time range and optionally the step used in the most inner subquery.
     /// The function always set `start_time` and `end_time`. If the node isn't used in any subquery the function sets `step` to 0.
     void extractRangeAndStep(const PrometheusQueryTree::Node * node,
-                             DecimalField<DateTime64> & start_time, DecimalField<DateTime64> & end_time, DecimalField<Decimal64> & step) const
+                             DateTime64 & start_time, DateTime64 & end_time, Decimal64 & step) const
     {
         parent_nodes.clear();
         for (const auto * parent = node; parent; parent = parent->parent)
@@ -861,7 +843,7 @@ private:
         {
             start_time = *evaluation_time;
             end_time = *evaluation_time;
-            step = getZeroInterval();
+            step = 0;
         }
         else
         {
@@ -873,41 +855,42 @@ private:
 
         for (const auto * parent : parent_nodes)
         {
-            if (parent->node_type == NodeType::At)
+            if (parent->node_type == NodeType::Offset)
             {
-                const auto * at_node = typeid_cast<const PrometheusQueryTree::At *>(parent);
-                if (const auto * at = at_node->getAt())
+                const auto * offset_node = typeid_cast<const PrometheusQueryTree::Offset *>(parent);
+                if (offset_node->at_timestamp)
                 {
-                    start_time = nodeToTimestamp(at);
+                    start_time = *offset_node->at_timestamp;
                     end_time = start_time;
-                    step = getZeroInterval();
+                    step = 0;
                 }
-                if (const auto * offset = at_node->getOffset())
+                if (offset_node->offset_value)
                 {
                     /// The "offset" modifier moves the evaluation time backward.
-                    start_time = subtract(start_time, nodeToInterval(offset));
-                    end_time = subtract(end_time, nodeToInterval(offset));
+                    auto offset = *offset_node->offset_value;
+                    start_time = start_time - offset;
+                    end_time = end_time - offset;
                 }
             }
             else if (parent->node_type == NodeType::Subquery)
             {
                 const auto * subquery_node = typeid_cast<const PrometheusQueryTree::Subquery *>(parent);
-                if (const auto * resolution = subquery_node->getResolution())
+                if (subquery_node->resolution)
                 {
-                    step = nodeToInterval(resolution);
-                    if (step.getValue() <= 0)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Resolution must be positive, got {}", getPromQLText(resolution));
+                    step = *subquery_node->resolution;
+                    if (step <= 0)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Resolution must be positive, got {}", toString(step, timestamp_scale));
                 }
                 else
                 {
+                    if (default_resolution <= 0)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The default resolution must be positive, got {}", toString(default_resolution, timestamp_scale));
                     step = default_resolution;
-                    if (step.getValue() <= 0)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The default resolution must be positive, got {}", toString(default_resolution));
                 }
-                auto subquery_range = nodeToInterval(subquery_node->getRange());
-                if (subquery_range.getValue() <= 0)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subquery rangeResolution must be positive, got {}", getPromQLText(subquery_node->getRange()));
-                start_time = subtract(start_time, previous(subquery_range));
+                auto subquery_range = subquery_node->range;
+                if (subquery_range <= 0)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subquery range must be positive, got {}", toString(subquery_range, timestamp_scale));
+                start_time = start_time - subquery_range + 1;
 
                 /// We need to align `start_time` and `end_time` by `step` if there is a subquery.
                 /// (See https://www.robustperception.io/promql-subqueries-and-alignment/)
@@ -917,56 +900,28 @@ private:
         }
     }
 
-    /// Extracts a value from a scalar literal or an interval literal node.
-    Field nodeToField(const PrometheusQueryTree::Node * scalar_or_interval_node) const
-    {
-        auto node_type = scalar_or_interval_node->node_type;
-        if (node_type == NodeType::ScalarLiteral)
-            return Field{typeid_cast<const PrometheusQueryTree::ScalarLiteral &>(*scalar_or_interval_node).scalar};
-        else if (node_type == NodeType::IntervalLiteral)
-            return Field{typeid_cast<const PrometheusQueryTree::IntervalLiteral &>(*scalar_or_interval_node).interval};
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a scalar literal or a interval literal node, got {} ({})", node_type, getPromQLText(scalar_or_interval_node));
-    }
-
     /// Converts a scalar or an interval value to a timestamp compatible with the data types used in the TimeSeries table.
-    DecimalField<DateTime64> fieldToTimestamp(const Field & field) const
+    DateTime64 fieldToTimestamp(const Field & field) const
     {
-        return fieldToDecimal<DateTime64>(field, timestamp_data_type);
-    }
-
-    DecimalField<DateTime64> nodeToTimestamp(const PrometheusQueryTree::Node * scalar_or_interval_node) const
-    {
-        return fieldToTimestamp(nodeToField(scalar_or_interval_node));
+        return fieldToDecimal<DateTime64>(field, timestamp_scale);
     }
 
     /// Converts a scalar or an interval value to an interval compatible with the data types used in the TimeSeries table.
-    DecimalField<Decimal64> fieldToInterval(const Field & field) const
+    Decimal64 fieldToInterval(const Field & field) const
     {
-        return fieldToDecimal<Decimal64>(field, interval_data_type);
-    }
-
-    DecimalField<Decimal64> nodeToInterval(const PrometheusQueryTree::Node * scalar_or_interval_node) const
-    {
-        return fieldToInterval(nodeToField(scalar_or_interval_node));
-    }
-
-    /// Returns a zero interval with the correct scale.
-    DecimalField<Decimal64> getZeroInterval() const
-    {
-        return DecimalField<Decimal64>{0, interval_scale};
+        return fieldToDecimal<Decimal64>(field, timestamp_scale);
     }
 
     /// Converts a timestamp to AST.
-    ASTPtr timestampToAST(const DecimalField<DateTime64> & field) const
+    ASTPtr timestampToAST(DateTime64 timestamp) const
     {
-        return decimalToAST(field, timestamp_data_type);
+        return decimalToAST(timestamp, timestamp_scale, timestamp_data_type);
     }
 
     /// Converts a interval to AST.
-    ASTPtr intervalToAST(const DecimalField<Decimal64> & field) const
+    ASTPtr intervalToAST(Decimal64 interval) const
     {
-        return decimalToAST(field, interval_data_type);
+        return decimalToAST(interval, timestamp_scale, interval_data_type);
     }
 };
 
