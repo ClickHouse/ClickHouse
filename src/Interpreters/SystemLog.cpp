@@ -684,9 +684,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
             /// Create a new UUID column with the same marker value for all rows
             auto marker_col = ColumnUUID::create();
-            marker_col->reserve(to_flush.size());
-            for (size_t i = 0; i < to_flush.size(); ++i)
-                marker_col->insert(marker_uuid);
+            marker_col->getData().resize_fill(to_flush.size(), marker_uuid);
 
             /// Overwrite the marker column that was created by appendToBlock
             columns[marker_idx] = std::move(marker_col);
