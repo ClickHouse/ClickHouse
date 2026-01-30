@@ -24,6 +24,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
             context,
             compression_method,
             configuration.headers,
+            configuration.body,
             configuration.http_method,
             nullptr,
             /*distributed_processing=*/ true);
