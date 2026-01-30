@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ExpressionActions.h>
 
-
 namespace DB
 {
 
@@ -220,12 +219,13 @@ bool tryBuildPrewhereSteps(
     const bool is_conjunction = (condition_root.type == ActionsDAG::ActionType::FUNCTION && condition_root.function_base->getName() == "and");
     if (!is_conjunction)
         return false;
-    auto condition_nodes = condition_root.children;
 
-    /// 2. Collect the set of columns that are used in the condition
+    /// 2. Collect the conditions set of columns that are used in each condition
+    ActionsDAG::NodeRawConstPtrs condition_nodes;
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> nodes_info;
-    for (const auto & node : condition_nodes)
+    for (const auto & node : condition_root.children)
     {
+        condition_nodes.push_back(node);
         fillRequiredColumns(node, nodes_info);
     }
 
@@ -234,14 +234,53 @@ bool tryBuildPrewhereSteps(
 
     /// 4. Group conditions with the same set of columns into a single read/compute step
     std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
+    std::vector<const ActionsDAG::Node *> condition_group_with_no_input; /// Special condition group with no required input
     for (const auto & node : condition_nodes)
     {
         const auto & node_info = nodes_info[node];
         if (!condition_groups.empty() && nodes_info[condition_groups.back().back()].required_columns == node_info.required_columns)
-            condition_groups.back().push_back(node);    /// Add to the last group
-        else
+        {
+            if (node_info.required_columns.empty())
+                condition_group_with_no_input.push_back(node);
+            else
+                condition_groups.back().push_back(node);    /// Add to the last group
+        }
+        else if (!node_info.required_columns.empty())
             condition_groups.push_back({node}); /// Start new group
+        else
+            condition_group_with_no_input.push_back(node);
     }
+
+
+    if (!condition_group_with_no_input.empty())
+    {
+        /// We skip constant nodes because at this stage they should be always_true
+        /// In addition, when a constant node is the first step of reading chain and the storage doesn't have adaptive granularity,
+        /// the last granule 's rows will not be accurate because no physical read is performed, and it may cause some bug in range
+        /// reader. See https://github.com/ClickHouse/ClickHouse/issues/62741
+
+        auto filter_actions_dag_with_no_input =  ActionsDAG::buildFilterActionsDAG(condition_group_with_no_input)->clone();
+        auto expression = std::make_shared<ExpressionActions>(filter_actions_dag_with_no_input, actions_settings);
+
+        Block dummy_block;
+        dummy_block.insert({DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "dummy"});
+        expression->execute(dummy_block);
+        if (dummy_block.columns() != 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns in block");
+
+        const auto & column = dummy_block.getByPosition(0).column;
+        Field value;
+        column->get(0, value);
+
+        if (value.get<UInt64>())
+            condition_group_with_no_input.clear();
+
+        /// TODO: If it is a constant predicate then at this stage, it certainly must be always true
+        /// May be we should throw exception here if value is not true?
+    }
+
+    if (!condition_group_with_no_input.empty())
+        condition_groups.insert(condition_groups.begin(), condition_group_with_no_input);
 
     /// 5. Build DAGs for each step
     struct Step
