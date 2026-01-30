@@ -19,7 +19,6 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <memory>
 #include <string>
-#include <type_traits>
 
 #include <Common/ErrorCodes.h>
 #include <Common/filesystemHelpers.h>

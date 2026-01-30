@@ -266,6 +266,10 @@ void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
         if (nodes.size() < 2)
             continue;
 
+        if (argument.first.node->getResultType()->isNullable())
+            /// Do not apply to functions with Nullable arguments, because `sumCount` handles it different from `sum` and `avg`.
+            continue;
+
         auto sum_count_node = createResolvedAggregateFunction("sumCount", argument.first.node);
         for (auto * node : nodes)
         {
