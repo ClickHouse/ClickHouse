@@ -4,7 +4,7 @@
 namespace DB
 {
 
-int ReplicatedMergeTreeAltersSequence::getHeadAlterVersion(std::unique_lock<std::mutex> & /*state_lock*/) const
+int ReplicatedMergeTreeAltersSequence::getHeadAlterVersion() const
 {
     /// If queue empty, than we don't have version
     if (!queue_state.empty())
@@ -12,7 +12,7 @@ int ReplicatedMergeTreeAltersSequence::getHeadAlterVersion(std::unique_lock<std:
     return -1;
 }
 
-void ReplicatedMergeTreeAltersSequence::addMutationForAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/)
+void ReplicatedMergeTreeAltersSequence::addMutationForAlter(int alter_version)
 {
     /// Metadata alter can be added before, or
     /// maybe already finished if we startup after metadata alter was finished.
@@ -23,7 +23,7 @@ void ReplicatedMergeTreeAltersSequence::addMutationForAlter(int alter_version, s
 }
 
 void ReplicatedMergeTreeAltersSequence::addMetadataAlter(
-    int alter_version, std::lock_guard<std::mutex> & /*state_lock*/)
+    int alter_version)
 {
     /// Data alter (mutation) always added before. See ReplicatedMergeTreeQueue::pullLogsToQueue.
     /// So mutation already added to this sequence or doesn't exist.
@@ -33,7 +33,7 @@ void ReplicatedMergeTreeAltersSequence::addMetadataAlter(
         queue_state[alter_version].metadata_finished = false;
 }
 
-void ReplicatedMergeTreeAltersSequence::finishMetadataAlter(int alter_version, std::unique_lock<std::mutex> & /*state_lock*/)
+void ReplicatedMergeTreeAltersSequence::finishMetadataAlter(int alter_version)
 {
     /// Sequence must not be empty
     assert(!queue_state.empty());
@@ -47,7 +47,7 @@ void ReplicatedMergeTreeAltersSequence::finishMetadataAlter(int alter_version, s
         queue_state[alter_version].metadata_finished = true;
 }
 
-void ReplicatedMergeTreeAltersSequence::finishDataAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/)
+void ReplicatedMergeTreeAltersSequence::finishDataAlter(int alter_version)
 {
     /// Queue can be empty after load of finished mutation without move of mutation pointer
     if (queue_state.empty())
@@ -66,7 +66,7 @@ void ReplicatedMergeTreeAltersSequence::finishDataAlter(int alter_version, std::
     }
 }
 
-bool ReplicatedMergeTreeAltersSequence::canExecuteDataAlter(int alter_version, std::unique_lock<std::mutex> & /*state_lock*/) const
+bool ReplicatedMergeTreeAltersSequence::canExecuteDataAlter(int alter_version) const
 {
     /// Queue maybe empty when we start after server shutdown
     /// and have some MUTATE_PART records in queue
@@ -80,7 +80,7 @@ bool ReplicatedMergeTreeAltersSequence::canExecuteDataAlter(int alter_version, s
     return queue_state.at(alter_version).metadata_finished;
 }
 
-bool ReplicatedMergeTreeAltersSequence::canExecuteMetaAlter(int alter_version, std::unique_lock<std::mutex> & /*state_lock*/) const
+bool ReplicatedMergeTreeAltersSequence::canExecuteMetaAlter(int alter_version) const
 {
     assert(!queue_state.empty());
 
