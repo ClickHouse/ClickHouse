@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -32,7 +33,8 @@ namespace DB::QueryPlanOptimizations
 /// to speed up the search.
 ///
 /// (*) Vector search only makes sense if a vector similarity index exists on vec. In the scope of this
-///     function, we don't care. That check is left to query runtime, ReadFromMergeTree specifically.
+///     function, we check that table has a vector similarity index built using either vec column or
+//      expression based on vec column. Other checks are left to query runtime, ReadFromMergeTree specifically.
 size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     QueryPlan::Node * node = parent_node;
@@ -192,6 +194,29 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     }
 
     if (search_column.empty() || reference_vector.empty())
+        return no_layers_updated;
+
+    /// Check if the table has vector similarity index built on top of search column
+    const auto & indexes = read_from_mergetree_step->getStorageMetadata()->getSecondaryIndices();
+
+    bool has_required_vector_similarity_index = false;
+    for (const auto & index : indexes)
+    {
+        if (index.type != "vector_similarity")
+            continue;
+
+        if (index.expression)
+        {
+            const auto required_columns = index.expression->getRequiredColumns();
+            if (required_columns.size() == 1 && required_columns[0] == search_column)
+            {
+                has_required_vector_similarity_index = true;
+                break;
+            }
+        }
+    }
+
+    if (!has_required_vector_similarity_index)
         return no_layers_updated;
 
     /// All set for 2nd pass
