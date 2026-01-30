@@ -6,6 +6,7 @@
 #include <Core/Joins.h>
 
 #include <Interpreters/Context_fwd.h>
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
@@ -70,6 +71,11 @@ public:
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
         const ContextPtr & context);
+
+    static StoragePtr tryResolveDatalakeTable(
+        const Identifier & table_identifier,
+        const ContextPtr & context,
+        const CurrentDatabaseInfo & current_db_info);
 
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,

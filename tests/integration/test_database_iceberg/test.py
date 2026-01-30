@@ -704,3 +704,188 @@ def test_gcs(started_cluster):
             """
         )
         assert "Google cloud storage converts to S3" in str(err.value)
+
+def test_database_priority_over_namespace(started_cluster):
+    """
+    Test that database.table interpretation takes priority over namespace.table.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_priority_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "priority_table"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    catalog.create_namespace(namespace)
+    iceberg_table = create_table(catalog, namespace, table_name)
+
+    data = [generate_record() for _ in range(5)]
+    df = pa.Table.from_pylist(data)
+    iceberg_table.append(df)
+
+    # create the DataLakeCatalog database
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # create a regular database with the same name as the namespace
+    node.query(f"DROP DATABASE IF EXISTS `{namespace}`")
+    node.query(f"CREATE DATABASE `{namespace}`")
+    
+    # create a table with the same name in the regular database (3 rows)
+    node.query(f"CREATE TABLE `{namespace}`.{table_name} (id UInt64) ENGINE = Memory")
+    node.query(f"INSERT INTO `{namespace}`.{table_name} VALUES (1), (2), (3)")
+
+    # When in the DataLakeCatalog database, querying namespace.table should resolve
+    # to the regular database (db.table takes priority)
+    count = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM {namespace}.{table_name}"))
+    assert count == 3, f"Expected 3 rows from regular database, got {count}"
+
+    # To access the iceberg table, use backticks
+    count_iceberg = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM `{namespace}.{table_name}`"))
+    assert count_iceberg == 5, f"Expected 5 rows from iceberg table, got {count_iceberg}"
+
+    node.query(f"DROP DATABASE IF EXISTS `{namespace}`")
+
+
+def test_use_database_with_namespace(started_cluster):
+    """
+    Test USE db.namespace syntax for DataLakeCatalog databases
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_use_ns_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "use_test_table"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    catalog.create_namespace(namespace)
+    iceberg_table = create_table(catalog, namespace, table_name)
+
+    data = [generate_record() for _ in range(5)]
+    df = pa.Table.from_pylist(data)
+    iceberg_table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # Test USE db.namespace syntax - after this, short table names get namespace prefix
+    count = int(node.query(f"USE {CATALOG_NAME}.{namespace}; SELECT count() FROM {table_name}"))
+    assert count == 5, f"Expected 5 rows after USE db.namespace, got {count}"
+
+    # Verify we can also use the full path
+    count_full = int(node.query(f"SELECT count() FROM {CATALOG_NAME}.{namespace}.{table_name}"))
+    assert count_full == 5, f"Expected 5 rows with full path, got {count_full}"
+
+    # check that prefix is cleared when switching to regular db
+    _, error = node.query_and_get_answer_with_error(f"USE {CATALOG_NAME}.{namespace}; USE default; SELECT 1 FROM {table_name}")
+    assert "UNKNOWN_TABLE" in error or "doesn't exist" in error, f"Expected UNKNOWN_TABLE error, got: {error}"
+
+    # Test USE catalog (without prefix) and then query with namespace.table
+    count_ns = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM {namespace}.{table_name}"))
+    assert count_ns == 5, f"Expected 5 rows with namespace.table after USE catalog, got {count_ns}"
+
+
+def test_three_part_identifier(started_cluster):
+    """
+    Test 3-part compound identifier syntax: db.namespace.table
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_three_part_identifier_{uuid.uuid4().hex[:8]}"
+    table_name = f"{test_ref}_table"
+    namespace = f"{test_ref}_ns"  # Single-level namespace
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    table = create_table(catalog, namespace, table_name)
+
+    num_rows = 5
+    data = [generate_record() for _ in range(num_rows)]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # This should work the same as demo.`namespace.table`
+    count_3part = int(node.query(f"SELECT count() FROM {CATALOG_NAME}.{namespace}.{table_name}"))
+    assert count_3part == num_rows, f"Expected {num_rows} rows, got {count_3part}"
+
+    # compare with backtick syntax - should give same result
+    count_backtick = int(node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`"))
+    assert count_3part == count_backtick, "3-part and backtick syntax should return same results"
+
+    # EXISTS TABLE with 3-part identifier
+    exists_result = node.query(f"EXISTS TABLE {CATALOG_NAME}.{namespace}.{table_name}").strip()
+    assert exists_result == "1", f"EXISTS TABLE should return 1, got {exists_result}"
+
+    # DESCRIBE with 3-part identifier
+    desc_3part = node.query(f"DESCRIBE {CATALOG_NAME}.{namespace}.{table_name}")
+    desc_backtick = node.query(f"DESCRIBE {CATALOG_NAME}.`{namespace}.{table_name}`")
+    assert desc_3part == desc_backtick, "DESCRIBE output should match between syntaxes"
+
+    # SHOW CREATE TABLE with 3-part identifier
+    show_create_3part = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.{namespace}.{table_name}")
+    show_create_backtick = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`")
+    assert show_create_3part == show_create_backtick, "SHOW CREATE TABLE output should match between syntaxes"
+
+    # non-existent table with 3-part identifier
+    try:
+        node.query(f"SELECT * FROM {CATALOG_NAME}.{namespace}.nonexistent_table")
+        assert False, "Should have raised exception for non-existent table"
+    except Exception as e:
+        assert "doesn't exist" in str(e) or "UNKNOWN_TABLE" in str(e)
+
+
+def test_multi_level_namespace(started_cluster):
+    """
+    Test N-part compound identifier syntax with multiple namespace levels: db.ns1.ns2.table
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_multi_ns_{uuid.uuid4().hex[:8]}"
+    table_name = f"{test_ref}_table"
+    ns_level1 = f"{test_ref}_l1"
+    ns_level2 = f"{test_ref}_l2"
+    multi_namespace = f"{ns_level1}.{ns_level2}"  # Two-level namespace
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(multi_namespace)
+
+    table = create_table(catalog, multi_namespace, table_name)
+
+    num_rows = 5
+    data = [generate_record() for _ in range(num_rows)]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # 4-part identifier SELECT (db.ns1.ns2.table)
+    count_4part = int(node.query(f"SELECT count() FROM {CATALOG_NAME}.{ns_level1}.{ns_level2}.{table_name}"))
+    assert count_4part == num_rows, f"Expected {num_rows} rows, got {count_4part}"
+
+    # compare with backtick syntax - should give same result
+    count_backtick = int(node.query(f"SELECT count() FROM {CATALOG_NAME}.`{multi_namespace}.{table_name}`"))
+    assert count_4part == count_backtick, "4-part and backtick syntax should return same results"
+
+    # EXISTS TABLE with 4-part identifier
+    exists_result = node.query(f"EXISTS TABLE {CATALOG_NAME}.{ns_level1}.{ns_level2}.{table_name}").strip()
+    assert exists_result == "1", f"EXISTS TABLE should return 1, got {exists_result}"
+
+    # DESCRIBE with 4-part identifier
+    desc_4part = node.query(f"DESCRIBE {CATALOG_NAME}.{ns_level1}.{ns_level2}.{table_name}")
+    desc_backtick = node.query(f"DESCRIBE {CATALOG_NAME}.`{multi_namespace}.{table_name}`")
+    assert desc_4part == desc_backtick, "DESCRIBE output should match between syntaxes"
+
+    # SHOW CREATE TABLE with 4-part identifier
+    show_create_4part = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.{ns_level1}.{ns_level2}.{table_name}")
+    show_create_backtick = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{multi_namespace}.{table_name}`")
+    assert show_create_4part == show_create_backtick, "SHOW CREATE TABLE output should match between syntaxes"
+
+    # non-existent table with 4-part identifier
+    try:
+        node.query(f"SELECT * FROM {CATALOG_NAME}.{ns_level1}.{ns_level2}.nonexistent_table")
+        assert False, "Should have raised exception for non-existent table"
+    except Exception as e:
+        assert "doesn't exist" in str(e) or "UNKNOWN_TABLE" in str(e)

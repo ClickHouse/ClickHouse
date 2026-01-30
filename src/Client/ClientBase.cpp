@@ -1953,7 +1953,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
         if (parsed_insert_query->columns)
         {
-            auto columns = processColumnTransformers(client_context->getCurrentDatabase(), client_context->getInsertionTable(), columns_for_storage_file, parsed_insert_query->columns);
+            auto columns = processColumnTransformers(client_context->getCurrentDatabase().database, client_context->getInsertionTable(), columns_for_storage_file, parsed_insert_query->columns);
             ColumnsDescription reordered_description{};
             for (const auto & col_name : columns->children)
             {

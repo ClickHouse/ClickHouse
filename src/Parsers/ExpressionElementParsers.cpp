@@ -399,9 +399,6 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     if (table_name_with_optional_uuid)
     {
-        if (parts.size() > 2)
-            return false;
-
         if (s_uuid.ignore(pos, expected))
         {
             ParserStringLiteral uuid_p;
@@ -411,8 +408,27 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
         }
 
-        if (parts.size() == 1) node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
-        else node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
+        /// Support db.namespace1.namespace2...table for DataLakeCatalog databases
+        if (parts.size() == 1)
+        {
+            node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
+        }
+        else if (parts.size() == 2)
+        {
+            node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
+        }
+        else if (parts.size() >= 3)
+        {
+            /// Join namespace(s) and table into table name: db.ns1.ns2.table -> db, ns1.ns2.table
+            String table_name = parts[1];
+            for (size_t i = 2; i < parts.size(); ++i)
+                table_name += "." + parts[i];
+            node = make_intrusive<ASTTableIdentifier>(parts[0], table_name, std::move(params));
+        }
+        else
+        {
+            return false;
+        }
         node->as<ASTTableIdentifier>()->uuid = uuid;
     }
     else

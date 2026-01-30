@@ -643,7 +643,7 @@ void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const
         auto main_table = alter.getTable();
 
         if (main_database.empty())
-            main_database = query_context->getCurrentDatabase();
+            main_database = query_context->getCurrentDatabase().database;
 
         String prefix = backQuoteIfNeed(main_database) + "." + backQuoteIfNeed(main_table) + ".";
 
@@ -665,14 +665,14 @@ void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const
 
             if (!command->from_table.empty())
             {
-                String database = command->from_database.empty() ? getContext()->getCurrentDatabase() : command->from_database;
+                String database = command->from_database.empty() ? getContext()->getCurrentDatabase().database : command->from_database;
                 elem.query_databases.insert(database);
                 elem.query_tables.insert(database + "." + command->from_table);
             }
 
             if (!command->to_table.empty())
             {
-                String database = command->to_database.empty() ? getContext()->getCurrentDatabase() : command->to_database;
+                String database = command->to_database.empty() ? getContext()->getCurrentDatabase().database : command->to_database;
                 elem.query_databases.insert(database);
                 elem.query_tables.insert(database + "." + command->to_table);
             }

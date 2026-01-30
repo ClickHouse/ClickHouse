@@ -42,7 +42,7 @@ namespace
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
     public:
         DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_)
-            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_)
+            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase().database), current_database(current_database_), global_context(global_context_), can_throw(can_throw_)
         {
         }
 

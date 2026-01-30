@@ -48,7 +48,7 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
     auto context = getContext();
     if (table_id.database_name.empty())
     {
-        table_id.database_name = context->getCurrentDatabase();
+        table_id.database_name = context->getCurrentDatabase().database;
         query.setDatabase(table_id.database_name);
     }
 

@@ -229,7 +229,7 @@ ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, const Cont
     auto & literal = res->as<ASTLiteral &>();
     if (literal.value.safeGet<String>().empty())
     {
-        String current_database = context->getCurrentDatabase();
+        String current_database = context->getCurrentDatabase().database;
         if (current_database.empty())
         {
             /// Table was created on older version of ClickHouse and CREATE contains not folded expression.
