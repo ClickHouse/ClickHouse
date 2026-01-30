@@ -72,7 +72,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Common/UntrackedMemoryHolder.h>
+#include <Common/SystemAllocatedMemoryHolder.h>
 
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
@@ -908,17 +908,23 @@ BlockIO InterpreterSystemQuery::execute()
             FailPointInjection::disableFailPoint(query.fail_point_name);
             break;
         }
-        case Type::ALLOCATE_UNTRACKED_MEMORY:
+        case Type::ALLOCATE_MEMORY:
         {
-            getContext()->checkAccess(AccessType::SYSTEM_UNTRACKED_MEMORY);
-            getContext()->getUntrackedMemoryHolder()->alloc(query.untracked_memory_size);
+            getContext()->checkAccess(AccessType::SYSTEM_MEMORY);
+            auto holder = getContext()->getSystemAllocatedMemoryHolder();
+            if (!holder)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
+            holder->alloc(query.untracked_memory_size);
             LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
             break;
         }
-        case Type::FREE_UNTRACKED_MEMORY:
+        case Type::FREE_MEMORY:
         {
-            getContext()->checkAccess(AccessType::SYSTEM_UNTRACKED_MEMORY);
-            getContext()->getUntrackedMemoryHolder()->free();
+            getContext()->checkAccess(AccessType::SYSTEM_MEMORY);
+            auto holder = getContext()->getSystemAllocatedMemoryHolder();
+            if (!holder)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
+            holder->free();
             LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
             break;
         }
@@ -2330,10 +2336,10 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
             break;
         }
-        case Type::ALLOCATE_UNTRACKED_MEMORY:
-        case Type::FREE_UNTRACKED_MEMORY:
+        case Type::ALLOCATE_MEMORY:
+        case Type::FREE_MEMORY:
         {
-            required_access.emplace_back(AccessType::SYSTEM_UNTRACKED_MEMORY);
+            required_access.emplace_back(AccessType::SYSTEM_MEMORY);
             break;
         }
         case Type::STOP_THREAD_FUZZER:

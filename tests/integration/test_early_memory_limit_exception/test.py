@@ -24,8 +24,8 @@ def test_early_memory_limit():
     instance.query("CREATE USER Alex", user="default")
     instance.query("CREATE USER Bob", user="default")
 
-    # 20G should be probably enough
-    instance.query("system allocate untracked memory 20000000000", user="default")
+    # 2G should be probably enough
+    instance.query("system allocate memory 2000000000", user="default")
     instance.query("select 1", user="default")
     assert "(total) memory limit exceeded" in instance.query_and_get_error("select 1", user="Bob")
 
@@ -45,7 +45,6 @@ def test_early_memory_limit():
     instance.query("select 1", user="default")
 
     assert "(total) memory limit exceeded" in instance.query_and_get_error("select 1", user="Bob")
-
-    instance.query("system free untracked memory")
+    instance.query("system free memory")
     instance.query("DROP USER IF EXISTS Alex")
     instance.query("DROP USER IF EXISTS Bob")

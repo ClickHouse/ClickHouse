@@ -128,6 +128,7 @@
 
 #include <Common/Jemalloc.h>
 
+#include "Interpreters/Context.h"
 #include "config.h"
 #include <Common/config_version.h>
 
@@ -2225,6 +2226,7 @@ try
             global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
             global_context->setUsersToIgnoreEarlyMemoryLimitCheck(new_server_settings[ServerSetting::users_to_ignore_early_memory_limit_check]);
+            global_context->allowSystemAllocateMemory(config->getBool("allow_system_allocate_memory", false));
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
 

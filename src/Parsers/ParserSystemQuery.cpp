@@ -324,7 +324,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::ALLOCATE_UNTRACKED_MEMORY:
+        case Type::ALLOCATE_MEMORY:
         {
             ASTPtr ast;
             if (!ParserUnsignedInteger().parse(pos, ast, expected))
@@ -541,7 +541,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
-        case Type::FREE_UNTRACKED_MEMORY:
+        case Type::FREE_MEMORY:
             break;
 
         case Type::TEST_VIEW:
