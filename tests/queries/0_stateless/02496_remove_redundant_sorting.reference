@@ -532,7 +532,7 @@ Expression (Projection)
 -- query
 SELECT
     number,
-    plus(number, 2)
+    number + 2
 FROM
 (
     SELECT *

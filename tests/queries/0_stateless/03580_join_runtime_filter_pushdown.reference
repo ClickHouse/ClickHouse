@@ -7,10 +7,10 @@ Expression
             Filter
               ReadFromSystemNumbers
           Expression
-            BuildRuntimeFilter (Build runtime join filter on modulo(__table3.number, 3_UInt8))
+            BuildRuntimeFilter (Build runtime join filter on __table3.number % 3_UInt8)
               Filter
                 ReadFromSystemNumbers
     Expression (Right Pre Join Actions)
-      BuildRuntimeFilter (Build runtime join filter on plus(__table4.number, 2_UInt8))
+      BuildRuntimeFilter (Build runtime join filter on __table4.number + 2_UInt8)
         Expression
           ReadFromSystemNumbers

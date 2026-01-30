@@ -1,6 +1,6 @@
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(multiIf(equals(a, 1), 1, 0)) UInt64
+    sum(multiIf(a = 1, 1, 0)) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: countIf, function_type: aggregate, result_type: UInt64

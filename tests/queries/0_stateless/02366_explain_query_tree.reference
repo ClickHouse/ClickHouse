@@ -46,7 +46,7 @@ QUERY id: 0
 --
 QUERY id: 0
   PROJECTION COLUMNS
-    arrayMap(lambda(tuple(x), plus(x, 1)), [1, 2, 3]) Array(UInt16)
+    arrayMap(lambda(tuple(x), x + 1), [1, 2, 3]) Array(UInt16)
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: arrayMap, function_type: ordinary, result_type: Array(UInt16)

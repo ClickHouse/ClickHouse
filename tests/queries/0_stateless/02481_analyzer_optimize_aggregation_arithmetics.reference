@@ -3,7 +3,7 @@
 EXPLAIN QUERY TREE SELECT avg(log(2) * number) FROM numbers(10);
 QUERY id: 0
   PROJECTION COLUMNS
-    avg(multiply(log(2), number)) Float64
+    avg(log(2) * number) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: multiply, function_type: ordinary, result_type: Float64
@@ -27,7 +27,7 @@ QUERY id: 0
 EXPLAIN QUERY TREE SELECT avg(number * log(2)) FROM numbers(10);
 QUERY id: 0
   PROJECTION COLUMNS
-    avg(multiply(number, log(2))) Float64
+    avg(number * log(2)) Float64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: multiply, function_type: ordinary, result_type: Float64

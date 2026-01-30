@@ -69,7 +69,7 @@ ORDER BY ALL ASC
 SELECT *
 FROM t1_00826 AS x
 CROSS JOIN t1_00826 AS y
-WHERE (x.a = y.a) AND (x.b = y.b)
+WHERE x.a = y.a AND x.b = y.b
 ORDER BY ALL ASC
 --- cross one table expr ---
 SELECT *
@@ -81,43 +81,43 @@ ORDER BY ALL ASC
 SELECT *
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE (t1_00826.a = t2_00826.a) AND (t1_00826.b = t2_00826.b)
+WHERE t1_00826.a = t2_00826.a AND t1_00826.b = t2_00826.b
 ORDER BY ALL ASC
 --- cross and inside and ---
 SELECT *
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE (t1_00826.a = t2_00826.a) AND ((t1_00826.a = t2_00826.a) AND ((t1_00826.a = t2_00826.a) AND (t1_00826.b = t2_00826.b)))
+WHERE t1_00826.a = t2_00826.a AND t1_00826.a = t2_00826.a AND t1_00826.a = t2_00826.a AND t1_00826.b = t2_00826.b
 ORDER BY ALL ASC
 --- cross split conjunction ---
 SELECT *
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE (t1_00826.a = t2_00826.a) AND (t1_00826.b = t2_00826.b) AND (t1_00826.a >= 1) AND (t2_00826.b > 0)
+WHERE t1_00826.a = t2_00826.a AND t1_00826.b = t2_00826.b AND t1_00826.a >= 1 AND t2_00826.b > 0
 ORDER BY ALL ASC
 --- and or ---
 SELECT *
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE (t1_00826.a = t2_00826.a) AND (t1_00826.b = t2_00826.b) AND ((t1_00826.a >= 1) OR (t2_00826.b = 1))
+WHERE t1_00826.a = t2_00826.a AND t1_00826.b = t2_00826.b AND (t1_00826.a >= 1 OR t2_00826.b = 1)
 ORDER BY ALL ASC
 --- arithmetic expr ---
 SELECT *
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE ((t1_00826.a + 1) = (t2_00826.a + t2_00826.b)) AND ((((t1_00826.a + t1_00826.b) + t2_00826.a) + t2_00826.b) > 5)
+WHERE t1_00826.a + 1 = t2_00826.a + t2_00826.b AND t1_00826.a + t1_00826.b + t2_00826.a + t2_00826.b > 5
 ORDER BY ALL ASC
 --- is null or ---
 SELECT *
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE (t1_00826.b = t2_00826.a) AND ((t2_00826.b IS NULL) OR (t2_00826.b > t2_00826.a))
+WHERE t1_00826.b = t2_00826.a AND (t2_00826.b IS NULL OR t2_00826.b > t2_00826.a)
 ORDER BY ALL ASC
 --- do not rewrite alias ---
 SELECT a AS b
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE (t1_00826.b = t2_00826.a) AND (b > 0)
+WHERE t1_00826.b = t2_00826.a AND b > 0
 ORDER BY ALL ASC
 --- comma ---
 SELECT *
@@ -132,5 +132,5 @@ ORDER BY ALL ASC
 --- comma and or ---
 SELECT *
 FROM t1_00826, t2_00826
-WHERE (t1_00826.a = t2_00826.a) AND ((t2_00826.b IS NULL) OR (t2_00826.b < 2))
+WHERE t1_00826.a = t2_00826.a AND (t2_00826.b IS NULL OR t2_00826.b < 2)
 ORDER BY ALL ASC

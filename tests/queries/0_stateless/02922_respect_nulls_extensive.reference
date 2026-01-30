@@ -42,29 +42,29 @@ Select last_value_respect_nulls (number) IGNORE NULLS from (SELECT if(number < 2
 Select LAST_VALUE_respect_nulls (number) IGNORE NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
 9
 -- IGNORE/RESPECT NULLS should work with combinators because we can do it
-SELECT first_valueIf (number, NOT isNull(number) AND (assumeNotNull(number) > 5)) RESPECT NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
+SELECT first_valueIf (number, NOT number IS NULL AND (assumeNotNull(number) > 5)) RESPECT NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
 6
-SELECT last_valueIf (number, NOT isNull(number) AND (assumeNotNull(number) > 5)) RESPECT NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
+SELECT last_valueIf (number, NOT number IS NULL AND (assumeNotNull(number) > 5)) RESPECT NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
 9
-SELECT first_valueIf (number, isNull(number)) RESPECT NULLS from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+SELECT first_valueIf (number, number IS NULL) RESPECT NULLS from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
 \N
-SELECT last_valueIf (number, isNull(number)) RESPECT NULLS from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+SELECT last_valueIf (number, number IS NULL) RESPECT NULLS from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
 \N
-SELECT toTypeName(first_valueIfState(number, isNull(number)) RESPECT NULLS) from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+SELECT toTypeName(first_valueIfState(number, number IS NULL) RESPECT NULLS) from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
 AggregateFunction(any_respect_nullsIf, Nullable(UInt64), UInt8)
-SELECT toTypeName(last_valueIfState(number, isNull(number)) RESPECT NULLS) from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+SELECT toTypeName(last_valueIfState(number, number IS NULL) RESPECT NULLS) from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
 AggregateFunction(anyLast_respect_nullsIf, Nullable(UInt64), UInt8)
-SELECT FIRST_VALUEIf (number, NOT isNull(number) AND (assumeNotNull(number) > 5)) RESPECT NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
+SELECT FIRST_VALUEIf (number, NOT number IS NULL AND (assumeNotNull(number) > 5)) RESPECT NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
 6
-SELECT LAST_VALUEIf (number, NOT isNull(number) AND (assumeNotNull(number) > 5)) RESPECT NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
+SELECT LAST_VALUEIf (number, NOT number IS NULL AND (assumeNotNull(number) > 5)) RESPECT NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
 9
-SELECT anyIf (number, isNull(number)) RESPECT NULLS from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+SELECT anyIf (number, number IS NULL) RESPECT NULLS from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
 \N
-SELECT anyLastIf (number, isNull(number)) RESPECT NULLS from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+SELECT anyLastIf (number, number IS NULL) RESPECT NULLS from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
 \N
-SELECT toTypeName(FIRST_VALUEIfState(number, isNull(number)) RESPECT NULLS) from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+SELECT toTypeName(FIRST_VALUEIfState(number, number IS NULL) RESPECT NULLS) from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
 AggregateFunction(any_respect_nullsIf, Nullable(UInt64), UInt8)
-SELECT toTypeName(LAST_VALUEIfState(number, isNull(number)) RESPECT NULLS) from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+SELECT toTypeName(LAST_VALUEIfState(number, number IS NULL) RESPECT NULLS) from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
 AggregateFunction(anyLast_respect_nullsIf, Nullable(UInt64), UInt8)
 -- Unsupported functions should throw in the server
 SELECT number, sum (number) RESPECT NULLS over (order by number) from numbers(1); -- { serverError NOT_IMPLEMENTED }

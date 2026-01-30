@@ -33,7 +33,7 @@ TEST(LikePerfectAffixRewrite, rewrite)
     test_f("col LIKE '%a'", "endsWith(col, 'a')");
 
     /// Perfect affix ILIKE should NOT be rewritten
-    test_f("col ILIKE 'Test%'", "col ILIKE 'Test%'");
+    test_f("col ILIKE 'Test%'", "ilike(col, 'Test%')");
 
     /// Perfect affix without upper bound
     test_f("col LIKE '\xFF%'", "startsWith(col, '\xFF')");
@@ -44,19 +44,19 @@ TEST(LikePerfectAffixRewrite, rewrite)
     test_f("col NOT LIKE '%Test'", "not(endsWith(col, 'Test'))");
 
     /// Imperfect affix (I)LIKE should not be rewritten
-    test_f("col LIKE 'hello_world%'", "col LIKE 'hello_world%'");
-    test_f("col LIKE '%hello_world'", "col LIKE '%hello_world'");
-    test_f("col LIKE '%test%'", "col LIKE '%test%'");
-    test_f("col LIKE '%test_'", "col LIKE '%test_'");
-    test_f("col LIKE '_test%'", "col LIKE '_test%'");
-    test_f("col LIKE '%'", "col LIKE '%'");
-    test_f("col LIKE 'exactvalue'", "col LIKE 'exactvalue'");
+    test_f("col LIKE 'hello_world%'", "like(col, 'hello_world%')");
+    test_f("col LIKE '%hello_world'", "like(col, '%hello_world')");
+    test_f("col LIKE '%test%'", "like(col, '%test%')");
+    test_f("col LIKE '%test_'", "like(col, '%test_')");
+    test_f("col LIKE '_test%'", "like(col, '_test%')");
+    test_f("col LIKE '%'", "like(col, '%')");
+    test_f("col LIKE 'exactvalue'", "like(col, 'exactvalue')");
 
-    test_f("col ILIKE 'hello_world%'", "col ILIKE 'hello_world%'");
+    test_f("col ILIKE 'hello_world%'", "ilike(col, 'hello_world%')");
 
     /// Imperfect affix NOT (I)LIKE should not be rewritten
-    test_f("col NOT LIKE 'hello_world%'", "col NOT LIKE 'hello_world%'");
-    test_f("col NOT LIKE '%hello_world'", "col NOT LIKE '%hello_world'");
-    test_f("col NOT ILIKE 'hello_world%'", "col NOT ILIKE 'hello_world%'");
-    test_f("col NOT ILIKE '%hello_world'", "col NOT ILIKE '%hello_world'");
+    test_f("col NOT LIKE 'hello_world%'", "notLike(col, 'hello_world%')");
+    test_f("col NOT LIKE '%hello_world'", "notLike(col, '%hello_world')");
+    test_f("col NOT ILIKE 'hello_world%'", "notILike(col, 'hello_world%')");
+    test_f("col NOT ILIKE '%hello_world'", "notILike(col, '%hello_world')");
 }

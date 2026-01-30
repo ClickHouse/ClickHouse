@@ -7,12 +7,12 @@ Actions: INPUT : 0 -> __table1.uid Int16 : 0
          ALIAS __table1.age :: 2 -> age Int16 : 1
 Positions: 3 0 1
   Filter (WHERE)
-  Filter column: equals(__table1.uid, __table2) (removed)
+  Filter column: __table1.uid = __table2 (removed)
   Actions: INPUT : 0 -> __table1.uid Int16 : 0
            INPUT :: 1 -> __table1.name String : 1
            INPUT :: 2 -> __table1.age Int16 : 2
            INPUT : 3 -> __table2 Nullable(Int64) : 3
-           FUNCTION equals(__table1.uid : 0, __table2 :: 3) -> equals(__table1.uid, __table2) Nullable(UInt8) : 4
+           FUNCTION __table1.uid : 0 = __table2 :: 3 -> __table1.uid = __table2 Nullable(UInt8) : 4
   Positions: 4 0 1 2
     JoinLogical
     Join: R0[3] ⋈ Memory[3]
@@ -20,14 +20,14 @@ Positions: 3 0 1
     Type: INNER
     Strictness: ALL
     Locality: UNSPECIFIED
-    Expression: equals(__table2.__table1.name, __table1.name)
+    Expression: __table2.__table1.name = __table1.name
     Expression:
     Actions: INPUT :: 0 -> __table2 Nullable(Int64) : 0
              INPUT : 1 -> __table2.__table1.name String : 1
              INPUT :: 2 -> __table1.uid Int16 : 2
              INPUT : 3 -> __table1.name String : 3
              INPUT :: 4 -> __table1.age Int16 : 4
-             FUNCTION equals(__table2.__table1.name :: 1, __table1.name : 3) -> equals(__table2.__table1.name, __table1.name) UInt8 : 5
+             FUNCTION __table2.__table1.name :: 1 = __table1.name : 3 -> __table2.__table1.name = __table1.name UInt8 : 5
     Positions: 0 2 3 4
     Expression Sources:
     __table2: {0}
@@ -56,12 +56,12 @@ Positions: 3 0 1
                    INPUT :: 2 -> __table3.name String : 2
           Positions: 0 2 1
             Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-            Filter column: equals(__table1.name, __table3.name) (removed)
+            Filter column: __table1.name = __table3.name (removed)
             Actions: INPUT : 0 -> age Int16 : 0
                      INPUT : 1 -> name String : 1
                      ALIAS age :: 0 -> __table3.age Int16 : 2
                      ALIAS name : 1 -> __table3.name String : 0
-                     FUNCTION equals(name : 1, name :: 1) -> equals(__table1.name, __table3.name) UInt8 : 3
+                     FUNCTION name : 1 = name :: 1 -> __table1.name = __table3.name UInt8 : 3
                      ALIAS __table3.name : 0 -> __table1.name String : 1
             Positions: 3 2 0 1
               ReadFromMemoryStorage

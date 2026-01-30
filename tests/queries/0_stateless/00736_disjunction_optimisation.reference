@@ -121,11 +121,11 @@ QUERY id: 0
 QUERY id: 0
   PROJECTION COLUMNS
     k UInt64
-    or(equals(k, 1), equals(k, 2), equals(k, 3)) UInt8
+    k = 1 OR k = 2 OR k = 3 UInt8
     s UInt64
-    equals(s, 21) UInt8
-    or(equals(s, 21), equals(s, 22)) UInt8
-    or(equals(s, 21), equals(s, 22), equals(s, 23)) UInt8
+    s = 21 UInt8
+    s = 21 OR s = 22 UInt8
+    s = 21 OR s = 22 OR s = 23 UInt8
   PROJECTION
     LIST id: 1, nodes: 6
       COLUMN id: 2, column_name: k, result_type: UInt64, source_id: 3
@@ -174,7 +174,7 @@ QUERY id: 0
 QUERY id: 0
   PROJECTION COLUMNS
     s UInt64
-    or(equals(s, 21), equals(s, 22), equals(s, 23)) UInt8
+    s = 21 OR s = 22 OR s = 23 UInt8
   PROJECTION
     LIST id: 1, nodes: 2
       COLUMN id: 2, column_name: s, result_type: UInt64, source_id: 3
@@ -309,11 +309,11 @@ QUERY id: 0
 QUERY id: 0
   PROJECTION COLUMNS
     k UInt64
-    or(equals(k, 1), equals(k, 2), equals(k, 3)) UInt8
+    k = 1 OR k = 2 OR k = 3 UInt8
     s UInt64
-    equals(s, 21) UInt8
-    or(equals(s, 21), equals(s, 22)) UInt8
-    or(equals(s, 21), equals(s, 22), equals(s, 23)) UInt8
+    s = 21 UInt8
+    s = 21 OR s = 22 UInt8
+    s = 21 OR s = 22 OR s = 23 UInt8
   PROJECTION
     LIST id: 1, nodes: 6
       COLUMN id: 2, column_name: k, result_type: UInt64, source_id: 3
@@ -370,7 +370,7 @@ QUERY id: 0
 QUERY id: 0
   PROJECTION COLUMNS
     s UInt64
-    or(equals(s, 21), equals(s, 22), equals(s, 23)) UInt8
+    s = 21 OR s = 22 OR s = 23 UInt8
   PROJECTION
     LIST id: 1, nodes: 2
       COLUMN id: 2, column_name: s, result_type: UInt64, source_id: 3
@@ -403,7 +403,7 @@ QUERY id: 0
 QUERY id: 0
   PROJECTION COLUMNS
     s UInt64
-    or(equals(s, 21), equals(22, s), equals(23, s)) UInt8
+    s = 21 OR 22 = s OR 23 = s UInt8
   PROJECTION
     LIST id: 1, nodes: 2
       COLUMN id: 2, column_name: s, result_type: UInt64, source_id: 3

@@ -76,10 +76,10 @@ QUERY id: 0
                       CONSTANT id: 53, constant_value: UInt64_10, constant_value_type: UInt8
   SETTINGS optimize_extract_common_expressions=0
 
-SELECT (__table1.number > 10) OR ((__table1.number > 2) AND (__table1.number > 10)) AS a
+SELECT __table1.number > 10 OR __table1.number > 2 AND __table1.number > 10 AS a
 FROM numbers(10) AS __table1
-GROUP BY (__table1.number > 10) OR ((__table1.number > 2) AND (__table1.number > 10))
-HAVING (__table1.number > 10) OR ((__table1.number > 2) AND (__table1.number > 10))
+GROUP BY __table1.number > 10 OR __table1.number > 2 AND __table1.number > 10
+HAVING __table1.number > 10 OR __table1.number > 2 AND __table1.number > 10
 SETTINGS optimize_extract_common_expressions = 0
 QUERY id: 0
   PROJECTION COLUMNS
@@ -159,8 +159,8 @@ QUERY id: 0
                       CONSTANT id: 53, constant_value: UInt64_10, constant_value_type: UInt8
   SETTINGS optimize_extract_common_expressions=1
 
-SELECT (__table1.number > 10) OR ((__table1.number > 2) AND (__table1.number > 10)) AS a
+SELECT __table1.number > 10 OR __table1.number > 2 AND __table1.number > 10 AS a
 FROM numbers(10) AS __table1
-GROUP BY (__table1.number > 10) OR ((__table1.number > 2) AND (__table1.number > 10))
-HAVING (__table1.number > 10) OR ((__table1.number > 2) AND (__table1.number > 10))
+GROUP BY __table1.number > 10 OR __table1.number > 2 AND __table1.number > 10
+HAVING __table1.number > 10 OR __table1.number > 2 AND __table1.number > 10
 SETTINGS optimize_extract_common_expressions = 1

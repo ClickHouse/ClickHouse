@@ -1,6 +1,6 @@
 QUERY id: 0
   PROJECTION COLUMNS
-    sumIf(1, equals(modulo(number, 2), 0)) UInt64
+    sumIf(1, number % 2 = 0) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: countIf, function_type: aggregate, result_type: UInt64
@@ -25,7 +25,7 @@ QUERY id: 0
 --
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(if(equals(modulo(number, 2), 0), 1, 0)) UInt64
+    sum(if(number % 2 = 0, 1, 0)) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: countIf, function_type: aggregate, result_type: UInt64
@@ -50,7 +50,7 @@ QUERY id: 0
 --
 QUERY id: 0
   PROJECTION COLUMNS
-    sum(if(equals(modulo(number, 2), 0), 0, 1)) UInt64
+    sum(if(number % 2 = 0, 0, 1)) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: countIf, function_type: aggregate, result_type: UInt64

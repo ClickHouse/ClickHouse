@@ -1,4 +1,4 @@
-SELECT (tuple(0, (* IN (*))) AS a) * 1
+SELECT tuple(0, * IN *) AS a * 1
 FROM system.one
 SELECT
     toUInt64(0) > 0.,
@@ -109,7 +109,7 @@ SELECT
     0. < toUInt64(0),
     toInt16(0) != 0.,
     toInt8(0) <= 0.,
-    equals(0.),
-    (tuple(*, *, *, *, *, *, *, 1, *, *, isNull(isZeroOrNull(1)), (* GLOBAL NOT IN (*))) AS alias3151) >= toInt64(0)
+    0.,
+    tuple(*, *, *, *, *, *, *, 1, *, *, isZeroOrNull(1) IS NULL, * GLOBAL NOT IN *) AS alias3151 >= toInt64(0)
 FROM system.one
-PREWHERE equals(0 != 0., partitioned_by_tuple__fuzz_12)
+PREWHERE 0 != 0. = partitioned_by_tuple__fuzz_12

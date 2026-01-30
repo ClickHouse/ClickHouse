@@ -35,7 +35,7 @@
           "Type": "UInt8"
         },
         {
-          "Name": "plus(2, dummy)",
+          "Name": "2 + dummy",
           "Type": "UInt16"
         }
 --------
@@ -51,7 +51,7 @@
               "Type": "Float64"
             },
             {
-              "Name": "sumIf(__table1.number, greater(__table1.number, 0_UInt8))",
+              "Name": "sumIf(__table1.number, __table1.number > 0_UInt8)",
               "Type": "UInt64"
             }
           ],
@@ -68,13 +68,13 @@
               "Arguments": ["__table1.number"]
             },
             {
-              "Name": "sumIf(__table1.number, greater(__table1.number, 0_UInt8))",
+              "Name": "sumIf(__table1.number, __table1.number > 0_UInt8)",
               "Function": {
                 "Name": "sumIf",
                 "Argument Types": ["UInt64", "UInt8"],
                 "Result Type": "UInt64"
               },
-              "Arguments": ["__table1.number", "greater(__table1.number, 0_UInt8)"]
+              "Arguments": ["__table1.number", "__table1.number > 0_UInt8"]
             }
           ],
 --------
@@ -98,7 +98,7 @@
                   "With Fill": false
                 },
                 {
-                  "Column": "plus(__table1.number, 1_UInt8)",
+                  "Column": "__table1.number + 1_UInt8",
                   "Ascending": true,
                   "With Fill": false
                 }

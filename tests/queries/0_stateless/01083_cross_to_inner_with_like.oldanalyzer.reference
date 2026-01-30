@@ -4,18 +4,18 @@ SELECT
     name
 FROM n
 ALL INNER JOIN r ON k = r.k
-WHERE (k = r.k) AND (name = \'A\')
+WHERE k = r.k AND name = \'A\'
 SELECT
     k,
     r.k,
     name
 FROM n
 ALL INNER JOIN r ON k = r.k
-WHERE (k = r.k) AND (name LIKE \'A%\')
+WHERE k = r.k AND like(name, \'A%\')
 SELECT
     k,
     r.k,
     name
 FROM n
 ALL INNER JOIN r ON k = r.k
-WHERE (k = r.k) AND (name NOT LIKE \'A%\')
+WHERE k = r.k AND notLike(name, \'A%\')

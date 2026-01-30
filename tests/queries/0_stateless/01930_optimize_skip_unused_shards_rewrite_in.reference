@@ -144,9 +144,9 @@ select _shard_num, * from remote('127.{1..4}', view(select toUInt64(id) id from 
 2	1
 4	9223372036854775807
 4	18446744073709551615
--- modulo(Int8)
+-- Int8
 select distinct _shard_num, * from remote('127.{1..4}', view(select toInt16(id) id from data), toInt8(id)%255) where id in (-1) order by _shard_num, id;
 4	-1
--- modulo(UInt8)
+-- UInt8
 select distinct _shard_num, * from remote('127.{1..4}', view(select toInt16(id) id from data), toUInt8(id)%255) where id in (-1) order by _shard_num, id;
 1	-1

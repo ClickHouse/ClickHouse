@@ -43,10 +43,10 @@ Positions: 2
                      INPUT :: 1 -> __table2.number UInt64 : 1
             Positions: 1 0
               Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-              Filter column: equals(__table2.number, __table3.number) (removed)
+              Filter column: __table2.number = __table3.number (removed)
               Actions: INPUT : 0 -> number UInt64 : 0
                        ALIAS number : 0 -> __table2.number UInt64 : 1
-                       FUNCTION equals(number : 0, number :: 0) -> equals(__table2.number, __table3.number) UInt8 : 2
+                       FUNCTION number : 0 = number :: 0 -> __table2.number = __table3.number UInt8 : 2
                        ALIAS __table2.number : 1 -> __table3.number UInt64 : 0
               Positions: 2 1 0
                 ReadFromSystemNumbers

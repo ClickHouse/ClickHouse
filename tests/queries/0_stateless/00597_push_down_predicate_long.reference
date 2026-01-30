@@ -8,15 +8,15 @@ SELECT count()
 FROM
 (
     SELECT
-        [number] AS a,
-        [number * 2] AS b
+        array(number) AS a,
+        array(number * 2) AS b
     FROM system.numbers
     LIMIT 1
 ) AS t
 ARRAY JOIN
     a,
     b
-WHERE NOT ignore(a + b)
+WHERE NOT (ignore(a + b))
 1
 SELECT
     a,

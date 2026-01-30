@@ -10,7 +10,7 @@ select max(identity(dummy + 1)) over () as x from remote('127.0.0.{1,2}', system
 1
 drop table if exists t_01568;
 create table t_01568 engine Memory as
-select intDiv(number, 3) p, modulo(number, 3) o, number
+select intDiv(number, 3) p, number % 3 o, number
 from numbers(9);
 select sum(number) over w as x, max(number) over w as y from t_01568 window w as (partition by p) order by x, y;
 3	2

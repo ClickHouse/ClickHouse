@@ -13,12 +13,12 @@ Positions: 0 3 1
   Header: __table1.str String
           __table2.x Nullable(UInt32)
           __table2.s String
-  Filter column: equals(__table2.x, 1_UInt8) (removed)
+  Filter column: __table2.x = 1_UInt8 (removed)
   Actions: INPUT :: 0 -> __table1.str String : 0
            INPUT : 1 -> __table2.x Nullable(UInt32) : 1
            INPUT :: 2 -> __table2.s String : 2
            COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 3
-           FUNCTION equals(__table2.x : 1, 1_UInt8 :: 3) -> equals(__table2.x, 1_UInt8) Nullable(UInt8) : 4
+           FUNCTION __table2.x : 1 = 1_UInt8 :: 3 -> __table2.x = 1_UInt8 Nullable(UInt8) : 4
   Positions: 4 0 1 2
     Expression (Post Join Actions)
     Header: __table1.str String

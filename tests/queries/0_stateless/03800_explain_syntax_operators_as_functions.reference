@@ -1,0 +1,129 @@
+Basic arithmetic operators
+SELECT 1 + 2
+FROM system.one
+SELECT 5 - 3
+FROM system.one
+SELECT 4 * 7
+FROM system.one
+SELECT 10 / 2
+FROM system.one
+SELECT 10 % 3
+FROM system.one
+Unary operators
+SELECT -5
+FROM system.one
+SELECT NOT true
+FROM system.one
+Comparison operators
+SELECT 1 = 1
+FROM system.one
+SELECT 1 != 2
+FROM system.one
+SELECT 1 != 2
+FROM system.one
+SELECT 1 < 2
+FROM system.one
+SELECT 2 > 1
+FROM system.one
+SELECT 1 <= 2
+FROM system.one
+SELECT 2 >= 1
+FROM system.one
+Logical operators
+SELECT true AND false
+FROM system.one
+SELECT true OR false
+FROM system.one
+Nested arithmetic operators
+SELECT 1 + 2 + 3
+FROM system.one
+SELECT 1 * 2 * 3
+FROM system.one
+SELECT 1 + 2 * 3
+FROM system.one
+SELECT 1 + 2 * 3
+FROM system.one
+Mixed operators with precedence
+SELECT 1 + 2 * 3
+FROM system.one
+SELECT 1 + 2 * 3 + 4
+FROM system.one
+SELECT 10 / 2 - 3
+FROM system.one
+Complex multi-operator expressions
+SELECT
+    1 + 2 * 3,
+    5 - 1,
+    NOT true,
+    -10
+FROM system.one
+SELECT 1 = 1 AND 2 < 3
+FROM system.one
+SELECT NOT (1 = 2)
+FROM system.one
+Nested unary operators
+SELECT NOT (NOT true)
+FROM system.one
+SELECT -(-5)
+FROM system.one
+SELECT NOT (NOT (NOT false))
+FROM system.one
+LIKE operator
+SELECT like(\'test\', \'te%\')
+FROM system.one
+SELECT notLike(\'test\', \'x%\')
+FROM system.one
+IN operator
+SELECT 1 IN (1, 2, 3)
+FROM system.one
+SELECT 1 NOT IN (4, 5, 6)
+FROM system.one
+IS NULL operator
+SELECT _CAST(NULL, \'Nullable(Nothing)\') IS NULL
+FROM system.one
+SELECT 1 IS NOT NULL
+FROM system.one
+Array subscript operator
+SELECT arrayElement(_CAST([1, 2, 3], \'Array(UInt8)\'), 1)
+FROM system.one
+Tuple element access
+SELECT tupleElement(_CAST((1, 2), \'Tuple(UInt8, UInt8)\'), 1)
+FROM system.one
+Complex deeply nested expression
+SELECT 1 + 2 * 3 - 4 / 5 + 6 - 7 * 8
+FROM system.one
+Mixed logical and comparison
+SELECT 1 < 2 AND 3 > 2 OR 4 = 4
+FROM system.one
+All common operators in one query
+SELECT
+    1 + 2,
+    3 - 4,
+    5 * 6,
+    7 / 8,
+    9 % 2,
+    -10,
+    NOT true,
+    11 = 11,
+    12 != 13,
+    14 < 15,
+    16 > 15,
+    17 <= 18,
+    19 >= 18,
+    true AND false,
+    true OR false
+FROM system.one
+Edge case: operator with column reference
+SELECT number + 1
+FROM system.numbers
+LIMIT 1
+Edge case: operators in WHERE clause
+SELECT *
+FROM system.numbers
+WHERE number > 0 AND number < 10
+LIMIT 1
+Edge case: operators in GROUP BY
+SELECT number + 1 AS n
+FROM system.numbers
+GROUP BY n
+LIMIT 1

@@ -60,7 +60,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT count()
 FROM t_constraints_where
-PREWHERE (b > 20) OR (b < 8)
+PREWHERE b > 20 OR b < 8
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
