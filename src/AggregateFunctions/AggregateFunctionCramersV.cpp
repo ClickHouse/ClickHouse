@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-struct CramersVData : CrossTabData
+struct CramersVData : CrossTabAggregateData
 {
     static const char * getName()
     {
@@ -24,6 +24,31 @@ struct CramersVData : CrossTabData
             return std::numeric_limits<Float64>::quiet_NaN();
 
         UInt64 q = std::min(count_a.size(), count_b.size());
+
+        if (q <= 1)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
+        return sqrt(getPhiSquared() / static_cast<Float64>(q - 1));
+    }
+};
+
+struct CramersVWindowData : CrossTabPhiSquaredWindowData
+{
+    static const char * getName()
+    {
+        return CramersVData::getName();
+    }
+
+    Float64 getResult() const
+    {
+        if (count < 2)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
+        UInt64 q = std::min(a_marginal_count.size(), b_marginal_count.size());
+
+        if (q <= 1)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
         return sqrt(getPhiSquared() / static_cast<Float64>(q - 1));
     }
 };
@@ -38,7 +63,7 @@ The result of the `cramersV` function ranges from 0 (corresponding to no associa
 It may be viewed as the association between two variables as a percentage of their maximum possible variation.
 
 :::note
-For a bias corrected version of Cramer's V see: [cramersVBiasCorrected](./cramersvbiascorrected.md)
+For a bias corrected version of Cramer's V see: [cramersVBiasCorrected](./cramersvbiascorrected)
 :::
     )";
     FunctionDocumentation::Syntax syntax = "cramersV(column1, column2)";
@@ -61,7 +86,7 @@ FROM
             number % 5 AS b
         FROM
             numbers(150)
-    )
+    );
         )",
         R"(
 ┌─cramersV(a, b)─┐
@@ -78,14 +103,14 @@ FROM
     (
         SELECT
             number % 10 AS a,
-            number % 5 AS b
+            if (number % 12 = 0, (number + 1) % 5, number % 5) AS b
         FROM
             numbers(150)
-    )
+    );
         )",
         R"(
 ┌─────cramersV(a, b)─┐
-│ 0.8944271909999159 │
+│ 0.9066801892162646 │
 └────────────────────┘
         )"
     }
@@ -102,7 +127,13 @@ FROM
             return std::make_shared<AggregateFunctionCrossTab<CramersVData>>(argument_types);
         },
         {},
-        documentation
+        documentation,
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertBinary(name, argument_types);
+            assertNoParameters(name, parameters);
+            return std::make_shared<AggregateFunctionCrossTab<CramersVWindowData>>(argument_types);
+        }
     });
 }
 

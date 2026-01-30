@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-struct CramersVBiasCorrectedData : CrossTabData
+struct CramersVBiasCorrectedData : CrossTabAggregateData
 {
     static const char * getName()
     {
@@ -25,15 +25,56 @@ struct CramersVBiasCorrectedData : CrossTabData
 
         Float64 phi = getPhiSquared();
 
-        Float64 a_size_adjusted = static_cast<Float64>(count_a.size() - 1);
-        Float64 b_size_adjusted = static_cast<Float64>(count_b.size() - 1);
+        Float64 a_size = static_cast<Float64>(count_a.size());
+        Float64 b_size = static_cast<Float64>(count_b.size());
+
+        Float64 a_size_adjusted = a_size - 1;
+        Float64 b_size_adjusted = b_size - 1;
         Float64 count_adjusted = static_cast<Float64>(count - 1);
 
         Float64 res = std::max(0.0, phi - a_size_adjusted * b_size_adjusted / count_adjusted);
-        Float64 correction_a = static_cast<Float64>(count_a.size()) - a_size_adjusted * a_size_adjusted / count_adjusted;
-        Float64 correction_b = static_cast<Float64>(count_b.size()) - b_size_adjusted * b_size_adjusted / count_adjusted;
+        Float64 correction_a = a_size - a_size_adjusted * a_size_adjusted / count_adjusted;
+        Float64 correction_b = b_size - b_size_adjusted * b_size_adjusted / count_adjusted;
 
-        res /= std::min(correction_a, correction_b) - 1;
+        const Float64 denom = std::min(correction_a, correction_b) - 1.0;
+        if (denom <= 0.0)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
+        res /= denom;
+        return sqrt(res);
+    }
+};
+
+struct CramersVBiasCorrectedWindowData : CrossTabPhiSquaredWindowData
+{
+    static const char * getName()
+    {
+        return CramersVBiasCorrectedData::getName();
+    }
+
+    Float64 getResult() const
+    {
+        if (count < 2)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
+        Float64 phi = getPhiSquared();
+
+        Float64 a_size = static_cast<Float64>(a_marginal_count.size());
+        Float64 b_size = static_cast<Float64>(b_marginal_count.size());
+
+        Float64 a_size_adjusted = a_size - 1;
+        Float64 b_size_adjusted = b_size - 1;
+        Float64 count_adjusted = static_cast<Float64>(count - 1);
+
+        Float64 res = std::max(0.0, phi - a_size_adjusted * b_size_adjusted / count_adjusted);
+        Float64 correction_a = a_size - a_size_adjusted * a_size_adjusted / count_adjusted;
+        Float64 correction_b = b_size - b_size_adjusted * b_size_adjusted / count_adjusted;
+
+        const Float64 denom = std::min(correction_a, correction_b) - 1.0;
+        if (denom <= 0.0)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
+        res /= denom;
         return sqrt(res);
     }
 };
@@ -68,12 +109,12 @@ FROM
             number % 4 AS b
         FROM
             numbers(150)
-    )
+    );
         )",
         R"(
-┌──────cramersV(a, b)─┬─cramersVBiasCorrected(a, b)─┐
-│ 0.41171788506213564 │         0.33369281784141364 │
-└─────────────────────┴─────────────────────────────┘
+┌─────cramersV(a, b)─┬─cramersVBiasCorrected(a, b)─┐
+│ 0.5798088336225178 │          0.5305112825189074 │
+└────────────────────┴─────────────────────────────┘
         )"
     }
     };
@@ -89,7 +130,13 @@ FROM
             return std::make_shared<AggregateFunctionCrossTab<CramersVBiasCorrectedData>>(argument_types);
         },
         {},
-        documentation
+        documentation,
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertBinary(name, argument_types);
+            assertNoParameters(name, parameters);
+            return std::make_shared<AggregateFunctionCrossTab<CramersVBiasCorrectedWindowData>>(argument_types);
+        }
     });
 }
 

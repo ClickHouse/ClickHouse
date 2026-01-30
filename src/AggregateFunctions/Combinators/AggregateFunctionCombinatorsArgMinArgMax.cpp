@@ -1,5 +1,6 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/SingleValueData.h>
+#include <Common/memory.h>
 
 namespace DB
 {
@@ -56,7 +57,7 @@ public:
         , data_type(arguments.back())
         , serialization(arguments.back()->getDefaultSerialization())
         , key_col{arguments.size() - 1}
-        , key_offset{((nested_function->sizeOfData() + alignof(Key) - 1) / alignof(Key)) * alignof(Key)}
+        , key_offset{::Memory::alignUp(nested_function->sizeOfData(), alignof(Key))}
         , key_type(arguments[key_col])
     {
         if (!arguments[key_col]->isComparable())
@@ -81,6 +82,39 @@ public:
             return nested_function->getName() + "ArgMin";
         else
             return nested_function->getName() + "ArgMax";
+    }
+
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (rhs.getName() != getName())
+            return false;
+
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        const size_t rhs_key_offset = ::Memory::alignUp(rhs_nested->sizeOfData(), alignof(Key));
+        const auto & rhs_key = *reinterpret_cast<const Key *>(rhs_place + rhs_key_offset);
+
+        if ((isMin && data(place).data().setIfSmaller(rhs_key.data(), arena))
+            || (!isMin && data(place).data().setIfGreater(rhs_key.data(), arena)))
+        {
+            nested_function->destroy(place);
+            nested_function->create(place);
+            nested_function->mergeStateFromDifferentVariant(place, *rhs_nested, rhs_place, arena);
+        }
+        else if (data(place).data().isEqualTo(rhs_key.data()))
+        {
+            nested_function->mergeStateFromDifferentVariant(place, *rhs_nested, rhs_place, arena);
+        }
     }
 
     bool isState() const override { return nested_function->isState(); }

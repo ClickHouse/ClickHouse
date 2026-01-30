@@ -301,6 +301,25 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (rhs.getName() != getName())
+            return false;
+
+        /// Distinct state contains a history of unique values and can be merged across
+        /// variants without reading the nested function state from rhs
+        return this->haveEqualArgumentTypes(rhs);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place,
+        const IAggregateFunction & /*rhs*/,
+        ConstAggregateDataPtr rhs_place,
+        Arena * arena) const override
+    {
+        merge(place, rhs_place, arena);
+    }
+
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 

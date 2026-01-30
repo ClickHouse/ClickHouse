@@ -3,3 +3,87 @@ SELECT round(cramersV(a, b), 2), round(cramersVBiasCorrected(a, b), 2), round(th
 SELECT round(cramersV(a, b), 2), round(cramersVBiasCorrected(a, b), 2), round(theilsU(a, b), 2), round(theilsU(b, a), 2), round(contingency(a, b), 2) FROM (SELECT number % 10 AS a, number % 10 AS b FROM numbers(150));
 SELECT round(cramersV(a, b), 2), round(cramersVBiasCorrected(a, b), 2), round(theilsU(a, b), 2), round(theilsU(b, a), 2), round(contingency(a, b), 2) FROM (SELECT number % 10 AS a, number % 5 AS b FROM numbers(150));
 SELECT round(cramersV(a, b), 2), round(cramersVBiasCorrected(a, b), 2), round(theilsU(a, b), 2), round(theilsU(b, a), 2), round(contingency(a, b), 2) FROM (SELECT number % 10 AS a, number % 10 = 0 ? number : a AS b FROM numbers(150));
+
+SELECT
+    round(cramersV(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(cramersVBiasCorrected(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(theilsU(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(theilsU(b, a) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(contingency(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2)
+FROM
+(
+    SELECT
+        number,
+        number % 3 AS a,
+        number % 5 AS b
+    FROM numbers(150)
+)
+LIMIT -1;
+
+SELECT
+    round(cramersV(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(cramersVBiasCorrected(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(theilsU(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(theilsU(b, a) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(contingency(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2)
+FROM
+(
+    SELECT
+        number,
+        number AS a,
+        number + 1 AS b
+    FROM numbers(150)
+)
+ORDER BY number
+LIMIT -1;
+
+SELECT
+    round(cramersV(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(cramersVBiasCorrected(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(theilsU(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(theilsU(b, a) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(contingency(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2)
+FROM
+(
+    SELECT
+        number,
+        number % 10 AS a,
+        number % 10 AS b
+    FROM numbers(150)
+)
+ORDER BY number
+LIMIT -1;
+
+SELECT
+    round(cramersV(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(cramersVBiasCorrected(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(theilsU(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(theilsU(b, a) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(contingency(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2)
+FROM
+(
+    SELECT
+        number,
+        number % 10 AS a,
+        number % 5 AS b
+    FROM numbers(150)
+)
+ORDER BY number
+LIMIT -1;
+
+SELECT
+    round(cramersV(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(cramersVBiasCorrected(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(theilsU(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(theilsU(b, a) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2),
+    round(contingency(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), 2)
+FROM
+(
+    SELECT
+        number,
+        number % 10 AS a,
+        number % 10 = 0 ? number : a AS b
+    FROM numbers(150)
+)
+ORDER BY number
+LIMIT -1;

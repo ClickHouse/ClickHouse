@@ -107,6 +107,31 @@ public:
         return nested_function->getName();
     }
 
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (rhs.getName() != getName())
+            return false;
+
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        if constexpr (result_is_nullable)
+            if (getFlag(rhs_place))
+                setFlag(place);
+
+        const size_t rhs_prefix_size = result_is_nullable ? rhs_nested->alignOfData() : 0;
+        nested_function->mergeStateFromDifferentVariant(nestedPlace(place), *rhs_nested, rhs_place + rhs_prefix_size, arena);
+    }
+
     static DataTypePtr createResultType(const AggregateFunctionPtr & nested_function_)
     {
         if constexpr (result_is_nullable)

@@ -4,6 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/assert_cast.h>
+#include <Common/memory.h>
 #include <base/arithmeticOverflow.h>
 
 
@@ -51,7 +52,7 @@ public:
         , step{step_}
         , total{0}
         , align_of_data{nested_function->alignOfData()}
-        , size_of_data{(nested_function->sizeOfData() + align_of_data - 1) / align_of_data * align_of_data}
+        , size_of_data{::Memory::alignUp(nested_function->sizeOfData(), align_of_data)}
     {
         // notice: argument types has been checked before
         if (step == 0)
@@ -81,6 +82,30 @@ public:
     String getName() const override
     {
         return nested_function->getName() + "Resample";
+    }
+
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (rhs.getName() != getName())
+            return false;
+
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        const size_t rhs_align_of_data = rhs_nested->alignOfData();
+        const size_t rhs_size_of_data = ::Memory::alignUp(rhs_nested->sizeOfData(), rhs_align_of_data);
+
+        for (size_t i = 0; i < total; ++i)
+            nested_function->mergeStateFromDifferentVariant(place + i * size_of_data, *rhs_nested, rhs_place + i * rhs_size_of_data, arena);
     }
 
     bool isState() const override
