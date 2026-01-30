@@ -1267,6 +1267,9 @@ class SettingsRandomizer:
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
         "parallel_replicas_local_plan": lambda: random.randint(0, 1),
+        "parallel_replicas_min_number_of_rows_per_replica": lambda: random.randint(
+            0, 1
+        ),
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false"]), # true forces swap, which is harmfull for some tests
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
