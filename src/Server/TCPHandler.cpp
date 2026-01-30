@@ -1631,7 +1631,8 @@ void TCPHandler::sendProfileEvents(QueryState & state)
                 block.rows(), block.bytes(), elapsed_milliseconds);
     }
     auto peak_after = CurrentThread::getGroup()->memory_tracker.getPeak();
-    if (peak_after != peak_before) {
+    if (peak_after != peak_before)
+    {
         LOG_DEBUG(log, "Memory usage changed during sending profile events: before={} bytes, after={} bytes",
                     ReadableSize(peak_before), ReadableSize(peak_after));
     }
