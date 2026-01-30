@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPLICAS=3
 
 for i in $(seq $REPLICAS); do
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_alter_detach_$i"
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_alter_detach_$i" 2>&1 | grep -Fa "Exception: " | grep -Fv "TIMEOUT_EXCEEDED"
 done
 
 for i in $(seq $REPLICAS); do
@@ -98,12 +98,16 @@ for i in $(seq $REPLICAS); do
 done
 
 # This alter will finish all previous, but replica 1 maybe still not up-to-date
-while [[ $(timeout 120 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alter_detach_1 MODIFY COLUMN value1 String SETTINGS replication_alter_partitions_sync=2" 2>&1) ]]; do
-    sleep 1
-    # just try to attach table if it failed for some reason in the code above
-    for i in $(seq $REPLICAS); do
-        $CLICKHOUSE_CLIENT --query "ATTACH TABLE concurrent_alter_detach_$i" 2> /dev/null
-    done
+for retry in $(seq 3); do
+    if [[ $(timeout 120 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alter_detach_1 MODIFY COLUMN value1 String SETTINGS replication_alter_partitions_sync=2" 2>&1) ]]; then
+        sleep 1
+        # just try to attach table if it failed for some reason in the code above
+        for i in $(seq $REPLICAS); do
+            $CLICKHOUSE_CLIENT --query "ATTACH TABLE concurrent_alter_detach_$i" 2> /dev/null
+        done
+    else
+        break
+    fi
 done
 
 for i in $(seq $REPLICAS); do
@@ -112,5 +116,5 @@ for i in $(seq $REPLICAS); do
     $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and is_done=0 and table = 'concurrent_alter_detach_$i'" # all mutations have to be done
     $CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and is_done=0 and table = 'concurrent_alter_detach_$i'" # all mutations have to be done
     $CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue WHERE table = 'concurrent_alter_detach_$i' and (type = 'ALTER_METADATA' or type = 'MUTATE_PART')" # all mutations and alters have to be done
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_alter_detach_$i"
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_alter_detach_$i" 2>&1 | grep -Fa "Exception: " | grep -Fv "TIMEOUT_EXCEEDED"
 done
