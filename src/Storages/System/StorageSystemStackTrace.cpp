@@ -1,3 +1,6 @@
+#include <Interpreters/TraceLog.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/VariableContext.h>
 #ifdef OS_LINUX /// Because of 'rt_tgsigqueueinfo' functions and RT signals.
 
 #include <poll.h>
@@ -81,6 +84,7 @@ StackTrace stack_trace{NoCapture{}};
 constexpr size_t max_query_id_size = 128;
 char query_id_data[max_query_id_size];
 size_t query_id_size = 0;
+VariableContext memory_blocked_context = VariableContext::Max;
 
 LazyPipeFDs notification_pipe;
 
@@ -116,6 +120,8 @@ void signalHandler(int, siginfo_t * info, void * context)
     query_id_size = std::min(query_id.size(), max_query_id_size);
     if (!query_id.empty())
         memcpy(query_id_data, query_id.data(), query_id_size);
+
+    memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
 
     /// This is unneeded (because we synchronize through pipe) but makes TSan happy.
     data_ready_num.store(notification_num, std::memory_order_release);
@@ -302,7 +308,7 @@ public:
     {
         /// Create a mask of what columns are needed in the result.
         NameSet names_set(column_names.begin(), column_names.end());
-        send_signal = names_set.contains("trace") || names_set.contains("query_id");
+        send_signal = names_set.contains("trace") || names_set.contains("query_id") || names_set.contains("memory_blocked_context");
         read_thread_names = names_set.contains("thread_name");
     }
 
@@ -347,6 +353,7 @@ protected:
             {
                 res_columns[res_index++]->insert(thread_name);
                 res_columns[res_index++]->insert(tid);
+                res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
             }
@@ -409,6 +416,7 @@ protected:
                         res_columns[res_index++]->insert(thread_name);
                         res_columns[res_index++]->insert(tid);
                         res_columns[res_index++]->insertData(query_id_data, query_id_size);
+                        res_columns[res_index++]->insert(memory_blocked_context);
                         res_columns[res_index++]->insert(arr);
 
                         continue;
@@ -422,6 +430,7 @@ protected:
 
                 res_columns[res_index++]->insert(thread_name);
                 res_columns[res_index++]->insert(tid);
+                res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
                 res_columns[res_index++]->insertDefault();
             }
@@ -524,6 +533,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_name", std::make_shared<DataTypeString>(), "The name of the thread."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
+        {"memory_blocked_context", std::make_shared<TraceLogElement::ContextDataType>(TraceLogElement::context_values), "In which context memory tracker is blocked (for ClickHouse developers)"},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
     }));
     setInMemoryMetadata(storage_metadata);
