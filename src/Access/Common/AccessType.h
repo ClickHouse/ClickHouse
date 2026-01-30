@@ -417,6 +417,8 @@ enum class AccessType : uint8_t
     M(NATS, "", GLOBAL, ALL) \
     M(RABBITMQ, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
+    M(YTSAURUS, "", GLOBAL, ALL) \
+    M(ARROW_FLIGHT, "", GLOBAL, ALL) \
     \
     /* Consts */ \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
