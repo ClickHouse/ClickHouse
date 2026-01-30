@@ -26,6 +26,7 @@ protected:
 
 private:
     static Block getSampleBlock();
+    /// A kind of read lock for the database which prevents dropping the database (and its metadata from zk that we use for getting the query status)
     DDLGuardPtr database_guard;
 
 
