@@ -277,9 +277,10 @@ UInt128 DeduplicationInfo::getBlockHash(size_t offset) const
             continue; // source id is already included in by_data
 
         extension.append(":");
-        if (is_async_insert)
+        if (is_async_insert && extra.type == TokenDefinition::Extra::SOURCE_NUMBER)
         {
-            // do not include source number for async inserts, they are not relevant as data hash is used or user token
+            // do not include source number for async inserts,
+            // they are not relevant as data hash is used or user token
             // a token describes only the data in one block
             extension.append(TokenDefinition::Extra::asSourceNumber(0).toString());
         }
