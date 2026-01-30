@@ -1,0 +1,9 @@
+dist_idx_pk_size	540103
+dist_idx_skipping_idx_size	107888994
+['default.dist_idx']	1
+['default.no_dist_idx_not_enough_indexes']	0
+['default.no_dist_idx_min_not_enough_parts']	0
+['default.no_dist_idx']	0
+['default.dist_idx_parts']	1
+['default.dist_idx_pk_size']	0
+['default.dist_idx_skipping_idx_size']	1

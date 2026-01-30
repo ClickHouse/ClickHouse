@@ -8,6 +8,10 @@
             <!-- <async_insert>1</async_insert> -->
         </default>
 
+        <!-- Settings for background operations (e.g. Merge, Mutate) -->
+        <!-- <background> -->
+        <!-- </background> -->
+
         <!-- Profile that allows only read queries. -->
         <readonly>
             <readonly>1</readonly>

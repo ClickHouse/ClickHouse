@@ -35,6 +35,8 @@ struct BlockIO
     /// Each level calls executeQuery and adds its process list entry.
     std::vector<std::shared_ptr<ProcessListEntry>> process_list_entries;
 
+    QueryPipeline pipeline;
+
     /// Query-scoped cache for storage metadata and snapshots.
     ///
     /// The cache is created at query execution entry point and is kept alive by BlockIO for the entire lifetime of
@@ -47,8 +49,6 @@ struct BlockIO
     /// access during query execution.
     QueryMetadataCachePtr query_metadata_cache;
 
-    QueryPipeline pipeline;
-
     /// The finalize_query_pipeline function is called once to flush the pipeline progress and reset it.
     /// Then all finish callbacks are called with the resulting QueryPipelineFinalizedInfo.
     std::function<QueryPipelineFinalizedInfo(QueryPipeline &&)> finalize_query_pipeline;
@@ -60,7 +60,7 @@ struct BlockIO
     bool null_format = false;
 
     /// Needed to optionally detach from the thread group on destruction
-    std::unique_ptr<CurrentThread::QueryScope> query_scope_holder;
+    CurrentThread::QueryScope query_scope;
 
     void onFinish(std::chrono::system_clock::time_point finish_time = std::chrono::system_clock::now());
     void onException(bool log_as_error=true);
@@ -87,6 +87,8 @@ struct BlockIO
 
     /// Release query slot early to allow client to reuse it for his next query.
     void releaseQuerySlot() const;
+
+    void resetPipeline(bool cancel);
 
 private:
     void reset();

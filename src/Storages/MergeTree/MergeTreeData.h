@@ -614,10 +614,6 @@ public:
     /// and mutations required to be applied at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
-        /// Hold a reference to the storage since the snapshot cache in query context
-        /// may outlive the storage and delay destruction of data parts.
-        ConstStoragePtr storage;
-
         // shared_ptr because lifetime is as long as some query still reading it
         // const because we are sharing across multiple queries, we cannot have things mutating this.
         RangesInDataPartsPtr parts;
@@ -1062,6 +1058,15 @@ public:
         return secondary_index_sizes;
     }
 
+    IndexSize getPrimaryIndexSize() const
+    {
+        /// Always keep locks order parts_lock -> sizes_lock
+        auto parts_lock = readLockParts();
+        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
+        calculateColumnAndSecondaryIndexSizesLazily(parts_lock, sizes_lock);
+        return primary_index_size;
+    }
+
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsAnyLock & lock) const;
@@ -1387,6 +1392,7 @@ private:
     mutable ColumnSizeByName column_sizes;
     /// Current secondary index sizes in compressed and uncompressed form.
     mutable IndexSizeByName secondary_index_sizes;
+    mutable IndexSize primary_index_size;
 
 protected:
     void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;

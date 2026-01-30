@@ -63,9 +63,9 @@ static FillColumnDescription::StepFunction getStepFunction(
     {
 #define DECLARE_CASE(NAME) \
         case IntervalKind::Kind::NAME: \
-            return [step, scale, &date_lut](Field & field, Int32 jumps_count) { \
+            return [step, scale, &date_lut](Field & field, Int64 jumps_count) { \
                 field = Add##NAME##sImpl::execute(static_cast<T>(\
-                    field.safeGet<T>()), static_cast<Int32>(step) * jumps_count, date_lut, utc_time_zone, scale); };
+                    field.safeGet<T>()), step * jumps_count, date_lut, utc_time_zone, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
@@ -102,7 +102,7 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
             {
 #define DECLARE_CASE(NAME) \
                 case IntervalKind::Kind::NAME: \
-                    return [converted_step, &time_zone = date_time64->getTimeZone()](Field & field, Int32 jumps_count) \
+                    return [converted_step, &time_zone = date_time64->getTimeZone()](Field & field, Int64 jumps_count) \
                     { \
                         auto field_decimal = field.safeGet<DecimalField<DateTime64>>(); \
                         auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), converted_step * jumps_count, time_zone, utc_time_zone, static_cast<UInt16>(field_decimal.getScale())); \
@@ -120,7 +120,7 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
     }
     else
     {
-        return [step](Field & field, Int32 jumps_count)
+        return [step](Field & field, Int64 jumps_count)
         {
             auto shifted_step = step;
             if (jumps_count != 1)

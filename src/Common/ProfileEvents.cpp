@@ -270,6 +270,10 @@
     M(ReplicatedDataLoss, "Number of times a data part that we wanted doesn't exist on any replica (even on replicas that are offline right now). That data parts are definitely lost. This is normal due to asynchronous replication (if quorum inserts were not enabled), when the replica on which the data part was written was failed and when it became online after fail it doesn't contain that data part.", ValueType::Number) \
     M(ReplicatedCoveredPartsInZooKeeperOnStart, "For debugging purposes. Number of parts in ZooKeeper that have a covering part, but doesn't exist on disk. Checked on server start.", ValueType::Number) \
     \
+    M(QuorumParts, "Number of data parts written with quorum. It counts as one part for sync insert and maybe up to async inserts count for insert which flushes async inserts.", ValueType::Number) \
+    M(QuorumWaitMicroseconds, "Total time spent waiting for quorum during inserts.", ValueType::Microseconds) \
+    M(QuorumFailedInserts, "Number of inserts failed due to quorum not reaching.", ValueType::Number) \
+    \
     M(InsertedRows, "Number of rows INSERTed to all tables.", ValueType::Number) \
     M(InsertedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) INSERTed to all tables.", ValueType::Bytes) \
     M(DelayedInserts, "Number of times the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.", ValueType::Number) \
@@ -1254,8 +1258,6 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetPrefetcherReadRandomRead, "The total number of reads with ReadMode::RandomRead by DB::Parquet::Prefetcher", ValueType::Number) \
     M(ParquetPrefetcherReadSeekAndRead, "The total number of reads with ReadMode::SeekAndRead by DB::Parquet::Prefetcher", ValueType::Number) \
     M(ParquetPrefetcherReadEntireFile, "The total number of read with ReadMode::EntireFileIsInMemory by DB::Parquet::Prefetcher", ValueType::Number) \
-    M(ParquetRowsFilterExpression, "The total number of rows that were passed through filter", ValueType::Number) \
-    M(ParquetColumnsFilterExpression, "The total number of columns that were passed through filter", ValueType::Number) \
     M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
     M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
     \
