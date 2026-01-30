@@ -67,6 +67,9 @@ public:
 
     void setAsyncCallback(AsyncCallback async_callback) override;
 
+    /// Get the connection pool of the current active connection (for error tracking)
+    ConnectionPoolPtr getCurrentConnectionPool() const override;
+
 private:
     Packet receivePacketUnlocked(AsyncCallback async_callback) override;
 

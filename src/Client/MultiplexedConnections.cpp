@@ -541,6 +541,28 @@ void MultiplexedConnections::setAsyncCallback(AsyncCallback async_callback)
     }
 }
 
+ConnectionPoolPtr MultiplexedConnections::getCurrentConnectionPool() const
+{
+    /// Find the replica state that corresponds to the current_connection
+    /// and return its connection pool
+    if (!current_connection)
+        return nullptr;
+
+    for (const auto & state : replica_states)
+    {
+        if (state.connection == current_connection && !state.pool_entry.isNull())
+        {
+            auto * pool_base = state.pool_entry.getPool();
+            if (auto * conn_pool = dynamic_cast<ConnectionPool*>(pool_base))
+            {
+                return ConnectionPoolPtr(conn_pool, [](IConnectionPool*){});
+            }
+        }
+    }
+
+    return nullptr;
+}
+
 // NOLINTEND(bugprone-undefined-memory-manipulation)
 
 }

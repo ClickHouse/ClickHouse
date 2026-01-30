@@ -203,6 +203,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int BAD_ARGUMENTS;
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
@@ -211,6 +212,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char execute_query_calling_empty_set_result_func_on_exception[];
+    extern const char remote_query_executor_exception_retryable[];
 }
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
@@ -862,6 +864,11 @@ void logExceptionBeforeStart(
     const Settings & settings = context->getSettingsRef();
 
     const auto & client_info = context->getClientInfo();
+
+    fiu_do_on(FailPoints::remote_query_executor_exception_retryable, {
+        if (!internal && client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+            throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Injected TOO_MANY_SIMULTANEOUS_QUERIES error (retryable)");
+    });
 
     /// Log the start of query execution into the table if necessary.
     QueryLogElement elem;

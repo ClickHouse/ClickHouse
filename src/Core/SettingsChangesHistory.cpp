@@ -114,6 +114,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"compatibility_s3_presigned_url_query_in_path", false, false, "New setting."},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
             {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
+            {"distributed_shard_retry_count", 0, 0, "New setting. The maximum number of times to retry a distributed query on different replicas within a shard when receiving a retryable error."},
             {"automatic_parallel_replicas_mode", 0, 0, "New setting"},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 0, "New setting"},
             {"type_json_skip_invalid_typed_paths", false, false, "Allow skipping typed paths that fail type coercion in JSON columns"},

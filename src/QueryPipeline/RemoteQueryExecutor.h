@@ -301,6 +301,24 @@ private:
       */
     bool got_duplicated_part_uuids = false;
 
+    /** Track if we've received any data from the current replica
+      * Used to determine if we can safely retry on a different replica
+      */
+    bool received_data_from_replica = false;
+
+    size_t retry_count = 0;
+
+    /** Store the error code that triggered the last retry
+     * Used for logging the retry reason
+     */
+    int last_retry_error_code = 0;
+
+    bool should_retry = false;
+
+    /** Store connection pool with failover for retrying with different replicas
+     */
+    ConnectionPoolWithFailoverPtr connection_pool_with_failover;
+
 #if defined(OS_LINUX)
     bool packet_in_progress = false;
 #endif
@@ -335,6 +353,14 @@ private:
     /// Cancel query and restart it with info about duplicate UUIDs
     /// only for `allow_experimental_query_deduplication`.
     ReadResult restartQueryWithoutDuplicatedUUIDs();
+
+    /// Retry query on a different replica after receiving a retryable error
+    ReadResult retryQuery();
+
+    /// Check if an error code is retryable
+    bool isRetryableError(int error_code) const;
+
+    void resetQueryState();
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void cancelUnlocked();

@@ -1213,6 +1213,21 @@ Possible values:
 
     If a shard is unavailable, ClickHouse throws an exception.
 )", 0) \
+    DECLARE(UInt64, distributed_shard_retry_count, 0, R"(
+The maximum number of times to retry a distributed query on different replicas within a shard when receiving a retryable error. Retryable errors are currently `NETWORK_ERROR`, `CANNOT_OPEN_FILE` and `TOO_MANY_SIMULTANEOUS_QUERIES`.
+
+When a query to a replica returns a retryable error and no data has been received yet, ClickHouse will automatically retry the query on a different replica in the same shard, up to the configured number of retries.
+
+Possible values:
+
+- 0 — Retries disabled. All errors will immediately fail the query.
+- Positive integer — Maximum number of retries on different replicas.
+
+**See Also**
+
+- [Distributed Table Engine](../../engines/table-engines/special/distributed.md)
+- [skip_unavailable_shards](#skip_unavailable_shards)
+)", 0) \
     \
     DECLARE(UInt64, parallel_distributed_insert_select, 2, R"(
 Enables parallel distributed `INSERT ... SELECT` query.

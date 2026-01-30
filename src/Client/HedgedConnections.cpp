@@ -660,5 +660,13 @@ void HedgedConnections::setAsyncCallback(AsyncCallback async_callback)
     }
 }
 
+ConnectionPoolPtr HedgedConnections::getCurrentConnectionPool() const
+{
+    /// getCurrentConnnectionPool is used for error tracking for things such as retries.
+    /// For hedged requests, the 'natural' load balancing and error tracking in the factory
+    /// already handles these things, so we don't need to do it again here.
+    return nullptr;
+}
+
 }
 #endif
