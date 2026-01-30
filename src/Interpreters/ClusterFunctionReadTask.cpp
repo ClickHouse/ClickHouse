@@ -1,15 +1,16 @@
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/Context.h>
+#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
@@ -87,10 +88,18 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)
     {
         SerializedSetsRegistry registry;
-        if (data_lake_metadata.transform)
-            data_lake_metadata.transform->serialize(out, registry);
+        if (data_lake_metadata.schema_transform)
+            data_lake_metadata.schema_transform->serialize(out, registry);
         else
             ActionsDAG().serialize(out, registry);
+
+        if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS)
+        {
+            if (data_lake_metadata.excluded_rows)
+                data_lake_metadata.excluded_rows->write(out);
+            else
+                DataLakeObjectMetadata::ExcludedRows().write(out);
+        }
     }
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO)
@@ -144,7 +153,12 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
 
         if (!path.empty() && !transform->getInputs().empty())
         {
-            data_lake_metadata.transform = std::move(transform);
+            data_lake_metadata.schema_transform = std::move(transform);
+        }
+        if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS)
+        {
+            data_lake_metadata.excluded_rows = std::make_shared<DataLakeObjectMetadata::ExcludedRows>();
+            data_lake_metadata.excluded_rows->read(in);
         }
     }
 

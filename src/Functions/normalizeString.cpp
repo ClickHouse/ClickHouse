@@ -112,10 +112,10 @@ struct NormalizeUTF8Impl
                 int32_t from_code_points = 0;
                 u_strFromUTF8(
                     from_uchars.data(),
-                    from_uchars.size(),
+                    static_cast<int32_t>(from_uchars.size()),
                     &from_code_points,
                     reinterpret_cast<const char*>(&data[current_from_offset]),
-                    from_size,
+                    static_cast<int32_t>(from_size),
                     &err);
                 if (U_FAILURE(err))
                     throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (strFromUTF8): {}", u_errorName(err));
@@ -127,7 +127,7 @@ struct NormalizeUTF8Impl
                     from_uchars.data(),
                     from_code_points,
                     to_uchars.data(),
-                    to_uchars.size(),
+                    static_cast<int32_t>(to_uchars.size()),
                     &err);
                 if (U_FAILURE(err))
                     throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (normalize): {}", u_errorName(err));
@@ -139,7 +139,7 @@ struct NormalizeUTF8Impl
                 int32_t to_size = 0;
                 u_strToUTF8(
                     reinterpret_cast<char*>(&res_data[current_to_offset]),
-                    res_data.size() - current_to_offset,
+                    static_cast<int32_t>(res_data.size() - current_to_offset),
                     &to_size,
                     to_uchars.data(),
                     to_code_points,

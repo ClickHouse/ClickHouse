@@ -203,8 +203,8 @@ bool ReadBufferFromS3::nextImpl()
         /// We could get EOF only if read_until_position is not set,
         /// otherwise we'd quit before impl->next().
         chassert(!read_until_position,
-                 fmt::format("Cannot read all data. File size: {}, expected size: {}",
-                             getObjectSizeFromS3(), file_size_str));
+                 fmt::format("Cannot read all data. Key: {}, size: {}, expected size: {}, position: {}/{}",
+                             key, getObjectSizeFromS3(), file_size_str, offset.load(), read_until_position.load()));
         return false;
     }
 

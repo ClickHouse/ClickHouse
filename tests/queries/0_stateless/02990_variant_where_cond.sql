@@ -6,7 +6,7 @@ create table test (v Variant(String, UInt64)) engine=MergeTree ORDER BY tuple();
 insert into test values (42), ('Hello'), (NULL);
 
 select * from test where v = 'Hello';
-select * from test where v = 42; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+select * from test where v = 42;
 select * from test where v = 42::UInt64::Variant(String, UInt64);
 
 drop table test;

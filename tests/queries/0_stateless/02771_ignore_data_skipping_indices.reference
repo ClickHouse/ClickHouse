@@ -10,16 +10,19 @@
       Skip
         Name: x_idx
         Description: minmax GRANULARITY 1
+        Condition: (x in [1, 1])
         Parts: 0/1
         Granules: 0/1
       Skip
         Name: y_idx
         Description: minmax GRANULARITY 1
+        Condition: (y in [2, 2])
         Parts: 0/0
         Granules: 0/0
       Skip
         Name: xy_idx
         Description: minmax GRANULARITY 1
+        Condition: and((y in [2, 2]), (x in [1, 1]))
         Parts: 0/0
         Granules: 0/0
       Ranges: 0
@@ -32,11 +35,13 @@
       Skip
         Name: x_idx
         Description: minmax GRANULARITY 1
+        Condition: (x in [1, 1])
         Parts: 0/1
         Granules: 0/1
       Skip
         Name: y_idx
         Description: minmax GRANULARITY 1
+        Condition: (y in [2, 2])
         Parts: 0/0
         Granules: 0/0
       Ranges: 0
@@ -49,16 +54,19 @@
       Skip
         Name: x_idx
         Description: minmax GRANULARITY 1
+        Condition: (x in [1, 1])
         Parts: 0/1
         Granules: 0/1
       Skip
         Name: y_idx
         Description: minmax GRANULARITY 1
+        Condition: (y in [2, 2])
         Parts: 0/0
         Granules: 0/0
       Skip
         Name: xy_idx
         Description: minmax GRANULARITY 1
+        Condition: and((y in [2, 2]), (x in [1, 1]))
         Parts: 0/0
         Granules: 0/0
       Ranges: 0
@@ -71,11 +79,13 @@
       Skip
         Name: x_idx
         Description: minmax GRANULARITY 1
+        Condition: (x in [1, 1])
         Parts: 0/1
         Granules: 0/1
       Skip
         Name: y_idx
         Description: minmax GRANULARITY 1
+        Condition: (y in [2, 2])
         Parts: 0/0
         Granules: 0/0
       Ranges: 0

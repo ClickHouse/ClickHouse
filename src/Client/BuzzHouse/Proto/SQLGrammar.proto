@@ -1678,56 +1678,73 @@ enum SQLTableFunc {
     TFcluster = 4;
     TFclusterAllReplicas = 5;
     TFdeltaLake = 6;
-    TFdeltaLakeCluster = 7;
-    TFdictionary = 8;
-    TFexecutable = 9;
-    TFfile = 10;
-    TFfileCluster = 11;
-    TFformat = 12;
-    TFfuzzJSON = 13;
-    TFfuzzQuery = 14;
-    TFgcs = 15;
-    TFgenerateSeries = 16;
-    TFgenerateRandom = 17;
-    TFhdfs = 18;
-    TFhdfsCluster = 19;
-    TFhudi = 20;
-    TFhudiCluster = 21;
-    TFiceberg = 22;
-    TFicebergCluster = 23;
-    TFinput = 24;
-    TFjdbc = 25;
-    TFloop = 26;
-    TFmerge = 27;
-    TFmergeTreeAnalyzeIndexes = 28;
-    TFmergeTreeAnalyzeIndexesUUID = 29;
-    TFmergeTreeIndex = 30;
-    TFmergeTreeProjection = 31;
-    TFmongodb = 32;
-    TFmysql = 33;
-    TFnull = 34;
-    TFnumbers = 35;
-    TFodbc = 36;
-    TFpaimon = 37;
-    TFpaimonCluster = 38;
-    TFpostgresql = 39;
-    TFprometheusQuery = 40;
-    TFprometheusQueryRange = 41;
-    TFredis = 42;
-    TFremote = 43;
-    TFremoteSecure = 44;
-    TFs3 = 45;
-    TFs3Cluster = 46;
-    TFsqlite = 47;
-    TFtimeSeriesData = 48;
-    TFtimeSeriesMetrics = 49;
-    TFtimeSeriesSelector = 50;
-    TFtimeSeriesTags = 51;
-    TFurl = 52;
-    TFurlCluster = 53;
-    TFvalues = 54;
-    TFview = 55;
-    TFytsaurus = 56;
+    TFdeltaLakeAzure = 7;
+    TFdeltaLakeAzureCluster = 8;
+    TFdeltaLakeCluster = 9;
+    TFdeltaLakeLocal = 10;
+    TFdeltaLakeLocalCluster = 11;
+    TFdeltaLakeS3 = 12;
+    TFdeltaLakeS3Cluster = 13;
+    TFdictionary = 14;
+    TFexecutable = 15;
+    TFfile = 16;
+    TFfileCluster = 17;
+    TFformat = 18;
+    TFfuzzJSON = 19;
+    TFfuzzQuery = 20;
+    TFgcs = 21;
+    TFgenerateRandom = 22;
+    TFgenerateSeries = 23;
+    TFhdfs = 24;
+    TFhdfsCluster = 25;
+    TFhudi = 26;
+    TFhudiCluster = 27;
+    TFiceberg = 28;
+    TFicebergAzure = 29;
+    TFicebergAzureCluster = 30;
+    TFicebergCluster = 31;
+    TFicebergLocal = 32;
+    TFicebergLocalCluster = 33;
+    TFicebergS3 = 34;
+    TFicebergS3Cluster = 35;
+    TFinput = 36;
+    TFjdbc = 37;
+    TFloop = 38;
+    TFmerge = 39;
+    TFmergeTreeAnalyzeIndexes = 40;
+    TFmergeTreeAnalyzeIndexesUUID = 41;
+    TFmergeTreeIndex = 42;
+    TFmergeTreeProjection = 43;
+    TFmongodb = 44;
+    TFmysql = 45;
+    TFnull = 46;
+    TFnumbers = 47;
+    TFodbc = 48;
+    TFpaimon = 49;
+    TFpaimonAzure = 50;
+    TFpaimonAzureCluster = 51;
+    TFpaimonCluster = 52;
+    TFpaimonLocal = 53;
+    TFpaimonS3 = 54;
+    TFpaimonS3Cluster = 55;
+    TFpostgresql = 56;
+    TFprometheusQuery = 57;
+    TFprometheusQueryRange = 58;
+    TFredis = 59;
+    TFremote = 60;
+    TFremoteSecure = 61;
+    TFs3 = 62;
+    TFs3Cluster = 63;
+    TFsqlite = 64;
+    TFtimeSeriesData = 65;
+    TFtimeSeriesMetrics = 66;
+    TFtimeSeriesSelector = 67;
+    TFtimeSeriesTags = 68;
+    TFurl = 69;
+    TFurlCluster = 70;
+    TFvalues = 71;
+    TFview = 72;
+    TFytsaurus = 73;
 }
 
 message Database {
@@ -2692,49 +2709,31 @@ message MongoDBFunc {
     optional Expr structure = 6;
 }
 
-message S3Func {
+message ObjectStoreFunc {
     enum FName {
         gcs = 1;
         s3 = 2;
-        deltaLakeS3 = 3;
-        icebergS3 = 4;
-        gcsCluster = 5; /// Add as an alignment
-        s3Cluster = 6;
-        deltaLakeS3Cluster = 7;
-        icebergS3Cluster = 8;
+        azureBlobStorage = 3;
+        deltaLake = 4;
+        deltaLakeS3 = 5;
+        deltaLakeAzure = 6;
+        deltaLakeLocal = 7;
+        iceberg = 8;
+        icebergS3 = 9;
+        icebergAzure = 10;
+        icebergLocal = 11;
+        paimon = 12;
+        paimonS3 = 13;
+        paimonAzure = 14;
+        paimonCluster = 15;
+        paimonLocal = 16;
     }
-    required FName fname = 1;
-    optional Cluster cluster = 2;
-    required string credential = 3;
-    repeated KeyValuePair params = 4;
-    optional SettingValues setting_values = 5;
-}
-
-message AzureBlobStorageFunc {
-    enum FName {
-        azureBlobStorage = 1;
-        deltaLakeAzure = 2;
-        icebergAzure = 3;
-        deltaLakeAzureCluster = 4;
-        azureBlobStorageCluster = 5;
-        icebergAzureCluster = 6;
-    }
-    required FName fname = 1;
-    optional Cluster cluster = 2;
-    required string credential = 3;
-    repeated KeyValuePair params = 4;
-    optional SettingValues setting_values = 5;
-}
-
-message LocalFunc {
-    enum FName {
-        deltaLakeLocal = 1;
-        icebergLocal = 2;
-    }
-    required FName fname = 1;
-    required string credential = 2;
-    repeated KeyValuePair params = 3;
-    optional SettingValues setting_values = 4;
+    optional bool cluster_func = 1;
+    required FName fname = 2;
+    optional Cluster cluster = 3;
+    required string credential = 4;
+    repeated KeyValuePair params = 5;
+    optional SettingValues setting_values = 6;
 }
 
 message URLFunc {
@@ -2784,6 +2783,7 @@ message MergeTreeProjectionFunc {
 message MergeTreeAnalyzeIndexesFunc {
     required ExprSchemaTable est = 1;
     optional Expr pred = 2;
+    optional string part = 3;
 }
 
 message GenerateRandomFunc {
@@ -2812,7 +2812,7 @@ message TableFunction {
         MySQLFunc mysql = 5;
         PostgreSQLFunc postgresql = 6;
         SQLiteFunc sqite = 7;
-        S3Func s3 = 8;
+        ObjectStoreFunc object_func = 8;
         MergeFunc merge = 9;
         ClusterFunc cluster = 10;
         MergeTreeIndexFunc mtindex = 11;
@@ -2820,16 +2820,14 @@ message TableFunction {
         GenerateRandomFunc grandom = 13;
         ValuesStatement values = 14;
         ExprSchemaTable dictionary = 15;
-        AzureBlobStorageFunc azure = 16;
-        LocalFunc local = 17;
-        URLFunc url = 18;
-        RedisFunc redis = 19;
-        MongoDBFunc mongodb = 20;
-        MergeTreeProjectionFunc mtproj = 21;
-        Expr nullf = 22;
-        ArrowFlightFunc flight = 23;
-        MergeTreeAnalyzeIndexesFunc mtanindex = 24;
-        SQLTableFuncCall func = 25;
+        URLFunc url = 16;
+        RedisFunc redis = 17;
+        MongoDBFunc mongodb = 18;
+        MergeTreeProjectionFunc mtproj = 19;
+        Expr nullf = 20;
+        ArrowFlightFunc flight = 21;
+        MergeTreeAnalyzeIndexesFunc mtanindex = 22;
+        SQLTableFuncCall func = 23;
     }
 }
 
@@ -3658,13 +3656,14 @@ message CheckTable {
 }
 
 message DescribeStatement {
+    optional bool paren = 1;
     oneof desc_oneof {
-        TableOrFunction tof = 1;
-        ExplainQuery sel = 2;
-        SQLTableFuncCall stf = 3;
+        TableOrFunction tof = 2;
+        ExplainQuery sel = 3;
+        SQLTableFuncCall stf = 4;
     }
-    optional SettingValues setting_values = 4;
-    optional OutFormat format = 5;
+    optional SettingValues setting_values = 5;
+    optional OutFormat format = 6;
 }
 
 message DeduplicateExpr {
@@ -4345,7 +4344,6 @@ message ShowStatement {
         bool merges = 23;
     }
     optional SettingValues setting_values = 24;
-    optional OutFormat format = 25;
 }
 
 message SQLQueryInner {

@@ -70,15 +70,17 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
     pending.setCapacity(max_tasks_count);
     active.set_capacity(max_tasks_count);
 
+    /// Update policy before starting threads to avoid a data race between
+    /// updatePolicy modifying the variant and worker threads calling empty().
+    if (!policy.empty())
+        pending.updatePolicy(policy);
+
     pool->setMaxThreads(std::max(1UL, threads_count));
     pool->setMaxFreeThreads(std::max(1UL, threads_count));
     pool->setQueueSize(std::max(1UL, threads_count));
 
     for (size_t number = 0; number < threads_count; ++number)
         pool->scheduleOrThrowOnError([this] { threadFunction(); });
-
-    if (!policy.empty())
-        pending.updatePolicy(policy);
 }
 
 template <class Queue>
@@ -211,12 +213,15 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         /// Erase storage related tasks from pending and select active tasks to wait for
         tasks_to_cancel = pending.removeTasks(id);
 
-        /// Copy items to wait for their completion
-        std::copy_if(active.begin(), active.end(), std::back_inserter(tasks_to_wait),
-            [&] (auto item) -> bool { return item->task->getStorageID() == id; });
-
-        for (auto & item : tasks_to_wait)
-            item->is_currently_deleting = true;
+        tasks_to_wait.reserve(active.size());
+        for (auto & item : active)
+        {
+            if (item->task->getStorageID() == id)
+            {
+                item->is_currently_deleting = true;
+                tasks_to_wait.push_back(item);
+            }
+        }
     }
 
     for (auto & item : tasks_to_cancel)

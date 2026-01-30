@@ -16,7 +16,7 @@ INSERT INTO t SETTINGS max_insert_block_size = 2000000 SELECT number, toString(n
 SELECT marks FROM system.projection_parts WHERE active AND database = currentDatabase() AND table = 't' AND name = 'p3';
 5001
 SELECT marks FROM system.projection_parts WHERE active AND database = currentDatabase() AND table = 't' AND name = 'p4';
-50
+70
 SELECT name, settings FROM system.projections WHERE database = currentDatabase() AND table = 't' ORDER BY name;
 p3	{'index_granularity':'2','index_granularity_bytes':'999999999'}
 p4	{'index_granularity':'9999999999','index_granularity_bytes':'4096'}

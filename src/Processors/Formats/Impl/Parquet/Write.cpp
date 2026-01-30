@@ -346,7 +346,7 @@ struct ConverterNumeric
 
     const To * getBatch(size_t offset, size_t count)
     {
-        if constexpr (sizeof(*column.getData().data()) == sizeof(To))
+        if constexpr (sizeof(*column.getData().data()) == sizeof(To) && !std::is_same_v<To, bool>)
             return reinterpret_cast<const To *>(column.getData().data() + offset);
         else
         {
@@ -720,9 +720,9 @@ void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkInd
     ///  * bloom filter size must be at most 128 MiB.
     /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
     /// requires this.
-    double requested_num_blocks = hashes.size() * options.bloom_filter_bits_per_value / 256;
+    double requested_num_blocks = static_cast<double>(hashes.size()) * options.bloom_filter_bits_per_value / 256;
     size_t num_blocks = 1;
-    while (num_blocks < requested_num_blocks)
+    while (static_cast<double>(num_blocks) < requested_num_blocks)
     {
         if (num_blocks >= 4 * 1024 * 1024)
             return;
@@ -1325,7 +1325,13 @@ void finalizeRowGroup(FileWriteState & file, size_t num_rows, const WriteOptions
         r.total_byte_size += c.meta_data.total_uncompressed_size;
         r.total_compressed_size += c.meta_data.total_compressed_size;
     }
-    chassert(!r.columns.empty());
+
+    if (r.columns.empty())
+    {
+        /// All columns are empty tuples, there are no pages.
+        r.__set_file_offset(file.offset);
+    }
+    else
     {
         auto & m = r.columns[0].meta_data;
         r.__set_file_offset(m.__isset.dictionary_page_offset ? m.dictionary_page_offset : m.data_page_offset);

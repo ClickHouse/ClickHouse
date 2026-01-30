@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto res = std::make_shared<ASTTableExpression>();
+    auto res = make_intrusive<ASTTableExpression>();
 
     if (!ParserWithOptionalAlias(std::make_unique<ParserSubquery>(), allow_alias_without_as_keyword).parse(pos, res->subquery, expected)
         && !ParserWithOptionalAlias(std::make_unique<ParserFunction>(false, true), allow_alias_without_as_keyword).parse(pos, res->table_function, expected)
@@ -70,7 +70,7 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
 bool ParserArrayJoin::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto res = std::make_shared<ASTArrayJoin>();
+    auto res = make_intrusive<ASTArrayJoin>();
 
     /// [LEFT] ARRAY JOIN expr list
     Pos saved_pos = pos;
@@ -125,7 +125,7 @@ static void parseJoinStrictness(IParser::Pos & pos, ASTTableJoin & table_join, E
 
 bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto res = std::make_shared<ASTTablesInSelectQueryElement>();
+    auto res = make_intrusive<ASTTablesInSelectQueryElement>();
 
     if (is_first)
     {
@@ -137,7 +137,7 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
     }
     else
     {
-        auto table_join = std::make_shared<ASTTableJoin>();
+        auto table_join = make_intrusive<ASTTableJoin>();
 
         if (pos->type == TokenType::Comma)
         {
@@ -268,7 +268,7 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
 
 bool ParserTablesInSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto res = std::make_shared<ASTTablesInSelectQuery>();
+    auto res = make_intrusive<ASTTablesInSelectQuery>();
 
     ASTPtr child;
 

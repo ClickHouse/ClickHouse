@@ -222,8 +222,9 @@ private:
     UInt8 ALWAYS_INLINE read(UInt8 value_l, UInt8 value_r) const
     {
         /// The cell overlaps two bytes.
-        return ((value_l >> offset_l) & ((1 << (8 - offset_l)) - 1))
-            | ((value_r & ((1 << offset_r) - 1)) << (8 - offset_l));
+        return static_cast<UInt8>(
+            ((value_l >> offset_l) & ((1 << (8 - offset_l)) - 1))
+             | ((value_r & ((1 << offset_r) - 1)) << (8 - offset_l)));
     }
 
     size_t index_l;

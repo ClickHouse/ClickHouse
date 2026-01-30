@@ -8,7 +8,7 @@ namespace DB
 
 ASTPtr ASTWithElement::clone() const
 {
-    const auto res = std::make_shared<ASTWithElement>(*this);
+    const auto res = make_intrusive<ASTWithElement>(*this);
     res->children.clear();
     res->subquery = subquery->clone();
     if (aliases)

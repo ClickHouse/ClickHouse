@@ -431,10 +431,9 @@ struct Reader
     struct PrewhereStep
     {
         ExpressionActions actions;
-        String result_column_name;
+        std::optional<String> filter_column_name {};
         std::vector<size_t> input_idxs {}; // indices in extended_sample_block
-        std::optional<size_t> idx_in_output_block = std::nullopt;
-        bool need_filter = true;
+        std::vector<std::pair<String, size_t>> idxs_in_output_block {};
     };
 
     ReadOptions options;
@@ -470,7 +469,7 @@ struct Reader
     /// Maps idx_in_output_block to index in output_columns. I.e.:
     ///     sample_block_to_output_columns_idx[output_columns[i].idx_in_output_block] = i
     /// nullopt if the column is produced by PREWHERE expression:
-    ///     prewhere_steps[?].idx_in_output_block == i
+    ///     prewhere_steps[?].idxs_in_output_block[?].second == i
     std::vector<std::optional<size_t>> sample_block_to_output_columns_idx;
 
     /// sample_block with maybe some columns added at the end.
@@ -539,7 +538,8 @@ private:
     void initializePrefetches();
     double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
     void decodeDictionaryPageImpl(const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
-    void skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    /// If row_idx is provided, jump to the start of that row. Otherwise go to the start of next page.
+    void skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     std::tuple<parq::PageHeader, std::span<const char>> decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const;
     bool initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void decompressPageIfCompressed(PageState & page);

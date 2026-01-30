@@ -78,7 +78,7 @@ def run_fuzz_job(check_name: str):
         f.write("\n".join(changed_files))
 
     Shell.check(command=run_command, verbose=True)
-    
+
     # Fix file ownership after running docker as root
     logging.info("Fixing file ownership after running docker as root")
     uid = os.getuid()
@@ -126,10 +126,17 @@ def run_fuzz_job(check_name: str):
     if server_died:
         # Server died - status will be determined after OOM checks
         is_failed = True
-    elif fuzzer_exit_code in (0, 143):
-        # normal exit with timeout
+    elif fuzzer_exit_code in (0, 137, 143):
+        # normal exit with timeout or OOM kill
         is_failed = False
         status = Result.Status.SUCCESS
+        if fuzzer_exit_code == 0:
+            info.append("Fuzzer exited with success")
+        elif fuzzer_exit_code == 137:
+            info.append("Fuzzer killed")
+        else:
+            info.append("Fuzzer exited with timeout")
+        info.append("\n")
     elif fuzzer_exit_code in (227,):
         # BuzzHouse exception, it means a query oracle failed, or
         # an unwanted exception was found
@@ -143,20 +150,16 @@ def run_fuzz_job(check_name: str):
         info.append(f"ERROR: {error_info}")
     else:
         status = Result.Status.ERROR
-        if fuzzer_exit_code == 137:
-            # Killed.
-            info.append("ERROR: Fuzzer killed")
-        else:
-            # The server was alive, but the fuzzer returned some error. This might
-            # be some client-side error detected by fuzzing, or a problem in the
-            # fuzzer itself. Don't grep the server log in this case, because we will
-            # find a message about normal server termination (Received signal 15),
-            # which is confusing.
-            info.append("Client failure (see logs)")
-            info.append("---\nFuzzer log (last 200 lines):")
-            info.extend(
-                Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
-            )
+        # The server was alive, but the fuzzer returned some error. This might
+        # be some client-side error detected by fuzzing, or a problem in the
+        # fuzzer itself. Don't grep the server log in this case, because we will
+        # find a message about normal server termination (Received signal 15),
+        # which is confusing.
+        info.append("Client failure (see logs)")
+        info.append("---\nFuzzer log (last 200 lines):")
+        info.extend(
+            Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
+        )
 
     if is_failed:
         if is_sanitized:

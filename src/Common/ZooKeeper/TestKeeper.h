@@ -43,6 +43,8 @@ public:
     int64_t getConnectionXid() const override { return 0; }
     int64_t getSessionID() const override { return 0; }
     int64_t getLastZXIDSeen() const override { return 0; }
+    bool isFeatureEnabled(DB::KeeperFeatureFlag flag) const override { return keeper_feature_flags.isEnabled(flag); }
+    const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
     void create(
             const String & path,
@@ -82,7 +84,9 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallbackPtrOrEventPtr watch) override;
+        WatchCallbackPtrOrEventPtr watch,
+        bool with_stat,
+        bool with_data) override;
 
     void check(
         const String & path,
@@ -111,11 +115,6 @@ public:
     void getACL(const String & path, GetACLCallback callback) override;
 
     void finalize(const String & reason) override;
-
-    bool isFeatureEnabled(DB::KeeperFeatureFlag) const override
-    {
-        return false;
-    }
 
     struct Node
     {
@@ -148,6 +147,7 @@ private:
     std::atomic<bool> expired{false};
 
     int64_t zxid = 0;
+    DB::KeeperFeatureFlags keeper_feature_flags;
 
     Watches watches;
     Watches list_watches; /// Watches for 'list' request (watches on children).

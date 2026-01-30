@@ -38,11 +38,11 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
 {
     if (level)
     {
-        auto level_literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
+        auto level_literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
         return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), level_literal)), {});
     }
 
-    auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
+    auto identifier = make_intrusive<ASTIdentifier>(Poco::toUpper(family_name));
     return get(makeASTFunction("CODEC", identifier), {});
 }
 

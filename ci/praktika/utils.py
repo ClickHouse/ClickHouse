@@ -32,6 +32,7 @@ class MetaClasses:
 
     @dataclasses.dataclass
     class Serializable(ABC):
+        # TODO: make it non-static to do self.to_dict()
         @classmethod
         def to_dict(cls, obj):
             if dataclasses.is_dataclass(obj):

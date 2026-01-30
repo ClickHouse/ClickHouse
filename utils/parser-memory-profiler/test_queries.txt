@@ -1,0 +1,231 @@
+# Parser Memory Profiler Test Queries
+# 100 diverse queries to test different memory allocation patterns
+# Categories: SELECT basics, SELECT complex, WHERE/HAVING, GROUP BY/ORDER BY,
+# CREATE TABLE, CREATE VIEW, INSERT, ALTER TABLE, System queries, Edge cases
+
+# === SELECT Basics (1-15) ===
+# Simple literals and expressions
+
+SELECT 1;
+
+SELECT 'hello world';
+
+SELECT 1 + 2 * 3 - 4 / 2;
+
+SELECT 1, 2, 3, 4, 5, 6, 7, 8, 9, 10;
+
+SELECT now(), today(), yesterday();
+
+SELECT toUInt32(123), toFloat64(3.14), toString(42);
+
+SELECT length('test string'), upper('hello'), lower('WORLD');
+
+SELECT arrayJoin([1, 2, 3, 4, 5]);
+
+SELECT range(10);
+
+SELECT if(1 > 0, 'yes', 'no');
+
+SELECT multiIf(x = 1, 'one', x = 2, 'two', 'other') FROM (SELECT 1 AS x);
+
+SELECT NULL, isNull(NULL), isNotNull(1);
+
+SELECT coalesce(NULL, NULL, 'default');
+
+SELECT 1 AS a, 2 AS b, 3 AS c, a + b + c AS total;
+
+SELECT concat('hello', ' ', 'world', '!');
+
+# === SELECT Complex (16-30) ===
+# JOINs, subqueries, CTEs, UNION
+
+SELECT * FROM system.one;
+
+SELECT a.*, b.* FROM system.one AS a, system.one AS b;
+
+SELECT * FROM (SELECT 1 AS x) AS subquery;
+
+SELECT * FROM (SELECT number FROM system.numbers LIMIT 10) AS t1 JOIN (SELECT number FROM system.numbers LIMIT 10) AS t2 ON t1.number = t2.number;
+
+SELECT * FROM (SELECT 1 AS a UNION ALL SELECT 2 UNION ALL SELECT 3);
+
+SELECT * FROM (SELECT number, number * 2 AS doubled FROM system.numbers LIMIT 100) WHERE doubled > 50;
+
+WITH cte AS (SELECT number FROM system.numbers LIMIT 10) SELECT * FROM cte;
+
+WITH RECURSIVE cte AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM cte WHERE n < 10) SELECT * FROM cte;
+
+SELECT t1.number, t2.number FROM system.numbers AS t1 LEFT JOIN system.numbers AS t2 ON t1.number = t2.number LIMIT 10;
+
+SELECT t1.number, t2.number FROM system.numbers AS t1 RIGHT JOIN system.numbers AS t2 ON t1.number = t2.number LIMIT 10;
+
+SELECT t1.number, t2.number FROM system.numbers AS t1 FULL OUTER JOIN system.numbers AS t2 ON t1.number = t2.number LIMIT 10;
+
+SELECT t1.number FROM system.numbers AS t1 CROSS JOIN system.numbers AS t2 LIMIT 100;
+
+SELECT * FROM (SELECT 1 AS a) AS x INNER JOIN (SELECT 1 AS b) AS y ON x.a = y.b;
+
+SELECT number FROM system.numbers WHERE number IN (SELECT number FROM system.numbers LIMIT 10) LIMIT 20;
+
+SELECT number, (SELECT max(number) FROM system.numbers LIMIT 100) AS max_val FROM system.numbers LIMIT 5;
+
+# === WHERE/HAVING (31-40) ===
+# Comparisons, IN, LIKE, complex predicates
+
+SELECT number FROM system.numbers WHERE number > 5 AND number < 10 LIMIT 100;
+
+SELECT number FROM system.numbers WHERE number BETWEEN 5 AND 10 LIMIT 100;
+
+SELECT number FROM system.numbers WHERE number IN (1, 2, 3, 4, 5) LIMIT 100;
+
+SELECT number FROM system.numbers WHERE number NOT IN (1, 2, 3) LIMIT 10;
+
+SELECT name FROM system.tables WHERE name LIKE '%log%';
+
+SELECT name FROM system.tables WHERE name NOT LIKE 'system%';
+
+SELECT name FROM system.columns WHERE match(name, '^col_[0-9]+$');
+
+SELECT number FROM system.numbers WHERE (number > 5 OR number < 2) AND number != 3 LIMIT 20;
+
+SELECT number FROM system.numbers WHERE number > 0 AND number < 100 AND number % 2 = 0 AND number % 3 = 0 LIMIT 10;
+
+SELECT database, count() AS cnt FROM system.tables GROUP BY database HAVING cnt > 5;
+
+# === GROUP BY/ORDER BY (41-50) ===
+# Aggregations, window functions
+
+SELECT database, count() FROM system.tables GROUP BY database;
+
+SELECT database, engine, count() FROM system.tables GROUP BY database, engine;
+
+SELECT database, count(), sum(total_rows), avg(total_rows), min(total_rows), max(total_rows) FROM system.tables GROUP BY database;
+
+SELECT database, groupArray(name) FROM system.tables GROUP BY database;
+
+SELECT database, topK(5)(name) FROM system.tables GROUP BY database;
+
+SELECT number, count() OVER () FROM system.numbers LIMIT 10;
+
+SELECT number, sum(number) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM system.numbers LIMIT 10;
+
+SELECT number, row_number() OVER (ORDER BY number) AS rn, rank() OVER (ORDER BY number) AS rnk FROM system.numbers LIMIT 10;
+
+SELECT number, lag(number, 1) OVER (ORDER BY number) AS prev, lead(number, 1) OVER (ORDER BY number) AS next FROM system.numbers LIMIT 10;
+
+SELECT * FROM system.tables ORDER BY database, name LIMIT 10;
+
+# === CREATE TABLE (51-65) ===
+# Columns, types, constraints, engines
+
+CREATE TABLE test_simple (id UInt64) ENGINE = Memory;
+
+CREATE TABLE test_types (a UInt8, b UInt16, c UInt32, d UInt64, e Int8, f Int16, g Int32, h Int64) ENGINE = Memory;
+
+CREATE TABLE test_strings (s String, fs FixedString(32), uuid UUID) ENGINE = Memory;
+
+CREATE TABLE test_dates (d Date, d32 Date32, dt DateTime, dt64 DateTime64(3)) ENGINE = Memory;
+
+CREATE TABLE test_nullable (a Nullable(UInt64), b Nullable(String)) ENGINE = Memory;
+
+CREATE TABLE test_array (arr Array(UInt64), nested_arr Array(Array(String))) ENGINE = Memory;
+
+CREATE TABLE test_tuple (t Tuple(a UInt64, b String, c Float64)) ENGINE = Memory;
+
+CREATE TABLE test_map (m Map(String, UInt64)) ENGINE = Memory;
+
+CREATE TABLE test_lowcardinality (lc LowCardinality(String)) ENGINE = Memory;
+
+CREATE TABLE test_enum (e Enum8('a' = 1, 'b' = 2, 'c' = 3)) ENGINE = Memory;
+
+CREATE TABLE test_mergetree (id UInt64, name String, created DateTime) ENGINE = MergeTree() ORDER BY id;
+
+CREATE TABLE test_mergetree_partition (id UInt64, date Date, value Float64) ENGINE = MergeTree() PARTITION BY toYYYYMM(date) ORDER BY (date, id);
+
+CREATE TABLE test_replicated (id UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/test', '{replica}') ORDER BY id;
+
+CREATE TABLE test_ttl (id UInt64, created DateTime, data String TTL created + INTERVAL 1 DAY) ENGINE = MergeTree() ORDER BY id;
+
+CREATE TABLE test_codec (id UInt64, value Float64 CODEC(Delta, ZSTD)) ENGINE = MergeTree() ORDER BY id;
+
+# === CREATE VIEW (66-70) ===
+
+CREATE VIEW test_view AS SELECT number FROM system.numbers LIMIT 100;
+
+CREATE VIEW test_view_complex AS SELECT database, count() AS table_count FROM system.tables GROUP BY database;
+
+CREATE MATERIALIZED VIEW test_mv ENGINE = Memory AS SELECT now() AS ts, rand() AS val;
+
+CREATE VIEW test_view_join AS SELECT t.name, c.name AS col_name FROM system.tables t JOIN system.columns c ON t.name = c.table;
+
+CREATE VIEW test_view_params AS SELECT {param:UInt64} AS value;
+
+# === INSERT (71-75) ===
+
+INSERT INTO test_simple VALUES (1);
+
+INSERT INTO test_simple VALUES (1), (2), (3), (4), (5);
+
+INSERT INTO test_types VALUES (1, 2, 3, 4, 5, 6, 7, 8);
+
+INSERT INTO test_simple SELECT number FROM system.numbers LIMIT 100;
+
+INSERT INTO test_strings VALUES ('hello', 'world', generateUUIDv4());
+
+# === ALTER TABLE (76-85) ===
+
+ALTER TABLE test_simple ADD COLUMN new_col String;
+
+ALTER TABLE test_simple DROP COLUMN new_col;
+
+ALTER TABLE test_simple MODIFY COLUMN id UInt32;
+
+ALTER TABLE test_simple COMMENT COLUMN id 'Primary identifier';
+
+ALTER TABLE test_simple ADD INDEX idx_id id TYPE minmax GRANULARITY 1;
+
+ALTER TABLE test_simple DROP INDEX idx_id;
+
+ALTER TABLE test_mergetree ADD PROJECTION proj_name (SELECT name ORDER BY name);
+
+ALTER TABLE test_mergetree MODIFY TTL created + INTERVAL 7 DAY;
+
+ALTER TABLE test_simple RENAME COLUMN id TO identifier;
+
+ALTER TABLE test_mergetree UPDATE name = 'updated' WHERE id = 1;
+
+# === System queries (86-90) ===
+
+SYSTEM FLUSH LOGS;
+
+SHOW TABLES FROM system;
+
+DESCRIBE TABLE system.tables;
+
+EXPLAIN AST SELECT 1;
+
+EXPLAIN SYNTAX SELECT * FROM system.one WHERE 1;
+
+# === Edge cases (91-100) ===
+# Deeply nested, many columns, long identifiers
+
+SELECT ((((1 + 2) * 3) - 4) / 5);
+
+SELECT arrayMap(x -> arrayMap(y -> y * 2, x), [[1, 2], [3, 4]]);
+
+SELECT transform(number, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'], 'other') FROM system.numbers LIMIT 20;
+
+CREATE TABLE test_many_columns (c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64, c5 UInt64, c6 UInt64, c7 UInt64, c8 UInt64, c9 UInt64, c10 UInt64, c11 UInt64, c12 UInt64, c13 UInt64, c14 UInt64, c15 UInt64, c16 UInt64, c17 UInt64, c18 UInt64, c19 UInt64, c20 UInt64) ENGINE = Memory;
+
+SELECT very_long_column_name_that_tests_memory_allocation_for_identifiers FROM (SELECT 1 AS very_long_column_name_that_tests_memory_allocation_for_identifiers);
+
+SELECT a.very_long_alias_name_for_testing_purposes, b.another_extremely_long_alias_name FROM (SELECT 1 AS very_long_alias_name_for_testing_purposes) AS a, (SELECT 2 AS another_extremely_long_alias_name) AS b;
+
+WITH extremely_long_cte_name_that_should_test_memory_allocation_patterns AS (SELECT number FROM system.numbers LIMIT 10) SELECT * FROM extremely_long_cte_name_that_should_test_memory_allocation_patterns;
+
+SELECT * FROM system.tables AS this_is_a_very_long_table_alias_name_for_testing WHERE this_is_a_very_long_table_alias_name_for_testing.database = 'system';
+
+CREATE TABLE test_complex_default (id UInt64, computed UInt64 MATERIALIZED id * 2, aliased UInt64 ALIAS id + 1, with_default String DEFAULT 'default_value') ENGINE = Memory;
+
+SELECT JSONExtractString('{"key": "value", "nested": {"inner": 123}}', 'key'), JSONExtractInt('{"key": "value", "nested": {"inner": 123}}', 'nested', 'inner');
+

@@ -750,7 +750,7 @@ public:
     template <typename DateOrTime>
     UInt8 toISOWeek(DateOrTime v) const
     {
-        return 1 + (toFirstDayNumOfWeek(v) - toDayNum(toFirstDayNumOfISOYearIndex(v))) / 7;
+        return static_cast<UInt8>(1 + (toFirstDayNumOfWeek(v) - toDayNum(toFirstDayNumOfISOYearIndex(v))) / 7);
     }
 
     /*
@@ -824,9 +824,9 @@ public:
         }
 
         if ((first_weekday_mode && weekday != 0) || (!first_weekday_mode && weekday >= 4))
-            days = day_number - (first_day_number + (7 - weekday));
+            days = static_cast<UInt16>(day_number - (first_day_number + (7 - weekday)));
         else
-            days = day_number - (first_day_number - weekday);
+            days = static_cast<UInt16>(day_number - (first_day_number - weekday));
 
         if (week_year_mode && days >= 52 * 7)
         {
@@ -839,7 +839,7 @@ public:
             }
         }
 
-        yw.second = days / 7 + 1;
+        yw.second = static_cast<UInt8>(days / 7 + 1);
         return yw;
     }
 
@@ -874,7 +874,7 @@ public:
             if (toDayOfWeek(i) != 7)
                 this_day = ExtendedDayNum(i - toDayOfWeek(i));
         }
-        yw.second = (this_day - first_day) / 7 + 1;
+        yw.second = static_cast<UInt8>((this_day - first_day) / 7 + 1);
         return yw;
     }
 
@@ -890,7 +890,7 @@ public:
 
         const auto day_of_week = toDayOfWeek(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
+            return (day_of_week != 7) ? DayNum(static_cast<UInt16>(saturateMinus(v, day_of_week))) : toDayNum(v);
         else
             return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
     }
@@ -908,7 +908,7 @@ public:
         const auto day_of_week = toDayOfWeek(v);
         v += 6;
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
+            return (day_of_week != 7) ? DayNum(static_cast<UInt16>(saturateMinus(v, day_of_week))) : toDayNum(v);
         else
             return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
     }
@@ -1017,7 +1017,7 @@ public:
 
         const LUTIndex i = toLUTIndex(v);
 
-        UInt16 year = lut[i].year / years * years;
+        UInt16 year = static_cast<UInt16>(static_cast<UInt64>(lut[i].year) / years * years);
 
         /// For example, rounding down 1925 to 100 years will be 1900, but it's less than min supported year.
         if (unlikely(year < DATE_LUT_MIN_YEAR))
@@ -1061,7 +1061,7 @@ public:
         UInt64 days = weeks * 7;
         // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday.
         if constexpr (std::is_same_v<Date, DayNum>)
-            return DayNum(4 + (d - 4) / days * days);
+            return DayNum(static_cast<UInt16>(4 + (d - 4) / days * days));
         else
             return ExtendedDayNum(static_cast<Int32>(4 + (d - 4) / days * days));
     }
@@ -1273,12 +1273,12 @@ public:
 
     Time YYYYMMDDToDate(UInt32 num) const /// NOLINT
     {
-        return makeDate(num / 10000, num / 100 % 100, num % 100);
+        return makeDate(static_cast<Int16>(num / 10000), static_cast<UInt8>(num / 100 % 100), static_cast<UInt8>(num % 100));
     }
 
     ExtendedDayNum YYYYMMDDToDayNum(UInt32 num) const /// NOLINT
     {
-        return makeDayNum(num / 10000, num / 100 % 100, num % 100);
+        return makeDayNum(static_cast<Int16>(num / 10000), static_cast<UInt8>(num / 100 % 100), static_cast<UInt8>(num % 100));
     }
 
 
@@ -1391,7 +1391,7 @@ public:
     Time YYYYMMDDhhmmssToTime(UInt64 num) const /// NOLINT
     {
         return makeDateTime(
-            num / 10000000000,
+            static_cast<Int16>(num / 10000000000),
             num / 100000000 % 100,
             num / 1000000 % 100,
             num / 10000 % 100,
@@ -1445,16 +1445,16 @@ public:
         {
             auto year = values.year + (month - 1) / 12;
             month = ((month - 1) % 12) + 1;
-            auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
+            auto day_of_month = saturateDayOfMonth(static_cast<Int16>(year), static_cast<UInt8>(month), values.day_of_month);
 
-            return makeLUTIndex(year, month, day_of_month);
+            return makeLUTIndex(static_cast<Int16>(year), static_cast<UInt8>(month), day_of_month);
         }
 
         auto year = values.year - (12 - month) / 12;
         month = 12 - (-month % 12);
-        auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
+        auto day_of_month = saturateDayOfMonth(static_cast<Int16>(year), static_cast<UInt8>(month), values.day_of_month);
 
-        return makeLUTIndex(year, month, day_of_month);
+        return makeLUTIndex(static_cast<Int16>(year), static_cast<UInt8>(month), day_of_month);
     }
 
     /// If resulting month has less days than source month, then saturation can happen.
@@ -1506,15 +1506,15 @@ public:
     {
         const Values & values = lut[toLUTIndex(v)];
 
-        auto year = values.year + delta;
+        auto year = values.year + static_cast<Int16>(delta);
         auto month = values.month;
         auto day_of_month = values.day_of_month;
 
         /// Saturation to 28 Feb can happen.
         if (unlikely(day_of_month == 29 && month == 2))
-            day_of_month = saturateDayOfMonth(year, month, day_of_month);
+            day_of_month = saturateDayOfMonth(static_cast<Int16>(year), month, day_of_month);
 
-        return makeLUTIndex(year, month, day_of_month);
+        return makeLUTIndex(static_cast<Int16>(year), month, day_of_month);
     }
 
     /// Saturation can occur if 29 Feb is mapped to non-leap year.

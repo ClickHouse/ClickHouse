@@ -156,3 +156,50 @@ SELECT
     x IN (arr)
 FROM numbers(3)
 SETTINGS transform_null_in = 0;
+
+SELECT '-- Scalar-returning functions (rewritten to equals/notEquals) --';
+
+SELECT 1 IN if(1 > 0, 1, 2);
+SELECT 1 IN if(1 > 0, 2, 1);
+SELECT 2 IN if(0 > 1, 1, 2);
+
+SELECT number, number IN if(number > 2, 5, 1) FROM numbers(6);
+SELECT number, number IN if(number % 2 = 0, number, number + 10) FROM numbers(5);
+
+SELECT 1 NOT IN if(1 > 0, 1, 2);
+SELECT 1 NOT IN if(1 > 0, 2, 1);
+SELECT number, number NOT IN if(number > 2, 5, 1) FROM numbers(6);
+
+SELECT 1 IN if(1 > 0, if(2 > 1, 1, 3), 2);
+SELECT 2 IN if(1 > 0, if(2 > 1, 1, 3), 2);
+
+SELECT 1 IN multiIf(1 > 2, 10, 2 > 3, 20, 1);
+SELECT 10 IN multiIf(1 > 0, 10, 2 > 3, 20, 1);
+
+SELECT 1 IN coalesce(NULL, 1);
+SELECT 1 IN coalesce(NULL, 2);
+SELECT 1 IN coalesce(1, 2);
+
+SELECT 1 IN nullIf(1, 2);
+SELECT 1 IN nullIf(2, 2);
+
+SELECT 5 IN (2 + 3);
+SELECT 5 IN (2 * 3);
+
+SELECT 'hello' IN if(1 > 0, 'hello', 'world');
+SELECT 'world' IN if(1 > 0, 'hello', 'world');
+
+SELECT * FROM (SELECT number, number IN if(number > 2, 5, number) as result FROM numbers(6)) WHERE result = 1;
+
+SELECT number, number IN if(number > 2, 5, 1), number IN if(number < 2, 0, 10) FROM numbers(6);
+
+SELECT 1 GLOBAL IN if(1 > 0, 1, 2);
+SELECT 1 GLOBAL NOT IN if(1 > 0, 1, 2);
+
+SELECT * FROM (SELECT * FROM VALUES('cab_type String, dropoff UInt16', ('yellow', 138), ('green', 132))) AS t WHERE dropoff IN if(cab_type = 'yellow', 138, 132);
+
+SELECT '-- Scalar NULL handling (preserves IN non-nullable behavior) --';
+SELECT 1 IN nullIf(1, 1) AS r, toTypeName(1 IN nullIf(1, 1)) AS t;
+SELECT 1 NOT IN nullIf(1, 1) AS r, toTypeName(1 NOT IN nullIf(1, 1)) AS t;
+SELECT number, number IN nullIf(number, 1) FROM numbers(3);
+SELECT number, number NOT IN nullIf(number, 1) FROM numbers(3);

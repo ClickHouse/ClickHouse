@@ -1,3 +1,5 @@
+-- add_minmax_index_for_numeric_columns=0: Implicit indices will filter before projections
+
 -- { echo ON }
 
 DROP TABLE IF EXISTS test_simple_projection;
@@ -19,7 +21,7 @@ CREATE TABLE test_simple_projection
 )
 ENGINE = MergeTree
 ORDER BY (event_date, id)
-SETTINGS index_granularity = 1, max_bytes_to_merge_at_max_space_in_pool = 1; -- disable merge
+SETTINGS index_granularity = 1, max_bytes_to_merge_at_max_space_in_pool = 1, add_minmax_index_for_numeric_columns=0; -- disable merge
 INSERT INTO test_simple_projection VALUES (1, '2023-01-01', 101, 'https://example.com/page1', 'europe');
 INSERT INTO test_simple_projection VALUES (2, '2023-01-01', 102, 'https://example.com/page2', 'us_west');
 INSERT INTO test_simple_projection VALUES (3, '2023-01-02', 106, 'https://example.com/page3', 'us_west');

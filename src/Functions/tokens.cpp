@@ -249,18 +249,25 @@ REGISTER_FUNCTION(Tokens)
 {
     FunctionDocumentation::Description description = R"(
 Splits a string into tokens using the given tokenizer.
-The default tokenizer uses non-alphanumeric ASCII characters as separators.
+
+Available tokenizers:
+- `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters (also see function [splitByNonAlpha](/sql-reference/functions/splitting-merging-functions.md/#splitByNonAlpha)).
+- `splitByString(S)` splits strings along certain user-defined separator strings `S` (also see function [splitByString](/sql-reference/functions/splitting-merging-functions.md/#splitByString)). The separators can be specified using an optional parameter, for example, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`. Note that each string can consist of multiple characters (`', '` in the example). The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
+- `ngrams(N)` splits strings into equally large `N`-grams (also see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)). The ngram length can be specified using an optional integer parameter between 1 and 8, for example, `tokenizer = ngrams(3)`. The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
+- `sparseGrams(min_length, max_length, min_cutoff_length)` splits strings into variable-length n-grams of at least `min_length` and at most `max_length` (inclusive) characters (also see function [sparseGrams](/sql-reference/functions/string-functions#sparseGrams)). Unless specified explicitly, `min_length` and `max_length` default to 3 and 100. If parameter `min_cutoff_length` is provided, only n-grams with length greater or equal than `min_cutoff_length` are returned. Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text. For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
+- `array` performs no tokenization, i.e. every row value is a token (also see function [array](/sql-reference/functions/array-functions.md/#array)).
 
 In case of the `splitByString` tokenizer, if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
 To do so, pass the separators in order of descending length.
 For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
 )";
     FunctionDocumentation::Syntax syntax = R"(
-tokens(value)
-tokens(value, tokenizer)
-tokens(value, 'ngrams'[, n])
+tokens(value) -- 'splitByNonAlpha' tokenizer
+tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
+tokens(value, 'ngrams'[, n])
 tokens(value, 'sparseGrams'[, min_length, max_length[, min_cutoff_length]])
+tokens(value, 'array')
 )";
     FunctionDocumentation::Arguments arguments = {
         {"value", "The input string.", {"String", "FixedString"}},

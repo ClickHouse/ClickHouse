@@ -114,7 +114,7 @@ public:
             }
             else
             {
-                QueryResult res = findApproxQuantile(index, min_rank, target_error, percentile);
+                QueryResult res = findApproxQuantile(index, min_rank, static_cast<double>(target_error), percentile);
                 index = res.index;
                 min_rank = res.rank;
                 result[indices[i]] = res.value;
@@ -129,7 +129,7 @@ public:
 
         withHeadBufferInserted();
 
-        doCompress(2 * relative_error * count);
+        doCompress(2 * relative_error * static_cast<double>(count));
         compressed = true;
     }
 
@@ -186,8 +186,8 @@ public:
             backup_sampled.reserve_exact(sampled.size() + other.sampled.size());
             double merged_relative_error = std::max(relative_error, other.relative_error);
             size_t merged_count = count + other.count;
-            Int64 additional_self_delta = static_cast<Int64>(std::floor(2 * other.relative_error * other.count));
-            Int64 additional_other_delta = static_cast<Int64>(std::floor(2 * relative_error * count));
+            Int64 additional_self_delta = static_cast<Int64>(std::floor(2 * other.relative_error * static_cast<double>(other.count)));
+            Int64 additional_other_delta = static_cast<Int64>(std::floor(2 * relative_error * static_cast<double>(count)));
 
             // Do a merge of two sorted lists until one of the lists is fully consumed
             size_t self_idx = 0;
@@ -236,7 +236,7 @@ public:
             count = merged_count;
             compress_threshold = other.compress_threshold;
 
-            doCompress(2 * merged_relative_error * merged_count);
+            doCompress(2 * merged_relative_error * static_cast<double>(merged_count));
             compressed = true;
         }
         /// NOLINTEND(readability-else-after-return)
@@ -287,13 +287,14 @@ private:
     QueryResult findApproxQuantile(size_t index, Int64 min_rank_at_index, double target_error, double percentile) const
     {
         Stats curr_sample = sampled[index];
-        Int64 rank = static_cast<Int64>(std::ceil(percentile * count));
+        Int64 rank = static_cast<Int64>(std::ceil(percentile * static_cast<Float64>(count)));
         size_t i = index;
         Int64 min_rank = min_rank_at_index;
         while (i < sampled.size() - 1)
         {
             Int64 max_rank = min_rank + curr_sample.delta;
-            if (max_rank - target_error <= rank && rank <= min_rank + target_error)
+            if (static_cast<double>(max_rank) - target_error <= static_cast<double>(rank)
+                && static_cast<double>(rank) <= static_cast<double>(min_rank) + target_error)
                 return {i, min_rank, curr_sample.value};
 
             ++i;
@@ -337,7 +338,7 @@ private:
             if (backup_sampled.empty() || (sample_idx == sampled.size() && ops_idx == (head_sampled.size() - 1)))
                 delta = 0;
             else
-                delta = static_cast<Int64>(std::floor(2 * relative_error * current_count));
+                delta = static_cast<Int64>(std::floor(2 * relative_error * static_cast<double>(current_count)));
 
             backup_sampled.emplace_back(current_sample, 1, delta);
         }
@@ -369,7 +370,7 @@ private:
             // The current sample:
             const auto & sample1 = sampled[i];
             // Do we need to compress?
-            if (sample1.g + head.g + head.delta < merge_threshold)
+            if (static_cast<double>(sample1.g + head.g + head.delta) < merge_threshold)
             {
                 // Do not insert yet, just merge the current element into the head.
                 head.g += sample1.g;

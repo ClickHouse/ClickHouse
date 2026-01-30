@@ -2030,7 +2030,7 @@ class ClickHouseCluster:
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/var/lib/clickhouse/server_%h_%p_%m.profraw"
+            "/debug/it-%4m.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd
@@ -3919,9 +3919,9 @@ class ClickHouseCluster:
             bufsize=0,
         )
 
-    def shutdown(self, kill=True, ignore_fatal=True):
+    def shutdown(self, kill=True, ignore_fatal=False, ignore_logical_errors=False):
         sanitizer_assert_instance = None
-        fatal_log = None
+        failure_logs = []
 
         if self.up_called:
             if kill:
@@ -3938,6 +3938,13 @@ class ClickHouseCluster:
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
+                # Collect exit codes for later inspection
+                if instance.with_dolor:
+                    container = self.docker_client.containers.get(instance.docker_id)
+                    res = container.wait()
+                    exit_code = res["StatusCode"]
+                    logging.info(f"The server {name} exited with code: {exit_code}")
+
                 if instance.contains_in_log(
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
@@ -3953,14 +3960,19 @@ class ClickHouseCluster:
                         sanitizer_assert_instance,
                     )
 
-                if not ignore_fatal and instance.contains_in_log(
-                    "Fatal", from_host=True
-                ):
-                    fatal_log = instance.grep_in_log("Fatal", from_host=True)
-                    if "Child process was terminated by signal 9 (KILL)" in fatal_log:
-                        fatal_log = None
-                        continue
-                    logging.error("Crash in instance %s fatal log %s", name, fatal_log)
+                if not ignore_logical_errors:
+                    logical_error_log = instance.grep_in_log("LOGICAL_ERROR", from_host=True)
+                    if logical_error_log and '<Error>' in logical_error_log:
+                        msg = f"Logical error in instance '{name}':\n{logical_error_log}"
+                        failure_logs.append(msg)
+                        logging.error(msg)
+
+                if not ignore_fatal:
+                    fatal_log = instance.grep_in_log("<Fatal>", from_host=True)
+                    if fatal_log and "Child process was terminated by signal 9 (KILL)" not in fatal_log:
+                        msg = f"Crash in instance '{name}':\n{fatal_log}"
+                        failure_logs.append(msg)
+                        logging.error(msg)
 
             try:
                 subprocess_check_call(self.base_cmd + ["down", "--volumes"])
@@ -4016,14 +4028,20 @@ class ClickHouseCluster:
         if self.spark_session:
             self.spark_session.stop()
 
-        if fatal_log is not None:
-            raise Exception("Fatal messages found: {}".format(fatal_log))
+        if failure_logs:
+            raise Exception("\n".join(failure_logs))
 
     def _pause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["pause", instance_name])
 
     def _unpause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["unpause", instance_name])
+
+    def _pause_container_using_signal(self, instance_name):
+        subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGSTOP", instance_name])
+
+    def _unpause_container_using_signal(self, instance_name):
+        subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGCONT", instance_name])
 
     @contextmanager
     def pause_container(self, instance_name):
@@ -4036,6 +4054,14 @@ class ClickHouseCluster:
             yield
         finally:
             self._unpause_container(instance_name)
+
+    @contextmanager
+    def pause_container_using_signal(self, instance_name):
+        self._pause_container_using_signal(instance_name)
+        try:
+            yield
+        finally:
+            self._unpause_container_using_signal(instance_name)
 
     def open_bash_shell(self, instance_name):
         os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
@@ -4144,7 +4170,7 @@ services:
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
             - {HELPERS_DIR}/../integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
-            - {CLICKHOUSE_ROOT_DIR}:/debug:ro
+            - {CLICKHOUSE_ROOT_DIR}:/debug:rw
             {metrika_xml}
             {binary_volume}
             {external_dirs_volumes}
@@ -4281,10 +4307,10 @@ class ClickHouseInstance:
         if mem_limit is not None:
             self.mem_limit = f"mem_limit: {mem_limit}"
         else:
-            self.mem_limit = "mem_limit: 10g"
+            self.mem_limit = "mem_limit: 12g"
 
         if cpu_limit is None:
-            self.cpu_limit = "cpus: 3"
+            self.cpu_limit = "cpus: 5"
         elif cpu_limit == False:
             self.cpu_limit = ""
         else:
@@ -4445,6 +4471,12 @@ class ClickHouseInstance:
             "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
         )
         return "NDEBUG" not in build_opts
+    
+    def is_built_with_llvm_coverage(self):
+        with_coverage = self.query(
+            "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'"
+        )
+        return "ON" in with_coverage.upper()
 
     def is_built_with_thread_sanitizer(self):
         return self.is_built_with_sanitizer("thread")
@@ -4786,7 +4818,7 @@ class ClickHouseInstance:
                 return False
 
             self.exec_in_container(
-                ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")],
+                ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "-15")],
                 user="root",
             )
 
@@ -5552,6 +5584,7 @@ class ClickHouseInstance:
             use_distributed_plan = self.use_distributed_plan
 
         write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
+        write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
 
         if use_old_analyzer:
             write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
@@ -5809,7 +5842,7 @@ class ClickHouseInstance:
                     net_alias1=net_alias1,
                     init_flag="true" if self.docker_init_flag else "false",
                     HELPERS_DIR=HELPERS_DIR,
-                    CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR
+                    CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR,
                 )
             )
 
