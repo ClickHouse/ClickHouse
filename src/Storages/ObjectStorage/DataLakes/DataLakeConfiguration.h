@@ -19,7 +19,6 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <memory>
 #include <string>
-#include <type_traits>
 
 #include <Common/ErrorCodes.h>
 #include <Common/filesystemHelpers.h>
@@ -365,6 +364,15 @@ public:
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
         auto disk = context->getDisk(disk_name);
         ready_object_storage = disk->getObjectStorage();
+    }
+
+    bool supportsPrewhere() const override
+    {
+#if USE_AVRO
+        return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
+#else
+        return false;
+#endif
     }
 
 private:
