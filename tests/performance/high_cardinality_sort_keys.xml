@@ -1,0 +1,20 @@
+<test>
+    <settings>
+        <max_threads>4</max_threads>
+    </settings>
+    <create_query>CREATE TABLE sort_t (a String, b String, c UInt32, d UInt32) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO sort_t
+        SELECT 
+            toString(rand()) as a,
+            toString(rand()% 10) as b,
+            rand() % 100000 as c,
+            rand() % 10 as d
+        FROM numbers(1e7)
+    </fill_query>
+
+    <query>SELECT a, c FROM sort_t ORDER BY a, c FORMAT Null</query>
+    <query>SELECT b, d FROM sort_t ORDER BY b, d FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS sort_t</drop_query>
+</test>

@@ -54,7 +54,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
         sort_description_types.emplace_back(header->getByName(column_description.column_name).type);
     }
 
-    queue_variants = SortQueueVariants(sort_description_types, description);
+    queue_variants = SortQueueVariants<>(sort_description_types, description);
     if (queue_variants.variantSupportJITCompilation())
         compileSortDescriptionIfNeeded(description, sort_description_types, true /*increase_compile_attempts*/);
 }
