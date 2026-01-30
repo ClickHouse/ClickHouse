@@ -163,7 +163,7 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
         {
             const auto & settings = condition_text.getContext()->getSettingsRef();
             double selectivity_threshold = settings[Setting::text_index_hint_max_selectivity];
-            size_t num_rows_in_part = data_part_info_for_read->getRowCount();
+            size_t num_rows_in_part = data_part_info_for_read->getRowsCount();
             double cardinality = estimateCardinality(*search_query, remaining_tokens, num_rows_in_part);
 
             if (cardinality <= static_cast<double>(num_rows_in_part) * selectivity_threshold)
@@ -258,7 +258,7 @@ size_t MergeTreeReaderTextIndex::readRows(
         from_row = index_granularity.getMarkStartingRow(from_mark) + rows_offset;
     }
 
-    size_t total_rows = data_part_info_for_read->getRowCount();
+    size_t total_rows = data_part_info_for_read->getRowsCount();
     if (from_row < total_rows)
         max_rows_to_read = std::min(max_rows_to_read, total_rows - from_row);
     else
@@ -279,7 +279,10 @@ size_t MergeTreeReaderTextIndex::readRows(
         /// When the number of rows in a part is smaller than `index_granularity`,
         /// `MergeTreeReaderTextIndex` must ensure that the virtual column it reads
         /// contains no more data rows than actually exist in the part
-        size_t rows_to_read = std::min(index_granularity.getMarkRows(from_mark), max_rows_to_read - read_rows);
+        size_t rows_to_read = std::min(data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark), data_part_info_for_read->getRowsCount());
+        // Fix reading the row count of the last granule in the fixed index granularity case.
+        if (auto last_granule_rows_count = data_part_info_for_read->getRowsCountForLastGranuleOrZero(from_mark))
+            rows_to_read = last_granule_rows_count;
 
         /// If our reader is not first in the chain, canSkipMark is not called in RangeReader.
         /// TODO: adjust the code in RangeReader to call canSkipMark for all readers.
