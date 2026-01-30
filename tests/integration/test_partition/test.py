@@ -741,3 +741,50 @@ def test_attach_broken_parts(drop_detached_parts_table):
         )
         == "0\n"
     )
+
+
+def test_attach_part_path_traversal(drop_detached_parts_table):
+    """Test that path traversal attempts in ATTACH PART FROM are rejected."""
+    instance.query(
+        """
+        DROP TABLE IF EXISTS t_path_traversal;
+        CREATE TABLE t_path_traversal (id UInt64) ENGINE = MergeTree ORDER BY id;
+    """
+    )
+
+    # Test path traversal with ../
+    with pytest.raises(Exception) as e:
+        instance.query(
+            "ALTER TABLE t_path_traversal ATTACH PART 'all_1_1_0' FROM '../some_path'"
+        )
+    assert "INCORRECT_FILE_NAME" in str(e.value)
+
+    # Test path traversal with subdirectory ../
+    with pytest.raises(Exception) as e:
+        instance.query(
+            "ALTER TABLE t_path_traversal ATTACH PART 'all_1_1_0' FROM 'subdir/../../../etc'"
+        )
+    assert "INCORRECT_FILE_NAME" in str(e.value)
+
+    # Test absolute path
+    with pytest.raises(Exception) as e:
+        instance.query(
+            "ALTER TABLE t_path_traversal ATTACH PART 'all_1_1_0' FROM '/etc/passwd'"
+        )
+    assert "INCORRECT_FILE_NAME" in str(e.value)
+
+    # Test dot directory
+    with pytest.raises(Exception) as e:
+        instance.query(
+            "ALTER TABLE t_path_traversal ATTACH PART 'all_1_1_0' FROM '.'"
+        )
+    assert "INCORRECT_FILE_NAME" in str(e.value)
+
+    # Test double dot directory
+    with pytest.raises(Exception) as e:
+        instance.query(
+            "ALTER TABLE t_path_traversal ATTACH PART 'all_1_1_0' FROM '..'"
+        )
+    assert "INCORRECT_FILE_NAME" in str(e.value)
+
+    instance.query("DROP TABLE t_path_traversal")

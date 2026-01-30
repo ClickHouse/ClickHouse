@@ -88,7 +88,7 @@ void CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 t
 
 void CancellationChecker::appendDoneTasks(const QueryStatusPtr & query)
 {
-    std::unique_lock<std::mutex> lock(m);
+    std::unique_lock lock(m);
 
     auto it = std::ranges::find(query_set, query, &QueryToTrack::query);
     if (it == query_set.end())
