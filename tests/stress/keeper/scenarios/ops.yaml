@@ -1,0 +1,26 @@
+version: 1
+defaults:
+  duration: 120
+  topology: 3
+scenarios:
+  - id: OPS-01
+    name: Persist metrics to ClickHouse
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+
+  - id: OPS-02
+    name: Grafana single-run & compare
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+
+  - id: OPS-03
+    name: Guardrail thresholds on Prom metrics
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - type: prom_thresholds_le
+        aggregate: sum
+        metrics:
+          raft_elections_total: 3
+    opts:
+      prom_allow_prefixes: ["clickhouse_keeper_", "raft_"]

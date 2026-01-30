@@ -402,6 +402,7 @@ class Result(MetaClasses.Serializable):
         env=None,
         pytest_report_file=None,
         logfile=None,
+        timeout_seconds=None,
     ):
         """
         Runs a pytest command, captures results in jsonl format, and creates a Result object.

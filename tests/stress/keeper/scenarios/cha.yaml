@@ -1,0 +1,121 @@
+version: 1
+defaults:
+  duration: 120
+  topology: 3
+scenarios:
+  - id: CHA-02
+    name: WAN variance
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: netem, on: all, delay_ms: 25, jitter_ms: 7, loss_pct: 2, duration_s: 120 }
+    gates:
+      - { type: error_rate_le, max_ratio: 0.05 }
+
+  - id: CHA-03
+    name: Latency jitter sweep
+    topology: 3
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: netem, on: all, delay_ms: 20, jitter_ms: 15, duration_s: 180, target_parallel: true }
+    gates:
+      - { type: error_rate_le, max_ratio: 0.05 }
+      - { type: p99_le, max_ms: 5000 }
+      - { type: p95_le, max_ms: 3000 }
+
+  - id: CHA-04
+    name: Packet loss 2%
+    topology: 3
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: netem, on: all, loss_pct: 2, jitter_ms: 5, duration_s: 180, target_parallel: true }
+    gates:
+      - { type: error_rate_le, max_ratio: 0.05 }
+      - { type: p99_le, max_ms: 6000 }
+      - { type: p95_le, max_ms: 4000 }
+
+  - id: CHA-05
+    name: Rolling restart (stop/cont)
+    topology: 3
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: stop_cont, on: ["keeper2"], count: 1, sleep_s: 2.0 }
+      - { kind: stop_cont, on: ["keeper3"], count: 1, sleep_s: 2.0 }
+      - { kind: stop_cont, on: leader, count: 1, sleep_s: 2.0 }
+    gates:
+      - { type: config_converged, timeout_s: 30 }
+      - { type: error_rate_le, max_ratio: 0.05 }
+      - { type: p99_le, max_ms: 6000 }
+
+  - id: CHA-06
+    name: Net+Disk combined (parallel)
+    topology: 3
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - kind: parallel
+        steps:
+          - { kind: netem, on: all, delay_ms: 10, jitter_ms: 5, duration_s: 180, target_parallel: true }
+          - { kind: dm_delay, on: all, ms: 3, duration_s: 180, target_parallel: true }
+    gates:
+      - { type: error_rate_le, max_ratio: 0.05 }
+      - { type: p99_le, max_ms: 6000 }
+
+  - id: CHA-10M-01
+    name: 10m bench with leader partition + kill
+    topology: 3
+    duration: 600
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - kind: background_schedule
+        duration_s: 540
+        min_period_s: 30
+        max_period_s: 90
+        steps:
+          - { kind: partition_oneway, on: leader, duration_s: 30 }
+          - { kind: leader_kill_measure, timeout_s: 60 }
+    gates:
+      - { type: error_rate_le, max_ratio: 0.10 }
+      - { type: p99_le, max_ms: 10000 }
+      - { type: log_sanity_ok, allow: ["failed to read rpc header.*End of file", "Socket is not connected", "Cannot read all data"] }
+
+  - id: CHA-HEAVY-01
+    name: "10m heavy chaos: symmetric partitions, quorum loss, tbf, dns, resource pressure, ENOSPC, dm_delay"
+    topology: 3
+    duration: 600
+    workload: { config: workloads/prod_mix.yaml }
+    pre:
+      - { kind: record_watch_baseline }
+    faults:
+      - { kind: leader_kill_measure, on: leader, timeout_s: 60 }
+      - kind: background_schedule
+        duration_s: 540
+        min_period_s: 20
+        max_period_s: 40
+        steps:
+              - { kind: partition_symmetric, on: leader, duration_s: 20 }
+              - { kind: tbf, on: leader, duration_s: 30, rate: "10mbit" }
+              - { kind: dns_blackhole, on: all, duration_s: 30 }
+              - { kind: stop_cont, on: leader, count: 3, sleep_s: 1 }
+              - { kind: cpu_hog, on: leader, seconds: 30 }
+              - { kind: mem_hog, on: leader, mb: 512, seconds: 30 }
+              - { kind: fd_pressure, on: leader, fds: 2000, seconds: 30 }
+              - { kind: enospc, on: leader, size_mb: 2048 }
+              - { kind: free_enospc, on: leader }
+              - { kind: dm_error, on: followers, duration_s: 30 }
+              - { kind: kill, on: followers }
+      # Ensure recovery before gates
+      - { kind: start, on: all, wait_s: 240 }
+      - { kind: leader_kill_measure, timeout_s: 120 }
+    gates:
+      - { type: single_leader, timeout_s: 240 }
+      - { type: backlog_drains, max_s: 120 }
+      - { type: watch_delta_within, pct: 50 }
+      - { type: election_time_le, max_s: 10 }
+      - { type: error_rate_le, max_ratio: 0.10 }
+      - { type: p99_le, max_ms: 10000 }
+      - { type: log_sanity_ok }
+      - { type: prom_thresholds_le, metrics: { keeper_dummy_metric: 1000000 }, aggregate: sum }

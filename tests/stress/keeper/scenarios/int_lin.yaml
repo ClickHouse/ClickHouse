@@ -1,0 +1,133 @@
+version: 1
+defaults:
+  duration: 120
+  topology: 3
+scenarios:
+  - id: INT-01
+    name: ReplicatedMergeTree under faults
+    topology: 3
+    workload:
+      config: workloads/prod_mix.yaml
+    pre:
+      - kind: sql
+        on: all
+        query: "DROP TABLE IF EXISTS r SYNC"
+      - kind: sql
+        on: all
+        query: "CREATE TABLE r (k UInt32, v String) ENGINE=ReplicatedMergeTree('/stress/r', '{replica}') ORDER BY k"
+      - kind: sql
+        on: leader
+        query: "INSERT INTO r SELECT number, toString(number) FROM numbers(2000)"
+    faults:
+      - kind: kill
+        on: leader
+    gates:
+      - type: single_leader
+      - type: table_count_eq
+        table: r
+        expected: 2000
+      - type: backlog_drains
+
+  - id: INT-02
+    name: KeeperMap under chaos
+    topology: 3
+    workload:
+      config: workloads/prod_mix.yaml
+    pre:
+      - kind: sql
+        on: all
+        query: "DROP TABLE IF EXISTS r2 SYNC"
+      - kind: sql
+        on: all
+        query: "CREATE TABLE r2 (k UInt32, v String) ENGINE=ReplicatedMergeTree('/stress/r2', '{replica}') ORDER BY k"
+      - kind: sql
+        on: leader
+        query: "INSERT INTO r2 SELECT number, toString(number) FROM numbers(1500)"
+    faults:
+      - kind: netem
+        on: all
+        delay_ms: 25
+        jitter_ms: 7
+        loss_pct: 2
+        duration_s: 120
+      - kind: dm_delay
+        on: all
+        ms: 3
+        duration_s: 120
+    gates:
+      - type: single_leader
+      - type: table_count_eq
+        table: r2
+        expected: 1500
+      - type: backlog_drains
+
+  - id: INT-03
+    name: "{uuid} + Distributed paths"
+    topology: 3
+    workload:
+      config: workloads/prod_mix.yaml
+    pre:
+      - kind: sql
+        on: all
+        query: "DROP TABLE IF EXISTS r3 SYNC"
+      - kind: sql
+        on: all
+        query: "CREATE TABLE r3 (k UInt32, v String) ENGINE=ReplicatedMergeTree('/stress/r3', '{replica}') ORDER BY k"
+      - kind: sql
+        on: leader
+        query: "INSERT INTO r3 SELECT number, toString(number) FROM numbers(2500)"
+    gates:
+      - type: single_leader
+      - type: table_count_eq
+        table: r3
+        expected: 2500
+      - type: backlog_drains
+
+  - id: INT-04
+    name: High watch/DDL scale simulation
+    topology: 3
+    duration: 180
+    workload:
+      config: workloads/prod_mix.yaml
+    pre:
+      - kind: record_watch_baseline
+      - kind: sql
+        on: all
+        query: "DROP TABLE IF EXISTS r4 SYNC"
+      - kind: sql
+        on: all
+        query: "CREATE TABLE r4 (k UInt32, v String) ENGINE=ReplicatedMergeTree('/stress/r4', '{replica}') ORDER BY k"
+      - kind: sql
+        on: leader
+        query: "INSERT INTO r4 SELECT number, toString(number) FROM numbers(3000)"
+    gates:
+      - type: single_leader
+      - type: table_count_eq
+        table: r4
+        expected: 3000
+      - type: backlog_drains
+      - type: watch_delta_within
+        pct: 50
+      - type: no_watcher_hotspot
+        max_share: 0.95
+
+  - id: LIN-01
+    name: Register linearizability
+    topology: 3
+    workload:
+      config: workloads/prod_mix.yaml
+    faults:
+      - kind: partition_symmetric
+        on: leader
+        duration_s: 10
+      - kind: stop_cont
+        on: leader
+        count: 6
+        sleep_s: 1.0
+    gates:
+      - type: single_leader
+      - type: lin_register_ok
+        duration_s: 10
+        writers: 2
+        readers: 4
+        path: /lin/reg

@@ -1,0 +1,60 @@
+version: 1
+defaults:
+  duration: 120
+  topology: 3
+scenarios:
+  - id: LDR-01
+    name: Leader kill re-election
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: leader_kill_measure, on: leader, timeout_s: 10 }
+    gates:
+      - { type: election_time_le, max_s: 10 }
+      - { type: error_rate_le, max_ratio: 0.05 }
+
+  - id: LDR-02
+    name: Leader isolation symmetric
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: partition_symmetric, on: leader, duration_s: 30 }
+    gates:
+      - { type: single_leader }
+
+  - id: LDR-03
+    name: Handoff churn p99 budget
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: stop_cont, on: leader, count: 10, sleep_s: 1 }
+    gates:
+      - { type: single_leader }
+      - { type: p99_le, max_ms: 5000 }
+
+  - id: LDR-04
+    name: Follower kill & catch-up
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: kill, on: followers }
+    gates:
+      - { type: single_leader }
+      - { type: error_rate_le, max_ratio: 0.05 }
+
+  - id: LDR-05
+    name: Quorum loss safe no-serve
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: kill, on: leader }
+      - { kind: kill, on: followers }
+    gates:
+      - { type: single_leader }
+
+  - id: LDR-06
+    name: Five-node priority/learner steering
+    topology: 5
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }

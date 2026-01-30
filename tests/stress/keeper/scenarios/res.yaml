@@ -1,0 +1,43 @@
+version: 1
+defaults:
+  duration: 120
+  topology: 3
+scenarios:
+  - id: RES-01
+    name: Memory soft-limit refusal
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+
+  - id: RES-02
+    name: File descriptor pressure
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: fd_pressure, on: leader, fds: 5000, seconds: 60 }
+    gates:
+      - { type: single_leader }
+
+  - id: RES-03
+    name: Leader CPU hog
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: cpu_hog, on: leader, seconds: 60 }
+    gates:
+      - { type: single_leader }
+
+  - id: RES-04
+    name: cgroup CPU quota throttling
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+
+  - id: RES-05
+    name: OOM killer recovery
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }

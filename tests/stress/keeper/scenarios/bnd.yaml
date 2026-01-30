@@ -1,0 +1,25 @@
+version: 1
+defaults:
+  duration: 120
+  topology: 3
+scenarios:
+  - id: BND-01
+    name: Value size sweep
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+
+  - id: BND-02
+    name: Large children list
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }
+
+  - id: BND-03
+    name: Deep and invalid paths
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml }
+    gates:
+      - { type: single_leader }

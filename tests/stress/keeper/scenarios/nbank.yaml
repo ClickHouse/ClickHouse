@@ -1,0 +1,34 @@
+version: 1
+defaults:
+  duration: 120
+  topology: 3
+scenarios:
+  - id: NBANK-01
+    name: Namespace bank seed + transfers
+    topology: 3
+    pre:
+      - { kind: nbank_seed, on: leader, accounts: 200, initial: 50 }
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - { kind: nbank_transfers, on: leader, count: 2000, max_amount: 5, seed: 12345 }
+    gates:
+      - { type: single_leader }
+      - { type: namespace_bank_invariant_ok, base: /nbank }
+
+  - id: NBANK-02
+    name: Namespace bank under chaos
+    topology: 3
+    pre:
+      - { kind: nbank_seed, on: leader, accounts: 100, initial: 100 }
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - kind: parallel
+        steps:
+          - { kind: netem, on: all, delay_ms: 10, jitter_ms: 10, duration_s: 180, target_parallel: true }
+          - { kind: nbank_transfers, on: leader, count: 5000, max_amount: 10, seed: 67890 }
+          - { kind: mem_hog, on: all, mb: 512, seconds: 60, target_parallel: true }
+    gates:
+      - { type: single_leader }
+      - { type: namespace_bank_invariant_ok, base: /nbank }
+      - { type: error_rate_le, max_ratio: 0.1 }
