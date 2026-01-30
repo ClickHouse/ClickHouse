@@ -11,10 +11,7 @@ class ExecutableFunctionVariantAdaptor final : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionVariantAdaptor(
-        std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, size_t variant_argument_index_)
-        : function_overload_resolver(std::move(function_overload_resolver_)), variant_argument_index(variant_argument_index_)
-    {
-    }
+        std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, size_t variant_argument_index_);
 
     String getName() const override { return function_overload_resolver->getName(); }
 
@@ -36,6 +33,7 @@ private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Variant column.
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver;
     size_t variant_argument_index;
+    bool throw_on_type_mismatch = false;
 };
 
 class FunctionBaseVariantAdaptor final : public IFunctionBase

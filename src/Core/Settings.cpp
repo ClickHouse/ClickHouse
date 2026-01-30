@@ -6657,6 +6657,24 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
 └───────────────────────────────┘
 ```
 )", 0) \
+    DECLARE(Bool, variant_throw_on_type_mismatch, false, R"(
+Controls the behavior of `Variant` type when a function encounters an incompatible type during execution.
+
+When disabled (default), operations on `Variant` values with incompatible types return `NULL`.
+When enabled, operations throw an exception similar to `Dynamic` type behavior.
+
+Example:
+
+```sql
+SET variant_throw_on_type_mismatch = 0;
+SELECT number % 2 ? number : 'even' AS x, x + 1 FROM numbers(5);
+-- Returns NULL for string values
+
+SET variant_throw_on_type_mismatch = 1;
+SELECT number % 2 ? number : 'even' AS x, x + 1 FROM numbers(5);
+-- Throws exception: Illegal types String and UInt8 of arguments of function plus
+```
+)", 0) \
     DECLARE(Bool, enable_order_by_all, true, R"(
 Enables or disables sorting with `ORDER BY ALL` syntax, see [ORDER BY](../../sql-reference/statements/select/order-by.md).
 

@@ -1,0 +1,30 @@
+Default behavior: type mismatch returns NULL
+even	\N
+1	2
+even	\N
+3	4
+even	\N
+5	6
+Type of result
+Nullable(UInt64)
+Table test: plus operation with type mismatch
+\N	\N
+10	15
+20	25
+hello	\N
+world	\N
+Type of table result
+Nullable(UInt64)
+Multiple operations with type mismatch
+\N	\N	\N
+10	20	9
+20	40	19
+hello	\N	\N
+world	\N	\N
+Strict behavior: type mismatch throws exception
+Strict mode with compatible types
+\N	\N
+3.14	4.140000104904175
+10	11
+20	21
+Attempting operation with incompatible type (should fail)

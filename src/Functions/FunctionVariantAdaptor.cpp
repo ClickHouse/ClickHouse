@@ -6,10 +6,17 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsBool variant_throw_on_type_mismatch;
+}
 
 namespace ErrorCodes
 {
@@ -18,6 +25,19 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TYPE_MISMATCH;
 extern const int CANNOT_CONVERT_TYPE;
 extern const int NO_COMMON_TYPE;
+}
+
+ExecutableFunctionVariantAdaptor::ExecutableFunctionVariantAdaptor(
+    std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, size_t variant_argument_index_)
+    : function_overload_resolver(std::move(function_overload_resolver_))
+    , variant_argument_index(variant_argument_index_)
+{
+    if (CurrentThread::isInitialized())
+    {
+        auto query_context = CurrentThread::get().getQueryContext();
+        if (query_context)
+            throw_on_type_mismatch = query_context->getSettingsRef()[Setting::variant_throw_on_type_mismatch];
+    }
 }
 
 ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
@@ -78,9 +98,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         catch (const Exception & e)
         {
             /// If function execution fails for this variant type due to type mismatch,
-            /// return a column filled with NULLs. Only catch type-related errors - re-throw everything else.
+            /// return a column filled with NULLs (or re-throw if strict mode is enabled).
+            /// Only catch type-related errors - re-throw everything else.
             if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
                 && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+
+            /// If strict type checking is enabled, re-throw the exception like Dynamic does
+            if (throw_on_type_mismatch)
                 throw;
 
             auto res = result_type->createColumn();
@@ -195,9 +220,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         catch (const Exception & e)
         {
             /// If function execution fails for this variant type due to type mismatch,
-            /// return a column filled with NULLs. Only catch type-related errors - re-throw everything else.
+            /// return a column filled with NULLs (or re-throw if strict mode is enabled).
+            /// Only catch type-related errors - re-throw everything else.
             if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
                 && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+
+            /// If strict type checking is enabled, re-throw the exception like Dynamic does
+            if (throw_on_type_mismatch)
                 throw;
 
             auto res = result_type->createColumn();
@@ -427,9 +457,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         catch (const Exception & e)
         {
             /// If function execution fails for this variant type due to type mismatch,
-            /// treat those rows as NULL/not matching. Only catch type-related errors - re-throw everything else.
+            /// treat those rows as NULL/not matching (or re-throw if strict mode is enabled).
+            /// Only catch type-related errors - re-throw everything else.
             if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
                 && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+
+            /// If strict type checking is enabled, re-throw the exception like Dynamic does
+            if (throw_on_type_mismatch)
                 throw;
 
             variants_result_types[i] = nullptr;
