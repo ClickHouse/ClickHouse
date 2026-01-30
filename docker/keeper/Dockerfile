@@ -95,5 +95,6 @@ RUN clickhouse-keeper --version \
 # /var/lib/clickhouse is necessary due to the current default configuration for Keeper
 VOLUME "${DEFAULT_DATA_DIR}" /var/lib/clickhouse
 EXPOSE 2181 10181 44444 9181
+USER clickhouse
 
 ENTRYPOINT ["/entrypoint.sh"]
