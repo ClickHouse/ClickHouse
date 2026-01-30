@@ -38,7 +38,7 @@ void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
 
     /// Skip next 30 blocks if too few rows got filtered out
     if (static_cast<double>(rows_passed) > pass_ratio_threshold_for_disabling * static_cast<double>(rows_checked))
-        rows_to_skip = rows_checked * blocks_to_skip_before_reenabling;
+        rows_to_skip += rows_checked * blocks_to_skip_before_reenabling;
 }
 
 bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
