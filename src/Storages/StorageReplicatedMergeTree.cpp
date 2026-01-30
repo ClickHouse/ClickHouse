@@ -6432,7 +6432,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
     ContextPtr query_context,
     const zkutil::ZooKeeperPtr & zookeeper) const
 {
-    const std::set<String> mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context);
+    const PartitionIds mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context);
     auto block_data = serializeCommittingBlockOpToString(op);
 
     if (mutation_affected_partition_ids.size() == 1)
@@ -6466,7 +6466,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
         if (lock.partition_id.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
             continue;
 
-        if (mutation_affected_partition_ids.empty() || mutation_affected_partition_ids.contains(lock.partition_id))
+        if (containsInPartitionIdsOrEmpty(mutation_affected_partition_ids, lock.partition_id))
             block_numbers[lock.partition_id] = lock.number;
 
         LOG_TRACE(log, "Allocated block number {} in partition {}", lock.number, lock.partition_id);
@@ -8617,7 +8617,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     const auto metadata_snapshot = getInMemoryMetadataPtr();
     const MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot);
 
-    std::unordered_set<String> partitions;
+    PartitionIds partitions;
     if (partition->as<ASTPartition>()->all)
     {
         if (replace)
@@ -8627,7 +8627,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     }
     else
     {
-        partitions = std::unordered_set<String>();
         partitions.emplace(getPartitionIDFromQuery(partition, query_context));
     }
     LOG_INFO(log, "Will try to attach {} partitions", partitions.size());

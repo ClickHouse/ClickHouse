@@ -26,7 +26,7 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
     }
     else
     {
-        NameSet partitions_set = *partition_ids_hint;
+        auto partitions_set = *partition_ids_hint;
 
         /// We need to get committing blocks for original partitions of patch parts
         /// because the corretness of merge of patch parts depends on them.

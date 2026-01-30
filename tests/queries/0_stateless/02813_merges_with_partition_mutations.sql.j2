@@ -1,0 +1,63 @@
+DROP TABLE IF EXISTS multipart;
+CREATE TABLE multipart
+(
+    `n` UInt32,
+    `p` UInt32,
+    `s` String
+)
+ENGINE = MergeTree
+PARTITION BY p
+ORDER BY n;
+
+{% macro WATCH(message) -%}
+select 'active parts after {{ message }}';
+-- retrieve active parts in three sample partitions: 7, 8 and 9
+-- IN PARTTION mutations are applied to 7
+select name from system.parts where table='multipart' and database=currentDatabase() and active=1 and (name LIKE '7\\_%' OR name LIKE '8\\_%' OR name LIKE '9\\_%') ORDER BY name;
+{%- endmacro %}
+
+INSERT INTO multipart select number, number%10, '' from numbers(18) settings max_partitions_per_insert_block=10;
+optimize table multipart final;
+
+alter table multipart update s='first' where p=7 SETTINGS mutations_sync = 2;
+{{ WATCH('global mutation - all parts modified') }}
+
+alter table multipart update s='second' IN PARTITION 7 where p=7 SETTINGS mutations_sync = 2;
+alter table multipart update s='third' where p=7 SETTINGS mutations_sync = 2;
+
+{{ WATCH('local, then global mutation - all parts modified') }}
+optimize table multipart final;
+{{ WATCH('local, then global mutation, then optimize') }}
+
+alter table multipart update s='fourth' where p=7 SETTINGS mutations_sync = 2;
+alter table multipart update s='fifth' IN PARTITION 7 where p=7 SETTINGS mutations_sync = 2;
+
+{{ WATCH('global, then local mutation - only part 7 is modified by local mutation') }}
+optimize table multipart final;
+{{ WATCH('global, then local mutation, then optimize') }}
+
+alter table multipart update s='testing merge' where p=7 SETTINGS mutations_sync = 2;
+{{ WATCH('global mutation - all parts modified') }}
+
+insert into multipart values(42, 8, 'inserted - 1');
+{{ WATCH('global mutation, insert') }}
+
+optimize table multipart final;
+{{ WATCH('global mutation, insert, optimize') }}
+
+alter table multipart update s='testing merge' IN PARTITION 7 where p=7 SETTINGS mutations_sync = 2;
+{{ WATCH('local mutation') }}
+
+insert into multipart values(42, 8, 'inserted - 2');
+{{ WATCH('local mutation, insert into partition that is not affected by local mutation') }}
+
+optimize table multipart final;
+{{ WATCH('local mutation, insert, optimize - merge done, mutation versions are still different') }}
+
+insert into multipart values(42, 7, 'inserted - 3');
+{{ WATCH('local mutation, insert into partition that is affected by local mutation') }}
+
+optimize table multipart final;
+{{ WATCH('local mutation, insert, optimize - merge done, mutation versions are still different') }}
+
+drop table multipart;

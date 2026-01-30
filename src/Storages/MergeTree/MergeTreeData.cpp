@@ -5906,7 +5906,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForIn
         data_parts_by_state_and_info.upper_bound(state_with_partition));
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const
+MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const PartitionIds & partition_ids) const
 {
     auto txn = local_context->getCurrentTransaction();
     DataPartsVector res;
@@ -6796,7 +6796,7 @@ private:
 
 void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    std::optional<std::unordered_set<String>> partition_ids;
+    PartitionIds partition_ids;
     if (partitions)
         partition_ids = getPartitionIDsFromQuery(*partitions, restorer.getContext());
 
@@ -6820,7 +6820,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
                             String{data_path_in_backup_fs / part_name});
         }
 
-        if (partition_ids && !partition_ids->contains(part_info->getPartitionId()))
+        if (!containsInPartitionIdsOrEmpty(partition_ids, part_info->getPartitionId()))
             continue;
 
         restorer.addDataRestoreTask(
@@ -7275,18 +7275,30 @@ void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts
              visible_size, total_size, snapshot_version, current_tid, fmt::join(getPartsNames(maybe_visible_parts), ", "));
 }
 
-std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & asts, ContextPtr local_context) const
+PartitionIds MergeTreeData::getPartitionIDsFromQuery(const ASTs & asts, ContextPtr local_context) const
 {
-    std::unordered_set<String> partition_ids;
-    for (const auto & ast : asts)
-        partition_ids.emplace(getPartitionIDFromQuery(ast, local_context));
-    return partition_ids;
+    if (auto num_asts = asts.size(); num_asts < 3)
+    {
+        PartitionIds partition_ids;
+        for (const auto & ast : asts)
+            partition_ids.insert(getPartitionIDFromQuery(ast, local_context));
+        return partition_ids;
+    }
+    else
+    {   /// add all elements all together to avoid moves inside plain_set
+        std::vector<String> area;
+        area.reserve(num_asts);
+        for (const auto & ast : asts)
+            area.push_back(getPartitionIDFromQuery(ast, local_context));
+
+        return PartitionIds(area.begin(), area.end());
+    }
 }
 
-std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
+PartitionIds MergeTreeData::getPartitionIdsAffectedByCommands(
     const MutationCommands & commands, ContextPtr query_context) const
 {
-    std::set<String> affected_partition_ids;
+    PartitionIds affected_partition_ids;
 
     for (const auto & command : commands)
     {
@@ -7301,23 +7313,24 @@ std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
         );
     }
 
+    affected_partition_ids.shrink_to_fit();
     return affected_partition_ids;
 }
 
-std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
+PartitionIds MergeTreeData::getAllPartitionIds() const
 {
     auto lock = readLockParts();
-    std::unordered_set<String> res;
+    std::vector<std::string> area;
     std::string_view prev_id;
     for (const auto & part : getDataPartsStateRange(DataPartState::Active))
     {
         if (prev_id == part->info.getPartitionId())
             continue;
 
-        res.insert(part->info.getPartitionId());
+        area.push_back(part->info.getPartitionId());
         prev_id = part->info.getPartitionId();
     }
-    return res;
+    return PartitionIds(area.begin(), area.end());
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & /*lock*/, DataPartStateVector * out_states) const
