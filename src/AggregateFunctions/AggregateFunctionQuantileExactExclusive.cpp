@@ -107,7 +107,7 @@ SELECT quantileExactExclusive(0.1)(number), quantileExactExclusive(0.9)(number) 
     FunctionDocumentation::Description description_quantiles = R"(
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the exclusive method.
 
-This function is equivalent to [`quantileExactExclusive`](/sql-reference/aggregate-functions/reference/quantileexactexclusive) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileExactExclusive`](/sql-reference/aggregate-functions/reference/quantileExactExclusive) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
 
 This function uses the exclusive method for calculating quantiles, as described in the [R-6 method](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
 This is equivalent to [PERCENTILE.EXC](https://support.microsoft.com/en-us/office/percentile-exc-function-bbaa7204-e9e1-4010-85bf-c31dc5dce4ba) Excel function.

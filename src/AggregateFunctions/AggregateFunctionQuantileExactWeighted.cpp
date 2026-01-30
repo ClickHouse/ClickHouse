@@ -448,7 +448,7 @@ Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a num
 To get the exact value, all the passed values are combined into an array, which is then partially sorted.
 Each value is counted with its weight, as if it is present `weight` times.
 A hash table is used in the algorithm.
-Because of this, if the passed values are frequently repeated, the function consumes less RAM than [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact#quantileexact).
+Because of this, if the passed values are frequently repeated, the function consumes less RAM than [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact#quantileExact).
 You can use this function instead of `quantileExact` and specify the weight 1.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
