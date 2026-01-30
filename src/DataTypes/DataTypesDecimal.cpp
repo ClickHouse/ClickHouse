@@ -292,8 +292,10 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
             else
                 return ReturnType(false);
         }
-
-        result = static_cast<ToNativeType>(out);
+        // Perform rounding before casting float to decimal to avoid precision loss.
+        // This helps ensure consistent behavior between CAST(float AS Decimal)
+        // and explicit toDecimal64(...), which already rounds as expected.
+        result = static_cast<ToNativeType>(std::round(out));
         return ReturnType(true);
     }
     else
