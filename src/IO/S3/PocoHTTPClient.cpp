@@ -800,7 +800,16 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
 
     auto log = getLogger("PocoHTTPClientGCPOAuth");
     if (enable_s3_requests_logging)
-        LOG_TEST(log, "Make request to: {}", url.toString());
+    {
+        try
+        {
+            LOG_TEST(log, "Make request to: {} (IP: {})", url.toString(), session->getResolvedAddress());
+        }
+        catch (...)
+        {
+            LOG_TEST(log, "Make request to: {}", url.toString());
+        }
+    }
 
     auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
     auto session = makeHTTPSession(group, url, timeouts);
