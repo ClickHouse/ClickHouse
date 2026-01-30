@@ -54,7 +54,7 @@ def started_cluster():
         shard_1.query("INSERT INTO fixed_numbers_2 SELECT number FROM numbers(0, 10)")
 
         shard_2.query(
-            "INSERT INTO fixed_numbers_2 SELECT number FROM numbers(0, 120000)"
+            "INSERT INTO fixed_numbers_2 SELECT number FROM numbers(0, 1200000)"
         )
 
         yield cluster
@@ -64,23 +64,37 @@ def started_cluster():
 
 def get_memory_usage_from_client_output_and_close(client_output):
     client_output.seek(0)
+    query_id = None
+    peak_memory_usage = None
     peek_memory_usage_str_found = False
+    
     for line in client_output:
         print(f"'{line}'\n")
+        
+        # Extract query ID
+        if query_id is None and "Query id:" in line:
+            query_id_match = re.search(r"Query id: ([a-f0-9-]+)", line)
+            if query_id_match:
+                query_id = query_id_match.group(1)
+                print(f"query_id {query_id}")
+        
+        # Extract peak memory usage
         if not peek_memory_usage_str_found:
             # Can be both Peak/peak
             peek_memory_usage_str_found = "eak memory usage" in line
 
-        if peek_memory_usage_str_found:
+        if peek_memory_usage_str_found and peak_memory_usage is None:
             search_obj = re.search(r"[+-]?[0-9]+\.[0-9]+", line)
             if search_obj:
-                client_output.close()
-                print(f"peak_memory_usage {search_obj.group()}")
-                return search_obj.group()
-
-    print(f"peak_memory_usage not found")
+                peak_memory_usage = search_obj.group()
+                print(f"peak_memory_usage {peak_memory_usage}")
+    
     client_output.close()
-    return ""
+    
+    assert query_id is not None, "query_id not found"
+    assert peak_memory_usage is not None, "peak_memory_usage not found"
+    
+    return query_id, peak_memory_usage
 
 
 def test_clickhouse_client_max_peak_memory_usage_distributed(started_cluster):
@@ -96,9 +110,39 @@ def test_clickhouse_client_max_peak_memory_usage_distributed(started_cluster):
         client1.expect("Peak memory usage", timeout=60)
         client1.expect(prompt)
 
-    peak_memory_usage = get_memory_usage_from_client_output_and_close(client_output)
+    query_id, peak_memory_usage = get_memory_usage_from_client_output_and_close(client_output)
+    assert query_id
     assert peak_memory_usage
-    assert shard_2.contains_in_log(f"Query peak memory usage: {peak_memory_usage}")
+    
+    # Extract required_query_id from shard2 logs
+    required_query_id = None
+    shard_2_logs = shard_2.grep_in_log(f"initial_query_id: {query_id}")
+    
+    if shard_2_logs:
+        log_lines = shard_2_logs.strip().split('\n')
+        for log_line in log_lines:
+            query_id_match = re.search(r"\{([a-f0-9-]+)\}", log_line)
+            if query_id_match:
+                required_query_id = query_id_match.group(1)
+                break
+    
+    assert required_query_id, "Failed to extract required_query_id from shard2 logs"
+    
+    # Extract server peak memory usage from logs
+    server_memory_log = shard_2.grep_in_log(f"{{{required_query_id}}} <Debug> MemoryTracker: Query peak memory usage:")
+    assert server_memory_log, f"Memory usage log not found for query {required_query_id}"
+    
+    # Parse server memory usage value
+    server_memory_match = re.search(r"Query peak memory usage: ([0-9.]+)", server_memory_log)
+    assert server_memory_match, "Failed to parse server memory usage"
+    server_memory_value = float(server_memory_match.group(1))
+    
+    # Parse client memory usage value
+    client_memory_value = float(peak_memory_usage)
+    
+    # Assert difference is less than 1 MB
+    memory_diff = abs(client_memory_value - server_memory_value)
+    assert memory_diff < 1.0, f"Memory usage difference {memory_diff} MiB exceeds 1 MiB threshold (client: {client_memory_value} MiB, server: {server_memory_value} MiB)"
 
 
 def test_clickhouse_client_max_peak_memory_single_node(started_cluster):
@@ -115,6 +159,10 @@ def test_clickhouse_client_max_peak_memory_single_node(started_cluster):
         client1.expect("Peak memory usage", timeout=60)
         client1.expect(prompt)
 
-    peak_memory_usage = get_memory_usage_from_client_output_and_close(client_output)
+    query_id, peak_memory_usage = get_memory_usage_from_client_output_and_close(client_output)
+    assert query_id
     assert peak_memory_usage
     assert shard_1.contains_in_log(f"Query peak memory usage: {peak_memory_usage}")
+
+
+    
