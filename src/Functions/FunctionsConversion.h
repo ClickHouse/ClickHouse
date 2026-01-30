@@ -3694,33 +3694,79 @@ struct ToDateMonotonicity
     }
 };
 
+/** Check if conversion to Time/Time64 is monotonic for the given interval
+  *
+  * Converting to Time/Time64 from Time/Time64 is always monotonic
+  * From other types (DateTime, integers), toTime extracts time-of-day which wraps at midnight,
+  * so it's only monotonic if [left, right] located within a single day
+  */
+inline IFunction::Monotonicity getMonotonicityForTimeConversion(const WhichDataType & which, const Field & left, const Field & right)
+{
+    if (which.isTimeOrTime64())
+        return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+    if (left.isNull() || right.isNull())
+        return {};
+
+    auto getSecondsFromField = [&](const Field & field) -> std::optional<Int64>
+    {
+        if (which.isDateTime64())
+        {
+            const auto & dt64 = field.safeGet<DateTime64>();
+            return dt64.getValue() / DecimalUtils::scaleMultiplier<DateTime64>(dt64.getScale());
+        }
+        if (which.isNativeInt())
+            return field.safeGet<Int64>();
+        if (which.isNativeUInt() || which.isDateTime())
+            return static_cast<Int64>(field.safeGet<UInt64>());
+        return std::nullopt;
+    };
+
+    auto left_seconds = getSecondsFromField(left);
+    auto right_seconds = getSecondsFromField(right);
+
+    if (!left_seconds || !right_seconds)
+        return {};
+
+    constexpr Int64 max_seconds = std::numeric_limits<UInt32>::max();
+    if (*left_seconds < 0 || *right_seconds < 0 || *left_seconds > max_seconds || *right_seconds > max_seconds)
+        return {};
+
+    const auto & date_lut = DateLUT::instance();
+    if (date_lut.toDayNum(static_cast<UInt32>(*left_seconds)) == date_lut.toDayNum(static_cast<UInt32>(*right_seconds)))
+        return {.is_monotonic = true, .is_always_monotonic = false};
+
+    return {};
+}
+
 template <typename T>
 struct ToDateTimeMonotonicity
 {
     static bool has() { return true; }
 
-    static IFunction::Monotonicity get(const IDataType & type, const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
-        if (type.isValueRepresentedByNumber())
-        {
-            auto which = WhichDataType(type);
-            if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isDate() || which.isUInt8() || which.isUInt16()
-                || which.isUInt32()))
-                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
-
-            if (std::is_same_v<T, DataTypeDateTime64> && (which.isDateOrDate32OrDateTimeOrDateTime64() || which.isNativeInteger()))
-                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
-
-            /// Converting to Time/Time64 is only monotonic from Time/Time64.
-            /// Converting from other types (integers, DateTime, etc.) extracts the time-of-day
-            /// component using toTime, which is not monotonic.
-            if ((std::is_same_v<T, DataTypeTime> || std::is_same_v<T, DataTypeTime64>) && !which.isTimeOrTime64())
-                return {};
-
-            return {.is_monotonic = true, .is_always_monotonic = true};
-        }
-        else
+        if (!type.isValueRepresentedByNumber())
             return {};
+
+        WhichDataType which(type);
+
+        if constexpr (std::is_same_v<T, DataTypeDateTime>)
+        {
+            if (which.isDateTime() || which.isDate() || which.isUInt8() || which.isUInt16() || which.isUInt32())
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+        }
+
+        if constexpr (std::is_same_v<T, DataTypeDateTime64>)
+        {
+            if (which.isDateOrDate32OrDateTimeOrDateTime64() || which.isNativeInteger())
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+        }
+
+        if constexpr (std::is_same_v<T, DataTypeTime> || std::is_same_v<T, DataTypeTime64>)
+            return getMonotonicityForTimeConversion(which, left, right);
+
+        return {.is_monotonic = true, .is_always_monotonic = true};
     }
 };
 
