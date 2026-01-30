@@ -216,53 +216,6 @@ tail:
     return ret;
 }
 
-namespace
-{
-__attribute__((no_sanitize("coverage"))) __attribute__((always_inline)) void
-unaligned_store_unaligned_load_64_sse(char * __restrict dst, const char * __restrict src)
-{
-    /// Use inline assembly to ensure SSE2 instructions are used and not converted to AVX-512.
-    /// movdqu = unaligned load, movups = unaligned store (better assembler compatibility)
-    __asm__ __volatile__("movdqu   (%[src]), %%xmm0\n\t"
-                         "movdqu 16(%[src]), %%xmm1\n\t"
-                         "movdqu 32(%[src]), %%xmm2\n\t"
-                         "movdqu 48(%[src]), %%xmm3\n\t"
-                         "movups %%xmm0,   (%[dst])\n\t"
-                         "movups %%xmm1, 16(%[dst])\n\t"
-                         "movups %%xmm2, 32(%[dst])\n\t"
-                         "movups %%xmm3, 48(%[dst])\n\t"
-                         :
-                         : [src] "r"(src), [dst] "r"(dst)
-                         : "xmm0", "xmm1", "xmm2", "xmm3", "memory");
-}
-
-__attribute__((no_sanitize("coverage"))) __attribute__((always_inline)) void
-aligned_store_unaligned_load_128_sse(char * __restrict dst, const char * __restrict src)
-{
-    /// Use inline assembly to ensure SSE2 instructions are used and not converted to AVX-512.
-    /// /// movdqu = unaligned load, movdqa = aligned store
-    __asm__ __volatile__("movdqu   (%[src]), %%xmm0\n"
-                         "movdqu 16(%[src]), %%xmm1\n"
-                         "movdqu 32(%[src]), %%xmm2\n"
-                         "movdqu 48(%[src]), %%xmm3\n"
-                         "movdqu 64(%[src]), %%xmm4\n"
-                         "movdqu 80(%[src]), %%xmm5\n"
-                         "movdqu 96(%[src]), %%xmm6\n"
-                         "movdqu 112(%[src]), %%xmm7\n"
-                         "movdqa %%xmm0,   (%[dst])\n"
-                         "movdqa %%xmm1, 16(%[dst])\n"
-                         "movdqa %%xmm2, 32(%[dst])\n"
-                         "movdqa %%xmm3, 48(%[dst])\n"
-                         "movdqa %%xmm4, 64(%[dst])\n"
-                         "movdqa %%xmm5, 80(%[dst])\n"
-                         "movdqa %%xmm6, 96(%[dst])\n"
-                         "movdqa %%xmm7, 112(%[dst])\n"
-                         :
-                         : [src] "r"(src), [dst] "r"(dst)
-                         : "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "memory");
-}
-}
-
 __attribute__((no_sanitize("coverage")))
 __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,bmi2"))) void *
 ch_memcpy_avx512(void * __restrict dst_, const void * __restrict src_, size_t size)
@@ -274,16 +227,18 @@ ch_memcpy_avx512(void * __restrict dst_, const void * __restrict src_, size_t si
 
     if (size < 64) [[likely]]
     {
-    tail_64:
+tail_64:
         __mmask64 mask = (__mmask64)_bzhi_u64(0xFFFFFFFFFFFFFFFFull, size);
         _mm512_mask_storeu_epi8(dst, mask, _mm512_maskz_loadu_epi8(mask, src));
     }
-    else if (size < (256 + 64)) [[likely]]
+    else if (size < (512 + 64)) [[likely]]
     {
-    tail_512:
+tail_512:
+        #pragma nounroll
         while (size > 64)
         {
-            unaligned_store_unaligned_load_64_sse(dst, src);
+            __m512i c0 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src));
+            _mm512_storeu_si512((reinterpret_cast<__m512i*>(dst) + 0), c0);
             src += 64;
             dst += 64;
             size -= 64;
@@ -306,12 +261,27 @@ ch_memcpy_avx512(void * __restrict dst_, const void * __restrict src_, size_t si
 
         do
         {
-            size -= 256;
-            aligned_store_unaligned_load_128_sse(dst + 0, src + 0);
-            aligned_store_unaligned_load_128_sse(dst + 128, src + 128);
-            src += 256;
-            dst += 256;
-        } while (size >= 256);
+            size -= 512;
+            __m512i c0 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 0);
+            __m512i c1 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 1);
+            __m512i c2 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 2);
+            __m512i c3 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 3);
+            __m512i c4 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 4);
+            __m512i c5 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 5);
+            __m512i c6 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 6);
+             __m512i c7 = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(src) + 7);
+            _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 0), c0);
+            _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 1), c1);
+            _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 2), c2);
+            _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 3), c3);
+            _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 4), c4);
+            _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 5), c5);
+            _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 6), c6);
+            _mm512_store_si512((reinterpret_cast<__m512i*>(dst) + 7), c7);
+
+            src += 512;
+            dst += 512;
+        } while (size >= 512);
 
         goto tail_512;
     }
