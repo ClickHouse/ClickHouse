@@ -25,9 +25,11 @@ struct IcebergMetadataLogElement
     void appendToBlock(MutableColumns & columns) const;
 };
 
+/// Here `get_row` function is used instead `row` string to calculate string only when required.
+/// Inside `insertRowToLogTable` code can exit immediately after `iceberg_metadata_log_level` setting check.
 void insertRowToLogTable(
     const ContextPtr & local_context,
-    String row,
+    std::function<String()> get_row,
     IcebergMetadataLogLevel row_log_level,
     const String & table_path,
     const String & file_path,

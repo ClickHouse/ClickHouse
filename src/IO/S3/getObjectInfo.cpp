@@ -1,6 +1,7 @@
 #include <optional>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/Expect404ResponseScope.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 
 #if USE_AWS_S3
 
@@ -15,6 +16,7 @@ namespace ProfileEvents
     extern const Event S3GetObject;
     extern const Event S3GetObjectTagging;
     extern const Event S3HeadObject;
+    extern const Event S3HeadObjectMicroseconds;
     extern const Event DiskS3GetObject;
     extern const Event DiskS3GetObjectTagging;
     extern const Event DiskS3HeadObject;
@@ -35,6 +37,7 @@ namespace
         ProfileEvents::increment(ProfileEvents::S3HeadObject);
         if (client.isClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::S3HeadObjectMicroseconds);
 
         S3::HeadObjectRequest req;
         req.SetBucket(bucket);
