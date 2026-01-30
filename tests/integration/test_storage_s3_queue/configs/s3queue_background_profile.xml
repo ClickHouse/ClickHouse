@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <s3queue_chunked>
-            <max_insert_block_size>10</max_insert_block_size>
-        </s3queue_chunked>
-    </profiles>
-</clickhouse>
