@@ -15,6 +15,6 @@ SELECT a
 FROM t1
 GROUP BY a
 HAVING materialize(0)
-SETTINGS parallel_replicas_local_plan = 1, allow_push_predicate_ast_for_distributed_subqueries=0;
+SETTINGS parallel_replicas_local_plan = 1, parallel_replicas_filter_pushdown=1;
 
 DROP TABLE t1;
