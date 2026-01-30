@@ -105,33 +105,33 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
 
         command.column_name = ast_col_decl.name;
-        if (ast_col_decl.type)
+        if (ast_col_decl.getType())
         {
-            command.data_type = data_type_factory.get(ast_col_decl.type);
+            command.data_type = data_type_factory.get(ast_col_decl.getType());
         }
-        if (ast_col_decl.default_expression)
+        if (ast_col_decl.getDefaultExpression())
         {
-            command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
-            command.default_expression = ast_col_decl.default_expression;
+            command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
+            command.default_expression = ast_col_decl.getDefaultExpression();
         }
 
-        if (ast_col_decl.comment)
+        if (ast_col_decl.getComment())
         {
-            const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
+            const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.getComment());
             command.comment = ast_comment.value.safeGet<String>();
         }
 
-        if (ast_col_decl.codec)
+        if (ast_col_decl.getCodec())
         {
-            if (ast_col_decl.default_specifier == "ALIAS")
+            if (ast_col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-            command.codec = ast_col_decl.codec;
+            command.codec = ast_col_decl.getCodec();
         }
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
 
-        if (ast_col_decl.ttl)
-            command.ttl = ast_col_decl.ttl;
+        if (ast_col_decl.getTTL())
+            command.ttl = ast_col_decl.getTTL();
 
         command.first = command_ast->first;
         command.if_not_exists = command_ast->if_not_exists;
@@ -162,31 +162,31 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.column_name = ast_col_decl.name;
         command.to_remove = removePropertyFromString(command_ast->remove_property);
 
-        if (ast_col_decl.type)
+        if (ast_col_decl.getType())
         {
-            command.data_type = data_type_factory.get(ast_col_decl.type);
+            command.data_type = data_type_factory.get(ast_col_decl.getType());
         }
 
-        if (ast_col_decl.default_expression)
+        if (ast_col_decl.getDefaultExpression())
         {
-            command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
-            command.default_expression = ast_col_decl.default_expression;
+            command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
+            command.default_expression = ast_col_decl.getDefaultExpression();
         }
 
-        if (ast_col_decl.comment)
+        if (ast_col_decl.getComment())
         {
-            const auto & ast_comment = ast_col_decl.comment->as<ASTLiteral &>();
+            const auto & ast_comment = ast_col_decl.getComment()->as<ASTLiteral &>();
             command.comment.emplace(ast_comment.value.safeGet<String>());
         }
 
-        if (ast_col_decl.ttl)
-            command.ttl = ast_col_decl.ttl;
+        if (ast_col_decl.getTTL())
+            command.ttl = ast_col_decl.getTTL();
 
-        if (ast_col_decl.codec)
-            command.codec = ast_col_decl.codec;
+        if (ast_col_decl.getCodec())
+            command.codec = ast_col_decl.getCodec();
 
-        if (ast_col_decl.settings)
-            command.settings_changes = ast_col_decl.settings->as<ASTSetQuery &>().changes;
+        if (ast_col_decl.getSettings())
+            command.settings_changes = ast_col_decl.getSettings()->as<ASTSetQuery &>().changes;
 
         /// At most only one of ast_col_decl.settings or command_ast->settings_changes is non-null
         if (command_ast->settings_changes)
@@ -687,8 +687,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add index {}: index with this name already exists", index_name);
         }
 
-        if (index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)
-            && (metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns))
+
+        auto using_auto_minmax_index = metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns
+            || metadata.add_minmax_index_for_temporal_columns;
+        if (index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX) && using_auto_minmax_index)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add index {} because it uses a reserved index name", index_name);
         }
@@ -720,7 +722,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             ++insert_it;
         }
 
-        metadata.secondary_indices.emplace(insert_it, IndexDescription::getIndexFromAST(index_decl, metadata.columns, /* is_implicitly_created */ false, context));
+        metadata.secondary_indices.emplace(
+            insert_it,
+            IndexDescription::getIndexFromAST(
+                index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
     }
     else if (type == DROP_INDEX)
     {
@@ -883,7 +888,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     {
         if (!metadata.settings_changes)
         {
-            auto changes = std::make_shared<ASTSetQuery>();
+            auto changes = make_intrusive<ASTSetQuery>();
             changes->is_standalone = false;
             metadata.settings_changes = std::move(changes);
         }
@@ -1275,7 +1280,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     {
         try
         {
-            index = IndexDescription::getIndexFromAST(index.definition_ast, metadata_copy.columns, index.isImplicitlyCreated(), context);
+            index = IndexDescription::getIndexFromAST(
+                index.definition_ast, metadata_copy.columns, index.isImplicitlyCreated(), index.escape_filenames, context);
         }
         catch (const Exception & exception)
         {
@@ -1389,7 +1395,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
-    ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
+    ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
     NameSet modified_columns;
     NameSet renamed_columns;
     for (size_t i = 0; i < size(); ++i)
@@ -1684,7 +1690,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
 
                 default_expr_list->children.emplace_back(setAlias(
-                    addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
+                    addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
                     final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
@@ -1701,7 +1707,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto data_type_ptr = command.data_type;
 
                 default_expr_list->children.emplace_back(setAlias(
-                    addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+                    addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(column_in_table.default_desc.expression->clone(), tmp_column_name));
             }
@@ -1740,7 +1746,7 @@ bool AlterCommands::isCommentAlter() const
 static MutationCommand createMaterializeTTLCommand()
 {
     MutationCommand command;
-    auto ast = std::make_shared<ASTAlterCommand>();
+    auto ast = make_intrusive<ASTAlterCommand>();
     ast->type = ASTAlterCommand::MATERIALIZE_TTL;
     command.type = MutationCommand::MATERIALIZE_TTL;
     command.ast = std::move(ast);

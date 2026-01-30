@@ -1,3 +1,5 @@
+SET use_variant_as_common_type = 0;
+
 DROP TABLE IF EXISTS agg_table;
 
 CREATE TABLE IF NOT EXISTS agg_table

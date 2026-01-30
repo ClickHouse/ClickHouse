@@ -48,7 +48,7 @@ InterpreterUpdateQuery::InterpreterUpdateQuery(ASTPtr query_ptr_, ContextPtr con
 
 static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query)
 {
-    auto alter_query = std::make_shared<ASTAlterCommand>();
+    auto alter_query = make_intrusive<ASTAlterCommand>();
 
     alter_query->type = ASTAlterCommand::UPDATE;
     alter_query->set(alter_query->predicate, update_query.predicate);
@@ -102,7 +102,7 @@ BlockIO InterpreterUpdateQuery::execute()
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
-        auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
+        auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
     }

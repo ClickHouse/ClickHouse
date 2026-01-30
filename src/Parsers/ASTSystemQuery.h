@@ -18,7 +18,6 @@ namespace DB
 class ASTSystemQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-
     enum class Type : UInt64
     {
         UNKNOWN,
@@ -134,6 +133,7 @@ public:
         RECONNECT_ZOOKEEPER,
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
+        RESET_DDL_WORKER,
         END
     };
 
@@ -217,7 +217,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTSystemQuery>(*this);
+        auto res = make_intrusive<ASTSystemQuery>(*this);
         res->children.clear();
 
         if (database) { res->database = database->clone(); res->children.push_back(res->database); }

@@ -64,8 +64,10 @@ namespace Setting
     extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool parallel_replicas_filter_pushdown;
 }
 
 namespace ErrorCodes
@@ -169,7 +171,7 @@ static void enforceAggregationInOrder(
     }
 }
 
-static String formattedAST(const ASTPtr & ast)
+static String formattedAST(const ASTPtr & ast, bool enable_analyzer)
 {
     if (!ast)
         return {};
@@ -177,6 +179,8 @@ static String formattedAST(const ASTPtr & ast)
     WriteBufferFromOwnString buf;
     IAST::FormatSettings ast_format_settings(
         /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+    if (!enable_analyzer)
+        ast_format_settings.collapse_identical_nodes_to_aliases = true;
     ast->format(buf, ast_format_settings);
     return buf.str();
 }
@@ -285,10 +289,10 @@ ASTPtr tryBuildAdditionalFilterAST(
 
         if (node->column && isColumnConst(*node->column))
         {
-            auto literal = std::make_shared<ASTLiteral>((*node->column)[0]);
+            auto literal = make_intrusive<ASTLiteral>((*node->column)[0]);
             /// Need to enforce type of the literal, because some type is not comparable to its native type
             /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
-            auto casted_literal = makeASTFunction("_CAST", literal, std::make_shared<ASTLiteral>(node->result_type->getName()));
+            auto casted_literal = makeASTFunction("_CAST", literal, make_intrusive<ASTLiteral>(node->result_type->getName()));
             node_to_ast[node] = std::move(casted_literal);
             stack.pop();
             continue;
@@ -315,7 +319,7 @@ ASTPtr tryBuildAdditionalFilterAST(
                 /// SELECT x FROM (SELECT number + 1 AS x FROM remote('127.0.0.2', numbers(3))) WHERE x = 1
                 /// In this case, ReadFromRemote has header `x UInt64` and filter DAG has input column with name `x`.
                 /// Here, filter is applied to the whole query, and checking for projection name is reasonable.
-                res = std::make_shared<ASTIdentifier>(node->result_name);
+                res = make_intrusive<ASTIdentifier>(node->result_name);
             }
             else
             {
@@ -367,7 +371,7 @@ ASTPtr tryBuildAdditionalFilterAST(
 
         /// and() with 1 arg is not allowed. Make it AND(condition, 1)
         if (is_function_and && arguments.size() == 1)
-            arguments.push_back(std::make_shared<ASTLiteral>(Field(1)));
+            arguments.push_back(make_intrusive<ASTLiteral>(Field(1)));
 
         /// Support for GLOBAL IN.
         if (external_tables && isNameOfGlobalInFunction(func_name))
@@ -414,7 +418,7 @@ ASTPtr tryBuildAdditionalFilterAST(
                         context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
                     }
 
-                    node_to_ast[second_arg] = std::make_shared<ASTIdentifier>(temporary_table_name);
+                    node_to_ast[second_arg] = make_intrusive<ASTIdentifier>(temporary_table_name);
                     arguments[1] = node_to_ast[second_arg];
                 }
             }
@@ -618,7 +622,8 @@ void ReadFromRemote::addLazyPipe(
         /// So that GLOBAL IN would work as local IN in the pushed-down predicate.
         if (pushed_down_filters)
             addFilters(nullptr, my_context, query, query_tree, planner_context, *pushed_down_filters);
-        String query_string = formattedAST(query);
+        bool enable_analyzer = current_settings[Setting::allow_experimental_analyzer];
+        String query_string = formattedAST(query, enable_analyzer);
         auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
 
         my_scalars["_shard_num"] = Block{
@@ -674,6 +679,8 @@ void ReadFromRemote::addPipe(
         context->setSetting("cluster_for_parallel_replicas", cluster_name);
     }
 
+    bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
+
     /// parallel replicas custom key case
     if (shard.shard_filter_generator)
     {
@@ -691,7 +698,7 @@ void ReadFromRemote::addPipe(
                 select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
             }
 
-            const String query_string = formattedAST(query);
+            const String query_string = formattedAST(query, enable_analyzer);
 
             if (!priority_func_factory.has_value())
                 priority_func_factory = GetPriorityForLoadBalancing(LoadBalancing::ROUND_ROBIN, randomSeed());
@@ -729,7 +736,7 @@ void ReadFromRemote::addPipe(
         if (filter_actions_dag)
             addFilters(&external_tables, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
 
-        const String query_string = formattedAST(shard.query);
+        const String query_string = formattedAST(shard.query, enable_analyzer);
         auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
@@ -791,11 +798,11 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 
 static ASTPtr makeExplain(const ExplainPlanOptions & options, ASTPtr query)
 {
-    auto explain_settings = std::make_shared<ASTSetQuery>();
+    auto explain_settings = make_intrusive<ASTSetQuery>();
     explain_settings->is_standalone = false;
     explain_settings->changes =  options.toSettingsChanges();
 
-    auto explain_query = std::make_shared<ASTExplainQuery>(ASTExplainQuery::ExplainKind::QueryPlan);
+    auto explain_query = make_intrusive<ASTExplainQuery>(ASTExplainQuery::ExplainKind::QueryPlan);
     explain_query->setExplainedQuery(query);
     explain_query->setSettings(explain_settings);
 
@@ -906,7 +913,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
         replicas.push_back(pools_to_use[i]->getAddress());
     }
 
-    auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast), fmt::join(replicas, ", "));
+    bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast, enable_analyzer), fmt::join(replicas, ", "));
     setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 }
 
@@ -922,7 +930,7 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (filter_actions_dag)
+    if (context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown] && filter_actions_dag)
         addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag);
 
     Pipes pipes = addPipes(query_ast, output_header);
@@ -1009,8 +1017,9 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
     bool add_extremes = false;
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
+    bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
 
-    String query_string = formattedAST(ast);
+    String query_string = formattedAST(ast, enable_analyzer);
 
     if (ast->as<ASTExplainQuery>() == nullptr)
         assert(stage != QueryProcessingStage::Complete);

@@ -436,8 +436,14 @@ IMPLEMENT_SETTING_ENUM(ArrowFlightDescriptorType, ErrorCodes::BAD_ARGUMENTS,
      {"command", ArrowFlightDescriptorType::Command}})
 
 IMPLEMENT_SETTING_ENUM(DeduplicateInsertSelectMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"enable_when_possible", DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE},
+    {{"enable_when_possible", DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE},
      {"force_enable", DeduplicateInsertSelectMode::FORCE_ENABLE},
      {"disable", DeduplicateInsertSelectMode::DISABLE},
      {"enable_even_for_bad_queries", DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES}})
+
+IMPLEMENT_SETTING_ENUM(DeduplicateInsertMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"backward_compatible_choice", DeduplicateInsertMode::BACKWARD_COMPATIBLE_CHOICE},
+     {"enable", DeduplicateInsertMode::ENABLE},
+     {"disable", DeduplicateInsertMode::DISABLE}})
+
 }

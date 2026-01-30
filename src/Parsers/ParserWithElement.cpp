@@ -5,6 +5,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserWithElement.h>
 
 
@@ -48,7 +49,7 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (ASTPtr subquery; s_subquery.parse(pos, subquery, expected))
         {
-            auto with_element = std::make_shared<ASTWithElement>();
+            auto with_element = make_intrusive<ASTWithElement>();
 
             tryGetIdentifierNameInto(cte_name, with_element->name);
             with_element->aliases = std::move(aliases);

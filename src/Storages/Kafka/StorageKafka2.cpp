@@ -1179,7 +1179,7 @@ void StorageKafka2::cleanConsumers()
 std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch)
 {
     // Create an INSERT query for streaming data
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = getStorageID();
 
     auto modified_context = Context::createCopy(getContext());

@@ -25,7 +25,7 @@ ${CLICKHOUSE_CLIENT} --user ${user_name} --query "${backup_query}" 2>&1 >/dev/nu
 
 # Sometimes we might take the backup lock file content from the OS cache.
 # That will lead to non-matching UUIDs of lock files (from the old failed backup and the new one), and a "concurrent backup is running" error will appear.
-${CLICKHOUSE_CLIENT} --query "system drop mmap cache"
+${CLICKHOUSE_CLIENT} --query "system clear mmap cache"
 
 ${CLICKHOUSE_CLIENT} --query "grant backup on *.* to ${user_name}"
 ${CLICKHOUSE_CLIENT} --user ${user_name} --query "${backup_query}" 2>&1 >/dev/null | (grep -q "ACCESS_DENIED" && echo "ACCESS_DENIED error is not expected")

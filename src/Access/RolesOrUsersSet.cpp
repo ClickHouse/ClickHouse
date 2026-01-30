@@ -118,9 +118,9 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
 }
 
 
-std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
+boost::intrusive_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
 {
-    auto ast = std::make_shared<ASTRolesOrUsersSet>();
+    auto ast = make_intrusive<ASTRolesOrUsersSet>();
     ast->id_mode = true;
     ast->all = all;
 
@@ -144,9 +144,9 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
 }
 
 
-std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const AccessControl & access_control) const
+boost::intrusive_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const AccessControl & access_control) const
 {
-    auto ast = std::make_shared<ASTRolesOrUsersSet>();
+    auto ast = make_intrusive<ASTRolesOrUsersSet>();
     ast->all = all;
 
     if (!ids.empty() && !all)
