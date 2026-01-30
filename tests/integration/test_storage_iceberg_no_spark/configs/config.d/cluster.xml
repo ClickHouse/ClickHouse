@@ -10,11 +10,15 @@
                     <host>node2</host>
                     <port>9000</port>
                 </replica>
+            </shard>
+        </cluster_simple>
+        <cluster_single_node>
+            <shard>
                 <replica>
-                    <host>node3</host>
+                    <host>node1</host>
                     <port>9000</port>
                 </replica>
             </shard>
-        </cluster_simple>
+        </cluster_single_node>
     </remote_servers>
 </clickhouse>

@@ -121,6 +121,8 @@ private:
     bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
     const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
 
+    static NameAndTypePair resetTimeZoneIfNeeded(const NameAndTypePair & name_and_type);
+
     std::shared_ptr<ActionsDAG> getSchemaTransformationDag(
         const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema, Int32 old_id, Int32 new_id);
 

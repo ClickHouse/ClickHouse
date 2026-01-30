@@ -123,25 +123,23 @@ ManifestFilesPruner::ManifestFilesPruner(
 
     if (manifest_file.hasBoundsInfoInManifests() && transformed_dag != nullptr)
     {
+        const auto & bounded_columns = manifest_file.getColumnsIDsWithBounds();
+        for (Int32 used_column_id : used_columns_in_filter)
         {
-            const auto & bounded_columns = manifest_file.getColumnsIDsWithBounds();
-            for (Int32 used_column_id : used_columns_in_filter)
-            {
-                if (!bounded_columns.contains(used_column_id))
-                    continue;
+            if (!bounded_columns.contains(used_column_id))
+                continue;
 
-                auto name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);
-                if (!name_and_type.has_value())
-                    continue;
+            auto name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);
+            if (!name_and_type.has_value())
+                continue;
 
-                name_and_type->name = DB::backQuote(DB::toString(used_column_id));
+            name_and_type->name = DB::backQuote(DB::toString(used_column_id));
 
-                ExpressionActionsPtr expression
-                    = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
+            ExpressionActionsPtr expression
+                = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
 
-                ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
-                min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
-            }
+            ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
+            min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
         }
     }
 }
