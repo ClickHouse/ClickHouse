@@ -4,7 +4,8 @@
 
 #include <Poco/Net/NetException.h>
 #include <Common/ProfileEvents.h>
-#include <Common/logger_useful.h>
+#include <Common/ThreadStatus.h>
+#include <Common/setThreadName.h>
 
 
 namespace ProfileEvents
@@ -36,6 +37,9 @@ HTTPServerConnection::HTTPServerConnection(
 
 void HTTPServerConnection::run()
 {
+    ThreadStatus thread_status;
+    DB::setThreadName(ThreadName::HTTP_HANDLER);
+
     std::string server = params->getSoftwareVersion();
     Poco::Net::HTTPServerSession session(socket(), params);
 
