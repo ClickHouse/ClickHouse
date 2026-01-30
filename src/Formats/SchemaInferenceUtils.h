@@ -109,6 +109,8 @@ void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, D
 ///  - Type -> Nullable(type)
 ///  - Array(Type) -> Array(Nullable(Type))
 ///  - Tuple(Type1, ..., TypeN) -> Tuple(Nullable(Type1), ..., Nullable(TypeN))
+///    If settings.schema_inference_allow_nullable_tuple_type is enabled, also wraps the whole tuple:
+///      Tuple(...) -> Nullable(Tuple(...))
 ///  - Map(KeyType, ValueType) -> Map(KeyType, Nullable(ValueType))
 ///  - LowCardinality(Type) -> LowCardinality(Nullable(Type))
 /// Does not recurse into types with custom name.

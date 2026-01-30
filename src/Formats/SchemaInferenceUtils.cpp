@@ -1703,10 +1703,13 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
             nested_types.push_back(nested_type);
         }
 
+        DataTypePtr tuple_res;
         if (tuple_type->hasExplicitNames())
-            return std::make_shared<DataTypeTuple>(std::move(nested_types), tuple_type->getElementNames());
+            tuple_res = std::make_shared<DataTypeTuple>(std::move(nested_types), tuple_type->getElementNames());
+        else
+            tuple_res = std::make_shared<DataTypeTuple>(std::move(nested_types));
 
-        return std::make_shared<DataTypeTuple>(std::move(nested_types));
+        return (make_nullable && settings.schema_inference_allow_nullable_tuple_type) ? makeNullableSafe(tuple_res) : tuple_res;
     }
 
     if (which.isMap())
