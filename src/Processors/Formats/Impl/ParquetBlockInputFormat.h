@@ -75,6 +75,7 @@ struct ParquetBucketSplitter : public IBucketSplitter
 class ParquetBlockInputFormat : public IInputFormat
 {
 public:
+
     ParquetBlockInputFormat(
         ReadBuffer & buf,
         SharedHeader header,

@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
             {"default_dictionary_database", "", "", "New setting"},
+            {"use_parquet_metadata_cache", true, true, "Enables cache of parquet file metadata."},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {

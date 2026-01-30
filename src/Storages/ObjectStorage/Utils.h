@@ -63,5 +63,5 @@ struct ParseFromDiskResult
 
 ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context, const fs::path & prefix);
 
-
+bool isParquetFormat(const ObjectInfoPtr & object_info, const StorageObjectStorageConfigurationPtr & conf);
 }
