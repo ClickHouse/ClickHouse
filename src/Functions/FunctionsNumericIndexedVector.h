@@ -150,24 +150,43 @@ public:
                 arguments[0]->getName());
 
         const auto * type1 = typeid_cast<const DataTypeAggregateFunction *>(arguments[1].get());
-
-        if (type1 && type1->getFunctionName() != NameAggregateFunctionGroupNumericIndexedVector::name)
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument for function {} must be a NumericIndexedVector or Numeric Value",
-                getName());
-
-
-        if (type1
-            && (type0->getArgumentsDataTypes()[0]->getTypeId() != type1->getArgumentsDataTypes()[0]->getTypeId()
-                || type0->getArgumentsDataTypes()[1]->getTypeId() != type1->getArgumentsDataTypes()[1]->getTypeId()))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The nested types in NumericIndexedVector must be the same, but one is ({}, {}), and the other is ({}, {}).",
-                type0->getArgumentsDataTypes()[0]->getName(),
-                type0->getArgumentsDataTypes()[1]->getName(),
-                type1->getArgumentsDataTypes()[0]->getName(),
-                type1->getArgumentsDataTypes()[1]->getName());
+        if (type1)
+        {
+            if (type1->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name)
+            {
+                if (type0->getArgumentsDataTypes()[0]->getTypeId() != type1->getArgumentsDataTypes()[0]->getTypeId()
+                    || type0->getArgumentsDataTypes()[1]->getTypeId() != type1->getArgumentsDataTypes()[1]->getTypeId())
+                {
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "The nested types in NumericIndexedVector must be the same, but one is ({}, {}), and the other is ({}, {}).",
+                        type0->getArgumentsDataTypes()[0]->getName(),
+                        type0->getArgumentsDataTypes()[1]->getName(),
+                        type1->getArgumentsDataTypes()[0]->getName(),
+                        type1->getArgumentsDataTypes()[1]->getName());
+                }
+            }
+            else if (type1->getFunctionName() == AggregateFunctionGroupBitmapData<UInt8>::name())
+            {
+                if (type0->getArgumentsDataTypes()[0]->getTypeId() != type1->getArgumentsDataTypes()[0]->getTypeId())
+                {
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Bitmap element type must match NumericIndexedVector index type for function {}: "
+                        "got Bitmap({}) vs vector index {}",
+                        getName(),
+                        type1->getArgumentsDataTypes()[0]->getName(),
+                        type0->getArgumentsDataTypes()[0]->getName());
+                }
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument for function {} must be a NumericIndexedVector, (u)int*, float*, or Bitmap",
+                    getName());
+            }
+        }
 
         return arguments[0];
     }
@@ -248,12 +267,28 @@ private:
             auto lhs = reinterpret_cast<const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> *>(first_data_ptr);
 
             AggregateDataPtr second_data_ptr = is_second_column_const ? second_column_ptr->getData()[0] : second_column_ptr->getData()[i];
-            auto rhs = reinterpret_cast<const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> *>(second_data_ptr);
-
             col_to->insertDefault();
             auto res = reinterpret_cast<AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> *>(col_to->getData()[i]);
             res->init = true;
-            FuncImpl<VectorImpl>::apply(*lhs, *rhs, *res);
+
+
+            if (second_column_ptr->getAggregateFunction()->getName() == NameAggregateFunctionGroupNumericIndexedVector::name)
+            {
+                auto rhs = reinterpret_cast<const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> *>(second_data_ptr);
+                FuncImpl<VectorImpl>::apply(*lhs, *rhs, *res);
+            }
+            else if (second_column_ptr->getAggregateFunction()->getName() == AggregateFunctionGroupBitmapData<UInt8>::name())
+            {
+                auto rhs = reinterpret_cast<const AggregateFunctionGroupBitmapData<typename VectorImpl::IndexType> *>(second_data_ptr);
+                FuncImpl<VectorImpl>::apply(*lhs, *rhs, *res);
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument for function {} must be a NumericIndexedVector, (u)int*, float*, or Bitmap",
+                    getName());
+            }
         }
         return col_to;
     }
@@ -308,6 +343,15 @@ struct NumericIndexedVectorPointwiseAddImpl
     {
         NumericIndexedVector<VectorImpl>::pointwiseAdd(lhs.vector, rhs.vector, res.vector);
     }
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* lhs */,
+        const AggregateFunctionGroupBitmapData<typename VectorImpl::IndexType> & /* rhs */,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* res */)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second parameter of {} does not currently support the bitmap type.", name);
+    }
 };
 
 template <typename VectorImpl>
@@ -329,6 +373,15 @@ struct NumericIndexedVectorPointwiseSubtractImpl
         AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
     {
         NumericIndexedVector<VectorImpl>::pointwiseSubtract(lhs.vector, rhs.vector, res.vector);
+    }
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* lhs */,
+        const AggregateFunctionGroupBitmapData<typename VectorImpl::IndexType> & /* rhs */,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* res */)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second parameter of {} does not currently support the bitmap type.", name);
     }
 };
 
@@ -352,6 +405,14 @@ struct NumericIndexedVectorPointwiseMultiplyImpl
     {
         NumericIndexedVector<VectorImpl>::pointwiseMultiply(lhs.vector, rhs.vector, res.vector);
     }
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
+        const AggregateFunctionGroupBitmapData<typename VectorImpl::IndexType> & rhs,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
+    {
+        NumericIndexedVector<VectorImpl>::pointwiseMultiply(lhs.vector, rhs, res.vector);
+    }
 };
 
 template <typename VectorImpl>
@@ -373,6 +434,15 @@ struct NumericIndexedVectorPointwiseDivideImpl
         AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
     {
         NumericIndexedVector<VectorImpl>::pointwiseDivide(lhs.vector, rhs.vector, res.vector);
+    }
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* lhs */,
+        const AggregateFunctionGroupBitmapData<typename VectorImpl::IndexType> & /* rhs */,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* res */)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second parameter of {} does not currently support the bitmap type.", name);
     }
 };
 
@@ -396,6 +466,15 @@ struct NumericIndexedVectorPointwiseEqualImpl
     {
         NumericIndexedVector<VectorImpl>::pointwiseEqual(lhs.vector, rhs.vector, res.vector);
     }
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* lhs */,
+        const AggregateFunctionGroupBitmapData<typename VectorImpl::IndexType> & /* rhs */,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* res */)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second parameter of {} does not currently support the bitmap type.", name);
+    }
 };
 
 template <typename VectorImpl>
@@ -417,6 +496,15 @@ struct NumericIndexedVectorPointwiseNotEqualImpl
         AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
     {
         NumericIndexedVector<VectorImpl>::pointwiseNotEqual(lhs.vector, rhs.vector, res.vector);
+    }
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* lhs */,
+        const AggregateFunctionGroupBitmapData<typename VectorImpl::IndexType> & /* rhs */,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* res */)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second parameter of {} does not currently support the bitmap type.", name);
     }
 };
 
@@ -440,6 +528,15 @@ struct NumericIndexedVectorPointwiseLessImpl
     {
         NumericIndexedVector<VectorImpl>::pointwiseLess(lhs.vector, rhs.vector, res.vector);
     }
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* lhs */,
+        const AggregateFunctionGroupBitmapData<typename VectorImpl::IndexType> & /* rhs */,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* res */)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second parameter of {} does not currently support the bitmap type.", name);
+    }
 };
 
 template <typename VectorImpl>
@@ -461,6 +558,15 @@ struct NumericIndexedVectorPointwiseLessEqualImpl
         AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
     {
         NumericIndexedVector<VectorImpl>::pointwiseLessEqual(lhs.vector, rhs.vector, res.vector);
+    }
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* lhs */,
+        const AggregateFunctionGroupBitmapData<typename VectorImpl::IndexType> & /* rhs */,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* res */)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second parameter of {} does not currently support the bitmap type.", name);
     }
 };
 
@@ -484,6 +590,15 @@ struct NumericIndexedVectorPointwiseGreaterImpl
     {
         NumericIndexedVector<VectorImpl>::pointwiseGreater(lhs.vector, rhs.vector, res.vector);
     }
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* lhs */,
+        const AggregateFunctionGroupBitmapData<typename VectorImpl::IndexType> & /* rhs */,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* res */)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second parameter of {} does not currently support the bitmap type.", name);
+    }
 };
 template <typename VectorImpl>
 struct NumericIndexedVectorPointwiseGreaterEqualImpl
@@ -505,6 +620,79 @@ struct NumericIndexedVectorPointwiseGreaterEqualImpl
     {
         NumericIndexedVector<VectorImpl>::pointwiseGreaterEqual(lhs.vector, rhs.vector, res.vector);
     }
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* lhs */,
+        const AggregateFunctionGroupBitmapData<typename VectorImpl::IndexType> & /* rhs */,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* res */)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second parameter of {} does not currently support the bitmap type.", name);
+    }
+};
+
+template <typename VectorImpl>
+struct NumericIndexedVectorPointwiseMaxImpl
+{
+    static constexpr auto name = "numericIndexedVectorPointwiseMax";
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* lhs */,
+        const typename VectorImpl::ValueType & /* rhs */,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* res */)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second parameter of {} does not currently support the scalar type.", name);
+    }
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & rhs,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
+    {
+        NumericIndexedVector<VectorImpl>::pointwiseMax(lhs.vector, rhs.vector, res.vector);
+    }
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* lhs */,
+        const AggregateFunctionGroupBitmapData<typename VectorImpl::IndexType> & /* rhs */,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* res */)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second parameter of {} does not currently support the bitmap type.", name);
+    }
+};
+
+template <typename VectorImpl>
+struct NumericIndexedVectorPointwiseMinImpl
+{
+    static constexpr auto name = "numericIndexedVectorPointwiseMin";
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* lhs */,
+        const typename VectorImpl::ValueType & /* rhs */,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* res */)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second parameter of {} does not currently support the scalar type.", name);
+    }
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs,
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & rhs,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res)
+    {
+        NumericIndexedVector<VectorImpl>::pointwiseMin(lhs.vector, rhs.vector, res.vector);
+    }
+
+    static void apply(
+        const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* lhs */,
+        const AggregateFunctionGroupBitmapData<typename VectorImpl::IndexType> & /* rhs */,
+        AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & /* res */)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second parameter of {} does not currently support the bitmap type.", name);
+    }
 };
 
 using FunctionNumericIndexedVectorPointwiseAdd = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseAddImpl>;
@@ -517,6 +705,8 @@ using FunctionNumericIndexedVectorPointwiseLess = FunctionNumericIndexedVector<N
 using FunctionNumericIndexedVectorPointwiseLessEqual = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseLessEqualImpl>;
 using FunctionNumericIndexedVectorPointwiseGreater = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseGreaterImpl>;
 using FunctionNumericIndexedVectorPointwiseGreaterEqual = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseGreaterEqualImpl>;
+using FunctionNumericIndexedVectorPointwiseMax = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseMaxImpl>;
+using FunctionNumericIndexedVectorPointwiseMin = FunctionNumericIndexedVector<NumericIndexedVectorPointwiseMinImpl>;
 
 template <typename ToType, typename FuncImpl>
 class FunctionNumericIndexedVectorToNumberImpl
@@ -707,6 +897,103 @@ public:
         return col_to;
     }
 };
+
+template <template <class> class FuncImpl>
+class FunctionNumericIndexedVectorToSameValueTypeImpl
+    : public IFunction,
+      public FunctionNumericIndexedVectorHelper<FunctionNumericIndexedVectorToSameValueTypeImpl<FuncImpl>>
+{
+public:
+    static constexpr auto name = FuncImpl<BSINumericIndexedVector<UInt8, Float64>>::name;
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNumericIndexedVectorToSameValueTypeImpl<FuncImpl>>(); }
+    String getName() const override { return name; }
+    bool isVariadic() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        const auto * type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
+        if (!(type0 && type0->getFunctionName() == NameAggregateFunctionGroupNumericIndexedVector::name))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for {} must be a NumericIndexedVector but got {}",
+                getName(),
+                arguments[0]->getName());
+
+        WhichDataType which(type0->getArgumentsDataTypes()[1]->getTypeId());
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) \
+        return std::make_shared<DataTypeNumber<TYPE>>(); /// NOLINT
+        FOR_BASIC_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Unexpected value type {} for {}",
+            type0->getArgumentsDataTypes()[1]->getName(),
+            getName());
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t rows) const override
+    {
+        const auto * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].type.get());
+        DataTypePtr index_type = aggr_type->getArgumentsDataTypes()[0];
+        DataTypePtr value_type = aggr_type->getArgumentsDataTypes()[1];
+        Array params = aggr_type->getParameters();
+        return this->executeHelper(index_type, value_type, params, arguments, result_type, rows);
+    }
+
+    template <typename VectorImpl>
+    ColumnPtr executeBSI(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t rows) const
+    {
+        bool is_const = isColumnConst(*arguments[0].column);
+
+        const ColumnAggregateFunction * col = is_const
+            ? typeid_cast<const ColumnAggregateFunction *>(
+                  typeid_cast<const ColumnConst *>(arguments[0].column.get())->getDataColumnPtr().get())
+            : typeid_cast<const ColumnAggregateFunction *>(arguments[0].column.get());
+
+        const auto & data = col->getData();
+
+        using RetT = typename VectorImpl::ValueType;
+        auto out = ColumnVector<RetT>::create(rows);
+        auto & vec = out->getData();
+
+        for (size_t i = 0; i < rows; ++i)
+        {
+            AggregateDataPtr state = is_const ? data[0] : data[i];
+            const auto * lhs = reinterpret_cast<const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> *>(state);
+            vec[i] = FuncImpl<VectorImpl>::apply(*lhs);
+        }
+        return out;
+    }
+};
+
+template <typename VectorImpl>
+struct NumericIndexedVectorGetMaxValueImpl
+{
+    static constexpr auto name = "numericIndexedVectorGetMaxValue";
+    static typename VectorImpl::ValueType apply(const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs)
+    {
+        return lhs.vector.getMaxValue();
+    }
+};
+
+template <typename VectorImpl>
+struct NumericIndexedVectorGetMinValueImpl
+{
+    static constexpr auto name = "numericIndexedVectorGetMinValue";
+    static typename VectorImpl::ValueType apply(const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs)
+    {
+        return lhs.vector.getMinValue();
+    }
+};
+
+using FunctionNumericIndexedVectorGetMaxValue = FunctionNumericIndexedVectorToSameValueTypeImpl<NumericIndexedVectorGetMaxValueImpl>;
+using FunctionNumericIndexedVectorGetMinValue = FunctionNumericIndexedVectorToSameValueTypeImpl<NumericIndexedVectorGetMinValueImpl>;
 
 
 template <typename FuncImpl>
