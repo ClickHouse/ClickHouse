@@ -757,8 +757,8 @@ double measureValueLookup(const Storage & storage, const std::vector<int8_t> & v
 
 void printComparisonTable()
 {
-    const char * implementations[] = {"Current", "HashMapBoth", "CompactSorted", "CompactDirect", "MinimalCompact"};
-    const int num_impl = 5;
+    const char * implementations[] = {"Current", "HashMapBoth", "CompactSorted", "CompactDirect", "DirectDynamic", "MinimalCompact"};
+    const int num_impl = 6;
     const int num_sizes = 6;
 
     // Size variants: tiny(3), small(10), medium(50), large(100), xlarge(200), max(255)
@@ -836,15 +836,26 @@ void printComparisonTable()
         metrics[3].value_lookup[s] = measureValueLookup(storage, *lookup_values[s]);
     }
 
+    // DirectDynamic
+    std::cout << "  Measuring DirectDynamic...  \r" << std::flush;
+    for (int s = 0; s < num_sizes; ++s)
+    {
+        EnumStorageCompactDirectDynamic<int8_t> storage(*enum_data[s]);
+        metrics[4].memory[s] = storage.memoryUsage();
+        metrics[4].construct[s] = measureConstruction<EnumStorageCompactDirectDynamic<int8_t>>(*enum_data[s]);
+        metrics[4].name_lookup[s] = measureNameLookup(storage, *lookup_names[s]);
+        metrics[4].value_lookup[s] = measureValueLookup(storage, *lookup_values[s]);
+    }
+
     // MinimalCompact
     std::cout << "  Measuring MinimalCompact... \r" << std::flush;
     for (int s = 0; s < num_sizes; ++s)
     {
         EnumStorageMinimalCompact<int8_t> storage(*enum_data[s]);
-        metrics[4].memory[s] = storage.memoryUsage();
-        metrics[4].construct[s] = measureConstruction<EnumStorageMinimalCompact<int8_t>>(*enum_data[s]);
-        metrics[4].name_lookup[s] = measureNameLookup(storage, *lookup_names[s]);
-        metrics[4].value_lookup[s] = measureValueLookup(storage, *lookup_values[s]);
+        metrics[5].memory[s] = storage.memoryUsage();
+        metrics[5].construct[s] = measureConstruction<EnumStorageMinimalCompact<int8_t>>(*enum_data[s]);
+        metrics[5].name_lookup[s] = measureNameLookup(storage, *lookup_names[s]);
+        metrics[5].value_lookup[s] = measureValueLookup(storage, *lookup_values[s]);
     }
 
     std::cout << "                              \r" << std::flush;
@@ -925,7 +936,8 @@ void printComparisonTable()
         if (i == 0) best_for = "Baseline (current implementation)";
         else if (i == 1) best_for = "Fast construction + value lookup";
         else if (i == 2) best_for = "Memory-efficient, moderate lookups";
-        else if (i == 3) best_for = "Memory-efficient + fast val lookup";
+        else if (i == 3) best_for = "Fast val lookup, 256B fixed array";
+        else if (i == 4) best_for = "Best memory + fast val lookup";
         else best_for = "Minimum memory (slow val lookup)";
 
         std::cout << "│ " << std::setw(14) << std::left << implementations[i]

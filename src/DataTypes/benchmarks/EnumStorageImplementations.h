@@ -432,7 +432,150 @@ public:
 
 
 // ============================================================================
-// Implementation 5: Minimal Compact (no reverse lookup structure)
+// Implementation 5: Compact with Dynamic Direct Array
+// Uses: Same as #4 but allocates only [min_value..max_value] range
+// More memory efficient when enum values don't span full int8_t range
+// ============================================================================
+
+template <typename T>
+class EnumStorageCompactDirectDynamic
+{
+public:
+    using Value = std::pair<std::string, T>;
+    using Values = std::vector<Value>;
+
+private:
+    // Strings sorted lexicographically
+    std::vector<uint16_t> offsets;       // offsets[i] = start of string i
+    std::string string_data;              // concatenated strings
+    std::vector<T> values_by_name;        // values_by_name[i] = value for i-th string
+
+    // Dynamic array for O(1) reverse lookup
+    // value_to_index[value - min_value] = index into name arrays
+    std::vector<uint8_t> value_to_index;
+    T min_value = 0;
+    T max_value = 0;
+
+    static constexpr uint8_t INVALID_INDEX = 255;
+
+    std::string_view getStringAt(size_t idx) const
+    {
+        return std::string_view(string_data.data() + offsets[idx], offsets[idx + 1] - offsets[idx]);
+    }
+
+public:
+    explicit EnumStorageCompactDirectDynamic(const Values & input_values)
+    {
+        if (input_values.empty())
+            return;
+
+        // Find min/max values
+        min_value = input_values[0].second;
+        max_value = input_values[0].second;
+        for (const auto & [name, value] : input_values)
+        {
+            if (value < min_value) min_value = value;
+            if (value > max_value) max_value = value;
+        }
+
+        // Allocate only the range we need
+        size_t range_size = static_cast<size_t>(max_value - min_value + 1);
+        value_to_index.resize(range_size, INVALID_INDEX);
+
+        // Sort by name lexicographically
+        Values sorted_by_name = input_values;
+        std::sort(sorted_by_name.begin(), sorted_by_name.end(), [](const auto & a, const auto & b) {
+            return a.first < b.first;
+        });
+
+        size_t n = sorted_by_name.size();
+        offsets.reserve(n + 1);
+        values_by_name.reserve(n);
+
+        // Build offsets and concatenated string
+        uint16_t offset = 0;
+        for (size_t i = 0; i < n; ++i)
+        {
+            const auto & [name, value] = sorted_by_name[i];
+            offsets.push_back(offset);
+            string_data += name;
+            offset += static_cast<uint16_t>(name.size());
+            values_by_name.push_back(value);
+
+            // Fill direct lookup array (offset by min_value)
+            value_to_index[static_cast<size_t>(value - min_value)] = static_cast<uint8_t>(i);
+        }
+        offsets.push_back(offset);
+    }
+
+    std::optional<T> tryGetValue(std::string_view name) const
+    {
+        if (offsets.size() <= 1)
+            return std::nullopt;
+
+        size_t n = offsets.size() - 1;
+        size_t lo = 0, hi = n;
+
+        while (lo < hi)
+        {
+            size_t mid = lo + (hi - lo) / 2;
+            std::string_view mid_str = getStringAt(mid);
+
+            if (mid_str < name)
+                lo = mid + 1;
+            else if (mid_str > name)
+                hi = mid;
+            else
+                return values_by_name[mid];
+        }
+        return std::nullopt;
+    }
+
+    std::optional<std::string_view> tryGetName(T value) const
+    {
+        // Fast bounds check - return nullopt for values outside our range
+        if (value < min_value || value > max_value)
+            return std::nullopt;
+
+        uint8_t idx = value_to_index[static_cast<size_t>(value - min_value)];
+        if (idx == INVALID_INDEX)
+            return std::nullopt;
+        return getStringAt(idx);
+    }
+
+    size_t size() const { return offsets.empty() ? 0 : offsets.size() - 1; }
+
+    T getMinValue() const { return min_value; }
+    T getMaxValue() const { return max_value; }
+    size_t getRangeSize() const { return value_to_index.size(); }
+
+    size_t memoryUsage() const
+    {
+        size_t total = sizeof(*this);
+        total += offsets.capacity() * sizeof(uint16_t);
+        total += string_data.capacity();
+        total += values_by_name.capacity() * sizeof(T);
+        total += value_to_index.capacity() * sizeof(uint8_t);
+        return total;
+    }
+
+    Values getValues() const
+    {
+        Values result;
+        result.reserve(size());
+        for (size_t i = 0; i < size(); ++i)
+            result.emplace_back(std::string(getStringAt(i)), values_by_name[i]);
+
+        std::sort(result.begin(), result.end(), [](const auto & a, const auto & b) {
+            return a.second < b.second;
+        });
+        return result;
+    }
+};
+
+
+// ============================================================================
+// Implementation 6: Minimal Compact (no reverse lookup structure)
 // Uses: offsets[] + strings + values[], linear scan for value→name
 // Useful baseline to see overhead of lookup structures
 // ============================================================================
