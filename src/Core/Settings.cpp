@@ -4776,7 +4776,7 @@ Allow to execute alters which affects not only tables metadata, but also data on
     DECLARE(Bool, enable_global_with_statement, true, R"(
 Propagate WITH statements to UNION queries and all subqueries
 )", 0) \
-    DECLARE(Bool, enable_materialized_cte, true, R"(
+    DECLARE(Bool, enable_materialized_cte, false, R"(
 Enable materialized common table expressions, it will be preferred over enable_global_with_statement
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
