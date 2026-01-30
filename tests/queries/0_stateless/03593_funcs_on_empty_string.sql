@@ -282,7 +282,7 @@ SELECT str_to_date('');
 SELECT str_to_map('');
 SELECT stringBytesEntropy('');
 SELECT stringBytesUniq('');
-SELECT timestamp('');
+SELECT timestamp(''); -- { error CANNOT_PARSE_DATETIME }
 SELECT toBFloat16OrNull('');
 SELECT toBFloat16OrZero('');
 SELECT toColumnTypeName('');

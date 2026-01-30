@@ -1136,6 +1136,14 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
+    if (buf.eof())
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime64 from empty string");
+        else
+            return ReturnType(false);
+    }
+
     time_t whole = 0;
     bool is_negative_timestamp = (!buf.eof() && *buf.position() == '-');
     bool is_empty = buf.eof();
