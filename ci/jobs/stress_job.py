@@ -245,6 +245,15 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 )
             )
 
+    if exit_code != 0:
+        failed_results.append(
+            Result.create_from(
+                name="Check failed",
+                info=f"Check failed with exit code {exit_code}",
+                status=Result.Status.FAILED,
+            )
+        )
+
     r = Result.create_from(
         results=failed_results,
         status=Result.Status.SUCCESS if not failed_results else "",
