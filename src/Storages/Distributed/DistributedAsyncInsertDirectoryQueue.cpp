@@ -370,7 +370,10 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         {
             const auto & file_path = it->path();
             if (!it->is_directory() && startsWith(fs::path(file_path).extension(), ".bin") && parse<UInt64>(file_path.stem()))
+            {
                 broken_bytes_count += fs::file_size(file_path);
+                broken_files++;
+            }
             else
                 LOG_WARNING(log, "Unexpected file {} in {}", file_path.string(), broken_path);
         }
