@@ -596,6 +596,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         ProfileEvents::increment(ProfileEvents::InsertQuery);
         ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
         ProfileEvents::increment(ProfileEvents::AsyncInsertBytes, entry_data_size);
+        ProfileEvents::increment(ProfileEvents::InsertQuery);
 
         if (data_to_process)
         {
