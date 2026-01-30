@@ -9,7 +9,7 @@ dmesg --clear
 set -x
 
 # we mount tests folder from repo to /usr/share
-ln -s /repo/ci/jobs/scripts/stress/stress.py /usr/bin/stress
+ln -s /repo/tests/ci/stress.py /usr/bin/stress
 ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 ln -s /repo/tests/ci/download_release_packages.py /usr/bin/download_release_packages
 ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
@@ -25,13 +25,9 @@ azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
 
 echo "Get previous release tag"
-PACKAGES_DIR=/repo/ci/tmp
+PACKAGES_DIR=/repo/tests/ci/tmp/packages
 # shellcheck disable=SC2016
 previous_release_tag=$(dpkg-deb --showformat='${Version}' --show $PACKAGES_DIR/clickhouse-client*.deb | get_previous_release_tag)
-if [ $? -ne 0 ]; then
-    echo "Failed to get previous release tag"
-    exit 1
-fi
 echo $previous_release_tag
 
 echo "Clone previous release repository"
@@ -47,11 +43,11 @@ echo $previous_release_tag | download_release_packages && echo -e "Download scri
 if ! [ "$(ls -A previous_release_repository/tests/queries)" ]
 then
     echo -e 'failure\tFailed to clone previous release tests' > /test_output/check_status.tsv
-    exit 1
+    exit
 elif ! [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
 then
     echo -e 'failure\tFailed to download previous release packages' > /test_output/check_status.tsv
-    exit 1
+    exit
 fi
 
 echo -e "Successfully cloned previous release tests$OK" >> /test_output/test_results.tsv
@@ -89,7 +85,6 @@ function save_major_version()
 save_settings_clean 'old_settings.native'
 save_mergetree_settings_clean 'old_merge_tree_settings.native'
 save_major_version 'old_version.native'
-old_major_version=$(clickhouse-local -q "select a[1] || '.' || a[2] from (select splitByChar('.', version()) as a)")
 
 # Initial run without S3 to create system.*_log on local file system to make it
 # available for dump via clickhouse-local
@@ -267,18 +262,7 @@ fi
 sudo sed -i "s|>1<|>0<|g" /etc/clickhouse-server/config.d/lost_forever_check.xml \
 rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
-# Set compatibility setting to previous version, so we won't fail due to known backward incompatible changes.
-echo "<clickhouse>
-    <profiles>
-        <default>
-            <compatibility>$old_major_version</compatibility>
-        </default>
-    </profiles>
-</clickhouse>" > /etc/clickhouse-server/users.d/compatibility.xml
-
-cat /etc/clickhouse-server/users.d/compatibility.xml
-
-start_server || (echo "Failed to start server" && exit 1)
+start_server 500 || (echo "Failed to start server" && exit 1)
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
     && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
@@ -361,5 +345,31 @@ tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 collect_query_and_trace_logs
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
+
+# Write check result into check_status.tsv
+# Try to choose most specific error for the whole check status
+clickhouse-local --structure "test String, res String, time Nullable(Float32), desc String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by
+(test like '%Sanitizer%') DESC,
+(test like '%Killed by signal%') DESC,
+(test like '%gdb.log%') DESC,
+(test ilike '%possible deadlock%') DESC,
+(test like '%start%') DESC,
+(test like '%dmesg%') DESC,
+(test like '%OOM%') DESC,
+(test like '%Signal 9%') DESC,
+(test like '%Fatal message%') DESC,
+(test like '%Error message%') DESC,
+(test like '%previous release%') DESC,
+(test like '%Changed settings%') DESC,
+(test like '%New settings%') DESC,
+rowNumberInAllBlocks()
+LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo -e "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
+[ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
+
+# But OOMs in stress test are allowed
+if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
+then
+    sed -i 's/failure/success/' /test_output/check_status.tsv
+fi
 
 collect_core_dumps

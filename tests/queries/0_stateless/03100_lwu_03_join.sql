@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas, no-replicated-database, long
+-- Tags: no-parallel-replicas, no-replicated-database
 -- no-parallel-replicas: profile events may differ with parallel replicas.
 -- no-replicated-database: fails due to additional shard.
 
@@ -39,7 +39,7 @@ SELECT * FROM t_shared ORDER BY id;
 
 DROP TABLE t_shared SYNC;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT mapSort(mapFilter((k, v) -> k IN ('ReadTasksWithAppliedPatches', 'PatchesAppliedInAllReadTasks', 'PatchesMergeAppliedInAllReadTasks', 'PatchesJoinAppliedInAllReadTasks'), ProfileEvents))
 FROM system.query_log

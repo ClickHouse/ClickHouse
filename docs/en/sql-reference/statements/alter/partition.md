@@ -4,7 +4,6 @@ sidebar_label: 'PARTITION'
 sidebar_position: 38
 slug: /sql-reference/statements/alter/partition
 title: 'Manipulating Partitions and Parts'
-doc_type: 'reference'
 ---
 
 The following operations with [partitions](/engines/table-engines/mergetree-family/custom-partitioning-key.md) are available:
@@ -25,7 +24,6 @@ The following operations with [partitions](/engines/table-engines/mergetree-fami
 - [MOVE PARTITION\|PART](#move-partitionpart) — Move partition/data part to another disk or volume.
 - [UPDATE IN PARTITION](#update-in-partition) — Update data inside the partition by condition.
 - [DELETE IN PARTITION](#delete-in-partition) — Delete data inside the partition by condition.
-- [REWRITE PARTS](#rewrite-parts) — Rewrite parts in the table (or specific partition) completely.
 
 <!-- -->
 
@@ -227,9 +225,7 @@ To restore data from a backup, do the following:
 
 Restoring from a backup does not require stopping the server.
 
-The query processes parts in parallel, the number of threads is regulated by the `max_threads` setting.
-
-For more information about backups and restoring data, see section ["Backup and Restore in ClickHouse"](/operations/backup/overview) section.
+For more information about backups and restoring data, see the [Data Backup](/operations/backup.md) section.
 
 ## UNFREEZE PARTITION {#unfreeze-partition}
 
@@ -345,17 +341,6 @@ ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
 
 -- using partition id
 ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
-```
-
-## REWRITE PARTS {#rewrite-parts}
-
-This will rewrite the parts from scratch, using all new settings. This makes sense because table-level settings like `use_const_adaptive_granularity` are applied only for newly written parts by default.
-
-### Example {#example-rewrite-parts}
-
-```sql
-ALTER TABLE mt REWRITE PARTS;
-ALTER TABLE mt REWRITE PARTS IN PARTITION 2;
 ```
 
 ### See Also {#see-also-1}

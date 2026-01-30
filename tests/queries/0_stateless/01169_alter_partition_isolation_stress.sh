@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-ordinary-database, no-encrypted-storage, no-azure-blob-storage
+# Tags: long, no-replicated-database, no-ordinary-database, no-encrypted-storage
 
 # shellcheck disable=SC2015
 # shellcheck disable=SC2119

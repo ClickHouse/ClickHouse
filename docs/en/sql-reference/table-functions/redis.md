@@ -4,7 +4,6 @@ sidebar_label: 'redis'
 sidebar_position: 170
 slug: /sql-reference/table-functions/redis
 title: 'redis'
-doc_type: 'reference'
 ---
 
 # redis Table Function

@@ -7,7 +7,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/YTsaurus/StorageYTsaurus.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/NamedCollectionsHelpers.h>
 #include <Common/ErrorCodes.h>
 #include <Core/Settings.h>
 #include <Processors/Sources/YTsaurusSource.h>
@@ -31,12 +30,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_ytsaurus_table_engine;
 }
 
-namespace YTsaurusSetting
-{
-    extern const YTsaurusSettingsBool encode_utf8;
-    extern const YTsaurusSettingsBool enable_heavy_proxy_redirection;
-}
-
 
 StorageYTsaurus::StorageYTsaurus(
     const StorageID & table_id_,
@@ -47,12 +40,7 @@ StorageYTsaurus::StorageYTsaurus(
     : IStorage{table_id_}
     , cypress_path(std::move(configuration_.cypress_path))
     , settings(configuration_.settings)
-    , client_connection_info{
-        .http_proxy_urls = std::move(configuration_.http_proxy_urls),
-        .oauth_token = std::move(configuration_.oauth_token),
-        .encode_utf8 = settings[YTsaurusSetting::encode_utf8],
-        .enable_heavy_proxy_redirection = settings[YTsaurusSetting::enable_heavy_proxy_redirection],
-    }
+    , client_connection_info{.http_proxy_urls = std::move(configuration_.http_proxy_urls), .oauth_token = std::move(configuration_.oauth_token)}
     , log(getLogger("StorageYTsaurus(" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -87,51 +75,15 @@ Pipe StorageYTsaurus::read(
     return Pipe(ptr);
 }
 
-YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(
-    const NamedCollection & named_collection, const YTsaurusSettings& settings, bool is_for_dictionary = false)
-{
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"http_proxy_urls", "cypress_path", "oauth_token"};
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"ytsaurus_columns_description"};
-    if (is_for_dictionary)
-    {
-        for (const auto & name : settings.getAllRegisteredNames())
-        {
-            optional_arguments.insert(name);
-        }
-        optional_arguments.insert("name");
-    }
-    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
-
-
-    YTsaurusStorageConfiguration configuration{.settings = settings};
-    configuration.settings.loadFromNamedCollection(named_collection);
-
-    boost::split(configuration.http_proxy_urls, named_collection.get<String>("http_proxy_urls"), [](char c) { return c == '|'; });
-    configuration.cypress_path = named_collection.get<String>("cypress_path");
-    configuration.oauth_token = named_collection.get<String>("oauth_token");
-
-    if (is_for_dictionary)
-    {
-        auto column_description = named_collection.getOrDefault<String>("ytsaurus_columns_description", "");
-        if (!column_description.empty())
-            configuration.ytsaurus_columns_description = std::move(column_description);
-    }
-    return configuration;
-}
-
 YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
-    {
-        return StorageYTsaurus::processNamedCollectionResult(*named_collection, settings);
-    }
     YTsaurusStorageConfiguration configuration{.settings = settings};
+    for (auto & engine_arg : engine_args)
+    {
+        engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+    }
     if (engine_args.size() == 3)
     {
-        for (auto & engine_arg : engine_args)
-        {
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
-        }
         boost::split(configuration.http_proxy_urls, checkAndGetLiteralArgument<String>(engine_args[0], "http_proxy_urls"), [](char c) { return c == '|'; });
         configuration.cypress_path = checkAndGetLiteralArgument<String>(engine_args[1], "cypress_path");
         configuration.oauth_token = checkAndGetLiteralArgument<String>(engine_args[2], "oauth_token");

@@ -1,12 +1,13 @@
+# rebuild in #33610
 # docker build -t clickhouse/test-base .
 FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-ARG LLVM_APT_VERSION="1:21.1.5~"
+ARG LLVM_APT_VERSION="1:19.1.4"
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=21
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=19
 
 # We need ca-certificates first to be able to update all repos. This is why it's run twice
 RUN apt-get update \
@@ -25,8 +26,6 @@ RUN apt-get update \
         lsb-release \
         xxd \
         wget \
-        iptables \
-        iproute2 \
         --yes --no-install-recommends --verbose-versions \
     && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
     && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
@@ -44,32 +43,6 @@ RUN apt-get update \
 RUN test -f /usr/bin/llvm-symbolizer-${LLVM_VERSION}
 RUN ln -s /usr/bin/llvm-symbolizer-${LLVM_VERSION} /usr/bin/llvm-symbolizer
 
-# Install LLVM tools for code coverage (llvm-profdata, llvm-cov)
-# Must match LLVM_VERSION used for building (21)
-RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-        llvm-${LLVM_VERSION} \
-        make \
-        libdatetime-perl \
-        libcapture-tiny-perl \
-        libjson-xs-perl \
-        libperlio-gzip-perl \
-    && ln -s /usr/bin/llvm-profdata-${LLVM_VERSION} /usr/bin/llvm-profdata \
-    && ln -s /usr/bin/llvm-cov-${LLVM_VERSION} /usr/bin/llvm-cov \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
-
-# Install newer lcov from source
-# Ubuntu 22.04 has old 1.14 version, we need 2.x for --sort-tables and --hierarchical options
-RUN cd /tmp \
-    && wget -q https://github.com/linux-test-project/lcov/releases/download/v2.4/lcov-2.4.tar.gz \
-    && tar xzf lcov-2.4.tar.gz \
-    && cd lcov-2.4 \
-    && make install \
-    && cd /tmp \
-    && rm -rf lcov-2.4 lcov-2.4.tar.gz
-
 # Install cmake 3.20+ for Rust support
 # Used https://askubuntu.com/a/1157132 as reference
 RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg && \
@@ -83,12 +56,12 @@ RUN apt-get update \
         git \
         gperf \
         moreutils \
-        less \
         nasm \
         pigz \
         rename \
         software-properties-common \
         tzdata \
+        lcov \
         netbase \
         perl \
         pv \

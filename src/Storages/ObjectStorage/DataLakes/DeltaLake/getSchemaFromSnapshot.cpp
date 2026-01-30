@@ -1,7 +1,6 @@
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
-#include <DataTypes/DataTypeFactory.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
@@ -12,6 +11,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -88,11 +88,7 @@ public:
     const DB::Names & getPartitionColumns() const { return partition_columns; }
 
 private:
-    struct Field;
-    DB::NamesAndTypesList getNamesAndTypesFromList(
-        size_t list_idx,
-        const Field * parent,
-        DB::NameToNameMap & physical_names_map);
+    DB::NamesAndTypesList getNamesAndTypesFromList(size_t list_idx);
 
     struct Field
     {
@@ -162,7 +158,9 @@ public:
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
-    static void visitReadSchema(ffi::SharedScan * scan, SchemaVisitorData & data)
+    static void visitReadSchema(
+        ffi::SharedScan * scan,
+        SchemaVisitorData & data)
     {
         KernelSharedSchema schema(ffi::scan_physical_schema(scan));
         auto visitor = createVisitor(data);
@@ -170,7 +168,9 @@ public:
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
-    static void visitWriteSchema(ffi::SharedWriteContext * write_context, SchemaVisitorData & data)
+    static void visitWriteSchema(
+        ffi::SharedWriteContext * write_context,
+        SchemaVisitorData & data)
     {
         KernelSharedSchema schema(ffi::get_write_schema(write_context));
         auto visitor = createVisitor(data);
@@ -178,17 +178,12 @@ public:
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
-    static void visitPartitionColumns(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
+    static void visitPartitionColumns(
+        ffi::SharedSnapshot * snapshot,
+        SchemaVisitorData & data)
     {
         KernelStringSliceIterator partition_columns_iter(ffi::get_partition_columns(snapshot));
         while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitPartitionColumn)) {}
-    }
-
-    static void visitSchema(ffi::SharedSchema * schema, SchemaVisitorData & data)
-    {
-        auto visitor = createVisitor(data);
-        [[maybe_unused]] size_t result = ffi::visit_schema(schema, &visitor);
-        chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
 private:
@@ -382,15 +377,22 @@ private:
 SchemaVisitorData::SchemaResult SchemaVisitorData::getSchemaResult()
 {
     SchemaResult result;
-    result.names_and_types = getNamesAndTypesFromList(0, nullptr, result.physical_names_map);
+    result.names_and_types = getNamesAndTypesFromList(0);
     chassert(result.names_and_types.size() == type_lists[0]->size());
+
+    for (size_t i = 0; i < type_lists[0]->size(); ++i)
+    {
+        const auto & field = (*type_lists[0])[i];
+        if (!field.physical_name.empty())
+        {
+            [[maybe_unused]] bool inserted = result.physical_names_map.emplace(field.name, field.physical_name).second;
+            chassert(inserted);
+        }
+    }
     return result;
 }
 
-DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
-    size_t list_idx,
-    const Field * parent,
-    DB::NameToNameMap & physical_names_map)
+DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(size_t list_idx)
 {
     DB::NamesAndTypesList names_and_types;
     for (const auto & field : *type_lists[list_idx])
@@ -432,12 +434,12 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             DB::WhichDataType which(field.type);
             if (which.isTuple())
             {
-                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, &field, physical_names_map);
+                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id);
                 type = std::make_shared<DB::DataTypeTuple>(child_names_and_types.getTypes(), child_names_and_types.getNames());
             }
             else if (which.isArray())
             {
-                auto child_types = getNamesAndTypesFromList(field.child_list_id, &field, physical_names_map);
+                auto child_types = getNamesAndTypesFromList(field.child_list_id);
                 if (child_types.size() != 1)
                 {
                     throw DB::Exception(
@@ -450,7 +452,7 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             }
             else if (which.isMap())
             {
-                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, &field, physical_names_map);
+                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id);
                 auto child_types = child_names_and_types.getTypes();
                 if (child_types.size() != 2)
                 {
@@ -469,20 +471,6 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             }
         }
         chassert(type);
-        if (!field.physical_name.empty())
-        {
-            if (parent)
-            {
-                chassert(!parent->physical_name.empty());
-                physical_names_map.emplace(
-                    fmt::format("{}.{}", parent->name, field.name),
-                    fmt::format("{}.{}", parent->physical_name, field.physical_name));
-            }
-            else
-            {
-                physical_names_map.emplace(field.name, field.physical_name);
-            }
-        }
         names_and_types.emplace_back(field.name, type);
     }
     return names_and_types;
@@ -515,13 +503,6 @@ DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)
     SchemaVisitorData data;
     SchemaVisitor::visitPartitionColumns(snapshot, data);
     return data.getPartitionColumns();
-}
-
-DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema)
-{
-    SchemaVisitorData data;
-    SchemaVisitor::visitSchema(schema, data);
-    return data.getSchemaResult().names_and_types;
 }
 
 }

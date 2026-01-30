@@ -47,21 +47,21 @@ namespace
 
 ASTPtr BackupInfo::toAST() const
 {
-    auto func = make_intrusive<ASTFunction>();
+    auto func = std::make_shared<ASTFunction>();
     func->name = backup_engine_name;
     func->no_empty_args = true;
     func->kind = ASTFunction::Kind::BACKUP_NAME;
 
-    auto list = make_intrusive<ASTExpressionList>();
+    auto list = std::make_shared<ASTExpressionList>();
     func->arguments = list;
     func->children.push_back(list);
     list->children.reserve(args.size() + kv_args.size() + !id_arg.empty());
 
     if (!id_arg.empty())
-        list->children.push_back(make_intrusive<ASTIdentifier>(id_arg));
+        list->children.push_back(std::make_shared<ASTIdentifier>(id_arg));
 
     for (const auto & arg : args)
-        list->children.push_back(make_intrusive<ASTLiteral>(arg));
+        list->children.push_back(std::make_shared<ASTLiteral>(arg));
 
     for (const auto & kv_arg : kv_args)
         list->children.push_back(kv_arg);
@@ -175,7 +175,7 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
         auto mutable_collection = collection->duplicate();
         auto params_from_query = getParamsMapFromAST(kv_args, context);
         for (const auto & [key, value] : params_from_query)
-            mutable_collection->setOrUpdate<String>(key, fieldToString(value), {});
+            mutable_collection->setOrUpdate<String>(key, value.safeGet<String>(), {});
         collection = std::move(mutable_collection);
     }
 

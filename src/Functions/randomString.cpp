@@ -4,6 +4,10 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsRandom.h>
+#include <Functions/PerformanceAdaptors.h>
+#include <pcg_random.hpp>
+#include <Common/randomSeed.h>
+#include <base/unaligned.h>
 
 
 namespace DB
@@ -128,7 +132,7 @@ The returned characters are not necessarily ASCII characters, i.e. they may not 
     FunctionDocumentation::Syntax syntax = "randomString(length[, x])";
     FunctionDocumentation::Arguments arguments = {
         {"length", "Length of the string in bytes.", {"(U)Int*"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random bytes.", {"String"}};
     FunctionDocumentation::Examples examples = {
@@ -139,7 +143,7 @@ The returned characters are not necessarily ASCII characters, i.e. they may not 
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRandomString>(documentation);
 }

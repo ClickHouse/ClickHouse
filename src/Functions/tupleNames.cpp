@@ -1,10 +1,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -28,8 +26,6 @@ public:
     explicit ExecutableFunctionTupleNames(Array name_fields_) : name_fields(std::move(name_fields_)) { }
 
     String getName() const override { return name; }
-
-    bool useDefaultImplementationForNulls() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -82,24 +78,22 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(removeNullable(arguments[0].type).get());
+        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
 
         if (!tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a Tuple or Nullable(Tuple)", getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a tuple", getName());
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(removeNullable(arguments[0].type).get());
+        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
 
         if (!tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a Tuple or Nullable(Tuple)", getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a tuple", getName());
 
         DataTypes types = tuple->getElements();
         Array name_fields;

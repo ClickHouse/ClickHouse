@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
@@ -18,6 +17,12 @@
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 max_file_name_length;
+    extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
+}
 
 namespace ErrorCodes
 {
@@ -141,9 +146,13 @@ void MergeTreeDataPartWriterWide::addStreams(
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return;
 
-        auto full_stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+        auto full_stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
-        String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
+        String stream_name;
+        if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && full_stream_name.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
+            stream_name = sipHash128String(full_stream_name);
+        else
+            stream_name = full_stream_name;
 
         /// Shared offsets for Nested type.
         if (column_streams.contains(stream_name))
@@ -179,12 +188,10 @@ void MergeTreeDataPartWriterWide::addStreams(
             max_compress_block_size = settings.max_compress_block_size;
 
         WriteSettings query_write_settings = settings.query_write_settings;
-        query_write_settings.use_adaptive_write_buffer =
-            (settings.min_columns_to_activate_adaptive_write_buffer && columns_list.size() >= settings.min_columns_to_activate_adaptive_write_buffer)
-            || (settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size()));
+        query_write_settings.use_adaptive_write_buffer = settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size());
         query_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
 
-        column_streams[stream_name] = std::make_unique<MergeTreeWriterStream<false>>(
+        column_streams[stream_name] = std::make_unique<Stream<false>>(
             stream_name,
             data_part_storage,
             stream_name, DATA_FILE_EXTENSION,
@@ -213,7 +220,7 @@ const String & MergeTreeDataPartWriterWide::getStreamName(
     const NameAndTypePair & column,
     const ISerialization::SubstreamPath & substream_path) const
 {
-    auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+    auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path);
     auto it = full_name_to_stream_name.find(full_stream_name);
     if (it == full_name_to_stream_name.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} not found", full_stream_name);
@@ -328,7 +335,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
     {
         auto & column = block_to_write.getByName(it->name);
 
-        if (!ISerialization::hasKind(getSerialization(it->name)->getKindStack(), ISerialization::Kind::SPARSE))
+        if (getSerialization(it->name)->getKind() != ISerialization::Kind::SPARSE)
             column.column = recursiveRemoveSparse(column.column);
 
         if (permutation)
@@ -570,10 +577,15 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     const auto & [name, type] = name_type;
     const auto & serialization = getSerialization(name_type.name);
 
-    if (!type->isValueRepresentedByNumber() || type->haveSubtypes() || serialization->getKindStack() != ISerialization::KindStack{ISerialization::Kind::DEFAULT})
+    if (!type->isValueRepresentedByNumber() || type->haveSubtypes() || serialization->getKind() != ISerialization::Kind::DEFAULT)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot validate column of non fixed type {}", type->getName());
 
-    String stream_name = replaceFileNameToHashIfNeeded(escapeForFileName(name), *storage_settings, data_part_storage.get());
+    String escaped_name = escapeForFileName(name);
+    String stream_name;
+    if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && escaped_name.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
+        stream_name = sipHash128String(escaped_name);
+    else
+        stream_name = escaped_name;
     String mrk_path = stream_name + marks_file_extension;
     String bin_path = stream_name + DATA_FILE_EXTENSION;
 
@@ -581,14 +593,14 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     if (!getDataPartStorage().existsFile(mrk_path))
         return;
 
-    auto mrk_file_in = getDataPartStorage().readFile(mrk_path, {}, std::nullopt);
+    auto mrk_file_in = getDataPartStorage().readFile(mrk_path, {}, std::nullopt, std::nullopt);
     std::unique_ptr<ReadBuffer> mrk_in;
     if (index_granularity_info.mark_type.compressed)
         mrk_in = std::make_unique<CompressedReadBufferFromFile>(std::move(mrk_file_in));
     else
         mrk_in = std::move(mrk_file_in);
 
-    DB::CompressedReadBufferFromFile bin_in(getDataPartStorage().readFile(bin_path, {}, std::nullopt));
+    DB::CompressedReadBufferFromFile bin_in(getDataPartStorage().readFile(bin_path, {}, std::nullopt, std::nullopt));
     bool must_be_last = false;
     UInt64 offset_in_compressed_file = 0;
     UInt64 offset_in_decompressed_block = 0;
@@ -746,7 +758,7 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
         }
 
         stream->preFinalize();
-        stream->addToChecksums(checksums, true);
+        stream->addToChecksums(checksums);
     }
 }
 
@@ -769,7 +781,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
     {
         if (column.type->isValueRepresentedByNumber()
             && !column.type->haveSubtypes()
-            && getSerialization(column.name)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT})
+            && getSerialization(column.name)->getKind() == ISerialization::Kind::DEFAULT)
         {
             validateColumnOfFixedSize(column);
         }
@@ -925,7 +937,7 @@ void MergeTreeDataPartWriterWide::initColumnsSubstreamsIfNeeded(const Block & bl
         columns_substreams.addColumn(name_and_type.name);
         serialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)));
+            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path));
             return &buf;
         };
         serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath &){ return MarkInCompressedFile(); };
