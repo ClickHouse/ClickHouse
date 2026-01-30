@@ -13,6 +13,7 @@
 201	1
 === Test 5: Array format - multiple arguments ===
 202	1
+302	1
 === Test 6: String aggregate function - value format ===
 300	1
 301	1
@@ -22,8 +23,6 @@
 === Test 8: VALUES and TabSeparated format - value and TabSeparated ===
 400	999
 400	999
-=== Test 9: Error handling - invalid format ===
-Error validation works correctly
 === Test 10: Multiple inserts with different formats ===
 500	100
 501	200
@@ -45,3 +44,27 @@ Error validation works correctly
 === Test 18: Multiple JSON records ===
 706	111
 707	222
+=== Test 19: RowBinary format - value ===
+0	0
+1	100
+2	200
+3	300
+4	400
+=== Test 20: RowBinary format - array ===
+0	0
+1	1.5
+2	3
+3	4.5
+4	6
+=== Test 21: RowBinary format - multiple arguments ===
+0	nan
+1	1
+2	1
+3	1
+4	1
+=== Test 22: String aggregate function - binary array format ===
+0	1
+1	2
+2	2
+3	2
+4	2
