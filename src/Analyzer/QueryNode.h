@@ -12,6 +12,8 @@
 
 #include <Interpreters/Context_fwd.h>
 
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -93,6 +95,7 @@ public:
     /// Returns true if query node has settings changes, false otherwise
     bool hasSettingsChanges() const
     {
+        LOG_TRACE(getLogger("QueryNode"), "hasSettingsChanges");
         return !settings_changes.empty();
     }
 
@@ -255,10 +258,24 @@ public:
         return is_order_by_all;
     }
 
+    /// Returns true, if query node has SHUFFLE, false otherwise
+    bool isShuffle() const
+    {
+        LOG_TRACE(getLogger("QueryNode"), "isShuffle");
+        return is_shuffle;
+    }
+
     /// Set query node ORDER BY ALL modifier value
     void setIsOrderByAll(bool is_order_by_all_value)
     {
         is_order_by_all = is_order_by_all_value;
+    }
+
+    /// Set query node has SHUFFLE
+    void setIsShuffle(bool is_shuffle_value) 
+    {
+        LOG_TRACE(getLogger("QueryNode"), "isShuffle");
+        is_shuffle = is_shuffle_value;
     }
 
     /// Returns true if query node WITH section is not empty, false otherwise
@@ -694,6 +711,7 @@ private:
     bool is_group_by_with_grouping_sets = false;
     bool is_group_by_all = false;
     bool is_order_by_all = false;
+    bool is_shuffle = false;
     bool is_limit_by_all = false;
 
     std::string cte_name;

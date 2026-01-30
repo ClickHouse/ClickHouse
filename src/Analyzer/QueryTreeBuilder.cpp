@@ -48,7 +48,6 @@
 
 #include <Interpreters/Context.h>
 
-
 namespace DB
 {
 
@@ -299,6 +298,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setCTEName(cte_name);
     current_query_tree->setIsRecursiveWith(select_query_typed.recursive_with);
     current_query_tree->setIsDistinct(select_query_typed.distinct);
+    current_query_tree->setIsShuffle(select_query_typed.has_shuffle);
     current_query_tree->setIsLimitWithTies(select_query_typed.limit_with_ties);
     current_query_tree->setIsGroupByWithTotals(select_query_typed.group_by_with_totals);
     current_query_tree->setIsGroupByWithCube(select_query_typed.group_by_with_cube);
