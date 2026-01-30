@@ -82,7 +82,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
-    extern const int OPENSSL_ERROR;
 }
 
 using namespace std::chrono_literals;
@@ -94,28 +93,12 @@ namespace
 
 auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std::string_view key)
 {
-    String load_default_ca_file_property = fmt::format("openSSL.{}.loadDefaultCAFile", key);
-    String verification_mode_property = fmt::format("openSSL.{}.verificationMode", key);
-    String root_ca_file_property = fmt::format("openSSL.{}.caConfig", key);
-    String private_key_passphrase_property = fmt::format("openSSL.{}.privateKeyPassphraseHandler.options.password", key);
+    const String config_prefix = fmt::format("openSSL.{}.", key);
+    const String load_default_ca_file_property = config_prefix + "loadDefaultCAFile";
+    const String verification_mode_property = config_prefix + "verificationMode";
+    const String root_ca_file_property = config_prefix + "caConfig";
 
     Poco::Net::Context::Params params;
-    String certificate_file_property = fmt::format("openSSL.{}.certificateFile", key);
-    String private_key_file_property = fmt::format("openSSL.{}.privateKeyFile", key);
-    if (config.has(certificate_file_property))
-        params.certificateFile = config.getString(certificate_file_property);
-
-    if (config.has(private_key_file_property))
-        params.privateKeyFile = config.getString(private_key_file_property);
-
-    std::shared_ptr<CertificateReloader::Data> certificate_data;
-    if (config.has(private_key_passphrase_property))
-    {
-        certificate_data = std::make_shared<CertificateReloader::Data>(
-            params.certificateFile, params.privateKeyFile, config.getString(private_key_passphrase_property));
-        params.certificateFile.clear();
-        params.privateKeyFile.clear();
-    }
 
     if (config.has(root_ca_file_property))
         params.caLocation = config.getString(root_ca_file_property);
@@ -123,7 +106,7 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
     params.loadDefaultCAs = config.getBool(load_default_ca_file_property, false);
     params.verificationMode = Poco::Net::Utility::convertVerificationMode(config.getString(verification_mode_property, "none"));
 
-    std::string disabled_protocols_list = config.getString(fmt::format("openSSL.{}.disableProtocols", key), "");
+    std::string disabled_protocols_list = config.getString(config_prefix + "disableProtocols", "");
     Poco::StringTokenizer dp_tok(disabled_protocols_list, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
     int disabled_protocols = 0;
     for (const auto & token : dp_tok)
@@ -140,9 +123,10 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
             disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_2;
     }
 
-    auto prefer_server_cypher = config.getBool(fmt::format("openSSL.{}.preferServerCiphers", key), false);
-    auto cache_sessions = config.getBool(fmt::format("openSSL.{}.cache_sessions", key), false);
-    return [params, disabled_protocols, prefer_server_cypher, cache_sessions, is_server = key == "server", certificate_data]
+    auto prefer_server_cypher = config.getBool(config_prefix + "preferServerCiphers", false);
+    auto cache_sessions = config.getBool(config_prefix + "cache_sessions", false);
+
+    return [params, disabled_protocols, prefer_server_cypher, cache_sessions, is_server = key == "server", config_prefix]
     {
         Poco::Net::Context context(is_server ? Poco::Net::Context::Usage::SERVER_USE : Poco::Net::Context::Usage::CLIENT_USE, params);
         context.disableProtocols(disabled_protocols);
@@ -154,27 +138,12 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
             context.enableSessionCache();
 
         auto * ssl_ctx = context.sslContext();
-        if (certificate_data)
+
+        if (!CertificateReloader::instance().registerAdditionalContext(ssl_ctx, config_prefix))
         {
-            if (auto err = SSL_CTX_clear_chain_certs(ssl_ctx); err != 1)
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "Clear certificates {}", Poco::Net::Utility::getLastError());
-
-            const auto * root_certificate = static_cast<const X509 *>(certificate_data->certs_chain.front());
-            if (auto err = SSL_CTX_use_certificate(ssl_ctx, const_cast<X509 *>(root_certificate)); err != 1)
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "Use certificate {}", Poco::Net::Utility::getLastError());
-
-            for (auto cert = certificate_data->certs_chain.begin() + 1; cert != certificate_data->certs_chain.end(); cert++)
-            {
-                const auto * certificate = static_cast<const X509 *>(*cert);
-                if (auto err = SSL_CTX_add1_chain_cert(ssl_ctx, const_cast<X509 *>(certificate)); err != 1)
-                    throw Exception(ErrorCodes::OPENSSL_ERROR, "Add certificate to chain {}", Poco::Net::Utility::getLastError());
-            }
-
-            if (auto err = SSL_CTX_use_PrivateKey(ssl_ctx, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(certificate_data->key))); err != 1)
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "Use private key {}", Poco::Net::Utility::getLastError());
-
-            if (auto err = SSL_CTX_check_private_key(ssl_ctx); err != 1)
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "Unusable key-pair {}", Poco::Net::Utility::getLastError());
+            LOG_WARNING(getLogger("KeeperServer"),
+                "Failed to register NuRaft SSL context with CertificateReloader for prefix '{}'. "
+                "Certificate hot-reload may not work for Raft connections.", config_prefix);
         }
 
         return context.takeSslContext();
