@@ -109,13 +109,6 @@ public:
     void shuffle(const CachePriorityGuard::WriteLock &) override;
 
     PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) override;
-    //struct LRUPriorityDump : public IPriorityDump
-    //{
-    //    std::vector<FileSegmentInfo> infos;
-    //    explicit LRUPriorityDump(const std::vector<FileSegmentInfo> & infos_) : infos(infos_) {}
-    //    void merge(const LRUPriorityDump & other) { infos.insert(infos.end(), other.infos.begin(), other.infos.end()); }
-    //};
-    //PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) override;
 
     void pop(const CachePriorityGuard::WriteLock & lock) { remove(queue.begin(), lock); } // NOLINT
 
