@@ -46,6 +46,17 @@ def setup_teardown():
     node1.query("DROP DATABASE test")
     node1.query("CREATE DATABASE test")
 
+def test_trailing_comment_after_semicolon_http(started_cluster):
+    node = started_cluster.instances["node1"]
+    node.query("DROP TABLE IF EXISTS tmp_pg_comment")
+    node.query("CREATE TABLE tmp_pg_comment (a Int32) ENGINE = Memory")
+
+    # HTTP 'queries=' batches and is split server-side
+    out = node.http_query(
+        "queries=INSERT INTO tmp_pg_comment VALUES (1); /* some comment */",
+        method="POST",
+    )
+    assert node.query("SELECT count() FROM tmp_pg_comment").strip() == "1"
 
 def test_postgres_select_insert(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
