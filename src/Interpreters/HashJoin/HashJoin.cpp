@@ -729,7 +729,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
 
                         if (flag_per_row)
                             used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(
-                                &stored_block->getSourceBlock());
+                                &stored_block->getSourceBlock(), source_block.getSelector());
                     });
             }
 
