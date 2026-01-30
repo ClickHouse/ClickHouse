@@ -113,7 +113,10 @@ std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(c
 void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
     if (auto path = getCgroupsV2PathContainingFile(filename))
-        openFileIfExists((path.value() + filename).c_str(), out);
+    {
+        const auto full_path = (std::filesystem::path(path.value()) / filename).string();
+        openFileIfExists(full_path.c_str(), out);
+    }
 };
 
 #endif
