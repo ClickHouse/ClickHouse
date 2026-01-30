@@ -55,21 +55,21 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
+    auto part_log_writer = [this](const ExecutionStatus & execution_status)
+    {
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        storage.writePartLog(
+            PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
+            entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
+            mutation_ids_for_log);
+    };
+
     MergeTreeData::DataPartPtr source_part = storage.getActiveContainingPart(source_part_name);
     if (!source_part)
     {
         LOG_DEBUG(log, "Source part {} for {} is missing; will try to fetch it instead. "
             "Either pool for fetches is starving, see background_fetches_pool_size, or none of active replicas has it",
             source_part_name, entry.new_part_name);
-
-        auto part_log_writer = [this](const ExecutionStatus & execution_status)
-        {
-            auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
-            storage.writePartLog(
-                PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
-                entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
-                mutation_ids_for_log);
-        };
 
         return PrepareResult{
             .prepared_successfully = false,
@@ -88,15 +88,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             "Possibly the mutation of this part is not needed and will be skipped. "
             "This shouldn't happen often.",
             source_part_name, source_part->name, entry.new_part_name);
-
-        auto part_log_writer = [this](const ExecutionStatus & execution_status)
-        {
-            auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
-            storage.writePartLog(
-                PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
-                entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
-                mutation_ids_for_log);
-        };
 
         return PrepareResult{
             .prepared_successfully = false,
@@ -117,15 +108,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         if (!replica.empty())
         {
             LOG_DEBUG(log, "Prefer to fetch {} from replica {}", entry.new_part_name, replica);
-
-            auto part_log_writer = [this](const ExecutionStatus & execution_status)
-            {
-                auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
-                storage.writePartLog(
-                    PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
-                    entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
-                    mutation_ids_for_log);
-            };
 
             return PrepareResult{
                 .prepared_successfully = false,
@@ -148,15 +130,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
                 "Prefer fetching part {} from replica {} due to execute_merges_on_single_replica_time_threshold",
                 entry.new_part_name, replica_to_execute_merge.value());
 
-            auto part_log_writer = [this](const ExecutionStatus & execution_status)
-            {
-                auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
-                storage.writePartLog(
-                    PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
-                    entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
-                    mutation_ids_for_log);
-            };
-
             return PrepareResult{
                 .prepared_successfully = false,
                 .need_to_check_missing_part_in_fetch = true,
@@ -173,15 +146,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     /// mutation_ids can be empty here.
     mutation_ids_for_log = mutation_ids;
-
-    auto part_log_writer = [this](const ExecutionStatus & execution_status)
-    {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
-        storage.writePartLog(
-            PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
-            entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
-            mutation_ids_for_log);
-    };
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
@@ -218,7 +182,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
                     "Mutation of part {} started by some other replica, will wait for it and mutated merged part. Number of tries {}",
                     entry.new_part_name,
                     entry.num_tries);
-                storage.watchZeroCopyLock(entry.new_part_name, disk);
 
                 return PrepareResult{
                     .prepared_successfully = false,
