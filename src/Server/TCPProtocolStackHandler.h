@@ -48,7 +48,7 @@ public:
 
     void run() override
     {
-        setThreadName("TCPProtocolStack");
+        DB::setThreadName(ThreadName::TCP_PROTOCOL_STACK);
         ThreadStatus thread_status;
 
         const auto & conf = server.config();
