@@ -161,7 +161,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->attach = true;
 
     /// We remove everything that is not needed for ATTACH from the query.
-    assert(!create->temporary);
+    assert(!create->isTemporary());
     create->database.reset();
 
     if (create->uuid != UUIDHelpers::Nil)
