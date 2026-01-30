@@ -126,7 +126,7 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
     const char * pos = begin;
     const char * end = regexp.data() + regexp.size();
 
-    while (pos != end)
+    while (pos < end)
     {
         switch (*pos)
         {
@@ -149,19 +149,22 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
                     case '$':
                     case '.':
                     case '[':
+                    case ']':
                     case '?':
                     case '*':
                     case '+':
+                    case '\\':
                     case '{':
+                    case '}':
+                    case '-':
                         fixed_prefix += *pos;
+                        ++pos;
                     break;
                     default:
                         /// all other escape sequences are not supported
                             pos = end;
-                    break;
                 }
 
-                ++pos;
                 break;
             }
 
