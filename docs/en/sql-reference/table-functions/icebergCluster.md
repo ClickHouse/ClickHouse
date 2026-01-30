@@ -2,13 +2,13 @@
 description: 'An extension to the iceberg table function which allows processing files
   from Apache Iceberg in parallel from many nodes in a specified cluster.'
 sidebar_label: 'icebergCluster'
-sidebar_position: 91
+sidebar_position: 90
 slug: /sql-reference/table-functions/icebergCluster
 title: 'icebergCluster'
 doc_type: 'reference'
 ---
 
-# icebergCluster Table Function
+# icebergCluster table function
 
 This is an extension to the [iceberg](/sql-reference/table-functions/iceberg.md) table function.
 

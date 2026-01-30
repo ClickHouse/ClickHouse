@@ -12,6 +12,7 @@ doc_type: 'reference'
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import FileArguments from './snippets/_file_arguments.md'
 
 # file Table Function
 
@@ -27,13 +28,7 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 
 ## Arguments {#arguments}
 
-| Parameter         | Description                                                                                                                                                                                                                                                                                                   |
-|-------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `path`            | The relative path to the file from [user_files_path](operations/server-configuration-parameters/settings.md#user_files_path). Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers). |
-| `path_to_archive` | The relative path to a zip/tar/7z archive. Supports the same globs as `path`.                                                                                                                                                                                                                                 |
-| `format`          | The [format](/interfaces/formats) of the file.                                                                                                                                                                                                                                                                |
-| `structure`       | Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                |
-| `compression`     | The existing compression type when used in a `SELECT` query, or the desired compression type when used in an `INSERT` query. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.                                                                                                       |
+<FileArguments/>
 
 ## Returned value {#returned_value}
 

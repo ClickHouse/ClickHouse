@@ -10,6 +10,7 @@ doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import HDFSParameters from './snippets/_hdfs_parameters.md';
 
 # HDFS table engine
 
@@ -27,12 +28,7 @@ ENGINE = HDFS(URI, format)
 
 **Engine Parameters**
 
-- `URI` - whole file URI in HDFS. The path part of `URI` may contain globs. In this case the table would be readonly.
-- `format` - specifies one of the available file formats. To perform
-`SELECT` queries, the format must be supported for input, and to perform
-`INSERT` queries – for output. The available formats are listed in the
-[Formats](/sql-reference/formats#formats-overview) section.
-- [PARTITION BY expr]
+<HDFSParameters/>
 
 ### PARTITION BY {#partition-by}
 
