@@ -134,7 +134,6 @@ DataLakeMetadataPtr PaimonMetadata::create(
     /// Create persistent components
     PaimonPersistentComponents persistent_components(
         schema_processor,
-        nullptr,  /// No cache by default - can be enabled via settings in the future
         stream_state,
         configuration_ptr->getPathForRead().path,
         table_path,
@@ -344,21 +343,6 @@ std::vector<PaimonManifestFileMeta> PaimonMetadata::getManifestList(const String
     if (manifest_list_path.empty())
         return {};
 
-    /// If cache is enabled, try to get from cache
-    if (persistent_components.hasMetadataCache())
-    {
-        String cache_key = PaimonMetadataCache::makeKey(persistent_components.table_path, manifest_list_path);
-        auto log_ptr = log;
-        auto client = table_client;
-        auto load_manifest_list = [log_ptr, client, manifest_list_path]()
-        {
-            LOG_TRACE(log_ptr, "Loading manifest list (cache miss): {}", manifest_list_path);
-            return client->getManifestMeta(manifest_list_path);
-        };
-
-        return persistent_components.metadata_cache->getOrSetManifestList(cache_key, load_manifest_list);
-    }
-
     /// No cache, load directly
     LOG_TRACE(log, "Loading manifest list (no cache): {}", manifest_list_path);
     return table_client->getManifestMeta(manifest_list_path);
@@ -369,22 +353,6 @@ PaimonManifest PaimonMetadata::getManifest(const String & manifest_path, Int64 s
     auto schema = persistent_components.schema_processor->getSchemaById(schema_id);
     if (!schema)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema with id {} not found", schema_id);
-
-    /// If cache is enabled, try to get from cache
-    if (persistent_components.hasMetadataCache())
-    {
-        String cache_key = PaimonMetadataCache::makeKey(persistent_components.table_path, manifest_path);
-        auto log_ptr = log;
-        auto client = table_client;
-        auto partition_default_name = persistent_components.partition_default_name;
-        auto load_manifest = [log_ptr, client, manifest_path, schema, partition_default_name]()
-        {
-            LOG_TRACE(log_ptr, "Loading manifest (cache miss): {}", manifest_path);
-            return client->getDataManifest(manifest_path, *schema, partition_default_name);
-        };
-
-        return persistent_components.metadata_cache->getOrSetManifest(cache_key, load_manifest);
-    }
 
     /// No cache, load directly
     LOG_TRACE(log, "Loading manifest (no cache): {}", manifest_path);

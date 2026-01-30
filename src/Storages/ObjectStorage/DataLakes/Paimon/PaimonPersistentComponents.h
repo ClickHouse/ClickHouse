@@ -4,7 +4,6 @@
 #if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonSchemaProcessor.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataCache.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonStreamState.h>
 
 namespace DB
@@ -20,9 +19,6 @@ using namespace Paimon;
 struct PaimonPersistentComponents
 {
     PaimonSchemaProcessorPtr schema_processor;
-
-    /// Controlled by use_paimon_metadata_files_cache setting
-    PaimonMetadataCachePtr metadata_cache;
 
     /// Stream state for incremental read (optional, can be nullptr)
     /// Controlled by paimon_incremental_read setting
@@ -49,7 +45,6 @@ struct PaimonPersistentComponents
 
     PaimonPersistentComponents(
         PaimonSchemaProcessorPtr schema_processor_,
-        PaimonMetadataCachePtr metadata_cache_,  /// Can be nullptr if cache is disabled
         PaimonStreamStatePtr stream_state_,      /// Can be nullptr if incremental read is disabled
         String table_location_,
         String table_path_,
@@ -58,7 +53,6 @@ struct PaimonPersistentComponents
         Int64 target_snapshot_id_ = -1,
         Int64 metadata_refresh_interval_ms_ = 0)
         : schema_processor(std::move(schema_processor_))
-        , metadata_cache(std::move(metadata_cache_))
         , stream_state(std::move(stream_state_))
         , table_location(std::move(table_location_))
         , table_path(std::move(table_path_))
@@ -68,8 +62,6 @@ struct PaimonPersistentComponents
         , metadata_refresh_interval_ms(metadata_refresh_interval_ms_)
     {
     }
-
-    bool hasMetadataCache() const { return metadata_cache != nullptr; }
 
     bool hasStreamState() const { return stream_state != nullptr && incremental_read_enabled; }
 };
