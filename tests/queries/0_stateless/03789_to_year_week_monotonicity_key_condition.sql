@@ -1,0 +1,61 @@
+-- { echo }
+
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (s String)
+ENGINE = MergeTree
+ORDER BY s;
+
+INSERT INTO t VALUES
+    ('2020-01-10 00:00:00'),
+    ('2020-01-2 00:00:00');
+
+SELECT * FROM t
+WHERE toYearWeek(s) = toYearWeek('2020-01-2 00:00:00');
+
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (d Date32)
+ENGINE = MergeTree
+ORDER BY d;
+
+INSERT INTO t VALUES ('2020-12-31'), ('2021-01-01');
+
+SELECT * FROM t
+WHERE toWeek(d) = toWeek(toDate32('2020-12-31'));
+
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (s String)
+ENGINE = MergeTree
+ORDER BY s;
+
+INSERT INTO t VALUES
+    ('2020-02-11 00:00:00'),
+    ('2020-02-3 00:00:00');
+
+SELECT * FROM t
+WHERE toWeek(s) = toWeek('2020-02-3 00:00:00');
+
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (dt DateTime) ENGINE=MergeTree ORDER BY dt SETTINGS index_granularity=1;
+INSERT INTO t SELECT toDateTime('2020-01-01 00:00:00') + number * 3600 FROM numbers(24 * 40);
+
+SELECT count()
+FROM t
+WHERE toWeek(dt) = toWeek(toDateTime('2020-01-15 00:00:00')) SETTINGS force_primary_key = 1, max_rows_to_read = 169;
+
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (s LowCardinality(String)) ENGINE = MergeTree ORDER BY s;
+INSERT INTO t VALUES ('2020-01-10 00:00:00'), ('2020-01-2 00:00:00');
+
+SELECT * FROM t WHERE toYearWeek(s) = toYearWeek('2020-01-2 00:00:00');
+
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (s Nullable(String)) ENGINE = MergeTree ORDER BY s SETTINGS allow_nullable_key = 1;
+INSERT INTO t VALUES ('2020-01-10 00:00:00'), ('2020-01-2 00:00:00');
+
+SELECT * FROM t WHERE toYearWeek(s) = toYearWeek('2020-01-2 00:00:00');
+
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (s LowCardinality(String)) ENGINE = MergeTree ORDER BY s;
+INSERT INTO t VALUES ('2020-01-10 00:00:00'), ('2020-01-2 00:00:00');
+
+SELECT * FROM t WHERE toYearWeek(s) = toYearWeek('2020-01-2 00:00:00');
