@@ -857,7 +857,6 @@ std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const ID
 
     /// For Float64 -> Decimal conversions, the "strictness" check is done by converting the Decimal back to Float64
     /// and comparing with the original Float64. This prevents surprising membership results like:
-    ///
     /// Example:
     ///   SELECT CAST('33.3', 'Decimal64(1)') IN (33.33); -- 0 (RHS would round to 33.3 without strict check)
     ///   SELECT CAST('33.3', 'Decimal64(1)') IN (33.3);  -- 1
