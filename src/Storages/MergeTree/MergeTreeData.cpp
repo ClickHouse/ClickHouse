@@ -10159,6 +10159,8 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::make_unique<SnapshotData>());
 
     auto snapshot_data = std::make_unique<SnapshotData>();
+    snapshot_data->storage = shared_from_this();
+
     auto [query_ranges, query_parts] = getPossiblySharedVisibleDataPartsRanges(query_context);
     snapshot_data->parts = query_ranges;
 
