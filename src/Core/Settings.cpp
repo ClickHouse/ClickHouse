@@ -4626,6 +4626,14 @@ Possible values:
 - Positive integer (in seconds).
 - 0 — No locking timeout.
 )", 0) \
+    DECLARE(Milliseconds, get_zookeeper_lock_acquire_timeout_ms, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC * 1000, R"(
+Defines how many milliseconds a locking request in Context::getZooKeeper should wait before failing.
+
+Possible values:
+
+- Positive integer (in milliseconds).
+- 0 — No locking timeout.
+)", 0) \
     DECLARE(Bool, materialize_ttl_after_modify, true, R"(
 Apply TTL for old data, after ALTER MODIFY TTL query
 )", 0) \
