@@ -2034,8 +2034,9 @@ class TestCase:
         if tags and ("no-encrypted-storage" in tags) and args.encrypted_storage:
             return FailureReason.ENCRYPTED_STORAGE
 
-        # Ingore no-{build} tags in stress-tests job
-        if tags and not args.stress_tests:
+        # Ignore no-{build} tags in stress-tests job, but still apply them in upgrade-check
+        # because upgrade check may start with an old version and upgrade to a new version with different build flags
+        if tags and (not args.stress_tests or args.upgrade_check):
             for build_flag in args.build_flags:
                 # We ignore no-buildflag for flaky check (args.flaky_check and args.test_runs > 1)
                 # and do not ignore for targeted check (args.flaky_check and args.test_runs == 1)
@@ -4187,6 +4188,12 @@ def main(args):
             raise TestException(f"Sticky host '{host}' not responding")
 
     args.build_flags = collect_build_flags(args)
+    # Add extra build flags if specified (used in upgrade checks to pass sanitizer flags from new binary)
+    if args.extra_build_flags:
+        for flag in args.extra_build_flags.split(","):
+            flag = flag.strip()
+            if flag and flag not in args.build_flags:
+                args.build_flags.append(flag)
     args.changed_merge_tree_settings = collect_changed_merge_tree_settings(args)
 
     if args.s3_storage and (BuildFlags.RELEASE not in args.build_flags):
@@ -4967,6 +4974,12 @@ def parse_args():
         "--capture-client-stacktrace",
         action="store_true",
         help="Capture stacktraces from clickhouse-client/local on errors",
+    )
+    parser.add_argument(
+        "--extra-build-flags",
+        default="",
+        help="Comma-separated list of extra build flags to use for test filtering (e.g., msan,tsan). "
+        "Used in upgrade checks to pass sanitizer flags from the new binary.",
     )
     parser.add_argument(
         "--trace", action="store_true", help="Capture various tracing info"
