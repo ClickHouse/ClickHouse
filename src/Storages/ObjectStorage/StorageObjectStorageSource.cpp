@@ -181,7 +181,9 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     std::unique_ptr<IObjectIterator> iterator;
     const auto & reading_path = configuration->getPathForRead();
-    if (reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
+    BetterGlob::GlobString glob_string(reading_path.path);
+
+    if (glob_string.hasGlobs() && glob_string.hasExactlyOneEnum())
     {
         auto paths = expandSelectionGlob(reading_path.path);
         iterator = std::make_unique<KeysIterator>(
@@ -189,7 +191,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
             file_progress_callback);
     }
-    else if (reading_path.hasGlobs())
+    else if (glob_string.hasGlobs())
     {
         // Try extract _path values from filter, which will allow to use KeysIterator instead of GlobIterator
         std::optional<Strings> paths;
@@ -216,20 +218,18 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         else
         {
             // Validate that extracted paths match the glob pattern to prevent scanning unallowed data
-            Strings validated_paths;
-            re2::RE2 matcher(makeRegexpPatternFromGlobs(reading_path.path));
-            if (matcher.ok())
-            {
-                for (const auto & path : paths.value())
-                {
-                    const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
-                    if (RE2::FullMatch(relative_path, matcher))
-                        validated_paths.push_back(relative_path);
-                }
-            }
-            else
+            re2::RE2 matcher(glob_string.asRegex());
+            if (!matcher.ok())
                 throw Exception(
                     ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", reading_path.path, matcher.error());
+
+            Strings validated_paths;
+            for (const auto & path : paths.value())
+            {
+                const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
+                if (RE2::FullMatch(relative_path, matcher))
+                    validated_paths.push_back(relative_path);
+            }
 
             iterator = std::make_unique<KeysIterator>(
                 validated_paths,
@@ -922,7 +922,8 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
 
         object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags);
 
-        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs.path));
+        BetterGlob::GlobString glob_string(key_with_globs.path);
+        matcher = std::make_unique<re2::RE2>(glob_string.asRegex());
         if (!matcher->ok())
         {
             throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", key_with_globs.path, matcher->error());
@@ -1228,7 +1229,8 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
 
 static IArchiveReader::NameFilter createArchivePathFilter(const std::string & archive_pattern)
 {
-    auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(archive_pattern));
+    BetterGlob::GlobString glob_string(archive_pattern);
+    auto matcher = std::make_shared<re2::RE2>(glob_string.asRegex());
     if (!matcher->ok())
     {
         throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,

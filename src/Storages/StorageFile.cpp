@@ -178,7 +178,8 @@ void listFilesWithRegexpMatchingImpl(
 
     const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
 
-    auto regexp = makeRegexpPatternFromGlobs(current_glob);
+    BetterGlob::GlobString glob_string(current_glob);
+    auto regexp = glob_string.asRegex();
 
     re2::RE2 matcher(regexp);
     if (!matcher.ok())
@@ -363,9 +364,11 @@ StorageFile::ArchiveInfo getArchiveInfo(
     StorageFile::ArchiveInfo archive_info;
     archive_info.path_in_archive = file_in_archive;
 
-    if (file_in_archive.find_first_of("*?{") != std::string::npos)
+    BetterGlob::GlobString glob_string(file_in_archive);
+
+    if (glob_string.hasGlobs())
     {
-        auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(file_in_archive));
+        auto matcher = std::make_shared<re2::RE2>(glob_string.asRegex());
         if (!matcher->ok())
             throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
                 "Cannot compile regex from glob ({}): {}", file_in_archive, matcher->error());
