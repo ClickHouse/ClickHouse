@@ -9,6 +9,7 @@
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <IO/Operators.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -560,7 +561,7 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     bool keep_non_zero_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
     part->info.level = (keep_non_zero_level && part->info.level > 0) ? 1 : 0;
     part->info.mutation = 0;
-    part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
+    part->version->setCreationTID(Tx::PrehistoricTID, nullptr);
     String block_id = deduplicate ? fmt::format("{}_{}", part->info.getPartitionId(), part->checksums.getTotalChecksumHex()) : "";
 
     try

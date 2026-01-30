@@ -7,6 +7,7 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
@@ -18,8 +19,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
+#include <Common/typeid_cast.h>
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
@@ -2658,7 +2659,7 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
                     continue;
 
                 /// Try to remove txn_version.txt file
-                String txn_file = fs::path(part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME;
+                String txn_file = fs::path(part_path) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME;
                 if (disk->existsFile(txn_file))
                 {
                     disk->removeFile(txn_file);

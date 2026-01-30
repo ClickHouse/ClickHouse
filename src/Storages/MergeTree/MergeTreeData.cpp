@@ -11,24 +11,12 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Common/Config/ConfigHelper.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Increment.h>
-#include <Common/ProfileEventsScope.h>
-#include <Common/Stopwatch.h>
-#include <Common/StringUtils.h>
-#include <Common/ThreadFuzzer.h>
-#include <Common/escapeForFileName.h>
-#include <Common/noexcept_scope.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
-#include <Common/thread_local_rng.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <Core/Settings.h>
-#include <Core/ServerSettings.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -45,47 +33,68 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/MutationsInterpreter.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTHelpers.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Processors/Transforms/SquashingTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Freeze.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
+#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <Common/Config/ConfigHelper.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Increment.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/Stopwatch.h>
+#include <Common/StringUtils.h>
+#include <Common/ThreadFuzzer.h>
+#include <Common/escapeForFileName.h>
+#include <Common/noexcept_scope.h>
+#include <Common/quoteString.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/thread_local_rng.h>
+#include <Common/typeid_cast.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -1786,23 +1795,28 @@ static std::optional<size_t> calculatePartSizeSafe(
 static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
 {
     part->remove_time.store(part->modification_time, std::memory_order_relaxed);
-    auto creation_csn = part->version.creation_csn.load(std::memory_order_relaxed);
-    if (creation_csn != Tx::RolledBackCSN && creation_csn != Tx::PrehistoricCSN && !part->version.isRemovalTIDLocked())
+    auto creation_csn = part->version->getCreationCSN();
+    auto removal_tid = part->version->getRemovalTID();
+    if (creation_csn != Tx::RolledBackCSN && creation_csn != Tx::PrehistoricCSN && removal_tid.isEmpty())
     {
         /// It's possible that covering part was created without transaction,
         /// but if covered part was created with transaction (i.e. creation_tid is not prehistoric),
         /// then it must have removal tid in metadata file.
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data part {} is Outdated and has creation TID {} and CSN {}, "
-                        "but does not have removal tid. It's a bug or a result of manual intervention.",
-                        part->name, part->version.creation_tid, creation_csn);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Data part {} is Outdated and has creation TID {} and CSN {}, "
+            "but does not have removal tid. It's a bug or a result of manual intervention.",
+            part->name,
+            part->version->getCreationTID(),
+            creation_csn);
     }
 
     /// Explicitly set removal_tid_lock for parts w/o transaction (i.e. w/o txn_version.txt)
     /// to avoid keeping part forever (see VersionMetadata::canBeRemoved())
-    if (!part->version.isRemovalTIDLocked())
+    if (part->version->getRemovalCSN() == 0 && !part->version->isRemovalTIDLocked())
     {
         TransactionInfoContext transaction_context{part->storage.getStorageID(), part->name};
-        part->version.lockRemovalTID(Tx::PrehistoricTID, transaction_context);
+        part->version->lockRemovalTID(Tx::PrehistoricTID, transaction_context);
     }
 }
 
@@ -1927,64 +1941,12 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     }
 
     res.part->modification_time = part_disk_ptr->getLastModified(fs::path(relative_data_path) / part_name).epochTime();
-    res.part->loadVersionMetadata();
+    res.part->version->loadAndVerifyMetadata(log.load());
 
     if (res.part->wasInvolvedInTransaction())
     {
-        /// Check if CSNs were written after committing transaction, update and write if needed.
-        bool version_updated = false;
-        auto & version = res.part->version;
-        chassert(!version.creation_tid.isEmpty());
-
-        if (!res.part->version.creation_csn)
-        {
-            auto min = TransactionLog::getCSNAndAssert(res.part->version.creation_tid, res.part->version.creation_csn);
-            if (!min)
-            {
-                /// Transaction that created this part was not committed. Remove part.
-                min = Tx::RolledBackCSN;
-            }
-
-            LOG_TRACE(log, "Will fix version metadata of {} after unclean restart: part has creation_tid={}, setting creation_csn={}",
-                        res.part->name, res.part->version.creation_tid, min);
-
-            version.creation_csn = min;
-            version_updated = true;
-        }
-
-        if (!version.removal_tid.isEmpty() && !version.removal_csn)
-        {
-            auto max = TransactionLog::getCSNAndAssert(version.removal_tid, version.removal_csn);
-            if (max)
-            {
-                LOG_TRACE(log, "Will fix version metadata of {} after unclean restart: part has removal_tid={}, setting removal_csn={}",
-                            res.part->name, version.removal_tid, max);
-                version.removal_csn = max;
-            }
-            else
-            {
-                /// Transaction that tried to remove this part was not committed. Clear removal_tid.
-                LOG_TRACE(log, "Will fix version metadata of {} after unclean restart: clearing removal_tid={}",
-                            res.part->name, version.removal_tid);
-                version.unlockRemovalTID(version.removal_tid, TransactionInfoContext{getStorageID(), res.part->name});
-            }
-
-            version_updated = true;
-        }
-
-        /// Sanity checks
-        bool csn_order = !version.removal_csn || version.creation_csn <= version.removal_csn || version.removal_csn == Tx::PrehistoricCSN;
-        bool min_start_csn_order = version.creation_tid.start_csn <= version.creation_csn;
-        bool max_start_csn_order = version.removal_tid.start_csn <= version.removal_csn;
-        bool creation_csn_known = version.creation_csn;
-        if (!csn_order || !min_start_csn_order || !max_start_csn_order || !creation_csn_known)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has invalid version metadata: {}", res.part->name, version.toString());
-
-        if (version_updated)
-            res.part->storeVersionMetadata(/* force */ true);
-
         /// Deactivate part if creation was not committed or if removal was.
-        if (version.creation_csn == Tx::RolledBackCSN || version.removal_csn)
+        if (res.part->version->getCreationCSN() == Tx::RolledBackCSN || res.part->version->getRemovalCSN())
         {
             preparePartForRemoval(res.part);
             to_state = DataPartState::Outdated;
@@ -3227,7 +3189,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             part->last_removal_attempt_time.store(time_now, std::memory_order_relaxed);
 
             /// Do not remove outdated part if it may be visible for some transaction
-            if (!part->version.canBeRemoved())
+            if (!part->version->canBeRemoved())
             {
                 part->removal_state.store(DataPartRemovalState::VISIBLE_TO_TRANSACTIONS, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
@@ -3253,9 +3215,9 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 
             auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
             bool reached_removal_time = part_remove_time <= time_now && time_now - part_remove_time >= (*getSettings())[MergeTreeSetting::old_parts_lifetime].totalSeconds();
-            if ((reached_removal_time && !has_skipped_mutation_parent(part))
-                || force
-                || (part->version.creation_csn == Tx::RolledBackCSN && (*getSettings())[MergeTreeSetting::remove_rolled_back_parts_immediately]))
+            if ((reached_removal_time && !has_skipped_mutation_parent(part)) || force
+                || (part->version->getCreationCSN() == Tx::RolledBackCSN
+                    && (*getSettings())[MergeTreeSetting::remove_rolled_back_parts_immediately]))
             {
                 if (part->removal_state.load(std::memory_order_relaxed) == DataPartRemovalState::REMOVE_ROLLED_BACK)
                     part->removal_state.store(DataPartRemovalState::REMOVE_RETRY, std::memory_order_relaxed);
@@ -3693,7 +3655,8 @@ size_t MergeTreeData::clearEmptyParts()
                 continue;
 
             /// Do not try to drop uncommitted parts. If the newest tx doesn't see it then it probably hasn't been committed yet
-            if (!part->version.getCreationTID().isPrehistoric() && !part->version.isVisible(TransactionLog::instance().getLatestSnapshot()))
+            if (!part->version->getCreationTID().isPrehistoric()
+                && !part->version->isVisible(TransactionLog::instance().getLatestSnapshot()))
                 continue;
 
             parts_names_to_drop.emplace_back(part->name);
@@ -5142,7 +5105,7 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
 
     for (const DataPartPtr & part : remove)
     {
-        if (part->version.creation_csn != Tx::RolledBackCSN)
+        if (part->version->getCreationCSN() != Tx::RolledBackCSN)
             MergeTreeTransaction::removeOldPart(shared_from_this(), part, txn);
 
         if (part->getState() == MergeTreeDataPartState::Active)
@@ -6879,8 +6842,8 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         }
 
         /// TODO Transactions: Decide what to do with version metadata (if any). Let's just skip it for now.
-        if (filename.ends_with(IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME) ||
-            filename.ends_with(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME))
+        if (filename.ends_with(VersionMetadata::TXN_VERSION_METADATA_FILE_NAME)
+            || filename.ends_with(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME))
         {
             ProfileEvents::increment(ProfileEvents::RestorePartsSkippedFiles);
             ProfileEvents::increment(ProfileEvents::RestorePartsSkippedBytes, backup->getFileSize(part_path_in_backup_fs / filename));
@@ -6912,7 +6875,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         MergeTreeDataPartBuilder builder(*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings());
         builder.withPartFormatFromDisk();
         part = std::move(builder).build();
-        part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
+        part->version->setCreationTID(Tx::PrehistoricTID, nullptr);
         part->loadColumnsChecksumsIndexes(/* require_columns_checksums= */ false, /* check_consistency= */ true);
     };
 
@@ -7263,10 +7226,8 @@ void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts
 {
     [[maybe_unused]] size_t total_size = maybe_visible_parts.size();
 
-    auto need_remove_pred = [snapshot_version, &current_tid] (const DataPartPtr & part) -> bool
-    {
-        return !part->version.isVisible(snapshot_version, current_tid);
-    };
+    auto need_remove_pred = [snapshot_version, &current_tid](const DataPartPtr & part) -> bool
+    { return !part->version->isVisible(snapshot_version, current_tid); };
 
     std::erase_if(maybe_visible_parts, need_remove_pred);
     [[maybe_unused]] size_t visible_size = maybe_visible_parts.size();
@@ -7683,6 +7644,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     for (const auto & [part_name, old_dir, new_dir, disk] : renamed_parts.old_and_new_names)
     {
         LOG_DEBUG(log, "Checking part {}", new_dir);
+        disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
 
         auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
         auto part = getDataPartBuilder(part_name, single_disk_volume, source_dir / new_dir, getReadSettings())
@@ -7690,6 +7652,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             .build();
 
         loadPartAndFixMetadataImpl(part, local_context);
+
+        chassert(!part->version->getInfo().isRemoved());
         loaded_parts.push_back(part);
     }
 
@@ -8070,7 +8034,7 @@ void MergeTreeData::Transaction::rollback(DataPartsLock & lock)
     if (!isEmpty())
     {
         for (const auto & part : precommitted_parts)
-            part->version.creation_csn.store(Tx::RolledBackCSN);
+            part->version->storeCreationCSN(Tx::RolledBackCSN);
 
         auto non_detached_precommitted_parts = precommitted_parts;
 
@@ -8832,7 +8796,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         {
             if (!params.files_to_copy_instead_of_hardlinks.contains(it->name())
                 && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
-                && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
+                && it->name() != VersionMetadata::TXN_VERSION_METADATA_FILE_NAME)
             {
                 params.hardlinked_files->hardlinks_from_source_part.insert(it->name());
             }
@@ -8847,7 +8811,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
                 auto file_name_with_projection_prefix = fs::path(projection_storage.getPartDirectory()) / it->name();
                 if (!params.files_to_copy_instead_of_hardlinks.contains(file_name_with_projection_prefix)
                     && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
-                    && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
+                    && it->name() != VersionMetadata::TXN_VERSION_METADATA_FILE_NAME)
                 {
                     params.hardlinked_files->hardlinks_from_source_part.insert(file_name_with_projection_prefix);
                 }
@@ -8857,8 +8821,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
 
     /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
     TransactionID tid = params.txn ? params.txn->tid : Tx::PrehistoricTID;
-    dst_data_part->version.setCreationTID(tid, nullptr);
-    dst_data_part->storeVersionMetadata();
+    dst_data_part->version->setCreationTID(tid, nullptr);
+    dst_data_part->version->storeMetadata(/*force=*/false);
 
     dst_data_part->is_temp = true;
 
