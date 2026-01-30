@@ -318,8 +318,6 @@ public:
     /// cannot be used and serializeValueIntoArena should be used instead,
     virtual std::optional<size_t> getSerializedValueSize(size_t n, const SerializationSettings *) const { return byteSizeAt(n); }
 
-    virtual void batchSerializeValueIntoMemory(std::vector<char *> & /* memories */, const SerializationSettings * settings) const;
-
     /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
     virtual std::string_view serializeValueIntoArenaWithNull(
         size_t /* n */,
@@ -329,8 +327,6 @@ public:
         const SerializationSettings * settings) const;
 
     virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
-
-    virtual void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & /* memories */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
     /// Calculate all the sizes of serialized data (as in the methods above) in the column and add to `sizes`.
     /// If `is_null` is not nullptr, also take null byte into account.
@@ -922,16 +918,6 @@ private:
 
     /// Fills column values from list of columns and row numbers
     void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers) override;
-
-    /// Move common implementations into the same translation unit to ensure they are properly inlined.
-    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
-    void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
-
-    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
-    void batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const override;
-
-    std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
 };
 
 }

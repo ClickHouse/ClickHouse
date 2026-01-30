@@ -2,15 +2,16 @@
 
 #include <cstring>
 
-#include <DataTypes/DataTypeString.h>
-#include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Common/PODArray.h>
-#include <Common/memcpySmall.h>
-#include <base/memcmpSmall.h>
-#include <Common/assert_cast.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeString.h>
+#include <IO/WriteHelpers.h>
+#include <base/memcmpSmall.h>
+#include <Common/Arena.h>
+#include <Common/PODArray.h>
+#include <Common/assert_cast.h>
+#include <Common/memcpySmall.h>
 
 #include <base/defines.h>
 
@@ -215,12 +216,86 @@ public:
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
-    std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
+    std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const final
+    {
+        bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+        return byteSizeAt(n) + serialize_string_with_zero_byte;
+    }
 
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
-    ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
+    std::string_view
+    serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const final
+    {
+        bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
 
-    void batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const override;
+        size_t string_size = sizeAt(n) + serialize_string_with_zero_byte;
+        size_t offset = offsetAt(n);
+
+        auto result_size = sizeof(string_size) + string_size;
+        char * pos = arena.allocContinue(result_size, begin);
+        memcpy(pos, &string_size, sizeof(string_size));
+        memcpy(pos + sizeof(string_size), &chars[offset], string_size - serialize_string_with_zero_byte);
+        if (serialize_string_with_zero_byte)
+            *(pos + sizeof(string_size) + string_size - 1) = 0;
+        return {pos, result_size};
+    }
+
+    ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const final
+    {
+        bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+        size_t string_size = sizeAt(n) + serialize_string_with_zero_byte;
+        size_t offset = offsetAt(n);
+
+        memcpy(memory, &string_size, sizeof(string_size));
+        memory += sizeof(string_size);
+        memcpy(memory, &chars[offset], string_size - serialize_string_with_zero_byte);
+        if (serialize_string_with_zero_byte)
+            *(memory + string_size - 1) = 0;
+        return memory + string_size;
+    }
+
+    std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null, const SerializationSettings * settings) const final
+    {
+        if (is_null)
+        {
+            char * memory;
+            if (is_null[n])
+            {
+                memory = arena.allocContinue(1, begin);
+                *memory = 1;
+                return {memory, 1};
+            }
+
+            auto serialized_value_size = getSerializedValueSize(n, settings);
+            if (serialized_value_size)
+            {
+                size_t total_size = *serialized_value_size + 1 /* null map byte */;
+                memory = arena.allocContinue(total_size, begin);
+                *memory = 0;
+                serializeValueIntoMemory(n, memory + 1, settings);
+                return {memory, total_size};
+            }
+
+            memory = arena.allocContinue(1, begin);
+            *memory = 0;
+            auto res = serializeValueIntoArena(n, arena, begin, settings);
+            return std::string_view(res.data() - 1, res.size() + 1);
+        }
+
+        return serializeValueIntoArena(n, arena, begin, settings);
+    }
+
+    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const SerializationSettings * settings) const final
+    {
+        if (is_null)
+        {
+            *memory = is_null[n];
+            ++memory;
+            if (is_null[n])
+                return memory;
+        }
+
+        return serializeValueIntoMemory(n, memory, settings);
+    }
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 

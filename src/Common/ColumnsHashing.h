@@ -1,16 +1,19 @@
 #pragma once
 
-#include <Common/HashTable/HashTable.h>
-#include <Common/HashTable/HashTableKeyHolder.h>
-#include <Common/ColumnsHashing/HashMethod.h>
-#include <Common/ColumnsHashingImpl.h>
-#include <Common/Arena.h>
-#include <Common/CacheBase.h>
-#include <Common/SipHash.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/assert_cast.h>
+#include <Columns/IColumn_fwd.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/AggregationCommon.h>
 #include <base/unaligned.h>
+#include <Common/Arena.h>
+#include <Common/CacheBase.h>
+#include <Common/ColumnsHashing/HashMethod.h>
+#include <Common/ColumnsHashingImpl.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/HashTable/HashTable.h>
+#include <Common/HashTable/HashTableKeyHolder.h>
+#include <Common/SipHash.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -20,6 +23,9 @@
 #include <memory>
 #include <cassert>
 #include <Common/HashTable/Hash.h>
+
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -128,8 +134,12 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     HashMethodSingleLowCardinalityColumn(
-        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context)
-        : Base({getLowCardinalityColumn(key_columns_low_cardinality[0]).getDictionary().getNestedNotNullableColumn().get()}, key_sizes, context)
+        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context, bool)
+        : Base(
+              {getLowCardinalityColumn(key_columns_low_cardinality[0]).getDictionary().getNestedNotNullableColumn().get()},
+              key_sizes,
+              context,
+              false)
     {
         const auto * column = &getLowCardinalityColumn(key_columns_low_cardinality[0]);
 
@@ -361,20 +371,50 @@ struct HashMethodSerialized
 
     static constexpr bool has_cheap_key_calculation = false;
 
-    ColumnRawPtrs key_columns;
-    size_t keys_size;
-    std::vector<const UInt8 *> null_maps;
+    struct Columns
+    {
+        template <typename ColT>
+        using ColumnWithNullMap = std::tuple<const ColT *, const UInt8 *, size_t>;
 
-    /// Only used if prealloc is true.
+        explicit Columns(const ColumnRawPtrs & key_columns_, bool optimize_)
+            : optimize(optimize_)
+        {
+            size_t pos = 0;
+            for (const auto * key_column : key_columns_)
+            {
+                const UInt8 * null_map = nullptr;
+                if constexpr (nullable)
+                {
+                    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(key_column))
+                    {
+                        key_column = nullable_column->getNestedColumnPtr().get();
+                        null_map = nullable_column->getNullMapData().data();
+                    }
+                }
+
+                if (optimize && typeid_cast<const ColumnString *>(key_column))
+                    string_key_columns.emplace_back(static_cast<const ColumnString *>(key_column), null_map, pos++);
+                else if (const auto * ptr = dynamic_cast<const ColumnFixedSizeHelper *>(key_column); ptr && optimize)
+                    fixed_size_key_columns.emplace_back(ptr, null_map, pos++);
+                else
+                    other_key_columns.emplace_back(key_column, null_map, pos++);
+            }
+        }
+
+        bool optimize = true;
+        std::vector<ColumnWithNullMap<ColumnString>> string_key_columns;
+        std::vector<ColumnWithNullMap<ColumnFixedSizeHelper>> fixed_size_key_columns;
+        std::vector<ColumnWithNullMap<IColumn>> other_key_columns;
+    };
+
     PaddedPODArray<UInt64> row_sizes;
-    size_t total_size = 0;
-    bool use_batch_serialize = false;
+    Columns key_columns;
+    bool optimize = true;
     IColumn::SerializationSettings serialization_settings;
-    PaddedPODArray<char> serialized_buffer;
-    std::vector<std::string_view> serialized_keys;
 
-    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context)
-        : key_columns(key_columns_), keys_size(key_columns_.size())
+    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context, bool optimize_)
+        : key_columns(key_columns_, optimize_)
+        , optimize(optimize_)
     {
         const auto * hash_serialized_context = typeid_cast<const HashMethodSerializedContext *>(context.get());
         if (!hash_serialized_context)
@@ -385,117 +425,108 @@ struct HashMethodSerialized
         }
 
         serialization_settings.serialize_string_with_zero_byte = hash_serialized_context->settings.serialize_string_with_zero_byte;
-        if constexpr (nullable)
-        {
-            null_maps.resize(keys_size, nullptr);
-            for (size_t i = 0; i < keys_size; ++i)
-            {
-                if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(key_columns[i]))
-                {
-                    null_maps[i] = nullable_column->getNullMapData().data();
-                    key_columns[i] = nullable_column->getNestedColumnPtr().get();
-                }
-            }
-        }
 
         if constexpr (prealloc)
         {
-            null_maps.resize(keys_size, nullptr);
-
-            /// Calculate serialized value size for each key column in each row.
-            for (size_t i = 0; i < keys_size; ++i)
-                key_columns[i]->collectSerializedValueSizes(row_sizes, null_maps[i], &serialization_settings);
-
-            for (auto row_size : row_sizes)
-                total_size += row_size;
-
-            use_batch_serialize = shouldUseBatchSerialize();
-            if (use_batch_serialize)
-            {
-                serialized_buffer.resize(total_size);
-
-                const size_t rows = row_sizes.size();
-                char * memory = serialized_buffer.data();
-                std::vector<char *> memories(rows);
-                serialized_keys.resize(rows);
-                for (size_t i = 0; i < row_sizes.size(); ++i)
-                {
-                    memories[i] = memory;
-                    serialized_keys[i] = std::string_view(memory, row_sizes[i]);
-
-                    memory += row_sizes[i];
-                }
-
-                for (size_t i = 0; i < keys_size; ++i)
-                {
-                    if constexpr (nullable)
-                        key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i], &serialization_settings);
-                    else
-                        key_columns[i]->batchSerializeValueIntoMemory(memories, &serialization_settings);
-                }
-            }
+            for (const auto & [key_column, null_map, _] : key_columns.string_key_columns)
+                key_column->collectSerializedValueSizes(row_sizes, null_map, &serialization_settings);
+            for (const auto & [key_column, null_map, _] : key_columns.fixed_size_key_columns)
+                key_column->collectSerializedValueSizes(row_sizes, null_map, &serialization_settings);
+            for (const auto & [key_column, null_map, _] : key_columns.other_key_columns)
+                key_column->collectSerializedValueSizes(row_sizes, null_map, &serialization_settings);
         }
-    }
-
-    bool shouldUseBatchSerialize() const
-    {
-#if defined(__aarch64__)
-        // On ARM64 architectures, always use batch serialization, otherwise it would cause performance degradation in related perf tests.
-        return true;
-#endif
-
-        size_t l2_size = 256 * 1024;
-#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
-        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
-            l2_size = ret;
-#endif
-        // Calculate the average row size.
-        size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
-        // Use batch serialization only if total size fits in 4x L2 cache and average row size is small.
-        return total_size <= 4 * l2_size && avg_row_size < 128;
     }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
-    ALWAYS_INLINE ArenaKeyHolder getKeyHolder(size_t row, Arena & pool) const
-    requires(prealloc)
+    ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const
     {
-        if (use_batch_serialize)
-            return ArenaKeyHolder{serialized_keys[row], pool};
-        else
+        if constexpr (prealloc)
         {
-            std::unique_ptr<char[]> holder = std::make_unique<char[]>(row_sizes[row]);
-            char * memory = holder.get();
+            const char * begin = nullptr;
+
+            char * memory = pool.allocContinue(row_sizes[row], begin);
             std::string_view key(memory, row_sizes[row]);
-            for (size_t j = 0; j < keys_size; ++j)
+            for (const auto & [key_column, null_map, _] : key_columns.string_key_columns)
             {
                 if constexpr (nullable)
-                    memory = key_columns[j]->serializeValueIntoMemoryWithNull(row, memory, null_maps[j], &serialization_settings);
+                    memory = key_column->serializeValueIntoMemoryWithNull(row, memory, null_map, &serialization_settings);
                 else
-                    memory = key_columns[j]->serializeValueIntoMemory(row, memory, &serialization_settings);
+                    memory = key_column->serializeValueIntoMemory(row, memory, &serialization_settings);
+            }
+            for (const auto & [key_column, null_map, _] : key_columns.fixed_size_key_columns)
+            {
+                if constexpr (nullable)
+                    memory = key_column->serializeValueIntoMemoryWithNull(row, memory, null_map, &serialization_settings);
+                else
+                    memory = key_column->serializeValueIntoMemory(row, memory, &serialization_settings);
+            }
+            for (const auto & [key_column, null_map, _] : key_columns.other_key_columns)
+            {
+                if constexpr (nullable)
+                    memory = key_column->serializeValueIntoMemoryWithNull(row, memory, null_map, &serialization_settings);
+                else
+                    memory = key_column->serializeValueIntoMemory(row, memory, &serialization_settings);
             }
 
-            return ArenaKeyHolder{key, pool, std::move(holder)};
+            return SerializedKeyHolder{key, pool};
         }
-    }
-
-    ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const
-    requires(!prealloc)
-    {
-        if constexpr (nullable)
+        else
         {
             const char * begin = nullptr;
 
             size_t sum_size = 0;
-            for (size_t j = 0; j < keys_size; ++j)
-                sum_size += key_columns[j]->serializeValueIntoArenaWithNull(row, pool, begin, null_maps[j], &serialization_settings).size();
+            for (const auto & [key_column, null_map, _] : key_columns.string_key_columns)
+            {
+                if constexpr (nullable)
+                    sum_size += key_column->serializeValueIntoArenaWithNull(row, pool, begin, null_map, &serialization_settings).size();
+                else
+                    sum_size += key_column->serializeValueIntoArena(row, pool, begin, &serialization_settings).size();
+            }
+            for (const auto & [key_column, null_map, _] : key_columns.fixed_size_key_columns)
+            {
+                if constexpr (nullable)
+                    sum_size += key_column->serializeValueIntoArenaWithNull(row, pool, begin, null_map, &serialization_settings).size();
+                else
+                    sum_size += key_column->serializeValueIntoArena(row, pool, begin, &serialization_settings).size();
+            }
+            for (const auto & [key_column, null_map, _] : key_columns.other_key_columns)
+            {
+                if constexpr (nullable)
+                    sum_size += key_column->serializeValueIntoArenaWithNull(row, pool, begin, null_map, &serialization_settings).size();
+                else
+                    sum_size += key_column->serializeValueIntoArena(row, pool, begin, &serialization_settings).size();
+            }
 
             return SerializedKeyHolder{{begin, sum_size}, pool};
         }
+    }
 
-        return SerializedKeyHolder{
-            serializeKeysToPoolContiguous(row, keys_size, key_columns, pool, &serialization_settings),
-            pool};
+    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns_, const Sizes & sizes, bool optimize)
+    {
+        ColumnRawPtrs key_columns_copy{key_columns_.begin(), key_columns_.end()};
+        Columns new_columns(key_columns_copy, optimize);
+
+        std::vector<IColumn *> new_key_columns;
+        new_key_columns.reserve(key_columns_.size());
+        Sizes new_key_sizes;
+        for (const auto & [key_column, null_map, original_pos] : new_columns.string_key_columns)
+        {
+            new_key_columns.push_back(key_columns_[original_pos]);
+            new_key_sizes.push_back(sizes[original_pos]);
+        }
+        for (const auto & [key_column, null_map, original_pos] : new_columns.fixed_size_key_columns)
+        {
+            new_key_columns.push_back(key_columns_[original_pos]);
+            new_key_sizes.push_back(sizes[original_pos]);
+        }
+        for (const auto & [key_column, null_map, original_pos] : new_columns.other_key_columns)
+        {
+            new_key_columns.push_back(key_columns_[original_pos]);
+            new_key_sizes.push_back(sizes[original_pos]);
+        }
+        key_columns_ = std::move(new_key_columns);
+        return new_key_sizes;
     }
 };
 

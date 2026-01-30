@@ -3,13 +3,13 @@
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Common/TargetSpecific.h>
-#include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
 #include <Core/Field.h>
 #include <Core/TypeId.h>
 #include <base/TypeName.h>
 #include <base/unaligned.h>
+#include <Common/TargetSpecific.h>
+#include <Common/assert_cast.h>
 
 #include "config.h"
 
@@ -46,14 +46,38 @@ public:
     using Container = PaddedPODArray<ValueType>;
 
 private:
-    ColumnVector() = default;
-    explicit ColumnVector(const size_t n) : data(n) {}
-    ColumnVector(const size_t n, const ValueType x) : data(n, x) {}
-    ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
-    ColumnVector(Container::const_iterator begin, Container::const_iterator end) : data(begin, end) { }
+    ColumnVector() { ColumnFixedSizeHelper::setFixedSize(sizeof(ValueType)); }
+
+    explicit ColumnVector(const size_t n)
+        : data(n)
+    {
+        ColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+    }
+
+    ColumnVector(const size_t n, const ValueType x)
+        : data(n, x)
+    {
+        ColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+    }
+
+    ColumnVector(const ColumnVector & src)
+        : data(src.data.begin(), src.data.end())
+    {
+        ColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+    }
+
+    ColumnVector(Container::const_iterator begin, Container::const_iterator end)
+        : data(begin, end)
+    {
+        ColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+    }
 
     /// Sugar constructor.
-    ColumnVector(std::initializer_list<T> il) : data{il} {}
+    ColumnVector(std::initializer_list<T> il)
+        : data{il}
+    {
+        ColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+    }
 
 public:
     bool isNumeric() const override { return is_arithmetic_v<T>; }

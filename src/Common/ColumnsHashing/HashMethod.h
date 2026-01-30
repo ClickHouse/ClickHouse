@@ -47,7 +47,8 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     const char * vec;
 
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
-    HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
+    HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, bool)
+        : Base(key_columns[0])
     {
         if constexpr (nullable)
         {
@@ -118,7 +119,8 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
     const IColumn::Offset * offsets;
     const UInt8 * chars;
 
-    HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
+    HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, bool)
+        : Base(key_columns[0])
     {
         const IColumn * column;
         if constexpr (nullable)
@@ -177,7 +179,8 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
     size_t n;
     const ColumnFixedString::Chars * chars;
 
-    HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
+    HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, bool)
+        : Base(key_columns[0])
     {
         const IColumn * column;
         if constexpr (nullable)
@@ -269,8 +272,10 @@ struct HashMethodKeysFixed
         return true;
     }
 
-    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &)
-        : Base(key_columns), key_sizes(key_sizes_), keys_size(key_columns.size())
+    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &, bool)
+        : Base(key_columns)
+        , key_sizes(key_sizes_)
+        , keys_size(key_columns.size())
     {
         if constexpr (has_low_cardinality)
         {
@@ -420,8 +425,10 @@ struct HashMethodHashed
 
     ColumnRawPtrs key_columns;
 
-    HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
-        : key_columns(std::move(key_columns_)) {}
+    HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &, bool)
+        : key_columns(std::move(key_columns_))
+    {
+    }
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
     {

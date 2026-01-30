@@ -157,10 +157,10 @@ KeyGetter HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::createKeyGetter(const
         auto key_size_copy = key_sizes;
         key_column_copy.pop_back();
         key_size_copy.pop_back();
-        return KeyGetter(key_column_copy, key_size_copy, nullptr);
+        return KeyGetter(key_column_copy, key_size_copy, nullptr, false);
     }
     else
-        return KeyGetter(key_columns, key_sizes, nullptr);
+        return KeyGetter(key_columns, key_sizes, nullptr, false);
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>

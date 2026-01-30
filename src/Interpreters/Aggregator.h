@@ -339,6 +339,8 @@ private:
     /// - There's no need to allocate and maintain full aggregation state.
     bool is_simple_count = false;
 
+    bool optimize_serialized = true;
+
     LoggerPtr log = getLogger("Aggregator");
 
     /// For external aggregation.

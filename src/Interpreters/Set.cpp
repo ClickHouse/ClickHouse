@@ -87,7 +87,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
     [[maybe_unused]] ConstNullMapPtr null_map,
     [[maybe_unused]] ColumnUInt8::Container * out_filter)
 {
-    typename Method::State state(key_columns, key_sizes, nullptr);
+    typename Method::State state(key_columns, key_sizes, nullptr, false);
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
@@ -569,7 +569,7 @@ void NO_INLINE Set::executeImplCase(
     ConstNullMapPtr null_map) const
 {
     Arena pool;
-    typename Method::State state(key_columns, key_sizes, nullptr);
+    typename Method::State state(key_columns, key_sizes, nullptr, false);
 
     /// NOTE Optimization is not used for consecutive identical strings.
 

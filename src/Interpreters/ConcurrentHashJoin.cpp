@@ -506,7 +506,7 @@ BlockHashes calculateHashes(const HashTable & hash_table, const ColumnRawPtrs & 
 {
     const size_t num_rows = key_columns[0]->size();
     Arena pool;
-    auto key_getter = KeyGetter(key_columns, key_sizes, nullptr);
+    auto key_getter = KeyGetter(key_columns, key_sizes, nullptr, false);
     BlockHashes hash(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
         hash[i] = key_getter.getHash(hash_table, i, pool);
