@@ -33,209 +33,30 @@ SELECT count()
 FROM events e
 WHERE person_id = '017adbc0-98b5-0000-3f74-619a368fe65e';
 0
-EXPLAIN indexes = 1
-SELECT count()
-FROM events e
-WHERE person_id = '017adbc0-98b5-0000-3f74-619a368fe65e';
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.events)
-        Indexes:
-          MinMax
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Partition
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          PrimaryKey
-            Keys:
-              cityHash64(person_id)
-            Condition: (cityHash64(person_id) in [4512983270581420426, 4512983270581420426])
-            Parts: 0/2
-            Granules: 0/2
-            Search Algorithm: generic exclusion search
-          Ranges: 0
 SELECT count()
 FROM events e
 WHERE person_id < '017adbc0-98b5-0000-3f74-619a368fe65e';
 2
-EXPLAIN indexes = 1
-SELECT count()
-FROM events e
-WHERE person_id < '017adbc0-98b5-0000-3f74-619a368fe65e';
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.events)
-        Indexes:
-          MinMax
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Partition
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          PrimaryKey
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Ranges: 2
 SELECT count()
 FROM events e
 WHERE person_id != '017adbc0-98b5-0000-3f74-619a368fe65e';
 2
-EXPLAIN indexes = 1
-SELECT count()
-FROM events e
-WHERE person_id != '017adbc0-98b5-0000-3f74-619a368fe65e';
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.events)
-        Indexes:
-          MinMax
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Partition
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          PrimaryKey
-            Keys:
-              cityHash64(person_id)
-            Condition: (cityHash64(person_id) not in [4512983270581420426, 4512983270581420426])
-            Parts: 2/2
-            Granules: 2/2
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count()
 FROM events e
 WHERE person_id IN (toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
 1
-EXPLAIN indexes = 1
-SELECT count()
-FROM events e
-WHERE person_id IN (toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.events)
-        Indexes:
-          MinMax
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Partition
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          PrimaryKey
-            Keys:
-              cityHash64(person_id)
-            Condition: (cityHash64(person_id) in 2-element set)
-            Parts: 1/2
-            Granules: 1/2
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM events e
 WHERE has([toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id);
 1
-EXPLAIN indexes = 1
-SELECT count()
-FROM events e
-WHERE has([toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id);
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.events)
-        Indexes:
-          MinMax
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Partition
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          PrimaryKey
-            Keys:
-              cityHash64(person_id)
-            Condition: (cityHash64(person_id) in 2-element set)
-            Parts: 1/2
-            Granules: 1/2
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM events e
 WHERE person_id NOT IN (toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
 1
-EXPLAIN indexes = 1
-SELECT count()
-FROM events e
-WHERE person_id NOT IN (toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.events)
-        Indexes:
-          MinMax
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Partition
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          PrimaryKey
-            Keys:
-              cityHash64(person_id)
-            Condition: (cityHash64(person_id) notIn 2-element set)
-            Parts: 2/2
-            Granules: 2/2
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count()
 FROM events e
 WHERE NOT has([toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id);
 1
-EXPLAIN indexes = 1
-SELECT count()
-FROM events e
-WHERE NOT has([toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id);
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.events)
-        Indexes:
-          MinMax
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Partition
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          PrimaryKey
-            Keys:
-              cityHash64(person_id)
-            Condition: not((cityHash64(person_id) in 2-element set))
-            Parts: 2/2
-            Granules: 2/2
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count()
 FROM events e
 WHERE person_id IN ('017adbc0-98b5-0000-3f74-619a368fe65d', toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
@@ -257,134 +78,26 @@ SELECT
             (number % 10) + 1
     )
 FROM numbers(100000);
-EXPLAIN indexes=1
-SELECT count()
-FROM test
-WHERE pod = 'vector-abc-001';
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1))
-            Condition: (left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) in [\'vector-abc\', \'vector-abc\'])
-            Parts: 1/1
-            Granules: 21/100
-            Search Algorithm: binary search
-          Ranges: 1
 SELECT count()
 FROM test
 WHERE pod = 'vector-abc-001';
 10000
-EXPLAIN indexes=1
-SELECT count()
-FROM test
-WHERE NOT pod = 'vector-abc-001';
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1))
-            Condition: (left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) not in [\'vector-abc\', \'vector-abc\'])
-            Parts: 1/1
-            Granules: 100/100
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM test
 WHERE NOT pod = 'vector-abc-001';
 90000
-EXPLAIN indexes=1
-SELECT count()
-FROM test
-WHERE pod IN ('vector-abc-001', 'metrics-def-003');
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1))
-            Condition: (left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) in 2-element set)
-            Parts: 1/1
-            Granules: 42/100
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count()
 FROM test
 WHERE pod IN ('vector-abc-001', 'metrics-def-003');
 20000
-EXPLAIN indexes=1
-SELECT count()
-FROM test
-WHERE has(['vector-abc-001', 'metrics-def-003'], pod);
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1))
-            Condition: (left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) in 2-element set)
-            Parts: 1/1
-            Granules: 42/100
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count()
 FROM test
 WHERE has(['vector-abc-001', 'metrics-def-003'], pod);
 20000
-EXPLAIN indexes=1
-SELECT count()
-FROM test
-WHERE pod NOT IN ('vector-abc-001', 'metrics-def-003');
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1))
-            Condition: (left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) notIn 2-element set)
-            Parts: 1/1
-            Granules: 100/100
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM test
 WHERE pod NOT IN ('vector-abc-001', 'metrics-def-003');
 80000
-EXPLAIN indexes=1
-SELECT count()
-FROM test
-WHERE NOT has(['vector-abc-001', 'metrics-def-003'], pod);
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1))
-            Condition: not((left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) in 2-element set))
-            Parts: 1/1
-            Granules: 100/100
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM test
 WHERE NOT has(['vector-abc-001', 'metrics-def-003'], pod);
@@ -403,134 +116,26 @@ SELECT
             (number % 10) + 1
     )
 FROM numbers(100000);
-EXPLAIN indexes=1
-SELECT count()
-FROM test_expr
-WHERE lower(pod) = 'vector-abc-001';
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test_expr)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1))
-            Condition: (left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) in [\'vector-abc\', \'vector-abc\'])
-            Parts: 1/1
-            Granules: 21/100
-            Search Algorithm: binary search
-          Ranges: 1
 SELECT count()
 FROM test_expr
 WHERE lower(pod) = 'vector-abc-001';
 10000
-EXPLAIN indexes=1
-SELECT count()
-FROM test_expr
-WHERE NOT lower(pod) = 'vector-abc-001';
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test_expr)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1))
-            Condition: (left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) not in [\'vector-abc\', \'vector-abc\'])
-            Parts: 1/1
-            Granules: 100/100
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM test_expr
 WHERE NOT lower(pod) = 'vector-abc-001';
 90000
-EXPLAIN indexes=1
-SELECT count()
-FROM test_expr
-WHERE lower(pod) IN ('vector-abc-001', 'metrics-def-003');
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test_expr)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1))
-            Condition: (left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) in 2-element set)
-            Parts: 1/1
-            Granules: 42/100
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count()
 FROM test_expr
 WHERE lower(pod) IN ('vector-abc-001', 'metrics-def-003');
 20000
-EXPLAIN indexes=1
-SELECT count()
-FROM test_expr
-WHERE has(['vector-abc-001', 'metrics-def-003'], lower(pod));
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test_expr)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1))
-            Condition: (left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) in 2-element set)
-            Parts: 1/1
-            Granules: 42/100
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count()
 FROM test_expr
 WHERE has(['vector-abc-001', 'metrics-def-003'], lower(pod));
 20000
-EXPLAIN indexes=1
-SELECT count()
-FROM test_expr
-WHERE lower(pod) NOT IN ('vector-abc-001', 'metrics-def-003');
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test_expr)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1))
-            Condition: (left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) notIn 2-element set)
-            Parts: 1/1
-            Granules: 100/100
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM test_expr
 WHERE lower(pod) NOT IN ('vector-abc-001', 'metrics-def-003');
 80000
-EXPLAIN indexes=1
-SELECT count()
-FROM test_expr
-WHERE NOT has(['vector-abc-001', 'metrics-def-003'], lower(pod));
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test_expr)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1))
-            Condition: not((left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) in 2-element set))
-            Parts: 1/1
-            Granules: 100/100
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM test_expr
 WHERE NOT has(['vector-abc-001', 'metrics-def-003'], lower(pod));
@@ -546,91 +151,14 @@ INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65d');
 INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65a');
 SELECT count() FROM test_dag_execution WHERE p = 'NOT-a-uuid';
 0
-EXPLAIN indexes = 1
-SELECT count() FROM test_dag_execution WHERE p = 'NOT-a-uuid';
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test_dag_execution)
-        Indexes:
-          PrimaryKey
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Ranges: 2
 SELECT count() FROM test_dag_execution WHERE p IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
 1
-EXPLAIN indexes = 1
-SELECT count() FROM test_dag_execution WHERE p IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test_dag_execution)
-        Indexes:
-          PrimaryKey
-            Keys:
-              toUUID(p)
-            Condition: (toUUID(p) in 1-element set)
-            Parts: 1/2
-            Granules: 1/2
-            Search Algorithm: binary search
-          Ranges: 1
 SELECT count() FROM test_dag_execution WHERE has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
 1
-EXPLAIN indexes = 1
-SELECT count() FROM test_dag_execution WHERE has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test_dag_execution)
-        Indexes:
-          PrimaryKey
-            Keys:
-              toUUID(p)
-            Condition: (toUUID(p) in 1-element set)
-            Parts: 1/2
-            Granules: 1/2
-            Search Algorithm: binary search
-          Ranges: 1
 SELECT count() FROM test_dag_execution WHERE p NOT IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
 1
-EXPLAIN indexes = 1
-SELECT count() FROM test_dag_execution WHERE p NOT IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test_dag_execution)
-        Indexes:
-          PrimaryKey
-            Keys:
-              toUUID(p)
-            Condition: (toUUID(p) notIn 1-element set)
-            Parts: 2/2
-            Granules: 2/2
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count() FROM test_dag_execution WHERE NOT has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
 1
-EXPLAIN indexes = 1
-SELECT count() FROM test_dag_execution WHERE NOT has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
-Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter ((WHERE + Change column names to column identifiers))
-        ReadFromMergeTree (default.test_dag_execution)
-        Indexes:
-          PrimaryKey
-            Keys:
-              toUUID(p)
-            Condition: not((toUUID(p) in 1-element set))
-            Parts: 2/2
-            Granules: 2/2
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SET enable_analyzer = 0;
 DROP TABLE IF EXISTS events;
 CREATE TABLE events
@@ -664,209 +192,30 @@ SELECT count()
 FROM events e
 WHERE person_id = '017adbc0-98b5-0000-3f74-619a368fe65e';
 0
-EXPLAIN indexes = 1
-SELECT count()
-FROM events e
-WHERE person_id = '017adbc0-98b5-0000-3f74-619a368fe65e';
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.events)
-        Indexes:
-          MinMax
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Partition
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          PrimaryKey
-            Keys:
-              cityHash64(person_id)
-            Condition: (cityHash64(person_id) in [4512983270581420426, 4512983270581420426])
-            Parts: 0/2
-            Granules: 0/2
-            Search Algorithm: generic exclusion search
-          Ranges: 0
 SELECT count()
 FROM events e
 WHERE person_id < '017adbc0-98b5-0000-3f74-619a368fe65e';
 2
-EXPLAIN indexes = 1
-SELECT count()
-FROM events e
-WHERE person_id < '017adbc0-98b5-0000-3f74-619a368fe65e';
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.events)
-        Indexes:
-          MinMax
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Partition
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          PrimaryKey
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Ranges: 2
 SELECT count()
 FROM events e
 WHERE person_id != '017adbc0-98b5-0000-3f74-619a368fe65e';
 2
-EXPLAIN indexes = 1
-SELECT count()
-FROM events e
-WHERE person_id != '017adbc0-98b5-0000-3f74-619a368fe65e';
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.events)
-        Indexes:
-          MinMax
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Partition
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          PrimaryKey
-            Keys:
-              cityHash64(person_id)
-            Condition: (cityHash64(person_id) not in [4512983270581420426, 4512983270581420426])
-            Parts: 2/2
-            Granules: 2/2
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count()
 FROM events e
 WHERE person_id IN (toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
 1
-EXPLAIN indexes = 1
-SELECT count()
-FROM events e
-WHERE person_id IN (toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.events)
-        Indexes:
-          MinMax
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Partition
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          PrimaryKey
-            Keys:
-              cityHash64(person_id)
-            Condition: (cityHash64(person_id) in 2-element set)
-            Parts: 1/2
-            Granules: 1/2
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM events e
 WHERE has([toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id);
 1
-EXPLAIN indexes = 1
-SELECT count()
-FROM events e
-WHERE has([toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id);
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.events)
-        Indexes:
-          MinMax
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Partition
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          PrimaryKey
-            Keys:
-              cityHash64(person_id)
-            Condition: (cityHash64(person_id) in 2-element set)
-            Parts: 1/2
-            Granules: 1/2
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM events e
 WHERE person_id NOT IN (toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
 1
-EXPLAIN indexes = 1
-SELECT count()
-FROM events e
-WHERE person_id NOT IN (toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.events)
-        Indexes:
-          MinMax
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Partition
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          PrimaryKey
-            Keys:
-              cityHash64(person_id)
-            Condition: (cityHash64(person_id) notIn 2-element set)
-            Parts: 2/2
-            Granules: 2/2
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count()
 FROM events e
 WHERE NOT has([toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id);
 1
-EXPLAIN indexes = 1
-SELECT count()
-FROM events e
-WHERE NOT has([toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id);
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.events)
-        Indexes:
-          MinMax
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Partition
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          PrimaryKey
-            Keys:
-              cityHash64(person_id)
-            Condition: not((cityHash64(person_id) in 2-element set))
-            Parts: 2/2
-            Granules: 2/2
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count()
 FROM events e
 WHERE person_id IN ('017adbc0-98b5-0000-3f74-619a368fe65d', toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
@@ -888,134 +237,26 @@ SELECT
             (number % 10) + 1
     )
 FROM numbers(100000);
-EXPLAIN indexes=1
-SELECT count()
-FROM test
-WHERE pod = 'vector-abc-001';
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1))
-            Condition: (left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) in [\'vector-abc\', \'vector-abc\'])
-            Parts: 1/1
-            Granules: 21/100
-            Search Algorithm: binary search
-          Ranges: 1
 SELECT count()
 FROM test
 WHERE pod = 'vector-abc-001';
 10000
-EXPLAIN indexes=1
-SELECT count()
-FROM test
-WHERE NOT pod = 'vector-abc-001';
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1))
-            Condition: (left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) not in [\'vector-abc\', \'vector-abc\'])
-            Parts: 1/1
-            Granules: 100/100
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM test
 WHERE NOT pod = 'vector-abc-001';
 90000
-EXPLAIN indexes=1
-SELECT count()
-FROM test
-WHERE pod IN ('vector-abc-001', 'metrics-def-003');
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1))
-            Condition: (left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) in 2-element set)
-            Parts: 1/1
-            Granules: 42/100
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count()
 FROM test
 WHERE pod IN ('vector-abc-001', 'metrics-def-003');
 20000
-EXPLAIN indexes=1
-SELECT count()
-FROM test
-WHERE has(['vector-abc-001', 'metrics-def-003'], pod);
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1))
-            Condition: (left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) in 2-element set)
-            Parts: 1/1
-            Granules: 42/100
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count()
 FROM test
 WHERE has(['vector-abc-001', 'metrics-def-003'], pod);
 20000
-EXPLAIN indexes=1
-SELECT count()
-FROM test
-WHERE pod NOT IN ('vector-abc-001', 'metrics-def-003');
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1))
-            Condition: (left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) notIn 2-element set)
-            Parts: 1/1
-            Granules: 100/100
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM test
 WHERE pod NOT IN ('vector-abc-001', 'metrics-def-003');
 80000
-EXPLAIN indexes=1
-SELECT count()
-FROM test
-WHERE NOT has(['vector-abc-001', 'metrics-def-003'], pod);
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1))
-            Condition: not((left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) in 2-element set))
-            Parts: 1/1
-            Granules: 100/100
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM test
 WHERE NOT has(['vector-abc-001', 'metrics-def-003'], pod);
@@ -1034,134 +275,26 @@ SELECT
             (number % 10) + 1
     )
 FROM numbers(100000);
-EXPLAIN indexes=1
-SELECT count()
-FROM test_expr
-WHERE lower(pod) = 'vector-abc-001';
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test_expr)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1))
-            Condition: (left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) in [\'vector-abc\', \'vector-abc\'])
-            Parts: 1/1
-            Granules: 21/100
-            Search Algorithm: binary search
-          Ranges: 1
 SELECT count()
 FROM test_expr
 WHERE lower(pod) = 'vector-abc-001';
 10000
-EXPLAIN indexes=1
-SELECT count()
-FROM test_expr
-WHERE NOT lower(pod) = 'vector-abc-001';
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test_expr)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1))
-            Condition: (left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) not in [\'vector-abc\', \'vector-abc\'])
-            Parts: 1/1
-            Granules: 100/100
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM test_expr
 WHERE NOT lower(pod) = 'vector-abc-001';
 90000
-EXPLAIN indexes=1
-SELECT count()
-FROM test_expr
-WHERE lower(pod) IN ('vector-abc-001', 'metrics-def-003');
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test_expr)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1))
-            Condition: (left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) in 2-element set)
-            Parts: 1/1
-            Granules: 42/100
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count()
 FROM test_expr
 WHERE lower(pod) IN ('vector-abc-001', 'metrics-def-003');
 20000
-EXPLAIN indexes=1
-SELECT count()
-FROM test_expr
-WHERE has(['vector-abc-001', 'metrics-def-003'], lower(pod));
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test_expr)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1))
-            Condition: (left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) in 2-element set)
-            Parts: 1/1
-            Granules: 42/100
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count()
 FROM test_expr
 WHERE has(['vector-abc-001', 'metrics-def-003'], lower(pod));
 20000
-EXPLAIN indexes=1
-SELECT count()
-FROM test_expr
-WHERE lower(pod) NOT IN ('vector-abc-001', 'metrics-def-003');
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test_expr)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1))
-            Condition: (left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) notIn 2-element set)
-            Parts: 1/1
-            Granules: 100/100
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM test_expr
 WHERE lower(pod) NOT IN ('vector-abc-001', 'metrics-def-003');
 80000
-EXPLAIN indexes=1
-SELECT count()
-FROM test_expr
-WHERE NOT has(['vector-abc-001', 'metrics-def-003'], lower(pod));
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test_expr)
-        Indexes:
-          PrimaryKey
-            Keys:
-              left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1))
-            Condition: not((left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) in 2-element set))
-            Parts: 1/1
-            Granules: 100/100
-            Search Algorithm: generic exclusion search
-          Ranges: 1
 SELECT count()
 FROM test_expr
 WHERE NOT has(['vector-abc-001', 'metrics-def-003'], lower(pod));
@@ -1177,88 +310,11 @@ INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65d');
 INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65a');
 SELECT count() FROM test_dag_execution WHERE p = 'NOT-a-uuid';
 0
-EXPLAIN indexes = 1
-SELECT count() FROM test_dag_execution WHERE p = 'NOT-a-uuid';
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test_dag_execution)
-        Indexes:
-          PrimaryKey
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Ranges: 2
 SELECT count() FROM test_dag_execution WHERE p IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
 1
-EXPLAIN indexes = 1
-SELECT count() FROM test_dag_execution WHERE p IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test_dag_execution)
-        Indexes:
-          PrimaryKey
-            Keys:
-              toUUID(p)
-            Condition: (toUUID(p) in 1-element set)
-            Parts: 1/2
-            Granules: 1/2
-            Search Algorithm: binary search
-          Ranges: 1
 SELECT count() FROM test_dag_execution WHERE has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
 1
-EXPLAIN indexes = 1
-SELECT count() FROM test_dag_execution WHERE has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test_dag_execution)
-        Indexes:
-          PrimaryKey
-            Keys:
-              toUUID(p)
-            Condition: (toUUID(p) in 1-element set)
-            Parts: 1/2
-            Granules: 1/2
-            Search Algorithm: binary search
-          Ranges: 1
 SELECT count() FROM test_dag_execution WHERE p NOT IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
 1
-EXPLAIN indexes = 1
-SELECT count() FROM test_dag_execution WHERE p NOT IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test_dag_execution)
-        Indexes:
-          PrimaryKey
-            Keys:
-              toUUID(p)
-            Condition: (toUUID(p) notIn 1-element set)
-            Parts: 2/2
-            Granules: 2/2
-            Search Algorithm: generic exclusion search
-          Ranges: 2
 SELECT count() FROM test_dag_execution WHERE NOT has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
 1
-EXPLAIN indexes = 1
-SELECT count() FROM test_dag_execution WHERE NOT has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
-Expression ((Projection + Before ORDER BY))
-  Aggregating
-    Expression (Before GROUP BY)
-      Filter (WHERE)
-        ReadFromMergeTree (default.test_dag_execution)
-        Indexes:
-          PrimaryKey
-            Keys:
-              toUUID(p)
-            Condition: not((toUUID(p) in 1-element set))
-            Parts: 2/2
-            Granules: 2/2
-            Search Algorithm: generic exclusion search
-          Ranges: 2
