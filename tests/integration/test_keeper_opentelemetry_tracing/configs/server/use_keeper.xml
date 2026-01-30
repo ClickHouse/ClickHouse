@@ -1,7 +1,7 @@
 <clickhouse>
     <zookeeper>
         <node index="1">
-            <host>keeper2</host>
+            <host>clickHouseKeeper2</host>
             <port>9181</port>
         </node>
         <pass_opentelemetry_tracing_context>1</pass_opentelemetry_tracing_context>
