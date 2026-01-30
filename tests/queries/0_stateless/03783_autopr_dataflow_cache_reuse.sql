@@ -19,6 +19,9 @@ SET max_threads=4, max_block_size=128;
 -- May disable the usage of parallel replicas
 SET automatic_parallel_replicas_min_bytes_per_replica=0;
 
+-- External aggregation is not supported at the moment, i.e., no statistics will be reported
+SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
+
 INSERT INTO t SELECT toString(number), number FROM numbers(1e4);
 
 --set send_logs_level='trace', send_logs_source_regexp = 'optimize';

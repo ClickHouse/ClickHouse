@@ -271,7 +271,7 @@ ProcessList::EntryPtr ProcessList::insert(
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
-            thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
+            thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
             {
@@ -396,6 +396,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
 ProcessListEntry::~ProcessListEntry()
 {
+    CancellationChecker::getInstance().appendDoneTasks(*it);
     LockAndOverCommitTrackerBlocker<std::unique_lock, ProcessList::Mutex> lock(parent.getMutex());
 
     const String user = (*it)->getClientInfo().current_user;
@@ -434,8 +435,6 @@ ProcessListEntry::~ProcessListEntry()
 
     if (auto query_user = parent.queries_to_user.find(query_id); query_user != parent.queries_to_user.end())
         parent.queries_to_user.erase(query_user);
-
-    CancellationChecker::getInstance().appendDoneTasks(*it);
 
     /// This removes the memory_tracker of one request.
     parent.processes.erase(it);
