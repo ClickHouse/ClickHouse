@@ -1,3 +1,8 @@
+#include <cstddef>
+#include <string>
+#include <Analyzer/IQueryTreeNode.h>
+#include <Core/Field.h>
+#include <Core/TypeId.h>
 #include <Storages/IStorage.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
@@ -13,6 +18,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
@@ -24,6 +30,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/NestedUtils.h>
@@ -33,10 +40,12 @@
 #include <Interpreters/Context.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 #include <Common/intExp10.h>
 #include <Common/randomSeed.h>
 
 #include <Functions/FunctionFactory.h>
+#include <base/types.h>
 
 #include <pcg_random.hpp>
 
@@ -96,10 +105,44 @@ void fillBufferWithRandomData(char * __restrict data, size_t limit, size_t size_
 }
 
 
+/// Helper function to calculate estimated size JSON Object type
+size_t estimateJSONValueSize(
+    UInt64 max_array_length,
+    UInt64 max_string_length,
+    UInt64 max_json_keys,
+    UInt64 max_json_depth,
+    double null_ratio,
+    size_t depth = 0)
+{
+    const size_t key_size = max_string_length + sizeof(UInt64);
+    
+    const size_t avg_scalar_size = (sizeof(UInt64) + max_string_length) / 2;
+    const size_t array_size = max_array_length * avg_scalar_size;
+
+    size_t value_size;
+    if (depth>=max_json_depth)
+    {
+        value_size = (avg_scalar_size * 6 + array_size * 4) / 10;
+    }
+    else
+    {
+        size_t nested_object_size = estimateJSONValueSize(max_array_length, max_string_length, std::max<UInt64>(max_json_keys/2, 1), max_json_depth, null_ratio, depth+1);
+        value_size = (avg_scalar_size * 5 + array_size * 3 + nested_object_size * 2) / 10;
+    }
+
+    /// Dynamic JSON paths: NULL values are represented as missing keys which consume zero bytes in ColumnObject storage. Please recheck.
+    size_t expected_keys = std::max<size_t>(1,static_cast<size_t>(max_json_keys * (1.0 - null_ratio)));
+
+    return (key_size + value_size) * expected_keys;
+}
+
 size_t estimateValueSize(
     const DataTypePtr type,
     UInt64 max_array_length,
-    UInt64 max_string_length)
+    UInt64 max_string_length, 
+    UInt64 max_json_keys,
+    UInt64 max_json_depth,
+    double null_ratio)
 {
     if (type->haveMaximumSizeOfValue())
         return type->getMaximumSizeOfValueInMemory();
@@ -117,13 +160,13 @@ size_t estimateValueSize(
         case TypeIndex::Array:
         {
             auto nested_type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
-            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length);
+            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length, max_json_keys, max_json_depth, null_ratio);
         }
 
         case TypeIndex::Map:
         {
             const DataTypePtr & nested_type = typeid_cast<const DataTypeMap &>(*type).getNestedType();
-            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length);
+            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length, max_json_keys, max_json_depth, null_ratio);
         }
 
         case TypeIndex::Tuple:
@@ -133,7 +176,7 @@ size_t estimateValueSize(
             size_t res = 0;
 
             for (size_t i = 0; i < tuple_size; ++i)
-                res += estimateValueSize(elements[i], max_array_length, max_string_length);
+                res += estimateValueSize(elements[i], max_array_length, max_string_length, max_json_keys, max_json_depth, null_ratio);
 
             return res;
         }
@@ -141,13 +184,18 @@ size_t estimateValueSize(
         case TypeIndex::Nullable:
         {
             auto nested_type = typeid_cast<const DataTypeNullable &>(*type).getNestedType();
-            return 1 + estimateValueSize(nested_type, max_array_length, max_string_length);
+            return 1 + estimateValueSize(nested_type, max_array_length, max_string_length, max_json_keys, max_json_depth, null_ratio);
         }
 
         case TypeIndex::LowCardinality:
         {
             auto nested_type = typeid_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
-            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length, max_string_length);
+            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length, max_string_length, max_json_keys, max_json_depth, null_ratio);
+        }
+
+        case TypeIndex::Object:
+        {
+            return estimateJSONValueSize(max_array_length,max_string_length,max_json_keys,max_json_depth,null_ratio,0);
         }
 
         default:
@@ -157,11 +205,100 @@ size_t estimateValueSize(
 
 }
 
+
+// Helper function for random Json generation
+static Object generateRandomObject(
+    pcg64 & rng,
+    UInt64 depth,
+    UInt64 max_json_depth,
+    UInt64 max_json_keys,
+    UInt64 max_array_length,
+    UInt64 max_string_length,
+    double null_ratio)
+{
+    Object obj;
+    UInt64 keys = 1 + (rng() % max_json_keys);
+
+    for (UInt64 k = 0; k < keys; ++k)
+    {
+        if ((rng() % 100) < static_cast<UInt64>(null_ratio * 100))
+            continue;
+
+        String key = "key_" + std::to_string(depth) + "_" + std::to_string(k);
+        UInt64 choice = rng() % 10;
+
+        if (choice < 5)
+        {
+            if (rng() % 2 == 0)
+            {
+                obj[key] = Field(static_cast<Int64>(rng()));
+            }
+            else
+            {
+                size_t len = rng() % (max_string_length + 1);
+                String s(len, ' ');
+                for (size_t i = 0; i < len; ++i)
+                    s[i] = static_cast<char>(32 + (rng() % 95));
+                obj[key] = Field(std::move(s));
+            }
+        }
+
+        else if (choice < 8)
+        {
+            Array arr;
+            UInt64 len = rng() % (max_array_length + 1);
+
+            for (UInt64 i = 0; i < len; ++i)
+            {
+                if (rng() % 2 == 0)
+                {
+                    arr.push_back(Field(static_cast<Int64>(rng())));
+                }
+                else
+                {
+                    size_t str_len = rng() % (max_string_length + 1);
+                    String s(str_len, ' ');
+                    for (size_t j = 0; j < str_len; ++j)
+                        s[j] = static_cast<char>(32 + (rng() % 95));
+                    arr.push_back(Field(std::move(s)));
+                }
+            }
+
+            obj[key] = Field(std::move(arr));
+        }
+
+        else
+        {
+            if (depth < max_json_depth)
+            {
+                obj[key] = Field(
+                    generateRandomObject(
+                        rng,
+                        depth + 1,
+                        max_json_depth,
+                        std::max<UInt64>(1, max_json_keys / 2),
+                        max_array_length,
+                        max_string_length,
+                        null_ratio));
+            }
+            else
+            {
+                obj[key] = Field(static_cast<Int64>(rng()));
+            }
+        }
+    }
+
+    return obj;
+}
+
 ColumnPtr fillColumnWithRandomData(
     DataTypePtr type,
     UInt64 limit,
     UInt64 max_array_length,
     UInt64 max_string_length,
+    UInt64 max_json_keys,
+    UInt64 max_json_depth,
+    double null_ratio,
     pcg64 & rng,
     ContextPtr context)
 {
@@ -266,7 +403,7 @@ ColumnPtr fillColumnWithRandomData(
             }
 
             /// This division by two makes the size growth subexponential on depth.
-            auto data_column = fillColumnWithRandomData(nested_type, offset, max_array_length / 2, max_string_length, rng, context);
+            auto data_column = fillColumnWithRandomData(nested_type, offset, max_array_length / 2, max_string_length, max_json_keys, max_json_depth, null_ratio, rng, context);
 
             return ColumnArray::create(data_column, std::move(offsets_column));
         }
@@ -274,8 +411,31 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::Map:
         {
             const DataTypePtr & nested_type = typeid_cast<const DataTypeMap &>(*type).getNestedType();
-            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length / 2, max_string_length, rng, context);
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length / 2, max_string_length, max_json_keys, max_json_depth, null_ratio, rng, context);
             return ColumnMap::create(nested_column);
+        }
+
+        case TypeIndex::Object:
+        {
+            const auto & object_type = assert_cast<const DataTypeObject &>(*type);
+            auto column = object_type.createColumn();
+            auto & column_object = assert_cast<ColumnObject &>(*column);
+
+            for (UInt64 row = 0; row < limit; ++row)
+            {
+                Object obj = generateRandomObject(
+                    rng,
+                    0,
+                    max_json_depth,
+                    max_json_keys,
+                    max_array_length,
+                    max_string_length,
+                    null_ratio);
+
+                column_object.insert(obj);
+            }
+
+            return column;
         }
 
         case TypeIndex::Tuple:
@@ -288,7 +448,7 @@ ColumnPtr fillColumnWithRandomData(
             Columns tuple_columns(tuple_size);
 
             for (size_t i = 0; i < tuple_size; ++i)
-                tuple_columns[i] = fillColumnWithRandomData(elements[i], limit, max_array_length, max_string_length, rng, context);
+                tuple_columns[i] = fillColumnWithRandomData(elements[i], limit, max_array_length, max_string_length, max_json_keys, max_json_depth, null_ratio, rng, context);
 
             return ColumnTuple::create(std::move(tuple_columns));
         }
@@ -296,7 +456,7 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::Nullable:
         {
             auto nested_type = typeid_cast<const DataTypeNullable &>(*type).getNestedType();
-            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, context);
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, max_json_keys, max_json_depth, null_ratio, rng, context);
 
             auto null_map_column = ColumnUInt8::create();
             auto & null_map = null_map_column->getData();
@@ -515,7 +675,7 @@ ColumnPtr fillColumnWithRandomData(
             /// but it's ok for testing purposes, because the LowCardinality data type supports high cardinality data as well.
 
             auto nested_type = typeid_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
-            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, context);
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, max_json_keys, max_json_depth, null_ratio, rng, context);
 
             auto column = type->createColumn();
             typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*nested_column, 0, limit);
@@ -574,9 +734,14 @@ protected:
     {
         Columns columns;
         columns.reserve(block_to_fill.columns());
+        
+        /// Default values for fillColumnWithRandomData and estimateValueSize function testing.  
+        constexpr UInt64 default_max_json_keys = 10;
+        constexpr UInt64 default_max_json_depth = 3;
+        constexpr double default_null_ratio = 0.1;
 
         for (const auto & elem : block_to_fill)
-            columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng, context));
+            columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length,default_max_json_keys,default_max_json_depth , default_null_ratio,rng, context));
 
         columns = Nested::flattenNested(block_to_fill.cloneWithColumns(columns)).getColumns();
 
@@ -705,7 +870,13 @@ Pipe StorageGenerateRandom::read(
     size_t preferred_block_size_bytes = context->getSettingsRef()[Setting::preferred_block_size_bytes];
     if (preferred_block_size_bytes)
     {
-        size_t estimated_row_size_bytes = estimateValueSize(std::make_shared<DataTypeTuple>(block_header.getDataTypes()), max_array_length, max_string_length);
+
+        /// Default values for fillColumnWithRandomData and estimateValueSize function testing.  
+        constexpr UInt64 default_max_json_keys = 10;
+        constexpr UInt64 default_max_json_depth = 3;
+        constexpr double default_null_ratio = 0.1;
+
+        size_t estimated_row_size_bytes = estimateValueSize(std::make_shared<DataTypeTuple>(block_header.getDataTypes()), max_array_length, max_string_length, default_max_json_keys,default_max_json_depth,default_null_ratio);
 
         size_t estimated_block_size_bytes = 0;
         if (common::mulOverflow(max_block_size, estimated_row_size_bytes, estimated_block_size_bytes))
