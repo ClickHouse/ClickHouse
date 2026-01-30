@@ -595,6 +595,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
         ProfileEvents::increment(ProfileEvents::InsertQuery);
         ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
+        ProfileEvents::increment(ProfileEvents::InsertQuery);
         ProfileEvents::increment(ProfileEvents::AsyncInsertBytes, entry_data_size);
         ProfileEvents::increment(ProfileEvents::InsertQuery);
 
