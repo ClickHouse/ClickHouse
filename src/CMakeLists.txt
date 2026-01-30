@@ -212,7 +212,9 @@ if (NOT ENABLE_SSL)
     list (REMOVE_ITEM clickhouse_common_io_headers Common/OpenSSLHelpers.h)
 endif ()
 
-add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
+add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources}
+        IO/UTFConvertingReadBuffer.h
+        IO/UTFConvertingReadBuffer.cpp)
 
 if (ENABLE_CLICKHOUSE_DISTRIBUTED_CACHE)
     target_compile_definitions(clickhouse_common_io PUBLIC ENABLE_DISTRIBUTED_CACHE=1)
@@ -543,6 +545,13 @@ endif ()
 if (TARGET ch_contrib::avrocpp)
     target_link_libraries(dbms PRIVATE ch_contrib::avrocpp)
 endif ()
+
+set_source_files_properties(IO/UTFConvertingReadBuffer.cpp PROPERTIES COMPILE_FLAGS "-Wno-documentation-deprecated-sync -Wno-old-style-cast")
+if (TARGET ch_contrib::icu)
+    target_include_directories(clickhouse_common_io PUBLIC
+            $<TARGET_PROPERTY:ch_contrib::icu,INTERFACE_INCLUDE_DIRECTORIES>
+    )
+endif()
 
 set_source_files_properties(Common/CaresPTRResolver.cpp PROPERTIES COMPILE_FLAGS -Wno-reserved-identifier)
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::c-ares)
