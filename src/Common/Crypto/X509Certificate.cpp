@@ -305,14 +305,20 @@ X509Certificate::Subjects X509Certificate::extractAllSubjects()
     {
         const GENERAL_NAME * name = static_cast<const GENERAL_NAME *>(OPENSSL_sk_value(reinterpret_cast<const _STACK *>(names), i));
 
-        if (name->type == GEN_DNS || name->type == GEN_URI)
+        if (name->type == GEN_DNS || name->type == GEN_URI || name->type == GEN_EMAIL)
         {
             const ASN1_IA5STRING * ia5 = name->d.ia5;
             const char * data = reinterpret_cast<const char *>(ASN1_STRING_get0_data(ia5));
             std::size_t len = ASN1_STRING_length(ia5);
             if (data && len > 0)
             {
-                std::string prefix = (name->type == GEN_DNS) ? "DNS:" : "URI:";
+                std::string prefix;
+                if (name->type == GEN_DNS)
+                    prefix = "DNS:";
+                else if (name->type == GEN_URI)
+                    prefix = "URI:";
+                else if (name->type == GEN_EMAIL)
+                    prefix = "EMAIL:";
                 subjects.insert(Subjects::Type::SAN, prefix + std::string(data, len));
             }
         }

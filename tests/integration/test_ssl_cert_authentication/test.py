@@ -416,3 +416,50 @@ def test_x509_san_wildcard_support():
     )
 
     instance.query("DROP USER brian")
+
+
+def test_x509_san_email_support():
+    instance.query("DROP USER IF EXISTS bob")
+
+    # Test native protocol with email SAN
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="alice", cert_name="client7"
+        )
+        == "alice\n"
+    )
+
+    # Test HTTPS protocol with email SAN
+    assert (
+        execute_query_https("SELECT currentUser()", user="alice", cert_name="client7")
+        == "alice\n"
+    )
+
+    # Verify system.users shows the email SAN correctly
+    assert (
+        instance.query(
+            "SELECT name, auth_type, auth_params FROM system.users WHERE name='alice'"
+        )
+        == 'alice\t[\'ssl_certificate\']\t[\'{"subject_alt_names":["EMAIL:alice@example.com"]}\']\n'
+    )
+
+    # Verify SHOW CREATE USER displays email SAN correctly
+    assert (
+        instance.query("SHOW CREATE USER alice")
+        == "CREATE USER alice IDENTIFIED WITH ssl_certificate SAN \\'EMAIL:alice@example.com\\'\n"
+    )
+
+    # Test creating a user with email SAN via SQL
+    instance.query(
+        "CREATE USER bob IDENTIFIED WITH ssl_certificate SAN 'EMAIL:alice@example.com'"
+    )
+    assert (
+        execute_query_https("SELECT currentUser()", user="bob", cert_name="client7")
+        == "bob\n"
+    )
+    assert (
+        instance.query("SHOW CREATE USER bob")
+        == "CREATE USER bob IDENTIFIED WITH ssl_certificate SAN \\'EMAIL:alice@example.com\\'\n"
+    )
+
+    instance.query("DROP USER IF EXISTS bob")
