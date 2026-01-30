@@ -12,6 +12,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsObsoleteMacros.h>
+#include <Core/QueryPlanSerializationSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3Defines.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
@@ -126,13 +127,6 @@ This is an expert-level setting, and you shouldn't change it if you're just gett
 
 Don't confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
 )", 0) \
-    DECLARE(NonZeroUInt64, max_block_size, DEFAULT_BLOCK_SIZE, R"(
-In ClickHouse, data is processed by blocks, which are sets of column parts. The internal processing cycles for a single block are efficient but there are noticeable costs when processing each block.
-
-The `max_block_size` setting indicates the recommended maximum number of rows to include in a single block when loading data from tables. Blocks the size of `max_block_size` are not always loaded from the table: if ClickHouse determines that less data needs to be retrieved, a smaller block is processed.
-
-The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
-)", 0) \
     DECLARE_WITH_ALIAS(NonZeroUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
 The maximum size of blocks (in a count of rows) to form for insertion into a table.
 
@@ -215,24 +209,6 @@ Squash blocks passed to external table to specified size in rows, if blocks are 
 )", 0) \
     DECLARE(UInt64, min_external_table_block_size_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256), R"(
 Squash blocks passed to the external table to a specified size in bytes, if blocks are not big enough.
-)", 0) \
-    DECLARE(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
-Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
-)", 0) \
-    DECLARE(UInt64, max_joined_block_size_bytes, 4_MiB, R"(
-Maximum block size in bytes for JOIN result (if join algorithm supports it). 0 means unlimited.
-)", 0) \
-    DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
-Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
-)", 0) \
-    DECLARE(UInt64, min_joined_block_size_bytes, 512 * 1024, R"(
-Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
-)", 0) \
-    DECLARE(Bool, joined_block_split_single_row, false, R"(
-Allow to chunk hash join result by rows corresponding to single row from left table.
-This may reduce memory usage in case of row with many matches in right table, but may increase CPU usage.
-Note that `max_joined_block_size_rows != 0` is mandatory for this setting to have effect.
-The `max_joined_block_size_bytes` combined with this setting is helpful to avoid excessive memory usage in case of skewed data with some large rows having many matches in right table.
 )", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
@@ -981,15 +957,6 @@ This algorithm uses a round-robin policy across replicas with the same number of
 Which replica to preferably send a query when FIRST_OR_RANDOM load balancing strategy is used.
 )", 0) \
     \
-    DECLARE(TotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, R"(
-How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.
-See the section "WITH TOTALS modifier".
-)", IMPORTANT) \
-    DECLARE(Float, totals_auto_threshold, 0.5, R"(
-The threshold for `totals_mode = 'auto'`.
-See the section "WITH TOTALS modifier".
-)", 0) \
-    \
     DECLARE(Bool, allow_suspicious_low_cardinality_types, false, R"(
 Allows or restricts using [LowCardinality](../../sql-reference/data-types/lowcardinality.md) with data types with fixed size of 8 bytes or less: numeric data types and `FixedString(8_bytes_or_less)`.
 
@@ -1036,40 +1003,11 @@ Compile some scalar functions and operators to native code.
     DECLARE(UInt64, min_count_to_compile_expression, 3, R"(
 Minimum count of executing same expression before it is get compiled.
 )", 0) \
-    DECLARE(Bool, compile_aggregate_expressions, true, R"(
-Enables or disables JIT-compilation of aggregate functions to native code. Enabling this setting can improve the performance.
-
-Possible values:
-
-- 0 — Aggregation is done without JIT compilation.
-- 1 — Aggregation is done using JIT compilation.
-
-**See Also**
-
-- [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
-)", 0) \
-    DECLARE(UInt64, min_count_to_compile_aggregate_expression, 3, R"(
-The minimum number of identical aggregate expressions to start JIT-compilation. Works only if the [compile_aggregate_expressions](#compile_aggregate_expressions) setting is enabled.
-
-Possible values:
-
-- Positive integer.
-- 0 — Identical aggregate expressions are always JIT-compiled.
-)", 0) \
     DECLARE(Bool, compile_sort_description, true, R"(
 Compile sort description to native code.
 )", 0) \
     DECLARE(UInt64, min_count_to_compile_sort_description, 3, R"(
 The number of identical sort descriptions before they are JIT-compiled
-)", 0) \
-    DECLARE(UInt64, group_by_two_level_threshold, 100000, R"(
-From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.
-)", 0) \
-    DECLARE(UInt64, group_by_two_level_threshold_bytes, 50000000, R"(
-From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. Two-level aggregation is used when at least one of the thresholds is triggered.
-)", 0) \
-    DECLARE(Bool, distributed_aggregation_memory_efficient, true, R"(
-Is the memory-saving mode of distributed aggregation enabled.
 )", 0) \
     DECLARE(UInt64, aggregation_memory_efficient_merge_threads, 0, R"(
 Number of threads to use for merge intermediate aggregation results in memory efficient mode. When bigger, then more memory is consumed. 0 means - same as 'max_threads'.
@@ -2233,9 +2171,6 @@ Possible values:
 - 1 — `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](/sql-reference/data-types/nullable), and empty cells are filled with [NULL](/sql-reference/syntax).
 )", IMPORTANT) \
     \
-    DECLARE(UInt64, join_output_by_rowlist_perkey_rows_threshold, 5, R"(
-The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join.
-)", 0) \
     DECLARE(JoinStrictness, join_default_strictness, JoinStrictness::All, R"(
 Sets default strictness for [JOIN clauses](/sql-reference/statements/select/join).
 
@@ -2514,9 +2449,6 @@ If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Force joined subqueries and table functions to have aliases for correct name qualification.
 )", 0) \
-    DECLARE(Bool, empty_result_for_aggregation_by_empty_set, false, R"(
-Return empty result when aggregating without keys on empty set.
-)", 0) \
     DECLARE(Bool, empty_result_for_aggregation_by_constant_keys_on_empty_set, true, R"(
 Return empty result when aggregating by constant keys on empty set.
 )", 0) \
@@ -2760,42 +2692,6 @@ Possible options:
 - `break`: stop executing the query and return the partial result.
 )", 0) \
     \
-    DECLARE(UInt64, max_rows_to_group_by, 0, R"(
-The maximum number of unique keys received from aggregation. This setting lets
-you limit memory consumption when aggregating.
-
-If aggregation during GROUP BY is generating more than the specified number of
-rows (unique GROUP BY keys), the behavior will be determined by the
-'group_by_overflow_mode' which by default is `throw`, but can be also switched
-to an approximate GROUP BY mode.
-)", 0) \
-    DECLARE(OverflowModeGroupBy, group_by_overflow_mode, OverflowMode::THROW, R"(
-Sets what happens when the number of unique keys for aggregation exceeds the limit:
-- `throw`: throw an exception
-- `break`: stop executing the query and return the partial result
-- `any`: continue aggregation for the keys that got into the set, but do not add new keys to the set.
-
-Using the 'any' value lets you run an approximation of GROUP BY. The quality of
-this approximation depends on the statistical nature of the data.
-)", 0) \
-    DECLARE(UInt64, max_bytes_before_external_group_by, 0, R"(
-Cloud default value: half the memory amount per replica.
-
-Enables or disables execution of `GROUP BY` clauses in external memory.
-(See [GROUP BY in external memory](/sql-reference/statements/select/group-by#group-by-in-external-memory))
-
-Possible values:
-
-- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](/sql-reference/statements/select/group-by) operation.
-- `0` — `GROUP BY` in external memory disabled.
-
-:::note
-If memory usage during GROUP BY operations is exceeding this threshold in bytes,
-activate the 'external aggregation' mode (spill data to disk).
-
-The recommended value is half of the available system memory.
-:::
-)", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_group_by, 0.5, R"(
 The ratio of available memory that is allowed for `GROUP BY`. Once reached,
 external memory is used for aggregation.
@@ -2803,52 +2699,6 @@ external memory is used for aggregation.
 For example, if set to `0.6`, `GROUP BY` will allow using 60% of the available memory
 (to server/user/merges) at the beginning of the execution, after that, it will
 start using external aggregation.
-)", 0) \
-    \
-    DECLARE(UInt64, max_rows_to_sort, 0, R"(
-The maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
-If more than the specified amount of records have to be processed for the ORDER BY operation,
-the behavior will be determined by the `sort_overflow_mode` which by default is set to `throw`.
-)", 0) \
-    DECLARE(UInt64, max_bytes_to_sort, 0, R"(
-The maximum number of bytes before sorting. If more than the specified amount of
-uncompressed bytes have to be processed for ORDER BY operation, the behavior will
-be determined by the `sort_overflow_mode` which by default is set to `throw`.
-)", 0) \
-    DECLARE(OverflowMode, sort_overflow_mode, OverflowMode::THROW, R"(
-Sets what happens if the number of rows received before sorting exceeds one of the limits.
-
-Possible values:
-- `throw`: throw an exception.
-- `break`: stop executing the query and return the partial result.
-)", 0) \
-    DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
-Prefer maximum block bytes for external sort, reduce the memory usage during merging.
-)", 0) \
-    DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
-Cloud default value: half the memory amount per replica.
-
-Enables or disables execution of `ORDER BY` clauses in external memory. See [ORDER BY Implementation Details](../../sql-reference/statements/select/order-by.md#implementation-details)
-If memory usage during ORDER BY operation exceeds this threshold in bytes, the 'external sorting' mode (spill data to disk) is activated.
-
-Possible values:
-
-- Maximum volume of RAM (in bytes) that can be used by the single [ORDER BY](../../sql-reference/statements/select/order-by.md) operation.
-  The recommended value is half of available system memory
-- `0` — `ORDER BY` in external memory disabled.
-)", 0) \
-    DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, R"(
-The ratio of available memory that is allowed for `ORDER BY`. Once reached, external sort is used.
-
-For example, if set to `0.6`, `ORDER BY` will allow using `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external sort.
-
-Note, that `max_bytes_before_external_sort` is still respected, spilling to disk will be done only if the sorting block is bigger then `max_bytes_before_external_sort`.
-)", 0) \
-    DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
-In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
-)", 0) \
-    DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., R"(
-If memory usage after remerge does not reduced by this ratio, remerge will be disabled.
 )", 0) \
     \
     DECLARE(UInt64, max_result_rows, 0, R"(
@@ -3132,221 +2982,15 @@ When enabled, ClickHouse will provide exact value for rows_before_limit_at_least
     DECLARE(Bool, rows_before_aggregation, false, R"(
 When enabled, ClickHouse will provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation
 )", 0) \
-    DECLARE(UInt64, max_rows_in_join, 0, R"(
-Limits the number of rows in the hash table that is used when joining tables.
-
-This settings applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
-operations and the [Join](/engines/table-engines/special/join) table engine.
-
-If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
-
-ClickHouse can proceed with different actions when the limit is reached. Use the
-[`join_overflow_mode`](/operations/settings/settings#join_overflow_mode) setting to choose the action.
-
-Possible values:
-
-- Positive integer.
-- `0` — Unlimited number of rows.
-)", 0) \
-    DECLARE(UInt64, max_bytes_in_join, 0, R"(
-The maximum size in number of bytes of the hash table used when joining tables.
-
-This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
-operations and the [Join table engine](/engines/table-engines/special/join).
-
-If the query contains joins, ClickHouse checks this setting for every intermediate result.
-
-ClickHouse can proceed with different actions when the limit is reached. Use
-the [join_overflow_mode](/operations/settings/settings#join_overflow_mode) settings to choose the action.
-
-Possible values:
-
-- Positive integer.
-- 0 — Memory control is disabled.
-)", 0) \
-    DECLARE(OverflowMode, join_overflow_mode, OverflowMode::THROW, R"(
-Defines what action ClickHouse performs when any of the following join limits is reached:
-
-- [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join)
-- [max_rows_in_join](/operations/settings/settings#max_rows_in_join)
-
-Possible values:
-
-- `THROW` — ClickHouse throws an exception and breaks operation.
-- `BREAK` — ClickHouse breaks operation and does not throw an exception.
-
-Default value: `THROW`.
-
-**See Also**
-
-- [JOIN clause](/sql-reference/statements/select/join)
-- [Join table engine](/engines/table-engines/special/join)
-)", 0) \
-    DECLARE(Bool, join_any_take_last_row, false, R"(
-Changes the behaviour of join operations with `ANY` strictness.
-
-:::note
-This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
-:::
-
-Possible values:
-
-- 0 — If the right table has more than one matching row, only the first one found is joined.
-- 1 — If the right table has more than one matching row, only the last one found is joined.
-
-See also:
-
-- [JOIN clause](/sql-reference/statements/select/join)
-- [Join table engine](../../engines/table-engines/special/join.md)
-- [join_default_strictness](#join_default_strictness)
-)", IMPORTANT) \
-    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash", R"(
-Specifies which [JOIN](../../sql-reference/statements/select/join.md) algorithm is used.
-
-Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
-
-Possible values:
-
-- grace_hash
-
- [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
-
- The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
-
- Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
-
-- hash
-
- [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
-
- When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
-
-- parallel_hash
-
- A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
-
- When using the `parallel_hash` algorithm, the right part of `JOIN` is uploaded into RAM.
-
-- partial_merge
-
- A variation of the [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join), where only the right table is fully sorted.
-
- The `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
-
- When using the `partial_merge` algorithm, ClickHouse sorts the data and dumps it to the disk. The `partial_merge` algorithm in ClickHouse differs slightly from the classic realization. First, ClickHouse sorts the right table by joining keys in blocks and creates a min-max index for sorted blocks. Then it sorts parts of the left table by the `join key` and joins them over the right table. The min-max index is also used to skip unneeded right table blocks.
-
-- direct
-
- The `direct` (also known as nested loop) algorithm performs a lookup in the right table using rows from the left table as keys.
- It's supported by special storages such as [Dictionary](/engines/table-engines/special/dictionary), [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md), and [MergeTree](/engines/table-engines/mergetree-family/mergetree) tables.
-
- For MergeTree tables, the algorithm pushes join key filters directly to the storage layer. This can be more efficient when the key can use the table's primary key index for lookups, otherwise it performs full scans of the right table for each left table block.
-
- Supports `INNER` and `LEFT` joins and only single-column equality join keys without other conditions.
-
-- auto
-
- When set to `auto`, `hash` join is tried first, and the algorithm is switched on the fly to another algorithm if the memory limit is violated.
-
-- full_sorting_merge
-
- [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting of joined tables before joining.
-
-- prefer_partial_merge
-
- ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
-
-- default (deprecated)
-
- Legacy value, please don't use anymore.
- Same as `direct,hash`, i.e. try to use direct join and hash join (in this order).
-
-)", 0) \
-    DECLARE(UInt64, cross_to_inner_join_rewrite, 1, R"(
-Use inner join instead of comma/cross join if there are joining expressions in the WHERE section. Values: 0 - no rewrite, 1 - apply if possible for comma/cross, 2 - force rewrite all comma joins, cross - if possible
-)", 0) \
-    DECLARE(UInt64, cross_join_min_rows_to_compress, 10000000, R"(
-Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
-)", 0) \
-    DECLARE(UInt64, cross_join_min_bytes_to_compress, 1_GiB, R"(
-Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
-)", 0) \
-    DECLARE(UInt64, default_max_bytes_in_join, 1000000000, R"(
-Maximum size of right-side table if limit is required but `max_bytes_in_join` is not set.
-)", 0) \
-    DECLARE(UInt64, partial_merge_join_left_table_buffer_bytes, 0, R"(
-If not 0 group left table blocks in bigger ones for left-side table in partial merge join. It uses up to 2x of specified memory per joining thread.
-)", 0) \
-    DECLARE(UInt64, partial_merge_join_rows_in_right_blocks, 65536, R"(
-Limits sizes of right-hand join data blocks in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
-
-ClickHouse server:
-
-1.  Splits right-hand join data into blocks with up to the specified number of rows.
-2.  Indexes each block with its minimum and maximum values.
-3.  Unloads prepared blocks to disk if it is possible.
-
-Possible values:
-
-- Any positive integer. Recommended range of values: \[1000, 100000\].
-)", 0) \
-    DECLARE(UInt64, join_on_disk_max_files_to_merge, 64, R"(
-Limits the number of files allowed for parallel sorting in MergeJoin operations when they are executed on disk.
-
-The bigger the value of the setting, the more RAM is used and the less disk I/O is needed.
-
-Possible values:
-
-- Any positive integer, starting from 2.
-)", 0) \
-    DECLARE(UInt64, max_rows_in_set_to_optimize_join, 0, R"(
-Maximal size of the set to filter joined tables by each other's row sets before joining.
-
-Possible values:
-
-- 0 — Disable.
-- Any positive integer.
-)", 0) \
-    \
     DECLARE(Bool, compatibility_ignore_collation_in_create_table, true, R"(
 Compatibility ignore collation in create table
 )", 0) \
     \
-    DECLARE(String, temporary_files_codec, "LZ4", R"(
-Sets compression codec for temporary files used in sorting and joining operations on disk.
-
-Possible values:
-
-- LZ4 — [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) compression is applied.
-- NONE — No compression is applied.
-)", 0) \
-    \
-    DECLARE(NonZeroUInt64, temporary_files_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, "Size of the buffer for temporary files writers. Larger buffer size means less system calls, but more memory consumption.", 0) \
-    DECLARE(UInt64, max_rows_to_transfer, 0, R"(
-Maximum size (in rows) that can be passed to a remote server or saved in a
-temporary table when the GLOBAL IN/JOIN section is executed.
-)", 0) \
     DECLARE(UInt64, max_bytes_to_transfer, 0, R"(
 The maximum number of bytes (uncompressed data) that can be passed to a remote
 server or saved in a temporary table when the GLOBAL IN/JOIN section is executed.
 )", 0) \
     DECLARE(OverflowMode, transfer_overflow_mode, OverflowMode::THROW, R"(
-Sets what happens when the amount of data exceeds one of the limits.
-
-Possible values:
-- `throw`: throw an exception (default).
-- `break`: stop executing the query and return the partial result, as if the
-source data ran out.
-)", 0) \
-    \
-    DECLARE(UInt64, max_rows_in_distinct, 0, R"(
-The maximum number of different rows when using DISTINCT.
-)", 0) \
-    DECLARE(UInt64, max_bytes_in_distinct, 0, R"(
-The maximum number of bytes of the state (in uncompressed bytes) in memory, which
-is used by a hash table when using DISTINCT.
-)", 0) \
-    DECLARE(OverflowMode, distinct_overflow_mode, OverflowMode::THROW, R"(
 Sets what happens when the amount of data exceeds one of the limits.
 
 Possible values:
@@ -3777,9 +3421,6 @@ Possible values:
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0) \
-    DECLARE(UInt64, aggregation_in_order_max_block_bytes, 50000000, R"(
-Maximal size of block in bytes accumulated during aggregation in order of primary key. Lower block size allows to parallelize more final merge stage of aggregation.
-)", 0) \
     DECLARE(UInt64, read_in_order_two_level_merge_threshold, 100, R"(
 Minimal number of parts to read to run preliminary merge step during multithread reading in order of primary key.
 )", 0) \
@@ -4112,10 +3753,6 @@ See also:
 - [Table engine Distributed](../../engines/table-engines/special/distributed.md)
 - [distributed_replica_error_cap](#distributed_replica_error_cap)
 - [distributed_replica_error_half_life](#distributed_replica_error_half_life)
-)", 0) \
-    \
-    DECLARE(UInt64, min_free_disk_space_for_temporary_data, 0, R"(
-The minimum disk space to keep while writing temporary data used in external sorting and aggregation.
 )", 0) \
     \
     DECLARE(DefaultTableEngine, default_temporary_table_engine, DefaultTableEngine::Memory, R"(
@@ -5402,32 +5039,12 @@ Result:
 ```
 )", 0) \
     \
-    DECLARE(Bool, collect_hash_table_stats_during_aggregation, true, R"(
-Enable collecting hash table statistics to optimize memory allocation
-)", 0) \
-    DECLARE(UInt64, max_size_to_preallocate_for_aggregation, 1'000'000'000'000, R"(
-For how many elements it is allowed to preallocate space in all hash tables in total before aggregation
-)", 0) \
-    \
-    DECLARE(Bool, collect_hash_table_stats_during_joins, true, R"(
-Enable collecting hash table statistics to optimize memory allocation
-)", 0) \
-    DECLARE(Bool, use_hash_table_stats_for_join_reordering, true, R"(
-Enable using collected hash table statistics for cardinality estimation during join reordering
-)", 0) \
-    DECLARE(UInt64, max_size_to_preallocate_for_joins, 1'000'000'000'000, R"(
-For how many elements it is allowed to preallocate space in all hash tables in total before join
-)", 0) \
-    \
     DECLARE(Bool, kafka_disable_num_consumers_limit, false, R"(
 Disable limit on kafka_num_consumers that depends on the number of available CPU cores.
 )", 0) \
     DECLARE(Bool, allow_experimental_kafka_offsets_storage_in_keeper, false, R"(
 Allow experimental feature to store Kafka related offsets in ClickHouse Keeper. When enabled a ClickHouse Keeper path and replica name can be specified to the Kafka table engine. As a result instead of the regular Kafka engine, a new type of storage engine will be used that stores the committed offsets primarily in ClickHouse Keeper
 )", EXPERIMENTAL) \
-    DECLARE(Bool, enable_software_prefetch_in_aggregation, true, R"(
-Enable use of software prefetch in aggregation
-)", 0) \
     DECLARE(Bool, allow_aggregate_partitions_independently, false, R"(
 Enable independent aggregation of partitions on separate threads when partition key suits group by key. Beneficial when number of partitions close to number of cores and partitions have roughly the same size
 )", 0) \
@@ -5436,9 +5053,6 @@ Force the use of optimization when it is applicable, but heuristics decided not 
 )", 0) \
     DECLARE(UInt64, max_number_of_partitions_for_independent_aggregation, 128, R"(
 Maximal number of partitions in table to apply optimization
-)", 0) \
-    DECLARE(Float, min_hit_rate_to_use_consecutive_keys_optimization, 0.5, R"(
-Minimal hit rate of a cache which is used for consecutive keys optimization in aggregation to keep it enabled
 )", 0) \
     \
     DECLARE(Bool, engine_file_empty_if_not_exists, false, R"(
@@ -5600,9 +5214,6 @@ Replaces injective functions by it's arguments in GROUP BY section
 )", 0) \
     DECLARE(Bool, optimize_group_by_function_keys, true, R"(
 Eliminates functions of other keys in GROUP BY section
-)", 0) \
-    DECLARE(Bool, optimize_group_by_constant_keys, true, R"(
-Optimize GROUP BY when all keys in block are constant
 )", 0) \
     DECLARE(Bool, legacy_column_name_of_tuple_literal, false, R"(
 List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.
@@ -5828,9 +5439,6 @@ Enable multithreading after evaluating window functions to allow parallel stream
 Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
-)", 0) \
-    DECLARE(Bool, enable_lazy_columns_replication, true, R"(
-Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, query_plan_use_new_logical_join_step, true, R"(
 Use logical join step in query plan.
@@ -6704,9 +6312,6 @@ Allow to use the function `getClientHTTPHeader` which lets to obtain a value of 
     DECLARE(Bool, cast_string_to_dynamic_use_inference, false, R"(
 Use types inference during String to Dynamic conversion
 )", 0) \
-    DECLARE(Bool, allow_dynamic_type_in_join_keys, false, R"(
-Allows using Dynamic type in JOIN keys. Added for compatibility. It's not recommended to use Dynamic type in JOIN keys because comparison with other types may lead to unexpected results.
-)", 0) \
     DECLARE(Bool, cast_string_to_variant_use_inference, true, R"(
 Use types inference during String to Variant conversion.
 )", 0) \
@@ -7133,12 +6738,6 @@ Populate constant comparison in AND chains to enhance filtering ability. Support
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
 )", 0) \
-    DECLARE(Bool, use_join_disjunctions_push_down, true, R"(
-Enable pushing OR-connected parts of JOIN conditions down to the corresponding input sides ("partial pushdown").
-This allows storage engines to filter earlier, which can reduce data read.
-The optimization is semantics-preserving and is applied only when each top-level OR branch contributes at least one deterministic
-predicate for the target side.
-)", 0) \
     DECLARE(Bool, shared_merge_tree_sync_parts_on_partition_operations, true, R"(
 Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
 )", 0) \
@@ -7187,10 +6786,6 @@ As each series represents a node in Keeper, it is recommended to have no more th
     DECLARE(Bool, use_hive_partitioning, true, R"(
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](/sql-reference/table-functions/file#hive-style-partitioning)/[S3](/sql-reference/table-functions/s3#hive-style-partitioning)/[URL](/sql-reference/table-functions/url#hive-style-partitioning)/[HDFS](/sql-reference/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/sql-reference/table-functions/azureBlobStorage#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 )", 0) \
-    DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
-When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
-The former is used when we know that the right table size is below the threshold.
-)", 0) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
 
@@ -7220,11 +6815,6 @@ Either to throw error or not if we don't have rights to get table's metadata in 
 )", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
-    DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, R"(
-Allow memory-efficient aggregation (see `distributed_aggregation_memory_efficient`) to produce buckets out of order.
-It may improve performance when aggregation bucket sizes are skewed by letting a replica to send buckets with higher id-s to the initiator while it is still processing some heavy buckets with lower id-s.
-The downside is potentially higher memory usage.
-)", 0) \
     DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0) \
     DECLARE(UInt64, min_outstreams_per_resize_after_split, 24, R"(
 Specifies the minimum number of output streams of a `Resize` or `StrictResize` processor after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur.
@@ -7329,9 +6919,6 @@ Possible values:
 - 0 — always,
 - negative integer - never.
 )", 0) \
-    DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, R"(
-Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.
-)", 0) \
     DECLARE(UInt64, s3_path_filter_limit, 1000, R"(
 Maximum number of `_path` values that can be extracted from query filters to use for file iteration
 instead of glob listing. 0 means disabled.
@@ -7375,21 +6962,6 @@ Wait for committed changes to become actually visible in the latest snapshot
 )", EXPERIMENTAL) \
     DECLARE(Bool, implicit_transaction, false, R"(
 If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
-)", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
-Initial number of grace hash join buckets
-)", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
-Limit on the number of grace hash join buckets
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
-The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, join_to_sort_maximum_table_rows, 10000, R"(
-The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_join_right_table_sorting, false, R"(
-If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
 )", EXPERIMENTAL) \
     \
     DECLARE_WITH_ALIAS(Bool, allow_statistics_optimize, true, R"(
@@ -7525,24 +7097,6 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
     DECLARE(Bool, enable_join_runtime_filters, false, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, R"(
-Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512_KiB, R"(
-Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, R"(
-Number of hash functions in a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
-)", EXPERIMENTAL) \
-    DECLARE(Double, join_runtime_filter_pass_ratio_threshold_for_disabling, 0.7, R"(
-If ratio of passed rows to checked rows is greater than this threshold the runtime filter is considered as poorly performing and is disabled for the next `join_runtime_filter_blocks_to_skip_before_reenabling` blocks to reduce the overhead.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, join_runtime_filter_blocks_to_skip_before_reenabling, 30, R"(
-Number of blocks that are skipped before trying to dynamically re-enable a runtime filter that previously was disabled due to poor filtering ratio.
-)", EXPERIMENTAL) \
-    DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, R"(
-If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.
-)", EXPERIMENTAL) \
     DECLARE(Bool, rewrite_in_to_join, false, R"(
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
 )", EXPERIMENTAL) \
@@ -7587,6 +7141,453 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_r
     /* ####################################################### */ \
 
 // End of COMMON_SETTINGS
+
+// This subset of settings affects specific query plan steps and is serialized for each step separately.
+// Since the SETTING clause can be defined individually for each subquery, it may result in different values across different parts of the query plan.
+// Therefore, global settings for the entire query are defined in the section above, while settings that influence the behavior of specific query plan steps are defined here.
+#define QUERY_PLAN_SETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
+    DECLARE(NonZeroUInt64, max_block_size, DEFAULT_BLOCK_SIZE, R"(
+In ClickHouse, data is processed by blocks, which are sets of column parts. The internal processing cycles for a single block are efficient but there are noticeable costs when processing each block.
+
+The `max_block_size` setting indicates the recommended maximum number of rows to include in a single block when loading data from tables. Blocks the size of `max_block_size` are not always loaded from the table: if ClickHouse determines that less data needs to be retrieved, a smaller block is processed.
+
+The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
+)", 0) \
+    DECLARE(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
+Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
+)", 0) \
+    DECLARE(UInt64, max_joined_block_size_bytes, 4_MiB, R"(
+Maximum block size in bytes for JOIN result (if join algorithm supports it). 0 means unlimited.
+)", 0) \
+    DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
+Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
+)", 0) \
+    DECLARE(UInt64, min_joined_block_size_bytes, 512 * 1024, R"(
+Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
+)", 0) \
+    DECLARE(Bool, joined_block_split_single_row, false, R"(
+Allow to chunk hash join result by rows corresponding to single row from left table.
+This may reduce memory usage in case of row with many matches in right table, but may increase CPU usage.
+Note that `max_joined_block_size_rows != 0` is mandatory for this setting to have effect.
+The `max_joined_block_size_bytes` combined with this setting is helpful to avoid excessive memory usage in case of skewed data with some large rows having many matches in right table.
+)", 0) \
+    DECLARE(TotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, R"(
+How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.
+See the section "WITH TOTALS modifier".
+)", IMPORTANT) \
+    DECLARE(Float, totals_auto_threshold, 0.5, R"(
+The threshold for `totals_mode = 'auto'`.
+See the section "WITH TOTALS modifier".
+)", 0) \
+    DECLARE(Bool, compile_aggregate_expressions, true, R"(
+Enables or disables JIT-compilation of aggregate functions to native code. Enabling this setting can improve the performance.
+
+Possible values:
+
+- 0 — Aggregation is done without JIT compilation.
+- 1 — Aggregation is done using JIT compilation.
+
+**See Also**
+
+- [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
+)", 0) \
+    DECLARE(UInt64, min_count_to_compile_aggregate_expression, 3, R"(
+The minimum number of identical aggregate expressions to start JIT-compilation. Works only if the [compile_aggregate_expressions](#compile_aggregate_expressions) setting is enabled.
+
+Possible values:
+
+- Positive integer.
+- 0 — Identical aggregate expressions are always JIT-compiled.
+)", 0) \
+    DECLARE(UInt64, group_by_two_level_threshold, 100000, R"(
+From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.
+)", 0) \
+    DECLARE(UInt64, group_by_two_level_threshold_bytes, 50000000, R"(
+From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. Two-level aggregation is used when at least one of the thresholds is triggered.
+)", 0) \
+    DECLARE(Bool, distributed_aggregation_memory_efficient, true, R"(
+Is the memory-saving mode of distributed aggregation enabled.
+)", 0) \
+    DECLARE(UInt64, join_output_by_rowlist_perkey_rows_threshold, 5, R"(
+The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join.
+)", 0) \
+    DECLARE(Bool, empty_result_for_aggregation_by_empty_set, false, R"(
+Return empty result when aggregating without keys on empty set.
+)", 0) \
+    DECLARE(UInt64, max_rows_to_group_by, 0, R"(
+The maximum number of unique keys received from aggregation. This setting lets
+you limit memory consumption when aggregating.
+
+If aggregation during GROUP BY is generating more than the specified number of
+rows (unique GROUP BY keys), the behavior will be determined by the
+'group_by_overflow_mode' which by default is `throw`, but can be also switched
+to an approximate GROUP BY mode.
+)", 0) \
+    DECLARE(OverflowModeGroupBy, group_by_overflow_mode, OverflowMode::THROW, R"(
+Sets what happens when the number of unique keys for aggregation exceeds the limit:
+- `throw`: throw an exception
+- `break`: stop executing the query and return the partial result
+- `any`: continue aggregation for the keys that got into the set, but do not add new keys to the set.
+
+Using the 'any' value lets you run an approximation of GROUP BY. The quality of
+this approximation depends on the statistical nature of the data.
+)", 0) \
+    DECLARE(UInt64, max_bytes_before_external_group_by, 0, R"(
+Cloud default value: half the memory amount per replica.
+
+Enables or disables execution of `GROUP BY` clauses in external memory.
+(See [GROUP BY in external memory](/sql-reference/statements/select/group-by#group-by-in-external-memory))
+
+Possible values:
+
+- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](/sql-reference/statements/select/group-by) operation.
+- `0` — `GROUP BY` in external memory disabled.
+
+:::note
+If memory usage during GROUP BY operations is exceeding this threshold in bytes,
+activate the 'external aggregation' mode (spill data to disk).
+
+The recommended value is half of the available system memory.
+:::
+)", 0) \
+    DECLARE(UInt64, max_rows_to_sort, 0, R"(
+The maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
+If more than the specified amount of records have to be processed for the ORDER BY operation,
+the behavior will be determined by the `sort_overflow_mode` which by default is set to `throw`.
+)", 0) \
+    DECLARE(UInt64, max_bytes_to_sort, 0, R"(
+The maximum number of bytes before sorting. If more than the specified amount of
+uncompressed bytes have to be processed for ORDER BY operation, the behavior will
+be determined by the `sort_overflow_mode` which by default is set to `throw`.
+)", 0) \
+    DECLARE(OverflowMode, sort_overflow_mode, OverflowMode::THROW, R"(
+Sets what happens if the number of rows received before sorting exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception.
+- `break`: stop executing the query and return the partial result.
+)", 0) \
+    DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
+Prefer maximum block bytes for external sort, reduce the memory usage during merging.
+)", 0) \
+    DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
+Cloud default value: half the memory amount per replica.
+
+Enables or disables execution of `ORDER BY` clauses in external memory. See [ORDER BY Implementation Details](../../sql-reference/statements/select/order-by.md#implementation-details)
+If memory usage during ORDER BY operation exceeds this threshold in bytes, the 'external sorting' mode (spill data to disk) is activated.
+
+Possible values:
+
+- Maximum volume of RAM (in bytes) that can be used by the single [ORDER BY](../../sql-reference/statements/select/order-by.md) operation.
+  The recommended value is half of available system memory
+- `0` — `ORDER BY` in external memory disabled.
+)", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, R"(
+The ratio of available memory that is allowed for `ORDER BY`. Once reached, external sort is used.
+
+For example, if set to `0.6`, `ORDER BY` will allow using `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external sort.
+
+Note, that `max_bytes_before_external_sort` is still respected, spilling to disk will be done only if the sorting block is bigger then `max_bytes_before_external_sort`.
+)", 0) \
+    DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
+In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
+)", 0) \
+    DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., R"(
+If memory usage after remerge does not reduced by this ratio, remerge will be disabled.
+)", 0) \
+    DECLARE(UInt64, max_rows_in_join, 0, R"(
+Limits the number of rows in the hash table that is used when joining tables.
+
+This settings applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
+operations and the [Join](/engines/table-engines/special/join) table engine.
+
+If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
+
+ClickHouse can proceed with different actions when the limit is reached. Use the
+[`join_overflow_mode`](/operations/settings/settings#join_overflow_mode) setting to choose the action.
+
+Possible values:
+
+- Positive integer.
+- `0` — Unlimited number of rows.
+)", 0) \
+    DECLARE(UInt64, max_bytes_in_join, 0, R"(
+The maximum size in number of bytes of the hash table used when joining tables.
+
+This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
+operations and the [Join table engine](/engines/table-engines/special/join).
+
+If the query contains joins, ClickHouse checks this setting for every intermediate result.
+
+ClickHouse can proceed with different actions when the limit is reached. Use
+the [join_overflow_mode](/operations/settings/settings#join_overflow_mode) settings to choose the action.
+
+Possible values:
+
+- Positive integer.
+- 0 — Memory control is disabled.
+)", 0) \
+    DECLARE(OverflowMode, join_overflow_mode, OverflowMode::THROW, R"(
+Defines what action ClickHouse performs when any of the following join limits is reached:
+
+- [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join)
+- [max_rows_in_join](/operations/settings/settings#max_rows_in_join)
+
+Possible values:
+
+- `THROW` — ClickHouse throws an exception and breaks operation.
+- `BREAK` — ClickHouse breaks operation and does not throw an exception.
+
+Default value: `THROW`.
+
+**See Also**
+
+- [JOIN clause](/sql-reference/statements/select/join)
+- [Join table engine](/engines/table-engines/special/join)
+)", 0) \
+    DECLARE(Bool, join_any_take_last_row, false, R"(
+Changes the behaviour of join operations with `ANY` strictness.
+
+:::note
+This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
+:::
+
+Possible values:
+
+- 0 — If the right table has more than one matching row, only the first one found is joined.
+- 1 — If the right table has more than one matching row, only the last one found is joined.
+
+See also:
+
+- [JOIN clause](/sql-reference/statements/select/join)
+- [Join table engine](../../engines/table-engines/special/join.md)
+- [join_default_strictness](#join_default_strictness)
+)", IMPORTANT) \
+    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash", R"(
+Specifies which [JOIN](../../sql-reference/statements/select/join.md) algorithm is used.
+
+Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
+
+Possible values:
+
+- grace_hash
+
+ [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
+
+ The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
+
+ Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
+
+- hash
+
+ [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
+
+ When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+
+- parallel_hash
+
+ A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
+
+ When using the `parallel_hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+
+- partial_merge
+
+ A variation of the [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join), where only the right table is fully sorted.
+
+ The `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
+
+ When using the `partial_merge` algorithm, ClickHouse sorts the data and dumps it to the disk. The `partial_merge` algorithm in ClickHouse differs slightly from the classic realization. First, ClickHouse sorts the right table by joining keys in blocks and creates a min-max index for sorted blocks. Then it sorts parts of the left table by the `join key` and joins them over the right table. The min-max index is also used to skip unneeded right table blocks.
+
+- direct
+
+ The `direct` (also known as nested loop) algorithm performs a lookup in the right table using rows from the left table as keys.
+ It's supported by special storages such as [Dictionary](/engines/table-engines/special/dictionary), [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md), and [MergeTree](/engines/table-engines/mergetree-family/mergetree) tables.
+
+ For MergeTree tables, the algorithm pushes join key filters directly to the storage layer. This can be more efficient when the key can use the table's primary key index for lookups, otherwise it performs full scans of the right table for each left table block.
+
+ Supports `INNER` and `LEFT` joins and only single-column equality join keys without other conditions.
+
+- auto
+
+ When set to `auto`, `hash` join is tried first, and the algorithm is switched on the fly to another algorithm if the memory limit is violated.
+
+- full_sorting_merge
+
+ [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting of joined tables before joining.
+
+- prefer_partial_merge
+
+ ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
+
+- default (deprecated)
+
+ Legacy value, please don't use anymore.
+ Same as `direct,hash`, i.e. try to use direct join and hash join (in this order).
+
+)", 0) \
+    DECLARE(UInt64, cross_to_inner_join_rewrite, 1, R"(
+Use inner join instead of comma/cross join if there are joining expressions in the WHERE section. Values: 0 - no rewrite, 1 - apply if possible for comma/cross, 2 - force rewrite all comma joins, cross - if possible
+)", 0) \
+    DECLARE(UInt64, cross_join_min_rows_to_compress, 10000000, R"(
+Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
+)", 0) \
+    DECLARE(UInt64, cross_join_min_bytes_to_compress, 1_GiB, R"(
+Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
+)", 0) \
+    DECLARE(UInt64, default_max_bytes_in_join, 1000000000, R"(
+Maximum size of right-side table if limit is required but `max_bytes_in_join` is not set.
+)", 0) \
+    DECLARE(UInt64, partial_merge_join_left_table_buffer_bytes, 0, R"(
+If not 0 group left table blocks in bigger ones for left-side table in partial merge join. It uses up to 2x of specified memory per joining thread.
+)", 0) \
+    DECLARE(UInt64, partial_merge_join_rows_in_right_blocks, 65536, R"(
+Limits sizes of right-hand join data blocks in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
+
+ClickHouse server:
+
+1.  Splits right-hand join data into blocks with up to the specified number of rows.
+2.  Indexes each block with its minimum and maximum values.
+3.  Unloads prepared blocks to disk if it is possible.
+
+Possible values:
+
+- Any positive integer. Recommended range of values: \[1000, 100000\].
+)", 0) \
+    DECLARE(UInt64, join_on_disk_max_files_to_merge, 64, R"(
+Limits the number of files allowed for parallel sorting in MergeJoin operations when they are executed on disk.
+
+The bigger the value of the setting, the more RAM is used and the less disk I/O is needed.
+
+Possible values:
+
+- Any positive integer, starting from 2.
+)", 0) \
+    DECLARE(UInt64, max_rows_in_set_to_optimize_join, 0, R"(
+Maximal size of the set to filter joined tables by each other's row sets before joining.
+
+Possible values:
+
+- 0 — Disable.
+- Any positive integer.
+)", 0) \
+    DECLARE(String, temporary_files_codec, "LZ4", R"(
+Sets compression codec for temporary files used in sorting and joining operations on disk.
+
+Possible values:
+
+- LZ4 — [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) compression is applied.
+- NONE — No compression is applied.
+)", 0) \
+    DECLARE(NonZeroUInt64, temporary_files_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, "Size of the buffer for temporary files writers. Larger buffer size means less system calls, but more memory consumption.", 0) \
+    DECLARE(UInt64, max_rows_to_transfer, 0, R"(
+Maximum size (in rows) that can be passed to a remote server or saved in a
+temporary table when the GLOBAL IN/JOIN section is executed.
+)", 0) \
+    DECLARE(UInt64, max_rows_in_distinct, 0, R"(
+The maximum number of different rows when using DISTINCT.
+)", 0) \
+    DECLARE(UInt64, max_bytes_in_distinct, 0, R"(
+The maximum number of bytes of the state (in uncompressed bytes) in memory, which
+is used by a hash table when using DISTINCT.
+)", 0) \
+    DECLARE(OverflowMode, distinct_overflow_mode, OverflowMode::THROW, R"(
+Sets what happens when the amount of data exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+source data ran out.
+)", 0) \
+    DECLARE(UInt64, aggregation_in_order_max_block_bytes, 50000000, R"(
+Maximal size of block in bytes accumulated during aggregation in order of primary key. Lower block size allows to parallelize more final merge stage of aggregation.
+)", 0) \
+    DECLARE(UInt64, min_free_disk_space_for_temporary_data, 0, R"(
+The minimum disk space to keep while writing temporary data used in external sorting and aggregation.
+)", 0) \
+    DECLARE(Bool, collect_hash_table_stats_during_aggregation, true, R"(
+Enable collecting hash table statistics to optimize memory allocation
+)", 0) \
+    DECLARE(UInt64, max_size_to_preallocate_for_aggregation, 1'000'000'000'000, R"(
+For how many elements it is allowed to preallocate space in all hash tables in total before aggregation
+)", 0) \
+    DECLARE(Bool, collect_hash_table_stats_during_joins, true, R"(
+Enable collecting hash table statistics to optimize memory allocation
+)", 0) \
+    DECLARE(UInt64, max_size_to_preallocate_for_joins, 1'000'000'000'000, R"(
+For how many elements it is allowed to preallocate space in all hash tables in total before join
+)", 0) \
+    DECLARE(Bool, enable_software_prefetch_in_aggregation, true, R"(
+Enable use of software prefetch in aggregation
+)", 0) \
+    DECLARE(Float, min_hit_rate_to_use_consecutive_keys_optimization, 0.5, R"(
+Minimal hit rate of a cache which is used for consecutive keys optimization in aggregation to keep it enabled
+)", 0) \
+    DECLARE(Bool, optimize_group_by_constant_keys, true, R"(
+Optimize GROUP BY when all keys in block are constant
+)", 0) \
+    DECLARE(Bool, enable_lazy_columns_replication, true, R"(
+Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
+)", 0) \
+    DECLARE(Bool, allow_dynamic_type_in_join_keys, false, R"(
+Allows using Dynamic type in JOIN keys. Added for compatibility. It's not recommended to use Dynamic type in JOIN keys because comparison with other types may lead to unexpected results.
+)", 0) \
+    DECLARE(Bool, use_join_disjunctions_push_down, true, R"(
+Enable pushing OR-connected parts of JOIN conditions down to the corresponding input sides ("partial pushdown").
+This allows storage engines to filter earlier, which can reduce data read.
+The optimization is semantics-preserving and is applied only when each top-level OR branch contributes at least one deterministic
+predicate for the target side.
+)", 0) \
+    DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
+When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
+The former is used when we know that the right table size is below the threshold.
+)", 0) \
+    DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, R"(
+Allow memory-efficient aggregation (see `distributed_aggregation_memory_efficient`) to produce buckets out of order.
+It may improve performance when aggregation bucket sizes are skewed by letting a replica to send buckets with higher id-s to the initiator while it is still processing some heavy buckets with lower id-s.
+The downside is potentially higher memory usage.
+)", 0) \
+    DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, R"(
+Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.
+)", 0) \
+    DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
+Initial number of grace hash join buckets
+)", EXPERIMENTAL) \
+    DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
+Limit on the number of grace hash join buckets
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
+The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_to_sort_maximum_table_rows, 10000, R"(
+The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_join_right_table_sorting, false, R"(
+If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, R"(
+Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512_KiB, R"(
+Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, R"(
+Number of hash functions in a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
+)", EXPERIMENTAL) \
+    DECLARE(Double, join_runtime_filter_pass_ratio_threshold_for_disabling, 0.7, R"(
+If ratio of passed rows to checked rows is greater than this threshold the runtime filter is considered as poorly performing and is disabled for the next `join_runtime_filter_blocks_to_skip_before_reenabling` blocks to reduce the overhead.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_filter_blocks_to_skip_before_reenabling, 30, R"(
+Number of blocks that are skipped before trying to dynamically re-enable a runtime filter that previously was disabled due to poor filtering ratio.
+)", EXPERIMENTAL) \
+    DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, R"(
+If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.
+)", 0) \
+    DECLARE(Bool, use_hash_table_stats_for_join_reordering, true, R"(
+Enable using collected hash table statistics for cardinality estimation during join reordering
+)", 0) \
+
+// End of QUERY_PLAN_SETTINGS
+
 // Please add settings related to formats in Core/FormatFactorySettings.h, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
@@ -7702,6 +7703,7 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_r
 
 #define LIST_OF_SETTINGS(M, ALIAS)     \
     COMMON_SETTINGS(M, ALIAS)          \
+    QUERY_PLAN_SETTINGS(M, ALIAS)     \
     OBSOLETE_SETTINGS(M, ALIAS)        \
     FORMAT_FACTORY_SETTINGS(M, ALIAS)  \
     OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
@@ -8205,5 +8207,52 @@ void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfigura
 {
     SettingsImpl::checkNoSettingNamesAtTopLevel(config, config_path);
 }
+
+#define PLAN_SERIALIZATION_SETTINGS(DECLARE, ALIAS) \
+    QUERY_PLAN_SETTINGS(DECLARE, ALIAS) \
+    /* Additional settings that are not standard query settings, but still serialized for each query plan step */ \
+    /* These settings are derived from other sources, such as a combination of multiple settings or server-level configurations. */ \
+    DECLARE(Bool, aggregation_in_order_memory_bound_merging, false, "", 0) \
+    DECLARE(UInt64, max_entries_for_hash_table_stats, 0, "", 0) \
+    DECLARE(Bool, aggregation_sort_result_by_bucket_number, false, "", 0) \
+
+
+DECLARE_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS)
+
+struct QueryPlanSerializationSettingsImpl : public BaseSettings<QueryPlanSerializationSettingsTraits>
+{
+};
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) QueryPlanSerializationSettings##TYPE NAME = &QueryPlanSerializationSettingsImpl ::NAME;
+
+namespace QueryPlanSerializationSetting
+{
+PLAN_SERIALIZATION_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+}
+
+#undef INITIALIZE_SETTING_EXTERN
+
+
+QueryPlanSerializationSettings::QueryPlanSerializationSettings() : impl(std::make_unique<QueryPlanSerializationSettingsImpl>())
+{
+}
+
+QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSerializationSettings & settings) : impl(std::make_unique<QueryPlanSerializationSettingsImpl>(*settings.impl))
+{
+}
+
+QueryPlanSerializationSettings::~QueryPlanSerializationSettings() = default;
+
+void QueryPlanSerializationSettings::writeChangedBinary(WriteBuffer & out) const
+{
+    impl->writeChangedBinary(out);
+}
+void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
+{
+    impl->readBinary(in);
+}
+
+QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
 }
