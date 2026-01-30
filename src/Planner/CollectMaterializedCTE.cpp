@@ -1,14 +1,17 @@
+#include <unordered_set>
 #include <Planner/CollectMaterializedCTE.h>
 
 #include <Analyzer/TableNode.h>
 #include <Analyzer/traverseQueryTree.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
 
-QueryTreeNodes collectMaterializedCTEs(const QueryTreeNodePtr & node)
+TableHolderToCTEMap collectMaterializedCTEs(const QueryTreeNodePtr & node)
 {
-    QueryTreeNodes materialized_ctes;
+    TableHolderToCTEMap materialized_ctes;
 
     traverseQueryTree(node, ExceptSubqueries{},
     [&](const QueryTreeNodePtr & current_node)
@@ -16,7 +19,10 @@ QueryTreeNodes collectMaterializedCTEs(const QueryTreeNodePtr & node)
         if (auto * table_node = current_node->as<TableNode>())
         {
             if (table_node->isMaterializedCTE())
-                materialized_ctes.push_back(current_node);
+            {
+                LOG_DEBUG(getLogger("collectMaterializedCTEs"), "Found materialized CTE:\n{}", table_node->dumpTree());
+                materialized_ctes.emplace(table_node->getTemporaryTableHolder().get(), current_node);
+            }
         }
     });
 

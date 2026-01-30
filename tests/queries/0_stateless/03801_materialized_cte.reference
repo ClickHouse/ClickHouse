@@ -63,3 +63,39 @@ QUERY id: 0
             LIST id: 19, nodes: 2
               COLUMN id: 20, column_name: uid, result_type: Int16, source_id: 4
               COLUMN id: 21, column_name: uid, result_type: Int16, source_id: 11
+MaterializingCTEs
+Header: count() UInt64
+  Expression ((Project names + Projection))
+  Header: count() UInt64
+    Aggregating
+    Header: count() UInt64
+      Expression (Before GROUP BY)
+      Header: 
+        Expression (Post Join Actions)
+        Header: __join_result_dummy UInt8
+          Join (JOIN FillRightFirst)
+          Header: __join_result_dummy UInt8
+            Expression (Left Pre Join Actions)
+            Header: __table1.uid Int16
+                    __join_result_dummy UInt8
+              Expression (Change column names to column identifiers)
+              Header: __table1.uid Int16
+                ReadFromMemoryStorage
+                Header: uid Int16
+            Expression (Right Pre Join Actions)
+            Header: __table4.uid Int16
+              Expression (Change column names to column identifiers)
+              Header: __table4.uid Int16
+                ReadFromMemoryStorage
+                Header: uid Int16
+  MaterializingCTE (Materializing CTE: )
+  Header: 
+    Expression ((Project names + (Projection + Change column names to column identifiers)))
+    Header: uid Int16
+            name String
+            age Int16
+      ReadFromMemoryStorage
+      Header: uid Int16
+              name String
+              age Int16
+3

@@ -92,8 +92,7 @@ bool TableNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     const auto & rhs_typed = assert_cast<const TableNode &>(rhs);
     return storage_id == rhs_typed.storage_id
         && table_expression_modifiers == rhs_typed.table_expression_modifiers
-        && temporary_table_name == rhs_typed.temporary_table_name
-        && getMaterializedCTESubquery() == rhs_typed.getMaterializedCTESubquery();
+        && temporary_table_name == rhs_typed.temporary_table_name;
 }
 
 void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const

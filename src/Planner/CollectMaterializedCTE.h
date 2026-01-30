@@ -10,6 +10,11 @@ class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
 
-QueryTreeNodes collectMaterializedCTEs(const QueryTreeNodePtr & node);
+struct TemporaryTableHolder;
+using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
+
+using TableHolderToCTEMap = std::unordered_map<const TemporaryTableHolder *, QueryTreeNodePtr>;
+
+TableHolderToCTEMap collectMaterializedCTEs(const QueryTreeNodePtr & node);
 
 }

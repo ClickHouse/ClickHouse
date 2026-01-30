@@ -1511,7 +1511,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
 void addBuildSubqueriesForMaterializedCTEsIfNeeded(
     QueryPlan & query_plan,
     const SelectQueryOptions & select_query_options,
-    const QueryTreeNodes & materialized_ctes
+    const TableHolderToCTEMap & materialized_ctes
 )
 {
     if (materialized_ctes.empty())
@@ -1529,7 +1529,7 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
 
     for (const auto & cte_node : materialized_ctes)
     {
-        auto * cte_table_node = cte_node->as<TableNode>();
+        auto * cte_table_node = cte_node.second->as<TableNode>();
         auto cte_options = select_query_options.subquery();
         Planner cte_planner(
             cte_table_node->getMaterializedCTESubquery(),
@@ -1538,10 +1538,6 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
         cte_planner.buildQueryPlanIfNeeded();
 
         auto cte_plan = std::move(cte_planner).extractQueryPlan();
-
-        LOG_DEBUG(getLogger(__func__), "CTE plan for temporary table {}:\n{}",
-            cte_table_node->getTemporaryTableName(),
-            dumpQueryPlan(cte_plan));
 
         auto step = std::make_unique<MaterializingCTEStep>(
             cte_plan.getCurrentHeader(),
