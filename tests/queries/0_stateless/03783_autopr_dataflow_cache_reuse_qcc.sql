@@ -1,5 +1,6 @@
--- Tags: no-sanitizers
+-- Tags: no-sanitizers, long
 -- no-sanitizers: too slow
+-- long: for flaky check
 
 DROP TABLE IF EXISTS t;
 
