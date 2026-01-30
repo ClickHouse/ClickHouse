@@ -553,7 +553,7 @@ void mutate(
     {
         FileNamesGenerator filename_generator(common_path, common_path, false, CompressionMethod::None, write_format);
         auto log = getLogger("IcebergMutations");
-        auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+        auto [last_version, metadata_path, last_modify_time, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
             object_storage,
             persistent_table_components.table_path,
             data_lake_settings,
@@ -565,7 +565,7 @@ void mutate(
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
-        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        auto metadata = getMetadataJSONObject(metadata_path, last_modify_time, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations are supported only for the second version of iceberg format");
         auto partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
@@ -685,7 +685,7 @@ void alter(
         FileNamesGenerator filename_generator(
             persistent_table_components.table_path, persistent_table_components.table_path, false, CompressionMethod::None, write_format);
         auto log = getLogger("IcebergMutations");
-        auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+        auto [last_version, metadata_path, last_modify_time, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
             object_storage,
             persistent_table_components.table_path,
             data_lake_settings,
@@ -697,7 +697,7 @@ void alter(
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
-        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        auto metadata = getMetadataJSONObject(metadata_path, last_modify_time, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
         auto metadata_json_generator = MetadataGenerator(metadata);
 

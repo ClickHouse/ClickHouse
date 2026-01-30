@@ -636,7 +636,7 @@ IcebergStorageSink::IcebergStorageSink(
     , blob_storage_type_name(configuration_->getTypeName())
     , blob_storage_namespace_name(configuration_->getNamespace())
 {
-    auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    auto [last_version, metadata_path, last_modify_time, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
@@ -647,6 +647,7 @@ IcebergStorageSink::IcebergStorageSink(
 
     metadata = getMetadataJSONObject(
         metadata_path,
+        last_modify_time,
         object_storage,
         persistent_table_components.metadata_cache,
         context,
@@ -891,7 +892,7 @@ bool IcebergStorageSink::initializeMetadata()
 
         if (retry_because_of_metadata_conflict)
         {
-            auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+            auto [last_version, metadata_path, last_modified_time, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
                 object_storage,
                 persistent_table_components.table_path,
                 data_lake_settings,
@@ -907,6 +908,7 @@ bool IcebergStorageSink::initializeMetadata()
 
             metadata = getMetadataJSONObject(
                 metadata_path,
+                last_modified_time,
                 object_storage,
                 persistent_table_components.metadata_cache,
                 context,

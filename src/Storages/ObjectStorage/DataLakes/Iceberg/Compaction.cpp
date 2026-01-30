@@ -123,7 +123,7 @@ Plan getPlan(
     plan.generator = FileNamesGenerator(
         persistent_table_components.table_path, persistent_table_components.table_path, false, compression_method, write_format);
 
-    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, last_modify_time, _] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
@@ -132,8 +132,15 @@ Plan getPlan(
         log.get(),
         persistent_table_components.table_uuid);
 
-    Poco::JSON::Object::Ptr initial_metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+    Poco::JSON::Object::Ptr initial_metadata_object = getMetadataJSONObject(
+        metadata_file_path,
+        last_modify_time,
+        object_storage,
+        persistent_table_components.metadata_cache,
+        context,
+        log,
+        compression_method,
+        persistent_table_components.table_uuid);
 
     if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) < 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");
@@ -498,10 +505,14 @@ std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & 
     auto metadata_files = listFiles(*object_storage, table_path, "metadata", "");
     auto data_files = listFiles(*object_storage, table_path, "data", "");
 
-    for (auto && data_file : data_files)
-        metadata_files.push_back(data_file);
+    std::vector<String> res;
+    res.reserve(data_files.size() + metadata_files.size());
+    for (auto & data_file : data_files)
+        res.emplace_back(data_file->relative_path);
+    for (auto & metadata_file : metadata_files)
+        res.emplace_back(metadata_file->relative_path);
 
-    return metadata_files;
+    return res;
 }
 
 void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & old_files)

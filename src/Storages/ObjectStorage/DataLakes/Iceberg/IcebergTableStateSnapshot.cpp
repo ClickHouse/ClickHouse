@@ -23,6 +23,7 @@ void TableStateSnapshot::serialize(WriteBuffer & out) const
     writeChar(snapshot_id.has_value() ? 1 : 0, out);
     if (snapshot_id.has_value())
         writeVarInt(snapshot_id.value(), out);
+    writeVarUInt(last_modify_time, out);
 }
 
 TableStateSnapshot TableStateSnapshot::deserialize(ReadBuffer & in, const int datalake_state_protocol_version)
@@ -51,6 +52,7 @@ TableStateSnapshot TableStateSnapshot::deserialize(ReadBuffer & in, const int da
         {
             state.snapshot_id = std::nullopt;
         }
+        readVarUInt(state.last_modify_time, in);
         return state;
     }
     UNREACHABLE();
@@ -59,6 +61,6 @@ TableStateSnapshot TableStateSnapshot::deserialize(ReadBuffer & in, const int da
 bool TableStateSnapshot::operator==(const TableStateSnapshot & other) const
 {
     return metadata_file_path == other.metadata_file_path && metadata_version == other.metadata_version && schema_id == other.schema_id
-        && snapshot_id == other.snapshot_id;
+        && snapshot_id == other.snapshot_id && last_modify_time == other.last_modify_time;
 }
 }

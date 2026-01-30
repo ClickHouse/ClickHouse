@@ -56,12 +56,12 @@ Strings HudiMetadata::getDataFilesImpl() const
 
     for (const auto & key : keys)
     {
-        auto key_file = std::filesystem::path(key);
+        auto key_file = std::filesystem::path(key->relative_path);
         Strings file_parts;
         const String stem = key_file.stem();
         splitInto<'_'>(file_parts, stem);
         if (file_parts.size() != 3)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected format for file: {}", key);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected format for file: {}", key->relative_path);
 
         const auto partition = key_file.parent_path().stem();
         const auto & file_id = file_parts[0];
@@ -70,7 +70,7 @@ Strings HudiMetadata::getDataFilesImpl() const
         auto & file_info = files[partition][file_id];
         if (file_info.timestamp == 0 || file_info.timestamp < timestamp)
         {
-            file_info.key = key;
+            file_info.key = key->relative_path;
             file_info.timestamp = timestamp;
         }
     }

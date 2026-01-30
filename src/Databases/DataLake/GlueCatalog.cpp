@@ -547,7 +547,7 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
 
     try
     {
-        auto [metadata_version, metadata_path, compression_method] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
+        auto [metadata_version, metadata_path, _, compression_method] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
             object_storage,
             table_path,
             *storage_settings,

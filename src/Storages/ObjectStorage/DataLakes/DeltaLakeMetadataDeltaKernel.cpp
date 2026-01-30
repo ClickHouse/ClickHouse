@@ -426,15 +426,14 @@ void DeltaLakeMetadataDeltaKernel::logMetadataFiles(ContextPtr context) const
     if (!context->getSettingsRef()[Setting::delta_lake_log_metadata].value)
         return;
 
-    const auto keys = listFiles(*object_storage_common, kernel_helper->getDataPath(), deltalake_metadata_directory, metadata_file_suffix);
+    const auto files = listFiles(*object_storage_common, kernel_helper->getDataPath(), deltalake_metadata_directory, metadata_file_suffix);
     auto read_settings = context->getReadSettings();
-    for (const String & key : keys)
+    for (const auto & object_info : files)
     {
-        RelativePathWithMetadata object_info(key);
-        auto buf = createReadBuffer(object_info, object_storage_common, context, log);
+        auto buf = createReadBuffer(*object_info, object_storage_common, context, log);
         String json_str;
         readStringUntilEOF(json_str, *buf);
-        insertDeltaRowToLogTable(context, json_str, kernel_helper->getDataPath(), key);
+        insertDeltaRowToLogTable(context, json_str, kernel_helper->getDataPath(), object_info->relative_path);
     }
 
 }

@@ -132,9 +132,9 @@ std::pair<Int32, String> PaimonTableClient::getLastestTableSchemaInfo()
         }
         return current_version;
     };
-    for (const auto & path : schema_files)
+    for (const auto & file : schema_files)
     {
-        schema_files_with_versions.emplace_back(std::make_pair(parse_version(path), path));
+        schema_files_with_versions.emplace_back(std::make_pair(parse_version(file->relative_path), file->relative_path));
     }
     return *std::max_element(schema_files_with_versions.begin(), schema_files_with_versions.end());
 }
@@ -224,9 +224,9 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLastestTableSnapsh
         return current_version;
     };
 
-    for (const auto & path : snapshot_files)
+    for (const auto & file : snapshot_files)
     {
-        snapshot_files_with_versions.emplace_back(std::make_pair(parse_version(path), path));
+        snapshot_files_with_versions.emplace_back(std::make_pair(parse_version(file->relative_path), file->relative_path));
     }
     return *std::max_element(snapshot_files_with_versions.begin(), snapshot_files_with_versions.end());
 }

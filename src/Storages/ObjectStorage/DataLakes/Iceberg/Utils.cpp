@@ -114,7 +114,7 @@ static bool isTemporaryMetadataFile(const String & file_name)
     return Poco::UUID{}.tryParse(substring);
 }
 
-static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
+static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path, const ObjectStoragePtr & object_storage, bool need_add_last_modify_time = true)
 {
     String file_name = std::filesystem::path(path).filename();
     if (isTemporaryMetadataFile(file_name))
@@ -136,9 +136,17 @@ static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: '{}'. Expected vN.metadata.json where N is a number", file_name);
 
+    UInt64 last_modify_time = 0;
+    if (need_add_last_modify_time)
+    {
+        ObjectMetadata meta = object_storage->getObjectMetadata(path, false);
+        last_modify_time = static_cast<UInt64>(meta.last_modified.epochTime());
+    }
+
     return MetadataFileWithInfo{
         .version = std::stoi(version_str),
         .path = path,
+        .last_modify_time = last_modify_time,
         .compression_method = getCompressionMethodFromMetadataFile(path)};
 }
 
@@ -214,8 +222,8 @@ bool writeMetadataFileAndVersionHint(
                 write_if_none_match.clear();
             }
 
-            auto [old_version, _1, _2] = getMetadataFileAndVersion(version_hint_value);
-            auto [new_version, _3, _4] = getMetadataFileAndVersion(version_hint_content);
+            auto [old_version, _1, _2, _3] = getMetadataFileAndVersion(version_hint_value, object_storage, false);
+            auto [new_version, _4, _5, _6] = getMetadataFileAndVersion(version_hint_content, object_storage, false);
             if (old_version < new_version)
             {
                 try
@@ -395,6 +403,7 @@ std::string normalizeUuid(const std::string & uuid)
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
+    UInt64 last_modify_time,
     ObjectStoragePtr object_storage,
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
@@ -427,7 +436,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     String metadata_json_str;
     if (metadata_cache && table_uuid.has_value())
         metadata_json_str = metadata_cache->getOrSetTableMetadata(
-            IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path), create_fn);
+            IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path, std::to_string(last_modify_time)), create_fn);
     else
         metadata_json_str = create_fn();
 
@@ -898,17 +907,21 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     }
     std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
     metadata_files_with_versions.reserve(metadata_files.size());
-    for (const auto & path : metadata_files)
+    for (const auto & file : metadata_files)
     {
+        const String & path = file->relative_path;
         String filename = std::filesystem::path(path).filename();
         if (isTemporaryMetadataFile(filename))
             continue;
-        auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
+        auto [version, metadata_file_path, last_modify_time,compression_method] = getMetadataFileAndVersion(path, object_storage);
 
         if (need_all_metadata_files_parsing)
         {
+            const auto last_modified_time = file->metadata.has_value()
+                ? static_cast<UInt64>(file->metadata->last_modified.epochTime())
+                : -1;
             auto metadata_file_object = getMetadataJSONObject(
-                metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
+                metadata_file_path, last_modified_time, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
             if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
             {
                 if (metadata_file_object->has(Iceberg::f_table_uuid))
@@ -974,7 +987,11 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.version < b.version; });
         }
     }();
-    return {latest_metadata_file_info.version, latest_metadata_file_info.path, getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
+    return {
+        latest_metadata_file_info.version,
+        latest_metadata_file_info.path,
+        latest_metadata_file_info.last_updated_ms,
+        getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
 }
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
@@ -1001,7 +1018,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
             }
             if (!explicit_metadata_path.starts_with(table_path))
                 explicit_metadata_path = std::filesystem::path(table_path) / explicit_metadata_path;
-            return getMetadataFileAndVersion(explicit_metadata_path);
+            return getMetadataFileAndVersion(explicit_metadata_path, object_storage);
         }
         catch (const std::exception & ex)
         {
@@ -1047,7 +1064,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
         ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
 
-        return getMetadataFileAndVersion(std::filesystem::path(table_path) / "metadata" / fs::path(metadata_file).filename());
+        return getMetadataFileAndVersion(std::filesystem::path(table_path) / "metadata" / fs::path(metadata_file).filename(), object_storage);
     }
     else
     {

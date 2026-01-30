@@ -8,7 +8,7 @@
 namespace DB
 {
 
-std::vector<String> listFiles(
+std::vector<RelativePathWithMetadataPtr> listFiles(
     const IObjectStorage & object_storage,
     const String & path,
     const String & prefix, const String & suffix)
@@ -21,7 +21,7 @@ std::vector<String> listFiles(
 }
 
 
-std::vector<String> listFiles(
+std::vector<RelativePathWithMetadataPtr> listFiles(
     const IObjectStorage & object_storage,
     const String & path,
     const String & prefix,
@@ -30,13 +30,17 @@ std::vector<String> listFiles(
     auto key = std::filesystem::path(path) / prefix;
     RelativePathsWithMetadata files_with_metadata;
     object_storage.listObjects(key, files_with_metadata, 0);
-    Strings res;
+    std::vector<RelativePathWithMetadataPtr> res;
     for (const auto & file_with_metadata : files_with_metadata)
     {
         if (check_need(*file_with_metadata))
-            res.push_back(file_with_metadata->relative_path);
+            res.emplace_back(file_with_metadata);
     }
-    LOG_TRACE(getLogger("DataLakeCommon"), "Listed {} files ({})", res.size(), fmt::join(res, ", "));
+    LOG_TRACE(
+        getLogger("DataLakeCommon"),
+        "Listed {} files ({})",
+        res.size(),
+        fmt::join(res | std::views::transform([](const auto & p) -> const String & { return p->relative_path; }), ", "));
     return res;
 }
 }
