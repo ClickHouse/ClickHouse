@@ -641,6 +641,16 @@ def test_table_functions():
                     assert not is_secret_present
                     assert "[HIDDEN]" in output
 
+    for toggle, secret in enumerate(["[HIDDEN]", password]):
+        skip = ['mysql', 'postgresql']
+        for table_function in table_functions:
+            should_skip = any([table_function.startswith(prefix_to_skip) for prefix_to_skip in skip])
+            if not should_skip:
+                output = node.query(f"EXPLAIN QUERY TREE SELECT * FROM {table_function} {show_secrets}={toggle}")
+                assert secret in output
+                if not toggle:
+                    assert password not in output
+
 
 def test_table_functions_object_storage_cluster():
     ch_cluster = "test_shard_localhost"
