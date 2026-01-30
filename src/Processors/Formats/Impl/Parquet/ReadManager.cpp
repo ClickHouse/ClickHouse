@@ -538,7 +538,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         if (row_group_idx != i)
             return false;
         const RowGroup & row_group = reader.row_groups[row_group_idx];
-        return row_group.read_ptr.load() == row_group.delivery_ptr.load();
+return row_group.read_ptr.load() == row_group.delivery_ptr.load();
     };
 
     while (true)
@@ -661,7 +661,7 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                     prefetches.push_back(&column.data_pages_prefetch);
 
                 double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(column, row_group, reader.primitive_columns.at(task.column_idx));
-                size_t column_memory = size_t(bytes_per_row * row_subgroup.filter.rows_pass);
+                size_t column_memory = static_cast<size_t>(bytes_per_row * static_cast<double>(row_subgroup.filter.rows_pass));
                 subchunk.column_and_offsets_memory = MemoryUsageToken(column_memory, &diff);
                 break;
             }

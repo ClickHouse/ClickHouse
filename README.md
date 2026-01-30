@@ -60,6 +60,7 @@ Upcoming meetups
 * [ClickHouse London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/312314505/) - February 10th, 2026
 * [AI Night San Francisco](https://luma.com/j2ck1sbz)- February 11th, 2026
 * [Toronto Meetup](https://luma.com/8p8unbnw) - February 19th, 2026
+* [Melbourne Meetup](https://www.meetup.com/clickhouse-melbourne-user-group/events/312871833/) - February 24th, 2026
 * [Seattle Meetup](https://luma.com/jsctpwoa) - February 26th, 2026
 * [LA Meetup](https://luma.com/wbkqmaqk) - March 6th, 2026
 

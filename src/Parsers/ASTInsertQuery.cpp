@@ -38,7 +38,7 @@ void ASTInsertQuery::setDatabase(const String & name)
     if (name.empty())
         database.reset();
     else
-        database = std::make_shared<ASTIdentifier>(name);
+        database = make_intrusive<ASTIdentifier>(name);
 }
 
 void ASTInsertQuery::setTable(const String & name)
@@ -46,7 +46,7 @@ void ASTInsertQuery::setTable(const String & name)
     if (name.empty())
         table.reset();
     else
-        table = std::make_shared<ASTIdentifier>(name);
+        table = make_intrusive<ASTIdentifier>(name);
 }
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

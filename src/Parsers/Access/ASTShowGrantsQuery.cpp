@@ -13,10 +13,10 @@ String ASTShowGrantsQuery::getID(char) const
 
 ASTPtr ASTShowGrantsQuery::clone() const
 {
-    auto res = std::make_shared<ASTShowGrantsQuery>(*this);
+    auto res = make_intrusive<ASTShowGrantsQuery>(*this);
 
     if (for_roles)
-        res->for_roles = std::static_pointer_cast<ASTRolesOrUsersSet>(for_roles->clone());
+        res->for_roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(for_roles->clone());
 
     return res;
 }

@@ -793,7 +793,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (!args.storage_def->primary_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB requires at least one column in primary key");
 
-    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->primary_key), metadata.columns, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     for (const auto & primary_key_name : primary_key_names)
     {
@@ -804,13 +804,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     auto settings = std::make_unique<RocksDBSettings>();
     settings->loadFromQuery(*args.storage_def);
     if (args.storage_def->settings)
-        metadata.settings_changes = args.storage_def->settings->ptr();
+        metadata.settings_changes = args.storage_def->getChild(*args.storage_def->settings);
     else
     {
         /// A workaround because embedded rocksdb doesn't have default immutable settings
         /// But InterpreterAlterQuery requires settings_changes to be set to run ALTER MODIFY
         /// SETTING queries. So we just add a setting with its default value.
-        auto settings_changes = std::make_shared<ASTSetQuery>();
+        auto settings_changes = make_intrusive<ASTSetQuery>();
         settings_changes->is_standalone = false;
         settings_changes->changes.insertSetting("optimize_for_bulk_insert", (*settings)[RocksDBSetting::optimize_for_bulk_insert].value);
         metadata.settings_changes = settings_changes;

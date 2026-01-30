@@ -20,9 +20,15 @@ def check_spark(spark):
 
 
     spark.sql(
-    """
-        CREATE DATABASE IF NOT EXISTS spark_catalog.db
-    """
+        """
+        DROP DATABASE IF EXISTS spark_catalog.db CASCADE
+        """
+    )
+
+    spark.sql(
+        """
+        CREATE DATABASE spark_catalog.db
+        """
     )
 
     spark.sql(

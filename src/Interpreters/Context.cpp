@@ -3,6 +3,7 @@
 #include <optional>
 #include <memory>
 #include <Poco/UUID.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
@@ -32,6 +33,7 @@
 #include <Formats/FormatFactory.h>
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/Context_fwd.h>
 #include <Server/ServerType.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeList.h>
@@ -321,6 +323,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
+    extern const SettingsString default_dictionary_database;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
 }
 
@@ -497,6 +500,7 @@ struct ContextSharedPart : boost::noncopyable
     /// No lock required for default_profile_name, system_profile_name, buffer_profile_name modified only during initialization
     String default_profile_name;                                /// Default profile name used for default values.
     String system_profile_name;                                 /// Profile used by system processes
+    String background_profile_name;                             /// Profile used by background operations
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
@@ -1171,12 +1175,15 @@ ContextData::ContextData(const ContextData &o) :
     query_context(o.query_context),
     session_context(o.session_context),
     global_context(o.global_context),
+    background_context(o.background_context),
     buffer_context(o.buffer_context),
     is_internal_query(o.is_internal_query),
+    is_background_operation(o.is_background_operation),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
+    runtime_filter_lookup(o.runtime_filter_lookup),
     kitchen_sink(o.kitchen_sink),
     part_uuids(o.part_uuids),
     ignored_part_uuids(o.ignored_part_uuids),
@@ -2574,7 +2581,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
 
             ASTCreateQuery create;
-            create.select = query->as<ASTSelectWithUnionQuery>();
+            create.set(create.select, query);
             auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
@@ -2805,13 +2812,13 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     StorageView::replaceQueryParametersIfParameterizedView(query, param_values);
 
     ASTCreateQuery create;
-    create.select = query->as<ASTSelectWithUnionQuery>();
+    create.set(create.select, query);
 
-    auto sql_security = std::make_shared<ASTSQLSecurity>();
+    auto sql_security = make_intrusive<ASTSQLSecurity>();
     sql_security->type = original_view_metadata->sql_security_type;
     if (original_view_metadata->definer)
-        sql_security->definer = std::make_shared<ASTUserNameWithHost>(*original_view_metadata->definer);
-    create.sql_security = sql_security;
+        sql_security->definer = make_intrusive<ASTUserNameWithHost>(*original_view_metadata->definer);
+    create.set(create.sql_security, sql_security);
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
@@ -3154,17 +3161,6 @@ void Context::setCurrentQueryId(const String & query_id)
         client_info.initial_query_id = client_info.current_query_id;
 }
 
-void Context::setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType background_operation)
-{
-    chassert(background_operation != ClientInfo::BackgroundOperationType::NOT_A_BACKGROUND_OPERATION);
-    client_info.background_operation_type = background_operation;
-}
-
-bool Context::isBackgroundOperationContext() const
-{
-    return client_info.background_operation_type != ClientInfo::BackgroundOperationType::NOT_A_BACKGROUND_OPERATION;
-}
-
 void Context::killCurrentQuery() const
 {
     if (auto elem = getProcessListElement())
@@ -3227,8 +3223,7 @@ void Context::setMacros(std::unique_ptr<Macros> && macros)
 ContextMutablePtr Context::getQueryContext() const
 {
     auto ptr = query_context.lock();
-    if (!ptr)
-        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "There is no query or query context has expired");
+    if (!ptr) throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "There is no query or query context has expired");
     return ptr;
 }
 
@@ -3249,6 +3244,14 @@ ContextMutablePtr Context::getGlobalContext() const
 {
     auto ptr = global_context.lock();
     if (!ptr) throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no global context or global context has expired");
+    return ptr;
+}
+
+ContextMutablePtr Context::getBackgroundContext() const
+{
+    auto ptr = background_context.lock();
+    if (!ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no background context or background context has not been initialized");
     return ptr;
 }
 
@@ -3311,6 +3314,30 @@ void Context::makeGlobalContext()
     EventNotifier::init();
 
     global_context = shared_from_this();
+}
+
+void Context::makeBackgroundContext(const Poco::Util::AbstractConfiguration & config)
+{
+    assert(!background_context_instance);
+    static constexpr std::string background_profile_name_setting = "background_profile";
+    static constexpr std::string background_profile_default_name = "background";
+
+    if (config.has(background_profile_name_setting))
+        /// 1. if background profile name setting is set explicitly - it'll be used, and will throw on lacking profile configuration
+        shared->background_profile_name = config.getString(background_profile_name_setting);
+    else if (getAccessControl().find<SettingsProfile>(background_profile_default_name).has_value())
+        /// 2. or if background profile is configured under its default name - it'll be used
+        shared->background_profile_name = background_profile_default_name;
+    else
+        /// 3. otherwise the system profile will be used for background operations
+        shared->background_profile_name = shared->system_profile_name;
+
+    ContextMutablePtr background_context_ptr = Context::createCopy(shared_from_this());
+    background_context_ptr->setCurrentProfile(shared->background_profile_name);
+    background_context_ptr->is_background_operation = true;
+
+    background_context_instance = background_context_ptr;
+    background_context = background_context_ptr;
 }
 
 const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
@@ -4296,16 +4323,20 @@ BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSetting
 
 BackgroundSchedulePool & Context::getSchedulePool() const
 {
-    size_t max_parallel_tasks_per_type = static_cast<size_t>(shared->server_settings[ServerSetting::background_schedule_pool_size]
+    size_t max_parallel_tasks_per_type = static_cast<size_t>(
+        static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_size])
         * shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]);
-    callOnce(shared->schedule_pool_initialized, [&] {
-        shared->schedule_pool = BackgroundSchedulePool::create(
-            shared->server_settings[ServerSetting::background_schedule_pool_size],
-            max_parallel_tasks_per_type,
-            CurrentMetrics::BackgroundSchedulePoolTask,
-            CurrentMetrics::BackgroundSchedulePoolSize,
-            DB::ThreadName::BACKGROUND_SCHEDULE_POOL);
-    });
+    callOnce(
+        shared->schedule_pool_initialized,
+        [&]
+        {
+            shared->schedule_pool = BackgroundSchedulePool::create(
+                shared->server_settings[ServerSetting::background_schedule_pool_size],
+                max_parallel_tasks_per_type,
+                CurrentMetrics::BackgroundSchedulePoolTask,
+                CurrentMetrics::BackgroundSchedulePoolSize,
+                DB::ThreadName::BACKGROUND_SCHEDULE_POOL);
+        });
 
     return *shared->schedule_pool;
 }
@@ -5295,25 +5326,32 @@ void Context::startClusterDiscovery()
 /// On repeating calls updates existing clusters and adds new clusters, doesn't delete old clusters
 void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_discovery, const String & config_name)
 {
-    std::lock_guard lock(shared->clusters_mutex);
-    if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
     {
-        shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
+        std::lock_guard lock(shared->clusters_mutex);
+        if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
+        {
+            shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
+        }
+
+        /// Do not update clusters if this part of config wasn't changed.
+        if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name))
+            return;
+
+        auto old_clusters_config = shared->clusters_config;
+        shared->clusters_config = config;
+
+        if (!shared->clusters)
+            shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
+        else
+            shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
+
+        ++shared->clusters_version;
     }
-
-    /// Do not update clusters if this part of config wasn't changed.
-    if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name))
-        return;
-
-    auto old_clusters_config = shared->clusters_config;
-    shared->clusters_config = config;
-
-    if (!shared->clusters)
-        shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
-    else
-        shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
-
-    ++shared->clusters_version;
+    {
+        SharedLockGuard lock(shared->mutex);
+        if (shared->ddl_worker)
+            shared->ddl_worker->notifyHostIDsUpdated();
+    }
 }
 
 size_t Context::getClustersVersion() const
@@ -6240,6 +6278,8 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 
+    makeBackgroundContext(config);
+
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = Context::createCopy(shared_from_this());
     buffer_context->setCurrentProfile(shared->buffer_profile_name);
@@ -6839,13 +6879,6 @@ void Context::setBlockMarshallingCallback(BlockMarshallingCallback && callback)
     block_marshalling_callback = std::move(callback);
 }
 
-RuntimeDataflowStatisticsCacheUpdaterPtr Context::getRuntimeDataflowStatisticsCacheUpdater() const
-{
-    if (!dataflow_cache_updater)
-        dataflow_cache_updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>();
-    return dataflow_cache_updater;
-}
-
 void Context::setParallelReplicasGroupUUID(UUID uuid)
 {
     parallel_replicas_group_uuid = uuid;
@@ -6893,7 +6926,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     const ServerSettings & server_settings = shared->server_settings;
     size_t background_pool_size = server_settings[ServerSetting::background_pool_size];
     auto background_merges_mutations_concurrency_ratio = server_settings[ServerSetting::background_merges_mutations_concurrency_ratio];
-    size_t background_pool_max_tasks_count = static_cast<size_t>(background_pool_size * background_merges_mutations_concurrency_ratio);
+    size_t background_pool_max_tasks_count = static_cast<size_t>(static_cast<double>(background_pool_size) * background_merges_mutations_concurrency_ratio);
     String background_merges_mutations_scheduling_policy = server_settings[ServerSetting::background_merges_mutations_scheduling_policy];
     size_t background_move_pool_size = server_settings[ServerSetting::background_move_pool_size];
     size_t background_fetches_pool_size = server_settings[ServerSetting::background_fetches_pool_size];

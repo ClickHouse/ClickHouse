@@ -1,5 +1,7 @@
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 
+#include <Common/assert_cast.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
 namespace DB
@@ -44,6 +46,13 @@ bool SerializationInfoSettings::canUseSparseSerialization(const IDataType & type
     {
         if (nullable_serialization_version == MergeTreeNullableSerializationVersion::BASIC)
             return false;
+
+        /// Skip support for sparse serialization of Nullable(Tuple) for now
+        if (const auto * nullable_type = assert_cast<const DataTypeNullable *>(&type))
+        {
+            if (isTuple(nullable_type->getNestedType()))
+                return false;
+        }
     }
 
     return type.supportsSparseSerialization();

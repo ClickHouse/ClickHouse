@@ -1,7 +1,6 @@
 import argparse
 import os
 import random
-import re
 import subprocess
 from pathlib import Path
 
@@ -143,6 +142,7 @@ def main():
     is_shared_catalog = False
     is_encrypted_storage = random.choice([True, False])
     is_parallel_replicas = False
+    is_llvm_coverage = False
     is_coverage = False
     runner_options = ""
     # optimal value for most of the jobs
@@ -153,22 +153,29 @@ def main():
         if "/" in to:
             batch_num, total_batches = map(int, to.split("/"))
         elif to in OPTIONS_TO_INSTALL_ARGUMENTS:
-            print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
-            config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
-        elif to.startswith("amd_") or to.startswith("arm_"):
+            pass
+        elif (
+            to.startswith("amd_") or to.startswith("arm_")
+        ):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
-            print(
-                f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
-            )
+            pass
         else:
             assert False, f"Unknown option [{to}]"
+
+        if to in OPTIONS_TO_INSTALL_ARGUMENTS:
+            print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
+            config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
 
         if to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             if to in ("parallel", "sequential") and args.test:
                 # skip setting up parallel/sequential if specific tests are provided
                 continue
-            runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
+            else:
+                runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
+                print(
+                    f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
+                )
 
         if "targeted" in to:
             is_targeted_check = True
@@ -176,9 +183,10 @@ def main():
             is_flaky_check = True
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
+        elif "amd_llvm_coverage" in to:
+            is_llvm_coverage = True
         elif "coverage" in to:
             is_coverage = True
-
         if "s3 storage" in to:
             is_s3_storage = True
         if "azure" in to:
@@ -208,12 +216,20 @@ def main():
         else:
             pass
 
+    workers = None
     if args.workers:
         print(f"Workers count set from --workers: {args.workers}")
-        runner_options += f" --jobs {args.workers}"
+        workers = args.workers
     else:
         print(f"Workers count set to optimal value: {nproc}")
-        runner_options += f" --jobs {nproc}"
+        workers = nproc
+
+    runner_options += f" --jobs {workers}"
+
+    if is_llvm_coverage:
+        # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
+        runner_options += " --no-random-settings --no-random-merge-tree-settings --no-long --llvm-coverage"
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%2m.profraw"
 
     rerun_count = 1
     if args.count:
@@ -284,7 +300,9 @@ def main():
         stages.remove(JobStages.COLLECT_COVERAGE)
     else:
         stages.remove(JobStages.COLLECT_LOGS)
-    if is_coverage or info.is_local_run:
+    if is_coverage or info.is_local_run or is_bugfix_validation:
+        # For bugfix validation, we intentionally skip the check error stage (checks FATAL messages):
+        # regular test failures are assumed to be sufficient to validate the test
         stages.remove(JobStages.CHECK_ERRORS)
     if info.is_local_run:
         if JobStages.COLLECT_LOGS in stages:
@@ -519,13 +537,19 @@ def main():
                             collected_test_results.append(test_case_result)
                             seen_test_names.add(test_case_result.name)
 
+                # Control elapsed time for targeted checks: exit if >30 minutes
+                stop_by_elapsed_time = False
+                if is_targeted_check and cnt > 0:
+                    stop_by_elapsed_time = stop_watch_.duration / 60 > 30
+
                 # On final run, replace results with collected ones
-                if is_final_run:
+                if is_final_run or stop_by_elapsed_time:
                     test_result.results = collected_test_results
                     # Set overall status to failed if any collected test cases failed
                     has_failures = any(not t.is_ok() for t in collected_test_results)
                     if has_failures and test_result.is_ok():
                         test_result.set_failed()
+                    break
 
         if not info.is_local_run:
             CH.stop_log_exports()
@@ -542,7 +566,11 @@ def main():
 
     if JobStages.RETRIES in stages and test_result and test_result.is_failure():
         # retry all failed tests and mark original failed either as success on retry or failed on retry
-        failed_tests = [t.name for t in test_result.results if t.is_failure()]
+        failed_tests = [
+            t.name
+            for t in test_result.results
+            if t.is_failure() and t.name and t.name[0].isdigit()
+        ]
         if len(failed_tests) > 10:
             results.append(
                 Result(
@@ -572,7 +600,11 @@ def main():
             if success_after_rerun or failed_after_rerun:
                 for test_case in test_result.results:
                     if test_case.name in success_after_rerun:
-                        test_case.set_label(Result.Label.OK_ON_RETRY)
+                        if is_llvm_coverage:
+                            print(f"Test {test_case.name} has succeeded after rerun. Mark it as OK")
+                            test_case.set_label(Result.StatusExtended.OK)
+                        else:    
+                            test_case.set_label(Result.Label.OK_ON_RETRY)
                     elif test_case.name in failed_after_rerun:
                         test_case.set_label(Result.Label.FAILED_ON_RETRY)
             results.append(retry_result)
@@ -620,24 +652,28 @@ def main():
         test_result.extend_sub_results(results[-1].results)
         results[-1].results = []
 
-        # invert result status for bugfix validation
-        if is_bugfix_validation:
-            has_failure = False
-            for r in results[-1].results:
-                r.set_label("xfail")
-                if r.status == Result.StatusExtended.FAIL:
-                    r.status = Result.StatusExtended.OK
-                    has_failure = True
-                elif r.status == Result.StatusExtended.OK:
-                    r.status = Result.StatusExtended.FAIL
-            if not has_failure:
-                print("Failed to reproduce the bug")
-                results[-1].set_failed().set_info("Failed to reproduce the bug")
-            else:
-                results[-1].set_success()
+    # invert result status for bugfix validation
+    if is_bugfix_validation and test_result:
+        has_failure = False
+        for r in test_result.results:
+            r.set_label("xfail")
+            if r.status == Result.StatusExtended.FAIL:
+                r.status = Result.StatusExtended.OK
+                has_failure = True
+            elif r.status == Result.StatusExtended.OK:
+                r.status = Result.StatusExtended.FAIL
+        if not has_failure:
+            print("Failed to reproduce the bug")
+            test_result.set_failed().set_info("Failed to reproduce the bug")
+        else:
+            # For bugfix validation, the expected behavior is:
+            # - At least one test must fail (bug reproduced)
+            # - The overall Tests result is treated as success in that case
+            test_result.set_success()
 
-        if not results[-1].is_ok():
-            results[-1].set_info("Found errors added into Tests results")
+        # For bugfix validation, "Check errors" (latest in the list) is only a helper step and
+        # must not affect the overall job result.
+        results[-1].set_success()
 
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")
@@ -668,6 +704,10 @@ def main():
                 f"NOTE: Failed {failures_cnt} tests, label 'ci-non-blocking' is set - do not block pipeline - exit with 0"
             )
             force_ok_exit = True
+    if is_llvm_coverage and test_result:
+        # do not block pipeline on amd_llvm_coverage job failures
+        print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
+        force_ok_exit = True
 
     if test_result:
         test_result.sort()
@@ -678,6 +718,49 @@ def main():
         files=CH.logs + debug_files,
         info=job_info,
     )
+
+    if is_llvm_coverage:
+        print("Collecting and merging LLVM coverage files...")
+        Shell.get_output("pwd", verbose=True).strip().split('\n')
+        profraw_files = Shell.get_output("find . -name '*.profraw'", verbose=True).strip().split('\n')
+        profraw_files = [f.strip() for f in profraw_files if f.strip()]
+
+        if profraw_files:
+            print(f"Found {len(profraw_files)} .profraw files:")
+            for f in profraw_files:
+                try:
+                    size_bytes = os.path.getsize(f)
+                    print(f"  {size_bytes:>12} bytes | {f}")
+                except OSError:
+                    continue
+
+            # Auto-detect available LLVM profdata tool
+            llvm_profdata = None
+            for ver in ["21", "20", "18", "19", "17", "16", ""]:
+                cmd = f"llvm-profdata{'-' + ver if ver else ''}"
+                if Shell.check(f"command -v {cmd}", verbose=False):
+                    llvm_profdata = cmd
+                    break
+
+            if not llvm_profdata:
+                print("ERROR: llvm-profdata not found in PATH")
+            else:
+                print(f"Using {llvm_profdata} to merge coverage files")
+
+                # Merge all profraw files to current directory
+                merged_file = f"./ft-{batch_num}.profdata"
+                merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
+                merge_output = Shell.get_output(merge_cmd, verbose=True)
+
+                # Check for corrupted files in the output
+                corrupted_files = [line for line in merge_output.split('\n') if 'invalid instrumentation profile' in line or 'file header is corrupt' in line]
+                if corrupted_files:
+                    print(f"WARNING: Found {len(corrupted_files)} corrupted profraw files:")
+                    for corrupted in corrupted_files:
+                        print(f"  {corrupted}")
+
+        else:
+            print("No .profraw files found for coverage")
 
     if reset_success:
         # coverage job ignores test failures
