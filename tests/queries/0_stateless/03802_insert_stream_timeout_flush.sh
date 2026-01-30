@@ -28,7 +28,7 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_timeout (id UInt64, data 
     --input_format_max_block_wait_ms=1000 \
     --min_insert_block_size_bytes=0 \
     --min_insert_block_size_rows=0 \
-    --input_format_parallel_parsing=0
+
 sleep 1
 record_count=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM test_insert_timeout")
 echo "Total records inserted: ${record_count}"
