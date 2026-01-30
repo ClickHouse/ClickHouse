@@ -64,6 +64,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
+    extern const int REQUIRED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
     extern const int USER_EXPIRED;
 }
@@ -377,20 +378,45 @@ try
     }
 #endif
 
-    try
+    bool asked_password = false;
+    bool asked_2fa = false;
+    for (;;)
     {
-        connect();
-    }
-    catch (const Exception & e)
-    {
-        if ((e.code() != ErrorCodes::AUTHENTICATION_FAILED && e.code() != ErrorCodes::REQUIRED_PASSWORD) ||
-            config().has("password") ||
-            config().getBool("ask-password", false) ||
-            !is_interactive)
-            throw;
+        try
+        {
+            connect();
+            break;
+        }
+        catch (const Exception & e)
+        {
+            auto code = e.code();
 
-        config().setBool("ask-password", true);
-        connect();
+            bool should_ask_password = !asked_password && is_interactive &&
+                (code == ErrorCodes::AUTHENTICATION_FAILED || code == ErrorCodes::REQUIRED_PASSWORD) &&
+                !config().has("password") && !config().getBool("ask-password", false);
+
+            if (should_ask_password)
+            {
+                asked_password = true;
+                config().setBool("ask-password", true);
+                continue;
+            }
+
+            bool should_ask_2fa = !asked_2fa && (code == ErrorCodes::REQUIRED_SECOND_FACTOR) &&
+                (config().getBool("ask-password", false) || is_interactive) && !config().has("one-time-password");
+
+            if (should_ask_2fa)
+            {
+                asked_2fa = true;
+                if (!connection_parameters.password.empty())
+                    config().setString("password", connection_parameters.password);
+                config().setBool("ask-password", false);
+                config().setBool("ask-password-2fa", true);
+                continue;
+            }
+
+            throw;
+        }
     }
 
     /// Show warnings at the beginning of connection.
@@ -727,6 +753,7 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
         ("jwt", po::value<std::string>(), "Use JWT for authentication")
+        ("one-time-password", po::value<std::string>(), "Time-based one-time password (TOTP) for two-factor authentication")
 #if USE_JWT_CPP && USE_SSL
         ("login", po::bool_switch(), "Use OAuth 2.0 to login")
         ("oauth-url", po::value<std::string>(), "The base URL for the OAuth 2.0 authorization server")
@@ -868,6 +895,8 @@ void Client::processOptions(
         config().setString("password", options["password"].as<std::string>());
     if (options.contains("ask-password"))
         config().setBool("ask-password", true);
+    if (options.contains("one-time-password"))
+        config().setString("one-time-password", options["one-time-password"].as<std::string>());
     if (options.contains("ssh-key-file"))
         config().setString("ssh-key-file", options["ssh-key-file"].as<std::string>());
     if (options.contains("ssh-key-passphrase"))

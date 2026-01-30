@@ -117,7 +117,7 @@ echo 'user'
 $CLICKHOUSE_CLIENT --config $CONFIG --connection test_user -q 'select currentUser()' |& grep -F -o 'MySQL: Authentication failed'
 $CLICKHOUSE_CLIENT --config $CONFIG --connection test_user --user default -q 'select currentUser()'
 echo 'password'
-$CLICKHOUSE_CLIENT --config $CONFIG --connection test_password -q 'select currentUser()' |& grep -F -o 'default: Authentication failed: password is incorrect, or there is no user with such name.'
+$CLICKHOUSE_CLIENT --config $CONFIG --connection test_password -q 'select currentUser()' |& grep -F -o 'default: Authentication failed: password is incorrect, or there is no user with such name'
 $CLICKHOUSE_CLIENT --config $CONFIG --connection test_password --password "" -q 'select currentUser()'
 echo 'history_file'
 $CLICKHOUSE_CLIENT --progress off --interactive --config $CONFIG --connection test_history_file -q 'select 1' </dev/null |& grep -F -o 'Cannot create file: /no/such/dir/.history'
@@ -127,9 +127,9 @@ unset CLICKHOUSE_USER
 unset CLICKHOUSE_PASSWORD
 unset CLICKHOUSE_HOST
 echo 'root overrides'
-$CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection incorrect_auth -q 'select currentUser()' |& grep -F -o 'foo: Authentication failed: password is incorrect, or there is no user with such name.'
+$CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection incorrect_auth -q 'select currentUser()' |& grep -F -o 'foo: Authentication failed: password is incorrect, or there is no user with such name'
 $CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection incorrect_auth --user "default" --password "" -q 'select currentUser()'
 $CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection default -q 'select currentUser()'
-$CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection default --user foo -q 'select currentUser()' |& grep -F -o 'foo: Authentication failed: password is incorrect, or there is no user with such name.'
+$CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection default --user foo -q 'select currentUser()' |& grep -F -o 'foo: Authentication failed: password is incorrect, or there is no user with such name'
 
 rm -f "${CONFIG:?}"

@@ -375,3 +375,6 @@
 [submodule "contrib/base64"]
 	path = contrib/base64
 	url = https://github.com/ClickHouse/base64.git
+[submodule "contrib/libcotp"]
+	path = contrib/libcotp
+	url = https://github.com/paolostivanin/libcotp.git
