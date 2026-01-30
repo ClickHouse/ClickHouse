@@ -20,6 +20,9 @@
 #include <boost/circular_buffer.hpp>
 #include <fmt/ranges.h>
 
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
+
 #include <ranges>
 
 
@@ -675,12 +678,19 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     std::vector<Pipe> && input_pipes,
     Block sample_block,
     ContextPtr context,
-    const ShellCommandSourceConfiguration & source_configuration)
+    const ShellCommandSourceConfiguration & source_configuration,
+    const std::optional<QueryMetadata> & query_metadata)
 {
     ShellCommand::Config command_config(command);
     command_config.arguments = arguments;
     for (size_t i = 1; i < input_pipes.size(); ++i)
         command_config.write_fds.emplace_back(i + 2);
+
+    /// Reserve a dedicated FD for query metadata if enabled. We keep it high to avoid clashing with stdin/stdout/stderr and per-input pipes.
+    constexpr int metadata_fd = EXECUTABLE_METADATA_FD;
+    bool should_send_query_metadata = configuration.send_query_metadata && query_metadata.has_value();
+    if (should_send_query_metadata)
+        command_config.write_fds.emplace_back(metadata_fd);
 
     std::unique_ptr<ShellCommand> process;
     std::unique_ptr<ShellCommandHolder> process_holder;
@@ -722,6 +732,56 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             process = ShellCommand::executeDirect(command_config);
         else
             process = ShellCommand::execute(command_config);
+    }
+
+    /// Write query metadata to the dedicated FD if enabled.
+    if (should_send_query_metadata)
+    {
+        auto it = process->write_fds.find(metadata_fd);
+        if (it == process->write_fds.end())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Metadata FD {} was not created in child process, but send_query_metadata is enabled",
+                metadata_fd);
+        }
+
+        auto & metadata_buffer = it->second;
+
+        try
+        {
+            /// Build JSON object using Poco
+            Poco::JSON::Object::Ptr json = new Poco::JSON::Object();
+            json->set("query", query_metadata->query_str);
+
+            /// Serialize to string
+            std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            oss.exceptions(std::ios::failbit);
+            Poco::JSON::Stringifier::stringify(json, oss);
+            String json_str = oss.str();
+
+            /// Write to the metadata FD
+            writeString(json_str, metadata_buffer);
+            writeChar('\n', metadata_buffer);
+
+            /// Flush to make the payload visible to the child. For pooled executables we keep the FD open
+            /// across queries; closing it would make reuse impossible.
+            metadata_buffer.sync();
+            if (!is_executable_pool)
+                metadata_buffer.close();
+        }
+        catch (const Exception & e)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR,
+                "Failed to send query metadata to executable: {}", e.message());
+        }
+        catch (...)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR,
+                "Failed to send query metadata to executable: unknown error");
+        }
     }
 
     std::vector<ShellCommandSource::SendDataTask> tasks;

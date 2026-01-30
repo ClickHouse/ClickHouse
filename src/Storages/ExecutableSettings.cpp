@@ -23,6 +23,7 @@ namespace ErrorCodes
     DECLARE(UInt64, command_write_timeout, 10000, "Timeout for writing data to command stdin in milliseconds.", 0) \
     DECLARE(ExternalCommandStderrReaction, stderr_reaction, ExternalCommandStderrReaction::NONE, "Reaction when external command outputs data to its stderr.", 0) \
     DECLARE(Bool, check_exit_code, false, "Throw exception if the command exited with non-zero status code.", 0) \
+    DECLARE(Bool, send_query_metadata, false, "Send query metadata (query, columns, filters) to the process via a dedicated file descriptor as JSON.", 0) \
 
 DECLARE_SETTINGS_TRAITS(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS)
