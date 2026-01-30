@@ -46,9 +46,18 @@ def check_ip_blocked(port, secure=False):
                 data += chunk
             except socket.timeout:
                 break
+            except (ConnectionResetError, OSError):
+                # Connection reset by peer - also acceptable due to race condition
+                break
                 
         response = data.decode('utf-8', errors='ignore')
-        assert "IP address not allowed" in response, f"Unexpected response: {response}"
+        # Accept both error messages due to TCP buffering race condition:
+        # - "IP address not allowed": TCP layer transmits error message before close() executes
+        # - Empty response or connection closed: close() executes before TCP transmits the message
+        # Race condition: send() is async (returns after copying to kernel buffer), close() may execute
+        # before TCP layer actually sends the data, causing RST to be sent instead.
+        # See: https://github.com/ClickHouse/ClickHouse/pull/93539
+        assert "IP address not allowed" in response or response == "", f"Unexpected response: {response}"
         
     finally:
         sock.close()
