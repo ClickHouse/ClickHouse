@@ -62,8 +62,14 @@
 \N
 \N
 (3.1,6.2)
+-- Test excess arguments for binary tuple operators
+-- Test wrong type (non-tuple) for binary tuple operators
+-- Test excess arguments for unary tuple operator
+-- Test wrong type for unary tuple operator
+-- Test excess arguments for tuple-by-number operators
+-- Test wrong type (non-tuple) for tuple-by-number operators
 (2,1)
-(3,2)
+    (3,2)
 (4,3)
 2.220446049250313e-16
 0.007722123286332261
