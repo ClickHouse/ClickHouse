@@ -18,7 +18,8 @@ namespace
 
 constexpr ITransformingStep::Traits getMaterializingCTETraits()
 {
-    return ITransformingStep::Traits{
+    return ITransformingStep::Traits
+    {
         {
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
