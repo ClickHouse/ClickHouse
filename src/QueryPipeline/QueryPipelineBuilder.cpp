@@ -752,6 +752,7 @@ void QueryPipelineBuilder::addMaterializingCTETransform(
 
     auto transform = std::make_shared<MaterializingCTETransform>(
             getSharedHeader(),
+            res_header,
             temporary_table_holder);
 
     pipe.addTransform(std::move(transform));

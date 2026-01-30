@@ -8,9 +8,10 @@ namespace DB
 
 MaterializingCTETransform::MaterializingCTETransform(
     const SharedHeader & input_header_,
+    const SharedHeader & output_header_,
     TemporaryTableHolderPtr temporary_table_holder_
 )
-    : IAccumulatingTransform(input_header_, input_header_)
+    : IAccumulatingTransform(input_header_, output_header_)
     , temporary_table_holder(std::move(temporary_table_holder_))
 {
     auto storage = temporary_table_holder->getTable();

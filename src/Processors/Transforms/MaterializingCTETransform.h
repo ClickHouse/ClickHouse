@@ -15,6 +15,7 @@ class MaterializingCTETransform : public IAccumulatingTransform
 public:
     MaterializingCTETransform(
         const SharedHeader & input_header_,
+        const SharedHeader & output_header_,
         TemporaryTableHolderPtr temporary_table_holder_);
 
     String getName() const override { return "MaterializingCTETransform"; }
