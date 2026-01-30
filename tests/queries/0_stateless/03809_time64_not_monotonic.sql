@@ -68,12 +68,12 @@ INSERT INTO mt_uint32_test SELECT 1705276800 + number * 60, number FROM numbers(
 -- Same day query
 SELECT count() FROM mt_uint32_test
 WHERE ts >= 1705276800 + 8*3600 AND ts < 1705276800 + 20*3600
-  AND toTime64(ts, 3) >= toTime64(1705276800 + 10*3600, 3) AND toTime64(ts, 3) < toTime64(1705276800 + 18*3600, 3);
+  AND toTime64(ts, 3) >= '10:00:00'::Time64(3) AND toTime64(ts, 3) < '18:00:00'::Time64(3);
 
 -- Cross-day query
 SELECT count() FROM mt_uint32_test
 WHERE ts >= 1705276800 + 20*3600 AND ts < 1705276800 + 32*3600
-  AND toTime64(ts, 3) >= toTime64(1705276800 + 6*3600, 3);
+  AND toTime64(ts, 3) >= '06:00:00'::Time64(3);
 
 DROP TABLE mt_uint32_test;
 
@@ -84,6 +84,6 @@ CREATE TABLE mt_time_test (t Time64(3), value UInt32) ENGINE = MergeTree ORDER B
 INSERT INTO mt_time_test SELECT toTime64(number * 1000, 3) AS t, number FROM numbers(86400);
 
 -- Time64 to Time64 is always monotonic (scale conversion)
-SELECT count() > 0 FROM mt_time_test WHERE toTime64(t, 6) >= toTime64(10*3600*1000, 6);
+SELECT count() > 0 FROM mt_time_test WHERE toTime64(t, 6) >= '10:00:00'::Time64(6);
 
 DROP TABLE mt_time_test;
