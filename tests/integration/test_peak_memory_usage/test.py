@@ -54,7 +54,7 @@ def started_cluster():
         shard_1.query("INSERT INTO fixed_numbers_2 SELECT number FROM numbers(0, 10)")
 
         shard_2.query(
-            "INSERT INTO fixed_numbers_2 SELECT number FROM numbers(0, 120000)"
+            "INSERT INTO fixed_numbers_2 SELECT number FROM numbers(0, 1200000)"
         )
 
         yield cluster
@@ -62,7 +62,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def get_memory_usage_from_client_output_and_close(client_output):
+def get_memory_usage_from_client_output_and_close(client_output, shard_name):
     client_output.seek(0)
     query_id = None
     peak_memory_usage = None
@@ -107,7 +107,7 @@ def test_clickhouse_client_max_peak_memory_usage_distributed(started_cluster):
     with client(name="client1>", log=client_output, command=command_text) as client1:
         client1.expect(prompt)
         client1.send(
-            "SELECT COUNT(*) FROM distributed_fixed_numbers JOIN fixed_numbers_2 ON distributed_fixed_numbers.number=fixed_numbers_2.number SETTINGS query_plan_join_swap_table = 'false', join_algorithm='hash'",
+            "SELECT COUNT(*) FROM distributed_fixed_numbers JOIN fixed_numbers_2 ON distributed_fixed_numbers.number=fixed_numbers_2.number SETTINGS query_plan_join_swap_table = 'false', join_algorithm='hash', send_logs_level='trace', send_logs_source_regexp='MemoryTracker'",
         )
         client1.expect("Peak memory usage", timeout=60)
         client1.expect(prompt)
@@ -151,7 +151,7 @@ def test_clickhouse_client_max_peak_memory_single_node(started_cluster):
     with client(name="client1>", log=client_output, command=command_text) as client1:
         client1.expect(prompt)
         client1.send(
-            "SELECT COUNT(*) FROM (SELECT number FROM numbers(1,300000) INTERSECT SELECT number FROM numbers(10000,1200000))"
+            "SELECT COUNT(*) FROM (SELECT number FROM numbers(1,300000) INTERSECT SELECT number FROM numbers(10000,1200000)) SETTINGS send_logs_level='trace', send_logs_source_regexp='MemoryTracker'"
         )
         client1.expect("Peak memory usage", timeout=60)
         client1.expect(prompt)
