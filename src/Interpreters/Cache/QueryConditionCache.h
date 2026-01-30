@@ -36,7 +36,7 @@ private:
 
     struct Entry
     {
-#if defined(DEBUG) || defined(SANITIZER)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
         /// Store extended information only in Debug builds.
         /// Having them in release builds is too costly.
         const UUID table_id;
@@ -50,7 +50,7 @@ private:
 
         explicit Entry(size_t mark_count); /// (**)
 
-#if defined(DEBUG) || defined(SANITIZER)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
         Entry(size_t mark_count_, const UUID & table_id_, const String & part_name_, const UInt64 condition_hash_, const String & condition_);
 #endif
 

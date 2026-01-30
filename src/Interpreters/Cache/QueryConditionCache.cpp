@@ -36,7 +36,7 @@ size_t QueryConditionCache::EntryWeight::operator()(const Entry & entry) const
     /// Estimate the memory size of `std::vector<bool>` (it uses bit-packing internally)
     /// Round up to bytes.
     memory += (entry.matching_marks.capacity() + 7) / 8;
-#if defined(DEBUG) || defined(SANITIZER)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
     memory += entry.part_name.capacity() + entry.condition.capacity();
 #endif
     return memory;
@@ -56,7 +56,7 @@ void QueryConditionCache::write(
 
     Key key = makeKey(table_id, part_name, condition_hash);
 
-#if defined(DEBUG) || defined(SANITIZER)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count, table_id, part_name, condition_hash, condition); };
 #else
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
@@ -175,7 +175,7 @@ QueryConditionCache::Entry::Entry(size_t mark_count)
 }
 
 
-#if defined(DEBUG) || defined(SANITIZER)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
 QueryConditionCache::Entry::Entry(size_t mark_count_, const UUID & table_id_, const String & part_name_, const UInt64 condition_hash_, const String & condition_)
     : table_id(table_id_)
     , part_name(part_name_)

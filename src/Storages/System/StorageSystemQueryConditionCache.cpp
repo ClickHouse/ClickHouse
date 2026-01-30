@@ -17,11 +17,11 @@ ColumnsDescription StorageSystemQueryConditionCache::getColumnsDescription()
     return ColumnsDescription
     {
         {"key_hash", std::make_shared<DataTypeUInt128>(), "Hash of (table_uuid, part_name, condition_hash)."},
-#if defined(DEBUG) || defined(SANITIZER)
-        {"table_uuid", std::make_shared<DataTypeUUID>(), "The table UUID. (debug and sanitizerbuilds only)"},
-        {"part_name", std::make_shared<DataTypeString>(), "The part name. (debug and sanitizerbuilds only)"},
-        {"condition", std::make_shared<DataTypeString>(), "The hashed filter condition. (debug and sanitizerbuilds only)"},
-        {"condition_hash", std::make_shared<DataTypeUInt64>(), "The hash of the filter condition. (debug and sanitizerbuilds only)"},
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        {"table_uuid", std::make_shared<DataTypeUUID>(), "The table UUID. (debug and sanitizer builds only)"},
+        {"part_name", std::make_shared<DataTypeString>(), "The part name. (debug and sanitizer builds only)"},
+        {"condition", std::make_shared<DataTypeString>(), "The hashed filter condition. (debug and sanitizer builds only)"},
+        {"condition_hash", std::make_shared<DataTypeUInt64>(), "The hash of the filter condition. (debug and sanitizer builds only)"},
 #endif
         {"entry_size", std::make_shared<DataTypeUInt64>(), "The size of the entry in bytes."},
         {"matching_marks", std::make_shared<DataTypeString>(), "Matching marks."}
@@ -54,7 +54,7 @@ void StorageSystemQueryConditionCache::fillData(MutableColumns & res_columns, Co
     {
         ssize_t i = -1;
         res_columns[++i]->insert(key);
-#if defined(DEBUG) || defined(SANITIZER)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
         res_columns[++i]->insert(entry->table_id);
         res_columns[++i]->insert(entry->part_name);
         res_columns[++i]->insert(entry->condition);
