@@ -825,6 +825,9 @@ Write data types in binary format instead of type names in RowBinaryWithNamesAnd
     DECLARE(URI, format_avro_schema_registry_url, "", R"(
 For AvroConfluent format: Confluent Schema Registry URL.
 )", 0) \
+    DECLARE(URI, format_protobuf_schema_registry_url, "", R"(
+For AvroConfluent format: Confluent Schema Registry URL.
+)", 0) \
     DECLARE(Bool, input_format_binary_read_json_as_string, false, R"(
 Read values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary input format.
 )", 0) \

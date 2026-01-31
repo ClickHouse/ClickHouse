@@ -465,6 +465,10 @@
     M(StatelessWorkerThreadsScheduled, "Number of queued or active jobs in the stateless worker thread pool.") \
     M(ReadonlyDisks, "Number of disks that were marked as readonly during disk check.") \
     M(BrokenDisks, "Number of disks disks that were marked as broken during disk check.") \
+    M(ProtobufSchemaCacheBytes, "Size of the Protobuf schema cache in bytes") \
+    M(ProtobufSchemaCacheCells, "Number of cached Protobuf schemas") \
+    M(ProtobufSchemaRegistryCacheBytes, "Size of the Protobuf schema registry cache in bytes") \
+    M(ProtobufSchemaRegistryCacheCells, "Number of entries in Protobuf schema registry cache") \
     M(TaskTrackerThreads, "Number of threads used by the distributed query remote task tracker.") \
     M(TaskTrackerThreadsActive, "Number of threads in the distributed query remote task tracker thread pool running a task.") \
     M(TaskTrackerThreadsScheduled, "Number of queued or active jobs in the distributed query remote task tracker thread pool.") \

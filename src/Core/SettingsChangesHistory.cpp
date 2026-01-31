@@ -262,6 +262,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"execute_exists_as_scalar_subquery", false, true, "New setting"},
             {"allow_experimental_vector_similarity_index", false, true, "Vector similarity indexes are GA."},
             {"vector_search_with_rescoring", true, false, "New setting."},
+            {"format_protobuf_schema_registry_url", "", "", "URL to read schema from confluent protobuf schema registry."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},

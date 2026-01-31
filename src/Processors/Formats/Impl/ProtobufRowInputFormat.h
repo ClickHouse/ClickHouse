@@ -3,6 +3,7 @@
 #include "config.h"
 
 #if USE_PROTOBUF
+#   include <Processors/Formats/Impl/ConfluentRegistry.h>
 #   include <Processors/Formats/IRowInputFormat.h>
 #   include <Processors/Formats/ISchemaReader.h>
 #   include <Formats/FormatSchemaInfo.h>
@@ -77,6 +78,41 @@ private:
     bool oneof_presence;
     String google_protos_path;
 };
+
+/// Confluent framing + Protobuf binary datum encoding. Mainly used for Kafka.
+class ProtobufConfluentRowInputFormat final : public IRowInputFormat
+{
+public:
+    ProtobufConfluentRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    String getName() const override { return "ProtobufConfluentRowInputFormat"; }
+
+private:
+    bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
+    void readPrefix() override;
+
+    bool allowSyncAfterError() const override { return true; }
+    void syncAfterError() override;
+
+    std::shared_ptr<ConfluentSchemaRegistry> schema_registry;
+    using SchemaId = uint32_t;
+
+    FormatSettings format_settings;
+
+    void createReaderAndSerializer(SchemaId schema_id);
+
+    CacheBase<SchemaId, ProtobufReader> readers;
+    CacheBase<SchemaId, ProtobufSerializer> serializers;
+
+    const google::protobuf::Descriptor * descriptor;
+    std::vector<size_t> missing_column_indices;
+
+    bool with_length_delimiter;
+    bool flatten_google_wrappers;
+
+    bool first_row = true;
+};
+
+
 
 }
 #endif

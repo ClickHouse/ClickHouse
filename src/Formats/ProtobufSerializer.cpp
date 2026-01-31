@@ -2501,7 +2501,8 @@ namespace
             bool with_length_delimiter_,
             bool google_wrappers_special_treatment_,
             std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler_,
-            const ProtobufReaderOrWriter & reader_or_writer_)
+            const ProtobufReaderOrWriter & reader_or_writer_,
+            bool use_confluent_)
             : parent_field_descriptor(parent_field_descriptor_)
             , with_length_delimiter(with_length_delimiter_)
             , google_wrappers_special_treatment(google_wrappers_special_treatment_)
@@ -2510,6 +2511,7 @@ namespace
                 ? shouldSkipZeroOrEmpty(*parent_field_descriptor, google_wrappers_special_treatment_) : false)
             , reader(reader_or_writer_.reader)
             , writer(reader_or_writer_.writer)
+            , use_confluent(use_confluent_)
         {
             field_infos.reserve(field_descs_.size());
             for (auto & desc : field_descs_)
@@ -2610,6 +2612,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
+            (void)use_confluent;
             if (parent_field_descriptor || has_envelope_as_parent)
                 reader->startNestedMessage();
             else
@@ -2624,14 +2627,77 @@ namespace
                 try
                 {
                     int field_tag;
-                    while (reader->readFieldNumber(field_tag))
+                    bool should_exit_while = false;
+                    while (reader->readFieldNumber(field_tag) && !should_exit_while)
                     {
-                        size_t field_index = findFieldIndexByFieldTag(field_tag);
-                        if (field_index == static_cast<size_t>(-1))
-                            continue;
-                        auto * field_serializer = field_infos[field_index].field_serializer.get();
-                        field_serializer->readRow(row_num);
-                        field_infos[field_index].field_read = true;
+                        auto field_index = findFieldIndexByFieldTag(field_tag);
+                        if (!field_index.has_value())
+                        {
+                            if (use_confluent)
+                                break;
+                            else
+                                continue;
+                        }
+                        auto * field_serializer = field_infos[field_index.value()].field_serializer.get();
+                        auto * field_descriptor = field_infos[field_index.value()].field_descriptor;
+                        
+                        // For repeated fields, read all repetitions in a loop
+                        if (field_descriptor && field_descriptor->is_repeated())
+                        {
+                            // Read all repetitions of this field
+                            do
+                            {
+                                field_serializer->readRow(row_num);
+                                field_infos[field_index.value()].field_read = true;
+                                
+                                // Check if there's another field with the same tag
+                                // For Confluent format, save cursor position before reading next field_tag
+                                // so we can set current_message_end if the field_tag is not found
+                                Int64 cursor_before_read = use_confluent && !with_length_delimiter 
+                                    ? reader->getCursor() : 0;
+                                
+                                int next_field_tag;
+                                if (!reader->readFieldNumber(next_field_tag))
+                                    break; // End of message
+                                
+                                if (next_field_tag != field_tag)
+                                {
+                                    // Different field, check if it's valid
+                                    auto next_field_index = findFieldIndexByFieldTag(next_field_tag);
+                                    if (!next_field_index.has_value())
+                                    {
+                                        // Unknown field, probably start of next Confluent message
+                                        // In Confluent format, if we read an unknown field_tag, it might be
+                                        // the start of the next message (magic byte + schema id interpreted as varint)
+                                        if (use_confluent)
+                                        {
+                                            // For Confluent format, if field_tag is not found, it's likely
+                                            // the start of the next message, so we should exit
+                                            // Set current_message_end to cursor position before reading the unknown field_tag
+                                            if (!with_length_delimiter)
+                                                reader->setCurrentMessageEnd(cursor_before_read);
+                                            should_exit_while = true;
+                                            break; // Exit the do-while loop, exit the while loop
+                                        }
+                                        // For non-Confluent, continue to skip unknown fields
+                                        continue;
+                                    }
+                                    // Valid different field, process it in the next iteration
+                                    field_tag = next_field_tag;
+                                    break; // Exit the do-while loop, continue the while loop
+                                }
+                                // Same field tag, continue reading repetitions
+                            } while (true);
+                            
+                            if (should_exit_while)
+                                break; // Exit the while loop
+                        }
+                        else
+                        {
+                            // Non-repeated field, read it once
+                            field_serializer->readRow(row_num);
+                            field_infos[field_index.value()].field_read = true;
+                        }
                     }
 
                     for (auto & info : field_infos)
@@ -2654,6 +2720,24 @@ namespace
                             }
                         }
                     }
+                    
+                    // End the message after reading all fields
+                    // For Confluent format without length delimiter, set current_message_end to current cursor
+                    // to avoid ignoreAll() skipping remaining data
+                    if (parent_field_descriptor || has_envelope_as_parent)
+                        reader->endNestedMessage();
+                    else
+                    {
+                        if (use_confluent && !with_length_delimiter)
+                        {
+                            // Get current cursor position before ending message
+                            // We need to set current_message_end to cursor to avoid ignoreAll()
+                            reader->setCurrentMessageEnd(reader->getCursor());
+                            reader->endMessage(false);
+                        }
+                        else
+                            reader->endMessage(false);
+                    }
                 }
                 catch (...)
                 {
@@ -2665,13 +2749,37 @@ namespace
                     throw;
                 }
             }
-
-            if (parent_field_descriptor || has_envelope_as_parent)
-                reader->endNestedMessage();
             else
-                reader->endMessage(false);
+            {
+                // No fields to read, but we still need to end the message
+                if (parent_field_descriptor || has_envelope_as_parent)
+                    reader->endNestedMessage();
+                else
+                {
+                    if (use_confluent && !with_length_delimiter)
+                        reader->endMessage(true);
+                    else
+                        reader->endMessage(false);
+                }
+            }
 
             addDefaultsToMissingColumns(row_num);
+        }
+
+        ~ProtobufSerializerMessage() override
+        {
+            //finalizeRead();
+        }
+
+        void finalizeRead() override
+        {
+            if (reader->getBuffer()->available() == 0)
+            {
+                if (parent_field_descriptor || has_envelope_as_parent)
+                    reader->endNestedMessage();
+                else
+                    reader->endMessage(false);
+            }
         }
 
         void insertDefaults(size_t row_num) override
@@ -2721,7 +2829,7 @@ namespace
         }
 
     private:
-        size_t findFieldIndexByFieldTag(int field_tag)
+        std::optional<size_t> findFieldIndexByFieldTag(int field_tag)
         {
             while (true)
             {
@@ -2729,14 +2837,20 @@ namespace
                     return last_field_index;
                 if (field_tag < last_field_tag)
                     break;
-                if (++last_field_index >= field_infos.size())
+                if (!last_field_index)
+                {
+                    last_field_index = 0;
+                    if (last_field_index.value() >= field_infos.size())
+                        break;
+                }
+                else if (++(*last_field_index) >= field_infos.size())
                     break;
-                last_field_tag = field_infos[last_field_index].field_tag;
+                last_field_tag = field_infos[last_field_index.value()].field_tag;
             }
             last_field_tag = field_tag;
             auto it = field_index_by_field_tag.find(field_tag);
             if (it == field_index_by_field_tag.end())
-                last_field_index = static_cast<size_t>(-1);
+                last_field_index = std::nullopt;
             else
                 last_field_index = it->second;
             return last_field_index;
@@ -2781,18 +2895,19 @@ namespace
 
         const FieldDescriptor * const parent_field_descriptor;
         bool has_envelope_as_parent = false;
-        const bool with_length_delimiter;
-        const bool google_wrappers_special_treatment;
+        const bool with_length_delimiter = false;
+        const bool google_wrappers_special_treatment = false;
         const std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
-        const bool should_skip_if_empty;
+        const bool should_skip_if_empty = false;
         ProtobufReader * const reader;
         ProtobufWriter * const writer;
         std::vector<FieldInfo> field_infos;
         std::unordered_map<int, size_t> field_index_by_field_tag;
         MutableColumns mutable_columns;
+        bool use_confluent = false;
         bool has_missing_columns = false;
         int last_field_tag = 0;
-        size_t last_field_index = static_cast<size_t>(-1);
+        std::optional<size_t> last_field_index = std::nullopt;
     };
 
     /// Serializes a top-level envelope message in the protobuf schema.
@@ -2927,7 +3042,6 @@ namespace
     private:
         const std::unique_ptr<ProtobufSerializer> message_serializer;
     };
-
 
     /// Serializes a flattened Nested data type (an array of tuples with explicit names)
     /// as a repeated nested message.
@@ -3109,7 +3223,8 @@ namespace
             bool with_length_delimiter,
             bool with_envelope,
             bool google_wrappers_special_treatment,
-            bool oneof_presence)
+            bool oneof_presence,
+            bool use_confluent)
         {
             root_serializer_ptr = std::make_shared<ProtobufSerializer *>();
             get_root_desc_function = [my_root_serializer_ptr = root_serializer_ptr](size_t indent) -> String
@@ -3131,7 +3246,8 @@ namespace
                 /* parent_field_descriptor = */ nullptr,
                 used_column_indices,
                 /* columns_are_reordered_outside = */ false,
-                /* check_nested_while_filling_missing_columns = */ true);
+                /* check_nested_while_filling_missing_columns = */ true,
+                use_confluent);
 
             if (!message_serializer)
             {
@@ -3335,7 +3451,8 @@ namespace
             const FieldDescriptor * parent_field_descriptor,
             std::vector<size_t> & used_column_indices,
             bool columns_are_reordered_outside,
-            bool check_nested_while_filling_missing_columns)
+            bool check_nested_while_filling_missing_columns,
+            bool use_confluent)
         {
             std::vector<std::string_view> column_names_sv;
             column_names_sv.reserve(num_columns);
@@ -3353,7 +3470,8 @@ namespace
                 parent_field_descriptor,
                 used_column_indices,
                 columns_are_reordered_outside,
-                check_nested_while_filling_missing_columns);
+                check_nested_while_filling_missing_columns,
+                use_confluent);
         }
 
         std::unique_ptr<ProtobufSerializer> buildMessageSerializerImpl(
@@ -3367,7 +3485,8 @@ namespace
             const FieldDescriptor * parent_field_descriptor,
             std::vector<size_t> & used_column_indices,
             bool columns_are_reordered_outside,
-            bool check_nested_while_filling_missing_columns)
+            bool check_nested_while_filling_missing_columns,
+            bool use_confluent)
         {
             std::vector<ProtobufSerializerMessage::FieldDesc> field_descs;
             boost::container::flat_map<const FieldDescriptor *, std::string_view> field_descriptors_in_use;
@@ -3543,7 +3662,7 @@ namespace
                     /// Simple case: one column is serialized as one field.
                     const auto & field_descriptor = *field_descriptors_with_suffixes[0].first;
                     auto field_serializer = buildFieldSerializer(column_name, data_type,
-                        field_descriptor, field_descriptor.is_repeated(), google_wrappers_special_treatment, oneof_presence);
+                        field_descriptor, field_descriptor.is_repeated(), google_wrappers_special_treatment, oneof_presence, use_confluent);
 
                     if (field_serializer)
                     {
@@ -3627,7 +3746,8 @@ namespace
                             field_descriptor,
                             used_column_indices_in_nested,
                             /* columns_are_reordered_outside = */ true,
-                            /* check_nested_while_filling_missing_columns = */ false);
+                            /* check_nested_while_filling_missing_columns = */ false,
+                            use_confluent);
 
                         /// `columns_are_reordered_outside` is true because column indices are
                         /// going to be transformed and then written to the outer message,
@@ -3756,7 +3876,8 @@ namespace
                 with_length_delimiter,
                 google_wrappers_special_treatment,
                 std::move(missing_columns_filler),
-                reader_or_writer);
+                reader_or_writer,
+                use_confluent);
         }
 
         /// Builds a serializer for one-to-one match:
@@ -3767,10 +3888,11 @@ namespace
             const FieldDescriptor & field_descriptor,
             bool allow_repeat,
             bool google_wrappers_special_treatment,
-            bool oneof_presence)
+            bool oneof_presence,
+            bool use_confluent)
         {
             auto serializer_ptr = buildFieldSerializerImpl(
-                column_name, data_type, field_descriptor, allow_repeat, google_wrappers_special_treatment, oneof_presence);
+                column_name, data_type, field_descriptor, allow_repeat, google_wrappers_special_treatment, oneof_presence, use_confluent);
             return serializer_ptr;
         }
 
@@ -3782,7 +3904,8 @@ namespace
             const FieldDescriptor & field_descriptor,
             bool allow_repeat,
             bool google_wrappers_special_treatment,
-            bool oneof_presence)
+            bool oneof_presence,
+            bool use_confluent)
         {
             auto data_type_id = data_type->getTypeId();
             switch (data_type_id)
@@ -3828,7 +3951,8 @@ namespace
                         field_descriptor,
                         allow_repeat,
                         google_wrappers_special_treatment,
-                        oneof_presence);
+                        oneof_presence,
+                        use_confluent);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerNullable>(std::move(nested_serializer));
@@ -3843,7 +3967,8 @@ namespace
                         field_descriptor,
                         allow_repeat,
                         google_wrappers_special_treatment,
-                        oneof_presence);
+                        oneof_presence,
+                        use_confluent);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerLowCardinality>(std::move(nested_serializer));
@@ -3858,7 +3983,8 @@ namespace
                         field_descriptor,
                         allow_repeat,
                         google_wrappers_special_treatment,
-                        oneof_presence);
+                        oneof_presence,
+                        use_confluent);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerMap>(std::move(nested_serializer));
@@ -3896,7 +4022,8 @@ namespace
                                 &field_descriptor,
                                 used_column_indices,
                                 /* columns_are_reordered_outside = */ false,
-                                /* check_nested_while_filling_missing_columns = */ false);
+                                /* check_nested_while_filling_missing_columns = */ false,
+                                use_confluent);
 
                             if (!message_serializer)
                                 return nullptr;
@@ -3913,7 +4040,8 @@ namespace
                         field_descriptor,
                         /* allow_repeat = */ false, // We do our repeating now, so for nested type we forget about the repeating.
                         google_wrappers_special_treatment,
-                        oneof_presence);
+                        oneof_presence,
+                        use_confluent);
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerArray>(std::move(nested_serializer));
@@ -3962,7 +4090,8 @@ namespace
                             &field_descriptor,
                             used_column_indices,
                             /* columns_are_reordered_outside = */ false,
-                            /* check_nested_while_filling_missing_columns = */ false);
+                            /* check_nested_while_filling_missing_columns = */ false,
+                            use_confluent);
 
                         if (!message_serializer)
                         {
@@ -3990,7 +4119,8 @@ namespace
                             field_descriptor,
                             /* allow_repeat = */ false, // We do our repeating now, so for nested type we forget about the repeating.
                             google_wrappers_special_treatment,
-                            oneof_presence);
+                            oneof_presence,
+                            use_confluent);
 
                         if (!nested_serializer)
                             break;
@@ -4215,7 +4345,8 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
         with_length_delimiter,
         with_envelope,
         flatten_google_wrappers,
-        oneof_presence);
+        oneof_presence,
+        false);
 }
 
 std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
@@ -4231,7 +4362,25 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     return ProtobufSerializerBuilder(writer).buildMessageSerializer(
         column_names, data_types, missing_column_indices,
         *descriptor.message_descriptor,
-        with_length_delimiter, with_envelope, defaults_for_nullable_google_wrappers, false);
+        with_length_delimiter, with_envelope, defaults_for_nullable_google_wrappers, false, false);
+}
+
+std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
+    const Strings & column_names,
+    const DataTypes & data_types,
+    std::vector<size_t> & missing_column_indices,
+    const google::protobuf::Descriptor * descriptor,
+    bool with_length_delimiter,
+    bool with_envelope,
+    bool flatten_google_wrappers,
+    ProtobufReader & reader,
+    bool oneof_presence,
+    bool use_confluent)
+{
+    return ProtobufSerializerBuilder(reader).buildMessageSerializer(
+        column_names, data_types, missing_column_indices,
+        *descriptor,
+        with_length_delimiter, with_envelope, flatten_google_wrappers, oneof_presence, use_confluent);
 }
 
 NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields, bool oneof_presence)
