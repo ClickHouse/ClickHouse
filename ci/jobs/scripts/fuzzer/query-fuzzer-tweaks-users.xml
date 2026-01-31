@@ -64,6 +64,7 @@
             <allow_experimental_kusto_dialect>1</allow_experimental_kusto_dialect>
             <allow_experimental_lightweight_update>1</allow_experimental_lightweight_update>
             <allow_experimental_live_view>1</allow_experimental_live_view>
+            <allow_experimental_macaddress_type>1</allow_experimental_macaddress_type>
             <allow_experimental_materialized_postgresql_table>1</allow_experimental_materialized_postgresql_table>
             <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
             <allow_experimental_prql_dialect>1</allow_experimental_prql_dialect>

@@ -104,6 +104,7 @@ bool Field::operator< (const Field & rhs) const
         case Types::UUID:    return get<UUID>()    < rhs.get<UUID>();
         case Types::IPv4:    return get<IPv4>()    < rhs.get<IPv4>();
         case Types::IPv6:    return get<IPv6>()    < rhs.get<IPv6>();
+        case Types::MacAddress: return get<MacAddress>() < rhs.get<MacAddress>();
         case Types::Float64:
             static constexpr int nan_direction_hint = 1; /// Put NaN at the end
             return FloatCompareHelper<Float64>::less(get<Float64>(), rhs.get<Float64>(), nan_direction_hint);
@@ -143,6 +144,7 @@ bool Field::operator<= (const Field & rhs) const
         case Types::UUID:    return get<UUID>().toUnderType() <= rhs.get<UUID>().toUnderType();
         case Types::IPv4:    return get<IPv4>()    <= rhs.get<IPv4>();
         case Types::IPv6:    return get<IPv6>()    <= rhs.get<IPv6>();
+        case Types::MacAddress: return get<MacAddress>() <= rhs.get<MacAddress>();
         case Types::Float64:
         {
             static constexpr int nan_direction_hint = 1; /// Put NaN at the end
@@ -184,6 +186,7 @@ bool Field::operator== (const Field & rhs) const
         case Types::UUID:    return get<UUID>()    == rhs.get<UUID>();
         case Types::IPv4:    return get<IPv4>()    == rhs.get<IPv4>();
         case Types::IPv6:    return get<IPv6>()    == rhs.get<IPv6>();
+        case Types::MacAddress: return get<MacAddress>() == rhs.get<MacAddress>();
         case Types::String:  return get<String>()  == rhs.get<String>();
         case Types::Array:   return get<Array>()   == rhs.get<Array>();
         case Types::Tuple:   return get<Tuple>()   == rhs.get<Tuple>();
@@ -247,6 +250,12 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
             IPv6 value;
             readBinary(value.toUnderType(), buf);
             return value;
+        }
+        case Field::Types::MacAddress:
+        {
+            UInt64 value;
+            readBinary(value, buf);
+            return MacAddress(value);
         }
         case Field::Types::Int64:
         {
@@ -842,6 +851,7 @@ std::string_view fieldTypeToString(Field::Types::Which type)
         case Field::Types::Which::UUID: return "UUID"sv;
         case Field::Types::Which::IPv4: return "IPv4"sv;
         case Field::Types::Which::IPv6: return "IPv6"sv;
+        case Field::Types::Which::MacAddress: return "MacAddress"sv;
         case Field::Types::Which::CustomType: return "CustomType"sv;
     }
 }
@@ -894,6 +904,7 @@ template NearestFieldType<std::decay_t<String>> & Field::safeGet<String>() &;
 template NearestFieldType<std::decay_t<UUID>> & Field::safeGet<UUID>() &;
 template NearestFieldType<std::decay_t<IPv4>> & Field::safeGet<IPv4>() &;
 template NearestFieldType<std::decay_t<IPv6>> & Field::safeGet<IPv6>() &;
+template NearestFieldType<std::decay_t<MacAddress>> & Field::safeGet<MacAddress>() &;
 template NearestFieldType<std::decay_t<Decimal32>> & Field::safeGet<Decimal32>() &;
 template NearestFieldType<std::decay_t<Decimal64>> & Field::safeGet<Decimal64>() &;
 template NearestFieldType<std::decay_t<Decimal128>> & Field::safeGet<Decimal128>() &;

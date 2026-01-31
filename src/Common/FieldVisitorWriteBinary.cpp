@@ -18,6 +18,7 @@ void FieldVisitorWriteBinary::operator() (const Int256 & x, WriteBuffer & buf) c
 void FieldVisitorWriteBinary::operator() (const UUID & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const IPv4 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const IPv6 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const MacAddress & x, WriteBuffer & buf) const { writeBinary(x.toUInt64(), buf); }
 void FieldVisitorWriteBinary::operator() (const CustomType & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal32> & x, WriteBuffer & buf) const { writeBinary(x.getValue(), buf); writeBinary(x.getScale(), buf); }
 void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal64> & x, WriteBuffer & buf) const { writeBinary(x.getValue(), buf); writeBinary(x.getScale(), buf); }

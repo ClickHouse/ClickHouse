@@ -7442,6 +7442,10 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
 Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Tuple](../../sql-reference/data-types/tuple.md) columns in tables.
 )", EXPERIMENTAL) \
     \
+    DECLARE(Bool, allow_experimental_macaddress_type, false, R"(
+Allows creation of [MacAddress](../../sql-reference/data-types/macaddress.md) columns in tables.
+)", EXPERIMENTAL) \
+    \
     /** Experimental feature for moving data between shards. */ \
     DECLARE(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs

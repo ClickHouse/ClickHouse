@@ -873,6 +873,7 @@ template class IColumnHelper<ColumnVector<Float64>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<UUID>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<IPv4>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<IPv6>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<MacAddress>, ColumnFixedSizeHelper>;
 
 template class IColumnHelper<ColumnDecimal<Decimal32>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnDecimal<Decimal64>, ColumnFixedSizeHelper>;

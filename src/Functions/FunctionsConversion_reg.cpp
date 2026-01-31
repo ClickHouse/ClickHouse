@@ -1511,6 +1511,46 @@ SELECT toIPv6('127.0.0.1');
 
     factory.registerFunction<detail::FunctionToIPv6>(documentation_toIPv6);
 
+    /// toMacAddress documentation
+    FunctionDocumentation::Description description_toMacAddress = R"(
+Converts a string or a UInt64 form of MAC address to type MacAddress.
+Supports multiple MAC address formats: colon-separated (00:1A:2B:3C:4D:5E), hyphen-separated (00-1A-2B-3C-4D-5E), Cisco dot-separated (001A.2B3C.4D5E), and raw hexadecimal (001A2B3C4D5E).
+)";
+    FunctionDocumentation::Syntax syntax_toMacAddress = "toMacAddress(x)";
+    FunctionDocumentation::Arguments arguments_toMacAddress = {
+        {"x", "A MAC address", {"String", "UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_toMacAddress = {"Returns a MAC address.", {"MacAddress"}};
+    FunctionDocumentation::Examples examples_toMacAddress = {
+    {
+        "Usage example",
+        R"(
+SELECT toMacAddress('00:1a:2b:3c:4d:5e');
+        )",
+        R"(
+┌─toMacAddress('00:1a:2b:3c:4d:5e')─┐
+│ 00:1a:2b:3c:4d:5e                 │
+└───────────────────────────────────┘
+        )"
+    },
+    {
+        "Conversion from an integer",
+        R"(
+SELECT toMacAddress(112589990684126);
+        )",
+        R"(
+┌─toMacAddress(112589990684126)─┐
+│ 00:66:77:88:99:5e             │
+└───────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_toMacAddress = {25, 1};
+    FunctionDocumentation::Category category_toMacAddress = FunctionDocumentation::Category::IPAddress;
+    FunctionDocumentation documentation_toMacAddress = {description_toMacAddress, syntax_toMacAddress, arguments_toMacAddress, {}, returned_value_toMacAddress, examples_toMacAddress, introduced_in_toMacAddress, category_toMacAddress};
+
+    factory.registerFunction<detail::FunctionToMacAddress>(documentation_toMacAddress);
+
     FunctionDocumentation::Description toString_description = R"(
 Converts values to their string representation.
 For DateTime arguments, the function can take a second String argument containing the name of the time zone.
@@ -2768,6 +2808,46 @@ SELECT
 
     factory.registerFunction<detail::FunctionToIPv6OrZero>(documentation_toIPv6OrZero);
 
+    /// toMacAddressOrZero documentation
+    FunctionDocumentation::Description description_toMacAddressOrZero = R"(
+Converts an input value to a value of type [MacAddress](../data-types/macaddress.md) but returns zero MAC address in case of an error.
+Like [`toMacAddress`](#toMacAddress) but returns zero MAC address (`00:00:00:00:00:00`) instead of throwing an exception on conversion errors.
+
+Supported arguments:
+- String representations of MAC addresses in various formats (colon-separated, hyphen-separated, Cisco dot-separated, raw hexadecimal).
+- Integer representations of MAC addresses.
+
+Unsupported arguments (return zero MAC):
+- Invalid MAC address formats.
+- Out-of-range values.
+    )";
+    FunctionDocumentation::Syntax syntax_toMacAddressOrZero = "toMacAddressOrZero(x)";
+    FunctionDocumentation::Arguments arguments_toMacAddressOrZero =
+    {
+        {"x", "A string or integer representation of a MAC address.", {"String", "Integer"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_toMacAddressOrZero = {"Returns a MAC address if successful, otherwise zero MAC address (`00:00:00:00:00:00`).", {"MacAddress"}};
+    FunctionDocumentation::Examples examples_toMacAddressOrZero = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    toMacAddressOrZero('00:1A:2B:3C:4D:5E') AS valid_mac,
+    toMacAddressOrZero('invalid.mac') AS invalid_mac
+        )",
+        R"(
+┌─valid_mac─────────┬─invalid_mac───────┐
+│ 00:1a:2b:3c:4d:5e │ 00:00:00:00:00:00 │
+└───────────────────┴───────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_toMacAddressOrZero = {25, 1};
+    FunctionDocumentation::Category category_toMacAddressOrZero = FunctionDocumentation::Category::IPAddress;
+    FunctionDocumentation documentation_toMacAddressOrZero = {description_toMacAddressOrZero, syntax_toMacAddressOrZero, arguments_toMacAddressOrZero, {}, returned_value_toMacAddressOrZero, examples_toMacAddressOrZero, introduced_in_toMacAddressOrZero, category_toMacAddressOrZero};
+
+    factory.registerFunction<detail::FunctionToMacAddressOrZero>(documentation_toMacAddressOrZero);
+
     /// toUInt8OrNull documentation
     FunctionDocumentation::Description description_toUInt8OrNull = R"(
 Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [`UInt8`](../data-types/int-uint.md) but returns `NULL` in case of an error.
@@ -4010,6 +4090,47 @@ SELECT
     FunctionDocumentation documentation_toIPv6OrNull = {description_toIPv6OrNull, syntax_toIPv6OrNull, arguments_toIPv6OrNull, {}, returned_value_toIPv6OrNull, examples_toIPv6OrNull, introduced_in_toIPv6OrNull, category_toIPv6OrNull};
 
     factory.registerFunction<detail::FunctionToIPv6OrNull>(documentation_toIPv6OrNull);
+
+    /// toMacAddressOrNull documentation
+    FunctionDocumentation::Description description_toMacAddressOrNull = R"(
+Converts an input value to a value of type `MacAddress` but returns `NULL` in case of an error.
+Like [`toMacAddress`](#toMacAddress) but returns `NULL` instead of throwing an exception on conversion errors.
+
+Supported arguments:
+- String representations of MAC addresses in various formats (colon-separated, hyphen-separated, Cisco dot-separated, raw hexadecimal).
+- Integer representations of MAC addresses.
+
+Unsupported arguments (return `NULL`):
+- Invalid MAC address formats.
+- Out-of-range values.
+- Malformed addresses.
+    )";
+    FunctionDocumentation::Syntax syntax_toMacAddressOrNull = "toMacAddressOrNull(x)";
+    FunctionDocumentation::Arguments arguments_toMacAddressOrNull =
+    {
+        {"x", "A string or integer representation of a MAC address.", {"String", "Integer"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_toMacAddressOrNull = {"Returns a MAC address if successful, otherwise `NULL`.", {"MacAddress", "NULL"}};
+    FunctionDocumentation::Examples examples_toMacAddressOrNull = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    toMacAddressOrNull('00:1A:2B:3C:4D:5E') AS valid_mac,
+    toMacAddressOrNull('invalid.mac') AS invalid_mac
+        )",
+        R"(
+┌─valid_mac─────────┬─invalid_mac─┐
+│ 00:1a:2b:3c:4d:5e │        ᴺᵁᴸᴸ │
+└───────────────────┴─────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_toMacAddressOrNull = {25, 1};
+    FunctionDocumentation::Category category_toMacAddressOrNull = FunctionDocumentation::Category::IPAddress;
+    FunctionDocumentation documentation_toMacAddressOrNull = {description_toMacAddressOrNull, syntax_toMacAddressOrNull, arguments_toMacAddressOrNull, {}, returned_value_toMacAddressOrNull, examples_toMacAddressOrNull, introduced_in_toMacAddressOrNull, category_toMacAddressOrNull};
+
+    factory.registerFunction<detail::FunctionToMacAddressOrNull>(documentation_toMacAddressOrNull);
 
     /// parseDateTimeBestEffort documentation
     FunctionDocumentation::Description parseDateTimeBestEffort_description = R"(
