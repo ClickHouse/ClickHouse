@@ -228,7 +228,18 @@ SortingTransform::SortingTransform(
 
     description.swap(description_without_constants);
 
-    if (SortQueueVariants(sort_description_types, description).variantSupportJITCompilation())
+    // Check if natural sort is used - JIT compilation is not supported for natural sort
+    bool has_natural_sort = false;
+    for (const auto & desc : description)
+    {
+        if (desc.is_natural)
+        {
+            has_natural_sort = true;
+            break;
+        }
+    }
+
+    if (!has_natural_sort && SortQueueVariants(sort_description_types, description).variantSupportJITCompilation())
         compileSortDescriptionIfNeeded(description, sort_description_types, increase_sort_description_compile_attempts /*increase_compile_attempts*/);
 }
 

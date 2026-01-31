@@ -25,6 +25,7 @@ public:
     int direction = 0; /// 1 for ASC, -1 for DESC
     int nulls_direction = 0; /// Same as direction for NULLS LAST, opposite for NULLS FIRST.
     bool nulls_direction_was_explicitly_specified = false;
+    bool is_natural;
 
     bool with_fill = false;
 

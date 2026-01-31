@@ -196,6 +196,11 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         auto * elem = orderBy()->children[0]->as<ASTOrderByElement>();
         ostr << (elem->direction == -1 ? " DESC" : " ASC");
 
+        if (elem->is_natural)
+        {
+            ostr << " NATURAL";
+        }
+
         if (elem->nulls_direction_was_explicitly_specified)
         {
             ostr << " NULLS " << (elem->nulls_direction == elem->direction ? "LAST" : "FIRST");
