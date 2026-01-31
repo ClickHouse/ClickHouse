@@ -11,6 +11,7 @@
 #include <Common/setThreadName.h>
 #include <Core/Settings.h>
 #include <Core/DeduplicateInsert.h>
+#include <Core/ServerSettings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
@@ -92,6 +93,11 @@ namespace Setting
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsDeduplicationUnificationStage deduplication_unification_stage;
 }
 
 namespace ErrorCodes
@@ -1244,7 +1250,9 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         data->entries.size(),
         std::move(adding_defaults_transform));
 
-    auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
+    auto deduplication_info = DeduplicationInfo::create(
+        /*async_insert*/true,
+        insert_context->getServerSettings()[ServerSetting::deduplication_unification_stage].value);
 
     for (const auto & entry : data->entries)
     {
@@ -1287,7 +1295,9 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
     LogFunc && add_to_async_insert_log)
 {
     size_t total_rows = 0;
-    auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
+    auto deduplication_info = DeduplicationInfo::create(
+        /*async_insert*/true,
+        context_->getServerSettings()[ServerSetting::deduplication_unification_stage].value);
     auto result_columns = header.cloneEmptyColumns();
 
     for (const auto & entry : data->entries)
