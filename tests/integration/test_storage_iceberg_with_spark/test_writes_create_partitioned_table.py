@@ -37,3 +37,42 @@ def test_writes_create_partitioned_table(started_cluster_iceberg_with_spark, for
 
     df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 1
+
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_writes_create_single_partition(started_cluster_iceberg_with_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_writes_create_partitioned_table_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x String, y Int64)", format_version, "icebergBucket(5, y)")
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
+
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('69', 1), ('1488', 39), ('777', 1), ('993', 1);", settings={"allow_experimental_insert_into_iceberg": 1})
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1488\t39\n69\t1\n777\t1\n993\t1\n'
+
+    if storage_type == "azure":
+        return
+
+    files = default_download_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    cnt_pq_files = 0
+    for file in files:
+        if file[-7:] == "parquet":
+            cnt_pq_files += 1
+
+    # there is only one partition in the table
+    assert cnt_pq_files == 1
+
+    with open(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "wb") as f:
+        f.write(b"2")
+
+    df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
+    assert len(df) == 4
