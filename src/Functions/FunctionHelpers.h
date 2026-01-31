@@ -161,6 +161,30 @@ void validateFunctionArguments(const String & function_name, const ColumnsWithTy
                                const FunctionArgumentDescriptors & mandatory_args,
                                const FunctionArgumentDescriptors & optional_args = {});
 
+/// Validates that the user-provided arguments match the expected arguments and the variadic argument at the end of the argument list.
+///
+/// Checks that
+/// - the number of provided arguments is at least the number of mandatory arguments,
+/// - all mandatory arguments are present and have the right type,
+/// - all arguments provided in excess of the mandatory arguments match the variadic argument type.
+///
+/// With multiple variadic arguments, e.g. f(a, b, ...[c]), provided arguments must match left-to-right. E.g. these calls are considered valid:
+///     f(a, b)
+///     f(a, b, c)
+///     f(a, b, c, c)
+/// but these are NOT:
+///     f(a)
+///     f(a, b, b)
+///     f(a, c)
+void validateFunctionArgumentsWithVariadics(const IFunction & func, const ColumnsWithTypeAndName & arguments,
+                                            const FunctionArgumentDescriptors & mandatory_args,
+                                            const FunctionArgumentDescriptor & variadic_args);
+
+/// Validates that the number of provided arguments is within expected range.
+void validateNumberOfFunctionArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments,
+                                       size_t expected_min_args,
+                                       size_t expected_max_args);
+
 /// Checks if a list of array columns have equal offsets. Return a pair of nested columns and offsets if true, otherwise throw.
 std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
 checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments);
@@ -172,13 +196,14 @@ wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const
 
 /** Return ColumnNullable of src, with input null map
   * Or ColumnConst(ColumnNullable) if the result is always NULL or if the result is constant and always not NULL.
+  * If null_map is nullptr, it's as if it's all 0.
   */
 ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map);
 
 struct NullPresence
 {
-    bool has_nullable = false;
-    bool has_null_constant = false;
+    bool has_nullable = false; /// Nullable(T)
+    bool has_null_constant = false; /// Nullable(Nothing)
 };
 
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args);

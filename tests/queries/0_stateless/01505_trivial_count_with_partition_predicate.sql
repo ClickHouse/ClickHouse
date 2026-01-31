@@ -1,8 +1,9 @@
+-- add_minmax_index_for_numeric_columns=0: Changes how many rows are read
 drop table if exists test1;
 drop table if exists test_tuple;
 drop table if exists test_two_args;
 
-create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) order by k settings index_granularity = 1;
+create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) order by k settings index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 insert into test1 values ('2020-09-01 00:01:02', 1), ('2020-09-01 20:01:03', 2), ('2020-09-02 00:01:03', 3);
 
 set max_rows_to_read = 1;
@@ -23,7 +24,7 @@ select count() from test1 where toDate(p) > '2020-09-01';
 -- non-optimized
 select count() from test1 where toDate(p) >= '2020-09-01' and p <= '2020-09-01 00:00:00';
 
-create table test_tuple(p DateTime, i int, j int) engine MergeTree partition by (toDate(p), i) order by j settings index_granularity = 1;
+create table test_tuple(p DateTime, i int, j int) engine MergeTree partition by (toDate(p), i) order by j settings index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 insert into test_tuple values ('2020-09-01 00:01:02', 1, 2), ('2020-09-01 00:01:03', 2, 3), ('2020-09-02 00:01:03', 3, 4);
 
@@ -42,7 +43,7 @@ select count() from test_tuple array join [1,2] as c where toDate(p) = '2020-09-
 select count() from test_tuple array join [1,2,3] as c where toDate(p) = '2020-09-01'; -- { serverError TOO_MANY_ROWS }
 select count() from test_tuple array join [1,2,3] as c where toDate(p) = '2020-09-01' settings max_rows_to_read = 6;
 
-create table test_two_args(i int, j int, k int) engine MergeTree partition by i + j order by k settings index_granularity = 1;
+create table test_two_args(i int, j int, k int) engine MergeTree partition by i + j order by k settings index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 insert into test_two_args values (1, 2, 3), (2, 1, 3), (0, 3, 4);
 

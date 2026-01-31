@@ -56,6 +56,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)
     , read_until_position(read_until_position_)
+    , last_object_metadata(std::make_unique<std::optional<ObjectMetadata>>())
 {
     if (!use_external_buffer)
     {
@@ -236,10 +237,10 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
 
     download_options.Range = {static_cast<int64_t>(offset), length};
 
+    Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), attempt);
+
     if (!blob_client)
         blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
-
-    azure_context = azure_context.WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), attempt);
 
     size_t sleep_time_with_backoff_milliseconds = 100;
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromAzureInitMicroseconds);
@@ -322,8 +323,12 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
 
             Azure::Storage::Blobs::DownloadBlobOptions download_options;
             download_options.Range = {static_cast<int64_t>(range_begin), n};
+            Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), 0);
+
+
             auto download_response = blob_client->Download(download_options, azure_context);
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
+
             std::unique_ptr<Azure::Core::IO::BodyStream> body_stream = std::move(download_response.Value.BodyStream);
             bytes_copied = body_stream->ReadToCount(reinterpret_cast<uint8_t *>(to), body_stream->Length(), azure_context);
 
@@ -371,23 +376,25 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
 
 ObjectMetadata ReadBufferFromAzureBlobStorage::getObjectMetadataFromTheLastRequest() const
 {
-    if (!last_object_metadata)
+    if (last_object_metadata.get()->has_value())
         throw Exception(ErrorCodes::NOT_INITIALIZED, "No Azure object metadata available because there were no successful requests");
 
-    return *last_object_metadata;
+    return last_object_metadata.get()->value();
 }
 
 void ReadBufferFromAzureBlobStorage::setMetadataFromResponse(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details, size_t blob_size) const
 {
-    last_object_metadata.emplace();
-    last_object_metadata->size_bytes = blob_size;
-    last_object_metadata->etag = details.ETag.ToString();
-    last_object_metadata->last_modified = static_cast<std::chrono::system_clock::time_point>(details.LastModified).time_since_epoch().count();
+    ObjectMetadata new_metadata;
+    new_metadata.size_bytes = blob_size;
+    new_metadata.etag = details.ETag.ToString();
+    new_metadata.last_modified = static_cast<std::chrono::system_clock::time_point>(details.LastModified).time_since_epoch().count();
     if (!details.Metadata.empty())
     {
         for (const auto & [key, value] : details.Metadata)
-            last_object_metadata->attributes[key] = value;
+            new_metadata.attributes[key] = value;
     }
+
+    last_object_metadata.set(std::make_unique<std::optional<ObjectMetadata>>(std::move(new_metadata)));
 }
 
 }

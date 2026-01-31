@@ -148,7 +148,12 @@ public:
     Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override;
 };
 
-using HeadObjectRequest = ExtendedRequest<Model::HeadObjectRequest>;
+class HeadObjectRequest: public ExtendedRequest<Model::HeadObjectRequest>
+{
+public:
+    void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
+};
+
 using ListObjectsV2Request = ExtendedRequest<Model::ListObjectsV2Request>;
 using ListObjectsRequest = ExtendedRequest<Model::ListObjectsRequest>;
 using GetObjectRequest = ExtendedRequest<Model::GetObjectRequest>;

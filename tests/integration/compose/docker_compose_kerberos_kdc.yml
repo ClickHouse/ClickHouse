@@ -8,3 +8,4 @@ services:
       - /dev/urandom:/dev/random
     ports: [88, 749]
     stop_grace_period: 5s
+    cpus: 3

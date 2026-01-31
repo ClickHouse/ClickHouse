@@ -2,8 +2,9 @@
 
 function drop_filesystem_cache()
 {
-    while [ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.filesystem_cache") -gt 0 ]; do
-        $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SYSTEM DROP FILESYSTEM CACHE"
+    local cache_name=$1 && shift
+    while [ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'") -gt 0 ]; do
+        $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SYSTEM DROP FILESYSTEM CACHE '$cache_name'"
         sleep 1
     done
 }

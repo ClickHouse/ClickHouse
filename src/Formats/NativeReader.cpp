@@ -207,30 +207,8 @@ Block NativeReader::read()
 
         SerializationPtr serialization;
         ColumnPtr read_column;
-        const ColumnLazy * column_lazy = nullptr;
-        bool skip_reading = false;
 
-        if (const auto * tmp_header_column = header.findByName(column.name))
-            column_lazy = checkAndGetColumn<ColumnLazy>(tmp_header_column->column.get());
-
-        if (column_lazy)
-        {
-            if (!column_lazy->getColumns().empty())
-            {
-                serialization = column_lazy->getDefaultSerialization();
-                const auto & tmp_columns = column_lazy->getColumns();
-
-                auto new_column = ColumnTuple::create(tmp_columns)->cloneEmpty();
-                new_column->reserve(rows);
-                read_column = std::move(new_column);
-            }
-            else
-            {
-                read_column = ColumnLazy::create(rows);
-                skip_reading = true;
-            }
-        }
-        else if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+        if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
             /// NativeReader must enable all supported serializations (e.g. nullable sparse) here. Since it operates on
             /// in-memory state, it should be able to handle all possible serialization variants.
@@ -263,7 +241,7 @@ Block NativeReader::read()
         }
 
         /// If no rows, nothing to read.
-        if (!skip_reading && rows)
+        if (rows)
         {
             const auto * format = format_settings ? &*format_settings : nullptr;
             NameAndTypePair name_and_type = {column.name, column.type};
@@ -281,16 +259,6 @@ Block NativeReader::read()
 
                 if (format_settings && format_settings->null_as_default)
                     insertNullAsDefaultIfNeeded(column, header_column, header.getPositionByName(column.name), block_missing_values);
-
-                if (!skip_reading && column_lazy)
-                {
-                    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.column.get()))
-                        column.column = ColumnLazy::create(column_tuple->getColumns());
-                    else
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column with name {} and data type {} found while reading data in Native format",
-                                        column.name,
-                                        column.column->getDataType());
-                }
 
                 if (!header_column.type->equals(*column.type))
                 {

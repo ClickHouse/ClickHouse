@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/IDataType.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
@@ -17,7 +18,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
@@ -116,8 +116,14 @@ struct TimeSlotsImpl
     Adjusting different scales can cause overflow -- it is OK for us. Don't use scales that differ a lot :)
     */
     static NO_SANITIZE_UNDEFINED void vectorVector(
-        const PaddedPODArray<DateTime64> & starts, const PaddedPODArray<Decimal64> & durations, Decimal64 time_slot_size,
-        PaddedPODArray<DateTime64> & result_values, ColumnArray::Offsets & result_offsets, UInt16 dt_scale, UInt16 duration_scale, UInt16 time_slot_scale,
+        const PaddedPODArray<DateTime64> & starts,
+        const PaddedPODArray<Decimal64> & durations,
+        Decimal64 time_slot_size,
+        PaddedPODArray<DateTime64> & result_values,
+        ColumnArray::Offsets & result_offsets,
+        UInt16 dt_scale,
+        UInt16 duration_scale,
+        UInt16 time_slot_scale,
         size_t input_rows_count)
     {
         result_offsets.resize(input_rows_count);
@@ -231,34 +237,30 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 2 && arguments.size() != 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                            getName(), arguments.size());
+        validateNumberOfFunctionArguments(*this, arguments, 2, 3);
 
         if (WhichDataType(arguments[0].type).isDateTime())
         {
-            if (!WhichDataType(arguments[1].type).isUInt32())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}. "
-                    "Must be UInt32 when first argument is DateTime.", arguments[1].type->getName(), getName());
-
-            if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isNativeUInt())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}. "
-                    "Must be UInt32 when first argument is DateTime.", arguments[2].type->getName(), getName());
+            FunctionArgumentDescriptors mandatory_args = {
+                {"start_time", &isDateTime, nullptr, "DateTime"},
+                {"duration", &isUInt32, nullptr, "UInt32"}
+            };
+            FunctionArgumentDescriptors optional_args = {
+                {"size", &isNativeUInt, nullptr, "UInt*"}
+            };
+            validateFunctionArguments(getName(), arguments, mandatory_args, optional_args);
         }
-        else if (WhichDataType(arguments[0].type).isDateTime64())
+        else // DateTime64
         {
-            if (!WhichDataType(arguments[1].type).isDecimal64())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}. "
-                    "Must be Decimal64 when first argument is DateTime64.", arguments[1].type->getName(), getName());
-
-            if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isDecimal64())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}. "
-                    "Must be Decimal64 when first argument is DateTime64.", arguments[2].type->getName(), getName());
+            FunctionArgumentDescriptors mandatory_args = {
+                {"start_time", &isDateTime64, nullptr, "DateTime64"},
+                {"duration", &isDecimal64, nullptr, "Decimal64"}
+            };
+            FunctionArgumentDescriptors optional_args = {
+                {"size", &isDecimal64, nullptr, "Decimal64"}
+            };
+            validateFunctionArguments(getName(), arguments, mandatory_args, optional_args);
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
-                                "Must be DateTime or DateTime64.", arguments[0].type->getName(), getName());
 
         /// If time zone is specified for source data type, attach it to the resulting type.
         /// Note that there is no explicit time zone argument for this function (we specify 2 as an argument number with explicit time zone).
@@ -338,7 +340,7 @@ public:
 
                 if (time_slot_size = time_slot_column->getValue<Decimal64>(); time_slot_size <= 0)
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Third argument for function {} must be greater than zero", getName());
-                time_slot_scale = assert_cast<const DataTypeDecimal64 *>(arguments[2].type.get())->getScale();
+                time_slot_scale = static_cast<UInt16>(assert_cast<const DataTypeDecimal64 *>(arguments[2].type.get())->getScale());
             }
 
             const auto * starts = checkAndGetColumn<ColumnDateTime64>(arguments[0].column.get());
@@ -355,8 +357,16 @@ public:
 
             if (starts && durations)
             {
-                TimeSlotsImpl::vectorVector(starts->getData(), durations->getData(), time_slot_size, res_values, res->getOffsets(),
-                    start_time_scale, duration_scale, time_slot_scale, input_rows_count);
+                TimeSlotsImpl::vectorVector(
+                    starts->getData(),
+                    durations->getData(),
+                    time_slot_size,
+                    res_values,
+                    res->getOffsets(),
+                    static_cast<UInt16>(start_time_scale),
+                    static_cast<UInt16>(duration_scale),
+                    time_slot_scale,
+                    input_rows_count);
                 return res;
             }
             if (starts && const_durations)
@@ -367,8 +377,8 @@ public:
                     time_slot_size,
                     res_values,
                     res->getOffsets(),
-                    start_time_scale,
-                    duration_scale,
+                    static_cast<UInt16>(start_time_scale),
+                    static_cast<UInt16>(duration_scale),
                     time_slot_scale,
                     input_rows_count);
                 return res;
@@ -381,8 +391,8 @@ public:
                     time_slot_size,
                     res_values,
                     res->getOffsets(),
-                    start_time_scale,
-                    duration_scale,
+                    static_cast<UInt16>(start_time_scale),
+                    static_cast<UInt16>(duration_scale),
                     time_slot_scale,
                     input_rows_count);
                 return res;

@@ -395,3 +395,68 @@ Granules: 1/2
 Description: text GRANULARITY 100000000
 Parts: 0/2
 Granules: 0/2
+-- mapContains*Like support
+-- -- query with String
+1
+2
+1
+1
+2
+1
+-- -- query with FixedString
+1
+2
+1
+1
+2
+1
+-- -- Check that the text index actually gets used (String)
+-- -- -- key exists only in the first granule
+Description: text GRANULARITY 100000000
+Parts: 1/2
+Granules: 1/2
+-- -- -- key exists only in the second granule
+Description: text GRANULARITY 100000000
+Parts: 1/2
+Granules: 1/2
+-- -- -- key exists in both granules
+Description: text GRANULARITY 100000000
+Parts: 2/2
+Granules: 2/2
+-- -- -- value exists only in the first granule
+Description: text GRANULARITY 100000000
+Parts: 1/2
+Granules: 1/2
+-- -- -- value exists only in the second granule
+Description: text GRANULARITY 100000000
+Parts: 1/2
+Granules: 1/2
+-- -- -- value exists in both granules
+Description: text GRANULARITY 100000000
+Parts: 2/2
+Granules: 2/2
+-- -- Check that the text index actually gets used (FixedString)
+-- -- -- key exists only in the first granule
+Description: text GRANULARITY 100000000
+Parts: 1/2
+Granules: 1/2
+-- -- -- key exists only in the second granule
+Description: text GRANULARITY 100000000
+Parts: 1/2
+Granules: 1/2
+-- -- -- key exists in both granules
+Description: text GRANULARITY 100000000
+Parts: 2/2
+Granules: 2/2
+-- -- -- value exists only in the first granule
+Description: text GRANULARITY 100000000
+Parts: 1/2
+Granules: 1/2
+-- -- -- value exists only in the second granule
+Description: text GRANULARITY 100000000
+Parts: 1/2
+Granules: 1/2
+-- -- -- value exists in both granules
+Description: text GRANULARITY 100000000
+Parts: 2/2
+Granules: 2/2

@@ -5,8 +5,10 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <base/hex.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
@@ -44,6 +46,12 @@ namespace ProfileEvents
     extern const Event KeeperBatchMaxCount;
     extern const Event KeeperBatchMaxTotalSize;
     extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
+}
+
+namespace HistogramMetrics
+{
+    extern Metric & KeeperCurrentBatchSizeElements;
+    extern Metric & KeeperCurrentBatchSizeBytes;
 }
 
 using namespace std::chrono_literals;
@@ -106,7 +114,8 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
                     memory_delta += set_req.bytesSize();
                     break;
                 }
-                case Coordination::OpNum::Remove: {
+                case Coordination::OpNum::Remove:
+                case Coordination::OpNum::TryRemove: {
                     Coordination::ZooKeeperRemoveRequest & remove_req
                         = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
                     memory_delta -= remove_req.bytesSize();
@@ -276,6 +285,9 @@ void KeeperDispatcher::requestThread()
                         ProfileEvents::increment(ProfileEvents::KeeperBatchMaxTotalSize, 1);
 
                     LOG_TEST(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
+
+                    HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeElements, current_batch.size());
+                    HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeBytes, current_batch_bytes_size);
 
                     auto result = server->putRequestBatch(current_batch);
 
@@ -459,6 +471,29 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     {
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
     }
+    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
+    return true;
+}
+
+bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
+{
+    {
+        /// If session was already disconnected than we will ignore requests
+        std::lock_guard lock(session_to_response_callback_mutex);
+        if (!session_to_response_callback.contains(session_id))
+            return false;
+    }
+
+    KeeperRequestForSession request_info;
+    request_info.request = request;
+    using namespace std::chrono;
+    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    request_info.session_id = session_id;
+
+    if (keeper_context->isShutdownCalled())
+        return false;
+
+    server->putLocalReadRequest(request_info);
     CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
     return true;
 }
@@ -734,15 +769,27 @@ void KeeperDispatcher::finishSession(int64_t session_id)
     if (keeper_context->isShutdownCalled())
         return;
 
+    ZooKeeperResponseCallback callback;
     {
         std::lock_guard lock(session_to_response_callback_mutex);
         auto session_it = session_to_response_callback.find(session_id);
         if (session_it != session_to_response_callback.end())
         {
+            callback = std::move(session_it->second);
             session_to_response_callback.erase(session_it);
             CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
         }
     }
+
+    /// Notify the callback that session is being closed before removing it
+    /// This allows clients to mark themselves as expired
+    if (callback)
+    {
+        auto close_response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
+        close_response->error = Coordination::Error::ZSESSIONEXPIRED;
+        callback(close_response, nullptr);
+    }
+
     {
         std::lock_guard lock(read_request_queue_mutex);
         read_request_queue.erase(session_id);
@@ -1077,7 +1124,7 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
         {
             std::unordered_set<int32_t> nodes;
             auto members = preconditions->getArray("members");
-            for (size_t i = 0; i < members->size(); ++i)
+            for (unsigned int i = 0; i < members->size(); ++i)
                 nodes.insert(members->getElement<int32_t>(i));
 
             auto servers_in_config = latest_config->get_servers();
@@ -1100,7 +1147,7 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
         {
             std::unordered_set<int32_t> leaders;
             auto leaders_array = preconditions->getArray("leaders");
-            for (size_t i = 0; i < leaders_array->size(); ++i)
+            for (unsigned int i = 0; i < leaders_array->size(); ++i)
                 leaders.insert(leaders_array->getElement<int32_t>(i));
 
             if (!server->isLeaderAlive())
@@ -1108,7 +1155,7 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
                     "Precondition failed: expected leader id {} but there is no leader currently",
                     fmt::join(leaders, ", "));
 
-            if (!leaders.contains(server->getLeaderID()))
+            if (!leaders.contains(static_cast<int32_t>(server->getLeaderID())))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Precondition failed: expected leader id {} does not match actual leader id {}",
                     fmt::join(leaders, ", "),

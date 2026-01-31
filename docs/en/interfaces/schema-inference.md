@@ -238,7 +238,7 @@ For this reason, the schema inference cache identifies the schema by file source
 Note: some files accessed by url in `url` table function may not contain information about the last modification time; for this case, there is a special setting
 `schema_inference_cache_require_modification_time_for_url`. Disabling this setting allows the use of the schema from cache without the last modification time for such files.
 
-There is also a system table [schema_inference_cache](../operations/system-tables/schema_inference_cache.md) with all current schemas in cache and system query `SYSTEM DROP SCHEMA CACHE [FOR File/S3/URL/HDFS]`
+There is also a system table [schema_inference_cache](../operations/system-tables/schema_inference_cache.md) with all current schemas in cache and system query `SYSTEM CLEAR SCHEMA CACHE [FOR File/S3/URL/HDFS]`
 that allows cleaning the schema cache for all sources, or for a specific source.
 
 **Examples:**
@@ -363,8 +363,9 @@ SELECT schema, format, source FROM system.schema_inference_cache WHERE storage='
 As you can see, there are two different schemas for the same file.
 
 We can clear the schema cache using a system query:
+
 ```sql
-SYSTEM DROP SCHEMA CACHE FOR S3
+SYSTEM CLEAR SCHEMA CACHE FOR S3
 ```
 ```response
 Ok.

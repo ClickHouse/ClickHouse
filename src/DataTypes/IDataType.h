@@ -106,13 +106,13 @@ public:
     void updateHash(SipHash & hash) const;
     virtual void updateHashImpl(SipHash & hash) const = 0;
 
-    bool hasSubcolumn(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
+    bool hasSubcolumn(std::string_view subcolumn_name) const;
 
-    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
-    DataTypePtr getSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
+    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name) const;
+    DataTypePtr getSubcolumnType(std::string_view subcolumn_name) const;
 
-    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default = nullptr) const;
-    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default = nullptr) const;
+    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
+    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
 
     SerializationPtr getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
@@ -504,6 +504,7 @@ bool isInteger(TYPE data_type); \
 bool isNativeInteger(TYPE data_type); \
 \
 bool isDecimal(TYPE data_type); \
+bool isDecimal64(TYPE data_type); \
 \
 bool isFloat(TYPE data_type); \
 \

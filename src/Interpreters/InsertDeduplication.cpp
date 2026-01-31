@@ -374,7 +374,7 @@ std::string DeduplicationInfo::debug() const
         block_str = fmt::format("rows/cols {}/{}", original_block->rows(), original_block->getColumns().size());
 
     return fmt::format(
-        "inst: {}, {}, {}, level {}, rows/tokens {}/{}, in block: {}, tokens: {}:[{}], visited views: {}:[{}], retried view id: {}, original block id: {}",
+        "instance_id: {}, {}, {}, level {}, rows/tokens {}/{}, in block: {}, tokens: {}:[{}], visited views: {}:[{}], retried view id: {}, original block id: {}",
         instance_id,
         is_async_insert ? "async" : "sync",
         disabled ? "disabled" : "enabled",

@@ -170,7 +170,7 @@ struct AggregateFunctionSumData
                 uint8_t flag = (condition_map[i] != add_if_zero);
 
                 T mask{};
-                std::memset(&mask, masks[flag], sizeof(T));
+                std::memset(&mask, static_cast<int>(masks[flag]), sizeof(T));
 
                 Impl::add(local_sum, ptr[i] & mask);
             }

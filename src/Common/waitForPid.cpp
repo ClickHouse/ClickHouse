@@ -161,6 +161,42 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
 
     return result;
 }
+#elif defined(OS_SUNOS)
+
+#include <libproc.h>
+
+namespace DB
+{
+
+/// Grab the process, wait for it to change state, and check whether it's
+/// terminated.
+static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
+{
+    PollPidResult result = PollPidResult::FAILED;
+    int rc, perr;
+    struct ps_prochandle *hdl;
+
+    hdl = Pgrab(pid, PGRAB_RETAIN | PGRAB_FORCE | PGRAB_NOSTOP, &perr);
+    if (hdl == NULL)
+    {
+        if (perr == G_NOPROC)
+            return PollPidResult::RESTART;
+        return PollPidResult::FAILED;
+    }
+
+    rc = Pstopstatus(hdl, PCWSTOP, timeout_in_ms);
+    if (rc < 0 && errno == ENOENT)
+        result = PollPidResult::RESTART;
+    if (rc == 0)
+    {
+        int state = Pstate(hdl);
+        if (state == PS_DEAD || state == PS_UNDEAD)
+            result = PollPidResult::RESTART;
+    }
+
+    Pfree(hdl);
+    return result;
+}
 #else
     #error "Unsupported OS type"
 #endif

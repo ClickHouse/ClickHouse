@@ -538,7 +538,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         if (row_group_idx != i)
             return false;
         const RowGroup & row_group = reader.row_groups[row_group_idx];
-        return row_group.read_ptr.load() == row_group.delivery_ptr.load();
+return row_group.read_ptr.load() == row_group.delivery_ptr.load();
     };
 
     while (true)
@@ -661,7 +661,7 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                     prefetches.push_back(&column.data_pages_prefetch);
 
                 double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(column, row_group, reader.primitive_columns.at(task.column_idx));
-                size_t column_memory = size_t(bytes_per_row * row_subgroup.filter.rows_pass);
+                size_t column_memory = static_cast<size_t>(bytes_per_row * static_cast<double>(row_subgroup.filter.rows_pass));
                 subchunk.column_and_offsets_memory = MemoryUsageToken(column_memory, &diff);
                 break;
             }
@@ -929,22 +929,10 @@ ReadManager::ReadResult ReadManager::read()
     RowGroup & row_group = reader.row_groups.at(task.row_group_idx);
     RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
     chassert(row_subgroup.stage == ReadStage::Deliver);
-    size_t num_final_columns = reader.sample_block->columns();
-    for (size_t i = 0; i < reader.output_columns.size(); ++i)
-    {
-        const auto & idx_in_output_block = reader.output_columns[i].idx_in_output_block;
-        if (!idx_in_output_block.has_value() || idx_in_output_block.value() >= num_final_columns)
-            continue;
-        bool already_formed = row_subgroup.output.at(*idx_in_output_block) != nullptr;
-        chassert(already_formed == reader.output_columns[i].use_prewhere);
-        if (already_formed)
-            continue;
-        row_subgroup.output.at(*idx_in_output_block) =
-            reader.formOutputColumn(row_subgroup, i, row_subgroup.filter.rows_pass);
-    }
-    row_subgroup.output.resize(num_final_columns); // remove prewhere-only columns
-    chassert(row_subgroup.filter.rows_pass > 0);
-    Chunk chunk(std::move(row_subgroup.output), row_subgroup.filter.rows_pass);
+    Columns output_columns(reader.sample_block->columns());
+    for (size_t i = 0; i < output_columns.size(); ++i)
+        output_columns[i] = std::move(reader.getOrFormOutputColumn(row_subgroup, i));
+    Chunk chunk(std::move(output_columns), row_subgroup.filter.rows_pass);
     BlockMissingValues block_missing_values = std::move(row_subgroup.block_missing_values);
 
     auto row_numbers_info = std::make_shared<ChunkInfoRowNumbers>(

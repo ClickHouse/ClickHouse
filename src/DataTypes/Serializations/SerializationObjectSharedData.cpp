@@ -1,7 +1,6 @@
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
 #include <DataTypes/Serializations/SerializationArray.h>
-#include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <DataTypes/DataTypeObject.h>
@@ -9,7 +8,6 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Core/NamesAndTypes.h>
 #include <IO/ReadHelpers.h>
 #include <ranges>

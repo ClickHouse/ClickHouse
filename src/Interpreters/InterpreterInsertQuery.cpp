@@ -2,15 +2,13 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Access/Common/AccessFlags.h>
-#include <Access/EnabledQuota.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/QueryNode.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
+#include <Core/DeduplicateInsert.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <IO/ReadBuffer.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -23,8 +21,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTConstraintDeclaration.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -35,11 +31,9 @@
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -49,7 +43,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
-#include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
 #include <Core/Field.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -68,8 +61,7 @@ namespace Setting
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
-    extern const SettingsBool insert_deduplicate;
-    extern const SettingsBoolAuto insert_select_deduplicate;
+    extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
     extern const SettingsUInt64 min_insert_block_size_rows;
@@ -77,7 +69,6 @@ namespace Setting
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsString insert_deduplication_token;
-    extern const SettingsBool parallel_view_processing;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
@@ -104,7 +95,6 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int DEDUPLICATION_IS_NOT_POSSIBLE;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
@@ -441,33 +431,12 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     if (select_streams != 1)
         pipeline.resize(1);
 
-    auto insert_select_deduplicate = [&] () -> bool
-    {
-        if (!context->getSettingsRef()[Setting::insert_select_deduplicate].is_auto)
-            return context->getSettingsRef()[Setting::insert_select_deduplicate].base;
+    auto deduplicate_insert_select = isDeduplicationEnabledForInsertSelect(select_query_sorted, context->getSettingsRef(), logger);
 
-        if (select_query_sorted)
-            return context->getSettingsRef()[Setting::insert_deduplicate];
-
-        if (context->getSettingsRef()[Setting::insert_deduplicate])
-            LOG_INFO(logger, "INSERT SELECT deduplication is disabled because SELECT is not stable");
-
-        return false;
-    }();
-
-    if (!select_query_sorted && insert_select_deduplicate)
-        throw Exception(ErrorCodes::DEDUPLICATION_IS_NOT_POSSIBLE,
-            "Deduplication for INSERT SELECT with non-stable SELECT is not possible"
-            " (the SELECT part can return different results on each execution)."
-            " You can disable it by setting 'insert_deduplicate' or `async_insert_deduplicate` to 0."
-            " Or make SELECT query stable (for example, by adding ORDER BY all to the query)."
-            " select_query_sorted {} dedeplicate {} insert_select_deduplicate is auto {}",
-            select_query_sorted, insert_select_deduplicate, context->getSettingsRef()[Setting::insert_select_deduplicate].is_auto);
-
-    if (insert_select_deduplicate != bool(context->getSettingsRef()[Setting::insert_deduplicate]))
+    if (deduplicate_insert_select != isDeduplicationEnabledForInsert(false, context->getSettingsRef()))
     {
         auto tmp_context = Context::createCopy(context);
-        tmp_context->setSetting("insert_deduplicate", Field{insert_select_deduplicate});
+        overrideDeduplicationSetting(deduplicate_insert_select, tmp_context);
         context = tmp_context;
     }
 

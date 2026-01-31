@@ -1,7 +1,5 @@
 #include <IO/CachedInMemoryReadBufferFromFile.h>
-#include <IO/SwapHelper.h>
 #include <base/scope_guard.h>
-#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 
 namespace ProfileEvents

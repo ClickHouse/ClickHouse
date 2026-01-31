@@ -1,9 +1,9 @@
-#include <Processors/Formats/IRowInputFormat.h>
-#include <IO/WriteHelpers.h>    // toString
+#include <Columns/IColumn.h>
 #include <IO/WithFileName.h>
 #include <IO/WithFileSize.h>
+#include <IO/WriteHelpers.h> // toString
+#include <Processors/Formats/IRowInputFormat.h>
 #include <Common/logger_useful.h>
-#include <Columns/IColumn.h>
 
 
 namespace DB
@@ -110,10 +110,6 @@ Chunk IRowInputFormat::read()
     size_t num_columns = header.columns();
     MutableColumns columns = header.cloneEmptyColumns(serializations);
 
-    ColumnCheckpoints checkpoints(columns.size());
-    for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
-        checkpoints[column_idx] = columns[column_idx]->getCheckpoint();
-
     block_missing_values.clear();
 
     size_t num_rows = 0;
@@ -122,7 +118,7 @@ Chunk IRowInputFormat::read()
     {
         if (need_only_count && supportsCountRows())
         {
-            num_rows = countRows(params.max_block_size);
+            num_rows = countRows(params.max_block_size_rows);
             if (num_rows == 0)
             {
                 readSuffix();
@@ -136,13 +132,29 @@ Chunk IRowInputFormat::read()
         RowReadExtension info;
         bool continue_reading = true;
         size_t total_bytes = 0;
-        for (size_t rows = 0; ((rows < params.max_block_size && (!params.max_block_size_bytes || total_bytes < params.max_block_size_bytes)) || num_rows == 0) && continue_reading; ++rows)
+
+        size_t max_block_size_rows = params.max_block_size_rows;
+        size_t max_block_size_bytes = params.max_block_size_bytes;
+        size_t min_block_size_rows = params.min_block_size_rows;
+        size_t min_block_size_bytes = params.min_block_size_bytes;
+
+        auto below_some_min_threshold = [&](size_t rows, size_t bytes)-> bool
         {
+            return (!min_block_size_rows && !min_block_size_bytes) || rows < min_block_size_rows || bytes < min_block_size_bytes;
+        };
+
+        auto below_all_max_thresholds = [&](size_t rows, size_t bytes)-> bool
+        {
+            return (!max_block_size_rows || rows < max_block_size_rows) && (!max_block_size_bytes || bytes < max_block_size_bytes);
+        };
+
+        for (size_t rows = 0; ((below_some_min_threshold(rows, total_bytes) && below_all_max_thresholds(rows, total_bytes)) || num_rows == 0)
+             && continue_reading;
+             ++rows)
+        {
+
             try
             {
-                for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
-                    columns[column_idx]->updateCheckpoint(*checkpoints[column_idx]);
-
                 info.read_columns.clear();
                 continue_reading = readRow(columns, info);
 
@@ -171,7 +183,7 @@ Chunk IRowInputFormat::read()
                 if (columns.empty())
                     ++num_rows;
 
-                if (params.max_block_size_bytes)
+                if (min_block_size_bytes || max_block_size_bytes)
                 {
                     for (const auto & column : columns)
                         total_bytes += column->byteSizeAt(column->size() - 1);
@@ -193,7 +205,7 @@ Chunk IRowInputFormat::read()
                     logError();
 
                 ++num_errors;
-                Float64 current_error_ratio = static_cast<Float64>(num_errors) / total_rows;
+                Float64 current_error_ratio = static_cast<Float64>(num_errors) / static_cast<double>(total_rows);
 
                 if (num_errors > params.allow_errors_num
                     && current_error_ratio > params.allow_errors_ratio)
@@ -214,7 +226,11 @@ Chunk IRowInputFormat::read()
 
                 /// Rollback all columns in block to initial size (remove values, that was appended to only part of columns).
                 for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
-                    columns[column_idx]->rollback(*checkpoints[column_idx]);
+                {
+                    auto & column = columns[column_idx];
+                    if (column->size() > num_rows)
+                        column->popBack(column->size() - num_rows);
+                }
             }
         }
     }

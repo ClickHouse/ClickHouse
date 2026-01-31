@@ -44,13 +44,13 @@ void ASTUserNameWithHost::replace(const String name)
     username.reset();
     host_pattern.reset();
 
-    username = std::make_shared<ASTIdentifier>(name);
+    username = make_intrusive<ASTIdentifier>(name);
     children.emplace_back(username);
 }
 
 ASTUserNameWithHost::ASTUserNameWithHost(const String & name)
 {
-    username = std::make_shared<ASTIdentifier>(name);
+    username = make_intrusive<ASTIdentifier>(name);
     children.emplace_back(username);
 }
 
@@ -61,7 +61,7 @@ ASTUserNameWithHost::ASTUserNameWithHost(ASTPtr && name_, String && host_pattern
 
     if (!host_pattern_.empty() && host_pattern_ != "%")
     {
-        host_pattern = std::make_shared<ASTLiteral>(std::move(host_pattern_));
+        host_pattern = make_intrusive<ASTLiteral>(std::move(host_pattern_));
         children.emplace_back(host_pattern);
     }
 }
@@ -88,7 +88,7 @@ String ASTUserNameWithHost::getHostPattern() const
 
 ASTUserNamesWithHost::ASTUserNamesWithHost(const String & name_)
 {
-    children.emplace_back(std::make_shared<ASTUserNameWithHost>(name_));
+    children.emplace_back(make_intrusive<ASTUserNameWithHost>(name_));
 }
 
 void ASTUserNamesWithHost::formatImpl(
@@ -155,7 +155,7 @@ String ASTUserNameWithHost::getStringFromAST(const ASTPtr & ast) const
 
 ASTPtr ASTUserNameWithHost::clone() const
 {
-    auto clone = std::make_shared<ASTUserNameWithHost>(*this);
+    auto clone = make_intrusive<ASTUserNameWithHost>(*this);
     clone->children.clear();
 
     clone->username = username->clone();

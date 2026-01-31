@@ -89,6 +89,17 @@ public:
         });
     }
 
+    /// Handle GET, HEAD or POST endpoint on specified path
+    void allowGetHeadAndPostRequest()
+    {
+        addFilter([](const auto & request)
+        {
+            return request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST;
+        });
+    }
+
     /// Handle Post request or (Get or Head) with params or OPTIONS requests
     void allowPostAndGetParamsAndOptionsRequest()
     {
@@ -99,6 +110,18 @@ public:
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD))
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST;
+        });
+    }
+
+    void allowRESTMethods()
+    {
+        addFilter([](const auto & request)
+        {
+            return request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE;
         });
     }
 

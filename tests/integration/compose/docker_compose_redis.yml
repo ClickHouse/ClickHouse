@@ -6,3 +6,4 @@ services:
             - ${REDIS_EXTERNAL_PORT:-6379}:${REDIS_INTERNAL_PORT:-6379}
         command: redis-server --requirepass "clickhouse" --databases 32
         stop_grace_period: 5s
+        cpus: 3

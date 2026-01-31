@@ -100,9 +100,10 @@ Weight levenshteinDistanceWeighted(std::span<const Element> lhs, std::span<const
 
             prev = row[i];
 
-            row[i] = std::min({row[i] + rhs_weights[j - 1], // deletion
-                               row[i - 1] + lhs_weights[i - 1], // insertion
-                               row[i - 1] + lhs_weights[i - 1] + rhs_weights[j - 1]}); // substitusion
+            row[i] = static_cast<Weight>(std::min(
+                {row[i] + rhs_weights[j - 1], // deletion
+                 row[i - 1] + lhs_weights[i - 1], // insertion
+                 row[i - 1] + lhs_weights[i - 1] + rhs_weights[j - 1]})); // substitution
         }
     }
 

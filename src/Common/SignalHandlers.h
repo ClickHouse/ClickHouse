@@ -8,6 +8,7 @@
 #include <Core/Types.h>
 #include <Poco/Runnable.h>
 
+
 class BaseDaemon;
 
 /** Reset signal handler to the default and send signal to itself.
@@ -45,7 +46,21 @@ void childSignalHandler(int sig, siginfo_t * info, void *);
 
 /// Avoid link time dependency on DB/Interpreters - will use this function only when linked.
 __attribute__((__weak__)) void collectCrashLog(
-    Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
+    Int32 signal,
+    Int32 signal_code,
+    UInt64 thread_id,
+    const String & query_id,
+    const String & query,
+    const StackTrace & stack_trace,
+    std::optional<UInt64> fault_address,
+    const String & fault_access_type,
+    const String & signal_description,
+    const String & current_exception);
+
+
+/// Check if we are currently handing the fatal signal and going to terminate
+/// it does not make sense to accept new connections and queries in this case.
+bool isCrashed();
 
 
 void blockSignals(const std::vector<int> & signals);
@@ -79,7 +94,8 @@ private:
         const StackTrace & stack_trace,
         const std::vector<FramePointers> & thread_frame_pointers,
         UInt32 thread_num,
-        DB::ThreadStatus * thread_ptr) const;
+        DB::ThreadStatus * thread_ptr,
+        const std::string & exception_message) const;
 };
 
 struct HandledSignals

@@ -1,3 +1,4 @@
+#include <optional>
 #include <config.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -17,8 +18,8 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Disks/IStoragePolicy.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Disks/IStoragePolicy.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
@@ -36,8 +37,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
-#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <boost/graph/properties.hpp>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -126,7 +127,8 @@ std::pair<Int32, String> PaimonTableClient::getLastestTableSchemaInfo()
         auto [_, ec] = std::from_chars(version_string.data(), version_string.data() + version_string.size(), current_version);
         if (ec != std::errc())
         {
-            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon schema file: {} version: {} is invalid.", file_name, version_string);
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon schema file: {} version: {} is invalid.", file_name, version_string);
         }
         return current_version;
     };
@@ -153,69 +155,80 @@ Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<In
     return shcema_json;
 }
 
-std::pair<Int64, String> PaimonTableClient::getLastestTableSnapshotInfo()
+std::optional<std::pair<Int64, String>> PaimonTableClient::getLastestTableSnapshotInfo()
 {
-    /// read latest hint
-    Int64 snapshot_version;
+    /// try to read latest hint
+    Int64 snapshot_version{-1};
+    String latest_snapshot_path;
     RelativePathWithMetadata relative_path_with_metadata(
         std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / PAIMON_SNAPSHOT_LATEST_HINT);
-    auto buf = createReadBuffer(relative_path_with_metadata, object_storage, getContext(), log);
-    String hint_version_string;
-    readStringUntilEOF(hint_version_string, *buf);
+    if (object_storage->exists(StoredObject(relative_path_with_metadata.relative_path)))
     {
-        auto [_, ec]
-            = std::from_chars(hint_version_string.data(), hint_version_string.data() + hint_version_string.size(), snapshot_version);
-        if (ec != std::errc())
+        auto buf = createReadBuffer(relative_path_with_metadata, object_storage, getContext(), log);
+        String hint_version_string;
+        readStringUntilEOF(hint_version_string, *buf);
         {
-            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot hint file content: {} is invalid.", hint_version_string);
-        }
-    }
-    String latest_snapshot_path
-        = std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR) / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(snapshot_version));
-
-    /// check latest hint is real latest snapshot, if not, find latest snapshot
-    Int64 next_snapshot_version = snapshot_version + 1;
-    StoredObject store_object(
-        std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR) / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(next_snapshot_version)));
-    if (object_storage->exists(store_object))
-    {
-        auto snapshot_files = listFiles(
-            *object_storage,
-            table_location,
-            PAIMON_SNAPSHOT_DIR,
-            [](const RelativePathWithMetadata & path_with_metadata)
-            {
-                String relative_path = path_with_metadata.relative_path;
-                String file_name(relative_path.begin() + relative_path.find_last_of('/') + 1, relative_path.end());
-                return file_name.starts_with(PAIMON_SNAPSHOT_PRIFIX);
-            });
-
-        std::vector<std::pair<Int64, String>> snapshot_files_with_versions;
-        snapshot_files_with_versions.reserve(snapshot_files.size());
-
-        auto parse_version = [](const String & relative_file_path)
-        {
-            String file_name(relative_file_path.begin() + relative_file_path.find_last_of('/') + 1, relative_file_path.end());
-            String version_string = file_name.substr(file_name.find(PAIMON_SNAPSHOT_PRIFIX) + strlen(PAIMON_SNAPSHOT_PRIFIX));
-            Int64 current_version;
-            auto [_, ec] = std::from_chars(version_string.data(), version_string.data() + version_string.size(), current_version);
+            auto [_, ec]
+                = std::from_chars(hint_version_string.data(), hint_version_string.data() + hint_version_string.size(), snapshot_version);
             if (ec != std::errc())
             {
-                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot file: {} version: {} is invalid.", file_name, version_string);
+                throw Exception(
+                    ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot hint file content: {} is invalid.", hint_version_string);
             }
-            return current_version;
-        };
-
-        for (const auto & path : snapshot_files)
-        {
-            snapshot_files_with_versions.emplace_back(std::make_pair(parse_version(path), path));
         }
-        return *std::max_element(snapshot_files_with_versions.begin(), snapshot_files_with_versions.end());
+        latest_snapshot_path
+            = std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR) / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(snapshot_version));
     }
-    else
+
+    /// check latest hint is real latest snapshot
+    if (!latest_snapshot_path.empty())
     {
-        return {snapshot_version, latest_snapshot_path};
+        Int64 next_snapshot_version = snapshot_version + 1;
+        StoredObject store_object(
+            std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR)
+            / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(next_snapshot_version)));
+        if (!object_storage->exists(store_object))
+        {
+            return std::make_pair(snapshot_version, latest_snapshot_path);
+        }
     }
+
+    // find real latest snapshot
+    auto snapshot_files = listFiles(
+        *object_storage,
+        table_location,
+        PAIMON_SNAPSHOT_DIR,
+        [](const RelativePathWithMetadata & path_with_metadata)
+        {
+            String relative_path = path_with_metadata.relative_path;
+            String file_name(relative_path.begin() + relative_path.find_last_of('/') + 1, relative_path.end());
+            return file_name.starts_with(PAIMON_SNAPSHOT_PRIFIX);
+        });
+    if (snapshot_files.empty())
+        return std::nullopt;
+
+    std::vector<std::pair<Int64, String>> snapshot_files_with_versions;
+    snapshot_files_with_versions.reserve(snapshot_files.size());
+
+    auto parse_version = [](const String & relative_file_path)
+    {
+        String file_name(relative_file_path.begin() + relative_file_path.find_last_of('/') + 1, relative_file_path.end());
+        String version_string = file_name.substr(file_name.find(PAIMON_SNAPSHOT_PRIFIX) + strlen(PAIMON_SNAPSHOT_PRIFIX));
+        Int64 current_version;
+        auto [_, ec] = std::from_chars(version_string.data(), version_string.data() + version_string.size(), current_version);
+        if (ec != std::errc())
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot file: {} version: {} is invalid.", file_name, version_string);
+        }
+        return current_version;
+    };
+
+    for (const auto & path : snapshot_files)
+    {
+        snapshot_files_with_versions.emplace_back(std::make_pair(parse_version(path), path));
+    }
+    return *std::max_element(snapshot_files_with_versions.begin(), snapshot_files_with_versions.end());
 }
 
 PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & snapshot_meta_info)

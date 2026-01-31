@@ -31,7 +31,6 @@ friend class DiskObjectStorageReservation;
 public:
     DiskObjectStorage(
         const String & name_,
-        const String & object_key_prefix_,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
         const Poco::Util::AbstractConfiguration & config,
@@ -147,6 +146,8 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
+    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
+
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
@@ -208,11 +209,6 @@ public:
     /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
     String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
 
-    std::string getObjectsKeyPrefix() const
-    {
-        return object_key_prefix;
-    }
-
     /// Add a cache layer.
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
@@ -245,7 +241,6 @@ private:
     String getReadResourceNameNoLock() const;
     String getWriteResourceNameNoLock() const;
 
-    const String object_key_prefix;
     LoggerPtr log;
 
     MetadataStoragePtr metadata_storage;
@@ -256,7 +251,7 @@ private:
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
 
-    bool tryReserve(UInt64 bytes);
+    bool tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints = std::nullopt);
     void sendMoveMetadata(const String & from_path, const String & to_path);
 
     mutable std::mutex resource_mutex;

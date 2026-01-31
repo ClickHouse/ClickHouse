@@ -55,7 +55,7 @@ void NO_INLINE loop(ReadBuffer & in, WriteBuffer & out)
 
     watch.stop();
     out << "Read in " << watch.elapsedSeconds() << " sec, "
-        << formatReadableSizeWithBinarySuffix(in.count() / watch.elapsedSeconds()) << "/sec, result = " << sum << "\n";
+        << formatReadableSizeWithBinarySuffix(static_cast<double>(in.count()) / watch.elapsedSeconds()) << "/sec, result = " << sum << "\n";
 }
 
 

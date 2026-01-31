@@ -22,6 +22,7 @@
 namespace CurrentMetrics
 {
     extern const Metric Query;
+    extern const Metric QueryNonInternal;
 }
 
 namespace DB
@@ -270,7 +271,7 @@ ProcessList::EntryPtr ProcessList::insert(
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
-            thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
+            thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
             {
@@ -279,6 +280,7 @@ ProcessList::EntryPtr ProcessList::insert(
                     .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_query],
                     .compression_codec = settings[Setting::temporary_files_codec],
                     .buffer_size = settings[Setting::temporary_files_buffer_size],
+                    .metrics = {}, /// Metrics are set by child scopes
                 };
 
                 if (temporary_data_on_disk_settings.buffer_size > 1_GiB)
@@ -394,6 +396,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
 ProcessListEntry::~ProcessListEntry()
 {
+    CancellationChecker::getInstance().appendDoneTasks(*it);
     LockAndOverCommitTrackerBlocker<std::unique_lock, ProcessList::Mutex> lock(parent.getMutex());
 
     const String user = (*it)->getClientInfo().current_user;
@@ -432,8 +435,6 @@ ProcessListEntry::~ProcessListEntry()
 
     if (auto query_user = parent.queries_to_user.find(query_id); query_user != parent.queries_to_user.end())
         parent.queries_to_user.erase(query_user);
-
-    CancellationChecker::getInstance().appendDoneTasks(*it);
 
     /// This removes the memory_tracker of one request.
     parent.processes.erase(it);
@@ -483,6 +484,9 @@ QueryStatus::QueryStatus(
     , num_queries_increment(CurrentMetrics::Query)
     , is_internal(is_internal_)
 {
+    if (!is_internal)
+        num_non_internal_queries_increment.emplace(CurrentMetrics::QueryNonInternal);
+
     /// We have to pass `query_settings_` to this constructor because we can't use `context_->getSettings().max_execution_time` here:
     /// a QueryStatus is created with `ProcessList::mutex` locked (see ProcessList::insert) and calling `context_->getSettings()`
     /// would lock the context's lock too, whereas holding two those locks simultaneously is not good.
@@ -865,6 +869,7 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
             .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_user],
             .compression_codec = settings[Setting::temporary_files_codec],
             .buffer_size = settings[Setting::temporary_files_buffer_size],
+            .metrics = {}, /// Metrics are set by child scopes
         };
 
         user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),

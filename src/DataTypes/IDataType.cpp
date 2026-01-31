@@ -68,7 +68,7 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
     size_t column_size = column.size();
     if (column_size > 10)
     {
-        double current_avg_value_size = static_cast<double>(column.byteSize()) / column_size;
+        double current_avg_value_size = static_cast<double>(column.byteSize()) / static_cast<double>(column_size);
 
         /// Heuristic is chosen so that avg_value_size_hint increases rapidly but decreases slowly.
         if (current_avg_value_size > avg_value_size_hint)
@@ -211,9 +211,9 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
     return res;
 }
 
-bool IDataType::hasSubcolumn(std::string_view subcolumn_name, SerializationPtr override_default) const
+bool IDataType::hasSubcolumn(std::string_view subcolumn_name) const
 {
-    return tryGetSubcolumnType(subcolumn_name, override_default) != nullptr;
+    return tryGetSubcolumnType(subcolumn_name) != nullptr;
 }
 
 bool IDataType::hasDynamicSubcolumns() const
@@ -231,29 +231,29 @@ bool IDataType::hasDynamicSubcolumns() const
     return has_dynamic_subcolumns;
 }
 
-DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default) const
+DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name) const
 {
-    auto data = SubstreamData(getDefaultSerialization(override_default)).withType(getPtr());
+    auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
     auto subcolumn_data = getSubcolumnData(subcolumn_name, data, false);
     return subcolumn_data ? subcolumn_data->type : nullptr;
 }
 
-DataTypePtr IDataType::getSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default) const
+DataTypePtr IDataType::getSubcolumnType(std::string_view subcolumn_name) const
 {
-    auto data = SubstreamData(getDefaultSerialization(override_default)).withType(getPtr());
+    auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
     return getSubcolumnData(subcolumn_name, data, true)->type;
 }
 
-ColumnPtr IDataType::tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default) const
+ColumnPtr IDataType::tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
 {
-    auto data = SubstreamData(getDefaultSerialization(override_default)).withType(getPtr()).withColumn(column);
+    auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
     auto subcolumn_data = getSubcolumnData(subcolumn_name, data, false);
     return subcolumn_data ? subcolumn_data->column : nullptr;
 }
 
-ColumnPtr IDataType::getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default) const
+ColumnPtr IDataType::getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
 {
-    auto data = SubstreamData(getDefaultSerialization(override_default)).withType(getPtr()).withColumn(column);
+    auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
     return getSubcolumnData(subcolumn_name, data, true)->column;
 }
 
@@ -419,6 +419,7 @@ bool isInteger(TYPE data_type) { return WhichDataType(data_type).isInteger(); } 
 bool isNativeInteger(TYPE data_type) { return WhichDataType(data_type).isNativeInteger(); } \
 \
 bool isDecimal(TYPE data_type) { return WhichDataType(data_type).isDecimal(); } \
+bool isDecimal64(TYPE data_type) { return WhichDataType(data_type).isDecimal64(); } \
 \
 bool isFloat(TYPE data_type) { return WhichDataType(data_type).isFloat(); } \
 \

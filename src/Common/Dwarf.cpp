@@ -746,7 +746,7 @@ Dwarf::CompilationUnit Dwarf::getCompilationUnit(uint64_t offset) const
     cu.size += cu.is64Bit ? 12 : 4;
 
     // 2) version
-    cu.version = read<uint16_t>(chunk);
+    cu.version = static_cast<uint8_t>(read<uint16_t>(chunk));
     SAFE_CHECK(cu.version >= 2 && cu.version <= 5, "invalid info version");
 
     if (cu.version == 5)
@@ -965,7 +965,7 @@ Dwarf::Die Dwarf::getDieAtOffset(const CompilationUnit & cu, uint64_t offset) co
     {
         return die;
     }
-    die.attr_offset = sp.data() - info_.data() - offset;
+    die.attr_offset = static_cast<uint8_t>(sp.data() - info_.data() - offset);
     die.abbr = !cu.abbr_cache.empty() && die.code < kMaxAbbreviationEntries ? cu.abbr_cache[die.code - 1]
                                                                             : getAbbreviation(die.code, cu.abbrev_offset);
 
@@ -1119,7 +1119,7 @@ bool Dwarf::findLocation(
     LineNumberVM line_vm(line_section, compilation_directory, str_, line_str_);
 
     // Execute line number VM program to find file and line
-    info.has_file_and_line = line_vm.findAddress(address, info.file, info.line);
+    info.has_file_and_line = line_vm.findAddress(address, info.file, info.line, info.column);
 
     bool check_inline = (mode == LocationInfoMode::FULL_WITH_INLINE);
 
@@ -2203,7 +2203,7 @@ Dwarf::Path Dwarf::LineNumberVM::getFullFileName(uint64_t index) const
     return Path(base_dir, getIncludeDirectory(fn.directoryIndex), fn.relativeName);
 }
 
-bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & line)
+bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & line, uint64_t & column)
 {
     std::string_view program = data_;
 
@@ -2223,6 +2223,7 @@ bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & 
 
     uint64_t prev_file = 0;
     uint64_t prev_line = 0;
+    uint64_t prev_column = 0;
     while (!program.empty())
     {
         bool seq_end = !next(program);
@@ -2255,10 +2256,12 @@ bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & 
                 }
                 file = getFullFileName(prev_file);
                 line = prev_line;
+                column = prev_column;
                 return true;
             }
             prev_file = file_;
             prev_line = line_;
+            prev_column = column_;
         }
 
         if (seq_end)

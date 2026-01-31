@@ -3,7 +3,6 @@
 #include <cstdlib>
 #include <memory>
 #include <optional>
-#include <fcntl.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <AggregateFunctions/SingleValueData.h>
@@ -20,7 +19,6 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -28,8 +26,6 @@
 #include <Parsers/parseQuery.h>
 #include <base/defines.h>
 #include <base/types.h>
-#include <Poco/Exception.h>
-#include <Poco/Logger.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -77,27 +73,40 @@ private:
     std::optional<UInt64> block_size_bytes;
 
 
-    void createBuffersIfNeeded(AggregateDataPtr __restrict place) const
+    void resetBuffersIfNeeded(AggregateDataPtr __restrict place) const
     {
-        if (!data(place).null_buf)
-            data(place).null_buf = std::make_unique<NullWriteBuffer>();
-        if (!data(place).compressed_buf)
-            data(place).compressed_buf = std::make_unique<CompressedWriteBuffer>(
-                *data(place).null_buf, getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
+        Data & data_ref = data(place);
+
+        if (!data_ref.null_buf || data_ref.null_buf->isFinalized())
+            data_ref.null_buf = std::make_unique<NullWriteBuffer>();
+
+        /// When aggregating on windows transformed columns, the function WindowTransform::appendChunk
+        /// calls updateAggregationState + writeOutCurrentRow in a loop.
+        /// writeOutCurrentRow finalizes the buffer to flush and compute sizes, but doesn't deletes it.
+        /// Ideally on finalized buffers we could "reinitialize" without reconstructing the whole object buffer.
+        if (!data_ref.compressed_buf || data_ref.compressed_buf->isFinalized())
+            data_ref.compressed_buf = std::make_unique<CompressedWriteBuffer>(
+                *data_ref.null_buf, getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
     }
 
     std::pair<UInt64, UInt64> finalizeAndGetSizes(ConstAggregateDataPtr __restrict place) const
     {
-        UInt64 uncompressed_size = data(place).merged_uncompressed_size;
-        UInt64 compressed_size = data(place).merged_compressed_size;
-        if (data(place).compressed_buf)
-        {
-            data(place).compressed_buf->finalize();
-            data(place).null_buf->finalize();
+        const Data & data_ref = data(place);
 
-            uncompressed_size += data(place).compressed_buf->getUncompressedBytes();
-            compressed_size += data(place).compressed_buf->getCompressedBytes();
+        UInt64 uncompressed_size = data_ref.merged_uncompressed_size;
+        UInt64 compressed_size = data_ref.merged_compressed_size;
+
+        if (data_ref.compressed_buf)
+        {
+            chassert(data_ref.null_buf != nullptr);
+
+            data_ref.compressed_buf->finalize();
+            data_ref.null_buf->finalize();
+
+            uncompressed_size += data_ref.compressed_buf->getUncompressedBytes();
+            compressed_size += data_ref.compressed_buf->getCompressedBytes();
         }
+
         return {uncompressed_size, compressed_size};
     }
 
@@ -134,7 +143,7 @@ public:
     {
         const auto & column = columns[0];
 
-        createBuffersIfNeeded(place);
+        resetBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
@@ -166,7 +175,7 @@ public:
     {
         const auto & column = columns[0];
 
-        createBuffersIfNeeded(place);
+        resetBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
@@ -210,7 +219,7 @@ public:
 
         Float64 ratio = 0;
         if (compressed_size > 0)
-            ratio = static_cast<Float64>(uncompressed_size) / compressed_size;
+            ratio = static_cast<Float64>(uncompressed_size) / static_cast<double>(compressed_size);
 
         assert_cast<ColumnFloat64 &>(to).getData().push_back(ratio);
     }

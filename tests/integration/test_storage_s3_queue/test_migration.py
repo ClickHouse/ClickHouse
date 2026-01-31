@@ -164,7 +164,34 @@ def test_migration(started_cluster, setting_prefix, buckets_num):
             if expected_rows[0] == get_count():
                 break
             time.sleep(1)
-        assert expected_rows[0] == get_count()
+
+        if expected_rows[0] != get_count():
+            files_to_generate = expected_rows[0]  # 1 row per file
+            expected_files = [
+                f"{files_path}/test_{x}.csv" for x in range(files_to_generate)
+            ]
+
+            for node in [node1, node2]:
+                node.query("SYSTEM FLUSH LOGS")
+
+            processed_files = (
+                node.query(
+                    f"SELECT distinct(_path) FROM clusterAllReplicas(cluster, default.{dst_table_name})"
+                )
+                .strip()
+                .split("\n")
+            )
+
+            processed_files.sort()
+            logging.debug(f"Processed files: {processed_files}")
+            missing_files = [
+                file for file in expected_files if file not in processed_files
+            ]
+            missing_files.sort()
+
+            assert (
+                False
+            ), f"Expected {total_rows} in total, got {count1} and {count2} ({count1 + count2}, having {len(missing_files)} missing files: ({missing_files})"
 
     add_files_and_check()
 

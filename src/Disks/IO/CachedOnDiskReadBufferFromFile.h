@@ -70,6 +70,10 @@ public:
 
     bool isContentCached(size_t offset, size_t size) override;
 
+    std::optional<size_t> tryGetFileSize() override;
+
+    size_t getFileSize();
+
 private:
     using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
 

@@ -57,6 +57,7 @@
 #cmakedefine01 USE_KRB5
 #cmakedefine01 USE_FILELOG
 #cmakedefine01 USE_BLAKE3
+#cmakedefine01 USE_SIMDCOMP
 #cmakedefine01 USE_SIMSIMD
 #cmakedefine01 USE_USEARCH
 #cmakedefine01 USE_FASTPFOR
@@ -80,7 +81,5 @@
 #cmakedefine01 USE_XRAY
 #cmakedefine01 USE_YTSAURUS
 #cmakedefine01 USE_CLIENT_AI
+#cmakedefine01 WITH_COVERAGE
 
-/// This is needed for .incbin in assembly. For some reason, include paths don't work there in presence of LTO.
-/// That's why we use absolute paths.
-#cmakedefine SOURCE_DIR "@SOURCE_DIR@"

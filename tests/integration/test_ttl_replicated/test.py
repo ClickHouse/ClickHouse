@@ -1,4 +1,5 @@
 import time
+import uuid
 
 import pytest
 
@@ -539,17 +540,19 @@ def test_ttl_empty_parts(started_cluster):
 def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     # The test times out for sanitizer builds, so we increase the timeout.
     timeout = 20
-    if node_left.is_built_with_sanitizer() or node_right.is_built_with_sanitizer():
-        timeout = 40
+    if node_left.is_built_with_sanitizer() or node_right.is_built_with_sanitizer() or \
+    node_left.is_built_with_llvm_coverage() or node_right.is_built_with_llvm_coverage():
+        timeout = 300
 
     table = f"test_ttl_compatibility_{node_left.name}_{node_right.name}_{num_run}"
     for node in [node_left, node_right]:
         node.query(
             """
+                DROP TABLE IF EXISTS {table}_delete SYNC;
                 CREATE TABLE {table}_delete(date DateTime, id UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}_delete', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
-                TTL date + INTERVAL 3 SECOND
+                TTL date + INTERVAL 3 SECOND;
             """.format(
                 table=table, replica=node.name
             )
@@ -557,10 +560,11 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
 
         node.query(
             """
+                DROP TABLE IF EXISTS {table}_group_by SYNC;
                 CREATE TABLE {table}_group_by(date DateTime, id UInt32, val UInt64)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}_group_by', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
-                TTL date + INTERVAL 3 SECOND GROUP BY id SET val = sum(val)
+                TTL date + INTERVAL 3 SECOND GROUP BY id SET val = sum(val);
             """.format(
                 table=table, replica=node.name
             )
@@ -568,10 +572,11 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
 
         node.query(
             """
+                DROP TABLE IF EXISTS {table}_where SYNC;
                 CREATE TABLE {table}_where(date DateTime, id UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}_where', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
-                TTL date + INTERVAL 3 SECOND DELETE WHERE id % 2 = 1
+                TTL date + INTERVAL 3 SECOND DELETE WHERE id % 2 = 1;
             """.format(
                 table=table, replica=node.name
             )
@@ -631,17 +636,135 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     node_left.query(f"SYSTEM SYNC REPLICA {table}_group_by", timeout=timeout)
     node_left.query(f"SYSTEM SYNC REPLICA {table}_where", timeout=timeout)
 
-    assert node_left.query(f"SELECT id FROM {table}_delete ORDER BY id") == "2\n4\n"
-    assert node_right.query(f"SELECT id FROM {table}_delete ORDER BY id") == "2\n4\n"
+    # Use assert_eq_with_retry because merges with TTL may still be pending
+    # after OPTIMIZE TABLE FINAL due to concurrent merge limits.
+    assert_eq_with_retry(
+        node_left,
+        f"SELECT id FROM {table}_delete ORDER BY id",
+        "2\n4\n",
+        retry_count=timeout * 2,
+        sleep_time=0.5,
+    )
+    assert_eq_with_retry(
+        node_right,
+        f"SELECT id FROM {table}_delete ORDER BY id",
+        "2\n4\n",
+        retry_count=timeout * 2,
+        sleep_time=0.5,
+    )
 
-    assert node_left.query(f"SELECT val FROM {table}_group_by ORDER BY id") == "10\n"
-    assert node_right.query(f"SELECT val FROM {table}_group_by ORDER BY id") == "10\n"
+    assert_eq_with_retry(
+        node_left,
+        f"SELECT val FROM {table}_group_by ORDER BY id",
+        "10\n",
+        retry_count=timeout * 2,
+        sleep_time=0.5,
+    )
+    assert_eq_with_retry(
+        node_right,
+        f"SELECT val FROM {table}_group_by ORDER BY id",
+        "10\n",
+        retry_count=timeout * 2,
+        sleep_time=0.5,
+    )
 
-    assert node_left.query(f"SELECT id FROM {table}_where ORDER BY id") == "2\n4\n"
-    assert node_right.query(f"SELECT id FROM {table}_where ORDER BY id") == "2\n4\n"
+    assert_eq_with_retry(
+        node_left,
+        f"SELECT id FROM {table}_where ORDER BY id",
+        "2\n4\n",
+        retry_count=timeout * 2,
+        sleep_time=0.5,
+    )
+    assert_eq_with_retry(
+        node_right,
+        f"SELECT id FROM {table}_where ORDER BY id",
+        "2\n4\n",
+        retry_count=timeout * 2,
+        sleep_time=0.5,
+    )
 
     # Cleanup
     for node in [node_left, node_right]:
         node.query(f"DROP TABLE {table}_delete SYNC")
         node.query(f"DROP TABLE {table}_group_by SYNC")
         node.query(f"DROP TABLE {table}_where SYNC")
+
+
+def test_ttl_drop_parts_limit(started_cluster):
+    table = f"test_merges_mutations_limit_{uuid.uuid4().hex}"
+
+    max_parts_to_merge_at_once = 123
+    node1.query(
+        f"""
+        CREATE TABLE {table} (
+            date DateTime,
+            id UInt32,
+            value String
+        )
+        ENGINE = MergeTree()
+        ORDER BY id
+        TTL date + INTERVAL 1 DAY
+        SETTINGS merge_with_ttl_timeout=0, max_merge_selecting_sleep_ms=6000,
+        -- Disables ordinary merges, but not TTL merges
+        min_parts_to_merge_at_once=2000,
+        -- Sets limit for TTL merges
+        max_parts_to_merge_at_once = {max_parts_to_merge_at_once}
+        """
+    )
+
+    # Stop merges, to be able to accumulate a big number of parts
+    node1.query(f"SYSTEM STOP MERGES {table}")
+
+    # Insert many parts (over 1000) with old dates that should expire
+    parts_count = 1100
+    old_date = "toDateTime('2000-01-01 00:00:00')"
+
+    for i in range(parts_count):
+        node1.query(
+            f"INSERT INTO {table} VALUES ({old_date}, {i}, 'value_{i}')"
+        )
+
+    # Verify we have many parts
+    initial_parts = int(node1.query(
+        f"SELECT count() FROM system.parts WHERE table = '{table}' AND active"
+    ).strip())
+    assert initial_parts >= parts_count, f"Expected at least {parts_count} parts, got {initial_parts}"
+
+    # Verify data exists before TTL merge
+    initial_rows = int(node1.query(f"SELECT count() FROM {table}").strip())
+    assert initial_rows == parts_count, f"Expected {parts_count} rows, got {initial_rows}"
+
+    node1.query(f"SYSTEM START MERGES {table}")
+
+    # Wait for TTL merges to process the parts and remove data
+    max_wait_iterations = 100
+    final_rows = initial_rows
+    for _ in range(max_wait_iterations):
+        final_rows = int(node1.query(f"SELECT count() FROM {table}").strip())
+        if final_rows == 0:
+            break
+        time.sleep(0.5)
+
+    # Verify that TTL has removed the data
+    assert final_rows == 0, f"Expected 0 rows after TTL expiration, got {final_rows}"
+
+    # Verify parts were removed
+    final_parts = int(node1.query(
+        f"SELECT count() FROM system.parts WHERE table = '{table}' AND active AND rows > 0"
+    ).strip())
+    assert final_parts == 0, f"Expected zero parts after merge, got {final_parts} (was {initial_parts})"
+
+    node1.query("SYSTEM FLUSH LOGS")
+
+    # Check that no merge created with more than max_parts_to_merge_at_once parts
+    max_parts_in_merge = int(node1.query(
+        f"""
+        SELECT max(length(merged_from))
+        FROM system.part_log
+        WHERE table = '{table}' AND merge_reason = 'TTLDropMerge'
+        """
+    ))
+
+    assert max_parts_in_merge == max_parts_to_merge_at_once, f"Found merge with {max_parts_in_merge} parts, which exceeds max_parts_to_merge_at_once limit of {max_parts_to_merge_at_once}"
+
+    node1.query(f"DROP TABLE {table} SYNC")
