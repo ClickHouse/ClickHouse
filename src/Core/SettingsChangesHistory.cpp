@@ -148,6 +148,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_header_cache", false, false, "New setting"},
             {"use_text_index_postings_cache", false, false, "New setting"},
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
+            {"max_insert_parts_buffer_rows", 0, 0, "New setting"},
+            {"max_insert_parts_buffer_bytes", 0, 0, "New setting"},
             {"http_write_exception_in_output_format", true, false, "Changed for consistency across formats"},
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
             {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},

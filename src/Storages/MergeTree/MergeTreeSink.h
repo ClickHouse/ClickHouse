@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/InsertDeduplication.h>
 
@@ -62,12 +64,44 @@ protected:
     StorageSnapshotPtr storage_snapshot;
     UInt64 num_blocks_processed = 0;
     bool deduplicate = true;
+
+    struct BufferedPartitionKey
+    {
+        Row fields;
+
+        bool operator==(const BufferedPartitionKey & other) const { return fields == other.fields; }
+
+        struct Hash
+        {
+            size_t operator()(const BufferedPartitionKey & p) const;
+        };
+    };
+
+    struct BufferedPartitionData
+    {
+        std::vector<Block> blocks = {};
+        size_t rows = 0;
+        size_t bytes = 0;
+
+        size_t getMetric(const Settings & settings) const;
+    };
+
+    const std::optional<size_t> max_parts_buffer_rows;
+    const std::optional<size_t> max_parts_buffer_bytes;
+    const bool insert_parts_buffered;
+    size_t parts_buffer_rows = 0;
+    size_t parts_buffer_bytes = 0;
+    std::unordered_map<BufferedPartitionKey, BufferedPartitionData, BufferedPartitionKey::Hash> parts_buffer;
+    std::set<std::pair<size_t, decltype(parts_buffer)::pointer>> parts_heap;
+
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<MergeTreeDelayedChunk> delayed_chunk;
 
     std::vector<std::string> commitPart(MutableDataPartPtr & part, const std::vector<String> & block_ids);
     virtual void finishDelayedChunk();
     virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);
+    void consumePartsSimple(BlocksWithPartition part_blocks, std::shared_ptr<DeduplicationInfo> deduplication_info);
+    void consumePartsBuffered(BlocksWithPartition part_blocks, std::shared_ptr<DeduplicationInfo> deduplication_info);
+    void flushPartsBuffer(bool just_one_bucket);
 };
-
 }

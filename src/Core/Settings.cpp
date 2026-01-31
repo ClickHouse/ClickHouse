@@ -234,6 +234,12 @@ This may reduce memory usage in case of row with many matches in right table, bu
 Note that `max_joined_block_size_rows != 0` is mandatory for this setting to have effect.
 The `max_joined_block_size_bytes` combined with this setting is helpful to avoid excessive memory usage in case of skewed data with some large rows having many matches in right table.
 )", 0) \
+    DECLARE(UInt64, max_insert_parts_buffer_rows, 0, R"(
+Maximum amount of rows to store in the buffer when inserting into partitioned table. Zero means no limit. Enables buffered parts insertion.
+)", 0) \
+    DECLARE(UInt64, max_insert_parts_buffer_bytes, 0, R"(
+Maximum amount of bytes to store in the buffer when inserting into partitioned table. Zero means no limit. Enables buffered parts insertion.
+)", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
 
