@@ -61,6 +61,7 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
+    extern const Event InsertQuery;
     extern const Event AsyncInsertQuery;
     extern const Event AsyncInsertBytes;
     extern const Event AsyncInsertRows;
@@ -586,6 +587,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         shard.busy_timeout_ms = timeout_ms;
 
         CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
+        ProfileEvents::increment(ProfileEvents::InsertQuery);
         ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
         ProfileEvents::increment(ProfileEvents::AsyncInsertBytes, entry_data_size);
 
