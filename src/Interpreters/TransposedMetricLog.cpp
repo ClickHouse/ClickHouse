@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
@@ -27,6 +28,8 @@ void TransposedMetricLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(event_time_microseconds);
     columns[column_idx++]->insert(metric_name);
     columns[column_idx++]->insert(value);
+
+    columns[column_idx++]->insert(log_marker);
 }
 
 
@@ -70,6 +73,12 @@ ColumnsDescription TransposedMetricLogElement::getColumnsDescription()
             std::make_shared<DataTypeInt64>(),
             parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
             "Metric value."
+        },
+        {
+            "log_marker",
+            std::make_shared<DataTypeUUID>(),
+            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Optional unique marker for log entries that were flushed together."
         }
     };
 }

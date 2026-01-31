@@ -26,6 +26,8 @@ struct MetricLogElement
     std::vector<ProfileEvents::Count> profile_events;
     std::vector<CurrentMetrics::Metric> current_metrics;
 
+    UUID log_marker{};
+
     static std::string name() { return "MetricLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }

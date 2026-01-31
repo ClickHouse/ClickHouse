@@ -58,6 +58,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
 #include <Interpreters/DistributedCacheServerLog.h>
@@ -81,6 +82,7 @@ namespace FailPoints
 
 namespace ServerSetting
 {
+    extern const ServerSettingsBool enable_system_log_marker;
     extern const ServerSettingsBool prepare_system_log_tables_on_startup;
 }
 
@@ -673,6 +675,21 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         for (const auto & elem : to_flush)
             elem.appendToBlock(columns);
 
+        /// Generate log_marker if the setting is enabled and the column exists in the block
+        bool enable_log_marker = getContext()->getServerSettings()[ServerSetting::enable_system_log_marker];
+        if (enable_log_marker && block.has("log_marker"))
+        {
+            UUID marker_uuid = UUIDHelpers::generateV4();
+            const size_t marker_idx = block.getPositionByName("log_marker");
+
+            /// Create a new UUID column with the same marker value for all rows
+            auto marker_col = ColumnUUID::create();
+            marker_col->getData().resize_fill(to_flush.size(), marker_uuid);
+
+            /// Overwrite the marker column that was created by appendToBlock
+            columns[marker_idx] = std::move(marker_col);
+        }
+
         block.setColumns(std::move(columns));
         prepare_insert_data_to_block = stopwatch.elapsedMilliseconds();
         stopwatch.restart();
@@ -741,6 +758,22 @@ template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
+
+    /// Validate that the log table has log_marker column when the feature is enabled
+    bool enable_log_marker = getContext()->getServerSettings()[ServerSetting::enable_system_log_marker];
+    if (enable_log_marker)
+    {
+        auto columns = LogElement::getColumnsDescription();
+        if (!columns.has("log_marker"))
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "System log '{}' is missing required 'log_marker' column when enable_system_log_marker is enabled. "
+                "Please add 'log_marker UUID column' to {}.getColumnsDescription()",
+                description,
+                LogElement::name());
+        }
+    }
 
     auto table = getStorage();
     if (table)

@@ -95,6 +95,8 @@ struct PartLogElement
 
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
 
+    UUID log_marker{};
+
     static std::string name() { return "PartLog"; }
 
     static MergeReasonType getMergeReasonType(MergeType merge_type);

@@ -47,6 +47,8 @@ struct BlobStorageLogElement
     using EvenTime = std::chrono::time_point<std::chrono::system_clock>;
     EvenTime event_time;
 
+    UUID log_marker{};
+
     static std::string name() { return "BlobStorageLog"; }
 
     static ColumnsDescription getColumnsDescription();

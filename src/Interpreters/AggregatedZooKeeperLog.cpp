@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
@@ -59,6 +60,10 @@ ColumnsDescription AggregatedZooKeeperLogElement::getColumnsDescription()
     result.add({"average_latency",
                 std::make_shared<DataTypeFloat64>(),
                 "Average latency across all operations in (session_id, parent_path, operation) group, in microseconds."});
+
+    result.add({"log_marker",
+                std::make_shared<DataTypeUUID>(),
+                "Optional unique marker for log entries that were flushed together."});
     return result;
 }
 
@@ -74,6 +79,7 @@ void AggregatedZooKeeperLogElement::appendToBlock(MutableColumns & columns) cons
     columns[i++]->insert(count);
     errors->dumpToMapColumn(&typeid_cast<DB::ColumnMap &>(*columns[i++]));
     columns[i++]->insert(static_cast<Float64>(total_latency_microseconds) / count);
+    columns[i++]->insert(log_marker);
 }
 
 void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
@@ -94,6 +100,7 @@ void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
             .count = entry_stats.count,
             .errors = std::move(entry_stats.errors),
             .total_latency_microseconds = entry_stats.total_latency_microseconds,
+            .log_marker = {},
         };
         add(std::move(element));
     }
