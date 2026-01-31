@@ -49,6 +49,7 @@
 #include <Analyzer/Passes/RegexpFunctionRewritePass.h>
 #include <Analyzer/Passes/RemoveUnusedProjectionColumnsPass.h>
 #include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
+#include <Analyzer/Passes/SubcolumnPushdownPass.h>
 #include <Analyzer/Passes/RewriteSumFunctionWithSumAndCountPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
@@ -263,12 +264,18 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
+
     /// This pass should be run for the secondary queries
     /// to ensure that the only required columns are read from VIEWs on the shards.
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
 
     manager.addPass(std::make_unique<ConvertEmptyStringComparisonToFunctionPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
+
+    /// Push subcolumn access into subqueries to enable subcolumn pruning.
+    /// Must run after FunctionToSubcolumnsPass which creates getSubcolumn calls.
+    /// This pass also removes the original base columns that become unused after optimization.
+    manager.addPass(std::make_unique<SubcolumnPushdownPass>());
 
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
     manager.addPass(std::make_unique<RegexpFunctionRewritePass>());
