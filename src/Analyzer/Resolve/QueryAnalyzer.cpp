@@ -3642,11 +3642,22 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
         {
             for (const auto & subcolumn : columns_description.getSubcolumns(column_name_and_type.name))
                 table_expression_data.subcolumn_names.insert(subcolumn.name);
-            const auto & column_default = columns_description.getDefault(column_name_and_type.name);
+
+            const auto & column_default = columns_description.getDefault(column_name_and_type.getNameInStorage());
 
             if (column_default && column_default->kind == ColumnDefaultKind::Alias)
             {
                 auto alias_expression = buildQueryTree(column_default->expression, scope.context);
+
+                if (column_name_and_type.isSubcolumn())
+                {
+                    auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
+                    get_subcolumn_function->getArguments().getNodes().push_back(alias_expression);
+                    get_subcolumn_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(column_name_and_type.getSubcolumnName()));
+
+                    alias_expression = std::move(get_subcolumn_function);
+                }
+
                 auto column_node = std::make_shared<ColumnNode>(column_name_and_type, std::move(alias_expression), table_expression_node);
                 column_name_to_column_node.emplace(column_name_and_type.name, column_node);
                 alias_columns_to_resolve.emplace_back(column_name_and_type.name, column_node);
