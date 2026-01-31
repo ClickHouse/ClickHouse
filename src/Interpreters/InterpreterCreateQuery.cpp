@@ -941,17 +941,27 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
         }
 
+        /// For refreshable materialized views, use the MV's database as context for the view's SELECT analysis.
+        /// This ensures unqualified table/view references resolve in the MV's database, not the session's database.
+        ContextPtr select_context = getContext();
+        if (create.is_materialized_view && create.refresh_strategy)
+        {
+            auto mv_context = Context::createCopy(getContext());
+            mv_context->setCurrentDatabaseUnchecked(create.getDatabase());
+            select_context = mv_context;
+        }
+
         SharedHeader as_select_sample;
 
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
-                getContext(),
+                select_context,
                 SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
         }
         else
         {
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
+            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), select_context);
         }
 
         properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
@@ -1088,14 +1098,29 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 /// We should treat SELECT as an initial query in order to properly analyze it.
                 auto context = Context::createCopy(getContext());
                 context->setQueryKindInitial();
+
+                /// For refreshable materialized views, use the MV's database as context.
+                /// This ensures unqualified references resolve in the MV's database, not session's database.
+                if (create.refresh_strategy)
+                    context->setCurrentDatabaseUnchecked(create.getDatabase());
+
                 input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
                     context,
                     SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
             }
             else
             {
+                /// For refreshable materialized views with old analyzer, use MV's database context.
+                ContextPtr select_context = getContext();
+                if (create.refresh_strategy)
+                {
+                    auto mv_context = Context::createCopy(getContext());
+                    mv_context->setCurrentDatabaseUnchecked(create.getDatabase());
+                    select_context = mv_context;
+                }
+
                 input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
-                    getContext(),
+                    select_context,
                     SelectQueryOptions().analyze()).getSampleBlock();
             }
         }

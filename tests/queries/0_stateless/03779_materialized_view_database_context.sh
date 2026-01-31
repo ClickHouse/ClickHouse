@@ -9,53 +9,124 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DB1="${CLICKHOUSE_DATABASE}_1"
 DB2="${CLICKHOUSE_DATABASE}_2"
 
+# ============================================================================
+# Cleanup any existing test databases
+# ============================================================================
+$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB1"
+$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB2"
+
+# ============================================================================
+# Test original issue #87082: UNQUALIFIED parameterized view references in REFRESH MVs
+# When session is in the same database as the MV, CREATE works (session context correct)
+# Before fix: RUNTIME execution of the refreshable materialized view failed with "Unknown table function v1"
+# After fix: RUNTIME succeeds (context set to MV's database during refresh)
+# ============================================================================
+
+# Setup DB1 with unqualified references (session in DB1)
+# Test that it works at runtime (failed before fix) and returns data from DB1
+$CLICKHOUSE_CLIENT <<EOF
+CREATE DATABASE $DB1;
+USE $DB1;
+CREATE TABLE tbl1 (id Int32, data String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tbl1 VALUES (1, 'db1_data');
+CREATE VIEW v1 AS SELECT id, data, {p:String} as p FROM tbl1;
+CREATE MATERIALIZED VIEW mv1 REFRESH EVERY 1 SECOND ORDER BY id AS SELECT id, data, p FROM v1(p='from_mv1_db1');
+SYSTEM WAIT VIEW mv1;
+SELECT 'mv1_db1:', * FROM mv1 ORDER BY id;
+EOF
+
+# ============================================================================
+# Setup second database with same structure (session in DB2)
+# Test that it also works at runtime (failed before fix) and returns data from DB2
+# This verifies that each MV uses its own database context correctly
+# ============================================================================
+$CLICKHOUSE_CLIENT <<EOF
+CREATE DATABASE $DB2;
+USE $DB2;
+CREATE TABLE tbl1 (id Int32, data String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tbl1 VALUES (2, 'db2_data');
+CREATE VIEW v1 AS SELECT id, data, {p:String} as p FROM tbl1;
+CREATE MATERIALIZED VIEW mv1 REFRESH EVERY 1 SECOND ORDER BY id AS SELECT id, data, p FROM v1(p='from_mv1_db2');
+SYSTEM WAIT VIEW mv1;
+SELECT 'mv1_db2:', * FROM mv1 ORDER BY id;
+EOF
+
+# ============================================================================
+# Test qualified cross-database references
+# MV in DB1 reading from DB2.v1
+# This should work regardless of session database
+# ============================================================================
+$CLICKHOUSE_CLIENT <<EOF
+CREATE MATERIALIZED VIEW $DB1.mv_qualified_crossdb REFRESH EVERY 1 SECOND ORDER BY id AS SELECT id, data, p FROM $DB2.v1(p='qualified_crossdb');
+SYSTEM WAIT VIEW $DB1.mv_qualified_crossdb;
+SELECT 'qualified:', * FROM $DB1.mv_qualified_crossdb ORDER BY id;
+EOF
+
+# ============================================================================
+# Setup second set of tables and views for testing ALTER MODIFY QUERY
+# ============================================================================
+$CLICKHOUSE_CLIENT <<EOF
+USE $DB1;
+CREATE TABLE tbl2 (id Int32, data String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tbl2 VALUES (3, 'db1_v2_data');
+CREATE VIEW v2 AS SELECT id, data, {p:String} as p FROM tbl2;
+EOF
+
+$CLICKHOUSE_CLIENT <<EOF
+USE $DB2;
+CREATE TABLE tbl2 (id Int32, data String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tbl2 VALUES (4, 'db2_v2_data');
+CREATE VIEW v2 AS SELECT id, data, {p:String} as p FROM tbl2;
+EOF
+
+# ============================================================================
+# Test ALTER TABLE ... MODIFY QUERY uses correct database context
+# Even with unqualified references, the MV's database context should be used
+# ============================================================================
+$CLICKHOUSE_CLIENT <<EOF
+ALTER TABLE $DB1.mv1 MODIFY QUERY SELECT id, data, p FROM v2(p='modified_query_db1');
+SYSTEM REFRESH VIEW $DB1.mv1;
+SYSTEM WAIT VIEW $DB1.mv1;
+SELECT 'modified_mv1_db1:', * FROM $DB1.mv1 ORDER BY id;
+EOF
+
+$CLICKHOUSE_CLIENT <<EOF
+ALTER TABLE $DB2.mv1 MODIFY QUERY SELECT id, data, p FROM v2(p='modified_query_db2');
+SYSTEM REFRESH VIEW $DB2.mv1;
+SYSTEM WAIT VIEW $DB2.mv1;
+SELECT 'modified_mv1_db2:', * FROM $DB2.mv1 ORDER BY id;
+EOF
+
+# ============================================================================
+# NEW scenario from review comments: Session database vs MV database context
+# When session is in DB2 but we create/alter MV in DB1 with UNQUALIFIED references,
+# those references should resolve in DB1 (MV's database), NOT DB2 (session's database)
+# ============================================================================
+
 # Clean up
 $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB1"
 $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB2"
 
-# Setup db1 with table, parameterized view, and REFRESH MV
+# Setup db1 with table and parameterized view
 $CLICKHOUSE_CLIENT --query "CREATE DATABASE $DB1"
 $CLICKHOUSE_CLIENT --query "CREATE TABLE $DB1.tbl1 (id Int32, data String) ENGINE = MergeTree ORDER BY id"
 $CLICKHOUSE_CLIENT --query "INSERT INTO $DB1.tbl1 VALUES (1, 'db1_data')"
 $CLICKHOUSE_CLIENT --query "CREATE VIEW $DB1.v1 AS SELECT id, data, {p:String} as p FROM $DB1.tbl1"
-$CLICKHOUSE_CLIENT --query "CREATE MATERIALIZED VIEW $DB1.mv1 REFRESH EVERY 1 SECOND ORDER BY id AS SELECT id, data, p FROM $DB1.v1(p='from_mv1_db1')"
-$CLICKHOUSE_CLIENT --query "SYSTEM WAIT VIEW $DB1.mv1"
-$CLICKHOUSE_CLIENT --query "SELECT 'mv1_db1:', * FROM $DB1.mv1 ORDER BY id"
 
-# Setup second database with same structure but different data
 $CLICKHOUSE_CLIENT --query "CREATE DATABASE $DB2"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE $DB2.tbl1 (id Int32, data String) ENGINE = MergeTree ORDER BY id"
-$CLICKHOUSE_CLIENT --query "INSERT INTO $DB2.tbl1 VALUES (2, 'db2_data')"
-$CLICKHOUSE_CLIENT --query "CREATE VIEW $DB2.v1 AS SELECT id, data, {p:String} as p FROM $DB2.tbl1"
-$CLICKHOUSE_CLIENT --query "CREATE MATERIALIZED VIEW $DB2.mv1 REFRESH EVERY 1 SECOND ORDER BY id AS SELECT id, data, p FROM $DB2.v1(p='from_mv1_db2')"
-$CLICKHOUSE_CLIENT --query "SYSTEM WAIT VIEW $DB2.mv1"
-$CLICKHOUSE_CLIENT --query "SELECT 'mv1_db2:', * FROM $DB2.mv1 ORDER BY id"
 
-# Test that qualified references still work
-$CLICKHOUSE_CLIENT --query "CREATE MATERIALIZED VIEW $DB1.mv_qualified_crossdb REFRESH EVERY 1 SECOND ORDER BY id AS SELECT id, data, p FROM $DB2.v1(p='qualified_crossdb')"
-$CLICKHOUSE_CLIENT --query "SYSTEM WAIT VIEW $DB1.mv_qualified_crossdb"
-$CLICKHOUSE_CLIENT --query "SELECT 'qualified:', * FROM $DB1.mv_qualified_crossdb ORDER BY id"
+$CLICKHOUSE_CLIENT << EOF
+USE DATABASE $DB2;
 
-# Create second set of tables and views for testing ALTER MODIFY QUERY
-$CLICKHOUSE_CLIENT --query "CREATE TABLE $DB1.tbl2 (id Int32, data String) ENGINE = MergeTree ORDER BY id"
-$CLICKHOUSE_CLIENT --query "INSERT INTO $DB1.tbl2 VALUES (3, 'db1_v2_data')"
-$CLICKHOUSE_CLIENT --query "CREATE VIEW $DB1.v2 AS SELECT id, data, {p:String} as p FROM $DB1.tbl2"
+-- KEY TEST: Create MV in DB1 with UNQUALIFIED view reference "v1" (not "DB1.v1")
+-- The unqualified v1 should resolve to DB1.v1 (MV's database), not the session's current database (DB2)
+CREATE MATERIALIZED VIEW $DB1.mv1 REFRESH EVERY 1 SECOND ORDER BY id AS SELECT id, data, p FROM v1(p='from_mv1_db1');
+SYSTEM WAIT VIEW $DB1.mv1;
+SELECT 'mv1_db1:', * FROM $DB1.mv1 ORDER BY id;
+EOF
 
-$CLICKHOUSE_CLIENT --query "CREATE TABLE $DB2.tbl2 (id Int32, data String) ENGINE = MergeTree ORDER BY id"
-$CLICKHOUSE_CLIENT --query "INSERT INTO $DB2.tbl2 VALUES (4, 'db2_v2_data')"
-$CLICKHOUSE_CLIENT --query "CREATE VIEW $DB2.v2 AS SELECT id, data, {p:String} as p FROM $DB2.tbl2"
-
-# Test ALTER TABLE ... MODIFY QUERY uses correct database context
-$CLICKHOUSE_CLIENT --query "ALTER TABLE $DB1.mv1 MODIFY QUERY SELECT id, data, p FROM v2(p='modified_query_db1')"
-$CLICKHOUSE_CLIENT --query "SYSTEM REFRESH VIEW $DB1.mv1"
-$CLICKHOUSE_CLIENT --query "SYSTEM WAIT VIEW $DB1.mv1"
-$CLICKHOUSE_CLIENT --query "SELECT 'modified_mv1_db1:', * FROM $DB1.mv1 ORDER BY id"
-
-$CLICKHOUSE_CLIENT --query "ALTER TABLE $DB2.mv1 MODIFY QUERY SELECT id, data, p FROM v2(p='modified_query_db2')"
-$CLICKHOUSE_CLIENT --query "SYSTEM REFRESH VIEW $DB2.mv1"
-$CLICKHOUSE_CLIENT --query "SYSTEM WAIT VIEW $DB2.mv1"
-$CLICKHOUSE_CLIENT --query "SELECT 'modified_mv1_db2:', * FROM $DB2.mv1 ORDER BY id"
-
+# ============================================================================
 # Cleanup
+# ============================================================================
 $CLICKHOUSE_CLIENT --query "DROP DATABASE $DB1"
 $CLICKHOUSE_CLIENT --query "DROP DATABASE $DB2"
