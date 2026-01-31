@@ -22,6 +22,11 @@
 
 #include <boost/program_options.hpp>
 
+/// Include them one by one so we can test different implementations
+#define SZ_USE_HASWELL 1
+#define SZ_USE_SKYLAKE 1
+#define SZ_USE_ICE 1
+#include <stringzilla/memory.h>
 
 template <typename F, typename MemcpyImpl>
 void NO_INLINE loop(uint8_t * dst, uint8_t * src, size_t size, F && chunk_size_distribution, MemcpyImpl && impl)
@@ -119,9 +124,6 @@ static void * memcpy_trivial(void * __restrict dst_, const void * __restrict src
 
     return ret;
 }
-
-extern "C" void * memcpy_jart(void * dst, const void * src, size_t size);
-extern "C" void MemCpy(void * dst, const void * src, size_t size);
 
 void * memcpy_fast_sse(void * dst, const void * src, size_t size);
 void * memcpy_fast_avx(void * dst, const void * src, size_t size);
@@ -842,20 +844,44 @@ extern "C" void * __memcpy_avx512_unaligned_erms(void * __restrict destination, 
 extern "C" void * __memcpy_avx512_no_vzeroupper(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
 
 
+void * sz_copy_haswell_cast(void * __restrict destination, const void * __restrict source, size_t size)
+{
+    void * dst = destination;
+    sz_copy_haswell(static_cast<sz_ptr_t>(destination), static_cast<sz_cptr_t>(source), size);
+    return dst;
+}
+
+void * sz_copy_skylake_cast(void * __restrict destination, const void * __restrict source, size_t size)
+{
+    void * dst = destination;
+    sz_copy_skylake(static_cast<sz_ptr_t>(destination), static_cast<sz_cptr_t>(source), size);
+    return dst;
+}
+
+void * sz_copy_cast(void * __restrict destination, const void * __restrict source, size_t size)
+{
+    void * dst = destination;
+    sz_copy(static_cast<sz_ptr_t>(destination), static_cast<sz_cptr_t>(source), size);
+    return dst;
+}
+
 #define VARIANT(N, NAME) \
     if (memcpy_variant == (N)) \
         return test(dst, src, size, iterations, num_threads, std::forward<F>(generator), NAME, #NAME);
+
+
+extern void * ch_memcpy_sse(void * __restrict dst_, const void * __restrict src_, size_t size);
+extern void * ch_memcpy_avx512(void * __restrict dst_, const void * __restrict src_, size_t size);
 
 template <typename F>
 uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * src, size_t size, size_t iterations, size_t num_threads, F && generator)
 {
     memcpy_type memcpy_libc_old = reinterpret_cast<memcpy_type>(dlsym(RTLD_NEXT, "memcpy"));
 
-    VARIANT(1, memcpy)
+    VARIANT(1, memcpy) /// Current ClickHouse memcpy (with dispatching)
     VARIANT(2, memcpy_trivial)
     VARIANT(3, memcpy_libc_old)
     VARIANT(4, memcpy_erms)
-    VARIANT(5, MemCpy)
     VARIANT(6, memcpySSE2)
     VARIANT(7, memcpySSE2Unrolled2)
     VARIANT(8, memcpySSE2Unrolled4)
@@ -874,6 +900,13 @@ uint64_t dispatchMemcpyVariants(size_t memcpy_variant, uint8_t * dst, uint8_t * 
     VARIANT(27, __memcpy_avx512_unaligned)
     VARIANT(28, __memcpy_avx512_unaligned_erms)
     VARIANT(29, __memcpy_avx512_no_vzeroupper)
+
+    VARIANT(30, sz_copy_haswell_cast)
+    VARIANT(31, sz_copy_skylake_cast)
+    VARIANT(32, sz_copy_cast)
+
+    VARIANT(40, ch_memcpy_sse) /// ClickHouse SSE memcpy with no dispatching
+    VARIANT(41, ch_memcpy_avx512) /// ClickHouse AVX512 memcpy with no dispatching
 
     return 0;
 }
@@ -973,7 +1006,7 @@ clickhouse-local --structure '
 
     /// Fill src with some pattern for validation.
     for (size_t i = 0; i < size; ++i)
-        src[i] = i;
+        src[i] = static_cast<uint8_t>(i);
 
     /// Fill dst to avoid page faults.
     memset(dst.get(), 0, size);
@@ -996,7 +1029,7 @@ clickhouse-local --structure '
     else
     {
         std::cout << ": " << num_threads << " threads, " << "size: " << size << ", distribution " << generator_variant
-            << ", processed in " << (elapsed_ns / 1e9) << " sec, " << (size * iterations * 1.0 / elapsed_ns) << " GB/sec\n";
+            << ", processed in " << (static_cast<double>(elapsed_ns) / 1e9) << " sec, " << (static_cast<double>(size * iterations) / static_cast<double>(elapsed_ns)) << " GB/sec\n";
     }
 
     return 0;
