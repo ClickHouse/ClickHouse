@@ -29,7 +29,7 @@ public:
     FileSegmentRangeWriter(
         FileCache * cache_,
         const FileSegment::Key & key_,
-        const FileCacheUserInfo & user_,
+        const FileCacheOriginInfo & origin_,
         size_t reserve_space_lock_wait_timeout_milliseconds_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
         const String & query_id_,
@@ -59,7 +59,7 @@ private:
 
     FileCache * cache;
     const FileSegment::Key key;
-    const FileCacheUserInfo user;
+    const FileCacheOriginInfo origin;
     const size_t reserve_space_lock_wait_timeout_milliseconds;
 
     LoggerPtr log;
@@ -101,7 +101,7 @@ public:
         const FileCacheKey & key_,
         const String & query_id_,
         const WriteSettings & settings_,
-        const FileCacheUserInfo & user_,
+        const FileCacheOriginInfo & origin_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
         bool is_distributed_cache_,
         FileSegmentKind file_segment_kind_ = FileSegmentKind::Regular);
@@ -128,7 +128,7 @@ private:
     FileCacheKey key;
 
     const String query_id;
-    const FileCacheUserInfo user;
+    const FileCacheOriginInfo origin;
     const size_t reserve_space_lock_wait_timeout_milliseconds;
     const bool throw_on_error_from_cache;
     const bool is_distributed_cache;

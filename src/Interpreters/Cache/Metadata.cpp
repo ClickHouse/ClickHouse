@@ -6,6 +6,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
+#include <Interpreters/Cache/FileSegmentInfo.h>
 
 namespace fs = std::filesystem;
 
@@ -63,18 +64,18 @@ size_t FileSegmentMetadata::size() const
 
 KeyMetadata::KeyMetadata(
     const Key & key_,
-    const UserInfo & user_,
+    const OriginInfo & origin_,
     const CacheMetadata * cache_metadata_,
     bool created_base_directory_)
     : key(key_)
-    , user(user_)
+    , origin(origin_)
     , cache_metadata(cache_metadata_)
     , created_base_directory(created_base_directory_)
 {
-    if (user_ == FileCache::getInternalUser())
+    if (origin_ == FileCache::getInternalOrigin())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create key metadata with internal user id");
 
-    if (!user_.weight.has_value())
+    if (!origin_.weight.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create key metadata without user weight");
 
     chassert(!created_base_directory || fs::exists(getPath()));
@@ -82,7 +83,7 @@ KeyMetadata::KeyMetadata(
 
 bool KeyMetadata::checkAccess(const UserID & user_id_) const
 {
-    return user_id_ == user.user_id || user_id_ == FileCache::getInternalUser().user_id;
+    return user_id_ == origin.user_id || user_id_ == FileCache::getInternalOrigin().user_id;
 }
 
 void KeyMetadata::assertAccess(const UserID & user_id_) const
@@ -161,12 +162,12 @@ bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
 
 std::string KeyMetadata::getPath() const
 {
-    return cache_metadata->getKeyPath(key, user);
+    return cache_metadata->getKeyPath(key, origin);
 }
 
 std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) const
 {
-    return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), user);
+    return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), origin);
 }
 
 LoggerPtr KeyMetadata::logger() const
@@ -206,18 +207,19 @@ String CacheMetadata::getFileSegmentPath(
     const Key & key,
     size_t offset,
     FileSegmentKind segment_kind,
-    const UserInfo & user) const
+    const OriginInfo & origin) const
 {
-    return fs::path(getKeyPath(key, user)) / getFileNameForFileSegment(offset, segment_kind);
+    return  fs::path(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind);
 }
 
-String CacheMetadata::getKeyPath(const Key & key, const UserInfo & user) const
+String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) const
 {
     const auto key_str = key.toString();
+    const auto key_type_prefix = getKeyTypePrefix(origin.segment_type);
     if (write_cache_per_user_directory)
-        return fs::path(path) / fmt::format("{}.{}", user.user_id, user.weight.value()) / key_str.substr(0, 3) / key_str;
+        return fs::path(path) / key_type_prefix / fmt::format("{}.{}", origin.user_id, origin.weight.value()) / key_str.substr(0, 3) / key_str;
 
-    return fs::path(path) / key_str.substr(0, 3) / key_str;
+    return fs::path(path) / key_type_prefix / key_str.substr(0, 3) / key_str;
 }
 
 CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const
@@ -235,10 +237,10 @@ CacheMetadata::MetadataBucket & CacheMetadata::getMetadataBucket(const Key & key
 LockedKeyPtr CacheMetadata::lockKeyMetadata(
     const FileCacheKey & key,
     KeyNotFoundPolicy key_not_found_policy,
-    const UserInfo & user,
+    const OriginInfo & origin,
     bool is_initial_load)
 {
-    auto key_metadata = getKeyMetadata(key, key_not_found_policy, user, is_initial_load);
+    auto key_metadata = getKeyMetadata(key, key_not_found_policy, origin, is_initial_load);
     if (!key_metadata)
         return nullptr;
 
@@ -271,13 +273,13 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
     /// Now we are at the case when the key was removed (key_state == KeyMetadata::KeyState::REMOVED)
     /// but we need to return empty key (key_not_found_policy == KeyNotFoundPolicy::CREATE_EMPTY)
     /// Retry
-    return lockKeyMetadata(key, key_not_found_policy, user);
+    return lockKeyMetadata(key, key_not_found_policy, origin);
 }
 
 KeyMetadataPtr CacheMetadata::getKeyMetadata(
     const Key & key,
     KeyNotFoundPolicy key_not_found_policy,
-    const UserInfo & user,
+    const OriginInfo & origin,
     bool is_initial_load)
 {
     auto & bucket = getMetadataBucket(key);
@@ -294,12 +296,12 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
             return nullptr;
 
         it = bucket.emplace(
-            key, std::make_shared<KeyMetadata>(key, user, this, is_initial_load)).first;
+            key, std::make_shared<KeyMetadata>(key, origin, this, is_initial_load)).first;
 
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheKeys);
     }
 
-    it->second->assertAccess(user.user_id);
+    it->second->assertAccess(origin.user_id);
     return it->second;
 }
 
@@ -570,7 +572,7 @@ CacheMetadata::removeEmptyKey(
 
     LOG_TEST(log, "Key {} is removed from metadata", key);
 
-    const fs::path key_directory = getKeyPath(key, locked_key.getKeyMetadata()->user);
+    const fs::path key_directory = getKeyPath(key, locked_key.getKeyMetadata()->origin);
     const fs::path key_prefix_directory = key_directory.parent_path();
 
     try
@@ -785,7 +787,7 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
             try
             {
                 {
-                    auto locked_key = lockKeyMetadata(key, KeyNotFoundPolicy::RETURN_NULL, FileCache::getInternalUser());
+                    auto locked_key = lockKeyMetadata(key, KeyNotFoundPolicy::RETURN_NULL, FileCache::getInternalOrigin());
                     if (!locked_key)
                         continue;
 

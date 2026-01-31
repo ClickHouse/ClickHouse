@@ -685,6 +685,8 @@ These settings should be defined in the disk configuration section.
 | `max_file_segment_size`               | Size    | `8Mi`      | Maximum size of a single cache file in bytes or readable format.                                                                                                                             |
 | `max_elements`                        | Integer | `10000000` | Maximum number of cache files.                                                                                                                                                               |
 | `load_metadata_threads`               | Integer | `16`       | Number of threads for loading cache metadata at startup.                                                                                                                                     |
+| `use_split_cache`                     | Boolean | `false`    | Use separation of files to system/data.                                                                                                                                     |
+| `split_cache_ratio`                   | Double | `0.1`    | Ratio of system segment to total size of cache for split_cache.                                                                                                                                     |
 
 > **Note**: Size values support units like `ki`, `Mi`, `Gi`, etc. (e.g., `10Gi`).
 

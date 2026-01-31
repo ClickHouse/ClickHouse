@@ -474,7 +474,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::CLEAR_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
-            const auto user_id = FileCache::getCommonUser().user_id;
+            const auto user_id = FileCache::getCommonOrigin().user_id;
 
             if (query.filesystem_cache_name.empty())
             {
@@ -529,8 +529,7 @@ BlockIO InterpreterSystemQuery::execute()
                 {
                     size_t i = 0;
                     const auto path = cache->getFileSegmentPath(
-                        file_segment.key, file_segment.offset, file_segment.kind,
-                        FileCache::UserInfo(file_segment.user_id, file_segment.user_weight));
+                        file_segment.key, file_segment.offset, file_segment.kind, file_segment.origin);
                     res_columns[i++]->insert(cache_name);
                     res_columns[i++]->insert(path);
                     res_columns[i++]->insert(file_segment.downloaded_size);

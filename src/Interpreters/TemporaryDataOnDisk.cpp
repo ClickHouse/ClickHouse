@@ -99,7 +99,7 @@ public:
         LOG_TRACE(getLogger("TemporaryFileInLocalCache"), "Creating temporary file in cache with key {}", key);
         segment_holder = file_cache.set(
             key, 0, std::max<size_t>(1, reserve_size),
-            CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonUser());
+            CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonOrigin());
 
         chassert(segment_holder->size() == 1);
         segment_holder->front().getKeyMetadata()->createBaseDirectory(/* throw_if_failed */true);
