@@ -479,14 +479,14 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_ASAN],
         ),
         Job.ParamSet(
-            parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel",
+            parameter="amd_asan, old analyzer, s3 storage, DatabaseReplicated, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
-            requires=[ArtifactNames.CH_AMD_BINARY],
+            requires=[ArtifactNames.CH_AMD_ASAN],
         ),
         Job.ParamSet(
-            parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential",
+            parameter="amd_asan, old analyzer, s3 storage, DatabaseReplicated, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
-            requires=[ArtifactNames.CH_AMD_BINARY],
+            requires=[ArtifactNames.CH_AMD_ASAN],
         ),
         Job.ParamSet(
             parameter="amd_binary, ParallelReplicas, s3 storage, parallel",
