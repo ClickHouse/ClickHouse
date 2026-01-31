@@ -28,6 +28,7 @@
 #include <Common/IPv6ToBinary.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
+#include <Common/maskURIPassword.h>
 
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
@@ -199,7 +200,9 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(memory_usage);
 
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(current_database.data(), current_database.size());
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(query.data(), query.size());
+    auto encoded_query = query;
+    maskURIPassword(&encoded_query);
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(encoded_query.data(), encoded_query.size());
     typeid_cast<ColumnString &>(*columns[i++]).insertData(formatted_query.data(), formatted_query.size());
     typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(normalized_query_hash);
 
