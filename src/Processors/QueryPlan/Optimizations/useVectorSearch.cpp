@@ -11,10 +11,35 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB::QueryPlanOptimizations
 {
+
+namespace
+{
+    /// Helper function to find and set vector search parameters on ReadFromMergeTree steps
+    /// within a Union or other container
+    void applyVectorSearchParamsToReadSteps(
+        QueryPlan::Node * node,
+        const VectorSearchParameters & params)
+    {
+        if (!node)
+            return;
+
+        /// If this node is ReadFromMergeTree, apply the parameters
+        if (auto * read_step = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+        {
+            read_step->setVectorSearchParameters(std::make_optional(params));
+            return;
+        }
+
+        /// Recursively search children
+        for (auto * child : node->children)
+            applyVectorSearchParamsToReadSteps(child, params);
+    }
+}
 
 /// Vector search queries have this form:
 ///     SELECT [...]
@@ -71,32 +96,101 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     if (node->children.size() != 1)
         return no_layers_updated;
     node = node->children.front();
-    auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
-    if (!expression_step)
-        return no_layers_updated;
 
-    if (node->children.size() != 1)
-        return no_layers_updated;
-    node = node->children.front();
-    auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
-    FilterStep * filter_step = nullptr;
-    if (!read_from_mergetree_step)
+    /// Check if we have a Union step for Distribution engine
+    auto * union_step = typeid_cast<UnionStep *>(node->step.get());
+    bool has_union = (union_step != nullptr);
+
+    ExpressionStep * expression_step = nullptr;
+    ReadFromMergeTree * read_from_mergetree_step = nullptr;
+
+    SortingStep * inner_sorting_step = nullptr;
+
+    if (has_union)
     {
-        /// Do we have a FilterStep on top of ReadFromMergeTree?
-        filter_step = typeid_cast<FilterStep *>(node->step.get());
-        if (!filter_step)
+        /// For Distributed tables, extract the ExpressionStep AND SortingStep from one of the children
+        /// Union -> Expression -> Sorting -> Expression -> ReadFromMergeTree
+        for (auto * child_node : node->children)
+        {
+            /// Skip over intermediate steps to find the Sorting and Expression with distance function
+            while (child_node && !child_node->children.empty())
+            {
+                /// Look for the inner Sorting step (the actual ORDER BY sorting, not the merge sorting)
+                if (!inner_sorting_step)
+                {
+                    if (auto * sort = typeid_cast<SortingStep *>(child_node->step.get()))
+                        inner_sorting_step = sort;
+                }
+
+                if (auto * expr = typeid_cast<ExpressionStep *>(child_node->step.get()))
+                {
+                    /// Check if this expression has the distance function
+                    bool has_distance_func = false;
+                    const auto & outputs = expr->getExpression().getOutputs();
+
+                    for (const auto * output : outputs)
+                    {
+                        if (output->type == ActionsDAG::ActionType::FUNCTION)
+                        {
+                            const String & func_name = output->function_base->getName();
+                            if (func_name == "L2Distance" || func_name == "cosineDistance")
+                            {
+                                has_distance_func = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (has_distance_func)
+                    {
+                        expression_step = expr;
+                        break;
+                    }
+                }
+                child_node = child_node->children.front();
+            }
+            if (expression_step && inner_sorting_step)
+                break;
+        }
+
+        if (!expression_step)
+            return no_layers_updated; /// Couldn't find distance function in Union children
+
+        if (!inner_sorting_step)
+            return no_layers_updated; /// Couldn't find inner sorting step in Union children
+
+        /// Override the outer sorting_step with the inner one we found
+        sorting_step = inner_sorting_step;
+    }
+    else
+    {
+        expression_step = typeid_cast<ExpressionStep *>(node->step.get());
+        if (!expression_step)
             return no_layers_updated;
+
         if (node->children.size() != 1)
             return no_layers_updated;
         node = node->children.front();
-        read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
-        if (!read_from_mergetree_step)
-            return no_layers_updated;
-        additional_filters_present = true;
-    }
 
-    if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
-        additional_filters_present = true;
+        read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
+        FilterStep * filter_step = nullptr;
+        if (!read_from_mergetree_step)
+        {
+            /// Do we have a FilterStep on top of ReadFromMergeTree?
+            filter_step = typeid_cast<FilterStep *>(node->step.get());
+            if (!filter_step)
+                return no_layers_updated;
+            if (node->children.size() != 1)
+                return no_layers_updated;
+            node = node->children.front();
+            read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
+            if (!read_from_mergetree_step)
+                return no_layers_updated;
+            additional_filters_present = true;
+        }
+
+        if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
+            additional_filters_present = true;
+    }
 
     if (additional_filters_present && settings.vector_search_filter_strategy == VectorSearchFilterStrategy::PREFILTER)
         return no_layers_updated; /// user explicitly wanted exact (brute-force) vector search
@@ -194,9 +288,19 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     if (search_column.empty() || reference_vector.empty())
         return no_layers_updated;
 
-    /// All set for 2nd pass
-    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, additional_filters_present, true);
-    read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
+    auto vector_search_parameters = VectorSearchParameters{search_column, distance_function, n, reference_vector, additional_filters_present, true};
+
+    if (has_union)
+    {
+        /// For Distributed tables apply parameters to all ReadFromMergeTree steps in Union children
+        /// NOTE: node points to the Union step, so we use it directly
+        applyVectorSearchParamsToReadSteps(node, vector_search_parameters);
+    }
+    else
+    {
+        /// For regular tables, apply to the single ReadFromMergeTree step
+        read_from_mergetree_step->setVectorSearchParameters(std::make_optional(vector_search_parameters));
+    }
 
     return no_layers_updated;
 }

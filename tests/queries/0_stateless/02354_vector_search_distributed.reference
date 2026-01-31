@@ -1,0 +1,45 @@
+# Direct query on local table - expect index usage
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+        ReadFromMergeTree (default.tab_local)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4
+          Ranges: 2
+6
+# Direct query on remote() - expect index usage
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Merge sorted streams after aggregation stage for ORDER BY)
+      Union
+        Sorting (Sorting for ORDER BY)
+          Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+            ReadFromMergeTree (default.tab_local)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 4/4
+              Skip
+                Name: idx
+                Description: vector_similarity GRANULARITY 2
+                Parts: 1/1
+                Granules: 2/4
+              Ranges: 2
+        ReadFromRemote (Read from remote replica)
+12
+# Verify actual query results with remote()
+1
+2
+3
+4
+5
