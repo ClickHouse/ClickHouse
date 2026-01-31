@@ -39,11 +39,18 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/ListNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -771,6 +778,80 @@ bool extractRequiredNonTableColumnsFromStorage(
     return has_table_virtual_column;
 }
 
+/// Push ORDER BY and LIMIT from outer query into simple VIEW's inner query.
+/// This enables merge-sorted-streams optimization for views over Distributed tables.
+///
+/// Only safe when the VIEW is a "transparent projection" that doesn't change ORDER BY semantics:
+/// - Single SELECT from one table (no UNION)
+/// - No row transformations (JOIN, GROUP BY, DISTINCT, window functions)
+/// - No existing ORDER BY/LIMIT in the view
+void tryPushOrderByIntoView(
+    const StoragePtr & storage,
+    const StorageSnapshotPtr & storage_snapshot,
+    const SelectQueryInfo & select_query_info,
+    const QueryTreeNodePtr & table_expression,
+    SelectQueryInfo & table_expression_query_info)
+{
+    /// Basic checks: must be a view with ORDER BY
+    if (!storage->isView() || !select_query_info.has_order_by)
+        return;
+
+    /// Skip inline view() table functions - they're handled by remote()/Distributed
+    if (storage->getStorageID().database_name == "_table_function")
+        return;
+
+    const auto * outer = select_query_info.query_tree->as<QueryNode>();
+    if (!outer || !outer->hasOrderBy())
+        return;
+
+    /// Validate ORDER BY: must be simple columns from this view
+    const auto & order_list = outer->getOrderBy();
+    for (const auto & node : order_list.getNodes())
+    {
+        const auto * sort = node->as<SortNode>();
+        const auto * col = sort ? sort->getExpression()->as<ColumnNode>() : nullptr;
+        if (!col || col->getColumnSource().get() != table_expression.get())
+            return;
+    }
+
+    /// Validate view structure: must be simple SELECT from single table
+    ASTPtr inner = storage_snapshot->metadata->getSelectQuery().inner_query;
+    auto * union_ast = inner ? inner->as<ASTSelectWithUnionQuery>() : nullptr;
+    if (!union_ast || !union_ast->list_of_selects || union_ast->list_of_selects->children.size() != 1)
+        return;
+
+    auto * sel = union_ast->list_of_selects->children[0]->as<ASTSelectQuery>();
+    if (!sel)
+        return;
+
+    /// View must not have transformations that change ORDER BY semantics
+    if (sel->hasJoin() || sel->groupBy() || sel->distinct)
+        return;
+
+    /// View must not already have ORDER BY/LIMIT
+    if (sel->orderBy() || sel->limitBy() || sel->limitLength() || sel->limitOffset())
+        return;
+
+    /// Clone and add ORDER BY/LIMIT to the view's inner query
+    ASTPtr modified = inner->clone();
+    sel = modified->as<ASTSelectWithUnionQuery>()->list_of_selects->children[0]->as<ASTSelectQuery>();
+
+    auto order_ast = make_intrusive<ASTExpressionList>();
+    for (const auto & node : order_list.getNodes())
+    {
+        const auto * sort = node->as<SortNode>();
+        auto elem = make_intrusive<ASTOrderByElement>();
+        elem->direction = sort->getSortDirection() == SortDirection::ASCENDING ? 1 : -1;
+        elem->nulls_direction = elem->direction;
+        elem->children.push_back(make_intrusive<ASTIdentifier>(sort->getExpression()->as<ColumnNode>()->getColumnName()));
+        order_ast->children.push_back(elem);
+    }
+    sel->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_ast);
+    if (outer->hasLimit())
+        sel->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, outer->getLimit()->toAST());
+    table_expression_query_info.view_query = modified;
+}
+
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     const QueryTreeNodePtr & parent_join_tree,
     const SelectQueryInfo & select_query_info,
@@ -811,6 +892,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         table_expression_query_info.table_expression = table_expression;
         if (const auto & filter_actions = table_expression_data.getFilterActions())
             table_expression_query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(filter_actions->clone());
+
+        tryPushOrderByIntoView(storage, storage_snapshot, select_query_info, table_expression, table_expression_query_info);
 
         size_t max_streams = settings[Setting::max_threads];
         size_t max_threads_execute_query = settings[Setting::max_threads];
