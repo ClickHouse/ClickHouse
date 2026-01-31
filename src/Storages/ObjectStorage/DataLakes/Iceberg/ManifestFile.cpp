@@ -196,6 +196,7 @@ ManifestFileContent::ManifestFileContent(
             "Cannot read Iceberg table: manifest file '{}' doesn't have field '{}' in its metadata",
             manifest_file_name,
             f_schema);
+
     Poco::Dynamic::Var json = parser.parse(*schema_json_string);
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
     Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
@@ -414,6 +415,16 @@ ManifestFileContent::ManifestFileContent(
                     break;
             }
         }
+        std::optional<Int32> sort_order_id;
+        if (manifest_file_deserializer.hasPath(c_data_file_sort_order_id))
+        {
+            auto sort_order_id_value = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_sort_order_id);
+            if (sort_order_id_value.isNull())
+                sort_order_id = std::nullopt;
+            else
+                sort_order_id = sort_order_id_value.safeGet<Int32>();
+        }
+
         switch (content_type)
         {
             case FileContentType::DATA:
@@ -430,7 +441,8 @@ ManifestFileContent::ManifestFileContent(
                     columns_infos,
                     file_format,
                     /*reference_data_file = */ std::nullopt,
-                    /*equality_ids*/ std::nullopt);
+                    /*equality_ids*/ std::nullopt,
+                    sort_order_id);
                 break;
             case FileContentType::POSITION_DELETE:
             {
@@ -541,6 +553,22 @@ bool ManifestFileContent::hasBoundsInfoInManifests() const
 const std::set<Int32> & ManifestFileContent::getColumnsIDsWithBounds() const
 {
     return column_ids_which_have_bounds;
+}
+
+bool ManifestFileContent::areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const
+{
+    for (const auto & file : data_files_without_deleted)
+    {
+        // Treat missing sort_order_id as "not sorted by the expected order".
+        // This can happen if:
+        // 1. The field is not present in older Iceberg format versions.
+        // 2. The data file was written without sort order information.
+        if (!file.sort_order_id.has_value() || (*file.sort_order_id != sort_order_id))
+            return false;
+    }
+    /// Empty manifest (no data files) is considered sorted by definition
+    return true;
+
 }
 
 size_t ManifestFileContent::getSizeInMemory() const

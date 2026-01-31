@@ -139,6 +139,10 @@ public:
 
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
+    /// NOTE: In this function we are going to check is data which we are going to read sorted by sorting key specified in StorageMetadataPtr.
+    /// It may look confusing that this function checks only StorageMetadataPtr, and not StorageSnapshot.
+    /// However snapshot_id is specified in StorageMetadataPtr, so we can extract necessary information from it.
+    virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
 
     // This function is used primarily for datalake storages to check if we need to update metadata
     // snapshot before executing operation (SELECT, INSERT, etc) to enforce that schema in operation metadata snapshot

@@ -88,6 +88,12 @@ public:
     virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
 
+    /// Data which we are going to read is sorted by sorting key specified in StorageMetadataPtr.
+    /// For example in Iceberg it's a valid query to change sort_order for table, but older files will
+    /// not be rewritten and will be left unsorted or with previous sort order.
+    /// In this case we shouldn't use read in order optimization.
+    virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
+
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
