@@ -64,6 +64,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <Parsers/ASTSystemQuery.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -206,11 +207,13 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
+    extern const int FAULT_INJECTED;
 }
 
 namespace FailPoints
 {
     extern const char execute_query_calling_empty_set_result_func_on_exception[];
+    extern const char terminate_with_exception[];
 }
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
@@ -1990,6 +1993,22 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 
         if (boost::iequals(format_name, "Null"))
             res.null_format = true;
+    }
+
+    /// The 'SYSTEM ENABLE FAILPOINT terminate_with_exception' query itself should succeed.
+    if (ast && !ast->as<ASTSystemQuery>())
+    {
+        fiu_do_on(FailPoints::terminate_with_exception,
+        {
+            try
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint terminate_with_exception");
+            }
+            catch (...)
+            {
+                std::terminate();
+            }
+        });
     }
 
     return std::make_pair(std::move(ast), std::move(res));
