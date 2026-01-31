@@ -27,6 +27,8 @@ struct BackgroundSchedulePoolLogElement
     UInt16 error = 0;
     String exception;
 
+    UUID log_marker{};
+
     static std::string name() { return "BackgroundSchedulePoolLog"; }
 
     static ColumnsDescription getColumnsDescription();

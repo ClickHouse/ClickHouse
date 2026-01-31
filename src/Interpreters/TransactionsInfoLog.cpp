@@ -5,11 +5,9 @@
 #include <Interpreters/Context.h>
 #include <Common/TransactionID.h>
 #include <Common/CurrentThread.h>
-#include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -51,6 +49,7 @@ ColumnsDescription TransactionsInfoLogElement::getColumnsDescription()
         {"table", std::make_shared<DataTypeString>(), "The name of the table the transaction was executed against."},
         {"uuid", std::make_shared<DataTypeUUID>(), "The uuid of the table the transaction was executed against."},
         {"part", std::make_shared<DataTypeString>(), "The name of the part participated in the transaction."}, // ?
+        {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -90,6 +89,7 @@ void TransactionsInfoLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(table.table_name);
     columns[i++]->insert(table.uuid);
     columns[i++]->insert(part_name);
+    columns[i++]->insert(log_marker);
 }
 
 

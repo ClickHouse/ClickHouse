@@ -23,6 +23,8 @@ struct AggregatedZooKeeperLogElement
     std::unique_ptr<Coordination::ErrorCounter> errors;
     UInt64 total_latency_microseconds;
 
+    UUID log_marker{};
+
     static std::string name() { return "AggregatedZooKeeperLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }

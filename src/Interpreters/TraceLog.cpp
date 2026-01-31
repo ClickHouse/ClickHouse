@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromArena.h>
 #include <Interpreters/InstrumentationManager.h>
@@ -112,6 +113,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"handler", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, handler of the instrumented function."},
         {"entry_type", std::make_shared<DataTypeNullable>(entry_type_enum), "For trace type Instrumentation, entry type of the instrumented function."},
         {"duration_nanoseconds", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "For trace type Instrumentation, time the function was running for in nanoseconds."},
+        {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -292,6 +294,8 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
         .insertData(entry_type.has_value() ? reinterpret_cast<const char *>(&entry_type.value()) : nullptr, sizeof(Instrumentation::EntryType));
     typeid_cast<ColumnNullable &>(*columns[i++])
         .insertData(duration_nanoseconds.has_value() ? reinterpret_cast<const char *>(&duration_nanoseconds.value()) : nullptr, sizeof(UInt64));
+
+    columns[i++]->insert(log_marker);
 }
 
 }

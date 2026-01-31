@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 
 namespace DB
@@ -42,6 +43,7 @@ ColumnsDescription BackupLogElement::getColumnsDescription()
         {"compressed_size", std::make_shared<DataTypeUInt64>(), "Compressed size of the backup. If the backup is not stored as an archive it equals to uncompressed_size."},
         {"files_read", std::make_shared<DataTypeUInt64>(), "Number of files read during the restore operation."},
         {"bytes_read", std::make_shared<DataTypeUInt64>(), "Total size of files read during the restore operation."},
+        {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -67,6 +69,7 @@ void BackupLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(info.compressed_size);
     columns[i++]->insert(info.num_read_files);
     columns[i++]->insert(info.num_read_bytes);
+    columns[i++]->insert(log_marker);
 }
 
 }

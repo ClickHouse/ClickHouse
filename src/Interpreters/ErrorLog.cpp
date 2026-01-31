@@ -7,12 +7,14 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ErrorLog.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 
 #include <vector>
+
 
 namespace DB
 {
@@ -87,6 +89,12 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "A stack trace that represents a list of physical addresses where the called methods are stored."
+            },
+        {
+                "log_marker",
+                std::make_shared<DataTypeUUID>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Optional unique marker for log entries that were flushed together."
             }
     };
 }
@@ -113,6 +121,8 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
         last_error_trace_array.emplace_back(reinterpret_cast<uintptr_t>(ptr));
 
     columns[column_idx++]->insert(Array(last_error_trace_array.begin(), last_error_trace_array.end()));
+
+    columns[column_idx++]->insert(log_marker);
 }
 
 struct ValuePair
@@ -140,7 +150,8 @@ void ErrorLog::stepFunction(TimePoint current_time)
                 .last_error_time=(error.local.error_time_ms / 1000),
                 .last_error_message=error.local.message,
                 .last_error_query_id=error.local.query_id,
-                .last_error_trace=error.local.trace
+                .last_error_trace=error.local.trace,
+                .log_marker = {}
             };
             this->add(std::move(local_elem));
             previous_values[code].local = error.local.count;
@@ -155,7 +166,8 @@ void ErrorLog::stepFunction(TimePoint current_time)
                 .last_error_time=(error.remote.error_time_ms / 1000),
                 .last_error_message=error.remote.message,
                 .last_error_query_id=error.remote.query_id,
-                .last_error_trace=error.remote.trace
+                .last_error_trace=error.remote.trace,
+                .log_marker = {},
             };
             add(std::move(remote_elem));
             previous_values[code].remote = error.remote.count;

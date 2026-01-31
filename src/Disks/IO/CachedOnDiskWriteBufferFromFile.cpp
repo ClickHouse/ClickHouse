@@ -267,6 +267,7 @@ void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_s
         .read_from_cache_attempted = false,
         .read_buffer_id = {},
         .profile_counters = nullptr,
+        .log_marker = {},
     };
 
     cache_log->add(std::move(elem));

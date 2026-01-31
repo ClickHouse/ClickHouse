@@ -68,6 +68,7 @@ struct ZooKeeperLogElement
     /// list
     Strings children;
 
+    UUID log_marker{};
 
     static std::string name() { return "ZooKeeperLog"; }
     static ColumnsDescription getColumnsDescription();
