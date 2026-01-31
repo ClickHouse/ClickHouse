@@ -9,19 +9,39 @@
   */
 namespace AggregatedMetrics
 {
-    /// PreAggregated value of CurrentMetric. Used to implement partial updates to the destination metric.
-    class MetricHandle
-    {
-    public:
-        explicit MetricHandle(CurrentMetrics::Metric destination_metric_);
-        ~MetricHandle();
 
-        void set(CurrentMetrics::Value value);
-        void add(CurrentMetrics::Value delta);
-        void sub(CurrentMetrics::Value delta);
+class GlobalSum
+{
+public:
+    explicit GlobalSum(CurrentMetrics::Metric destination_metric_) noexcept;
+    ~GlobalSum() noexcept;
 
-    private:
-        CurrentMetrics::Metric destination_metric;
-        alignas(64) std::atomic<CurrentMetrics::Value> accounted_value = 0;
-    };
+    void set(CurrentMetrics::Value value) noexcept;
+    void add(CurrentMetrics::Value delta) noexcept;
+    void sub(CurrentMetrics::Value delta) noexcept;
+
+private:
+    const CurrentMetrics::Metric destination_metric;
+    alignas(64) std::atomic<CurrentMetrics::Value> accounted_value = 0;
+};
+
+class GlobalQuantile
+{
+public:
+    explicit GlobalQuantile(CurrentMetrics::Metric destination_metric_) noexcept;
+    ~GlobalQuantile() noexcept;
+
+    void set(CurrentMetrics::Value value) noexcept;
+
+private:
+    const CurrentMetrics::Metric destination_metric;
+
+    double quantile;
+    void * shared_buckets = nullptr;
+    void * shared_update = nullptr;
+
+    bool was_accounted = false;
+    alignas(64) std::atomic<CurrentMetrics::Value> accounted_value = 0;
+};
+
 }

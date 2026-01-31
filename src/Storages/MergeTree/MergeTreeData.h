@@ -1417,7 +1417,7 @@ private:
         std::shared_ptr<const ColumnsDescription> original;
         std::shared_ptr<const ColumnsDescription> with_collected_nested;
     };
-    mutable AggregatedMetrics::MetricHandle columns_descriptions_metric_handle;
+    mutable AggregatedMetrics::GlobalSum columns_descriptions_metric_handle;
     mutable std::mutex columns_descriptions_cache_mutex;
     mutable std::unordered_map<NamesAndTypesList, ColumnsDescriptionCache, NamesAndTypesListHash> columns_descriptions_cache TSA_GUARDED_BY(columns_descriptions_cache_mutex);
 
