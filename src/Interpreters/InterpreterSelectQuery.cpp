@@ -137,6 +137,10 @@ namespace Setting
     extern const SettingsBool count_distinct_optimization;
     extern const SettingsUInt64 cross_to_inner_join_rewrite;
     extern const SettingsOverflowMode distinct_overflow_mode;
+    extern const SettingsUInt64 distinct_set_limit_for_enabling_bloom_filter;
+    extern const SettingsUInt64 distinct_bloom_filter_bytes;
+    extern const SettingsDouble distinct_pass_ratio_threshold_for_disabling_bloom_filter;
+    extern const SettingsDouble distinct_bloom_filter_max_ratio_of_set_bits;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
@@ -3249,7 +3253,12 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
             limits,
             limit_for_distinct,
             columns,
-            pre_distinct);
+            pre_distinct,
+            settings[Setting::distinct_set_limit_for_enabling_bloom_filter],
+            settings[Setting::distinct_bloom_filter_bytes],
+            settings[Setting::distinct_pass_ratio_threshold_for_disabling_bloom_filter],
+            settings[Setting::distinct_bloom_filter_max_ratio_of_set_bits]
+        );
 
         if (pre_distinct)
             distinct_step->setStepDescription("Preliminary DISTINCT");

@@ -3354,6 +3354,18 @@ Possible values:
 - `break`: stop executing the query and return the partial result, as if the
 source data ran out.
 )", 0) \
+    DECLARE(UInt64, distinct_set_limit_for_enabling_bloom_filter, 1000000, R"(
+Maximum number of elements in pre DISTINCT that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.
+)", 0) \
+    DECLARE(UInt64, distinct_bloom_filter_bytes, 512 * 1024, R"(
+Size in bytes of a bloom filter used as DISTINCT filter.
+)", 0) \
+    DECLARE(Double, distinct_pass_ratio_threshold_for_disabling_bloom_filter, 0.7, R"(
+If ratio of passed rows to checked rows is greater than this threshold the DISTINCT is considered as poorly performing and is disabled to reduce the overhead.
+)", 0) \
+    DECLARE(Double, distinct_bloom_filter_max_ratio_of_set_bits, 0.7, R"(
+If the number of set bits in a DISTINCT bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.
+)", 0) \
     \
     DECLARE(UInt64, max_memory_usage, 0, R"(
 Cloud default value: depends on the amount of RAM on the replica.

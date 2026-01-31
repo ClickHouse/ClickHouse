@@ -175,6 +175,9 @@
     M(AggregatorThreads, "Number of threads in the Aggregator thread pool.") \
     M(AggregatorThreadsActive, "Number of threads in the Aggregator thread pool running a task.") \
     M(AggregatorThreadsScheduled, "Number of queued or active jobs in the Aggregator thread pool.") \
+    M(DistinctThreads, "Number of threads in the Distinct thread pool.") \
+    M(DistinctThreadsActive, "Number of threads in the Distinct thread pool running a task.") \
+    M(DistinctThreadsScheduled, "Number of queued or active jobs in the Distinct thread pool.") \
     M(DDLWorkerThreads, "Number of threads in the DDLWorker thread pool for ON CLUSTER queries.") \
     M(DDLWorkerThreadsActive, "Number of threads in the DDLWORKER thread pool for ON CLUSTER queries running a task.") \
     M(DDLWorkerThreadsScheduled, "Number of queued or active jobs in the DDLWORKER thread pool for ON CLUSTER queries.") \
