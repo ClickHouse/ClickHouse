@@ -1,4 +1,7 @@
 #include <optional>
+#include <cstdlib>
+#include <filesystem>
+#include <vector>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/Expect404ResponseScope.h>
 
@@ -107,9 +110,10 @@ ObjectAttributes getObjectTags(
         const auto & error = tag_outcome.GetError();
         throw S3Exception(
             error.GetErrorType(),
-            "Failed to get object tags: {}. HTTP response code: {}",
+            "Failed to get object tags: {}. HTTP response code: {}.{}",
             error.GetMessage(),
-            static_cast<size_t>(error.GetResponseCode()));
+            static_cast<size_t>(error.GetResponseCode()),
+            getAuthenticationErrorHint(error.GetErrorType()));
     }
 
     for (const auto & tag : tag_outcome.GetResult().GetTagSet())
@@ -122,6 +126,58 @@ bool isNotFoundError(Aws::S3::S3Errors error)
 {
     return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND || error == Aws::S3::S3Errors::NO_SUCH_KEY
         || error == Aws::S3::S3Errors::NO_SUCH_BUCKET;
+}
+
+bool isAuthenticationError(Aws::S3::S3Errors error)
+{
+    return error == Aws::S3::S3Errors::ACCESS_DENIED
+        || error == Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID
+        || error == Aws::S3::S3Errors::INVALID_SIGNATURE;
+}
+
+String getAuthenticationErrorHint(Aws::S3::S3Errors error)
+{
+    if (!isAuthenticationError(error))
+        return "";
+
+    std::vector<String> possible_sources;
+
+    /// Check for environment variable credentials
+    if (std::getenv("AWS_ACCESS_KEY_ID"))
+        possible_sources.push_back("environment variables (AWS_ACCESS_KEY_ID)");
+
+    /// Check for ECS container credentials
+    if (std::getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") || std::getenv("AWS_CONTAINER_CREDENTIALS_FULL_URI"))
+        possible_sources.push_back("ECS container credentials");
+
+    /// Check for web identity / assume role credentials
+    if (std::getenv("AWS_WEB_IDENTITY_TOKEN_FILE") || std::getenv("AWS_ROLE_ARN"))
+        possible_sources.push_back("STS AssumeRole with web identity");
+
+    /// Check for default credentials file
+    const char * home = std::getenv("HOME");
+    String credentials_file;
+    if (const char * custom_file = std::getenv("AWS_SHARED_CREDENTIALS_FILE"))
+        credentials_file = custom_file;
+    else if (home)
+        credentials_file = String(home) + "/.aws/credentials";
+
+    if (!credentials_file.empty() && std::filesystem::exists(credentials_file))
+        possible_sources.push_back(credentials_file);
+
+    String hint = " Please check your AWS credentials and permissions.";
+    if (!possible_sources.empty())
+    {
+        hint += " Possible credential sources: ";
+        for (size_t i = 0; i < possible_sources.size(); ++i)
+        {
+            if (i > 0)
+                hint += ", ";
+            hint += possible_sources[i];
+        }
+        hint += ".";
+    }
+    return hint;
 }
 
 ObjectInfo getObjectInfoIfExists(
@@ -143,9 +199,10 @@ ObjectInfo getObjectInfoIfExists(
 
     throw S3Exception(
         error.GetErrorType(),
-        "Failed to get object info: {}. HTTP response code: {}",
+        "Failed to get object info: {}. HTTP response code: {}.{}",
         error.GetMessage(),
-        static_cast<size_t>(error.GetResponseCode()));
+        static_cast<size_t>(error.GetResponseCode()),
+        getAuthenticationErrorHint(error.GetErrorType()));
 }
 
 ObjectInfo getObjectInfo(
@@ -165,9 +222,10 @@ ObjectInfo getObjectInfo(
 
     throw S3Exception(
         error.GetErrorType(),
-        "Failed to get object info: {}. HTTP response code: {}",
+        "Failed to get object info: {}. HTTP response code: {}.{}",
         error.GetMessage(),
-        static_cast<size_t>(error.GetResponseCode()));
+        static_cast<size_t>(error.GetResponseCode()),
+        getAuthenticationErrorHint(error.GetErrorType()));
 }
 
 size_t getObjectSize(
@@ -196,8 +254,9 @@ bool objectExists(
         return false;
 
     throw S3Exception(error.GetErrorType(),
-        "Failed to check existence of key {} in bucket {}: {}. HTTP response code: {}, error type: {}",
-        key, bucket, error.GetMessage(), static_cast<size_t>(error.GetResponseCode()), error.GetErrorType());
+        "Failed to check existence of key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
+        key, bucket, error.GetMessage(), static_cast<size_t>(error.GetResponseCode()),
+        error.GetErrorType(), getAuthenticationErrorHint(error.GetErrorType()));
 }
 
 void checkObjectExists(
