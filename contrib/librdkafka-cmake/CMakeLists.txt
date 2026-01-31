@@ -110,9 +110,15 @@ if(TARGET ch_contrib::sasl2)
 endif()
 
 set(WITH_SSL 1)
+# CRITICAL FIX: Enable OAUTHBEARER independently of SASL_CYRUS
+# OAUTHBEARER (RFC 7628) only requires OpenSSL for crypto operations,
+# it does NOT require Cyrus SASL library. By enabling it unconditionally
+# when WITH_SSL is set, we can support AWS MSK IAM authentication and
+# other OAUTHBEARER mechanisms without needing the full Cyrus SASL stack.
+set(WITH_SASL_OAUTHBEARER 1)
+
 if(WITH_SASL_CYRUS)
    set(WITH_SASL_SCRAM 1)
-   set(WITH_SASL_OAUTHBEARER 1)
 endif()
 add_definitions(-DOPENSSL_NO_ENGINE)
 list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c")

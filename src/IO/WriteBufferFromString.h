@@ -41,7 +41,7 @@ class WriteBufferFromOwnString : public detail::StringHolder, public WriteBuffer
 {
     using Base = WriteBufferFromVectorImpl<std::string>;
 public:
-    WriteBufferFromOwnString()
+    WriteBufferFromOwnString() // NOLINT(modernize-use-equals-default, hicpp-use-equals-default)
         : Base(value)
     {
     }
