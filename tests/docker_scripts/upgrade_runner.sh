@@ -26,6 +26,24 @@ cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio statele
 
 echo "Get previous release tag"
 PACKAGES_DIR=/repo/ci/tmp
+
+# Detect sanitizer from new packages before installing old ones.
+# This is needed to skip tests with no-{sanitizer} tags during upgrade check,
+# because tests may create tables with engines that are not supported in sanitizer builds.
+echo "Detecting sanitizer from new packages..."
+NEW_BINARY_SANITIZER=""
+dpkg -x $PACKAGES_DIR/clickhouse-common-static_*.deb /tmp/new_clickhouse_extract
+if /tmp/new_clickhouse_extract/usr/bin/clickhouse local --query "SELECT value LIKE '%-fsanitize=memory%' FROM system.build_options WHERE name = 'CXX_FLAGS'" | grep -q 1; then
+    NEW_BINARY_SANITIZER="msan"
+elif /tmp/new_clickhouse_extract/usr/bin/clickhouse local --query "SELECT value LIKE '%-fsanitize=address%' FROM system.build_options WHERE name = 'CXX_FLAGS'" | grep -q 1; then
+    NEW_BINARY_SANITIZER="asan"
+elif /tmp/new_clickhouse_extract/usr/bin/clickhouse local --query "SELECT value LIKE '%-fsanitize=thread%' FROM system.build_options WHERE name = 'CXX_FLAGS'" | grep -q 1; then
+    NEW_BINARY_SANITIZER="tsan"
+elif /tmp/new_clickhouse_extract/usr/bin/clickhouse local --query "SELECT value LIKE '%-fsanitize=undefined%' FROM system.build_options WHERE name = 'CXX_FLAGS'" | grep -q 1; then
+    NEW_BINARY_SANITIZER="ubsan"
+fi
+rm -rf /tmp/new_clickhouse_extract
+echo "Detected sanitizer: ${NEW_BINARY_SANITIZER:-none}"
 # shellcheck disable=SC2016
 previous_release_tag=$(dpkg-deb --showformat='${Version}' --show $PACKAGES_DIR/clickhouse-client*.deb | get_previous_release_tag)
 if [ $? -ne 0 ]; then
@@ -119,7 +137,13 @@ clickhouse-client --query="SELECT 'Server version: ', version()"
 
 mkdir tmp_stress_output
 
-stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\""  --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
+# Build extra-build-flags option if sanitizer was detected
+EXTRA_BUILD_FLAGS_OPT=""
+if [ -n "$NEW_BINARY_SANITIZER" ]; then
+    EXTRA_BUILD_FLAGS_OPT="--extra-build-flags=$NEW_BINARY_SANITIZER"
+fi
+
+stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" $EXTRA_BUILD_FLAGS_OPT"  --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
