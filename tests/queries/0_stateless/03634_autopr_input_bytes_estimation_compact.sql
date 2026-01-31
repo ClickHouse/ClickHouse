@@ -5,6 +5,9 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=2, parallel_rep
 
 set max_threads=4, max_block_size=8192;
 
+-- For runs with the old analyzer
+SET enable_analyzer=1;
+
 -- Reading of aggregation states from disk will affect `ReadCompressedBytes`
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 
