@@ -1,0 +1,66 @@
+Test 1: Single value HLL
+1
+Test 2: Single value quantile
+1
+Test 3: Two identical values
+1
+Test 4: Very small dataset (1 value)
+1
+Test 5: Very small dataset (2 values)
+1
+Test 6: Extreme percentiles
+1
+Test 7: All percentiles between 0 and 1
+1
+Test 8: Large integers (UInt64)
+1
+Test 9: Negative numbers in quantiles
+1
+Test 10: Very small floating point numbers
+1
+Test 11: Mixed positive and negative
+1	1
+Test 12: Sparse data (many NULLs)
+1
+Test 13: All NULLs HLL
+1
+Test 14: All NULLs quantiles
+1
+Test 15: String with special characters
+1
+Test 16: Empty string
+1
+Test 17: Very long strings
+1
+Test 18: Identical sketches produce identical results
+1
+Test 19: Merging order independence
+1
+Test 20: Quantile monotonicity
+1	1	1	1	1	1	1	1
+Test 21: base64_encoded parameter equivalence
+1	1
+Test 22: Quantiles base64_encoded parameter
+1
+Test 23: Very high cardinality
+1
+Test 24: Percentile with uniform distribution
+1
+Test 25: Multiple aggregations in same query
+1	1	1
+Test 26: lg_k at minimum bound (4)
+1
+Test 27: lg_k at maximum bound (21)
+1
+Test 28: All HLL types with small dataset
+1	1	1
+Test 29: Merge sketches with matching parameters
+1
+Test 30: Parameter combinations
+1
+Test 31: Higher lg_k with small dataset
+1
+Test 32: Different types same cardinality estimate
+1	1
+Test 33: Merge with default vs explicit parameters
+1

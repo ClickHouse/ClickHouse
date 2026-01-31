@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3453
+personal_ws-1.1 en 3465
 aarch
 AArch
 ACLs
@@ -261,6 +261,7 @@ DataLakeCatalog
 DataLens
 DataPacket
 DataPup
+DataSketches
 DataTypes
 DataTypesMatching
 DatabaseCatalog
@@ -288,6 +289,7 @@ DeliveryTag
 DeltaLake
 Deltalake
 Denormalize
+Deserializes
 DeprecatedBadge
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
@@ -311,6 +313,8 @@ DistributedProductMode
 DistributedSend
 DockerHub
 DoubleDelta
+DoubleSketch
+DoubleSketches
 Doxygen
 Dresseler
 Durre
@@ -1623,6 +1627,7 @@ capn
 capnproto
 cardinalities
 cardinality
+cardinalityFromHLL
 cartesian
 caseWithExpression
 cashflow
@@ -1639,6 +1644,8 @@ ccache
 cctz
 ceil
 centroid
+centroids
+centroidsFromTDigest
 certificateFile
 cetera
 cfg
@@ -2342,6 +2349,7 @@ lang
 laravel
 largestTriangleThreeBuckets
 latencies
+latencyValuesAndWeights
 ldap
 leadInFrame
 leftPad
@@ -2461,6 +2469,9 @@ mergeTreeIndex
 mergeTreePartInfo
 mergeTreeProjection
 mergeable
+mergeSerializedHLL
+mergeSerializedQuantiles
+mergeSerializedTDigest
 mergetree
 messageID
 metacharacters
@@ -2700,6 +2711,8 @@ pclmulqdq
 pcre
 perf
 performant
+percentileFromQuantiles
+percentileFromTDigest
 perimeterCartesian
 perimeterSpherical
 perkey
@@ -3017,6 +3030,9 @@ sequenceNextNode
 seriesDecomposeSTL
 seriesOutliersDetectTukey
 seriesPeriodDetectFFT
+serializedHLL
+serializedQuantiles
+serializedTDigest
 serverTimeZone
 serverTimezone
 serverUUID
