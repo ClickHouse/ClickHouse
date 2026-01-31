@@ -35,6 +35,8 @@ SET optimize_use_projection_filtering = 1;
 -- enable projection for parallel replicas
 SET parallel_replicas_local_plan = 1;
 SET optimize_aggregation_in_order = 0;
+-- Statistics pruning would filter parts before projection eligibility check
+SET use_statistics_for_part_pruning = 0;
 
 -- region projection is enough effective for filtering
 SELECT trimLeft(explain)

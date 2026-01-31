@@ -1,6 +1,8 @@
 -- add_minmax_index_for_numeric_columns=0: Changes the plan FOR b
 DROP TABLE IF EXISTS t_skip_index_insert;
 
+SET use_statistics_for_part_pruning = 0; -- disable statistics-based part pruning to keep EXPLAIN output stable
+
 CREATE TABLE t_skip_index_insert
 (
     a UInt64,

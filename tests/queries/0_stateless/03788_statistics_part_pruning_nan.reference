@@ -1,0 +1,78 @@
+-- Case 1: Float64 = NaN comparison (should return 0, validates Statistics NaN handling)
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_nan)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Statistics
+            Keys:
+              val_float
+            Parts: 0/1
+            Granules: 0/1
+          Ranges: 0
+0
+-- Case 1: Float64 <> NaN comparison (should return 7, validates Statistics NaN handling)
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_nan)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+7
+-- Case 2: Float64 = -NaN comparison (should return 0)
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_nan)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Statistics
+            Keys:
+              val_float
+            Parts: 0/1
+            Granules: 0/1
+          Ranges: 0
+0
+-- Case 3: Float64 <> -NaN comparison (should return 7)
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_nan)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+7

@@ -3,6 +3,7 @@ SET parallel_replicas_local_plan = 1; -- this setting may skip index analysis wh
 SET use_skip_indexes_on_data_read = 0;
 SET materialize_skip_indexes_on_insert = 0;
 SET mutations_sync = 2; -- disable asynchronous mutations
+SET use_statistics_for_part_pruning = 0; -- disable statistics-based part pruning to keep EXPLAIN output stable
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
