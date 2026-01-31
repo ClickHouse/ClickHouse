@@ -8619,9 +8619,46 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
 
     checkColumnFilenamesForCollision(metadata.getColumns(), *settings, throw_on_error);
 }
-
-void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
+void MergeTreeData::checkColumnFilenamesForCollision(
+    const ColumnsDescription & columns,
+    const MergeTreeSettings & settings,
+    bool throw_on_error) const
 {
+    auto startsWith = [](const String & s, const String & pfx) -> bool
+    {
+    return s.starts_with(pfx);
+    };
+
+    auto isDigit = [](char c) -> bool
+    {
+        return c >= '0' && c <= '9';
+    };
+
+    /// Some stream files are intentionally shared across "nested-like" columns.
+    /// Example: for columns "col.s" and "col.u" (both Arrays), offsets may live in "col.size0".
+    /// This is safe because both columns refer to the same offsets file by design.
+    auto isSharedNestedOffsetsFile = [&](const String & full_stream_name, const String & col_a, const String & col_b) -> bool
+    {
+        /// Match "<prefix>.size<digits>" at the end.
+        static const String marker = ".size";
+        const size_t pos = full_stream_name.rfind(marker);
+        if (pos == String::npos)
+            return false;
+
+        const size_t digits_begin = pos + marker.size();
+        if (digits_begin >= full_stream_name.size())
+            return false; /// no digits
+
+        for (size_t i = digits_begin; i < full_stream_name.size(); ++i)
+            if (!isDigit(full_stream_name[i]))
+                return false;
+
+        const String stream_prefix = full_stream_name.substr(0, pos);
+        const String stream_prefix_dot = stream_prefix + ".";
+
+        return startsWith(col_a, stream_prefix_dot) && startsWith(col_b, stream_prefix_dot);
+    };
+
     std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
     auto columns_list = Nested::collect(columns.getAllPhysical());
     SerializationInfo::Settings serialization_settings
@@ -8637,40 +8674,99 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
     {
         std::unordered_map<String, String> column_streams;
 
+        bool local_collision = false;
+        String local_collision_message;
+
         auto callback = [&](const auto & substream_path)
         {
-            auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
+            if (local_collision)
+                return;
+
+            auto full_stream_name =
+                ISerialization::getFileNameForStream(
+                    column,
+                    substream_path,
+                    ISerialization::StreamFileNameSettings(settings));
+
             String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
-            column_streams.emplace(stream_name, full_stream_name);
+
+            /// Detect collisions within streams of the same column (previously could be silently skipped).
+            auto [it, inserted] = column_streams.emplace(stream_name, full_stream_name);
+            if (!inserted && it->second != full_stream_name)
+            {
+                local_collision_message = fmt::format(
+                    "Column '{} {}' has streams ({} and {}) with collision in file name {}",
+                    column.name, column.type->getName(), full_stream_name, it->second, stream_name);
+
+                if (settings[MergeTreeSetting::replace_long_file_name_to_hash])
+                    local_collision_message +=
+                        ". It may be a collision between a filename for one stream and a hash of filename for another stream "
+                        "(see setting 'replace_long_file_name_to_hash')";
+
+                local_collision = true;
+            }
         };
 
         auto serialization = column.type->getSerialization(serialization_settings);
         serialization->enumerateStreams(callback);
 
+        if (local_collision)
+        {
+            if (throw_on_error)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", local_collision_message);
+
+            LOG_ERROR(
+                log,
+                "Table definition is incorrect. {}. It may lead to corruption of data or crashes. "
+                "You need to resolve it manually",
+                local_collision_message);
+
+            return;
+        }
+
         for (const auto & [stream_name, full_stream_name] : column_streams)
         {
-            auto [it, inserted] = stream_name_to_full_name.emplace(stream_name, std::pair{full_stream_name, column.name});
+            auto [it, inserted] = stream_name_to_full_name.emplace(
+                stream_name, std::pair{full_stream_name, column.name});
+
             if (!inserted)
             {
                 const auto & [other_full_name, other_column_name] = it->second;
+
+                /// If the *full* stream name is identical, it might still be intentional sharing (nested offsets).
+                if (other_full_name == full_stream_name
+                    && isSharedNestedOffsetsFile(full_stream_name, column.name, other_column_name))
+                {
+                    continue;
+                }
+
                 auto other_type = columns.getPhysical(other_column_name).type;
 
                 auto message = fmt::format(
                     "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
-                    column.name, column.type->getName(), other_column_name, other_type->getName(), full_stream_name, other_full_name, stream_name);
+                    column.name, column.type->getName(),
+                    other_column_name, other_type->getName(),
+                    full_stream_name, other_full_name, stream_name);
 
                 if (settings[MergeTreeSetting::replace_long_file_name_to_hash])
-                    message += ". It may be a collision between a filename for one column and a hash of filename for another column (see setting 'replace_long_file_name_to_hash')";
+                    message += ". It may be a collision between a filename for one column and a hash of filename for another column "
+                               "(see setting 'replace_long_file_name_to_hash')";
 
                 if (throw_on_error)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
 
-                LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
+                LOG_ERROR(
+                    log,
+                    "Table definition is incorrect. {}. It may lead to corruption of data or crashes. "
+                    "You need to resolve it manually",
+                    message);
+
                 return;
             }
         }
     }
 }
+
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
 {
