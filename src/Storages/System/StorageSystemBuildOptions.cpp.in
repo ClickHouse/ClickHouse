@@ -67,6 +67,8 @@ const char * auto_config_build[]
     "USE_MSGPACK", "@USE_MSGPACK@",
     "USE_DELTA_KERNEL_RS", "@USE_DELTA_KERNEL_RS@",
     "USE_XRAY", "@USE_XRAY@",
+    "USE_WASMEDGE", "@USE_WASMEDGE@",
+    "USE_WASMTIME", "@USE_WASMTIME@",
     "WITH_COVERAGE", "@WITH_COVERAGE@",
     "CLICKHOUSE_CLOUD", "@CLICKHOUSE_CLOUD@",
     "GIT_HASH", "@GIT_HASH@",

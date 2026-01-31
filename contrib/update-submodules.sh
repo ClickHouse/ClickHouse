@@ -36,8 +36,9 @@ git config --file .gitmodules --get-regexp '.*path' | sed 's/[^ ]* //' | xargs -
 # llvm-project: Used to build llvm. Could be replaced with our own cmake files
 # corrosion: Used to build rust (Does not make sense to replace)
 # rust_vendor: Used to build rust
+# wasmtime: uses build.rs script that requires cmake files to be present
 grep -o -P '"contrib/[^"]+"' .gitmodules |
-  grep -v -P 'contrib/(llvm-project|corrosion|rust_vendor)' |
+  grep -v -P 'contrib/(llvm-project|corrosion|rust_vendor|wasmtime)' |
   xargs -I@ find @ \
     -'(' -name 'CMakeLists.txt' -or -name '*.cmake' -')' -and -not -name '*.h.cmake' \
     -delete

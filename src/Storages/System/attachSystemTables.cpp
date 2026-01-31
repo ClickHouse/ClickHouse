@@ -108,6 +108,7 @@
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Storages/System/StorageSystemViewRefreshes.h>
 #include <Storages/System/StorageSystemDNSCache.h>
+#include <Storages/System/StorageSystemWasmModules.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #if USE_ICU
 #   include <Storages/System/StorageSystemUnicode.h>
@@ -271,8 +272,15 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     {
         attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");
     }
+
     attach<StorageSystemCodecs>(context, system_database, "codecs", "Contains information about system codecs.");
     attach<StorageSystemCompletions>(context, system_database, "completions", "Contains a list of completion tokens.");
+
+    if (context->hasWasmModuleManager())
+    {
+        attach<StorageSystemWasmModules>(context, system_database, "webassembly_modules", "Allows to load Webassembly modules into ClickHouse to create User Defined Functions from them.",
+            context->getWasmModuleManager());
+    }
 }
 
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics)

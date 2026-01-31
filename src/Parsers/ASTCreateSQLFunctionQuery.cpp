@@ -1,16 +1,20 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-
 
 namespace DB
 {
 
-ASTPtr ASTCreateFunctionQuery::clone() const
+namespace ErrorCodes
 {
-    auto res = make_intrusive<ASTCreateFunctionQuery>(*this);
+extern const int LOGICAL_ERROR;
+}
+
+ASTPtr ASTCreateSQLFunctionQuery::clone() const
+{
+    auto res = make_intrusive<ASTCreateSQLFunctionQuery>(*this);
     res->children.clear();
 
     res->function_name = function_name->clone();
@@ -21,7 +25,7 @@ ASTPtr ASTCreateFunctionQuery::clone() const
     return res;
 }
 
-void ASTCreateFunctionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
+void ASTCreateSQLFunctionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
     ostr << "CREATE ";
 
@@ -41,11 +45,14 @@ void ASTCreateFunctionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
     function_core->format(ostr, settings, state, frame);
 }
 
-String ASTCreateFunctionQuery::getFunctionName() const
+String ASTCreateSQLFunctionQuery::getFunctionName() const
 {
     String name;
-    tryGetIdentifierNameInto(function_name, name);
+    bool is_ok = tryGetIdentifierNameInto(function_name, name);
+    if (!is_ok)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected function name, got '{}'", function_name->formatForErrorMessage());
     return name;
 }
+
 
 }

@@ -3,5 +3,6 @@
 members = [
     "skim",
     "prql",
+    "wasmtime",
 ]
 resolver = "2"
