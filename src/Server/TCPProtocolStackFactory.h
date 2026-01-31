@@ -7,6 +7,8 @@
 #include <Poco/Net/NetException.h>
 #include <Common/logger_useful.h>
 #include <Access/Common/AllowedClientHosts.h>
+#include <vector>
+#include <string>
 
 
 namespace DB
@@ -15,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ADDRESS_PATTERN_TYPE;
-    extern const int IP_ADDRESS_NOT_ALLOWED;
 }
 
 
@@ -64,13 +65,14 @@ public:
 
     Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
     {
+        bool ip_blocked = false;
         if (!allowed_client_hosts.empty() && !allowed_client_hosts.contains(socket.peerAddress().host()))
-            throw Exception(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "Connections from {} are not allowed", socket.peerAddress().toString());
+            ip_blocked = true;
 
         try
         {
-            LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-            return new TCPProtocolStackHandler(server, tcp_server, socket, stack, conf_name);
+            LOG_TRACE(log, "TCP Request. Address: {}. {}", socket.peerAddress().toString(), ip_blocked ? "Access denied." : "Allowed.");
+            return new TCPProtocolStackHandler(server, tcp_server, socket, stack, conf_name, ip_blocked);
         }
         catch (const Poco::Net::NetException &)
         {
