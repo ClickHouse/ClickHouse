@@ -1505,9 +1505,10 @@ private:
                 const auto & mapped_block = *it;
                 size_t rows = mapped_block.columns_info.columns.at(0)->size();
 
+                auto used_flags_holder = parent.getUsedFlagsHolder(&mapped_block.columns_info.columns);
                 for (size_t row = 0; row < rows; ++row)
                 {
-                    if (!parent.isUsed(&mapped_block.columns_info.columns, row))
+                    if (!used_flags_holder->isUsed(row))
                     {
                         for (size_t column = 0; column < columns_keys_and_right.size(); ++column)
                         {
@@ -1533,10 +1534,11 @@ private:
             Iterator & it = std::any_cast<Iterator &>(position);
             auto end = map.end();
 
+            auto used_flags_holder = parent.getUsedFlagsHolder();
             for (; it != end; ++it)
             {
                 size_t offset = map.offsetInternal(it.getPtr());
-                if (parent.isUsed(offset))
+                if (used_flags_holder->isUsed(offset))
                     continue;
 
                 const Mapped & mapped = it->getMapped();
@@ -1568,18 +1570,21 @@ private:
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
             size_t rows = columns->columns_info.columns.at(0)->size();
-            for (size_t row = 0; row < rows; ++row)
+            if (nullmap)
             {
-                if (nullmap && (*nullmap)[row])
+                for (size_t i = 0; i < rows; ++i)
                 {
-                    for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
+                    if ((*nullmap)[i])
                     {
-                        if (const auto * replicated_column = columns->columns_info.replicated_columns[col])
-                            columns_keys_and_right[col]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
-                        else
-                            columns_keys_and_right[col]->insertFrom(*columns->columns_info.columns[col], row);
+                        for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
+                        {
+                            if (const auto * replicated_column = columns->columns_info.replicated_columns[col])
+                                columns_keys_and_right[col]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
+                            else
+                                columns_keys_and_right[col]->insertFrom(*columns->columns_info.columns[col], row);
+                        }
+                        ++rows_added;
                     }
-                    ++rows_added;
                 }
             }
         }
@@ -1758,6 +1763,16 @@ bool HashJoin::isUsed(size_t off) const
 bool HashJoin::isUsed(const Columns * columns_ptr, size_t row_idx) const
 {
     return used_flags->getUsedSafe(columns_ptr, row_idx);
+}
+
+std::unique_ptr<JoinStuff::UsedFlagsHolder> HashJoin::getUsedFlagsHolder(const Columns * columns) const
+{
+    return used_flags->getUsedFlagsHolder(columns);
+}
+
+std::unique_ptr<JoinStuff::UsedFlagsHolder> HashJoin::getUsedFlagsHolder() const
+{
+    return used_flags->getUsedFlagsHolder();
 }
 
 bool HashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const

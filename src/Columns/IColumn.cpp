@@ -22,13 +22,13 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumnDummy.h>
 #include <Columns/IColumn_fwd.h>
-#include <Core/Field.h>
 #include <Core/Block.h>
+#include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Interpreters/RowRefs.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/SipHash.h>
 
 using Hash = CityHash_v1_0_2::uint128;
@@ -268,6 +268,11 @@ bool IColumn::structureEquals(const IColumn &) const
 std::string_view IColumn::getRawData() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Column {} is not a contiguous block of memory", getName());
+}
+
+void IColumn::batchUpdateHashWithValue(const UInt8 * /*nullmap*/, std::vector<SipHash> & /*hashes*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchUpdateHashWithValue is not supported for {}", getName());
 }
 
 size_t IColumn::sizeOfValueIfFixed() const
@@ -842,6 +847,27 @@ ColumnPtr IColumnHelper<Derived, Parent>::updateFrom(const IColumn::Patch & patc
     return updateFrom<false>(dst, patch);
 }
 
+template <typename Derived, typename Parent>
+void IColumnHelper<Derived, Parent>::batchUpdateHashWithValue(const UInt8 * nullmap, std::vector<SipHash> & hashes) const
+{
+    const auto & self = static_cast<const Derived &>(*this);
+    size_t rows = self.size();
+    chassert(rows = hashes.size());
+    if (!nullmap)
+    {
+        for (size_t i = 0; i < rows; ++i)
+            self.updateHashWithValue(i, hashes[i]);
+        return;
+    }
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        auto is_null = nullmap[i];
+        hashes[i].update(is_null);
+        if (!is_null)
+            self.updateHashWithValue(i, hashes[i]);
+    }
+}
 
 template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::updateInplaceFrom(const IColumn::Patch & patch)

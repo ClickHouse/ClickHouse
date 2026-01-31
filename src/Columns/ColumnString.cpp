@@ -716,7 +716,7 @@ void ColumnString::validate() const
                         last_offset, chars.size());
 }
 
-void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
+ALWAYS_INLINE void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
 {
     size_t string_size = sizeAt(n);
     size_t offset = offsetAt(n);
@@ -727,6 +727,26 @@ void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
     hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
     /// This is for compatibility
     hash.update(UInt8(0));
+}
+
+void ColumnString::batchUpdateHashWithValue(const UInt8 * nullmap, std::vector<SipHash> & hashes) const
+{
+    size_t rows = size();
+    chassert(rows == hashes.size());
+    if (!nullmap)
+    {
+        for (size_t i = 0; i < rows; ++i)
+            updateHashWithValue(i, hashes[i]);
+        return;
+    }
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        auto is_null = nullmap[i];
+        hashes[i].update(is_null);
+        if (!is_null)
+            updateHashWithValue(i, hashes[i]);
+    }
 }
 
 void ColumnString::updateHashFast(SipHash & hash) const
