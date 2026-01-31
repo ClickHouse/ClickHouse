@@ -1,7 +1,4 @@
-#include <memory>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Core/Block_fwd.h>
 #include <Planner/Planner.h>
 
 #include <Core/Names.h>
@@ -12,12 +9,16 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitors.h>
+#include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -44,6 +45,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/StorageID.h>
 
@@ -71,6 +73,7 @@
 #include <Analyzer/WindowFunctionsUtils.h>
 
 #include <Planner/CollectColumnIdentifiers.h>
+#include <Planner/CollectMaterializedCTE.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/findQueryForParallelReplicas.h>
@@ -1505,6 +1508,49 @@ void addBuildSubqueriesForSetsStepIfNeeded(
     }
 }
 
+void addBuildSubqueriesForMaterializedCTEsIfNeeded(
+    QueryPlan & query_plan,
+    const SelectQueryOptions & select_query_options,
+    const TableHolderToCTEMap & materialized_ctes
+)
+{
+    if (materialized_ctes.empty())
+        return;
+
+    SharedHeaders headers;
+    std::vector<std::unique_ptr<QueryPlan>> plans;
+
+    headers.reserve(materialized_ctes.size() + 1);
+    plans.reserve(materialized_ctes.size() + 1);
+    headers.emplace_back(query_plan.getCurrentHeader());
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
+
+    query_plan = QueryPlan();
+
+    for (const auto & cte_node : materialized_ctes)
+    {
+        auto * cte_table_node = cte_node.second->as<TableNode>();
+        auto cte_options = select_query_options.subquery();
+        Planner cte_planner(
+            cte_table_node->getMaterializedCTESubquery(),
+            cte_options,
+            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
+        cte_planner.buildQueryPlanIfNeeded();
+
+        auto cte_plan = std::move(cte_planner).extractQueryPlan();
+
+        auto step = std::make_unique<MaterializingCTEStep>(
+            cte_plan.getCurrentHeader(),
+            cte_table_node->getTemporaryTableHolder());
+        step->setStepDescription("Materializing CTE: " + cte_table_node->getTemporaryTableName(), 100);
+        cte_plan.addStep(std::move(step));
+
+        headers.emplace_back(cte_plan.getCurrentHeader());
+        plans.emplace_back(std::make_unique<QueryPlan>(std::move(cte_plan)));
+    }
+    query_plan.unitePlans(std::make_unique<MaterializingCTEsStep>(std::move(headers)), std::move(plans));
+}
+
 /// Support for `additional_result_filter` setting
 void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     const QueryNode & query_node,
@@ -1775,6 +1821,7 @@ void Planner::buildPlanForQueryNode()
     }
 
     collectSets(query_tree, *planner_context);
+    auto materialized_ctes = collectMaterializedCTEs(query_tree);
 
     const auto & settings = query_context->getSettingsRef();
     if (query_context->canUseTaskBasedParallelReplicas())
@@ -2222,7 +2269,10 @@ void Planner::buildPlanForQueryNode()
         query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
 
     if (!select_query_options.only_analyze)
+    {
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, useful_sets);
+        addBuildSubqueriesForMaterializedCTEsIfNeeded(query_plan, select_query_options, materialized_ctes);
+    }
 
     query_node_to_plan_step_mapping[&query_node] = query_plan.getRootNode();
 }

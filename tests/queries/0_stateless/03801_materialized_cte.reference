@@ -1,0 +1,101 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    name String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: name, result_type: String, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: _temporary_and_external_tables._tmp_UNIQ_ID
+      MATERIALIZED CTE SUBQUERY
+        QUERY id: 4, alias: __table2, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
+          PROJECTION COLUMNS
+            uid Int16
+            name String
+            age Int16
+          PROJECTION
+            LIST id: 5, nodes: 3
+              COLUMN id: 6, column_name: uid, result_type: Int16, source_id: 7
+              COLUMN id: 8, column_name: name, result_type: String, source_id: 7
+              COLUMN id: 9, column_name: age, result_type: Int16, source_id: 7
+          JOIN TREE
+            TABLE id: 7, alias: __table3, table_name: default.users
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    JOIN id: 3, strictness: ALL, kind: INNER
+      LEFT TABLE EXPRESSION
+        TABLE id: 4, alias: __table1, table_name: _temporary_and_external_tables._tmp_UNIQ_ID
+          MATERIALIZED CTE SUBQUERY
+            QUERY id: 5, alias: __table2, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
+              PROJECTION COLUMNS
+                uid Int16
+                name String
+                age Int16
+              PROJECTION
+                LIST id: 6, nodes: 3
+                  COLUMN id: 7, column_name: uid, result_type: Int16, source_id: 8
+                  COLUMN id: 9, column_name: name, result_type: String, source_id: 8
+                  COLUMN id: 10, column_name: age, result_type: Int16, source_id: 8
+              JOIN TREE
+                TABLE id: 8, alias: __table3, table_name: default.users
+      RIGHT TABLE EXPRESSION
+        TABLE id: 11, alias: __table4, table_name: _temporary_and_external_tables._tmp_UNIQ_ID
+          MATERIALIZED CTE SUBQUERY
+            QUERY id: 12, alias: __table5, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
+              PROJECTION COLUMNS
+                uid Int16
+                name String
+                age Int16
+              PROJECTION
+                LIST id: 13, nodes: 3
+                  COLUMN id: 14, column_name: uid, result_type: Int16, source_id: 15
+                  COLUMN id: 16, column_name: name, result_type: String, source_id: 15
+                  COLUMN id: 17, column_name: age, result_type: Int16, source_id: 15
+              JOIN TREE
+                TABLE id: 15, alias: __table6, table_name: default.users
+      JOIN EXPRESSION
+        FUNCTION id: 18, function_name: equals, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: 19, nodes: 2
+              COLUMN id: 20, column_name: uid, result_type: Int16, source_id: 4
+              COLUMN id: 21, column_name: uid, result_type: Int16, source_id: 11
+MaterializingCTEs
+Header: count() UInt64
+  Expression ((Project names + Projection))
+  Header: count() UInt64
+    Aggregating
+    Header: count() UInt64
+      Expression (Before GROUP BY)
+      Header: 
+        Expression (Post Join Actions)
+        Header: __join_result_dummy UInt8
+          Join (JOIN FillRightFirst)
+          Header: __join_result_dummy UInt8
+            Expression (Left Pre Join Actions)
+            Header: __table1.uid Int16
+                    __join_result_dummy UInt8
+              Expression (Change column names to column identifiers)
+              Header: __table1.uid Int16
+                ReadFromMemoryStorage
+                Header: uid Int16
+            Expression (Right Pre Join Actions)
+            Header: __table4.uid Int16
+              Expression (Change column names to column identifiers)
+              Header: __table4.uid Int16
+                ReadFromMemoryStorage
+                Header: uid Int16
+  MaterializingCTE (Materializing CTE: )
+  Header: 
+    Expression ((Project names + (Projection + Change column names to column identifiers)))
+    Header: uid Int16
+            name String
+            age Int16
+      ReadFromMemoryStorage
+      Header: uid Int16
+              name String
+              age Int16
+3

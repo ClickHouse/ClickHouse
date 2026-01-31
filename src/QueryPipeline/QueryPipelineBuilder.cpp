@@ -1,3 +1,5 @@
+#include <Core/Block_fwd.h>
+#include <Processors/Transforms/MaterializingCTETransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Core/SortDescription.h>
@@ -736,6 +738,22 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
             std::move(set_and_key),
             limits,
             std::move(prepared_sets_cache));
+
+    pipe.addTransform(std::move(transform));
+}
+
+void QueryPipelineBuilder::addMaterializingCTETransform(
+    [[maybe_unused]] SharedHeader res_header,
+    TemporaryTableHolderPtr temporary_table_holder
+)
+{
+    checkInitializedAndNotCompleted();
+    resize(1);
+
+    auto transform = std::make_shared<MaterializingCTETransform>(
+            getSharedHeader(),
+            res_header,
+            temporary_table_holder);
 
     pipe.addTransform(std::move(transform));
 }

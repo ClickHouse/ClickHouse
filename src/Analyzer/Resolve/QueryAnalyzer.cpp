@@ -55,6 +55,7 @@
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <memory>
 #include <ranges>
 
 namespace DB
@@ -67,6 +68,7 @@ namespace Setting
     extern const SettingsBool asterisk_include_materialized_columns;
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool enable_materialized_cte;
     extern const SettingsBool enable_scopes_for_with_statement;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool enable_positional_arguments;
@@ -1375,7 +1377,42 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         if (cte_query_node_it != scope.cte_name_to_query_node.end()
             && !ctes_in_resolve_process.contains(cte_query_node_it->second))
         {
-            resolve_result = { .resolved_identifier = cte_query_node_it->second, .resolve_place = IdentifierResolvePlace::CTE };
+            auto & cte_node = cte_query_node_it->second;
+            auto * query_node = cte_node->as<QueryNode>();
+            auto * union_node = cte_node->as<UnionNode>();
+
+            bool is_materialized_cte = (query_node && query_node->isMaterialized()) || (union_node && union_node->isMaterialized());
+            if (is_materialized_cte && scope.context->getSettingsRef()[Setting::enable_materialized_cte])
+            {
+                resolveExpressionNode(cte_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
+
+                bool is_correlated = (query_node && query_node->isCorrelated()) || (union_node && union_node->isCorrelated());
+                if (is_correlated)
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "Materialized CTE '{}' cannot be correlated (enable 'allow_experimental_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
+                        full_name,
+                        scope.scope_node->formatASTForErrorMessage());
+
+                ///TODO: handle UNION node case
+                const auto & projection_columns = query_node ? query_node->getProjectionColumns() : NamesAndTypes{};
+
+                NamesAndTypesList columns;
+                for (const auto & projection_column : projection_columns)
+                    columns.emplace_back(projection_column.name, projection_column.type);
+
+                auto storage_holder = std::make_shared<TemporaryTableHolder>(
+                    scope.context,
+                    ColumnsDescription(std::move(columns), false),
+                    ConstraintsDescription{},
+                    nullptr /*query*/,
+                    true /*create_for_global_subquery*/);
+
+                auto table_node = std::make_shared<TableNode>(std::move(storage_holder), cte_node, scope.context);
+
+                cte_node = table_node;
+            }
+
+            resolve_result = { .resolved_identifier = cte_node, .resolve_place = IdentifierResolvePlace::CTE };
         }
     }
 

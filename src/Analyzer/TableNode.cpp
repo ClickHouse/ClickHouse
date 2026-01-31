@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTIdentifier.h>
 
 #include <Storages/IStorage.h>
@@ -42,6 +43,17 @@ TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
 {
 }
 
+TableNode::TableNode(
+    TemporaryTableHolderPtr temporary_table_holder_,
+    QueryTreeNodePtr materialized_cte_subquery_,
+    const ContextPtr & context_
+)
+    : TableNode(temporary_table_holder_->getTable(), context_)
+{
+    temporary_table_holder = std::move(temporary_table_holder_);
+    children[materialized_cte_subquery_index] = std::move(materialized_cte_subquery_);
+}
+
 void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & context)
 {
     storage = std::move(storage_value);
@@ -67,13 +79,20 @@ void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << ", ";
         table_expression_modifiers->dump(buffer);
     }
+
+    if (isMaterializedCTE())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "MATERIALIZED CTE SUBQUERY\n";
+        getMaterializedCTESubquery()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
 }
 
 bool TableNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const TableNode &>(rhs);
-    return storage_id == rhs_typed.storage_id && table_expression_modifiers == rhs_typed.table_expression_modifiers &&
-        temporary_table_name == rhs_typed.temporary_table_name;
+    return storage_id == rhs_typed.storage_id
+        && table_expression_modifiers == rhs_typed.table_expression_modifiers
+        && temporary_table_name == rhs_typed.temporary_table_name;
 }
 
 void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -103,11 +122,15 @@ QueryTreeNodePtr TableNode::cloneImpl() const
     result_table_node->table_expression_modifiers = table_expression_modifiers;
     result_table_node->temporary_table_name = temporary_table_name;
 
+    result_table_node->temporary_table_holder = temporary_table_holder;
+    result_table_node->children[materialized_cte_subquery_index] = getMaterializedCTESubquery();
+
     return result_table_node;
 }
 
 ASTPtr TableNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 {
+    ///TODO: handle MATERIALIZED CTE subquery
     return toASTIdentifier();
 }
 
