@@ -4,14 +4,16 @@
 
 #if USE_PARQUET
 
-#include <Interpreters/Context_fwd.h>
-#include <Core/Types.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Poco/JSON/Object.h>
+#    include <map>
+#    include <optional>
+#    include <Core/Types.h>
+#    include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#    include <Interpreters/Context_fwd.h>
+#    include <Storages/ColumnsDescription.h>
+#    include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+#    include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#    include <Storages/ObjectStorage/StorageObjectStorage.h>
+#    include <Poco/JSON/Object.h>
 
 namespace DB
 {
@@ -21,8 +23,12 @@ struct DeltaLakePartitionColumn
     NameAndTypePair name_and_type;
     Field value;
 
-    bool operator ==(const DeltaLakePartitionColumn & other) const = default;
+    bool operator==(const DeltaLakePartitionColumn & other) const = default;
 };
+
+/// Alias for backward compatibility
+using DeltaLakeHistoryRecord = DataLakeHistoryRecord;
+using DeltaLakeHistory = DataLakeHistory;
 
 /// Data file -> partition columns
 using DeltaLakePartitionColumns = std::unordered_map<std::string, std::vector<DeltaLakePartitionColumn>>;
@@ -40,11 +46,19 @@ public:
 
     DeltaLakePartitionColumns getPartitionColumns() const { return partition_columns; }
 
+    /// Get the object storage used by this metadata
+    ObjectStoragePtr getObjectStorage() const { return object_storage; }
+
+    /// Get the table path for this Delta Lake table
+    const String & getTablePath() const;
+
+    /// Get history of Delta Lake table versions
+    DataLakeHistory getHistory(ContextPtr local_context) const override;
+
     bool operator==(const IDataLakeMetadata & other) const override
     {
         const auto * deltalake_metadata = dynamic_cast<const DeltaLakeMetadata *>(&other);
-        return deltalake_metadata
-            && !data_files.empty() && !deltalake_metadata->data_files.empty()
+        return deltalake_metadata && !data_files.empty() && !deltalake_metadata->data_files.empty()
             && data_files == deltalake_metadata->data_files;
     }
 
@@ -61,10 +75,8 @@ public:
     {
     }
 
-    static DataLakeMetadataPtr create(
-        ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationWeakPtr configuration,
-        ContextPtr local_context);
+    static DataLakeMetadataPtr
+    create(ObjectStoragePtr object_storage, StorageObjectStorageConfigurationWeakPtr configuration, ContextPtr local_context);
 
     static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static DataTypePtr getSimpleTypeByName(const String & type_name);
@@ -84,6 +96,7 @@ private:
     NamesAndTypesList schema;
     DeltaLakePartitionColumns partition_columns;
     ObjectStoragePtr object_storage;
+    String table_path;
 
     Strings getDataFiles(const ActionsDAG *) const { return data_files; }
 };

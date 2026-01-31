@@ -20,6 +20,9 @@
 #include <Common/assert_cast.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Interpreters/DeltaMetadataLog.h>
+#include <IO/ReadHelpers.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
 namespace DB
 {
@@ -437,6 +440,151 @@ void DeltaLakeMetadataDeltaKernel::logMetadataFiles(ContextPtr context) const
         insertDeltaRowToLogTable(context, json_str, kernel_helper->getDataPath(), key);
     }
 
+}
+
+DataLakeHistory DeltaLakeMetadataDeltaKernel::getHistory(ContextPtr local_context) const
+{
+    DataLakeHistory history;
+
+    /// Limit the number of history records to avoid excessive I/O
+    static constexpr size_t max_history_records = 100;
+
+    try
+    {
+        Strings metadata_files = listFiles(*object_storage_common, kernel_helper->getDataPath(), deltalake_metadata_directory, metadata_file_suffix);
+
+        if (metadata_files.empty())
+            return history;
+
+        /// Sort files to get versions in order (descending to get most recent first)
+        std::sort(metadata_files.begin(), metadata_files.end(), std::greater<>());
+
+        /// Limit to most recent N files
+        if (metadata_files.size() > max_history_records)
+            metadata_files.resize(max_history_records);
+
+        /// Find the current (latest) version - first file since we sorted descending
+        UInt64 current_version = 0;
+        {
+            const auto & first_file = metadata_files.front();
+            auto filename = std::filesystem::path(first_file).filename().string();
+            if (filename.size() > 5 && filename.ends_with(".json"))
+            {
+                filename = filename.substr(0, filename.size() - 5);
+                try
+                {
+                    current_version = std::stoull(filename);
+                }
+                catch (const std::invalid_argument &)
+                {
+                    current_version = 0;
+                }
+                catch (const std::out_of_range &)
+                {
+                    current_version = 0;
+                }
+            }
+        }
+
+        /// Process each metadata file to extract history
+        for (const auto & metadata_file : metadata_files)
+        {
+            try
+            {
+                /// Extract version from filename
+                auto filename = std::filesystem::path(metadata_file).filename().string();
+                if (filename.size() <= 5 || !filename.ends_with(".json"))
+                    continue;
+
+                filename = filename.substr(0, filename.size() - 5);
+                UInt64 version = 0;
+                try
+                {
+                    version = std::stoull(filename);
+                }
+                catch (const std::invalid_argument &)
+                {
+                    continue;
+                }
+                catch (const std::out_of_range &)
+                {
+                    continue;
+                }
+
+                /// Read the metadata file
+                RelativePathWithMetadata object_info(metadata_file);
+                auto buf = createReadBuffer(object_info, object_storage_common, local_context, log);
+
+                DataLakeHistoryRecord record;
+                record.version = version;
+                record.is_current = (version == current_version);
+
+                char c;
+                while (!buf->eof())
+                {
+                    /// Skip invalid characters before JSON
+                    while (buf->peek(c) && c != '{')
+                        buf->ignore();
+
+                    if (buf->eof())
+                        break;
+
+                    String json_str;
+                    readJSONObjectPossiblyInvalid(json_str, *buf);
+
+                    if (json_str.empty())
+                        continue;
+
+                    Poco::JSON::Parser parser;
+                    Poco::Dynamic::Var json = parser.parse(json_str);
+                    const Poco::JSON::Object::Ptr & json_object = json.extract<Poco::JSON::Object::Ptr>();
+
+                    if (!json_object)
+                        continue;
+
+                    /// Extract commitInfo
+                    if (json_object->has("commitInfo"))
+                    {
+                        const auto commit_info = json_object->get("commitInfo").extract<Poco::JSON::Object::Ptr>();
+                        if (commit_info)
+                        {
+                            if (commit_info->has("timestamp"))
+                            {
+                                auto ts = commit_info->getValue<Int64>("timestamp");
+                                record.timestamp = static_cast<DateTime64>(ts);
+                            }
+
+                            if (commit_info->has("operation"))
+                                record.operation = commit_info->getValue<String>("operation");
+
+                            if (commit_info->has("operationParameters"))
+                            {
+                                const auto params = commit_info->get("operationParameters").extract<Poco::JSON::Object::Ptr>();
+                                if (params)
+                                {
+                                    for (const auto & param : *params)
+                                        record.operation_parameters[param.first] = param.second.toString();
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+
+                history.push_back(std::move(record));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Failed to process metadata file {}", metadata_file));
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to get Delta Lake history");
+    }
+
+    return history;
 }
 
 }

@@ -1,0 +1,9 @@
+database	String
+table	String
+version	UInt64
+timestamp	Nullable(DateTime64(3))
+operation	String
+operation_parameters	Map(String, String)
+is_current	UInt8
+0
+delta_lake_history

@@ -3945,3 +3945,64 @@ deltaLake{suffix}({cluster}
     # check rows indexes size is 2
     # (not 3 because third deleted row is inside a different partition and represents a single row inside it)
     assert node.contains_in_log("Row indexes size: 2")
+
+
+def test_system_delta_lake_history(started_cluster):
+    """Test that system.delta_lake_history table works correctly with Delta Lake tables."""
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_system_delta_lake_history")
+
+    # Verify system.delta_lake_history table exists and has correct schema
+    result = instance.query(
+        "SELECT name FROM system.columns WHERE database = 'system' AND table = 'delta_lake_history' ORDER BY position"
+    )
+    assert len(result.strip()) > 0, "system.delta_lake_history table should have columns"
+
+    # Verify the table is queryable (should return empty or existing results)
+    count_before = int(instance.query("SELECT count() FROM system.delta_lake_history").strip())
+
+    # Create a Delta Lake table with multiple versions
+    path = f"s3a://{bucket}/{TABLE_NAME}"
+    storage_options = get_storage_options(started_cluster)
+
+    # Write initial data (version 0)
+    data = pa.table({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    write_deltalake(path, data, mode="overwrite", storage_options=storage_options)
+
+    # Write more data (version 1)
+    data2 = pa.table({"a": [4, 5, 6], "b": ["p", "q", "r"]})
+    write_deltalake(path, data2, mode="append", storage_options=storage_options)
+
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+
+    # Create the Delta Lake table in ClickHouse
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        ENGINE=DeltaLake(s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{bucket}/')
+        """
+    )
+
+    # Query system.delta_lake_history for this table
+    history_count = int(
+        instance.query(
+            f"SELECT count() FROM system.delta_lake_history WHERE table = '{TABLE_NAME}'"
+        ).strip()
+    )
+
+    # Should have at least 2 versions (initial write + append)
+    assert history_count >= 2, f"Expected at least 2 history entries, got {history_count}"
+
+    # Verify we can query specific columns from the history
+    versions = instance.query(
+        f"SELECT version FROM system.delta_lake_history WHERE table = '{TABLE_NAME}' ORDER BY version"
+    ).strip()
+    assert "0" in versions, "Version 0 should exist in history"
+    assert "1" in versions, "Version 1 should exist in history"
+
+    # Clean up
+    instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
