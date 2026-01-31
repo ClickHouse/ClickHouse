@@ -696,7 +696,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (checkIfCredentialsChanged(error))
         {
             LOG_INFO(log, "Credentials changed, attempting again");
-            credentials_provider->SetNeedRefresh();
+            credentials_provider->GetAWSCredentials();
             continue;
         }
 

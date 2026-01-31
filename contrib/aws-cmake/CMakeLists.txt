@@ -117,6 +117,8 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/utils/xml/*.cpp"
 )
 
+list(REMOVE_ITEM AWS_SDK_CORE_SRC "${AWS_SDK_CORE_DIR}/source/auth/LoginCredentialsProvider.cpp")
+
 if(OS_LINUX OR OS_DARWIN)
     file(GLOB AWS_SDK_CORE_NET_SRC "${AWS_SDK_CORE_DIR}/source/net/linux-shared/*.cpp")
     file(GLOB AWS_SDK_CORE_PLATFORM_SRC "${AWS_SDK_CORE_DIR}/source/platform/linux-shared/*.cpp")

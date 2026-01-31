@@ -691,11 +691,11 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
 Aws::Auth::AWSCredentials AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::GetAWSCredentials()
 {
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
-    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
+    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
         return credentials;
 
     guard.UpgradeToWriterLock();
-    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
+    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
         return credentials;
 
     Reload();
@@ -809,12 +809,12 @@ void SSOCredentialsProvider::Reload()
 void SSOCredentialsProvider::refreshIfExpired()
 {
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
-    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
+    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
         return;
 
     guard.UpgradeToWriterLock();
 
-    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
+    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
         return;
 
     Reload();
