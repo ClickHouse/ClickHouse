@@ -18,7 +18,7 @@ bool ToBool::convertImpl(String & out, IParser::Pos & pos)
     const auto param = getArgument(function_name, pos);
     out = fmt::format(
         "multiIf(toString({0}) = 'true', true, "
-        "toString({0}) = 'false', false, toInt64OrNull(toString({0})) != 0)",
+        "toString({0}) = 'false', false, (toInt64OrNull(toString({0})) != 0)::Nullable(Bool))",
         param,
         generateUniqueIdentifier());
     return true;

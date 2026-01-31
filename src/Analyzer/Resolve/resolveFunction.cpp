@@ -37,6 +37,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
+#include <Columns/ColumnNothing.h>
 
 namespace DB
 {
@@ -71,6 +72,7 @@ namespace Setting
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 namespace
@@ -344,7 +346,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_dict_get = functionIsDictGet(function_name);
         is_special_function_join_get = functionIsJoinGet(function_name);
         is_special_function_exists = function_name == "exists";
-        is_special_function_if = function_name == "if";
+        is_special_function_if = function_name == "if" || function_name == "multiIf";
 
         /** Special handling for count and countState functions (including with combinators like countIf, countIfState, etc.).
           *
@@ -459,49 +461,183 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
           * SELECT if(hasColumnInTable('system', 'numbers', 'not_existing_column'), not_existing_column, 5) FROM system.numbers;
           */
         auto & if_function_arguments = function_node_ptr->getArguments().getNodes();
+
+        /// MATCHER arguments for 'if' and 'multiIf' are not supported
+        for (auto & arg : if_function_arguments)
+            if (arg->getNodeType() == QueryTreeNodeType::MATCHER)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} does not support MATCHER arguments. In scope {}",
+                    function_name,
+                    scope.scope_node->formatASTForErrorMessage());
+
         auto if_function_condition = if_function_arguments[0];
-        resolveExpressionNode(if_function_condition, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        auto arguments_projection_names = resolveExpressionNode(if_function_condition, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
         auto constant_condition = tryExtractConstantFromConditionNode(if_function_condition);
 
-        if (constant_condition.has_value() && if_function_arguments.size() == 3)
+        if (constant_condition.has_value())
         {
-            QueryTreeNodePtr constant_if_result_node;
-            QueryTreeNodePtr possibly_invalid_argument_node;
+            bool use_variant_when_no_common_type = scope.context->getSettingsRef()[Setting::use_variant_as_common_type];
 
-            if (*constant_condition)
+            if (if_function_arguments.size() == 3)
             {
-                possibly_invalid_argument_node = if_function_arguments[2];
-                constant_if_result_node = if_function_arguments[1];
-            }
-            else
-            {
-                possibly_invalid_argument_node = if_function_arguments[1];
-                constant_if_result_node = if_function_arguments[2];
-            }
+                QueryTreeNodePtr constant_if_result_node;
+                QueryTreeNodePtr possibly_invalid_argument_node;
 
-            bool apply_constant_if_optimization = false;
+                if (*constant_condition)
+                {
+                    possibly_invalid_argument_node = if_function_arguments[2];
+                    constant_if_result_node = if_function_arguments[1];
+                }
+                else
+                {
+                    possibly_invalid_argument_node = if_function_arguments[1];
+                    constant_if_result_node = if_function_arguments[2];
+                }
 
-            try
-            {
-                resolveExpressionNode(possibly_invalid_argument_node,
+                bool current_do_not_execute = disable_constant_folding;
+                disable_constant_folding = true;
+                auto dead_branch_argument_projection_names = resolveExpressionNode(possibly_invalid_argument_node,
                     scope,
                     false /*allow_lambda_expression*/,
                     false /*allow_table_expression*/);
-            }
-            catch (...)
-            {
-                apply_constant_if_optimization = true;
-            }
+                disable_constant_folding = current_do_not_execute;
 
-            if (apply_constant_if_optimization)
-            {
-                auto result_projection_names = resolveExpressionNode(constant_if_result_node,
+                ProjectionName dead_branch_argument_projection_name;
+                if (possibly_invalid_argument_node->getNodeType() != QueryTreeNodeType::IDENTIFIER)
+                {
+                    chassert(dead_branch_argument_projection_names.size() == 1);
+                    dead_branch_argument_projection_name = dead_branch_argument_projection_names[0];
+                }
+                else
+                    dead_branch_argument_projection_name = possibly_invalid_argument_node->as<IdentifierNode>()->getIdentifier().getFullName();
+
+                auto result_projection_name = resolveExpressionNode(constant_if_result_node,
                     scope,
                     false /*allow_lambda_expression*/,
                     false /*allow_table_expression*/);
-                node = std::move(constant_if_result_node);
+
+                chassert(result_projection_name.size() == 1);
+
+                if (*constant_condition)
+                {
+                    arguments_projection_names.push_back(result_projection_name[0]);
+                    arguments_projection_names.push_back(dead_branch_argument_projection_name);
+                }
+                else
+                {
+                    arguments_projection_names.push_back(dead_branch_argument_projection_name);
+                    arguments_projection_names.push_back(result_projection_name[0]);
+                }
+
+                ProjectionNames result_projection_names = { calculateFunctionProjectionName(node, {}, arguments_projection_names) };
+
+                if (possibly_invalid_argument_node->getNodeType() != QueryTreeNodeType::IDENTIFIER &&
+                    constant_if_result_node->getNodeType() != QueryTreeNodeType::IDENTIFIER &&
+                    !possibly_invalid_argument_node->getResultType()->equals(*constant_if_result_node->getResultType()))
+                {
+                    DataTypePtr common_type;
+                    if (use_variant_when_no_common_type)
+                        common_type = getLeastSupertypeOrVariant(DataTypes{possibly_invalid_argument_node->getResultType(), constant_if_result_node->getResultType()});
+                    else
+                        common_type = getLeastSupertype(DataTypes{possibly_invalid_argument_node->getResultType(), constant_if_result_node->getResultType()});
+                    node = buildCastFunction(constant_if_result_node, common_type, scope.context, true);
+                    resolveExpressionNode(node,
+                        scope,
+                        false /*allow_lambda_expression*/,
+                        false /*allow_table_expression*/);
+                }
+                else
+                    node = std::move(constant_if_result_node);
+
                 return result_projection_names;
+            }
+            else if (if_function_arguments.size() > 3)
+            {
+                if (*constant_condition)
+                {
+                    auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
+                    for (size_t n = 2; n < if_function_arguments.size(); ++n)
+                        multi_if_function->getArguments().getNodes().push_back(if_function_arguments[n]);
+
+                    QueryTreeNodePtr function_query_node = multi_if_function;
+                    bool current_do_not_execute = disable_constant_folding;
+                    disable_constant_folding = true;
+                    auto result_projection_names = resolveFunction(function_query_node, scope);
+                    disable_constant_folding = current_do_not_execute;
+
+                    auto second_argument = resolveExpressionNode(if_function_arguments[1],
+                        scope,
+                        false /*allow_lambda_expression*/,
+                        false /*allow_table_expression*/);
+
+                    chassert(second_argument.size() == 1);
+
+                    result_projection_names[0].insert(strlen("multiIf") + 1, arguments_projection_names[0] + ", " + second_argument[0] + ", ");
+
+                    if (if_function_arguments[1]->getNodeType() != QueryTreeNodeType::IDENTIFIER &&
+                        !function_query_node->getResultType()->equals(*if_function_arguments[1]->getResultType()))
+                    {
+                        DataTypePtr common_type;
+                        if (use_variant_when_no_common_type)
+                            common_type = getLeastSupertypeOrVariant(DataTypes{if_function_arguments[1]->getResultType(), function_query_node->getResultType()});
+                        else
+                            common_type = getLeastSupertype(DataTypes{if_function_arguments[1]->getResultType(), function_query_node->getResultType()});
+                        node = buildCastFunction(if_function_arguments[1], common_type, scope.context, true);
+                        resolveExpressionNode(node,
+                            scope,
+                            false /*allow_lambda_expression*/,
+                            false /*allow_table_expression*/);
+                    }
+                    else
+                        node = std::move(if_function_arguments[1]);
+
+                    return result_projection_names;
+                }
+                else
+                {
+                    bool current_do_not_execute = disable_constant_folding;
+                    disable_constant_folding = true;
+                    auto second_argument_projection_names = resolveExpressionNode(if_function_arguments[1],
+                        scope,
+                        false /*allow_lambda_expression*/,
+                        false /*allow_table_expression*/);
+                    disable_constant_folding = current_do_not_execute;
+
+                    ProjectionName second_argument_projection_name;
+                    if (if_function_arguments[1]->getNodeType() != QueryTreeNodeType::IDENTIFIER)
+                    {
+                        chassert(second_argument_projection_names.size() == 1);
+                        second_argument_projection_name = second_argument_projection_names[0];
+                    }
+                    else
+                        second_argument_projection_name = if_function_arguments[1]->as<IdentifierNode>()->getIdentifier().getFullName();
+
+                    auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
+                    for (size_t n = 2; n < if_function_arguments.size(); ++n)
+                        multi_if_function->getArguments().getNodes().push_back(std::move(if_function_arguments[n]));
+                    node = std::move(multi_if_function);
+                    auto result_projection_names = resolveFunction(node, scope);
+
+                    if (if_function_arguments[1]->getNodeType() != QueryTreeNodeType::IDENTIFIER &&
+                        !node->getResultType()->equals(*if_function_arguments[1]->getResultType()))
+                    {
+                        DataTypePtr common_type;
+                        if (use_variant_when_no_common_type)
+                            common_type = getLeastSupertypeOrVariant(DataTypes{if_function_arguments[1]->getResultType(), node->getResultType()});
+                        else
+                            common_type = getLeastSupertype(DataTypes{if_function_arguments[1]->getResultType(), node->getResultType()});
+                        node = buildCastFunction(node, common_type, scope.context, true);
+                        resolveExpressionNode(node,
+                            scope,
+                            false /*allow_lambda_expression*/,
+                            false /*allow_table_expression*/);
+                    }
+
+                    result_projection_names[0].insert(strlen("multiIf") + 1, arguments_projection_names[0] + ", " + second_argument_projection_name + ", ");
+
+                    return result_projection_names;
+                }
             }
         }
     }
@@ -717,11 +853,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// Resolve function arguments
     bool allow_table_expressions = is_special_function_in || is_special_function_exists;
+
+    FunctionOverloadResolverPtr builder = FunctionFactory::instance().tryGet(function_name, scope.context);
+    ColumnNumbers constant_arguments = builder ? builder->getArgumentsThatAreAlwaysConstant() : ColumnNumbers{};
+
     auto arguments_projection_names = resolveExpressionNodeList(
         function_node_ptr->getArgumentsNode(),
         scope,
         true /*allow_lambda_expression*/,
-        allow_table_expressions /*allow_table_expression*/);
+        allow_table_expressions /*allow_table_expression*/,
+        ColumnNumbersSet(constant_arguments.begin(), constant_arguments.end()));
 
     /// Mask arguments if needed
     if (!scope.context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
@@ -1476,7 +1617,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 size_t num_rows = 1;
                 if (!argument_columns.empty())
                     num_rows = argument_columns.front().column->size();
-                column = executable_function->execute(argument_columns, result_type, num_rows, true);
+
+                if (disable_constant_folding)
+                {
+                    if (isNothing(result_type))
+                        column = ColumnConst::create(ColumnNothing::create(1), num_rows);
+                    else
+                        column = result_type->createColumnConstWithDefaultValue(num_rows);
+                }
+                else
+                    column = executable_function->execute(argument_columns, result_type, num_rows, true);
             }
             else
             {

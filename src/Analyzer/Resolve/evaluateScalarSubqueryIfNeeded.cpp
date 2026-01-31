@@ -182,7 +182,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             }
         };
 
-        if (only_analyze)
+        if (only_analyze || disable_constant_folding)
         {
             /// If query is only analyzed, then constants are not correct.
             scalar_block = *interpreter->getSampleBlock();
