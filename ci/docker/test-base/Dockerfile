@@ -44,6 +44,32 @@ RUN apt-get update \
 RUN test -f /usr/bin/llvm-symbolizer-${LLVM_VERSION}
 RUN ln -s /usr/bin/llvm-symbolizer-${LLVM_VERSION} /usr/bin/llvm-symbolizer
 
+# Install LLVM tools for code coverage (llvm-profdata, llvm-cov)
+# Must match LLVM_VERSION used for building (21)
+RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        llvm-${LLVM_VERSION} \
+        make \
+        libdatetime-perl \
+        libcapture-tiny-perl \
+        libjson-xs-perl \
+        libperlio-gzip-perl \
+    && ln -s /usr/bin/llvm-profdata-${LLVM_VERSION} /usr/bin/llvm-profdata \
+    && ln -s /usr/bin/llvm-cov-${LLVM_VERSION} /usr/bin/llvm-cov \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
+# Install newer lcov from source
+# Ubuntu 22.04 has old 1.14 version, we need 2.x for --sort-tables and --hierarchical options
+RUN cd /tmp \
+    && wget -q https://github.com/linux-test-project/lcov/releases/download/v2.4/lcov-2.4.tar.gz \
+    && tar xzf lcov-2.4.tar.gz \
+    && cd lcov-2.4 \
+    && make install \
+    && cd /tmp \
+    && rm -rf lcov-2.4 lcov-2.4.tar.gz
+
 # Install cmake 3.20+ for Rust support
 # Used https://askubuntu.com/a/1157132 as reference
 RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg && \
@@ -63,7 +89,6 @@ RUN apt-get update \
         rename \
         software-properties-common \
         tzdata \
-        lcov \
         netbase \
         perl \
         pv \

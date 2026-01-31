@@ -14,7 +14,6 @@ from pyspark.sql.types import (
     StringType,
 )
 from pyspark.sql.window import Window
-from pyspark.sql.functions import expr
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.s3_tools import (
@@ -25,6 +24,8 @@ from helpers.s3_tools import (
     S3Downloader,
     prepare_s3_bucket,
 )
+
+from typing import Optional, Any
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -182,30 +183,6 @@ def generate_data(spark, start, end):
     )
 
     df = a.join(b, on=["row_index"]).drop("row_index")
-    return df
-
-def generate_data_complex(spark, start, end, div):
-    a = spark.range(start, end, 1).toDF("a")
-    b = spark.range(start + 1, end + 1, 1).toDF("b")
-    c = spark.range(start + end, end + end, 1).toDF("c")
-
-    a = a.withColumn("a", expr(f"a div {div}"))
-    b = b.withColumn("b", expr(f"b div {div}"))
-    c = c.withColumn("c", expr(f"c div {div}"))
-
-    b = b.withColumn("b", b["b"].cast(StringType()))
-
-    a = a.withColumn(
-        "row_index", row_number().over(Window.orderBy(monotonically_increasing_id()))
-    )
-    b = b.withColumn(
-        "row_index", row_number().over(Window.orderBy(monotonically_increasing_id()))
-    )
-    c = c.withColumn(
-        "row_index", row_number().over(Window.orderBy(monotonically_increasing_id()))
-    )
-
-    df = a.join(b, on=["row_index"]).join(c, on=["row_index"]).drop("row_index")
     return df
 
 
@@ -593,4 +570,64 @@ def check_validity_and_get_prunned_files_general(instance, table_name, settings1
         instance.query(
             f"SELECT ProfileEvents['{profile_event_name}'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
         )
+    )
+
+class ManifestEntry:
+    def __init__(self, file_path: str, content_type: int,
+                 lower_bound: Optional[str], upper_bound: Optional[str]):
+        self.file_path = file_path
+        self.content_type = content_type
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+
+
+def unescape_path(path: Optional[str]) -> Optional[str]:
+    """
+    Unescape a path that has backslash-escaped forward slashes.
+    """
+    if path is None:
+        return None
+    return path.replace('\\/', '/')
+
+
+def get_bound_for_column(bounds: Any, column_id: int) -> Optional[str]:
+    """
+    Extract bound value for a specific column ID from bounds structure.
+    Bounds can be either a dict {column_id: value} or a list of {key: column_id, value: value}.
+    Returns unescaped path.
+    """
+    if bounds is None:
+        return None
+    value: Optional[str] = None
+    if isinstance(bounds, dict):
+        value = bounds.get(str(column_id))
+    elif isinstance(bounds, list):
+        for item in bounds:
+            if isinstance(item, dict) and item.get('key') == column_id:
+                value = item.get('value')
+                break
+    return unescape_path(value)
+
+
+def parse_manifest_entry(content_json: dict[str, Any]) -> ManifestEntry:
+    """
+    Parse manifest file entry JSON to extract file info and bounds for column 2147483546.
+    """
+    DATA_FILE_COLUMN_ID = 2147483546
+    
+    data_file = content_json.get('data_file', {})
+    file_path: str = data_file.get('file_path', '')
+    content_type: int = data_file.get('content', 0)  # 0 = data, 1 = position delete, 2 = equality delete
+    
+    lower_bounds = data_file.get('lower_bounds')
+    upper_bounds = data_file.get('upper_bounds')
+    
+    lower_bound = get_bound_for_column(lower_bounds, DATA_FILE_COLUMN_ID)
+    upper_bound = get_bound_for_column(upper_bounds, DATA_FILE_COLUMN_ID)
+    
+    return ManifestEntry(
+        file_path=file_path,
+        content_type=content_type,
+        lower_bound=lower_bound,
+        upper_bound=upper_bound
     )

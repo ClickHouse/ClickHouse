@@ -62,9 +62,9 @@ public:
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !is_nullable_or_lc_nullable };
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return removeNullable(arguments[0]);
+        return removeNullable(arguments[0].type);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override

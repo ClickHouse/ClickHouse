@@ -32,7 +32,6 @@ extern const SettingsUInt64 function_sleep_max_microseconds_per_block;
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_SLOW;
 extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
@@ -81,16 +80,18 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        WhichDataType which(arguments[0]);
+        auto is_float_or_native_uint = [](const IDataType & type)
+        {
+            WhichDataType which(type);
+            return which.isFloat() || which.isNativeUInt();
+        };
 
-        if (!which.isFloat() && !which.isNativeUInt())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}, expected UInt* or Float*",
-                arguments[0]->getName(),
-                getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"seconds", is_float_or_native_uint, nullptr, "UInt* or Float*"}
+        };
+        validateFunctionArguments(getName(), arguments, mandatory_args);
 
         return std::make_shared<DataTypeUInt8>();
     }

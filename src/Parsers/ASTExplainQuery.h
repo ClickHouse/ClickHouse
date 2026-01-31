@@ -70,7 +70,7 @@ public:
     ExplainKind getKind() const { return kind; }
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTExplainQuery>(*this);
+        auto res = make_intrusive<ASTExplainQuery>(*this);
         res->children.clear();
         if (!children.empty())
             res->children.push_back(children[0]->clone());

@@ -2047,11 +2047,10 @@ void StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cl
             CTEquery * nqcte = scte->mutable_cte_query();
             const String name = fmt::format("cte{}d{}", this->levels[this->current_level].cte_counter++, this->current_level);
             SQLRelation rel(name);
-            const uint32_t ncols = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 5));
+            const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 5)), UINT32_C(1));
             const bool recursive = fc.allow_infinite_tables && this->depth<this->fc.max_depth && this->fc.max_width> this->width + 1
                 && rg.nextSmallNumber() < 4;
 
-            chassert(ncols);
             nqcte->set_recursive(recursive);
             generateDerivedTable(
                 rg,
@@ -2112,6 +2111,7 @@ void StatementGenerator::generateSelect(
 {
     CTEs * qctes = nullptr;
 
+    chassert(ncols);
     if ((allowed_clauses & allow_cte) && this->depth < this->fc.max_depth && this->width < this->fc.max_width && rg.nextMediumNumber() < 13)
     {
         qctes = sel->mutable_ctes();

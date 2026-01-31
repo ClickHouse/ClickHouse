@@ -13,11 +13,11 @@ doc_type: 'guide'
 The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a remote PostgreSQL server.
 
 :::note
-Currently, only PostgreSQL versions 12 and up are supported.
+Currently, only PostgreSQL versions 12 and up are supported for the table engine.
 :::
 
 :::tip
-ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for streaming Postgres data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
+Check out our [Managed Postgres](/docs/cloud/managed-postgres) service. Backed by NVMe storage that is physically co-located with compute, it delivers up to 10x faster performance for workloads that are disk-bound compared to alternatives using network-attached storage like EBS and allows you to replicate your Postgres data to ClickHouse using the Postgres CDC connector in ClickPipes.
 :::
 
 ## Creating a table {#creating-a-table}

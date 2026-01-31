@@ -62,9 +62,6 @@ public:
     using ComparatorDescendingStable = ComparatorDescendingStableImpl<ComparatorBase>;
     using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
 
-private:
-    friend class COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
-
     struct VariantInfo
     {
         DataTypePtr variant_type;
@@ -76,6 +73,9 @@ private:
         /// It's used during variant extension.
         std::unordered_map<String, UInt8> variant_name_to_discriminator;
     };
+
+private:
+    friend class COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
 
     explicit ColumnDynamic(size_t max_dynamic_types_);
     ColumnDynamic(MutableColumnPtr variant_column_, const DataTypePtr & variant_type_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {});

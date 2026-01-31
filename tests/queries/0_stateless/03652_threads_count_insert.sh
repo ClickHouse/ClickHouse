@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-object-storage, no-parallel, no-fasttest
-
 # no-object-storage: s3 has 20 more threads
 # no-parallel: it checks the number of threads, which can be lowered in presence of other queries
-
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh

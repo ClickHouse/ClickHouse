@@ -9,7 +9,7 @@ namespace DB
 {
 namespace
 {
-    bool parseRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseRoles(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -19,13 +19,13 @@ namespace
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 
-            roles = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
+            roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
             roles->allow_users = false;
             return true;
         });
     }
 
-    bool parseToUsers(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTRolesOrUsersSet> & to_users)
+    bool parseToUsers(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTRolesOrUsersSet> & to_users)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -38,7 +38,7 @@ namespace
             if (!users_p.parse(pos, ast, expected))
                 return false;
 
-            to_users = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
+            to_users = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
             to_users->allow_roles = false;
             return true;
         });
@@ -59,8 +59,8 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     else
         return false;
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
-    std::shared_ptr<ASTRolesOrUsersSet> to_users;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> to_users;
 
     if ((kind == Kind::SET_ROLE) || (kind == Kind::SET_DEFAULT_ROLE))
     {
@@ -74,7 +74,7 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
     }
 
-    auto query = std::make_shared<ASTSetRoleQuery>();
+    auto query = make_intrusive<ASTSetRoleQuery>();
     node = query;
 
     query->kind = kind;

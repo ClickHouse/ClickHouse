@@ -614,7 +614,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto mapper = configuration->getColumnMapperForObject(object_info);
             if (!mapper)
                 return format_filter_info;
-            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, nullptr, nullptr);
+            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
         }();
 
         LOG_DEBUG(
@@ -645,7 +645,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        configuration->addDeleteTransformers(object_info, builder, format_settings, context_);
+        configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
 
         if (object_info->data_lake_metadata
             && object_info->data_lake_metadata->excluded_rows

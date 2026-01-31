@@ -115,7 +115,7 @@ struct FormatSettings
 
     bool input_format_ipv4_default_on_conversion_error = false;
     bool input_format_ipv6_default_on_conversion_error = false;
-    bool check_conversion_from_numbers_to_enum = false;
+    bool check_conversion_from_numbers_to_enum = true;
 
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
@@ -261,6 +261,7 @@ struct FormatSettings
         bool empty_as_default = false;
         bool type_json_skip_invalid_typed_paths = false;
         bool type_json_skip_duplicated_paths = false;
+        std::optional<size_t> max_dynamic_subcolumns_in_json_type_parsing = std::nullopt;
         bool type_json_allow_duplicated_key_with_literal_and_nested_object = false;
         bool type_json_use_partial_match_to_skip_paths_by_regexp = true;
         bool pretty_print = true;

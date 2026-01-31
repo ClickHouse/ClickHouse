@@ -26,7 +26,6 @@ namespace Setting
     extern const SettingsBool optimize_use_projections;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
-    extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool query_plan_aggregation_in_order;
     extern const SettingsBool query_plan_convert_any_join_to_semi_or_anti_join;
     extern const SettingsBool query_plan_convert_join_to_in;
@@ -90,6 +89,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_optimize_join_order_limit;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
+    extern const SettingsBool parallel_replicas_filter_pushdown;
 }
 
 namespace ServerSetting
@@ -154,7 +154,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
-    query_condition_cache_store_conditions_as_plaintext = from[Setting::query_condition_cache_store_conditions_as_plaintext];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes] && from[Setting::use_skip_indexes_on_data_read];
     enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
@@ -227,6 +226,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_parallel_replicas = from[Setting::max_parallel_replicas];
     automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
+
+    parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
