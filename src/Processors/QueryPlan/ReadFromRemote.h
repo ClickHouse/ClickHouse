@@ -99,7 +99,8 @@ public:
         std::shared_ptr<const StorageLimitsList> storage_limits_,
         std::vector<ConnectionPoolPtr> pools_to_use,
         std::optional<size_t> exclude_pool_index_ = std::nullopt,
-        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
+        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr,
+        std::shared_ptr<const QueryPlan> query_plan_ = nullptr);
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
@@ -135,6 +136,7 @@ private:
     std::vector<ConnectionPoolPtr> pools_to_use;
     std::optional<size_t> exclude_pool_index;
     ConnectionPoolWithFailoverPtr connection_pool_with_failover;
+    std::shared_ptr<const QueryPlan> query_plan;
 };
 
 ASTPtr tryBuildAdditionalFilterAST(

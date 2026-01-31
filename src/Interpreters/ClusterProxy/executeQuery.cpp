@@ -705,6 +705,10 @@ void executeQueryWithParallelReplicas(
             return;
         }
 
+        std::shared_ptr<const QueryPlan> remote_query_plan;
+        if (new_context->getSettingsRef()[Setting::serialize_query_plan])
+            remote_query_plan = createRemotePlanForParallelReplicas(query_ast, * header, new_context, processed_stage);
+
         auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan));
         auto stub_local_plan = std::make_unique<QueryPlan>();
         stub_local_plan->addStep(std::move(read_from_local));
@@ -728,7 +732,8 @@ void executeQueryWithParallelReplicas(
             std::move(storage_limits),
             std::move(connection_pools),
             local_replica_index,
-            shard.pool);
+            shard.pool,
+            std::move(remote_query_plan));
 
         auto remote_plan = std::make_unique<QueryPlan>();
         remote_plan->addStep(std::move(read_from_remote));

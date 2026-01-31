@@ -97,8 +97,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
     std::optional<Extension> extension_,
-    ConnectionPoolWithFailoverPtr connection_pool_with_failover_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, nullptr, extension_)
+    ConnectionPoolWithFailoverPtr connection_pool_with_failover_,
+    std::shared_ptr<const QueryPlan> query_plan_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, query_plan_, extension_)
 {
     create_connections = [this, pool, throttler, extension_, connection_pool_with_failover_](AsyncCallback)
     {
