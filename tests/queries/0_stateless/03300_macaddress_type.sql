@@ -1,4 +1,5 @@
 -- Test MacAddress data type
+SET allow_experimental_macaddress_type = 1;
 
 -- Test 1: Create table with MacAddress column
 DROP TABLE IF EXISTS test_macaddress;
@@ -86,9 +87,73 @@ INSERT INTO test_macaddress_array VALUES (2, [toMacAddress('00:00:00:00:00:00')]
 SELECT 'Test with Array';
 SELECT id, macs FROM test_macaddress_array ORDER BY id;
 
+-- Test 11: Test conversion from integer to MacAddress
+SELECT 'Test conversion from integer to MacAddress';
+SELECT toMacAddress(112394521950); -- 00:1A:2B:3C:4D:5E
+SELECT toMacAddress(0);
+SELECT toMacAddress(281474976710655); -- FF:FF:FF:FF:FF:FF
+
+-- Test 12: Test conversion TO UInt64
+SELECT 'Test conversion TO UInt64';
+SELECT toUInt64(toMacAddress('00:1A:2B:3C:4D:5E'));
+SELECT toUInt64(toMacAddress('FF:FF:FF:FF:FF:FF'));
+SELECT toUInt64(toMacAddress('00:00:00:00:00:00'));
+
+-- Test 13: Test conversion TO String
+SELECT 'Test conversion TO String';
+SELECT toString(toMacAddress('00:1A:2B:3C:4D:5E'));
+SELECT toString(toMacAddress('FF:FF:FF:FF:FF:FF'));
+
+-- Test 14: Test CAST operations
+SELECT 'Test CAST operations';
+SELECT CAST('00:1A:2B:3C:4D:5E' AS MacAddress);
+SELECT CAST(112394521950 AS MacAddress);
+SELECT CAST(toMacAddress('00:1A:2B:3C:4D:5E') AS UInt64);
+SELECT CAST(toMacAddress('00:1A:2B:3C:4D:5E') AS String);
+
+-- Test 15: Test toMacAddressOrZero
+SELECT 'Test toMacAddressOrZero';
+SELECT toMacAddressOrZero('00:1A:2B:3C:4D:5E');
+SELECT toMacAddressOrZero('invalid');
+SELECT toMacAddressOrZero('');
+SELECT toMacAddressOrZero('ZZ:ZZ:ZZ:ZZ:ZZ:ZZ');
+
+-- Test 16: Test toMacAddressOrNull
+SELECT 'Test toMacAddressOrNull';
+SELECT toMacAddressOrNull('00:1A:2B:3C:4D:5E');
+SELECT toMacAddressOrNull('invalid');
+SELECT toMacAddressOrNull('');
+SELECT toMacAddressOrNull('ZZ:ZZ:ZZ:ZZ:ZZ:ZZ');
+
+-- Test 17: Test error cases for toMacAddress with invalid inputs
+SELECT 'Test error cases for toMacAddress';
+SELECT toMacAddress('invalid'); -- { serverError CANNOT_PARSE_MAC_ADDRESS }
+SELECT toMacAddress(''); -- { serverError CANNOT_PARSE_MAC_ADDRESS }
+SELECT toMacAddress('ZZ:ZZ:ZZ:ZZ:ZZ:ZZ'); -- { serverError CANNOT_PARSE_MAC_ADDRESS }
+SELECT toMacAddress('00:1A:2B:3C:4D'); -- { serverError CANNOT_PARSE_MAC_ADDRESS }
+SELECT toMacAddress('00:1A:2B:3C:4D:5E:6F'); -- { serverError CANNOT_PARSE_MAC_ADDRESS }
+
+-- Test 18: Test LowCardinality(MacAddress)
+DROP TABLE IF EXISTS test_macaddress_lowcardinality;
+CREATE TABLE test_macaddress_lowcardinality
+(
+    id UInt32,
+    mac LowCardinality(MacAddress)
+) ENGINE = Memory;
+
+INSERT INTO test_macaddress_lowcardinality VALUES (1, toMacAddress('00:1A:2B:3C:4D:5E'));
+INSERT INTO test_macaddress_lowcardinality VALUES (2, toMacAddress('00:1A:2B:3C:4D:5E'));
+INSERT INTO test_macaddress_lowcardinality VALUES (3, toMacAddress('FF:FF:FF:FF:FF:FF'));
+INSERT INTO test_macaddress_lowcardinality VALUES (4, toMacAddress('00:00:00:00:00:00'));
+
+SELECT 'Test LowCardinality(MacAddress)';
+SELECT id, mac FROM test_macaddress_lowcardinality ORDER BY id;
+SELECT mac, count() FROM test_macaddress_lowcardinality GROUP BY mac ORDER BY mac;
+
 -- Cleanup
 DROP TABLE IF EXISTS test_macaddress;
 DROP TABLE IF EXISTS test_macaddress_nullable;
 DROP TABLE IF EXISTS test_macaddress_join;
 DROP TABLE IF EXISTS test_macaddress_array;
+DROP TABLE IF EXISTS test_macaddress_lowcardinality;
 
