@@ -14,6 +14,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
     bool parseCheckTable(Pos & pos, ASTPtr & node, Expected & expected);
+    bool parseCheckDatabase(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 }

@@ -279,6 +279,11 @@ def test_list_tables(started_cluster):
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
 
+    node.query(
+
+        f"CHECK DATABASE '{CATALOG_NAME}'"
+    )
+
     tables_list = ""
     for table in namespace_1_tables:
         create_table(catalog, namespace_1, table)

@@ -47,6 +47,7 @@ public:
         const FilterByNameFunction & filter_by_table_name,
         bool skip_not_loaded) const override;
 
+    void checkDatabase() const override;
 
     void shutdown() override {}
 

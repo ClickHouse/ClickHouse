@@ -819,6 +819,12 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
     return create_query;
 }
 
+void DatabaseDataLake::checkDatabase() const
+{
+    auto catalog = getCatalog();
+    catalog->getTables();
+}
+
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
     ContextPtr /* context_ */,
