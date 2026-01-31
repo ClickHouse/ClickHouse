@@ -3,6 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/IColumn.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -16,7 +17,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
@@ -54,10 +54,12 @@ private:
 
 DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
-    if (arguments.size() < 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Number of arguments for function {} doesn't match: passed {}, should be at least 2.",
-            getName(), arguments.size());
+    FunctionArgumentDescriptors mandatory_args{
+        {"aggregate_function_name", &isString, &isColumnConst, "const String"},
+        {"argument", nullptr, nullptr, "Any"}
+    };
+    FunctionArgumentDescriptor variadic_args{"argument", nullptr, nullptr, "Any"};
+    validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
 
     const ColumnConst * aggregate_function_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
     if (!aggregate_function_name_column)
