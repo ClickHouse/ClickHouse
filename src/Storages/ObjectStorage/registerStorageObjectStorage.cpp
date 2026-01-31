@@ -14,6 +14,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
 #include <Disks/DiskType.h>
@@ -374,6 +375,208 @@ void registerStorageIceberg(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_sort_order = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessTypeObjects::Source::FILE,
+            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+        });
+}
+
+void registerStoragePaimon(StorageFactory & factory)
+{
+    /// Register default Paimon engine (auto-detect storage type based on disk)
+    factory.registerStorage(
+        PaimonDefinition::storage_engine_name,
+        [&](const StorageFactory::Arguments & args)
+        {
+            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
+                ? (*storage_settings)[DataLakeStorageSetting::disk].value
+                : "";
+
+            StorageObjectStorageConfigurationPtr configuration;
+            if (!disk_name.empty())
+            {
+                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                switch (disk->getObjectStorage()->getType())
+                {
+#if USE_AWS_S3
+                    case ObjectStorageType::S3:
+                        configuration = std::make_shared<StorageS3PaimonConfiguration>(storage_settings);
+                        break;
+#endif
+#if USE_AZURE_BLOB_STORAGE
+                    case ObjectStorageType::Azure:
+                        configuration = std::make_shared<StorageAzurePaimonConfiguration>(storage_settings);
+                        break;
+#endif
+                    case ObjectStorageType::Local:
+                        configuration = std::make_shared<StorageLocalPaimonConfiguration>(storage_settings);
+                        break;
+                    default:
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Unsupported disk type for {}: {}",
+                            PaimonDefinition::storage_engine_name,
+                            disk->getObjectStorage()->getType());
+                }
+            }
+            else
+            {
+#if USE_AWS_S3
+                configuration = std::make_shared<StorageS3PaimonConfiguration>(storage_settings);
+#else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 support is not available for Paimon in this build");
+#endif
+            }
+            if (configuration == nullptr)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "This storage configuration is not available at this build");
+            }
+            expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
+            return createStorageObjectStorage(args, configuration);
+        },
+        {
+            .supports_settings = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessTypeObjects::Source::S3,
+            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+        });
+
+#if USE_AWS_S3
+    /// Register PaimonS3 engine
+    factory.registerStorage(
+        PaimonS3Definition::storage_engine_name,
+        [&](const StorageFactory::Arguments & args)
+        {
+            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
+                ? (*storage_settings)[DataLakeStorageSetting::disk].value
+                : "";
+
+            StorageObjectStorageConfigurationPtr configuration;
+            if (!disk_name.empty())
+            {
+                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                switch (disk->getObjectStorage()->getType())
+                {
+                    case ObjectStorageType::S3:
+                        configuration = std::make_shared<StorageS3PaimonConfiguration>(storage_settings);
+                        break;
+                    default:
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Unsupported disk type for {}: {}",
+                            PaimonS3Definition::storage_engine_name,
+                            disk->getObjectStorage()->getType());
+                }
+            }
+            else
+                configuration = std::make_shared<StorageS3PaimonConfiguration>(storage_settings);
+            expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
+            return createStorageObjectStorage(args, configuration);
+        },
+        {
+            .supports_settings = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessTypeObjects::Source::S3,
+            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+        });
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+    /// Register PaimonAzure engine
+    factory.registerStorage(
+        PaimonAzureDefinition::storage_engine_name,
+        [&](const StorageFactory::Arguments & args)
+        {
+            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
+                ? (*storage_settings)[DataLakeStorageSetting::disk].value
+                : "";
+
+            StorageObjectStorageConfigurationPtr configuration;
+            if (!disk_name.empty())
+            {
+                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                switch (disk->getObjectStorage()->getType())
+                {
+                    case ObjectStorageType::Azure:
+                        configuration = std::make_shared<StorageAzurePaimonConfiguration>(storage_settings);
+                        break;
+                    default:
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Unsupported disk type for {}: {}",
+                            PaimonAzureDefinition::storage_engine_name,
+                            disk->getObjectStorage()->getType());
+                }
+            }
+            else
+                configuration = std::make_shared<StorageAzurePaimonConfiguration>(storage_settings);
+            expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
+            return createStorageObjectStorage(args, configuration);
+        },
+        {
+            .supports_settings = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessTypeObjects::Source::AZURE,
+            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+        });
+#endif
+
+#if USE_HDFS
+    /// Register PaimonHDFS engine
+    factory.registerStorage(
+        PaimonHDFSDefinition::storage_engine_name,
+        [&](const StorageFactory::Arguments & args)
+        {
+            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            auto configuration = std::make_shared<StorageHDFSPaimonConfiguration>(storage_settings);
+            expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
+            return createStorageObjectStorage(args, configuration);
+        },
+        {
+            .supports_settings = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessTypeObjects::Source::HDFS,
+            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+        });
+#endif
+
+    /// Register PaimonLocal engine
+    factory.registerStorage(
+        PaimonLocalDefinition::storage_engine_name,
+        [&](const StorageFactory::Arguments & args)
+        {
+            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
+                ? (*storage_settings)[DataLakeStorageSetting::disk].value
+                : "";
+
+            StorageObjectStorageConfigurationPtr configuration;
+            if (!disk_name.empty())
+            {
+                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                switch (disk->getObjectStorage()->getType())
+                {
+                    case ObjectStorageType::Local:
+                        configuration = std::make_shared<StorageLocalPaimonConfiguration>(storage_settings);
+                        break;
+                    default:
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Unsupported disk type for {}: {}",
+                            PaimonLocalDefinition::storage_engine_name,
+                            disk->getObjectStorage()->getType());
+                }
+            }
+            else
+                configuration = std::make_shared<StorageLocalPaimonConfiguration>(storage_settings);
+            expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
+            return createStorageObjectStorage(args, configuration);
+        },
+        {
+            .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,

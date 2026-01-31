@@ -122,14 +122,14 @@ struct HudiDefinition
 struct PaimonDefinition
 {
     static constexpr auto name = "paimon";
-    static constexpr auto storage_engine_name = S3Definition::storage_engine_name;
+    static constexpr auto storage_engine_name = "Paimon";
     static constexpr auto object_storage_type = "s3";
 };
 
 struct PaimonS3Definition
 {
     static constexpr auto name = "paimonS3";
-    static constexpr auto storage_engine_name = S3Definition::storage_engine_name;
+    static constexpr auto storage_engine_name = "PaimonS3";
     static constexpr auto object_storage_type = "s3";
 };
 
@@ -137,7 +137,7 @@ struct PaimonS3Definition
 struct PaimonAzureDefinition
 {
     static constexpr auto name = "paimonAzure";
-    static constexpr auto storage_engine_name = AzureDefinition::storage_engine_name;
+    static constexpr auto storage_engine_name = "PaimonAzure";
     static constexpr auto object_storage_type = "azure";
 };
 
@@ -145,13 +145,13 @@ struct PaimonAzureDefinition
 struct PaimonHDFSDefinition
 {
     static constexpr auto name = "paimonHDFS";
-    static constexpr auto storage_engine_name = HDFSDefinition::storage_engine_name;
+    static constexpr auto storage_engine_name = "PaimonHDFS";
     static constexpr auto object_storage_type = "hdfs";
 };
 struct PaimonLocalDefinition
 {
     static constexpr auto name = "paimonLocal";
-    static constexpr auto storage_engine_name = "File";
+    static constexpr auto storage_engine_name = "PaimonLocal";
     static constexpr auto object_storage_type = "local";
 };
 
