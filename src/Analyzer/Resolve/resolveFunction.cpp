@@ -27,6 +27,7 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Functions/exists.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -75,6 +76,7 @@ namespace Setting
 
 namespace
 {
+
 void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
 {
     if (node.getNullsAction() != NullsAction::EMPTY)
@@ -84,6 +86,58 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
+
+/// Collapse chain of tupleElement functions to a single tupleElement function with combined element name as subcolumn.
+/// For example: tupleElement(tupleElement(tupleElement(json_expression, 'a'), 'b'), 'c') -> tupleElement(json_expression, 'a.b.c').
+/// Since we support JSON in tupleElement in order to allow using dot operator in expressions to extract JSON paths,
+/// if we don't collapse a chain of tupleElement, we will extract only the first path element from JSON and then try to
+/// apply tupleElement to the extracted Dynamic subcolumn.
+bool collapseChainOfTupleElementFunctions(FunctionNode & function_node)
+{
+    auto & arguments = function_node.getArguments().getNodes();
+    /// Collapse make sense only for tupleElement with 2 arguments (without default value argument).
+    /// So if there are 3 arguments, stop recursion.
+    if (arguments.size() == 3)
+        return true;
+
+    /// Check for invalid number of arguments.
+    if (arguments.size() != 2)
+        return false;
+
+    auto & first_argument = arguments[0];
+
+    /// Stop recursion if first argument of tupleElement is not a tupleElement function.
+    auto * nested_function_node = first_argument->as<FunctionNode>();
+    if (!nested_function_node || nested_function_node->getFunctionName() != "tupleElement")
+        return true;
+
+    /// Collapse nested chain of tupleElement functions.
+    if (!collapseChainOfTupleElementFunctions(*nested_function_node))
+        return false;
+
+    /// Now we should have a chain with only 2 nested tupleElement functions.
+    /// Extract both element names and collapse them to a single tupleElement function.
+    const auto & nested_function_arguments = nested_function_node->getArguments().getNodes();
+    const auto * name_prefix_constant = nested_function_arguments[1]->as<ConstantNode>();
+    /// Don't collapse if second argument of nested tupleElement is not a constant string.
+    if (!name_prefix_constant || name_prefix_constant->getValue().getType() != Field::Types::String)
+        return true;
+
+    String name_prefix = name_prefix_constant->getValue().safeGet<String>();
+
+    const auto * name_suffix_constant = arguments[1]->as<ConstantNode>();
+    /// Don't collapse if second argument is not a constant string.
+    if (!name_suffix_constant || name_suffix_constant->getValue().getType() != Field::Types::String)
+        return true;
+
+    String name_suffix = name_suffix_constant->getValue().safeGet<String>();
+    String full_path = name_prefix + "." + name_suffix;
+
+    arguments[0] = nested_function_arguments[0];
+    arguments[1] = std::make_shared<ConstantNode>(full_path);
+    return true;
+}
+
 }
 
 /// Checks if node is a NULL constant
@@ -337,6 +391,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     bool is_special_function_join_get = false;
     bool is_special_function_exists = false;
     bool is_special_function_if = false;
+    bool is_special_function_tuple_element = false;
 
     if (!lambda_expression_untyped)
     {
@@ -345,6 +400,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_join_get = functionIsJoinGet(function_name);
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
+        is_special_function_tuple_element = function_name == "tupleElement";
 
         /** Special handling for count and countState functions (including with combinators like countIf, countIfState, etc.).
           *
@@ -722,6 +778,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         scope,
         true /*allow_lambda_expression*/,
         allow_table_expressions /*allow_table_expression*/);
+
+    if (is_special_function_tuple_element)
+        collapseChainOfTupleElementFunctions(*function_node_ptr);
 
     /// Mask arguments if needed
     if (!scope.context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
