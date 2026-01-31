@@ -7417,6 +7417,15 @@ Using the text index header cache can significantly reduce latency and increase 
 Whether to use a cache of deserialized text index posting lists.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
+    DECLARE(Bool, text_index_brute_force_apply, false, R"(
+Force using brute force algorithm when applying posting lists in text index queries.
+When false (default), the algorithm is selected automatically based on posting list density.
+    )", 0) \
+    DECLARE(Float, text_index_brute_force_density_threshold, 0.2f, R"(
+Density threshold for automatically switching to brute force algorithm when applying posting lists.
+When the average density of posting lists exceeds this threshold, brute force algorithm is used.
+Valid range: 0.0 to 1.0. Default is 0.2.
+    )", 0) \
     DECLARE(Bool, allow_experimental_window_view, false, R"(
 Enable WINDOW VIEW. Not mature enough.
 )", EXPERIMENTAL) \

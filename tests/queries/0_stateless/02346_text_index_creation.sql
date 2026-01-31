@@ -499,6 +499,94 @@ ORDER BY tuple(); -- TODO: this should throw an exception but it doesn't
 
 DROP TABLE tab;
 
+SELECT 'Test posting_list_apply_mode argument.';
+
+SELECT '-- posting_list_apply_mode must be a string.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_apply_mode = 1)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_apply_mode = 1.0)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- posting_list_apply_mode must be lazy or materialize.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_apply_mode = 'invalid')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- posting_list_apply_mode = materialize is valid for any codec.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_apply_mode = 'materialize')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'none', posting_list_apply_mode = 'materialize')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', posting_list_apply_mode = 'materialize')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+SELECT '-- posting_list_apply_mode = lazy requires posting_list_codec to be set (not none).';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_apply_mode = 'lazy')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'none', posting_list_apply_mode = 'lazy')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- posting_list_apply_mode = lazy is valid with compressed codec.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', posting_list_apply_mode = 'lazy')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
 SELECT 'Types are incorrect.';
 
 CREATE TABLE tab

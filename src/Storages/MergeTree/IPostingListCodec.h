@@ -15,6 +15,7 @@ struct TokenPostingsInfo;
 class ReadBuffer;
 class WriteBuffer;
 using PostingList = roaring::Roaring;
+struct PostingListBuilder;
 
 /// IPostingListCodec is an interface for compressing text index posting list.
 class IPostingListCodec
@@ -38,7 +39,7 @@ public:
 
     /// Splits the posting list into posting_list_block_size-large blocks and encodes each block separately.
     /// Also collects per-segment metadata into info and returns it to the caller (TokenPostingsInfo).
-    virtual void encode(const PostingList & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const = 0;
+    virtual void encode(const PostingListBuilder & postings, size_t posting_list_block_size, bool has_block_skip_index, TokenPostingsInfo & info, WriteBuffer & out) const = 0;
 
     /// Reads an encoded posting list, decodes it, and returns a posting list.
     virtual void decode(ReadBuffer & in, PostingList & postings) const = 0;

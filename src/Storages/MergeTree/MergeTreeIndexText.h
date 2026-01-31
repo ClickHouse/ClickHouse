@@ -73,12 +73,26 @@ namespace DB
 class IPostingListCodec;
 using PostingListCodecPtr = const IPostingListCodec *;
 
+/// Mode for applying compressed posting lists during query execution.
+/// This parameter only affects compressed posting lists (when posting_list_codec is not 'none').
+enum class PostingListApplyMode : UInt8
+{
+    /// Lazy mode: decode posting lists on-the-fly and directly build AND/OR results during decompression.
+    /// This is more efficient for low-cardinality queries as it avoids building intermediate roaring bitmaps.
+    Lazy = 0,
+    /// Materialize mode: decode posting lists into roaring bitmaps first, then perform AND/OR operations.
+    /// This is the traditional approach and may be better for high-cardinality queries or complex operations.
+    Materialize = 1,
+};
+
 struct MergeTreeIndexTextParams
 {
     size_t dictionary_block_size = 0;
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
     String preprocessor;
+    /// Mode for applying compressed posting lists. Only valid when posting_list_codec is not 'none'.
+    PostingListApplyMode posting_list_apply_mode = PostingListApplyMode::Materialize;
 };
 
 using PostingList = roaring::Roaring;
@@ -153,8 +167,7 @@ struct PostingsSerialization
         IsCompressed = 1ULL << 3,
     };
 
-    static void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, PostingListCodecPtr posting_list_codec, WriteBuffer & ostr);
-    static void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, PostingListCodecPtr posting_list_codec, WriteBuffer & ostr);
+    static void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, const MergeTreeIndexTextParams & params, PostingListCodecPtr posting_list_codec, WriteBuffer & ostr);
     static void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
     static PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PostingListCodecPtr posting_list_codec);
 };

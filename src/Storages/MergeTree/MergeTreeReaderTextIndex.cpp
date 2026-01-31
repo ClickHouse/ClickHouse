@@ -9,6 +9,8 @@
 #include <Common/logger_useful.h>
 #include <Columns/ColumnsNumber.h>
 #include <Storages/MergeTree/TextIndexCache.h>
+#include <Storages/MergeTree/IPostingListCodec.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Core/Settings.h>
 
 namespace ProfileEvents
@@ -24,6 +26,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsFloat text_index_hint_max_selectivity;
+    extern const SettingsBool text_index_brute_force_apply;
+    extern const SettingsFloat text_index_brute_force_density_threshold;
 }
 
 namespace ErrorCodes
@@ -88,6 +92,13 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
+    const auto & text_index = assert_cast<const MergeTreeIndexText &>(*index.index);
+    /// Use lazy mode for applying postings only when:
+    /// 1. The posting list codec is not 'none' (i.e., posting lists are compressed)
+    /// 2. The posting_list_apply_mode is set to 'lazy' (default)
+    lazy_apply_posting_list = text_index.posting_list_codec
+        && text_index.posting_list_codec->getType() != IPostingListCodec::Type::None
+        && text_index.params.posting_list_apply_mode == PostingListApplyMode::Lazy;
 }
 
 void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
@@ -284,36 +295,35 @@ size_t MergeTreeReaderTextIndex::readRows(
         /// If our reader is not first in the chain, canSkipMark is not called in RangeReader.
         /// TODO: adjust the code in RangeReader to call canSkipMark for all readers.
         if (!analyzed_granules.contains(static_cast<UInt32>(from_mark)))
-        {
             canSkipMark(from_mark, current_task_last_mark);
-        }
 
         if (!may_be_true_granules.contains(static_cast<UInt32>(from_mark)))
         {
+            /// Granule doesn't match any search condition - fill with zeros
             for (const auto & column : res_columns)
             {
                 auto & column_data = assert_cast<ColumnUInt8 &>(column->assumeMutableRef()).getData();
                 column_data.resize_fill(column->size() + rows_to_read, 0);
             }
         }
+        else if (lazy_apply_posting_list)
+        {
+            /// Lazy mode: use PostingListCursor for on-demand block decoding.
+            /// - readStreamPostingsIfNeeded registers required segments to cursors without decoding
+            /// - stream_posting_cursors (class member) persists across marks, enabling block-level
+            ///   binary search and lazy decompression during intersection/union operations
+            /// - Cursors decode blocks only when seek() or next() is called, reducing memory and CPU
+            readStreamPostingsIfNeeded(from_mark);
+            fillColumnsWithPostings(res_columns, stream_posting_cursors, from_row, rows_to_read);
+        }
         else
         {
+            /// Materialize mode: decode entire posting lists into roaring bitmaps upfront.
+            /// - readPostingsIfNeeded fully decodes all posting blocks for this mark
+            /// - Returns local PostingsMap that is discarded after processing this mark
+            /// - Simpler but uses more memory for large posting lists
             auto mark_postings = readPostingsIfNeeded(from_mark);
-
-            for (size_t i = 0; i < res_columns.size(); ++i)
-            {
-                auto & column_mutable = res_columns[i]->assumeMutableRef();
-
-                if (is_always_true[i])
-                {
-                    auto & column_data = assert_cast<ColumnUInt8 &>(column_mutable).getData();
-                    column_data.resize_fill(column_mutable.size() + rows_to_read, 1);
-                }
-                else
-                {
-                    fillColumn(column_mutable, columns_to_read[i].name, mark_postings, from_row, rows_to_read);
-                }
-            }
+            fillColumnsWithPostings(res_columns, mark_postings, from_row, rows_to_read);
         }
 
         ++from_mark;
@@ -601,6 +611,94 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
         applyPostingsAny(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
     else if (search_query->search_mode == TextSearchMode::All)
         applyPostingsAll(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
+}
+
+template <typename PostingsContainer>
+void MergeTreeReaderTextIndex::fillColumnsWithPostings(Columns & res_columns, PostingsContainer & postings, size_t from_row, size_t rows_to_read)
+{
+    for (size_t i = 0; i < res_columns.size(); ++i)
+    {
+        auto & column_mutable = res_columns[i]->assumeMutableRef();
+
+        if (is_always_true[i])
+        {
+            auto & column_data = assert_cast<ColumnUInt8 &>(column_mutable).getData();
+            column_data.resize_fill(column_mutable.size() + rows_to_read, 1);
+        }
+        else
+        {
+            fillColumn(column_mutable, columns_to_read[i].name, postings, from_row, rows_to_read);
+        }
+    }
+}
+
+/// Explicit template instantiations
+template void MergeTreeReaderTextIndex::fillColumnsWithPostings<PostingsMap>(Columns &, PostingsMap &, size_t, size_t);
+template void MergeTreeReaderTextIndex::fillColumnsWithPostings<PostingListCursorMap>(Columns &, PostingListCursorMap &, size_t, size_t);
+
+
+void MergeTreeReaderTextIndex::readStreamPostingsIfNeeded(size_t mark)
+{
+    auto rows_range = getRowsRangeForMark(mark);
+    if (!rows_range.has_value())
+        return;
+
+    auto &granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+    const auto &remaining_tokens = granule_text.getRemainingTokens();
+
+    auto read_token_postings = [&](std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range)
+    {
+        auto blocks_to_read = token_info.getBlocksToRead(range);
+        for (const auto & block_idx : blocks_to_read)
+        {
+            auto it = stream_posting_cursors.find(token);
+            if (it != stream_posting_cursors.end())
+            {
+                it->second->addSegment(block_idx);
+            }
+            else
+            {
+                auto cursor = token_info.embedded_postings
+                    ? std::make_shared<PostingListCursor>(token_info, block_idx)
+                    : std::make_shared<PostingListCursor>(large_postings_streams.at(token).get(), token_info, block_idx);
+                stream_posting_cursors[token] = cursor;
+            }
+        }
+    };
+    for (const auto &[token, token_info]: remaining_tokens)
+    {
+        if (!useful_tokens.contains(token))
+        {
+            continue;
+        }
+
+        read_token_postings(token, token_info, *rows_range);
+    }
+}
+
+void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & column_name, PostingListCursorMap & postings, size_t row_offset, size_t num_rows)
+{
+    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
+
+    size_t old_size = column_data.size();
+    column_data.resize_fill(old_size + num_rows, 0);
+
+    if (postings.empty() || search_query->tokens.empty())
+        return;
+
+    const auto context = data_part_info_for_read->getContext();
+
+    const auto & settings = condition_text.getContext()->getSettingsRef();
+    bool brute_force_apply = settings[Setting::text_index_brute_force_apply];
+    float density_threshold = settings[Setting::text_index_brute_force_density_threshold];
+    if (search_query->search_mode == TextSearchMode::Any || postings.size() == 1)
+        lazyUnionPostingLists(column, postings, search_query->tokens, old_size, row_offset, num_rows, brute_force_apply, density_threshold);
+    else if (search_query->search_mode == TextSearchMode::All)
+        lazyIntersectPostingLists(column, postings, search_query->tokens, old_size, row_offset, num_rows, brute_force_apply, density_threshold);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
 }

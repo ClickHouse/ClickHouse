@@ -18,7 +18,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// SIMD bitpacking block size: number of integers packed/unpacked per SIMD operation.
+/// This is determined by the simdcomp library's SSE2 implementation (128 = 4 lanes * 32 groups).
 static constexpr size_t BLOCK_SIZE = 128;
+
+/// Logical unit size for posting list encode/decode operations.
+/// We process posting lists in units of 256 integers (2 SIMD blocks) for better
+/// cache efficiency and to amortize per-block metadata overhead.
+static constexpr size_t POSTING_LIST_UNIT_SIZE = BLOCK_SIZE * 2;
 
 namespace impl
 {

@@ -1,0 +1,88 @@
+hasToken(apple):
+4000	4000	4000	1
+hasToken(banana):
+4000	4000	4000	1
+hasToken(elderberry):
+1000	1000	1000	1
+hasToken(nonexistent):
+0	0	0	1
+hasToken(empty):
+0	0	0	1
+hasAllTokens(apple banana):
+2000	2000	2000	1
+hasAllTokens(apple cherry):
+2000	2000	2000	1
+hasAllTokens(apple banana orange):
+1000	1000	1000	1
+hasAllTokens(apple banana cherry date):
+1000	1000	1000	1
+hasAllTokens(apple elderberry):
+0	0	0	1
+hasAllTokens(apple nonexistent):
+0	0	0	1
+hasAllTokens(apple) single:
+4000	4000	4000	1
+hasAllTokens(apple apple):
+4000	4000	4000	1
+hasAnyToken(apple cherry):
+6000	6000	6000	1
+hasAnyToken(apple elderberry):
+5000	5000	5000	1
+hasAnyToken(apple banana cherry):
+7000	7000	7000	1
+hasAnyToken(apple banana cherry date):
+7000	7000	7000	1
+hasAnyToken(nonexistent1 nonexistent2):
+0	0	0	1
+hasAnyToken(apple nonexistent):
+4000	4000	4000	1
+hasAnyToken(apple) single:
+4000	4000	4000	1
+hasToken(apple) AND hasToken(banana):
+2000	2000	2000	1
+hasToken(apple) OR hasToken(elderberry):
+5000	5000	5000	1
+hasAllTokens(apple banana) AND hasToken(cherry):
+1000	1000	1000	1
+hasAnyToken(apple cherry) AND hasToken(banana):
+3000	3000	3000	1
+hasAllTokens(apple banana) OR hasAllTokens(cherry date):
+3000	3000	3000	1
+NOT hasToken(apple):
+6000	6000	6000	1
+brute_force_apply=true hasAllTokens:
+1000	1000	1
+brute_force_apply=true hasAnyToken:
+5000	5000	1
+density_threshold=0.1 hasAllTokens:
+2000	2000	1
+density_threshold=0.5 hasAllTokens:
+1000	1000	1
+density_threshold=0.0 hasAllTokens:
+2000	2000	1
+density_threshold=1.0 hasAllTokens:
+2000	2000	1
+hasAllTokens 5 tokens:
+0	0	0	1
+hasAnyToken 5 tokens:
+8000	8000	8000	1
+hasToken case sensitivity:
+0	0	0	1
+hasToken partial match:
+0	0	0	1
+hasToken with LIMIT:
+100	100	100	1
+hasToken with ORDER BY:
+9998	9998	9998	1
+Stress hasToken(alpha):
+50000	1
+Stress hasAllTokens(alpha beta):
+16667	1
+Stress hasAllTokens(alpha beta gamma):
+3334	1
+Stress hasAllTokens(alpha beta gamma delta):
+477	1
+Stress hasAnyToken(alpha beta gamma):
+73334	1
+Stress brute_force hasAllTokens:
+3334	1

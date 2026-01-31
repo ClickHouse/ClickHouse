@@ -13,6 +13,10 @@ namespace DB
 using PostingsMap = absl::flat_hash_map<std::string_view, PostingListPtr>;
 using PostingsBlocksMap = absl::flat_hash_map<std::string_view, absl::btree_map<size_t, PostingListPtr>>;
 
+
+class PostingListCursor;
+using PostingListCursorPtr = std::shared_ptr<PostingListCursor>;
+using PostingListCursorMap = absl::flat_hash_map<std::string_view, PostingListCursorPtr>;
 /// A part of "direct read from text index" optimization.
 /// This reader fills virtual columns for text search filters
 /// which were replaced from the text search functions using
@@ -46,6 +50,7 @@ private:
 
     /// Returns postings for all all tokens required for the given mark.
     PostingsMap readPostingsIfNeeded(size_t mark);
+    void readStreamPostingsIfNeeded(size_t mark);
     /// Returns postings for all blocks of the given token required for the given range.
     std::vector<PostingListPtr> readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range);
     /// Removes blocks with max value less than the given range.
@@ -58,6 +63,11 @@ private:
     void analyzeTokensCardinality();
     void initializePostingStreams();
     void fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows);
+    void fillColumn(IColumn & column, const String & column_name, PostingListCursorMap & postings, size_t row_offset, size_t num_rows);
+
+    /// Template helper to fill all columns with postings from either PostingsMap or PostingListCursorMap.
+    template <typename PostingsContainer>
+    void fillColumnsWithPostings(Columns & res_columns, PostingsContainer & postings, size_t from_row, size_t rows_to_read);
 
     using TokenToPostingsInfosMap = MergeTreeIndexGranuleText::TokenToPostingsInfosMap;
 
@@ -96,6 +106,9 @@ private:
     /// Tokens that are useful for analysis and filling virtual columns.
     absl::flat_hash_set<std::string_view> useful_tokens;
     std::unique_ptr<MergeTreeIndexDeserializationState> deserialization_state;
+
+    PostingListCursorMap stream_posting_cursors;
+    bool lazy_apply_posting_list = false;
 };
 
 }
