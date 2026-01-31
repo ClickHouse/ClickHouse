@@ -1,18 +1,21 @@
--- Tags: no-parallel
--- Tag no-parallel: Depends on the query condition cache content (queries executed in parallel may overflow the cache size or straight away call "clear cache")
+-- Tags: no-sanitizers, long, no-parallel
+-- no-sanitizers: too slow
+-- long: for flaky check
+-- no-parallel: Depends on the query condition cache content (queries executed in parallel may overflow the cache size or straight away call "clear cache")
 
 DROP TABLE IF EXISTS t;
 
--- TODO(nickitat): Enforcing wide parts is a temporary workaround, not sure why collection doesn't work otherwise
-CREATE TABLE t(key String, value UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=8192, min_bytes_for_wide_part=0;
+-- index_granularity: to be able to produce small blocks from reading
+CREATE TABLE t(key String, value UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=128;
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 
-SET max_threads=2;
-
 -- For runs with the old analyzer
 SET enable_analyzer=1;
+
+-- max_block_size is set explicitly to ensure enough blocks will be fed to the statistics collector
+SET max_threads=4, max_block_size=128;
 
 SET use_query_condition_cache=1;
 SET automatic_parallel_replicas_min_bytes_per_replica='1Mi';
