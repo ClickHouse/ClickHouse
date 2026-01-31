@@ -316,7 +316,8 @@ public:
     {
         size_t hash_value = map.hash(key);
         auto it = map.find(key, hash_value);
-        chassert(it != map.end());
+        if (it != map.end())
+            return {};
 
         auto list_itr = it->getMapped();
         uint64_t old_value_size = list_itr->value.sizeInBytes();
