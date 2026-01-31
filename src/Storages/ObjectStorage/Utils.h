@@ -2,10 +2,37 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
+#include <mutex>
+#include <map>
+
 namespace DB
 {
 
 class IObjectStorage;
+
+#if USE_AVRO
+/// Thread-safe wrapper for secondary object storages map
+/// (now only used for Iceberg)
+struct SecondaryStorages
+{
+    mutable std::mutex mutex;
+    std::map<std::string, ObjectStoragePtr> storages;
+};
+#endif
+
+// A URI split into components
+//  s3://bucket/a/b -> scheme="s3", authority="bucket", path="/a/b"
+//  file:///var/x    -> scheme="file", authority="",     path="/var/x"
+//  /abs/p           -> scheme="",     authority="",     path="/abs/p"
+struct SchemeAuthorityKey
+{
+    explicit SchemeAuthorityKey(const std::string & uri);
+
+    std::string scheme;
+    std::string authority;
+    std::string key;
+};
 
 std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
@@ -63,5 +90,18 @@ struct ParseFromDiskResult
 
 ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context, const fs::path & prefix);
 
+std::string makeAbsolutePath(const std::string & table_location, const std::string & path);
+
+#if USE_AVRO
+/// Resolve object storage and key for reading from that storage
+/// If path is relative -- it must be read from base_storage
+/// Otherwise, look for a suitable storage in secondary_storages
+std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
+    const std::string & table_location,
+    const std::string & path,
+    const DB::ObjectStoragePtr & base_storage,
+    SecondaryStorages & secondary_storages,
+    const DB::ContextPtr & context);
+#endif
 
 }
