@@ -4,6 +4,7 @@
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/DDLGuard.h>
 #include <Interpreters/QueryFlags.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/BlockIO.h>
@@ -431,7 +432,7 @@ public:
 
     virtual bool shouldReplicateQuery(const ContextPtr & /*query_context*/, const ASTPtr & /*query_ptr*/) const { return false; }
 
-    virtual BlockIO tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags);
+    virtual BlockIO tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags, DDLGuardPtr && /*database_guard*/);
 
     /// Returns CREATE TABLE queries and corresponding tables prepared for writing to a backup.
     virtual std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & context) const;
