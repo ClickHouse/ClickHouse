@@ -44,6 +44,23 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
 }
 
+/// Helper function to check if a type is Bool, including when wrapped in Nullable or LowCardinality.
+/// This is needed because Bool is stored as UInt8 internally, and type.getName() returns
+/// "Nullable(Bool)" or "LowCardinality(Bool)" for wrapped types, not just "Bool".
+static bool isBoolType(const IDataType & type)
+{
+    if (type.getName() == "Bool")
+        return true;
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+        return isBoolType(*nullable_type->getNestedType());
+
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
+        return isBoolType(*low_cardinality_type->getDictionaryType());
+
+    return false;
+}
+
 
 /** Checking for a `Field from` of `From` type falls to a range of values of type `To`.
   * `From` and `To` - numeric types. They can be floating-point types.
@@ -170,10 +187,16 @@ Field convertDecimalType(const Field & from, const To & type)
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings)
 {
-    if (from_type_hint && from_type_hint->equals(type))
-    {
+    /// Special case for Bool: even if types are "equal" (UInt8 equals Bool because they share
+    /// the same underlying type), we need to convert the value to 0/1 when target is Bool
+    /// but source is not Bool (e.g., plain UInt8). Otherwise, values like 10 or 255 would be
+    /// stored as-is in the set instead of being converted to true (1).
+    /// See https://github.com/ClickHouse/ClickHouse/issues/92980
+    bool target_is_bool = (type.getName() == "Bool");
+    bool source_is_bool = from_type_hint && (from_type_hint->getName() == "Bool");
+
+    if (from_type_hint && from_type_hint->equals(type) && !(target_is_bool && !source_is_bool))
         return src;
-    }
 
     WhichDataType which_type(type);
     WhichDataType which_from_type;
@@ -770,11 +793,30 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
     if (from_value.isNull())
         return from_value;
 
-    if (from_type_hint && from_type_hint->equals(to_type))
+    /// Special case for Bool: even if types are "equal" (UInt8 equals Bool because they share
+    /// the same underlying type), we need to convert the value to 0/1 when target is Bool
+    /// but source is not Bool (e.g., plain UInt8). Otherwise, values like 10 or 255 would be
+    /// stored as-is in the set instead of being converted to true (1).
+    /// This also applies to Nullable(Bool) and LowCardinality(Bool) - we use isBoolType()
+    /// to detect Bool even when wrapped in these type modifiers.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/92980
+    bool target_is_bool = isBoolType(to_type);
+    bool source_is_bool = from_type_hint && isBoolType(*from_type_hint);
+
+    if (from_type_hint && from_type_hint->equals(to_type) && !(target_is_bool && !source_is_bool))
         return from_value;
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
-        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint, format_settings);
+    {
+        /// For LowCardinality, also unwrap the source type hint if it's LowCardinality
+        const IDataType * unwrapped_from_type_hint = from_type_hint;
+        if (from_type_hint)
+        {
+            if (const auto * lc_from = typeid_cast<const DataTypeLowCardinality *>(from_type_hint))
+                unwrapped_from_type_hint = lc_from->getDictionaryType().get();
+        }
+        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), unwrapped_from_type_hint, format_settings);
+    }
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
     {
         const IDataType & nested_type = *nullable_type->getNestedType();
@@ -783,9 +825,19 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
         if (WhichDataType(nested_type).isNothing())
             return {};
 
-        if (from_type_hint && from_type_hint->equals(nested_type))
+        /// For Nullable, also unwrap the source type hint if it's Nullable
+        const IDataType * unwrapped_from_type_hint = from_type_hint;
+        if (from_type_hint)
+        {
+            if (const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from_type_hint))
+                unwrapped_from_type_hint = nullable_from->getNestedType().get();
+        }
+
+        bool nested_target_is_bool = (nested_type.getName() == "Bool");
+        bool nested_source_is_bool = unwrapped_from_type_hint && (unwrapped_from_type_hint->getName() == "Bool");
+        if (unwrapped_from_type_hint && unwrapped_from_type_hint->equals(nested_type) && !(nested_target_is_bool && !nested_source_is_bool))
             return from_value;
-        return convertFieldToTypeImpl(from_value, nested_type, from_type_hint, format_settings);
+        return convertFieldToTypeImpl(from_value, nested_type, unwrapped_from_type_hint, format_settings);
     }
     return convertFieldToTypeImpl(from_value, to_type, from_type_hint, format_settings);
 }
