@@ -53,6 +53,7 @@ d256	Decimal(76, 40)
 200	909900
 10000	49995000
 0	0
+1	0
 # Very long string, which makes the Parquet encoder omit the corresponding min/max stat
 2
 # Nullable and LowCardinality

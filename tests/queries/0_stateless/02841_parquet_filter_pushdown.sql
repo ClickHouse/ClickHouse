@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest, no-parallel, no-replicated-database
 
 set output_format_parquet_row_group_size = 100;
 
@@ -87,6 +87,7 @@ select count(), sum(number) from file('02841.parquet') where indexHint(u8 < 0);
 select count(), sum(number) from file('02841.parquet') where indexHint(u64 + 1000000 == 1001000);
 select count(), sum(number) from file('02841.parquet') where indexHint(u64 + 1000000 == 1001000) settings input_format_parquet_filter_push_down = 0;
 select count(), sum(number) from file('02841.parquet') where indexHint(u32 + 1000000 == 999000);
+SELECT DISTINCT ((u16 < 4000) AND (u16 <= 61000)) OR assumeNotNull(2) OR ((u16 = 42) OR ((61000 >= u16) AND (4000 >= u16))), deltaSumDistinct(number) IGNORE NULLS FROM file(toFixedString('02841.parquet', 13)) PREWHERE and(and(notEquals(u32, (4000 >= u16) AND (u16 >= toUInt128(61000)) AS alias184), equals(dt64_ms, 4000 != u16)), equals(assumeNotNull(toNullable(56)), u16)) WHERE isNotDistinctFrom(u16, not(equals(u32, and(4000, (i8 >= -3) OR (assumeNotNull(42) = u16), 4000 != u16, equals(number, assumeNotNull(56))))));
 
 select '# Very long string, which makes the Parquet encoder omit the corresponding min/max stat';
 insert into function file('02841.parquet')

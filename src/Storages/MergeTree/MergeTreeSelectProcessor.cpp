@@ -20,6 +20,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 namespace
 {
@@ -164,12 +165,6 @@ String MergeTreeSelectProcessor::getName() const
 {
     return fmt::format("MergeTreeSelect(pool: {}, algorithm: {})", pool->getName(), algorithm->getName());
 }
-
-bool tryBuildPrewhereSteps(
-    PrewhereInfoPtr prewhere_info,
-    const ExpressionActionsSettings & actions_settings,
-    PrewhereExprInfo & prewhere,
-    bool force_short_circuit_execution);
 
 PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     const FilterDAGInfoPtr & row_level_filter,
