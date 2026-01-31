@@ -93,6 +93,8 @@ public:
 
     bool isVariadic() const override { return true; }
 
+    bool allowsOmittingParentheses() const override { return true; }
+
     size_t getNumberOfArguments() const override { return 0; }
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<NowOverloadResolver>(context); }
     explicit NowOverloadResolver(ContextPtr context)
@@ -174,6 +176,14 @@ SELECT now('Asia/Istanbul')
 ┌─now('Asia/Istanbul')─┐
 │  2020-10-17 10:42:23 │
 └──────────────────────┘
+        )"},
+        {"SQL standard syntax without parentheses", R"(
+SELECT NOW, CURRENT_TIMESTAMP
+        )",
+        R"(
+┌─────────────────NOW─┬───CURRENT_TIMESTAMP─┐
+│ 2020-10-17 07:42:09 │ 2020-10-17 07:42:09 │
+└─────────────────────┴─────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

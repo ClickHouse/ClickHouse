@@ -124,6 +124,7 @@ public:
     bool isVariadic() const override { return function->isVariadic(); }
     bool isServerConstant() const override { return function->isServerConstant(); }
     bool isShortCircuit(IFunctionBase::ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function->isShortCircuit(settings, number_of_arguments); }
+    bool allowsOmittingParentheses() const override { return function->allowsOmittingParentheses(); }
 
     size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
 
