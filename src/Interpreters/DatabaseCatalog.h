@@ -223,6 +223,10 @@ public:
     void removeViewDependency(const StorageID & source_table_id, const StorageID & view_id);
     std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
 
+    void addPlainViewDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_plain_view_dependencies);
+    std::vector<StorageID> getDependentPlainViews(const StorageID & source_table_id) const;
+    std::vector<StorageID> getAllDependentViews(const StorageID & source_table_id) const;
+
     /// If table has UUID, addUUIDMapping(...) must be called when table attached to some database
     /// removeUUIDMapping(...) must be called when it detached,
     /// and removeUUIDMappingFinally(...) must be called when table is dropped and its data removed from disk.
@@ -358,6 +362,8 @@ private:
 
     /// View dependencies between a source table and its view.
     TablesDependencyGraph view_dependencies TSA_GUARDED_BY(databases_mutex);
+
+    TablesDependencyGraph plain_view_dependencies TSA_GUARDED_BY(databases_mutex);
 
     LoggerPtr log;
 

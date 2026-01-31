@@ -342,6 +342,7 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
     referential_dependencies.clear();
     loading_dependencies.clear();
     view_dependencies.clear();
+    plain_view_dependencies.clear();
 }
 
 bool DatabaseCatalog::isPredefinedDatabase(std::string_view database_name)
@@ -959,6 +960,7 @@ DatabaseCatalog::DatabaseCatalog(ContextMutablePtr global_context_)
     , referential_dependencies{"ReferentialDeps"}
     , loading_dependencies{"LoadingDeps"}
     , view_dependencies{"ViewDeps"}
+    , plain_view_dependencies{"PlainViewDeps"}
     , log(getLogger("DatabaseCatalog"))
     , first_async_drop_in_queue(tables_marked_dropped.end())
 {
@@ -1012,6 +1014,30 @@ std::vector<StorageID> DatabaseCatalog::getDependentViews(const StorageID & sour
 {
     std::lock_guard lock{databases_mutex};
     return view_dependencies.getDependencies(source_table_id);
+}
+
+void DatabaseCatalog::addPlainViewDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_plain_view_dependencies)
+{
+    if (new_plain_view_dependencies.empty())
+        return;
+    std::lock_guard lock{databases_mutex};
+    for (const auto & source_table : new_plain_view_dependencies)
+        plain_view_dependencies.addDependency(StorageID{source_table}, StorageID{table_name});
+}
+
+std::vector<StorageID> DatabaseCatalog::getDependentPlainViews(const StorageID & source_table_id) const
+{
+    std::lock_guard lock{databases_mutex};
+    return plain_view_dependencies.getDependencies(source_table_id);
+}
+
+std::vector<StorageID> DatabaseCatalog::getAllDependentViews(const StorageID & source_table_id) const
+{
+    std::lock_guard lock{databases_mutex};
+    auto result = view_dependencies.getDependencies(source_table_id);
+    auto plain_views = plain_view_dependencies.getDependencies(source_table_id);
+    result.insert(result.end(), plain_views.begin(), plain_views.end());
+    return result;
 }
 
 DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table, const IDatabase * expected_database)

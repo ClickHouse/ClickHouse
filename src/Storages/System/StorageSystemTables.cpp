@@ -163,7 +163,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"metadata_modification_time", std::make_shared<DataTypeDateTime>(), "Time of latest modification of the table metadata."},
         {"metadata_version", std::make_shared<DataTypeInt32>(), "Metadata version for ReplicatedMergeTree table, 0 for non ReplicatedMergeTree table."},
         {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Database dependencies."},
-        {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Table dependencies (materialized views the current table)."},
+        {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Table dependencies (views, both regular and materialized)."},
         {"create_table_query", std::make_shared<DataTypeString>(), "The query that was used to create the table."},
         {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the table engine."},
         {"as_select", std::make_shared<DataTypeString>(), "SELECT query for view."},
@@ -538,7 +538,8 @@ protected:
                     Array views_database_name_array;
                     if (columns_mask[src_index] || columns_mask[src_index + 1])
                     {
-                        const auto view_ids = DatabaseCatalog::instance().getDependentViews(StorageID(database_name, table_name));
+                        /// Materialized views for triggering, plain views for display only
+                        const auto view_ids = DatabaseCatalog::instance().getAllDependentViews(StorageID(database_name, table_name));
 
                         views_table_name_array.reserve(view_ids.size());
                         views_database_name_array.reserve(view_ids.size());
