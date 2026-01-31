@@ -89,6 +89,13 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases
         hash_state.update(change.name);
         applyVisitor(FieldVisitorHash(hash_state), change.value);
     }
+    for (const auto & [name, expr] : changes_expressions)
+    {
+        hash_state.update(name.size());
+        hash_state.update(name);
+        if (expr)
+            expr->updateTreeHash(hash_state, /*ignore_aliases=*/ true);
+    }
 }
 
 void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked state) const
@@ -185,6 +192,24 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
 
         if (format.show_secrets || !format_if_secret())
             ostr << " = " << applyVisitor(FieldVisitorToSetting(), change.value);
+    }
+
+    for (const auto & [name, expr] : changes_expressions)
+    {
+        if (!first)
+            ostr << ", ";
+        else
+            first = false;
+
+        formatSettingName(name, ostr);
+        ostr << " = ";
+        if (expr)
+        {
+            // Use standard AST formatting for expressions
+            FormatState dummy_state;
+            FormatStateStacked dummy_stack;
+            expr->format(ostr, format, dummy_state, dummy_stack);
+        }
     }
 
     for (const auto & setting_name : default_settings)

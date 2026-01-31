@@ -518,7 +518,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// SETTINGS key1 = value1, key2 = value2, ...
     if (s_settings.ignore(pos, expected))
     {
-        ParserSetQuery parser_settings(true);
+        ParserSetQuery parser_settings(true, true, true);
 
         if (!parser_settings.parse(pos, settings, expected))
             return false;

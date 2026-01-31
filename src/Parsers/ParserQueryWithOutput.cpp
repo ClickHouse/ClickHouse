@@ -193,7 +193,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         else if (!query_with_output.settings_ast && s_settings.ignore(pos, expected))
         {
             // SETTINGS key1 = value1, key2 = value2, ...
-            ParserSetQuery parser_settings(true);
+            ParserSetQuery parser_settings(true, true, true);
             if (!parser_settings.parse(pos, query_with_output.settings_ast, expected))
                 return false;
             query_with_output.children.push_back(query_with_output.settings_ast);
