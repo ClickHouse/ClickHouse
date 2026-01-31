@@ -1512,7 +1512,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
 
     if (create.sql_security)
-        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, /* skip_check_permissions= */ mode >= LoadingStrictnessLevel::SECONDARY_CREATE);
+        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, mode);
 
     DDLGuardPtr ddl_guard;
 
@@ -2523,7 +2523,7 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
     }
 }
 
-void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view, bool skip_check_permissions)
+void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view, LoadingStrictnessLevel mode)
 {
     /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
     if (!sql_security.type)
@@ -2564,7 +2564,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
     }
 
     /// Checks the permissions for the specified definer user.
-    if (sql_security.definer && !skip_check_permissions)
+    if (sql_security.definer)
     {
         auto definer_name = sql_security.definer->toString();
         if (definer_name != current_user_name)
@@ -2572,7 +2572,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
 
         auto & access_control = context_->getAccessControl();
         const auto user = access_control.read<User>(definer_name);
-        if (access_control.isEphemeral(access_control.getID<User>(definer_name)))
+        if (access_control.isEphemeral(access_control.getID<User>(definer_name)) && mode <= LoadingStrictnessLevel::CREATE)
         {
             definer_name = user->getName() + ":definer";
             sql_security.definer = make_intrusive<ASTUserNameWithHost>(definer_name);
@@ -2584,7 +2584,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
         }
     }
 
-    if (sql_security.type == SQLSecurityType::NONE && !skip_check_permissions)
+    if (sql_security.type == SQLSecurityType::NONE)
         context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
 }
 
