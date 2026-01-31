@@ -15,7 +15,6 @@ RUN apt-get update \
             git \
             gnuplot \
             imagemagick \
-            libc6-dbg \
             moreutils \
             ncdu \
             numactl \
