@@ -76,10 +76,12 @@ You can use the [log_formatted_queries](/operations/settings/settings#log_format
 - `is_initial_query` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Query type. Possible values:
   - 1 — Query was initiated by the client.
   - 0 — Query was initiated by another query as part of distributed query execution.
+- `connection_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — The client IP address from which the connection was made. When connected through a proxy this will be the address of the proxy.
+- `connection_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port from which the connection was made. When connected through a proxy this will be the port of the proxy.
 - `user` ([String](../../sql-reference/data-types/string.md)) — Name of the user who initiated the current query.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the query.
-- `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address that was used to make the query.
-- `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port that was used to make the query.
+- `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — The IP address that was used to make the query. When connected through a proxy and [auth_use_forwarded_address](/operations/server-configuration-parameters/settings#auth_use_forwarded_address) is set this will be the address of the client instead of the proxy.
+- `port` ([UInt16](/sql-reference/data-types/int-uint#integer-ranges)) — The client port that was used to make the query. When connected through a proxy and [auth_use_forwarded_address](/operations/server-configuration-parameters/settings#auth_use_forwarded_address) is set this will be the port of the client instead of the proxy.
 - `initial_user` ([String](../../sql-reference/data-types/string.md)) — Name of the user who ran the initial query (for distributed query execution).
 - `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the initial query (for distributed query execution).
 - `initial_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address that the parent query was launched from.

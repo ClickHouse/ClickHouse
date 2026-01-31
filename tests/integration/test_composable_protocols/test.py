@@ -162,11 +162,12 @@ def test_proxy_1():
     query_id = proxy_client.query("SELECT currentQueryID()")[:-1]
     cluster.instances["server"].query("SYSTEM FLUSH LOGS")
     client = Client(server.ip_address, 9000, command=cluster.client_bin_path)
+    source_addr = proxy.get_source_addr()
     assert (
         client.query(
-            f"SELECT forwarded_for, address, port, initial_address, initial_port FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryStart'"
+            f"SELECT forwarded_for, address, port, initial_address, initial_port, connection_address, connection_port FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryStart'"
         )
-        == "123.231.132.213:12345\t::ffff:123.231.132.213\t12345\t::ffff:123.231.132.213\t12345\n"
+        == f"123.231.132.213:12345\t::ffff:123.231.132.213\t12345\t::ffff:123.231.132.213\t12345\t::ffff:{source_addr[0]}\t{source_addr[1]}\n"
     )
 
     # user123 only allowed from 123.123.123.123
@@ -179,11 +180,12 @@ def test_proxy_1():
     query_id = proxy_client.query("SELECT currentQueryID()", user="user123")[:-1]
     cluster.instances["server"].query("SYSTEM FLUSH LOGS")
     client = Client(server.ip_address, 9000, command=cluster.client_bin_path)
+    source_addr = proxy.get_source_addr()
     assert (
         client.query(
-            f"SELECT forwarded_for, address, port, initial_address, initial_port FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryStart'"
+            f"SELECT forwarded_for, address, port, initial_address, initial_port, connection_address, connection_port FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryStart'"
         )
-        == "123.123.123.123:12345\t::ffff:123.123.123.123\t12345\t::ffff:123.123.123.123\t12345\n"
+        == f"123.123.123.123:12345\t::ffff:123.123.123.123\t12345\t::ffff:123.123.123.123\t12345\t::ffff:{source_addr[0]}\t{source_addr[1]}\n"
     )
 
     # user123 is not allowed from other than 123.123.123.123
