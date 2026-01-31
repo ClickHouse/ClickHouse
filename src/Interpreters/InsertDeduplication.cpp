@@ -277,7 +277,15 @@ UInt128 DeduplicationInfo::getBlockHash(size_t offset) const
             continue; // source id is already included in by_data
 
         extension.append(":");
-        extension.append(extra.toString());
+        if (is_async_insert && extra.type == TokenDefinition::Extra::SOURCE_NUMBER)
+        {
+            // do not include source number for async inserts,
+            // they are not relevant as data hash is used or user token
+            // a token describes only the data in one block
+            extension.append(TokenDefinition::Extra::asSourceNumber(0).toString());
+        }
+        else
+            extension.append(extra.toString());
     }
 
     //LOG_DEBUG(logger, "getBlockId {} debug: {}", extension, debug());
@@ -304,7 +312,7 @@ std::unordered_map<std::string, std::vector<size_t>> DeduplicationInfo::buildBlo
 
 std::vector<std::string> DeduplicationInfo::getBlockIds(const std::string & partition_id, bool deduplication_enabled) const
 {
-    LOG_TEST(logger, "getBlockIds for partition_id={}, debug: {}", partition_id, debug());
+    LOG_TEST(logger, "getBlockIds for partition_id={}, deduplication_enabled: {}, debug: {}", partition_id, deduplication_enabled, debug());
     if (disabled || !deduplication_enabled)
         return {};
 

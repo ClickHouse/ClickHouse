@@ -11,6 +11,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InsertDeduplication.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
@@ -1188,7 +1189,22 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
         if (result)
         {
-            LOG_TEST(log, "Read {} rows from file: {}", chunk.getNumRows(), path);
+            const auto & object_metadata = reader.getObjectInfo()->getObjectMetadata();
+            const auto row_offset = file_status->processed_rows.load();
+            /// Etag is quoted for some reason.
+            std::string etag = object_metadata->etag;
+            if (etag.size() > 2 && etag.front() == '\"' && etag.back() == '\"')
+                etag = etag.substr(1, etag.size() - 2);
+
+            /// Create unique token per chunk: etag + row offset
+            const auto dedup_token = fmt::format("{}:{}", etag, row_offset);
+
+            auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
+            deduplication_info->setUserToken(dedup_token, chunk.getNumRows());
+            chunk.getChunkInfos().add(std::move(deduplication_info));
+
+            LOG_TEST(log, "Read {} rows from file {} (file offset: {}, deduplication token for chunk: {})",
+                     chunk.getNumRows(), path, row_offset, dedup_token);
 
             file_status->processed_rows += chunk.getNumRows();
             progress->processed_rows += chunk.getNumRows();
@@ -1205,12 +1221,14 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     path);
             }
 
-            const auto & object_metadata = reader.getObjectInfo()->getObjectMetadata();
-
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
-                {.path = path, .size = object_metadata->size_bytes, .last_modified = object_metadata->last_modified},
+                {
+                    .path = path,
+                    .size = object_metadata->size_bytes,
+                    .last_modified = object_metadata->last_modified
+                },
                 getContext());
 
             return chunk;
