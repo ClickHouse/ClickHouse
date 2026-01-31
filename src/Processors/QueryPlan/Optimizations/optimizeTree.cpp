@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Poco/Logger.h>
 #include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -411,7 +412,6 @@ void considerEnablingParallelReplicas(
     if (!source_reading_step)
         return;
 
-    /// TODO(nickitat): reuse index analysis result in the plan with PRs (if it will be chosen later by the heuristic)
     const auto analysis
         = source_reading_step->getAnalyzedResult() ? source_reading_step->getAnalyzedResult() : source_reading_step->selectRangesToRead();
     if (!analysis)
@@ -478,6 +478,11 @@ void considerEnablingParallelReplicas(
                     return;
                 }
 
+                ReadFromMergeTree * local_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
+                if (!local_plan_reading_step)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
+                chassert(local_plan_reading_step->getAnalyzedResult() == nullptr);
+                local_plan_reading_step->setAnalyzedResult(analysis);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
                 return;
             }
