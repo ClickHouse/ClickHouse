@@ -1,0 +1,64 @@
+# Initial data on writer
+key	val
+Int32	String
+0	val-0
+1	val-1
+2	val-2
+3	val-3
+4	val-4
+# Initial data on reader
+key	val
+Int32	String
+0	val-0
+1	val-1
+2	val-2
+3	val-3
+4	val-4
+# Data with new column on writer
+key	val	dt
+Int32	String	Date
+0	val-0	2025-01-01
+1	val-1	2025-01-02
+2	val-2	2025-01-03
+3	val-3	2025-01-04
+4	val-4	2025-01-05
+# Data with new column on reader before recreate
+key	val
+Int32	String
+0	val-0
+1	val-1
+2	val-2
+3	val-3
+4	val-4
+# Data with new column on reader after recreate
+key	val	dt
+Int32	String	Date
+0	val-0	2025-01-01
+1	val-1	2025-01-02
+2	val-2	2025-01-03
+3	val-3	2025-01-04
+4	val-4	2025-01-05
+# Data without column on writer
+key	val
+Int32	String
+0	val-0
+1	val-1
+2	val-2
+3	val-3
+4	val-4
+# Data without column on reader before recreate
+key	val	dt
+Int32	String	Date
+0	val-0	1970-01-01
+1	val-1	1970-01-01
+2	val-2	1970-01-01
+3	val-3	1970-01-01
+4	val-4	1970-01-01
+# Data with new column on reader after recreate
+key	val
+Int32	String
+0	val-0
+1	val-1
+2	val-2
+3	val-3
+4	val-4

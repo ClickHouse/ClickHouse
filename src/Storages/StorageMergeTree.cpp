@@ -1192,6 +1192,13 @@ void StorageMergeTree::loadMutations()
         increment.value = std::max(increment.value.load(), current_mutations_by_version.rbegin()->first);
 }
 
+void StorageMergeTree::dropMutationsOnDisk(const DiskPtr & disk) const
+{
+    for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+        if (startsWith(it->name(), "mutation_") || startsWith(it->name(), "tmp_mutation_"))
+            disk->removeFile(it->path());
+}
+
 std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::selectPartsToMerge(
     const StorageMetadataPtr & metadata_snapshot,
     bool aggressive,

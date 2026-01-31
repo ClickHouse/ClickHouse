@@ -1,0 +1,91 @@
+-- Initial data
+key	val
+Int32	String
+0	val-0
+1	val-1
+2	val-2
+3	val-3
+4	val-4
+5	val-5
+6	val-6
+7	val-7
+8	val-8
+9	val-9
+-- Adding Date column
+key	val	dt
+Int32	String	Date
+0	val-0	1970-01-01
+1	val-1	1970-01-01
+2	val-2	1970-01-01
+3	val-3	1970-01-01
+4	val-4	1970-01-01
+5	val-5	1970-01-01
+6	val-6	1970-01-01
+7	val-7	1970-01-01
+8	val-8	1970-01-01
+9	val-9	1970-01-01
+-- Updating Date column
+key	val	dt
+Int32	String	Date
+0	val-0	2025-01-01
+1	val-1	2025-01-02
+2	val-2	2025-01-03
+3	val-3	2025-01-04
+4	val-4	2025-01-05
+5	val-5	2025-01-06
+6	val-6	2025-01-07
+7	val-7	2025-01-08
+8	val-8	2025-01-09
+9	val-9	2025-01-10
+-- Dropping String column
+key	dt
+Int32	Date
+0	2025-01-01
+1	2025-01-02
+2	2025-01-03
+3	2025-01-04
+4	2025-01-05
+5	2025-01-06
+6	2025-01-07
+7	2025-01-08
+8	2025-01-09
+9	2025-01-10
+-- Changing type of Date column
+key	dt
+Int32	UInt128
+0	20089
+1	20090
+2	20091
+3	20092
+4	20093
+5	20094
+6	20095
+7	20096
+8	20097
+9	20098
+-- Renaming column
+key	renamed
+Int32	UInt128
+0	20089
+1	20090
+2	20091
+3	20092
+4	20093
+5	20094
+6	20095
+7	20096
+8	20097
+9	20098
+-- Clearing column
+key	renamed
+Int32	UInt128
+0	0
+1	0
+2	0
+3	0
+4	0
+5	0
+6	0
+7	0
+8	0
+9	0
