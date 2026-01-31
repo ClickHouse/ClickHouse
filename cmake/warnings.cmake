@@ -44,6 +44,8 @@ no_warning(unsafe-buffer-usage) # too aggressive
 no_warning(switch-default) # conflicts with "defaults in a switch covering all enum values"
 no_warning(nrvo) # not eliding copy on return - too aggressive
 no_warning(missing-noreturn) # too aggressive with no clear benefit, see https://github.com/ClickHouse/ClickHouse/pull/86416
+no_warning(lifetime-safety-intra-tu-suggestions) # New in clang-23
+no_warning(lifetime-safety-cross-tu-suggestions) # New in clang-23
 if (ARCH_E2K)
     # disable "use of GNU statement expression extension from macro expansion" warning
     no_warning(gnu-statement-expression-from-macro-expansion)
