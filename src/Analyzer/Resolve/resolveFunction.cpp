@@ -853,11 +853,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// Resolve function arguments
     bool allow_table_expressions = is_special_function_in || is_special_function_exists;
+
+    FunctionOverloadResolverPtr builder = FunctionFactory::instance().tryGet(function_name, scope.context);
+    ColumnNumbers constant_arguments = builder ? builder->getArgumentsThatAreAlwaysConstant() : ColumnNumbers{};
+
     auto arguments_projection_names = resolveExpressionNodeList(
         function_node_ptr->getArgumentsNode(),
         scope,
         true /*allow_lambda_expression*/,
-        allow_table_expressions /*allow_table_expression*/);
+        allow_table_expressions /*allow_table_expression*/,
+        ColumnNumbersSet(constant_arguments.begin(), constant_arguments.end()));
 
     /// Mask arguments if needed
     if (!scope.context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])

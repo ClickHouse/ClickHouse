@@ -3039,7 +3039,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
     QueryTreeNodePtr & node_list,
     IdentifierResolveScope & scope,
     bool allow_lambda_expression,
-    bool allow_table_expression
+    bool allow_table_expression,
+    const ColumnNumbersSet & constant_arguments
 )
 {
     auto & node_list_typed = node_list->as<ListNode &>();
@@ -3050,8 +3051,14 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
 
     ProjectionNames result_projection_names;
 
+    bool current_disable_constant_folding = disable_constant_folding;
+    size_t num = 0;
     for (auto & node : node_list_typed.getNodes())
     {
+        if (constant_arguments.contains(num))
+            disable_constant_folding = false;
+        ++num;
+
         auto node_to_resolve = node;
         auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression);
         size_t expected_projection_names_size = 1;
@@ -3074,6 +3081,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
 
         result_projection_names.insert(result_projection_names.end(), expression_node_projection_names.begin(), expression_node_projection_names.end());
         expression_node_projection_names.clear();
+
+        disable_constant_folding = current_disable_constant_folding;
     }
 
     node_list_typed.getNodes() = std::move(result_nodes);

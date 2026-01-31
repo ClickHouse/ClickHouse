@@ -27,3 +27,5 @@ SELECT 1 ? not_existing_column : 1 FROM numbers(1); -- { serverError UNKNOWN_IDE
 
 SELECT multiIf(0, not_existing_column, 1, 1, 1) FROM numbers(1);
 SELECT multiIf(1, not_existing_column, 1, 1, 1) FROM numbers(1); -- { serverError UNKNOWN_IDENTIFIER }
+
+SELECT if(1, 'a', cast(1, assumeNotNull((SELECT 'String'))));
