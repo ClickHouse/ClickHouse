@@ -52,7 +52,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
-
+#include <Common/formatReadable.h>
 
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -1438,7 +1438,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         sendTotals(state, executor.getTotalsBlock());
         sendExtremes(state, executor.getExtremesBlock());
         sendProfileInfo(state, executor.getProfileInfo());
-        sendProgress(state);
+        // sendProgress(state);
         sendLogs(state);
         sendSelectProfileEvents(state);
 
@@ -1610,6 +1610,7 @@ void TCPHandler::sendProfileEvents(QueryState & state)
     if (!state.query_context->getSettingsRef()[Setting::send_profile_events])
         return;
 
+    auto peak_before = CurrentThread::getGroup()->memory_tracker.getPeak();
     Stopwatch stopwatch;
     Block block = ProfileEvents::getProfileEvents(host_name, state.profile_queue, state.last_sent_snapshots);
     if (block.rows() != 0)
@@ -1628,6 +1629,12 @@ void TCPHandler::sendProfileEvents(QueryState & state)
         if (elapsed_milliseconds > 100)
             LOG_DEBUG(log, "Sending profile events block with {} rows, {} bytes took {} milliseconds",
                 block.rows(), block.bytes(), elapsed_milliseconds);
+    }
+    auto peak_after = CurrentThread::getGroup()->memory_tracker.getPeak();
+    if (peak_after != peak_before)
+    {
+        LOG_DEBUG(log, "Memory usage changed during sending profile events: before={} bytes, after={} bytes",
+                    ReadableSize(peak_before), ReadableSize(peak_after));
     }
 }
 
