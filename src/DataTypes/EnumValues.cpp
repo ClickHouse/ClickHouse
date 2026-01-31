@@ -78,7 +78,8 @@ void EnumValues<T>::buildLookupStructures()
     max_value = values.back().second;
 
     /// Decide strategy for value-to-name lookup
-    size_t range = static_cast<size_t>(max_value) - static_cast<size_t>(min_value) + 1;
+    /// Cast to Int32 first to avoid signed overflow when computing range (e.g., 127 - (-128) for Enum8)
+    size_t range = static_cast<size_t>(static_cast<Int32>(max_value) - static_cast<Int32>(min_value)) + 1;
 
     if constexpr (sizeof(T) == 1)
     {
@@ -97,7 +98,8 @@ void EnumValues<T>::buildLookupStructures()
         value_to_index.resize(range, INVALID_INDEX);
         for (size_t i = 0; i < n; ++i)
         {
-            size_t idx = static_cast<size_t>(values[i].second - min_value);
+            /// Cast to Int32 first to avoid signed overflow (e.g., 1 - (-128) for Enum8)
+            size_t idx = static_cast<size_t>(static_cast<Int32>(values[i].second) - static_cast<Int32>(min_value));
             value_to_index[idx] = static_cast<uint16_t>(i);
         }
     }
@@ -118,7 +120,9 @@ bool EnumValues<T>::hasValue(T value) const
     {
         if (value < min_value || value > max_value)
             return false;
-        return value_to_index[static_cast<size_t>(value - min_value)] != INVALID_INDEX;
+        /// Cast to Int32 first to avoid signed overflow
+        size_t idx = static_cast<size_t>(static_cast<Int32>(value) - static_cast<Int32>(min_value));
+        return value_to_index[idx] != INVALID_INDEX;
     }
     else
     {
@@ -156,7 +160,9 @@ bool EnumValues<T>::getNameForValue(T value, std::string_view & result) const
     {
         if (value < min_value || value > max_value)
             return false;
-        uint16_t idx = value_to_index[static_cast<size_t>(value - min_value)];
+        /// Cast to Int32 first to avoid signed overflow
+        size_t arr_idx = static_cast<size_t>(static_cast<Int32>(value) - static_cast<Int32>(min_value));
+        uint16_t idx = value_to_index[arr_idx];
         if (idx == INVALID_INDEX)
             return false;
         result = values[idx].first;
