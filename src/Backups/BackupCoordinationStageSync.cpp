@@ -123,6 +123,7 @@ BackupCoordinationStageSync::BackupCoordinationStageSync(
     , operation_node_name(zookeeper_path.parent_path().filename())
     , start_node_path(zookeeper_path / ("started|" + current_host))
     , finish_node_path(zookeeper_path / ("finished|" + current_host))
+    , initiator_start_node_path(zookeeper_path / ("started|" + String{kInitiator}))
     , num_hosts_node_path(zookeeper_path / "num_hosts")
     , error_node_path(zookeeper_path / "error")
     , alive_node_path(zookeeper_path / ("alive|" + current_host))
@@ -160,6 +161,9 @@ void BackupCoordinationStageSync::initializeState()
 
     if (!state.hosts.contains(String{kInitiator}))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "List of hosts must contain the initiator");
+
+    /// We know the version of the current host.
+    state.hosts.at(current_host).version = kCurrentVersion;
 }
 
 
@@ -204,6 +208,7 @@ void BackupCoordinationStageSync::startup()
 {
     createRootNodes();
     createStartAndAliveNodesAndCheckConcurrency();
+    readInitiatorVersion();
     startWatchingThread();
 }
 
@@ -417,6 +422,29 @@ void BackupCoordinationStageSync::checkConcurrency(Coordination::ZooKeeperWithFa
 }
 
 
+void BackupCoordinationStageSync::readInitiatorVersion()
+{
+    if (current_host == kInitiator)
+    {
+        chassert(getInitiatorVersion() == kCurrentVersion);
+        return;
+    }
+
+    auto holder = with_retries.createRetriesControlHolder("BackupCoordinationStageSync::readInitiatorVersion", WithRetries::kInitialization);
+    holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
+    {
+        with_retries.renewZooKeeper(zookeeper);
+        String initiator_start_node;
+        if (!zookeeper->tryGet(initiator_start_node_path, initiator_start_node))
+        {
+            LOG_TRACE(log, "Couldn't read the initiator's version, assuming {}", kInitialVersion);
+        }
+        std::lock_guard lock{mutex};
+        state.hosts.at(String{kInitiator}).version = parseStartNode(initiator_start_node, String{kInitiator});
+    });
+}
+
+
 void BackupCoordinationStageSync::startWatchingThread()
 {
     watching_thread_future = schedule([this]() { watchingThread(); }, Priority{});
@@ -446,6 +474,8 @@ void BackupCoordinationStageSync::stopWatchingThread()
 
 void BackupCoordinationStageSync::watchingThread()
 {
+    LOG_TRACE(log, "Started the watching thread");
+
     auto should_stop = [&]
     {
         std::lock_guard lock{mutex};
@@ -570,6 +600,23 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
     auto monotonic_now = std::chrono::steady_clock::now();
 
     /// Read the current state from zookeeper nodes.
+    /// First we process the "started" nodes because we need to read versions from them.
+    for (const auto & zk_node : new_zk_nodes)
+    {
+        if (zk_node.starts_with("started|"))
+        {
+            String host = zk_node.substr(strlen("started|"));
+            if (auto * host_info = get_host_info(host))
+            {
+                if (!host_info->started)
+                {
+                    host_info->version = parseStartNode(zookeeper->get(zookeeper_path / zk_node), host);
+                    host_info->started = true;
+                }
+            }
+        }
+    }
+
     for (const auto & zk_node : new_zk_nodes)
     {
         if (zk_node == "error")
@@ -580,18 +627,6 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
                 auto [exception, host] = parseErrorNode(serialized_error);
                 if (exception)
                     new_state.addErrorInfo(exception, host);
-            }
-        }
-        else if (zk_node.starts_with("started|"))
-        {
-            String host = zk_node.substr(strlen("started|"));
-            if (auto * host_info = get_host_info(host))
-            {
-                if (!host_info->started)
-                {
-                    host_info->version = parseStartNode(zookeeper->get(zookeeper_path / zk_node), host);
-                    host_info->started = true;
-                }
             }
         }
         else if (zk_node.starts_with("finished|"))
