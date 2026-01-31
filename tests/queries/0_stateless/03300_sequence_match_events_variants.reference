@@ -1,0 +1,37 @@
+Single event - First	1
+Single event - Last	1
+Single event - All count	1
+Two consecutive - First	1
+Two consecutive - Last	1
+Two consecutive - All count	1
+Three consecutive - First	1
+Three consecutive - Last (partial)	1
+Three consecutive - All count	1
+Three consecutive - All has partial	1
+Four consecutive - First	1
+Four consecutive - Last	1
+Four consecutive - All count	1
+Time constraint >10 - First	1
+Time constraint >10 - Last	1
+Time constraint >10 - All count	1
+Time constraint <11 - First	1
+Mixed pattern - First	1
+Mixed pattern - Last (partial)	1
+Mixed pattern - All count	1
+No match - First	1
+No match - Last	1
+No match - All count	1
+Comparison - Original (longest)	1
+Comparison - First	1
+Comparison - Last	1
+Multi-occurrence - First	1
+Multi-occurrence - Last	1
+Multi-occurrence - All count	1
+Multi-occurrence - All first	1
+Multi-occurrence - All second	1
+Multi-occurrence - All third	1
+Partial match - First (complete)	1
+Partial match - Last (partial)	1
+Partial match - All count	1
+Partial match - All complete	1
+Partial match - All partial	1
