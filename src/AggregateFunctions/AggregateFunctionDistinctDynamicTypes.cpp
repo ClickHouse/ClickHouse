@@ -27,7 +27,7 @@ struct AggregateFunctionDistinctDynamicTypesData
 {
     constexpr static size_t MAX_ARRAY_SIZE = 0xFFFFFF;
 
-    std::unordered_set<String> data;
+    UnorderedSetWithMemoryTracking<String> data;
 
     void add(const String & type)
     {
