@@ -557,9 +557,13 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx->initialized && !info.isPatch())
     {
         const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_date_column_pos];
-        return {
-            DayNum(static_cast<DayNum::UnderlyingType>(hyperrectangle.left.safeGet<UInt64>())),
-            DayNum(static_cast<DayNum::UnderlyingType>(hyperrectangle.right.safeGet<UInt64>()))};
+
+        /// The case when all values are NULL in a Nullable Date column.
+        /// In this case, getExtremes() returns POSITIVE_INFINITY which has type Null.
+        if (hyperrectangle.left.isNull())
+            return {};
+
+        return {DayNum(static_cast<UInt16>(hyperrectangle.left.safeGet<UInt64>())), DayNum(static_cast<UInt16>(hyperrectangle.right.safeGet<UInt64>()))};
     }
     return {};
 }
@@ -570,7 +574,12 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
     {
         const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_time_column_pos];
 
-        /// The case of DateTime
+        /// The case when all values are NULL in a Nullable DateTime/DateTime64 column.
+        /// In this case, getExtremes() returns POSITIVE_INFINITY which has type Null.
+        if (hyperrectangle.left.isNull())
+            return {};
+
+        /// The case of DateTime (stored as UInt64)
         if (hyperrectangle.left.getType() == Field::Types::UInt64)
         {
             assert(hyperrectangle.right.getType() == Field::Types::UInt64);
