@@ -272,25 +272,6 @@ public:
     {
     }
 
-    void addBatchSparse(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena) const override
-    {
-        const auto & column_sparse = typeid_cast<const ColumnSparse &>(*columns[0]);
-        const auto * values = &column_sparse.getValuesColumn();
-        const auto & offsets = column_sparse.getOffsetsData();
-
-        size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
-        size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
-
-        for (size_t i = from; i < to; ++i)
-            add(places[offsets[i]] + place_offset, &values, i + 1, arena);
-    }
-
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).merge(data(rhs));
