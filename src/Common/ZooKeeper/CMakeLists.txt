@@ -20,6 +20,7 @@ add_library(clickhouse_common_zookeeper ZooKeeperImpl.cpp)
 target_compile_definitions (clickhouse_common_zookeeper PRIVATE -DZOOKEEPER_LOG)
 target_link_libraries (clickhouse_common_zookeeper
     PUBLIC
+        clickhouse_common_zookeeper_base
         clickhouse_common_io
         clickhouse_compression
         common

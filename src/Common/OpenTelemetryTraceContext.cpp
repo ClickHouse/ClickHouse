@@ -2,6 +2,7 @@
 
 #include <random>
 #include <base/getThreadId.h>
+#include <Common/OpenTelemetryTracingContext.h>
 #include <Common/thread_local_rng.h>
 #include <Common/Exception.h>
 #include <base/hex.h>
@@ -120,6 +121,8 @@ SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
             = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
         this->addAttribute("clickhouse.thread_id", getThreadId());
+
+        this->old_trace_flags = current_trace_context->trace_flags;
     }
     catch (...)
     {
@@ -134,6 +137,12 @@ SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
     current_trace_context->span_id = this->span_id;
 }
 
+SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind, std::vector<SpanAttribute> _attributes)
+    : SpanHolder(_operation_name, _kind)
+{
+    attributes = std::move(_attributes);
+}
+
 void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
 {
     if (!this->isTraceEnabled())
@@ -142,6 +151,8 @@ void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
     // First of all, restore old value of current span.
     assert(current_trace_context->span_id == span_id);
     current_trace_context->span_id = parent_span_id;
+
+    current_trace_context->trace_flags = old_trace_flags;
 
     try
     {
@@ -267,6 +278,14 @@ void TracingContext::serialize(WriteBuffer & buf) const
 const TracingContextOnThread & CurrentContext()
 {
     return *current_trace_context;
+}
+
+void SetTraceFlagInCurrentContext(UInt8 flag, bool enable)
+{
+    if (enable)
+        current_trace_context->trace_flags |= flag;
+    else
+        current_trace_context->trace_flags &= ~flag;
 }
 
 void TracingContextOnThread::reset() noexcept

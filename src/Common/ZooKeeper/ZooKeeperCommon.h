@@ -1,6 +1,9 @@
 #pragma once
 
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/OpenTelemetryTracingContext.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/ZooKeeper/KeeperSpans.h>
 #include <Interpreters/ZooKeeperLog.h>
 
 #include <vector>
@@ -57,10 +60,10 @@ struct ZooKeeperRequest : virtual Request
     UInt64 thread_id = 0;
     String query_id;
 
-    /// For histogram metrics.
     std::chrono::steady_clock::time_point create_ts = {};
-    std::chrono::steady_clock::time_point enqueue_ts = {};
-    std::chrono::steady_clock::time_point send_ts = {};
+
+    std::optional<OpenTelemetry::TracingContext> tracing_context;
+    DB::ZooKeeperOpentelemetrySpans spans;
 
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;
@@ -68,7 +71,7 @@ struct ZooKeeperRequest : virtual Request
     virtual OpNum getOpNum() const = 0;
 
     /// Writes length, xid, op_num, then the rest.
-    void write(WriteBuffer & out, bool use_xid_64) const;
+    void write(WriteBuffer & out, bool use_xid_64, bool supports_tracing = false) const;
     std::string toString(bool short_format = false) const;
 
     virtual void writeImpl(WriteBuffer &) const = 0;

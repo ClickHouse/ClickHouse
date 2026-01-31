@@ -53,6 +53,7 @@ struct ZooKeeperArgs
     UInt64 recv_sleep_ms = 0;
     bool use_compression = false;
     bool use_xid_64 = false;
+    bool pass_opentelemetry_tracing_context = false;
     bool prefer_local_availability_zone = false;
     bool availability_zone_autodetect = false;
     String password;
