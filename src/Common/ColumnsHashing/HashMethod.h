@@ -91,6 +91,13 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     FieldType getKeyHolder(size_t row, Arena &) const { return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)); }
 
     const FieldType * getKeyData() const { return reinterpret_cast<const FieldType *>(vec); }
+
+    std::vector<Field> getFields(size_t row, Arena &) const
+    {
+        auto int_res = unalignedLoad<FieldType>(vec + row * sizeof(FieldType));
+        Field result{int_res};
+        return {result};
+    }
 };
 
 
@@ -146,6 +153,16 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
         {
             return key;
         }
+    }
+
+    std::vector<Field> getFields(size_t row, Arena &) const
+    {
+        String key(
+            reinterpret_cast<const char*>(chars + offsets[row - 1]),
+            offsets[row] - offsets[row - 1] - 1
+        );
+        Field result{key};
+        return {result};
     }
 
 protected:
@@ -204,6 +221,16 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
         {
             return key;
         }
+    }
+
+    std::vector<Field> getFields(size_t row, Arena &) const
+    {
+        String key(
+            reinterpret_cast<const char*>(&(*chars)[row * n]),
+            n
+        );
+        Field result{key};
+        return {result};
     }
 
 protected:
@@ -375,6 +402,19 @@ struct HashMethodKeysFixed
         }
     }
 
+    std::vector<Field> getFields(size_t row, Arena &) const
+    {
+        auto bitmap = Base::createBitmap(row);
+        // Converting a bitmap to a string just so that we can create a Field from it, because it can't be created from a bitmap (std::array).
+        // TODO construct Field from bitmap.
+        String s;
+        s.reserve(bitmap.size());
+        for (size_t i = 0; i < bitmap.size(); ++i)
+            s += static_cast<char>(bitmap[i]);
+        Field result{s};
+        return {result};
+    }
+
     static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
     {
         if (!usePreparedKeys(key_sizes))
@@ -426,6 +466,13 @@ struct HashMethodHashed
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
     {
         return hash128(row, key_columns.size(), key_columns);
+    }
+
+    std::vector<Field> getFields(size_t row, Arena &) const
+    {
+        auto hash = hash128(row, key_columns.size(), key_columns);
+        Field result{hash};
+        return {result};
     }
 };
 

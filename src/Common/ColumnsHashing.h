@@ -497,6 +497,8 @@ struct HashMethodSerialized
             serializeKeysToPoolContiguous(row, keys_size, key_columns, pool, &serialization_settings),
             pool};
     }
+
+    std::vector<Field> getFields(size_t, Arena &) const { return {}; }
 };
 
 }

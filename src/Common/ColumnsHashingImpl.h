@@ -2,9 +2,18 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/HashTable/FixedHashSet.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashTable.h>
+#include <Common/HashTable/StringHashMap.h>
+#include <Common/HashTable/TwoLevelStringHashMap.h>
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
-#include <Interpreters/KeysNullMap.h>
+#include <Interpreters/AggregatedData.h>
+#include <Interpreters/AggregationCommon.h>
+#include <Analyzer/SortNode.h>
+#include <algorithm>
+#include <type_traits>
 
 namespace DB
 {
@@ -44,6 +53,13 @@ struct LastElementCacheStats
         hits += num_tries - num_misses;
         misses += num_misses;
     }
+};
+
+struct OptimizationDataOneExpression // Metadata for one ORDER BY EXPRESSION
+{
+    UInt64 index_of_expression_in_group_by; // index of this expression on GROUP BY
+    SortDirection sort_direction;           // ASC or DESC
+    bool is_type_signed_integer;            // is it signed integer type or another type
 };
 
 namespace columns_hashing_impl
@@ -174,6 +190,61 @@ public:
     FindResultImpl(bool found_, size_t off) : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off) {}
 };
 
+template <typename T, typename = void>
+struct HasBegin : std::false_type {};
+
+template <typename T>
+struct HasBegin<T, std::void_t<decltype(std::declval<const T&>().begin())>> : std::true_type {};
+
+template <typename T, typename = void>
+struct HasForEachMapped : std::false_type {};
+
+template <typename T>
+struct HasForEachMapped<T, std::void_t<decltype(std::declval<const T&>().forEachMapped())>> : std::true_type {};
+
+template <typename T, typename ArgType, typename = void>
+struct HasErase : std::false_type {};
+
+template <typename T, typename ArgType>
+struct HasErase<T, ArgType, std::void_t<decltype(std::declval<T>().erase(std::declval<ArgType>()))>> : std::true_type {};
+
+template <typename T>
+struct MakeSignedType
+{
+    using type = typename std::conditional<
+        std::is_unsigned_v<T> && std::is_integral_v<T>,
+        std::make_signed<T>,
+        std::type_identity<T>
+    >::type::type;
+};
+
+template <typename KeyHolder1, typename KeyHolder2>
+static bool compareKeyHolders(const KeyHolder1 & lhs, const KeyHolder2 & rhs, const std::vector<OptimizationDataOneExpression> & optimization_indexes)
+{
+    const auto & lhs_key = keyHolderGetKey(lhs);
+    const auto & rhs_key = keyHolderGetKey(rhs);
+
+    assert(optimization_indexes.size() == 1); // TODO remove after supporting several expressions in findOptimizationSublistIndexes
+
+    if (optimization_indexes[0].is_type_signed_integer)
+    {
+        auto lhs_key_signed = static_cast<typename MakeSignedType<KeyHolder1>::type>(lhs_key);
+        auto rhs_key_signed = static_cast<typename MakeSignedType<KeyHolder2>::type>(rhs_key);
+        if (optimization_indexes[0].sort_direction == SortDirection::ASCENDING)
+            return lhs_key_signed < rhs_key_signed;
+        return rhs_key_signed < lhs_key_signed;
+    }
+
+    if (optimization_indexes[0].sort_direction == SortDirection::ASCENDING)
+        return lhs_key < rhs_key;
+    return rhs_key < lhs_key;
+}
+
+// Compares two rows by ORDER BY rules from the query
+// lhs and rhs - lists of GROUP BY expressions
+// optimization_indexes - list of ORDER BY expressions
+bool compareOrderbyFields(const std::vector<Field> & lhs, const std::vector<Field> & rhs, const std::vector<OptimizationDataOneExpression> & optimization_indexes);
+
 template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false, bool nullable = false>
 class HashMethodBase
 {
@@ -213,6 +284,44 @@ public:
 
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
         return emplaceImpl(key_holder, data);
+    }
+
+    template <typename Data, typename Compare>
+    ALWAYS_INLINE std::optional<EmplaceResult> emplaceKeyOptimization(
+        Data & data,
+        size_t row,
+        Arena & pool,
+        const std::vector<OptimizationDataOneExpression> & optimization_indexes,
+        size_t limit_plus_offset_length,
+        std::vector<std::vector<Field>>& top_keys_heap,
+        Compare heap_cmp)
+    {
+        if constexpr (nullable)
+        {
+            if (isNullAt(row))
+            {
+                if constexpr (consecutive_keys_optimization)
+                {
+                    if (!cache.is_null)
+                    {
+                        cache.onNewValue(true);
+                        cache.is_null = true;
+                    }
+                }
+
+                bool has_null_key = data.hasNullKeyData();
+                data.hasNullKeyData() = true;
+
+                if constexpr (has_mapped)
+                    return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
+                else
+                    return EmplaceResult(!has_null_key);
+            }
+        }
+
+        auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+        auto fields = static_cast<Derived &>(*this).getFields(row, pool);
+        return emplaceImplOptimization(key_holder, fields, data, limit_plus_offset_length, optimization_indexes, top_keys_heap, heap_cmp);
     }
 
     template <typename Data>
@@ -328,6 +437,128 @@ protected:
         typename Data::LookupResult it;
         bool inserted = false;
         data.emplace(key_holder, it, inserted);
+
+        [[maybe_unused]] Mapped * cached = nullptr;
+        if constexpr (has_mapped)
+            cached = &it->getMapped();
+
+        if constexpr (has_mapped)
+        {
+            if (inserted)
+            {
+                new (&it->getMapped()) Mapped();
+            }
+        }
+
+        if constexpr (consecutive_keys_optimization)
+        {
+            cache.onNewValue(true);
+
+            if constexpr (nullable)
+                cache.is_null = false;
+
+            if constexpr (has_mapped)
+            {
+                cache.value.first = it->getKey();
+                cache.value.second = it->getMapped();
+                cached = &cache.value.second;
+            }
+            else
+            {
+                cache.value = it->getKey();
+            }
+        }
+
+        if constexpr (has_mapped)
+            return EmplaceResult(it->getMapped(), *cached, inserted);
+        else
+            return EmplaceResult(inserted);
+    }
+
+    template <typename Data, typename KeyHolder, typename Compare>
+    ALWAYS_INLINE std::optional<EmplaceResult> emplaceImplOptimization(
+        KeyHolder & key_holder,
+        const std::vector<Field> & fields,
+        Data & data,
+        size_t limit_plus_offset_length,
+        const std::vector<OptimizationDataOneExpression> & optimization_indexes,
+        std::vector<std::vector<Field>>& top_keys_heap,
+        Compare heap_cmp)
+    {
+        // fields содержит поля, использующиеся в group by, как они есть
+        // Таким образом, чтобы сравнивать два ключа, достаточно проитерироватсья по std::vector<Field> и сравнить каждый из элементов в соответствие с его sort_order
+        chassert(limit_plus_offset_length > 0);
+        chassert(fields.size() == optimization_indexes.size());
+        if constexpr (consecutive_keys_optimization)
+        {
+            if (cache.found && cache.check(keyHolderGetKey(key_holder)))
+            {
+                if constexpr (has_mapped)
+                    return EmplaceResult(cache.value.second, cache.value.second, false);
+                else
+                    return EmplaceResult(false);
+            }
+        }
+
+        chassert(top_keys_heap.size() <= limit_plus_offset_length);
+        // First check if key_holder more than top of top_keys_heap. If more, it could be skipped.
+        if constexpr (!std::is_same_v<decltype(key_holder), const VoidKey>) { // TODO VoidKey doesn't work in compareKeyHolders
+            if constexpr (!std::is_same_v<KeyHolder, DB::SerializedKeyHolder>
+                       && !std::is_same_v<KeyHolder, DB::ArenaKeyHolder>
+                       && !std::is_same_v<KeyHolder, Int128>
+                       && !std::is_same_v<KeyHolder, UInt128>
+                       && !std::is_same_v<KeyHolder, Int256>
+                       && !std::is_same_v<KeyHolder, UInt256>) { // TODO support all types
+                if constexpr (HasBegin<Data>::value)
+                {
+                    if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>)
+                    {
+                        if (top_keys_heap.size() == limit_plus_offset_length &&
+                            compareOrderbyFields(top_keys_heap.front(), fields, optimization_indexes))
+                        {
+                            return std::nullopt;
+                        }
+                    }
+                } else
+                {
+                    // TODO
+                }
+            }
+        }
+
+        typename Data::LookupResult it;
+        bool inserted = false;
+        data.emplace(key_holder, it, inserted);
+
+        // If inserted, we have to update top_keys_heap. If is filled, pop the largest element.
+        if constexpr (!std::is_same_v<decltype(key_holder), const VoidKey>) { // TODO VoidKey doesn't work in compareKeyHolders
+            if constexpr (!std::is_same_v<KeyHolder, DB::SerializedKeyHolder>
+                       && !std::is_same_v<KeyHolder, DB::ArenaKeyHolder>
+                       && !std::is_same_v<KeyHolder, Int128>
+                       && !std::is_same_v<KeyHolder, UInt128>
+                       && !std::is_same_v<KeyHolder, Int256>
+                       && !std::is_same_v<KeyHolder, UInt256>) { // TODO support all types
+                if constexpr (HasBegin<Data>::value)
+                {
+                    if constexpr (!std::is_same_v<decltype(data.begin()->getKey()), const VoidKey>)
+                    {
+                        if (inserted)
+                        {
+                            if (top_keys_heap.size() == limit_plus_offset_length)
+                            {
+                                std::pop_heap(top_keys_heap.begin(), top_keys_heap.end(), heap_cmp);
+                                top_keys_heap.pop_back();
+                            }
+                            top_keys_heap.push_back(fields);
+                            std::push_heap(top_keys_heap.begin(), top_keys_heap.end(), heap_cmp);
+                        }
+                    }
+                } else
+                {
+                    // TODO
+                }
+            }
+        }
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)

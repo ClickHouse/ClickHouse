@@ -1,4 +1,5 @@
 #include <optional>
+#include <queue>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
 #include <Poco/Util/Application.h>
@@ -290,6 +291,8 @@ Aggregator::Params::Params(
     float min_hit_rate_to_use_consecutive_keys_optimization_,
     const StatsCollectingParams & stats_collecting_params_,
     bool enable_producing_buckets_out_of_order_in_aggregation_,
+    size_t limit_plus_offset_length_,
+    std::optional<std::vector<ColumnsHashing::OptimizationDataOneExpression>> optimization_indexes_,
     bool serialize_string_with_zero_byte_)
     : keys(keys_)
     , keys_size(keys.size())
@@ -314,6 +317,8 @@ Aggregator::Params::Params(
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
+    , limit_plus_offset_length(limit_plus_offset_length_)
+    , optimization_indexes(std::move(optimization_indexes_))
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
 {
 }
@@ -1046,6 +1051,8 @@ void Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
+    // Тут *result.NAME это method
+    // NAME это key8, key16, key32, key_string, ...
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
             executeImpl(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, \
@@ -1135,6 +1142,23 @@ void NO_INLINE Aggregator::executeImpl(
     }
 }
 
+template <typename T, typename = void>
+struct HasConstIterator : std::false_type {};
+
+template <typename T>
+struct HasConstIterator<T, std::void_t<typename T::const_iterator>> : std::true_type {};
+
+template <typename T, typename = void>
+struct HasImpls : std::false_type {};
+
+template <typename T>
+struct HasImpls<T, std::void_t<decltype(std::declval<const T&>().impls)>> : std::true_type {};
+
+bool couldOrderByOptimizationBeApplied(const Aggregator::Params& params)
+{
+    return params.optimization_indexes != std::nullopt;
+}
+
 template <bool prefetch, typename Method, typename State>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
@@ -1164,7 +1188,8 @@ void NO_INLINE Aggregator::executeImplBatch(
         AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
         if (all_keys_are_const)
         {
-            state.emplaceKey(method.data, 0, *aggregates_pool).setMapped(place);
+            auto emplace_result = state.emplaceKey(method.data, 0, *aggregates_pool);
+            emplace_result.setMapped(place);
         }
         else
         {
@@ -1331,58 +1356,141 @@ void NO_INLINE Aggregator::executeImplBatch(
     state.resetCache();
 
     /// For all rows.
+    bool is_order_by_optimization_applied = couldOrderByOptimizationBeApplied(params) && params.limit_plus_offset_length < (key_end - key_start) / 2;
     if (!no_more_keys)
     {
-        for (size_t i = key_start; i < key_end; ++i)
+        auto no_order_by_optimization_impl = [&]()
         {
-            AggregateDataPtr aggregate_data = nullptr;
-
-            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+            for (size_t i = key_start; i < key_end; ++i)
             {
-                if (i == key_start + PrefetchingHelper::iterationsToMeasure())
-                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+                AggregateDataPtr aggregate_data = nullptr;
 
-                if (i + prefetch_look_ahead < row_end)
+                if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
                 {
-                    auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
-                    method.data.prefetch(std::move(key_holder));
-                }
-            }
+                    if (i == key_start + PrefetchingHelper::iterationsToMeasure())
+                        prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
-            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
-
-            /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
-            if (emplace_result.isInserted())
-            {
-                /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
-                emplace_result.setMapped(nullptr);
-
-                aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-
-#if USE_EMBEDDED_COMPILER
-                if (use_compiled_functions)
-                {
-                    const auto & compiled_aggregate_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
-                    compiled_aggregate_functions.create_aggregate_states_function(aggregate_data);
-                    if (compiled_aggregate_functions.functions_count != aggregate_functions.size())
+                    if (i + prefetch_look_ahead < row_end)
                     {
-                        static constexpr bool skip_compiled_aggregate_functions = true;
-                        createAggregateStates<skip_compiled_aggregate_functions>(aggregate_data);
+                        auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                        method.data.prefetch(std::move(key_holder));
                     }
                 }
-                else
-#endif
+
+                auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+
+                /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
+                if (emplace_result.isInserted())
                 {
-                    createAggregateStates(aggregate_data);
+                    /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
+                    emplace_result.setMapped(nullptr);
+
+                    aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+
+#if USE_EMBEDDED_COMPILER
+                    if (use_compiled_functions)
+                    {
+                        const auto & compiled_aggregate_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
+                        compiled_aggregate_functions.create_aggregate_states_function(aggregate_data);
+                        if (compiled_aggregate_functions.functions_count != aggregate_functions.size())
+                        {
+                            static constexpr bool skip_compiled_aggregate_functions = true;
+                            createAggregateStates<skip_compiled_aggregate_functions>(aggregate_data);
+                        }
+                    }
+                    else
+#endif
+                    {
+                        createAggregateStates(aggregate_data);
+                    }
+
+                    emplace_result.setMapped(aggregate_data);
                 }
+                else
+                    aggregate_data = emplace_result.getMapped();
 
-                emplace_result.setMapped(aggregate_data);
+                assert(aggregate_data != nullptr);
+                places[i] = aggregate_data;
             }
-            else
-                aggregate_data = emplace_result.getMapped();
+        };
+        using DataType = decltype(method.data);
+        if (!is_order_by_optimization_applied)
+        {
+            no_order_by_optimization_impl();
+        } else
+        {
+            if constexpr (HasImpls<DataType>::value || !HasConstIterator<DataType>::value)
+            {
+                no_order_by_optimization_impl();
+            } else
+            {
+                const auto& optimization_indexes = params.optimization_indexes.value();
 
-            assert(aggregate_data != nullptr);
-            places[i] = aggregate_data;
+                // Creating heap comparator
+                auto heap_cmp = [&](const std::vector<Field>& lhs, const std::vector<Field>& rhs)
+                {
+                    return ColumnsHashing::columns_hashing_impl::compareOrderbyFields(lhs, rhs, optimization_indexes);
+                };
+                chassert(method.heap.size() <= params.limit_plus_offset_length);
+
+                for (size_t i = key_start; i < key_end; ++i)
+                {
+                    AggregateDataPtr aggregate_data = nullptr;
+
+                    if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+                    {
+                        if (i == key_start + PrefetchingHelper::iterationsToMeasure())
+                            prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+                        if (i + prefetch_look_ahead < row_end)
+                        {
+                            auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                            method.data.prefetch(std::move(key_holder));
+                        }
+                    }
+
+                    auto emplace_result = state.emplaceKeyOptimization(method.data, i, *aggregates_pool, optimization_indexes, params.limit_plus_offset_length, method.heap, heap_cmp);
+
+                    if (!emplace_result.has_value())
+                    {
+                        places[i] = overflow_row;
+                        continue;
+                    }
+
+                    /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
+                    if (emplace_result->isInserted())
+                    {
+                        /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
+                        emplace_result->setMapped(nullptr);
+
+                        aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+
+#if USE_EMBEDDED_COMPILER
+                        if (use_compiled_functions)
+                        {
+                            const auto & compiled_aggregate_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
+                            compiled_aggregate_functions.create_aggregate_states_function(aggregate_data);
+                            if (compiled_aggregate_functions.functions_count != aggregate_functions.size())
+                            {
+                                static constexpr bool skip_compiled_aggregate_functions = true;
+                                createAggregateStates<skip_compiled_aggregate_functions>(aggregate_data);
+                            }
+                        }
+                        else
+#endif
+                        {
+                            createAggregateStates(aggregate_data);
+                        }
+
+                        emplace_result->setMapped(aggregate_data);
+                    }
+                    else
+                        aggregate_data = emplace_result->getMapped();
+
+                    assert(aggregate_data != nullptr);
+                    places[i] = aggregate_data;
+                }
+            }
         }
     }
     else
@@ -1407,9 +1515,10 @@ void NO_INLINE Aggregator::executeImplBatch(
         aggregate_instructions,
         places.get(),
         key_start,
-        state.hasOnlyOneValueSinceLastReset(),
+        state.hasOnlyOneValueSinceLastReset() && !is_order_by_optimization_applied,
         all_keys_are_const,
         use_compiled_functions);
+
 }
 
 void Aggregator::executeAggregateInstructions(
@@ -1446,7 +1555,8 @@ void Aggregator::executeAggregateInstructions(
         {
             ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
             auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
-            add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), places[key_start]);
+            if (places[key_start] != nullptr)
+                add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), places[key_start]);
         }
         else
         {
@@ -1469,7 +1579,8 @@ void Aggregator::executeAggregateInstructions(
         if (all_keys_are_const || (inst->can_optimize_equal_keys_ranges && has_only_one_value_since_last_reset))
         {
             ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
-            addBatchSinglePlace(row_begin, row_end, inst, places[key_start] + inst->state_offset, aggregates_pool);
+            if (places[key_start] != nullptr && places[key_start] + inst->state_offset != nullptr)
+                addBatchSinglePlace(row_begin, row_end, inst, places[key_start] + inst->state_offset, aggregates_pool);
         }
         else
         {
@@ -1807,7 +1918,18 @@ bool Aggregator::executeOnBlock(Columns columns,
     else
     {
         /// This is where data is written that does not fit in `max_rows_to_group_by` with `group_by_overflow_mode = any`.
-        AggregateDataPtr overflow_row_ptr = params.overflow_row ? result.without_key : nullptr;
+        AggregateDataPtr overflow_row_ptr;
+        // TODO add setting params.overflow_row=true in creation of params if optimization is applied
+        if (couldOrderByOptimizationBeApplied(params) && result.without_key == nullptr)
+        {
+            AggregateDataPtr place = result.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+            createAggregateStates(place);
+            result.without_key = place;
+            overflow_row_ptr = result.without_key;
+        } else
+        {
+            overflow_row_ptr = params.overflow_row ? result.without_key : nullptr;
+        }
         executeImpl(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data(), no_more_keys, all_keys_are_const, overflow_row_ptr);
     }
 
@@ -1977,25 +2099,31 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
         AggregatedDataVariants & current = *non_empty_data[result_num];
         ParallelMergeWorker parallel_param{worker_id, total_worker};
 
+    // Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]],
+    // bool prefetch, std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker) const
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder)
         {
             mergeDataImpl<Method>(
                 getDataVariant<Method>(*res).data,
-                    getDataVariant<Method>(current).data,
-                    arena, true,
-                    false, /*prefetch*/
-                is_cancelled, &parallel_param);
+                getDataVariant<Method>(current).data,
+                arena,
+                /* use_compiled_functions=*/ true,
+                /*prefetch=*/ false,
+                is_cancelled,
+                &parallel_param);
         }
         else
 #endif
         {
             mergeDataImpl<Method>(
                 getDataVariant<Method>(*res).data,
-                    getDataVariant<Method>(current).data,
-                    arena, false,
-                    false, /*prefetch*/
-                is_cancelled, &parallel_param);
+                getDataVariant<Method>(current).data,
+                arena,
+                /* use_compiled_functions=*/ false,
+                /*prefetch=*/ false,
+                is_cancelled,
+                &parallel_param);
         }
     }
 }

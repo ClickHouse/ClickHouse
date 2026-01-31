@@ -17,13 +17,14 @@ struct AggregationMethodOneNumber
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    std::vector<std::vector<Field>> heap;
 
     AggregationMethodOneNumber() = default;
 
     explicit AggregationMethodOneNumber(size_t size_hint) : data(size_hint) { }
 
     template <typename Other>
-    explicit AggregationMethodOneNumber(const Other & other) : data(other.data)
+    explicit AggregationMethodOneNumber(const Other & other) : data(other.data), heap(other.heap)
     {
     }
 
@@ -60,11 +61,12 @@ struct AggregationMethodString
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    std::vector<std::vector<Field>> heap;
 
     AggregationMethodString() = default;
 
     template <typename Other>
-    explicit AggregationMethodString(const Other & other) : data(other.data)
+    explicit AggregationMethodString(const Other & other) : data(other.data), heap(other.heap)
     {
     }
 
@@ -96,13 +98,14 @@ struct AggregationMethodStringNoCache
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    std::vector<std::vector<Field>> heap;
 
     AggregationMethodStringNoCache() = default;
 
     explicit AggregationMethodStringNoCache(size_t size_hint) : data(size_hint) { }
 
     template <typename Other>
-    explicit AggregationMethodStringNoCache(const Other & other) : data(other.data)
+    explicit AggregationMethodStringNoCache(const Other & other) : data(other.data), heap(other.heap)
     {
     }
 
@@ -129,13 +132,14 @@ struct AggregationMethodFixedString
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    std::vector<std::vector<Field>> heap;
 
     AggregationMethodFixedString() = default;
 
     explicit AggregationMethodFixedString(size_t size_hint) : data(size_hint) { }
 
     template <typename Other>
-    explicit AggregationMethodFixedString(const Other & other) : data(other.data)
+    explicit AggregationMethodFixedString(const Other & other) : data(other.data), heap(other.heap)
     {
     }
 
@@ -162,13 +166,14 @@ struct AggregationMethodFixedStringNoCache
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    std::vector<std::vector<Field>> heap;
 
     AggregationMethodFixedStringNoCache() = default;
 
     explicit AggregationMethodFixedStringNoCache(size_t size_hint) : data(size_hint) { }
 
     template <typename Other>
-    explicit AggregationMethodFixedStringNoCache(const Other & other) : data(other.data)
+    explicit AggregationMethodFixedStringNoCache(const Other & other) : data(other.data), heap(other.heap)
     {
     }
 
@@ -233,13 +238,14 @@ struct AggregationMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     Data data;
+    std::vector<std::vector<Field>> heap;
 
     AggregationMethodKeysFixed() = default;
 
     explicit AggregationMethodKeysFixed(size_t size_hint) : data(size_hint) { }
 
     template <typename Other>
-    explicit AggregationMethodKeysFixed(const Other & other) : data(other.data)
+    explicit AggregationMethodKeysFixed(const Other & other) : data(other.data), heap(other.heap)
     {
     }
 
@@ -280,6 +286,7 @@ struct AggregationMethodSerialized
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    std::vector<std::vector<Field>> heap;
 
     AggregationMethodSerialized() = default;
 
@@ -288,7 +295,7 @@ struct AggregationMethodSerialized
     }
 
     template <typename Other>
-    explicit AggregationMethodSerialized(const Other & other) : data(other.data)
+    explicit AggregationMethodSerialized(const Other & other) : data(other.data), heap(other.heap)
     {
     }
 
