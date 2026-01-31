@@ -21,12 +21,14 @@
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/hasNullable.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Functions/exists.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -83,6 +85,85 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             "Function with name {} cannot use {} NULLS",
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
+}
+
+/// Try to convert Float64 constant arguments to Decimal when there's a Float+Decimal type mix.
+/// This allows float literals like 0. or 1.5 to work with Decimal types in functions like if().
+/// Only converts if the Float64 value can be exactly represented as Decimal (no precision loss).
+/// Returns true if any argument was converted.
+bool tryConvertFloatConstantsToDecimal(
+    QueryTreeNodes & function_arguments,
+    ColumnsWithTypeAndName & argument_columns,
+    DataTypes & argument_types)
+{
+    if (argument_columns.size() < 2)
+        return false;
+
+    /// Check if we have both Float64 and Decimal types
+    bool has_float64 = false;
+    bool has_decimal = false;
+    DataTypePtr target_decimal_type;
+    UInt32 max_scale = 0;
+
+    for (size_t i = 0; i < argument_types.size(); ++i)
+    {
+        const auto & type = argument_types[i];
+        if (!type)
+            continue;
+
+        WhichDataType which(type);
+        if (which.isFloat64())
+            has_float64 = true;
+        else if (which.isDecimal())
+        {
+            has_decimal = true;
+            UInt32 scale = getDecimalScale(*type);
+            if (scale >= max_scale)
+            {
+                max_scale = scale;
+                target_decimal_type = type;
+            }
+        }
+    }
+
+    if (!has_float64 || !has_decimal || !target_decimal_type)
+        return false;
+
+    bool any_converted = false;
+
+    for (size_t i = 0; i < function_arguments.size(); ++i)
+    {
+        auto * constant_node = function_arguments[i]->as<ConstantNode>();
+        if (!constant_node)
+            continue;
+
+        const auto & arg_type = argument_types[i];
+        if (!arg_type)
+            continue;
+
+        WhichDataType which(arg_type);
+        if (!which.isFloat64())
+            continue;
+
+        /// Try to convert this Float64 constant to the target Decimal type
+        Field float_value = constant_node->getValue();
+        auto converted = convertFieldToTypeStrict(float_value, *arg_type, *target_decimal_type);
+
+        if (converted.has_value())
+        {
+            /// Conversion successful and lossless - update the argument
+            auto new_constant = std::make_shared<ConstantNode>(*converted, target_decimal_type);
+            function_arguments[i] = new_constant;
+
+            argument_columns[i].type = target_decimal_type;
+            argument_columns[i].column = new_constant->getColumn();
+            argument_types[i] = target_decimal_type;
+
+            any_converted = true;
+        }
+    }
+
+    return any_converted;
 }
 }
 
@@ -1422,6 +1503,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         argument_columns[1].type = std::make_shared<DataTypeSet>();
     }
+
+    /// Try to convert Float64 constants to Decimal when there's a Float+Decimal type mix.
+    /// This allows float literals like 0. or 1.5 to work with Decimal types in if() function.
+    /// Only apply to if() function to avoid breaking existing behavior for other functions.
+    if (is_special_function_if)
+        tryConvertFloatConstantsToDecimal(function_arguments, argument_columns, argument_types);
 
     ConstantNodePtr constant_node;
 
