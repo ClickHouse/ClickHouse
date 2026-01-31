@@ -51,10 +51,23 @@ void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
             const auto new_prefix = disk->getObjectStorage()->getCommonKeyPrefix();
             const auto saved_prefix = saved_disk->getObjectStorage()->getCommonKeyPrefix();
             if (new_prefix.starts_with(saved_prefix) || saved_prefix.starts_with(new_prefix))
-                if (disk->getMetadataStorage().get() != saved_disk->getMetadataStorage().get())
+            {
+                bool same = disk->getMetadataStorage().get() == saved_disk->getMetadataStorage().get();
+
+                if (!same)
+                {
+                    /// In case of encrypted disk we cannot simply compare getMetadataStorage() since it is wrapped
+                    auto delegated_disk_or_original = disk->getDataSourceDescription().is_encrypted && disk->getDelegateDiskIfExists() ? disk->getDelegateDiskIfExists() : disk;
+                    auto delegated_saved_disk_or_original = saved_disk->getDataSourceDescription().is_encrypted && saved_disk->getDelegateDiskIfExists() ? saved_disk->getDelegateDiskIfExists() : saved_disk;
+
+                    same = delegated_disk_or_original->getMetadataStorage().get() == delegated_saved_disk_or_original->getMetadataStorage().get();
+                }
+
+                if (!same)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "It is not possible to register multiple plain-rewritable disks with the same object storage prefix. Disks '{}' and '{}'",
                         disk_name, saved_disk_name);
+            }
         }
     }
 
@@ -65,6 +78,7 @@ void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
 
 void DiskSelector::initialize(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator)
+try
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -106,6 +120,12 @@ void DiskSelector::initialize(
         recordDisk(LOCAL_DISK_NAME, std::make_shared<DiskLocal>(LOCAL_DISK_NAME, "/", 0, context, config, config_prefix));
     }
     is_initialized = true;
+}
+catch (...)
+{
+    for (const auto & [name, disk] : disks)
+        disk->shutdown();
+    throw;
 }
 
 DiskSelectorPtr DiskSelector::updateFromConfig(

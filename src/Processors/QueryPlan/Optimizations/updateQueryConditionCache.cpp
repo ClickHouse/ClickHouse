@@ -60,14 +60,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
             UInt64 condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
-
-            String condition;
-            if (optimization_settings.query_condition_cache_store_conditions_as_plaintext)
-            {
-                Names outputs_names = filter_actions_dag->getNames();
-                condition = outputs_names[0];
-            }
-
+            String condition = filter_actions_dag->getNames()[0];
             filter_step->setConditionForQueryConditionCache(condition_hash, condition);
             return;
         }

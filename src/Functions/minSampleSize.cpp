@@ -60,7 +60,7 @@ public:
         return std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         Impl::validateArguments(arguments);
         return getReturnType();
@@ -83,15 +83,17 @@ struct ContinuousImpl
     static constexpr size_t num_args = 5;
     static constexpr size_t const_args[] = {2, 3, 4};
 
-    static void validateArguments(const DataTypes & arguments)
+    static void validateArguments(const ColumnsWithTypeAndName & arguments)
     {
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            if (!isNativeNumber(arguments[i]))
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The {}th Argument of function {} must be a number.", i + 1, name);
-            }
-        }
+        FunctionArgumentDescriptors mandatory_args{
+            {"baseline", isNativeNumber, nullptr, "native numeric"},
+            {"sigma", isNativeNumber, nullptr, "native numeric"},
+            {"mde", isNativeNumber, nullptr, "native numeric"},
+            {"power", isNativeNumber, nullptr, "native numeric"},
+            {"alpha", isNativeNumber, nullptr, "native numeric"}
+        };
+
+        validateFunctionArguments(name, arguments, mandatory_args);
     }
 
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
@@ -174,16 +176,16 @@ struct ConversionImpl
     static constexpr size_t num_args = 4;
     static constexpr size_t const_args[] = {1, 2, 3};
 
-    static void validateArguments(const DataTypes & arguments)
+    static void validateArguments(const ColumnsWithTypeAndName & arguments)
     {
-        size_t arguments_size = arguments.size();
-        for (size_t i = 0; i < arguments_size; ++i)
-        {
-            if (!isFloat(arguments[i]))
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The {}th argument of function {} must be a float.", i + 1, name);
-            }
-        }
+        FunctionArgumentDescriptors mandatory_args{
+            {"p1", isFloat, nullptr, "Float"},
+            {"p2", isFloat, nullptr, "Float"},
+            {"power", isFloat, nullptr, "Float"},
+            {"alpha", isFloat, nullptr, "Float"}
+        };
+
+        validateFunctionArguments(name, arguments, mandatory_args);
     }
 
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)

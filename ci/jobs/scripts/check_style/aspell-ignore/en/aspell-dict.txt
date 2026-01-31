@@ -180,6 +180,7 @@ ClickHouseClient
 ClickHouseMigrator
 ClickHouseNIO
 ClickHouseVapor
+ClickLens
 ClickPipes
 ClickVisual
 ClickableSquare
@@ -666,6 +667,7 @@ LogQL
 LogQueriesType
 LogsLevel
 Logstash
+LongestRunningMerge
 LookML
 LoongArch
 LowCardinality
@@ -733,6 +735,7 @@ MergeTreePartsLoaderThreadsActive
 MergeTreeReadTaskRequestsSent
 MergeTreeSettings
 MergerMutator
+Mersenne
 MessagePack
 Metastore
 MetroHash

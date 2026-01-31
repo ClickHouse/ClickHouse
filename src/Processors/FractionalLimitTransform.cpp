@@ -121,8 +121,8 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
             return Status::NeedData;
 
         /// Calculate integral limit and offset values.
-        limit = static_cast<UInt64>(std::ceil(rows_cnt * limit_fraction));
-        offset += static_cast<UInt64>(std::ceil(rows_cnt * offset_fraction));
+        limit = static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * limit_fraction));
+        offset += static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * offset_fraction));
         if (with_ties && rows_read_from_cache < limit + offset)
             previous_row_chunk = {};
     }
@@ -194,7 +194,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
     ///
     /// Detect blocks that will 100% get removed by the fractional offset and remove them as early as possible.
     /// example: if we have 10 blocks with same num of rows and offset 0.1 we can freely drop the first block even before reading all data.
-    while (!chunks_cache.empty() && static_cast<UInt64>(std::ceil(rows_cnt * offset_fraction)) >= chunks_cache.front().chunk.getNumRows() + rows_read_from_cache)
+    while (!chunks_cache.empty() && static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * offset_fraction)) >= chunks_cache.front().chunk.getNumRows() + rows_read_from_cache)
     {
         rows_read_from_cache += chunks_cache.front().chunk.getNumRows();
         chunks_cache.pop_front();
@@ -221,7 +221,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
         if (rows_read_from_cache < offset)
             remaining_offset = offset - rows_read_from_cache;
 
-        UInt64 curr_limit = static_cast<UInt64>(std::ceil(rows_cnt * limit_fraction));
+        UInt64 curr_limit = static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * limit_fraction));
         if (curr_limit + remaining_offset >= num_rows + outputed_rows_cnt)
         {
             /// If we still have an integral offset that didn't cause the chunk

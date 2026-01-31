@@ -49,7 +49,12 @@ BackgroundSchedulePoolPausableTask::BackgroundSchedulePoolPausableTask(Backgroun
 {
 }
 
-void BackgroundSchedulePoolPausableTask::pause()
+BackgroundSchedulePoolPausableTask::PauseHolderPtr BackgroundSchedulePoolPausableTask::pause()
+{
+    return std::make_unique<PauseHolder>(*this);
+}
+
+void BackgroundSchedulePoolPausableTask::pauseImpl()
 {
     std::lock_guard lock(pause_mutex);
     pause_count++;
@@ -57,7 +62,7 @@ void BackgroundSchedulePoolPausableTask::pause()
         task->deactivate();
 }
 
-void BackgroundSchedulePoolPausableTask::resume()
+void BackgroundSchedulePoolPausableTask::resumeImpl()
 {
     std::lock_guard lock(pause_mutex);
     pause_count--;
@@ -68,12 +73,12 @@ void BackgroundSchedulePoolPausableTask::resume()
 BackgroundSchedulePoolPausableTask::PauseHolder::PauseHolder(BackgroundSchedulePoolPausableTask & task_)
     : task(task_)
 {
-    task.pause();
+    task.pauseImpl();
 }
 
 BackgroundSchedulePoolPausableTask::PauseHolder::~PauseHolder()
 {
-    task.resume();
+    task.resumeImpl();
 }
 
 }

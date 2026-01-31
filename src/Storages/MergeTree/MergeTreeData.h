@@ -122,6 +122,8 @@ struct DataPartsSharedLock
     DataPartsSharedLock(DataPartsSharedLock &&) = default;
     DataPartsSharedLock & operator=(DataPartsSharedLock &&) = default;
 
+    void unlock() { lock.unlock(); }
+
 private:
     std::optional<Stopwatch> wait_watch;
     std::shared_lock<DB::SharedMutex> lock;
@@ -1060,6 +1062,15 @@ public:
         return secondary_index_sizes;
     }
 
+    IndexSize getPrimaryIndexSize() const
+    {
+        /// Always keep locks order parts_lock -> sizes_lock
+        auto parts_lock = readLockParts();
+        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
+        calculateColumnAndSecondaryIndexSizesLazily(parts_lock, sizes_lock);
+        return primary_index_size;
+    }
+
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsAnyLock & lock) const;
@@ -1385,6 +1396,7 @@ private:
     mutable ColumnSizeByName column_sizes;
     /// Current secondary index sizes in compressed and uncompressed form.
     mutable IndexSizeByName secondary_index_sizes;
+    mutable IndexSize primary_index_size;
 
 protected:
     void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;

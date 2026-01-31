@@ -14,8 +14,6 @@
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <mutex>
 #include <lz4.h>
@@ -34,12 +32,6 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int CHECKSUM_DOESNT_MATCH;
-}
-
-namespace ProfileEvents
-{
-    extern const Event ParquetRowsFilterExpression;
-    extern const Event ParquetColumnsFilterExpression;
 }
 
 namespace DB::Parquet
@@ -668,12 +660,11 @@ void Reader::preparePrewhere()
 
     /// Convert ActionsDAG to ExpressionActions.
     std::optional<ExpressionActionsSettings> actions_settings;
-
-    auto add_single_step = [&] (const ActionsDAG & dag, const String & filter_column_name, bool needs_filter, size_t step_idx)
+    auto add_step = [&](const ActionsDAG & dag, const String & filter_column_name, bool needs_filter)
     {
         if (!actions_settings.has_value())
             actions_settings.emplace();
-        Step step { .actions = ExpressionActions(dag.clone(), actions_settings.value()) };
+        PrewhereStep step { .actions = ExpressionActions(dag.clone(), actions_settings.value()) };
         if (needs_filter)
             step.filter_column_name = filter_column_name;
 
@@ -685,13 +676,12 @@ void Reader::preparePrewhere()
             if (output_idx.has_value())
             {
                 OutputColumnInfo & output_info = output_columns[output_idx.value()];
-                output_info.step_idx = step_idx + 1;
+                output_info.use_prewhere = true;
                 bool only_for_prewhere = idx_in_output_block >= sample_block->columns();
 
                 for (size_t primitive_idx = output_info.primitive_start; primitive_idx < output_info.primitive_end; ++primitive_idx)
                 {
-                    //primitive_columns[primitive_idx].use_prewhere = true;
-                    primitive_columns[primitive_idx].steps_to_calculate.insert(steps.size() + 1);
+                    primitive_columns[primitive_idx].use_prewhere = true;
                     primitive_columns[primitive_idx].only_for_prewhere = only_for_prewhere;
                 }
             }
@@ -715,37 +705,7 @@ void Reader::preparePrewhere()
             }
         }
 
-        steps.push_back(std::move(step));
-    };
-
-    auto add_step = [&](const ActionsDAG & dag, const String & filter_column_name, bool needs_filter)
-    {
-        if (!actions_settings.has_value())
-            actions_settings.emplace();
-
-        auto prewhere_info_patched = std::make_shared<PrewhereInfo>(dag.clone(), filter_column_name);
-        prewhere_info_patched->need_filter = needs_filter;
-        PrewhereExprInfo prewhere_expr_info;
-        bool success = tryBuildPrewhereSteps(
-            prewhere_info_patched,
-            *actions_settings,
-            prewhere_expr_info,
-            /*force_short_circuit_execution*/ false);
-
-        if (success)
-        {
-            /// Add all steps separately.
-            for (size_t i = 0; i < prewhere_expr_info.steps.size(); ++i)
-            {
-                auto filter = prewhere_expr_info.steps[i];
-                add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
-            }
-        }
-        else
-        {
-            /// Execute everything as one large step
-            add_single_step(dag, filter_column_name, needs_filter, 0);
-        }
+        prewhere_steps.push_back(std::move(step));
     };
 
     if (row_level_filter)
@@ -1080,7 +1040,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         for (size_t i = 0; i < primitive_columns.size(); ++i)
             bytes_per_row += estimateColumnMemoryBytesPerRow(row_group.columns.at(i), row_group, primitive_columns.at(i));
 
-        size_t n = size_t(options.format.parquet.prefer_block_bytes / std::max(bytes_per_row, 1.));
+        size_t n = size_t(static_cast<double>(options.format.parquet.prefer_block_bytes) / std::max(bytes_per_row, 1.));
         n = std::max(n, size_t(128)); // avoid super tiny blocks if something is wrong with stats
         rows_per_subgroup = std::min(rows_per_subgroup, n);
     }
@@ -1118,7 +1078,6 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         }
     }
     row_group.intersected_row_ranges_after_column_index = std::move(row_ranges);
-    row_group.next_subgroup_for_step = std::vector<std::atomic<size_t>>(steps.size() + 1);
 }
 
 void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
@@ -1239,7 +1198,7 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
     {
         /// The writer of the parquet file has helpfully put the total length of the
         /// strings into file metadata. Thanks writer!
-        column_chunk_bytes = column.meta->meta_data.size_statistics.unencoded_byte_array_data_bytes;
+        column_chunk_bytes = static_cast<double>(column.meta->meta_data.size_statistics.unencoded_byte_array_data_bytes);
     }
     else if (column.meta->meta_data.__isset.dictionary_page_offset)
     {
@@ -1256,15 +1215,15 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
             /// We have no idea how long the strings are. Use some made up number (not chosen carefully).
             avg_string_length = 20;
         }
-        column_chunk_bytes = avg_string_length * column.meta->meta_data.num_values;
+        column_chunk_bytes = avg_string_length * static_cast<double>(column.meta->meta_data.num_values);
     }
     else
     {
         /// Non-dictionary-encoded strings.
-        column_chunk_bytes = column.meta->meta_data.total_uncompressed_size;
+        column_chunk_bytes = static_cast<double>(column.meta->meta_data.total_uncompressed_size);
     }
 
-    return column_chunk_bytes / row_group.meta->num_rows;
+    return column_chunk_bytes / static_cast<double>(row_group.meta->num_rows);
 }
 
 double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const
@@ -1272,7 +1231,8 @@ double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const
     double res;
     if (column_info.output_type->haveMaximumSizeOfValue())
         /// Fixed-size values, e.g. numbers or FixedString.
-        res = 1. * column_info.output_type->getMaximumSizeOfValueInMemory() * column.meta->meta_data.num_values / row_group.meta->num_rows;
+        res = 1. * static_cast<double>(column_info.output_type->getMaximumSizeOfValueInMemory())
+            * static_cast<double>(column.meta->meta_data.num_values) / static_cast<double>(row_group.meta->num_rows);
     else
         res = estimateAverageStringLengthPerRow(column, row_group);
 
@@ -1283,7 +1243,7 @@ double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const
     /// Nested array offsets (assume the worst case where the outer arrays are long and inner arrays
     /// are short, so inner arrays have ~num_values total elements rather than ~num_rows).
     if (column_info.levels.back().rep > 1)
-        res += (column_info.levels.back().rep - 1) * 8. * column.meta->meta_data.num_values / row_group.meta->num_rows;
+        res += (column_info.levels.back().rep - 1) * 8. * static_cast<double>(column.meta->meta_data.num_values) / static_cast<double>(row_group.meta->num_rows);
 
     return res;
 }
@@ -1300,7 +1260,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     else
         /// There are arrays, so we can't know exactly how many primitive values there are in
         /// rows that pass the filter. Make a guess using average array length.
-        output_num_values_estimate = size_t(1.2 * row_subgroup.filter.rows_pass / row_group.meta->num_rows * column.meta->meta_data.num_values);
+        output_num_values_estimate = size_t(1.2 * static_cast<double>(row_subgroup.filter.rows_pass) / static_cast<double>(row_group.meta->num_rows) * static_cast<double>(column.meta->meta_data.num_values));
 
     subchunk.arrays_offsets.resize(column_info.levels.back().rep);
     for (size_t i = 0; i < subchunk.arrays_offsets.size(); ++i)
@@ -1320,7 +1280,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (auto * string_column = typeid_cast<ColumnString *>(subchunk.column.get()))
     {
         double avg_len = estimateAverageStringLengthPerRow(column, row_group);
-        size_t bytes_to_reserve = size_t(1.2 * avg_len * row_subgroup.filter.rows_pass);
+        size_t bytes_to_reserve = size_t(1.2 * avg_len * static_cast<double>(row_subgroup.filter.rows_pass));
         string_column->getChars().reserve(bytes_to_reserve);
     }
 
@@ -1399,7 +1359,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     }
 
     if (subchunk.arrays_offsets.empty() && subchunk.column->size() != row_subgroup.filter.rows_pass)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of rows in column subchunk {} {}", subchunk.column->size(), row_subgroup.filter.rows_pass);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of rows in column subchunk");
 
     if (column_info.output_nullable)
     {
@@ -2091,10 +2051,11 @@ ColumnPtr & Reader::getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx
     return state.column;
 }
 
-void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx)
+void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group)
 {
+    for (size_t step_idx = 0; step_idx < prewhere_steps.size(); ++step_idx)
     {
-        const Step & step = steps.at(step_idx - 1);
+        const PrewhereStep & step = prewhere_steps.at(step_idx);
 
         Block block;
         for (size_t idx_in_output_block : step.input_idxs)
@@ -2102,16 +2063,8 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
             const ColumnWithTypeAndName & col = extended_sample_block.getByPosition(idx_in_output_block);
             block.insert({getOrFormOutputColumn(row_subgroup, idx_in_output_block), col.type, col.name});
         }
-        addDummyColumnWithRowCount(block, row_subgroup.filter.rows_pass);
+        addDummyColumnWithRowCount(block, row_subgroup.filter.rows_total);
 
-        ProfileEvents::increment(ProfileEvents::ParquetRowsFilterExpression, block.rows());
-        ProfileEvents::increment(ProfileEvents::ParquetColumnsFilterExpression, block.columns());
-
-        if (block.rows() == 0)
-        {
-            row_subgroup.filter.rows_pass = 0;
-            return;
-        }
         step.actions.execute(block);
 
         for (const auto & [name, idx] : step.idxs_in_output_block)
@@ -2122,25 +2075,20 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         }
 
         /// If it's the last prewhere step, deallocate the columns that were only needed for prewhere.
-        if (step_idx == steps.size())
+        if (step_idx == prewhere_steps.size() - 1)
         {
             while (row_subgroup.output.size() > sample_block->columns())
                 row_subgroup.output.pop_back(); // because OutputColumnState has no move constructor
         }
 
         if (!step.filter_column_name.has_value())
-            return;
+            continue;
 
         ColumnPtr filter_column = block.getByName(step.filter_column_name.value()).column;
         filter_column = FilterDescription::preprocessFilterColumn(std::move(filter_column));
         const IColumnFilter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
         chassert(filter.size() == row_subgroup.filter.rows_pass);
 
-        for (size_t i = 0; i < filter_column->size(); ++i)
-        {
-            Field field;
-            filter_column->get(i, field);
-        }
         size_t rows_pass = countBytesInFilter(filter.data(), 0, filter.size());
         if (rows_pass == 0 || !row_group.need_to_process)
         {
@@ -2148,18 +2096,24 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
             row_subgroup.filter.rows_pass = 0;
             return;
         }
+        if (rows_pass == filter.size())
+            /// Nothing was filtered out.
+            continue;
 
         /// Filter columns that were already read.
+
         for (auto & state : row_subgroup.output)
             if (state.column)
                 state.column = state.column->filter(filter, /*result_size_hint=*/ rows_pass);
 
         /// Expand the filter to correspond to all column subchunk rows, rather than only rows that
         /// passed previous filters (previous prewhere steps).
+
         auto mut_col = IColumn::mutate(std::move(filter_column));
         auto & mut_filter = typeid_cast<ColumnUInt8 &>(*mut_col);
         if (row_subgroup.filter.rows_pass != row_subgroup.filter.rows_total)
             mut_filter.expand(row_subgroup.filter.filter, /*inverted*/ false);
+
         row_subgroup.filter.filter = std::move(mut_filter.getData());
         row_subgroup.filter.rows_pass = rows_pass;
     }

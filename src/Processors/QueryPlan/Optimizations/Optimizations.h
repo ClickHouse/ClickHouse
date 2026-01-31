@@ -46,6 +46,9 @@ struct Optimization
         bool use_top_k_dynamic_filtering;
         size_t max_limit_for_top_k_optimization;
         bool use_skip_indexes_on_data_read;
+
+        // parallel replicas
+        bool parallel_replicas_filter_pushdown = false;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);

@@ -5,7 +5,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTForeignKeyDeclaration.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTStatisticsDeclaration.h>

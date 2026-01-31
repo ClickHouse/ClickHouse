@@ -477,13 +477,13 @@ void TCPHandler::runImpl()
             {
                 const auto elapsed_seconds = idle_time.elapsedSeconds();
 
-                if (elapsed_seconds > idle_connection_timeout)
+                if (elapsed_seconds > static_cast<double>(idle_connection_timeout))
                 {
                     LOG_TRACE(log, "Closing idle connection");
                     return;
                 }
 
-                if (elapsed_seconds > poll_interval && query_count > 0)
+                if (elapsed_seconds > static_cast<double>(poll_interval) && query_count > 0)
                 {
                     LOG_TRACE(log, "Resetting query count for idle connection");
                     query_count = 0;
@@ -524,17 +524,20 @@ void TCPHandler::runImpl()
 
         try
         {
-            /** If Query - process it. If Ping or Cancel - go back to the beginning.
+            /** If Query - process it.
+            *  If IgnoredPartUUIDs - keep looping for Query.
+            *  If Ping or Cancel - go back to the beginning of outer loop.
             *  There may come settings for a separate query that modify `query_context`.
-            *  It's possible to receive part uuids packet before the query, so then receivePacket has to be called twice.
             */
-            if (!receivePacketsExpectQuery(query_state))
-                continue;
+            while (!query_state && receivePacketsExpectQuery(query_state))
+            {
+                /// Keep looping for IgnoredPartUUIDs packets
+            }
 
-            /** If part_uuids got received in previous packet, trying to read again.
-            */
-            if (part_uuids_to_ignore.has_value() && !receivePacketsExpectQuery(query_state))
+            if (!query_state)
+            {
                 continue;
+            }
 
             chassert(query_state);
 
@@ -554,7 +557,7 @@ void TCPHandler::runImpl()
             /// Fatal error callback can be called at any time, including when we already destroyed TCPHandler object that created the callback.
             /// To avoid accessing invalid memory, we capture all needed fields by value.
             /// If TCPHandler object is already destroyed, we don't need to send logs so we capture shared_ptrs as weak_ptrs.
-            query_scope.emplace(
+            query_scope = CurrentThread::QueryScope::create(
                 query_state->query_context,
                 /* fatal_error_callback */
                 [tcp_protocol_version = this->client_tcp_protocol_version,
@@ -791,12 +794,12 @@ void TCPHandler::runImpl()
             {
                 /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
                 query_state->need_receive_data_for_insert = true;
-                processInsertQuery(*query_state, *query_scope);
+                processInsertQuery(*query_state);
                 query_state->io.onFinish();
             }
             else if (query_state->io.pipeline.pulling())
             {
-                processOrdinaryQuery(*query_state, *query_scope);
+                processOrdinaryQuery(*query_state);
                 query_state->io.onFinish();
             }
             else if (query_state->io.pipeline.completed())
@@ -821,12 +824,7 @@ void TCPHandler::runImpl()
                 /// NOTE: we cannot send Progress for regular INSERT (with VALUES)
                 /// without breaking protocol compatibility, but it can be done
                 /// by increasing revision.
-
                 sendProgress(*query_state);
-
-                /// Log peak memory usage just before sending it to client to make it as accurate as possible
-                /// (though note we may still have some allocations in between, that will make the difference)
-                query_scope->logPeakMemoryUsage();
                 sendSelectProfileEvents(*query_state);
             }
             else
@@ -839,13 +837,13 @@ void TCPHandler::runImpl()
                     create_query && create_query->isCreateQueryWithImmediateInsertSelect())
                 {
                     sendProgress(*query_state);
-
-                    /// Log peak memory usage just before sending it to client to make it as accurate as possible
-                    /// (though note we may still have some allocations in between, that will make the difference)
-                    query_scope->logPeakMemoryUsage();
                     sendSelectProfileEvents(*query_state);
                 }
             }
+
+            /// Do it before sending end of stream, to have a chance to show log message in client.
+            query_scope->logPeakMemoryUsage();
+
             sendLogs(*query_state);
             sendEndOfStream(*query_state);
 
@@ -1267,7 +1265,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
 }
 
 
-void TCPHandler::processInsertQuery(QueryState & state, CurrentThread::QueryScope & query_scope)
+void TCPHandler::processInsertQuery(QueryState & state)
 {
     size_t num_threads = state.io.pipeline.getNumThreads();
 
@@ -1356,14 +1354,11 @@ void TCPHandler::processInsertQuery(QueryState & state, CurrentThread::QueryScop
         run_executor(executor, std::move(processed_block));
     }
 
-    /// Log peak memory usage just before sending it to client to make it as accurate as possible
-    /// (though note we may still have some allocations in between, that will make the difference)
-    query_scope.logPeakMemoryUsage();
     sendInsertProfileEvents(state);
 }
 
 
-void TCPHandler::processOrdinaryQuery(QueryState & state, CurrentThread::QueryScope & query_scope)
+void TCPHandler::processOrdinaryQuery(QueryState & state)
 {
     auto & pipeline = state.io.pipeline;
 
@@ -1445,10 +1440,6 @@ void TCPHandler::processOrdinaryQuery(QueryState & state, CurrentThread::QuerySc
         sendProfileInfo(state, executor.getProfileInfo());
         sendProgress(state);
         sendLogs(state);
-
-        /// Log peak memory usage just before sending it to client to make it as accurate as possible
-        /// (though note we may still have some allocations in between, that will make the difference)
-        query_scope.logPeakMemoryUsage();
         sendSelectProfileEvents(state);
 
         sendData(state, {});
@@ -2916,7 +2907,7 @@ bool TCPHandler::connectionLimitReached()
     double elapsed_seconds = connection_timer.elapsedSeconds();
 
     bool max_queries_exceeded = max_queries > 0 && query_count > max_queries;
-    bool max_seconds_exceeded = max_seconds > 0 && elapsed_seconds > max_seconds;
+    bool max_seconds_exceeded = max_seconds > 0 && elapsed_seconds > static_cast<double>(max_seconds);
 
     bool limit_reached = max_queries_exceeded || max_seconds_exceeded;
 

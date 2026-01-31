@@ -86,6 +86,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
+    ONCE(terminate_with_exception) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
@@ -129,6 +130,11 @@ static struct InitFiu
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
+    PAUSEABLE(mt_merge_selecting_task_pause_when_scheduled) \
+    REGULAR(mt_select_parts_to_mutate_no_free_threads) \
+    REGULAR(mt_select_parts_to_mutate_max_part_size) \
+    REGULAR(rmt_merge_selecting_task_no_free_threads) \
+    REGULAR(rmt_merge_selecting_task_max_part_size) \
     PAUSEABLE_ONCE(smt_mutate_task_pause_in_prepare) \
     PAUSEABLE_ONCE(smt_merge_selecting_task_pause_when_scheduled) \
     ONCE(shared_set_full_update_fails_when_initializing) \
@@ -136,7 +142,9 @@ static struct InitFiu
     ONCE(parallel_replicas_reading_response_timeout) \
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
-    REGULAR(rmt_delay_commit_part)
+    REGULAR(rmt_delay_commit_part) \
+    ONCE(local_object_storage_network_error_during_remove) \
+    ONCE(parallel_replicas_check_read_mode_always)
 
 namespace FailPoints
 {
