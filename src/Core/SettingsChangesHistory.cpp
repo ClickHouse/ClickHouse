@@ -1041,6 +1041,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"add_minmax_index_for_temporal_columns", false, false, "New setting"},
             {"distributed_index_analysis_min_parts_to_activate", 10, 10, "New setting"},
             {"distributed_index_analysis_min_indexes_size_to_activate", 1_GiB, 1_GiB, "New setting"},
+            {"min_postpone_time_for_waiting_ms", 0, 1000, "Added new setting to control minimum (initial) backoff for waiting operations."},
+            {"max_postpone_time_for_waiting_ms", 0, 10ULL * 1000, "Added new setting to control maximum backoff for waiting operations like TTL recompression wait."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {

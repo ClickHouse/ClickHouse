@@ -1530,6 +1530,17 @@ namespace ErrorCodes
     DECLARE(UInt64, max_postpone_time_for_failed_replicated_tasks_ms, 5ULL * 60 * 1000, R"(
     The maximum postpone time for failed replicated task. The value is used if the task is not a fetch, merge or mutation.
     )", 0) \
+    DECLARE(UInt64, min_postpone_time_for_waiting_ms, 1000, R"(
+    The minimum (initial) postpone time in milliseconds for waiting operations such as TTL recompression wait or single-replica merge wait.
+    Exponential backoff starts from this value and doubles each postpone: min, min*2, min*4, ... up to max_postpone_time_for_waiting_ms.
+    Default is 1000ms (1 second).
+    )", 0) \
+    DECLARE(UInt64, max_postpone_time_for_waiting_ms, 10ULL * 1000, R"(
+    The maximum postpone time for waiting operations such as TTL recompression wait or single-replica merge wait.
+    When a replica is waiting for another replica to complete an operation, it will use exponential backoff
+    (starting from min_postpone_time_for_waiting_ms) up to this maximum value to avoid repeatedly evaluating the same queue entry.
+    Set to 0 to disable backoff (not recommended).
+    )", 0) \
     /** Compatibility settings */ \
     DECLARE(Bool, allow_suspicious_indices, false, R"(
     Reject primary/secondary indexes and sorting keys with identical expressions
