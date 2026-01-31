@@ -558,10 +558,36 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
     auto before_limit_by_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     before_limit_by_actions->dag = std::move(before_limit_by_actions_dag);
 
+    /** For LIMIT BY columns that are constants, we need to ensure they are required as inputs
+      * from the previous step rather than recreated as new constants. This is important because:
+      * 1. The previous step (e.g., ORDER BY) needs to know these columns are required
+      * 2. Without this, constant columns get dropped during ActionsChain finalization
+      * 3. Later steps (like DISTINCT) may operate on these columns and expect them in the block
+      *
+      * Example: SELECT DISTINCT 1, '1' ORDER BY 1 LIMIT 1 BY 2
+      * Here '1' (string) is a constant that must be preserved through ORDER BY for LIMIT BY.
+      */
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> input_nodes_by_name;
+    for (const auto * input_node : before_limit_by_actions->dag.getInputs())
+        input_nodes_by_name[input_node->result_name] = input_node;
+
+    auto & outputs = before_limit_by_actions->dag.getOutputs();
+    for (auto & output_node : outputs)
+    {
+        /// If the output is a constant and there's a corresponding input with the same name,
+        /// replace the constant output with the input to ensure the column is required from previous step
+        if (output_node->type == ActionsDAG::ActionType::COLUMN)
+        {
+            auto it = input_nodes_by_name.find(output_node->result_name);
+            if (it != input_nodes_by_name.end())
+                output_node = it->second;
+        }
+    }
+
     NameSet limit_by_column_names_set;
     Names limit_by_column_names;
-    limit_by_column_names.reserve(before_limit_by_actions->dag.getOutputs().size());
-    for (auto & output_node : before_limit_by_actions->dag.getOutputs())
+    limit_by_column_names.reserve(outputs.size());
+    for (auto & output_node : outputs)
     {
         limit_by_column_names_set.insert(output_node->result_name);
         limit_by_column_names.push_back(output_node->result_name);
