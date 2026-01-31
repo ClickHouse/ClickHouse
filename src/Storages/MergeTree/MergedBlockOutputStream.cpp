@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/HashingWriteBuffer.h>
@@ -32,7 +33,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     size_t part_uncompressed_bytes,
     bool reset_columns_,
     bool blocks_are_granules_size,
-    const WriteSettings & write_settings_)
+    const WriteSettings & write_settings_,
+    WrittenOffsetSubstreams * written_offset_substreams)
     : IMergedBlockOutputStream(
           std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
@@ -78,7 +80,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         data_part->getMarksFileExtension(),
         default_codec,
         writer_settings,
-        std::move(index_granularity_ptr));
+        std::move(index_granularity_ptr),
+        written_offset_substreams);
 }
 
 /// If data is pre-sorted.
@@ -182,6 +185,11 @@ void MergedBlockOutputStream::finalizePart(
     ColumnsSubstreams * additional_columns_substreams)
 {
     finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums, additional_columns_substreams).finish();
+}
+
+void MergedBlockOutputStream::finalizeIndexGranularity()
+{
+    writer->finalizeIndexGranularity();
 }
 
 MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(

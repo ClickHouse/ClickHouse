@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
     MergeTreeSettingsPtr data_settings,
@@ -23,7 +18,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     CompressionCodecPtr default_codec,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     size_t part_uncompressed_bytes,
-    WrittenOffsetColumns * offset_columns)
+    WrittenOffsetSubstreams * written_offset_substreams)
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
@@ -62,13 +57,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         data_part->getMarksFileExtension(),
         default_codec,
         writer_settings,
-        std::move(index_granularity_ptr));
-
-    auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get());
-    if (!writer_on_disk)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergedColumnOnlyOutputStream supports only parts stored on disk");
-
-    writer_on_disk->setWrittenOffsetColumns(offset_columns);
+        std::move(index_granularity_ptr),
+        written_offset_substreams);
 }
 
 void MergedColumnOnlyOutputStream::write(const Block & block)
@@ -78,6 +68,11 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
 
     writer->write(block, nullptr);
     new_serialization_infos.add(block);
+}
+
+void MergedColumnOnlyOutputStream::finalizeIndexGranularity()
+{
+    writer->finalizeIndexGranularity();
 }
 
 MergeTreeData::DataPart::Checksums

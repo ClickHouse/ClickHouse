@@ -10331,12 +10331,17 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
         txn ? txn->tid : Tx::PrehistoricTID,
-        /*part_uncompressed_bytes=*/ 0);
+        /*part_uncompressed_bytes=*/ 0,
+        /*reset_columns_=*/ false,
+        /*blocks_are_granules_size=*/ false,
+        /*write_settings=*/ {},
+        /*written_offset_substreams=*/ nullptr);
 
     bool sync_on_insert = (*settings)[MergeTreeSetting::fsync_after_insert];
 
     out.write(block);
     /// Here is no projections as no data inside
+    out.finalizeIndexGranularity();
     out.finalizePart(new_data_part, sync_on_insert);
 
     new_data_part_storage->precommitTransaction();
