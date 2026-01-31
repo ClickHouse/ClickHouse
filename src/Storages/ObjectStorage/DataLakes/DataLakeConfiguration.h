@@ -190,6 +190,12 @@ public:
         return current_metadata->totalBytes(local_context);
     }
 
+    bool isDataSortedBySortingKey(StorageMetadataPtr metadata_snapshot, ContextPtr local_context) const override
+    {
+        assertInitialized();
+        return current_metadata->isDataSortedBySortingKey(metadata_snapshot, local_context);
+    }
+
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override
     {
         assertInitialized();

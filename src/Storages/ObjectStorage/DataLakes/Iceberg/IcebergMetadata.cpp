@@ -738,6 +738,47 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 }
 
 
+bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
+{
+    if (!storage_metadata_snapshot->hasSortingKey())
+        return false;
+
+    auto sorting_key = storage_metadata_snapshot->getSortingKey();
+    if (!sorting_key.sort_order_id.has_value())
+        return false;
+
+    auto table_state_snapshot = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
+    if (table_state_snapshot == nullptr)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Can't extract iceberg table state from storage snapshot for table location {}",
+            persistent_components.table_location);
+    }
+
+    /// Empty table is sorted table
+    auto data_snapshot = getRelevantDataSnapshotFromTableStateSnapshot(*table_state_snapshot, context);
+    if (!data_snapshot)
+        return true;
+
+    for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
+    {
+        auto manifest_file_ptr = getManifestFile(
+            object_storage,
+            getConfiguration(),
+            persistent_components,
+            context,
+            log,
+            manifest_list_entry.manifest_file_path,
+            manifest_list_entry.added_sequence_number,
+            manifest_list_entry.added_snapshot_id);
+
+        if (!manifest_file_ptr->areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
+            return false;
+    }
+    return true;
+}
+
 std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
 {
     auto configuration_ptr = getConfiguration();
@@ -1106,7 +1147,9 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
     if (order_by_str.empty())
         return KeyDescription{};
     order_by_str.pop_back();
-    return KeyDescription::parse(order_by_str, column_description, local_context, true);
+    auto key = KeyDescription::parse(order_by_str, column_description, local_context, true);
+    key.sort_order_id = sort_order_id;
+    return key;
 }
 
 }
