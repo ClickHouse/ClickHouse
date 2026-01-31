@@ -1302,6 +1302,18 @@ The server successfully detected this situation and will download merged part fr
     M(RuntimeFilterRowsChecked, "Number of rows checked by JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterRowsPassed, "Number of rows that passed (not filtered out by) JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterRowsSkipped, "Number of rows in blocks that were skipped by JOIN Runtime Filters", ValueType::Number) \
+    \
+    /** Hybrid row-column storage metrics. */ \
+    M(HybridStorageRowBasedReads, "Number of times row-based reading (from __row column) was used in hybrid storage.", ValueType::Number) \
+    M(HybridStorageColumnBasedReads, "Number of times column-based reading (traditional) was used when hybrid storage is enabled.", ValueType::Number) \
+    M(HybridStorageBytesReadFromRow, "Number of bytes read from __row column in hybrid storage.", ValueType::Bytes) \
+    M(HybridStorageBytesWrittenToRow, "Number of bytes written to __row column in hybrid storage.", ValueType::Bytes) \
+    M(HybridStorageRowsReadFromRow, "Number of rows read from __row column in hybrid storage.", ValueType::Number) \
+    M(HybridStorageRowsWrittenToRow, "Number of rows written to __row column in hybrid storage.", ValueType::Number) \
+    M(HybridStorageRowSerializationMicroseconds, "Time spent serializing row data for hybrid storage.", ValueType::Microseconds) \
+    M(HybridStorageRowDeserializationMicroseconds, "Time spent deserializing row data from hybrid storage.", ValueType::Microseconds) \
+    M(HybridStorageRowsTooLarge, "Number of rows that exceeded the size limit and were not stored in __row column.", ValueType::Number) \
+    M(HybridStorageChecksumMismatches, "Number of checksum verification failures when reading from __row column.", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

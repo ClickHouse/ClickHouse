@@ -2073,6 +2073,37 @@ namespace ErrorCodes
     DECLARE(UInt64, distributed_index_analysis_min_indexes_size_to_activate, 1_GiB, R"(
     Minimal index sizes (data skipping and primary key) on disk (but uncompressed) to activated distributed index analysis
     )", 0) \
+    \
+    /** Hybrid row-column storage settings. */ \
+    DECLARE(Bool, enable_hybrid_storage, false, R"(
+    Enable hybrid row-column storage. When enabled, data is stored in both
+    columnar format (traditional) and row format (in __row column). This can
+    significantly improve performance for queries that read many columns,
+    such as SELECT * or point queries with many columns.
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, hybrid_storage_max_row_size, 1048576, R"(
+    Maximum size of serialized row data in bytes (default 1MB).
+    Rows exceeding this limit will not be stored in the __row column
+    and will fall back to column-based reading.
+    )", EXPERIMENTAL) \
+    DECLARE(Float, hybrid_storage_column_threshold, 0.5, R"(
+    Threshold for switching to row-based reading.
+    If a query requests more than this fraction of non-key columns,
+    use the __row column instead of reading individual columns.
+    Value should be between 0.0 and 1.0.
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, hybrid_storage_min_columns, 0, R"(
+    Minimum number of columns being read to enable hybrid row-based reading.
+    When set to a value > 0, hybrid storage row-based reading will only be used
+    if the query reads at least this many columns. This helps avoid the overhead
+    of row-based reading for tables that aren't wide enough to benefit from it.
+    Default is 0 (no minimum, use column_threshold only).
+    Recommended value: 500 for optimal performance based on benchmarks.
+    )", EXPERIMENTAL) \
+    DECLARE(String, hybrid_storage_compression_codec, "ZSTD(3)", R"(
+    Compression codec for __row column data.
+    Default is ZSTD(3) which provides good compression ratio and speed.
+    )", EXPERIMENTAL) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)

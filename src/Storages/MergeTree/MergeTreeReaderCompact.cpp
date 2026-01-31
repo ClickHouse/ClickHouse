@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
@@ -13,6 +15,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool enable_hybrid_storage;
+    extern const MergeTreeSettingsUInt64 hybrid_storage_max_row_size;
 }
 
 MergeTreeReaderCompact::MergeTreeReaderCompact(
@@ -503,6 +511,30 @@ bool MergeTreeReaderCompact::needSkipStream(size_t column_pos, const ISerializat
 
     bool is_offsets = !substream.empty() && substream.back().type == ISerialization::Substream::ArraySizes;
     return !is_offsets || columns_for_offsets[column_pos]->level < ISerialization::getArrayLevel(substream);
+}
+
+void MergeTreeReaderCompact::initHybridStorage()
+{
+    /// Check if hybrid storage should be used. Two modes:
+    /// 1. Query plan optimization enabled it (settings.use_hybrid_row_reading)
+    /// 2. Local decision based on column selection ratio (shouldUseHybridRowReading)
+    use_hybrid_row_reading = settings.use_hybrid_row_reading || shouldUseHybridRowReading();
+
+    if (!use_hybrid_row_reading)
+        return;
+
+    /// Verify that the part actually has __row column
+    if (!hasRowColumn())
+    {
+        use_hybrid_row_reading = false;
+        return;
+    }
+
+    /// Initialize the row data serializer
+    RowDataSerializer::Settings serializer_settings;
+    serializer_settings.max_row_size = (*storage_settings)[MergeTreeSetting::hybrid_storage_max_row_size];
+    serializer_settings.enable_checksum = true;
+    row_data_serializer = std::make_unique<RowDataSerializer>(serializer_settings);
 }
 
 }

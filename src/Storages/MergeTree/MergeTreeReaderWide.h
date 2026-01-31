@@ -118,6 +118,23 @@ private:
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     clockid_t clock_type;
     bool read_without_marks = false;
+
+    /// Hybrid storage support
+    bool use_hybrid_row_reading = false;
+    std::unique_ptr<RowDataSerializer> row_data_serializer;
+
+    /// Read rows using hybrid row-based storage (from __row column).
+    /// Returns number of rows read.
+    size_t readRowsFromHybridStorage(
+        size_t from_mark,
+        size_t current_task_last_mark,
+        bool continue_reading,
+        size_t max_rows_to_read,
+        size_t rows_offset,
+        Columns & res_columns);
+
+    /// Initialize hybrid storage reading infrastructure
+    void initHybridStorage();
 };
 
 }

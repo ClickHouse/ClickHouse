@@ -5819,6 +5819,12 @@ Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
+    DECLARE(Bool, query_plan_optimize_hybrid_storage, true, R"(
+Enable query plan optimization for hybrid row-column storage.
+When enabled and a table has hybrid storage enabled (enable_hybrid_storage = 1),
+the optimizer may choose to read from the __row column instead of individual
+columns if it's more efficient (i.e., when reading many columns).
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
 )", 0) \

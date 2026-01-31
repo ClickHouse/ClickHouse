@@ -1,0 +1,74 @@
+Test 1: Wide query (SELECT *)
+1	a	value1	10	1.5	x	[1,2,3]	nullable1	2024-01-01 00:00:00
+2	b	value2	20	2.5	y	[4,5,6]	\N	2024-01-02 00:00:00
+3	c	value3	30	3.5	z	[7,8,9]	nullable3	2024-01-03 00:00:00
+Test 2: Point query with many columns
+value2	20	2.5	y	[4,5,6]	\N	2024-01-02 00:00:00
+Test 3: Narrow query (2 columns)
+1	value1
+2	value2
+3	value3
+Test 4: Key columns only
+1	a
+2	b
+3	c
+Test 5: Mixed key and non-key columns
+1	a	value1	10
+Test 6: Query with key column filter
+value2	20	2.5	y	[4,5,6]
+value3	30	3.5	z	[7,8,9]
+Test 7: Aggregation query
+60	2.5
+Test 8: Check __row column exists
+Test 9: Nullable columns
+1	nullable1
+2	\N
+3	nullable3
+Test 10: Array columns
+1	[1,2,3]
+2	[4,5,6]
+3	[7,8,9]
+Test 11: Compact parts with hybrid storage
+1	a	10	1.5	x
+2	b	20	2.5	y
+3	c	30	3.5	z
+1	a
+2	b
+3	c
+Test 12: Different threshold (0.3)
+0	0	1	2	3
+1	1	2	3	4
+2	2	3	4	5
+0	0	1
+1	1	2
+2	2	3
+Test 13: Query plan optimization
+Test 13a: Wide query optimization
+10
+Test 13b: Narrow query (no optimization)
+10
+Test 13c: Optimization disabled
+10
+Test 13d: Query-level setting override
+10
+Test 14: Merge with hybrid storage
+1	a	val1	10	1.5
+2	b	val2	20	2.5
+3	c	val3	30	3.5
+val2	20	2.5
+Test 15: Mutation full rewrite
+1	a	10	1.5	x
+2	updated	20	2.5	y
+3	c	30	3.5	z
+updated	20	2.5	y
+Test 16: Lightweight delete
+1	a	10	1.5
+3	c	30	3.5
+4	d	40	4.5
+1	a	10	1.5
+3	c	30	3.5
+4	d	40	4.5
+Test 17: Multiple merges
+30
+5
+All hybrid storage reading tests passed

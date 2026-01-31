@@ -396,6 +396,10 @@ public:
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
 
+    /// Hybrid storage optimization: enable reading from __row column instead of individual columns
+    void enableHybridRowReading() { use_hybrid_row_reading = true; }
+    bool isUsingHybridRowReading() const { return use_hybrid_row_reading; }
+
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 
@@ -527,6 +531,7 @@ private:
     bool enable_vertical_final = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
     bool allow_query_condition_cache = true;
+    bool use_hybrid_row_reading = false;
 
     ExpressionActionsPtr virtual_row_conversion;
 

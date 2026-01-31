@@ -48,6 +48,11 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         save_primary_index_in_memory,
         /*blocks_are_granules_size=*/ false);
 
+    /// Skip hybrid row writing for column-only output streams (used in vertical merge).
+    /// The __row column requires all non-key columns to be available together, but in
+    /// vertical merge each column is written separately.
+    writer_settings.skip_hybrid_row_writing = true;
+
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),
         data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),

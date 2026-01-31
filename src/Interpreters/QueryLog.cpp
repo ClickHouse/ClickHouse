@@ -158,6 +158,9 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Metrics for asynchronous reading."},
 
         {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
+
+        {"used_hybrid_storage", std::make_shared<DataTypeUInt8>(), "Whether hybrid row-column storage was used during query execution."},
+        {"hybrid_storage_mode", low_cardinality_string, "Mode of hybrid storage reading: 'row' if data was read from __row column, 'column' if traditional column-based reading was used, empty if hybrid storage was not used."},
     };
 }
 
@@ -340,6 +343,9 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
+
+    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(used_hybrid_storage);
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(hybrid_storage_mode.data(), hybrid_storage_mode.size());
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)

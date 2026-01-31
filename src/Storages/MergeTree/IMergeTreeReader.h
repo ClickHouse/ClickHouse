@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/RowDataSerializer.h>
 
 namespace DB
 {
@@ -134,6 +135,23 @@ protected:
 
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;
+
+    /// Hybrid storage support: check if we should use row-based reading.
+    /// Returns true if:
+    /// - enable_hybrid_storage is set for the table
+    /// - The part has __row column
+    /// - The ratio of requested non-key columns exceeds the threshold
+    bool shouldUseHybridRowReading() const;
+
+    /// Check if the data part has the __row column for hybrid storage.
+    bool hasRowColumn() const;
+
+    /// Get the list of non-key columns that are stored in the __row column.
+    /// These are all physical columns except for ORDER BY / PRIMARY KEY columns.
+    NamesAndTypesList getNonKeyColumnsInRowData() const;
+
+    /// Get the serializations for non-key columns (for hybrid storage deserialization).
+    SerializationByName getNonKeySerializations() const;
 
 private:
     friend class MergeTreeReaderIndex;

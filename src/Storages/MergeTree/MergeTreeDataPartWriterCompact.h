@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <Storages/MergeTree/RowDataSerializer.h>
 
 
 namespace DB
@@ -58,6 +59,9 @@ private:
 
     void initColumnsSubstreamsIfNeeded(const Block & sample);
 
+    /// Write hybrid row data for the block if hybrid storage is enabled.
+    void writeHybridRowData(const Block & block, const Granules & granules);
+
     Block header;
 
     /** Simplified SquashingTransform. The original one isn't suitable in this case
@@ -110,6 +114,12 @@ private:
     /// then finally to 'marks_file'.
     std::unique_ptr<CompressedWriteBuffer> marks_compressor;
     std::unique_ptr<HashingWriteBuffer> marks_source_hashing;
+
+    /// Hybrid storage support
+    bool hybrid_storage_enabled = false;
+    std::unique_ptr<RowDataSerializer> row_data_serializer;
+    NamesAndTypesList non_key_columns;
+    SerializationPtr row_column_serialization;
 };
 
 }
