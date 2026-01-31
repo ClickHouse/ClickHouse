@@ -102,3 +102,19 @@ def test_writes_orc_format(started_cluster_iceberg_with_spark, format_version, s
             found_orc_files = True
     assert found_orc_files
 
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_writes_detach_attach(started_cluster_iceberg_with_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_writes_complex_types_" + storage_type + "_" + get_uuid_str()
+
+    schema = "(x String)"
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, schema, format_version)
+
+    instance.query(f"DETACH TABLE {TABLE_NAME}")
+    instance.query(f"ATTACH TABLE {TABLE_NAME}")
+
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('Pavel Ivanov');", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == 'Pavel Ivanov\n'
+
