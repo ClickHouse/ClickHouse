@@ -78,7 +78,7 @@ BlockIO InterpreterCreateIndexQuery::execute()
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, current_context, {});
+        return database->tryEnqueueReplicatedDDL(query_ptr, current_context, {}, std::move(guard));
     }
 
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, current_context);
