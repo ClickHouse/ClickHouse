@@ -122,7 +122,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
     {
         String short_name = identifier.shortName();
         bool allow_ambiguous = data.join_using_columns.contains(short_name);
-        if (auto best_pos = IdentifierSemantic::chooseTable(identifier, data.tables, allow_ambiguous))
+        if (auto best_pos = IdentifierSemantic::chooseTableColumnMatch(identifier, data.tables, allow_ambiguous))
         {
             size_t table_pos = *best_pos;
             if (data.unknownColumn(table_pos, identifier))
