@@ -1,5 +1,6 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <algorithm>
+#include <filesystem>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
@@ -819,6 +820,11 @@ bool CachedOnDiskReadBufferFromFile::writeCache(char * data, size_t size, size_t
     try
     {
         file_segment.write(data, size, offset);
+    }
+    catch (std::filesystem::filesystem_error & e)
+    {
+        LOG_ERROR(log, "Insert into cache is skipped due to cache filesystem error: {}", e.what());
+        return false;
     }
     catch (ErrnoException & e)
     {
