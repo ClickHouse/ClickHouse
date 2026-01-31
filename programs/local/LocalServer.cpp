@@ -554,6 +554,18 @@ void LocalServer::setupUsers()
     auto & access_control = global_context->getAccessControl();
     access_control.setNoPasswordAllowed(getClientConfiguration().getBool("allow_no_password", true));
     access_control.setPlaintextPasswordAllowed(getClientConfiguration().getBool("allow_plaintext_password", true));
+
+    /// Enable all access control improvements.
+    access_control.setEnabledUsersWithoutRowPoliciesCanReadRows(true);
+    access_control.setOnClusterQueriesRequireClusterGrant(true);
+    access_control.setSelectFromSystemDatabaseRequiresGrant(true);
+    access_control.setSelectFromInformationSchemaRequiresGrant(true);
+    access_control.setSettingsConstraintsReplacePrevious(true);
+    access_control.setTableEnginesRequireGrant(true);
+    access_control.setEnableReadWriteGrants(true);
+    access_control.setEnableUserNameAccessType(true);
+    access_control.setThrowOnInvalidReplicatedAccessEntities(true);
+
     if (getClientConfiguration().has("config-file") || fs::exists("config.xml"))
     {
         String config_path = getClientConfiguration().getString("config-file", "");
