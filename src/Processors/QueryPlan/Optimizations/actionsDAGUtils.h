@@ -7,6 +7,7 @@ namespace DB
 
 using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
 using NodeMap = std::unordered_map<const ActionsDAG::Node *, bool>;
+using NodeReplacementMap = std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>;
 
 /// This structure stores a node mapping from one DAG to another.
 /// The rule is following:
@@ -98,5 +99,8 @@ bool allOutputsDependsOnlyOnAllowedNodes(
     const ActionsDAG & partition_actions, const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches);
 bool allOutputsDependsOnlyOnAllowedNodes(
     const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches, const ActionsDAG::Node * node, NodeMap & visited);
+
+/// Recursively replaces nodes in ActionsDAG using the provided replacement map
+const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node * node, const NodeReplacementMap & replacements);
 
 }

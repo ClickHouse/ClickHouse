@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -23,7 +24,18 @@ namespace DB::ErrorCodes
 namespace DB::QueryPlanOptimizations
 {
 
+struct NodeToSubcolumnTransformerContext
+{
+    const StorageSnapshotPtr & storage_snapshot;
+    const ContextPtr & context;
+
+    ActionsDAG & actions_dag;
+    NameSet & new_inputs;
+    NodeReplacementMap & replacements;
+};
+
 using StepStack = std::vector<IQueryPlanStep *>;
+using NodeToSubcolumnTransformer = std::function<void(const ActionsDAG::Node *, NodeToSubcolumnTransformerContext &)>;
 
 static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 {
@@ -275,6 +287,168 @@ static ReadFromMergeTree * findReadingStep(QueryPlan::Node & node, StepStack & b
     return nullptr;
 }
 
+/// Optimizes empty() and notEmpty() functions by replacing them with value size comparisons using str.size subcolumn
+void optimizeFunctionStringEmpty(const ActionsDAG::Node * node, NodeToSubcolumnTransformerContext & ctx)
+{
+    const auto * input_node = node->children[0];
+    const String subcolumn_name = input_node->result_name + ".size";
+
+    if (ctx.storage_snapshot->tryGetColumn(GetColumnsOptions::All, subcolumn_name))
+        return;
+
+    const auto * size_input = &ctx.actions_dag.addInput(subcolumn_name, std::make_shared<DataTypeUInt64>());
+
+    ColumnWithTypeAndName zero_column(
+        std::make_shared<DataTypeUInt64>()->createColumnConst(1, 0), std::make_shared<DataTypeUInt64>(), "0_UInt64");
+    const auto * zero_const = &ctx.actions_dag.addColumn(zero_column);
+
+    ActionsDAG::NodeRawConstPtrs children = {size_input, zero_const};
+    String function_name = (node->function->getName() == "empty") ? "equals" : "notEquals";
+    auto function_builder = FunctionFactory::instance().get(function_name, ctx.context);
+    const auto * new_function_node = &ctx.actions_dag.addFunction(function_builder, children, {});
+
+    ctx.replacements[node] = new_function_node;
+    ctx.replacements[input_node] = size_input;
+
+    ctx.new_inputs.insert(subcolumn_name);
+}
+
+/// Optimizes length() function by directly using str.size subcolumn
+void optimizeFunctionStringLength(const ActionsDAG::Node * node, NodeToSubcolumnTransformerContext & ctx)
+{
+    const auto * input_node = node->children[0];
+    const String subcolumn_name = input_node->result_name + ".size";
+
+    if (ctx.storage_snapshot->tryGetColumn(GetColumnsOptions::All, subcolumn_name))
+        return;
+
+    const auto * size_input = &ctx.actions_dag.addInput(subcolumn_name, std::make_shared<DataTypeUInt64>());
+
+    ctx.replacements[node] = size_input;
+    ctx.replacements[input_node] = size_input;
+
+    ctx.new_inputs.insert(subcolumn_name);
+}
+
+std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
+{
+    {
+        {TypeIndex::String, "empty"},
+        optimizeFunctionStringEmpty,
+    },
+    {
+        {TypeIndex::String, "notEmpty"},
+        optimizeFunctionStringEmpty,
+    },
+    {
+        {TypeIndex::String, "length"},
+        optimizeFunctionStringLength,
+    },
+};
+
+static std::vector<bool> rewritePrewhereToSubcolumns(ReadFromMergeTree * reading_step, std::vector<bool> required_output_positions)
+{
+    const auto & prewhere_info = reading_step->getPrewhereInfo();
+    if (!prewhere_info)
+        return required_output_positions;
+
+    auto & actions_dag = prewhere_info->prewhere_actions;
+
+    NameSet replace_exclusions;
+    NodeSet replace_candidates;
+
+    // Traverse all nodes and identify both replacement candidates and inputs that
+    // should prevent replacement
+    NameSet required_outputs;
+    const auto cols = reading_step->getOutputHeader()->getColumnsWithTypeAndName();
+    for (size_t i = 0; i < cols.size(); ++i)
+        if (required_output_positions[i])
+            required_outputs.insert(cols[i].name);
+
+    for (const auto & node : actions_dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+
+        ActionsDAG::Node const * input_node = nullptr;
+        if (!node.children.empty() && node.children.at(0)->type == ActionsDAG::ActionType::INPUT)
+            input_node = node.children.at(0);
+
+        // If the function node is present in DAG outputs, it won't be optimized
+        // since the downstream operators expect its result column
+        bool is_dag_output = (node.result_name != prewhere_info->prewhere_column_name || !prewhere_info->remove_prewhere_column)
+            && actions_dag.tryFindInOutputs(node.result_name);
+        bool may_be_optimized = input_node && !required_outputs.contains(input_node->result_name)
+            && node_transformers.contains({input_node->result_type->getTypeId(), node.function->getName()}) && !is_dag_output;
+
+        // If function node can be optimized, adding it to replace candidates.
+        // Otherwise, add all function inputs (arguments) to the list of replacement
+        // exclusions.
+        if (may_be_optimized)
+            replace_candidates.insert(&node);
+        else
+            for (const auto & child : node.children)
+                if (child->type == ActionsDAG::ActionType::INPUT)
+                    replace_exclusions.insert(child->result_name);
+    }
+
+    NameSet new_inputs;
+    NodeReplacementMap replacements;
+
+    NodeToSubcolumnTransformerContext ctx
+    {
+        reading_step->getStorageSnapshot(),
+        reading_step->getContext(),
+        actions_dag,
+        new_inputs,
+        replacements,
+    };
+
+    for (const auto & node : replace_candidates)
+    {
+        bool has_non_replacement_inputs = std::any_of(
+            node->children.begin(),
+            node->children.end(),
+            [&](const auto & input)
+            { return input->type == ActionsDAG::ActionType::INPUT && replace_exclusions.contains(input->result_name); });
+
+        if (has_non_replacement_inputs)
+            continue;
+
+        auto input_type = node->children.at(0)->result_type->getTypeId();
+        auto transformer_it = node_transformers.find({input_type, node->function->getName()});
+
+        if (transformer_it != node_transformers.end())
+            transformer_it->second(node, ctx);
+    }
+
+    if (replacements.empty())
+        return required_output_positions;
+
+    // Update prewhere actions DAG, and prewhere info
+    const auto * filter_node = &actions_dag.findInOutputs(prewhere_info->prewhere_column_name);
+    for (auto & output : actions_dag.getOutputs())
+    {
+        bool is_prewhere_column = output == filter_node;
+        output = replaceNodes(actions_dag, output, replacements);
+        if (is_prewhere_column)
+            prewhere_info->prewhere_column_name = output->result_name;
+    }
+    actions_dag.removeUnusedActions(true);
+
+    // Update reading step for rewritten prewhere actions
+    reading_step->addColumnsToRead(new_inputs);
+    reading_step->updatePrewhereInfo(prewhere_info);
+
+    // Header is changed after rewriting, so need to produce new required outputs mask
+    const auto & header = reading_step->getOutputHeader();
+    std::vector<bool> rebuilt_required_outputs_positions(header->columns(), false);
+    for (size_t i = 0; i < rebuilt_required_outputs_positions.size(); ++i)
+        rebuilt_required_outputs_positions[i] = required_outputs.contains(header->getByPosition(i).name);
+
+    return rebuilt_required_outputs_positions;
+}
+
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization)
 {
     if (root.children.size() != 1)
@@ -349,6 +523,11 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     /// It's not likely we can optimize it more.
     if (reading_in_order && !has_filter)
         return false;
+
+    const bool should_rewrite_prewhere = settings.optimize_functions_to_subcolumns && reading_step->getStorageSnapshot()->storage.supportsSubcolumns();
+
+    if (should_rewrite_prewhere)
+        required_columns = rewritePrewhereToSubcolumns(read_from_merge_tree, std::move(required_columns));
 
     auto lazy_reading = removeUnusedColumnsFromReadingStep(*read_from_merge_tree, required_columns);
     if (!lazy_reading)

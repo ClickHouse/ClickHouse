@@ -20,6 +20,7 @@ namespace Setting
     extern const SettingsBool make_distributed_plan;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
+    extern const SettingsBool optimize_functions_to_subcolumns;
     extern const SettingsBool optimize_read_in_order;
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_use_implicit_projections;
@@ -182,6 +183,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
+    optimize_functions_to_subcolumns = from[Setting::optimize_functions_to_subcolumns];
 
     max_limit_for_vector_search_queries = from[Setting::max_limit_for_vector_search_queries].value;
     vector_search_with_rescoring = from[Setting::vector_search_with_rescoring];

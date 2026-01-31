@@ -1,0 +1,115 @@
+-- No lazy materialization
+Prewhere filter column: empty(__table1.str) (removed)
+0	2025-01-01	
+2	2025-01-03	
+4	2025-01-05	
+6	2025-01-07	
+8	2025-01-09	
+-- With lazy materialization
+Prewhere filter column: equals(str.size, 0_UInt64) (removed)
+0	2025-01-01	
+2	2025-01-03	
+4	2025-01-05	
+-- Rewrite to subcolumns disabled
+Prewhere filter column: empty(__table1.str) (removed)
+0	2025-01-01	
+2	2025-01-03	
+4	2025-01-05	
+-- Mixed conditions, no lazy materialization
+Prewhere filter column: or(empty(__table1.str), equals(__table1.str, \'foo\'_String)) (removed)
+0	2025-01-01	
+2	2025-01-03	
+4	2025-01-05	
+6	2025-01-07	
+8	2025-01-09	
+-- Mixed conditions, with lazy materialization
+Prewhere filter column: or(empty(__table1.str), equals(__table1.str, \'foo\'_String)) (removed)
+0	2025-01-01	
+2	2025-01-03	
+4	2025-01-05	
+-- Prewhere column not removed
+Prewhere filter column: empty(__table1.str)
+0	2025-01-01		1
+2	2025-01-03		1
+4	2025-01-05		1
+-- Prewhere column removed, expression over lazy column
+Prewhere filter column: equals(str.size, 0_UInt64) (removed)
+0	2025-01-01		0
+2	2025-01-03		0
+4	2025-01-05		0
+-- Prewhere disabled
+Filter column: empty(__table1.str) (removed)
+0	2025-01-01	
+2	2025-01-03	
+4	2025-01-05	
+-- Prewhere DAG output reused
+Prewhere filter column: and(empty(__table1.str), less(__table1.key, 15_UInt8)) (removed)
+0	2025-01-01		1
+2	2025-01-03		1
+4	2025-01-05		1
+-- Lazy materialization with aliases
+Prewhere filter column: equals(str.size, 0_UInt64) (removed)
+0	2025-01-01	
+2	2025-01-03	
+4	2025-01-05	
+-- Mixed conditions with aliases
+Prewhere filter column: or(empty(__table1.str), equals(__table1.str, \'foo\'_String)) (removed)
+0	2025-01-01	
+2	2025-01-03	
+4	2025-01-05	
+-- Prewhere DAG output reused with aliases
+Prewhere filter column: and(empty(__table1.str), less(__table1.key, 15_UInt8)) (removed)
+0	2025-01-01		1
+2	2025-01-03		1
+4	2025-01-05		1
+-- notEmpty String, no lazy materializaton
+Prewhere filter column: notEmpty(__table1.str) (removed)
+1	2025-01-02	str-1
+3	2025-01-04	str-3
+5	2025-01-06	str-5
+7	2025-01-08	str-7
+9	2025-01-10	str-9
+-- notEmpty String, with lazy materializaton
+Prewhere filter column: notEquals(str.size, 0_UInt64) (removed)
+1	2025-01-02	str-1
+3	2025-01-04	str-3
+5	2025-01-06	str-5
+-- length String, no lazy materializaton
+Prewhere filter column: equals(length(__table1.str), 0_UInt8) (removed)
+0	2025-01-01	
+2	2025-01-03	
+4	2025-01-05	
+6	2025-01-07	
+8	2025-01-09	
+-- length String, with lazy materializaton
+Prewhere filter column: equals(str.size, 0_UInt8) (removed)
+0	2025-01-01	
+2	2025-01-03	
+4	2025-01-05	
+-- length String gt, no lazy materializaton
+Prewhere filter column: greater(length(__table1.str), 0_UInt8) (removed)
+1	2025-01-02	str-1
+3	2025-01-04	str-3
+5	2025-01-06	str-5
+7	2025-01-08	str-7
+9	2025-01-10	str-9
+-- length String gt, with lazy materializaton
+Prewhere filter column: greater(str.size, 0_UInt8) (removed)
+1	2025-01-02	str-1
+3	2025-01-04	str-3
+5	2025-01-06	str-5
+-- empty String, with name conflict
+Prewhere filter column: empty(__table1.str) (removed)
+0	2025-01-01		100
+2	2025-01-03		100
+4	2025-01-05		100
+-- notEmpty String, with name conflict
+Prewhere filter column: notEmpty(__table1.str) (removed)
+1	2025-01-02	str-1	100
+3	2025-01-04	str-3	100
+5	2025-01-06	str-5	100
+-- length String, with name conflict
+Prewhere filter column: greater(length(__table1.str), 0_UInt8) (removed)
+1	2025-01-02	str-1	100
+3	2025-01-04	str-3	100
+5	2025-01-06	str-5	100
