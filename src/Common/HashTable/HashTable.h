@@ -74,7 +74,7 @@ struct HashTableNoState
   * Otherwise the invariants in hash table probing do not met when NaNs are present.
   */
 template <typename T>
-inline bool bitEquals(T a, T b)
+inline ALWAYS_INLINE bool bitEquals(T a, T b)
 {
     if constexpr (is_floating_point<T>)
         /// Note that memcmp with constant size is a compiler builtin.
@@ -175,9 +175,9 @@ struct HashTableCell
     static const Key & getKey(const value_type & value) { return value; }  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     /// Are the keys at the cells equal?
-    bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }
-    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
-    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
+    bool ALWAYS_INLINE keyEquals(const Key & key_) const { return bitEquals(key, key_); }
+    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
+    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
 
     /// If the cell can remember the value of the hash function, then remember it.
     void setHash(size_t /*hash_value*/) {}

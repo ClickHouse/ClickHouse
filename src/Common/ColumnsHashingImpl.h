@@ -350,13 +350,14 @@ protected:
 
             if constexpr (has_mapped)
             {
-                cache.value.first = it->getKey();
+                /// Using internal key getter for cache
+                cache.value.first = it->getKey(it->getValue());
                 cache.value.second = it->getMapped();
                 cached = &cache.value.second;
             }
             else
             {
-                cache.value = it->getKey();
+                cache.value = it->getValue();
             }
         }
 
