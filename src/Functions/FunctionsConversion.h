@@ -5969,9 +5969,8 @@ private:
                     if (!accurate::convertNumeric<typename ColumnNumberType::ValueType, FieldType, false>(in_data[i], converted_value))
                         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be converted to enum type", toString(in_data[i]));
 
-                    // This checks the number value exists in Enum values.
-                    /// If not found, an error is thrown.
-                    result_type.findByValue(converted_value);
+                    /// Validate that value exists in Enum (throws if not found)
+                    result_type.getNameForValue(converted_value);
                     out_data[i] = converted_value;
                 }
             }

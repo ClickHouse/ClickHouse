@@ -1,11 +1,9 @@
 #include <DataTypes/EnumValues.h>
 #include <boost/algorithm/string.hpp>
 #include <base/sort.h>
-#include <Common/HashTable/HashMap.h>
-#include <Interpreters/Context.h>
-#include <Core/Settings.h>
 #include <Core/Field.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -19,71 +17,186 @@ namespace ErrorCodes
 }
 
 template <typename T>
-class EnumValues<T>::NameToValueMap : public HashMap<std::string_view, T, StringViewHash> {};
-
-template <typename T>
 EnumValues<T>::EnumValues(const Values & values_)
     : values(values_)
-    , name_to_value_map(std::make_unique<NameToValueMap>())
 {
     if (values.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "DataTypeEnum enumeration cannot be empty");
 
-    ::sort(std::begin(values), std::end(values), [] (auto & left, auto & right)
+    /// Sort values by numeric value (for getValues() compatibility)
+    ::sort(std::begin(values), std::end(values), [](const auto & left, const auto & right)
     {
         return left.second < right.second;
     });
 
-    fillMaps();
+    buildLookupStructures();
 }
 
 template <typename T>
 EnumValues<T>::~EnumValues() = default;
 
 template <typename T>
-void EnumValues<T>::fillMaps()
+void EnumValues<T>::buildLookupStructures()
 {
-    for (const auto & name_and_value : values)
+    const size_t n = values.size();
+
+    /// Build name-sorted index for binary search on names
+    name_sorted_index.resize(n);
+    for (size_t i = 0; i < n; ++i)
+        name_sorted_index[i] = static_cast<uint16_t>(i);
+
+    ::sort(name_sorted_index.begin(), name_sorted_index.end(), [this](uint16_t a, uint16_t b)
     {
-        const auto inserted_value = name_to_value_map->insert(
-            { std::string_view{name_and_value.first}, name_and_value.second });
+        return values[a].first < values[b].first;
+    });
 
-        if (!inserted_value.second)
+    /// Check for duplicate names
+    for (size_t i = 1; i < n; ++i)
+    {
+        if (values[name_sorted_index[i - 1]].first == values[name_sorted_index[i]].first)
+        {
+            const auto & dup_name = values[name_sorted_index[i]].first;
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Duplicate names in enum: '{}' = {} and {}",
-                    name_and_value.first, toString(name_and_value.second), toString(inserted_value.first->getMapped()));
+                    dup_name,
+                    toString(values[name_sorted_index[i - 1]].second),
+                    toString(values[name_sorted_index[i]].second));
+        }
+    }
 
-        const auto inserted_name = value_to_name_map.insert(
-            { name_and_value.second, std::string_view{name_and_value.first} });
-
-        if (!inserted_name.second)
+    /// Check for duplicate values (values are already sorted by value)
+    for (size_t i = 1; i < n; ++i)
+    {
+        if (values[i - 1].second == values[i].second)
+        {
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Duplicate values in enum: '{}' = {} and '{}'",
-                    name_and_value.first, toString(name_and_value.second), toString((*inserted_name.first).first));
+                    values[i].first, toString(values[i].second), values[i - 1].first);
+        }
+    }
+
+    /// Find min/max values
+    min_value = values.front().second;
+    max_value = values.back().second;
+
+    /// Decide strategy for value-to-name lookup
+    /// Cast to Int32 first to avoid signed overflow when computing range (e.g., 127 - (-128) for Enum8)
+    size_t range = static_cast<size_t>(static_cast<Int32>(max_value) - static_cast<Int32>(min_value)) + 1;
+
+    if constexpr (sizeof(T) == 1)
+    {
+        /// Enum8: always use direct lookup (max 256 bytes)
+        use_direct_value_lookup = true;
+    }
+    else
+    {
+        /// Enum16: use direct lookup if range is small enough
+        use_direct_value_lookup = (range <= DIRECT_LOOKUP_THRESHOLD);
+    }
+
+    if (use_direct_value_lookup)
+    {
+        /// Build direct lookup array
+        value_to_index.resize(range, INVALID_INDEX);
+        for (size_t i = 0; i < n; ++i)
+        {
+            /// Cast to Int32 first to avoid signed overflow (e.g., 1 - (-128) for Enum8)
+            size_t idx = static_cast<size_t>(static_cast<Int32>(values[i].second) - static_cast<Int32>(min_value));
+            value_to_index[idx] = static_cast<uint16_t>(i);
+        }
+    }
+    else
+    {
+        /// Build value-sorted index for binary search
+        /// Since values are already sorted by value, the index is just 0, 1, 2, ...
+        value_sorted_index.resize(n);
+        for (size_t i = 0; i < n; ++i)
+            value_sorted_index[i] = static_cast<uint16_t>(i);
     }
 }
 
 template <typename T>
-EnumValues<T>::ValueToNameMap::const_iterator EnumValues<T>::findByValue(const T & value) const
+bool EnumValues<T>::hasValue(T value) const
 {
-    auto it = value_to_name_map.find(value);
-    if (it == value_to_name_map.end())
-        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unexpected value {} in enum", toString(value));
+    if (use_direct_value_lookup)
+    {
+        if (value < min_value || value > max_value)
+            return false;
+        /// Cast to Int32 first to avoid signed overflow
+        size_t idx = static_cast<size_t>(static_cast<Int32>(value) - static_cast<Int32>(min_value));
+        return value_to_index[idx] != INVALID_INDEX;
+    }
+    else
+    {
+        /// Binary search on values (values are sorted by value)
+        size_t lo = 0;
+        size_t hi = values.size();
+        while (lo < hi)
+        {
+            size_t mid = lo + (hi - lo) / 2;
+            T mid_val = values[mid].second;
+            if (mid_val < value)
+                lo = mid + 1;
+            else if (mid_val > value)
+                hi = mid;
+            else
+                return true;
+        }
+        return false;
+    }
+}
 
-    return it;
+template <typename T>
+std::string_view EnumValues<T>::getNameForValue(T value) const
+{
+    std::string_view result;
+    if (!getNameForValue(value, result))
+        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unexpected value {} in enum", toString(value));
+    return result;
+}
+
+template <typename T>
+bool EnumValues<T>::getNameForValue(T value, std::string_view & result) const
+{
+    if (use_direct_value_lookup)
+    {
+        if (value < min_value || value > max_value)
+            return false;
+        /// Cast to Int32 first to avoid signed overflow
+        size_t arr_idx = static_cast<size_t>(static_cast<Int32>(value) - static_cast<Int32>(min_value));
+        uint16_t idx = value_to_index[arr_idx];
+        if (idx == INVALID_INDEX)
+            return false;
+        result = values[idx].first;
+        return true;
+    }
+    else
+    {
+        /// Binary search on values (values are sorted by value)
+        size_t lo = 0;
+        size_t hi = values.size();
+        while (lo < hi)
+        {
+            size_t mid = lo + (hi - lo) / 2;
+            T mid_val = values[mid].second;
+            if (mid_val < value)
+                lo = mid + 1;
+            else if (mid_val > value)
+                hi = mid;
+            else
+            {
+                result = values[mid].first;
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 template <typename T>
 T EnumValues<T>::getValue(std::string_view field_name) const
 {
     T x;
-    if (auto it = name_to_value_map->find(field_name); it != name_to_value_map->end())
-    {
-        return it->getMapped();
-    }
-    if (tryParse(x, field_name.data(), field_name.size()) && value_to_name_map.contains(x))
-    {
-        /// If we fail to find given string in enum names, we will try to treat it as enum id.
+    if (tryGetValue(x, field_name))
         return x;
-    }
 
     auto hints = this->getHints(std::string{field_name});
     auto hints_string = !hints.empty() ? ", maybe you meant: " + toString(hints) : "";
@@ -93,20 +206,38 @@ T EnumValues<T>::getValue(std::string_view field_name) const
 template <typename T>
 bool EnumValues<T>::tryGetValue(T & x, std::string_view field_name) const
 {
-    if (auto it = name_to_value_map->find(field_name); it != name_to_value_map->end())
+    /// Binary search on name-sorted index
+    size_t lo = 0;
+    size_t hi = name_sorted_index.size();
+    while (lo < hi)
     {
-        x = it->getMapped();
-        return true;
+        size_t mid = lo + (hi - lo) / 2;
+        std::string_view mid_name = values[name_sorted_index[mid]].first;
+
+        int cmp = mid_name.compare(field_name);
+        if (cmp < 0)
+            lo = mid + 1;
+        else if (cmp > 0)
+            hi = mid;
+        else
+        {
+            x = values[name_sorted_index[mid]].second;
+            return true;
+        }
     }
 
-    /// If we fail to find given string in enum names, we will try to treat it as enum id.
-    return tryParse(x, field_name.data(), field_name.size()) && value_to_name_map.contains(x);
+    /// Fallback: try parsing as numeric value
+    if (tryParse(x, field_name.data(), field_name.size()) && hasValue(x))
+        return true;
+
+    return false;
 }
 
 template <typename T>
 Names EnumValues<T>::getAllRegisteredNames() const
 {
     Names result;
+    result.reserve(values.size());
     for (const auto & value : values)
         result.emplace_back(value.first);
     return result;
@@ -136,18 +267,42 @@ bool EnumValues<T>::containsAll(const TValues & rhs_values) const
 {
     auto check = [&](const auto & value)
     {
-        auto it = name_to_value_map->find(value.first);
-        /// If we don't have this name, than we have to be sure,
-        /// that this value exists in enum
-        if (it == name_to_value_map->end())
-            return value_to_name_map.contains(static_cast<T>(value.second));
-
-        /// If we have this name, than it should have the same value
-        return it->value.second == value.second;
+        /// Try to find by name using binary search
+        T found_value;
+        if (tryGetValue(found_value, value.first))
+        {
+            /// If we have this name, it should have the same value
+            return found_value == value.second;
+        }
+        /// If we don't have this name, check if the value exists
+        return hasValue(static_cast<T>(value.second));
     };
 
     return std::all_of(rhs_values.begin(), rhs_values.end(), check);
 }
+
+template <typename T>
+size_t EnumValues<T>::memoryUsage() const
+{
+    size_t total = sizeof(*this);
+
+    /// values vector
+    total += values.capacity() * sizeof(Value);
+    for (const auto & v : values)
+        total += v.first.capacity();
+
+    /// name_sorted_index
+    total += name_sorted_index.capacity() * sizeof(uint16_t);
+
+    /// value_to_index or value_sorted_index
+    if (use_direct_value_lookup)
+        total += value_to_index.capacity() * sizeof(uint16_t);
+    else
+        total += value_sorted_index.capacity() * sizeof(uint16_t);
+
+    return total;
+}
+
 template bool EnumValues<Int8>::containsAll<EnumValues<Int8>::Values>(const EnumValues<Int8>::Values & rhs_values) const;
 template bool EnumValues<Int8>::containsAll<EnumValues<Int16>::Values>(const EnumValues<Int16>::Values & rhs_values) const;
 template bool EnumValues<Int16>::containsAll<EnumValues<Int8>::Values>(const EnumValues<Int8>::Values & rhs_values) const;
