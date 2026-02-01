@@ -1,0 +1,12 @@
+<clickhouse>
+    <remote_servers>
+        <cluster_simple>
+            <shard>
+                <replica>
+                    <host>s3_node</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster_simple>
+    </remote_servers>
+</clickhouse>
