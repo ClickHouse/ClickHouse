@@ -75,24 +75,24 @@ REGISTER_FUNCTION(FunctionColorOKLCHToSRGB)
         {
             "Convert OKLCH to sRGB",
             R"(
-                            SELECT colorOKLCHToSRGB((0.6, 0.12, 40)) AS rgb
+SELECT colorOKLCHToSRGB((0.6, 0.12, 40)) AS rgb;
                         )",
             R"(
-                            ┌─rgb─────────────────────────────────────────────────────┐
-                            │(186.02058688365264,100.68677189684993,71.67819977081572)                                      │
-                            └─────────────────────────────────────────────────────────┘
+┌─rgb───────────────────────────────────────────────────────┐
+│ (186.02058688365264,100.68677189684993,71.67819977081575) │
+└───────────────────────────────────────────────────────────┘
                         )"
             },
          {
             "Convert OKLCH to sRGB (UInt8)",
             R"(
-                            WITH colorOKLCHToSRGB((0.6, 0.12, 40)) AS t
-                            SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB
+WITH colorOKLCHToSRGB((0.6, 0.12, 40)) AS t
+SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB;
                         )",
             R"(
-                            ┌─RGB──────────┐
-                            │ (186,100,71) │
-                            └──────────────┘
+┌─RGB──────────┐
+│ (186,100,71) │
+└──────────────┘
                         )"
             }
     };
