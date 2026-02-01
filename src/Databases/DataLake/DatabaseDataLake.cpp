@@ -58,6 +58,8 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString aws_access_key_id;
     extern const DatabaseDataLakeSettingsString aws_secret_access_key;
     extern const DatabaseDataLakeSettingsString region;
+    extern const DatabaseDataLakeSettingsString aws_role_arn;
+    extern const DatabaseDataLakeSettingsString aws_role_session_name;
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
@@ -142,6 +144,8 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
         .aws_access_key_id = settings[DatabaseDataLakeSetting::aws_access_key_id].value,
         .aws_secret_access_key = settings[DatabaseDataLakeSetting::aws_secret_access_key].value,
         .region = settings[DatabaseDataLakeSetting::region].value,
+        .aws_role_arn = settings[DatabaseDataLakeSetting::aws_role_arn].value,
+        .aws_role_session_name = settings[DatabaseDataLakeSetting::aws_role_session_name].value,
     };
 
     switch (settings[DatabaseDataLakeSetting::catalog_type].value)

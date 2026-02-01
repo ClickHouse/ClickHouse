@@ -120,6 +120,8 @@ struct CatalogSettings
     String aws_access_key_id;
     String aws_secret_access_key;
     String region;
+    String aws_role_arn;
+    String aws_role_session_name;
 
     DB::SettingsChanges allChanged() const;
 };
