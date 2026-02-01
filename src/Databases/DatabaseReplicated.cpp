@@ -2126,6 +2126,8 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
 
     waitDatabaseStarted();
 
+    std::lock_guard lock{metadata_mutex};
+
     String statement = readMetadataFile(table_name);
     String statement_to;
     if (exchange)
@@ -2166,7 +2168,6 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
             txn->addOp(zkutil::makeCreateRequest(metadata_zk_path_to, zk_statement, zkutil::CreateMode::Persistent));
     }
 
-    std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
     new_digest -= DB::getMetadataHash(table_name, statement);
     new_digest += DB::getMetadataHash(to_table_name, statement);
