@@ -1,13 +1,14 @@
 #pragma once
 
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <IO/ReadSettings.h>
 #include <Common/PageCache.h>
 
 namespace DB
 {
 
-class CachedInMemoryReadBufferFromFile : public ReadBufferFromFileBase
+class CachedInMemoryReadBufferFromFile : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
 {
 public:
     /// `in_` must support using external buffer. I.e. we assign its internal_buffer before
@@ -29,6 +30,7 @@ public:
     bool supportsRightBoundedReads() const override { return true; }
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
+    std::optional<Field> getMetadata(const String & name) const override;
 
 private:
     PageCacheKey cache_key; // .offset is offset of `chunk` start

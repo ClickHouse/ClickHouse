@@ -4,9 +4,12 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/Web/Configuration.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -114,6 +117,19 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 bool urlWithGlobs(const String & uri)
 {
     return (uri.contains('{') && uri.contains('}')) || uri.contains('|');
+}
+
+bool urlPathHasListableGlobs(const String & uri)
+{
+    const size_t scheme_pos = uri.find("://");
+    const size_t authority_start = (scheme_pos == String::npos) ? 0 : scheme_pos + 3;
+    const size_t path_start = uri.find('/', authority_start);
+    if (path_start == String::npos)
+        return false;
+
+    const size_t path_end = uri.find_first_of("?#", path_start);
+    const auto path = uri.substr(path_start, path_end - path_start);
+    return path.find('*') != String::npos;
 }
 
 String getSampleURI(String uri, ContextPtr context)
@@ -810,10 +826,10 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
 
 namespace
 {
-    class ReadBufferIterator : public IReadBufferIterator, WithContext
+    class URLReadBufferIterator : public IReadBufferIterator, WithContext
     {
     public:
-        ReadBufferIterator(
+        URLReadBufferIterator(
             const std::vector<String> & urls_to_check_,
             std::optional<String> format_,
             const CompressionMethod & compression_method_,
@@ -1043,7 +1059,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     else
         urls_to_check = {uri};
 
-    ReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
+    URLReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
     return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
@@ -1713,10 +1729,9 @@ void registerStorageURL(StorageFactory & factory)
 {
     factory.registerStorage(
         "URL",
-        [](const StorageFactory::Arguments & args)
+        [](const StorageFactory::Arguments & args) -> StoragePtr
         {
             ASTs & engine_args = args.engine_args;
-            auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext());
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
             auto context = args.getLocalContext();
 
@@ -1724,19 +1739,54 @@ void registerStorageURL(StorageFactory & factory)
             if (args.storage_def->partition_by)
                 partition_by = args.storage_def->partition_by->clone();
 
-            return std::make_shared<StorageURL>(
-                configuration.url,
+            auto config = StorageURL::getConfiguration(engine_args, context);
+            const bool use_object_storage
+                = config.http_method.empty()
+                && urlPathHasListableGlobs(config.url);
+
+            if (!use_object_storage)
+            {
+                return std::make_shared<StorageURL>(
+                    config.url,
+                    args.table_id,
+                    config.format,
+                    format_settings,
+                    args.columns,
+                    args.constraints,
+                    args.comment,
+                    context,
+                    config.compression_method,
+                    config.headers,
+                    config.http_method,
+                    partition_by,
+                    /* distributed_processing */ false);
+            }
+
+            auto configuration = std::make_shared<StorageWebConfiguration>();
+            StorageObjectStorageConfiguration::initialize(*configuration, engine_args, context, /* with_table_structure */ false);
+
+            ContextMutablePtr context_copy = Context::createCopy(args.getContext());
+            Settings settings_copy = args.getLocalContext()->getSettingsCopy();
+            context_copy->setSettings(settings_copy);
+
+            return std::make_shared<StorageObjectStorage>(
+                configuration,
+                configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE),
+                context_copy,
                 args.table_id,
-                configuration.format,
-                format_settings,
                 args.columns,
                 args.constraints,
                 args.comment,
-                context,
-                configuration.compression_method,
-                configuration.headers,
-                configuration.http_method,
-                partition_by);
+                format_settings,
+                args.mode,
+                configuration->getCatalog(context, args.query.attach),
+                args.query.if_not_exists,
+                /* is_datalake_query */ false,
+                /* distributed_processing */ false,
+                partition_by,
+                /* order_by */ nullptr,
+                /* is_table_function */ false,
+                /* lazy_init */ false);
         },
         {
             .supports_settings = true,

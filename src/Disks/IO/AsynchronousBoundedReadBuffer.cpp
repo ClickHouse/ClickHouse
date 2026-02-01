@@ -427,4 +427,11 @@ size_t AsynchronousBoundedReadBuffer::readBigAt(char * to, size_t n, size_t rang
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() is not implemented for a given implementation");
 }
 
+std::optional<Field> AsynchronousBoundedReadBuffer::getMetadata(const String & name) const
+{
+    if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(impl.get()))
+        return provider->getMetadata(name);
+    return std::nullopt;
+}
+
 }

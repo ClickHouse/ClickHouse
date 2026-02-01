@@ -31,13 +31,15 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     size_t file_size_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
-    size_t read_until_position_)
+    size_t read_until_position_,
+    HTTPHeaderEntries headers_)
     : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
     , log(getLogger("ReadBufferFromWebServer"))
     , context(context_)
     , url(url_)
     , buf_size(settings_.remote_fs_buffer_size)
     , read_settings(settings_)
+    , headers(std::move(headers_))
     , use_external_buffer(use_external_buffer_)
     , read_until_position(read_until_position_)
 {
@@ -66,6 +68,7 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
                    .withTimeouts(connection_timeouts)
                    .withBufSize(buf_size)
                    .withHostFilter(&context->getRemoteHostFilter())
+                   .withHeaders(headers)
                    .withExternalBuf(use_external_buffer)
                    .create(credentials);
 
@@ -134,6 +137,24 @@ bool ReadBufferFromWebServer::nextImpl()
         offset += working_buffer.size();
 
     return result;
+}
+
+Map ReadBufferFromWebServer::getResponseHeaders() const
+{
+    if (!impl)
+        return {};
+
+    if (auto * http_buf = dynamic_cast<ReadWriteBufferFromHTTP *>(impl.get()))
+        return http_buf->getResponseHeaders();
+
+    return {};
+}
+
+std::optional<Field> ReadBufferFromWebServer::getMetadata(const String & name) const
+{
+    if (name == "headers")
+        return Field(getResponseHeaders());
+    return std::nullopt;
 }
 
 

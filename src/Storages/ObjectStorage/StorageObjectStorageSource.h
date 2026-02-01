@@ -1,6 +1,7 @@
 #pragma once
 #include <optional>
 #include <Common/re2.h>
+#include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <IO/Archives/IArchiveReader.h>
@@ -88,6 +89,9 @@ protected:
     size_t total_rows_in_file = 0;
     LoggerPtr log = getLogger("StorageObjectStorageSource");
 
+    Map http_response_headers;
+    bool http_response_headers_initialized = false;
+
     struct ReaderHolder : private boost::noncopyable
     {
     public:
@@ -108,6 +112,7 @@ protected:
 
         ObjectInfoPtr getObjectInfo() const { return object_info; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
+        ReadBuffer * readBuffer() const { return read_buf.get(); }
 
     private:
         ObjectInfoPtr object_info;

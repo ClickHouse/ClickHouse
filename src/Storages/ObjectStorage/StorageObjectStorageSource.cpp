@@ -12,6 +12,8 @@
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
+#include <Disks/IO/ReadBufferFromWebServer.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCacheKey.h>
@@ -45,6 +47,11 @@
 #include <fmt/ranges.h>
 #include <Common/ProfileEvents.h>
 #include <Core/SettingsEnums.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
+#include <IO/IReadBufferMetadataProvider.h>
 
 namespace fs = std::filesystem;
 namespace ProfileEvents
@@ -385,6 +392,25 @@ Chunk StorageObjectStorageSource::generate()
                 },
                 read_context);
 
+            if (read_from_format_info.requested_virtual_columns.contains("_headers"))
+            {
+                if (!http_response_headers_initialized)
+                {
+                    if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(reader.readBuffer()))
+                    {
+                        if (auto metadata = provider->getMetadata("headers"); metadata && metadata->getType() == Field::Types::Map)
+                            http_response_headers = metadata->safeGet<Map>();
+                    }
+                    http_response_headers_initialized = true;
+                }
+
+                auto type = std::make_shared<DataTypeMap>(
+                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+
+                chunk.addColumn(type->createColumnConst(chunk.getNumRows(), http_response_headers)->convertToFullColumnIfConst());
+            }
+
 
 #if USE_PARQUET
             if (chunk_size && chunk.hasColumns())
@@ -457,6 +483,8 @@ Chunk StorageObjectStorageSource::generate()
 
         if (!reader)
             break;
+
+        http_response_headers_initialized = false;
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.

@@ -1,127 +1,35 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 
+#include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromIndexPages.h>
 #include <Common/logger_useful.h>
-#include <Common/escapeForFileName.h>
-
-#include <Core/ServerSettings.h>
-
-#include <IO/ReadWriteBufferFromHTTP.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
-#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
-#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ReadBufferFromWebServer.h>
-#include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Disks/IO/getThreadPoolReader.h>
+#include <IO/ConnectionTimeouts.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
+#include <Poco/Timestamp.h>
 
-#include <Storages/MergeTree/MergeTreeData.h>
-
-#include <Poco/Exception.h>
-#include <filesystem>
-
-
-namespace fs = std::filesystem;
+#include <deque>
+#include <unordered_set>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int FILE_DOESNT_EXIST;
 }
 
-std::pair<WebObjectStorage::FileDataPtr, std::vector<fs::path>>
-WebObjectStorage::loadFiles(const String & path, const std::unique_lock<SharedMutex> &) const
-{
-    std::vector<fs::path> loaded_files;
-    auto full_url = fs::path(url) / path;
-
-    LOG_TRACE(log, "Adding directory: {} ({})", path, full_url);
-
-    FileDataPtr result;
-    try
-    {
-        Poco::Net::HTTPBasicCredentials credentials{};
-
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
-            getContext()->getSettingsRef(),
-            getContext()->getServerSettings());
-
-        auto metadata_buf = BuilderRWBufferFromHTTP(Poco::URI(fs::path(full_url) / ".index"))
-                                .withConnectionGroup(HTTPConnectionGroupType::DISK)
-                                .withSettings(getContext()->getReadSettings())
-                                .withTimeouts(timeouts)
-                                .withHostFilter(&getContext()->getRemoteHostFilter())
-                                .withSkipNotFound(true)
-                                .create(credentials);
-
-        String file_name;
-
-        while (!metadata_buf->eof())
-        {
-            readText(file_name, *metadata_buf);
-            assertChar('\t', *metadata_buf);
-
-            bool is_directory;
-            readBoolText(is_directory, *metadata_buf);
-            size_t size = 0;
-            if (!is_directory)
-            {
-                assertChar('\t', *metadata_buf);
-                readIntText(size, *metadata_buf);
-            }
-            assertChar('\n', *metadata_buf);
-
-            FileDataPtr file_data = is_directory
-                ? FileData::createDirectoryInfo(false)
-                : FileData::createFileInfo(size);
-
-            auto file_path = fs::path(path) / file_name;
-            const bool inserted = files.add(file_path, file_data).second;
-            if (!inserted)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Loading data for {} more than once", file_path);
-
-            LOG_TRACE(getLogger("DiskWeb"), "Adding file: {}, size: {}", file_path, size);
-            loaded_files.emplace_back(file_path);
-        }
-
-        /// Check for not found url after read attempt, because of delayed initialization.
-        if (metadata_buf->hasNotFoundURL())
-            return {};
-
-        auto [it, inserted] = files.add(path, FileData::createDirectoryInfo(true));
-        if (!inserted)
-        {
-             if (it->second->loaded_children)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Loading data for {} more than once", path);
-
-             it->second->loaded_children = true;
-        }
-
-        return std::pair(it->second, loaded_files);
-    }
-    catch (HTTPException & e)
-    {
-        e.addMessage("while loading disk metadata");
-        throw;
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("while loading disk metadata");
-        throw;
-    }
-}
-
-
 WebObjectStorage::WebObjectStorage(
     const String & url_,
-    ContextPtr context_)
+    const String & query_fragment_,
+    ContextPtr context_,
+    HTTPHeaderEntries headers_)
     : WithContext(context_->getGlobalContext())
     , url(url_)
+    , query_fragment(query_fragment_)
+    , headers(std::move(headers_))
     , log(getLogger("WebObjectStorage"))
 {
 }
@@ -134,96 +42,53 @@ bool WebObjectStorage::exists(const StoredObject & object) const
 bool WebObjectStorage::exists(const std::string & path) const
 {
     LOG_TRACE(getLogger("DiskWeb"), "Checking existence of path: {}", path);
-    return tryGetFileInfo(path) != nullptr;
+    return tryGetObjectMetadata(path, /* with_tags */ false).has_value();
 }
 
-WebObjectStorage::FileDataPtr WebObjectStorage::getFileInfo(const String & path) const
+void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
-    auto file_info = tryGetFileInfo(path);
-    if (!file_info)
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "No such file: {}", path);
-    return file_info;
-}
+    MetadataStorageFromIndexPages metadata_storage(*this);
 
-std::vector<std::filesystem::path> WebObjectStorage::listDirectory(const String & path) const
-{
-    auto file_info = tryGetFileInfo(path);
-    if (!file_info)
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "No such file: {}", path);
+    std::string normalized_path = path;
+    if (normalized_path == "/")
+        normalized_path.clear();
+    if (normalized_path.starts_with('/'))
+        normalized_path.erase(0, 1);
+    if (!normalized_path.empty() && !normalized_path.ends_with('/'))
+        normalized_path += '/';
 
-    if (file_info->type != FileType::Directory)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} is not a directory", path);
+    std::deque<std::string> pending_directories;
+    pending_directories.push_back(normalized_path);
 
-    std::vector<std::filesystem::path> result;
-    if (!file_info->loaded_children)
+    std::unordered_set<std::string> visited_directories;
+
+    while (!pending_directories.empty())
     {
-        std::unique_lock unique_lock(metadata_mutex);
-        if (!file_info->loaded_children)
-            return loadFiles(path, unique_lock).second;
-    }
-    std::shared_lock shared_lock(metadata_mutex);
-    for (const auto & [file_path, _] : files)
-    {
-        if (fs::path(parentPath(file_path)) / "" == fs::path(path) / "")
-            result.emplace_back(file_path);
-    }
-    return result;
-}
+        if (max_keys && children.size() >= max_keys)
+            break;
 
-WebObjectStorage::FileDataPtr WebObjectStorage::tryGetFileInfo(const String & path) const
-{
-    std::shared_lock shared_lock(metadata_mutex);
+        auto current = std::move(pending_directories.front());
+        pending_directories.pop_front();
 
-    bool is_file = fs::path(path).has_extension();
-    if (auto it = files.find(path, is_file); it != files.end())
-        return it->second;
+        if (!visited_directories.emplace(current).second)
+            continue;
 
-    if (is_file)
-    {
-        shared_lock.unlock();
-
-        const auto parent_path = fs::path(path).parent_path();
-        auto parent_info = tryGetFileInfo(parent_path);
-        if (!parent_info)
+        auto entries = metadata_storage.listDirectory(current);
+        for (const auto & entry : entries)
         {
-            return nullptr;
-        }
+            if (max_keys && children.size() >= max_keys)
+                break;
 
-        if (!parent_info->loaded_children)
-        {
-            std::unique_lock unique_lock(metadata_mutex);
-            if (!parent_info->loaded_children)
-                loadFiles(parent_path, unique_lock);
-        }
+            if (entry.ends_with('/'))
+            {
+                pending_directories.push_back(entry);
+                continue;
+            }
 
-        shared_lock.lock();
-
-        if (auto jt = files.find(path, is_file); jt != files.end())
-            return jt->second;
-
-        return nullptr;
-    }
-
-    auto it = std::lower_bound(
-        files.begin(), files.end(), path, [](const auto & file, const std::string & path_) { return file.first < path_; });
-    if (it != files.end())
-    {
-        if (startsWith(it->first, path) || (it != files.begin() && startsWith(std::prev(it)->first, path)))
-        {
-            shared_lock.unlock();
-            std::unique_lock unique_lock(metadata_mutex);
-
-            /// Add this directory path not files cache to simplify further checks for this path.
-            return files.add(path, FileData::createDirectoryInfo(false)).first->second;
+            auto metadata = tryGetObjectMetadata(entry, /* with_tags */ false);
+            children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry, std::move(metadata)));
         }
     }
-
-    shared_lock.unlock();
-    std::unique_lock unique_lock(metadata_mutex);
-
-    if (auto jt = files.find(path, is_file); jt != files.end())
-        return jt->second;
-    return loadFiles(path, unique_lock).first;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
@@ -232,11 +97,13 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     std::optional<size_t>) const
 {
     return std::make_unique<ReadBufferFromWebServer>(
-        fs::path(url) / object.remote_path,
+        buildURL(object.remote_path),
         getContext(),
         object.bytes_size,
         read_settings,
-        read_settings.remote_read_buffer_use_external_buffer);
+        read_settings.remote_read_buffer_use_external_buffer,
+        /* read_until_position */ 0,
+        headers);
 }
 
 void WebObjectStorage::throwNotAllowed()
@@ -282,14 +149,56 @@ ObjectStorageKeyGeneratorPtr WebObjectStorage::createKeyGenerator() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "createKeyGenerator is not supported for {}", getName());
 }
 
-ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & /* path */, bool) const
+ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & path, bool with_tags) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", getName());
+    auto metadata = tryGetObjectMetadata(path, with_tags);
+    if (!metadata)
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "No such file: {}", path);
+    return *metadata;
 }
 
-std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::string & /* path */, bool) const
+std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", getName());
+    Poco::Net::HTTPBasicCredentials credentials{};
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
+        getContext()->getSettingsRef(),
+        getContext()->getServerSettings());
+
+    auto response_buf = BuilderRWBufferFromHTTP(Poco::URI(buildURL(path), false))
+                            .withConnectionGroup(HTTPConnectionGroupType::DISK)
+                            .withSettings(getContext()->getReadSettings())
+                            .withTimeouts(timeouts)
+                            .withHostFilter(&getContext()->getRemoteHostFilter())
+                            .withSkipNotFound(true)
+                            .withDelayInit(false)
+                            .withHeaders(headers)
+                            .create(credentials);
+
+    if (response_buf->hasNotFoundURL())
+        return std::nullopt;
+
+    ObjectMetadata metadata;
+    auto file_info = response_buf->getFileInfo();
+    if (file_info.file_size)
+        metadata.size_bytes = *file_info.file_size;
+    if (file_info.last_modified)
+        metadata.last_modified = Poco::Timestamp::fromEpochTime(*file_info.last_modified);
+    return metadata;
+}
+
+std::string WebObjectStorage::buildURL(const std::string & path) const
+{
+    if (path.empty())
+        return url + query_fragment;
+
+    std::string result = url;
+    if (!result.ends_with('/'))
+        result += '/';
+    if (path.starts_with('/'))
+        result += path.substr(1);
+    else
+        result += path;
+    return result + query_fragment;
 }
 
 }

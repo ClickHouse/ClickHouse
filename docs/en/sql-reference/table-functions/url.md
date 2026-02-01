@@ -55,6 +55,26 @@ SELECT * FROM test_table;
 
 Patterns in curly brackets `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](remote.md#globs-in-addresses) function.
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](../../operations/settings/settings.md#glob_expansion_max_elements) setting.
+For path glob syntax (such as `*`, `?`, `{a,b}`, `{N..M}`, and `**`), see [Globs in path](file.md#globs-in-path).
+
+## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
+
+For `url()` and the URL table engine, ClickHouse can expand wildcards by fetching HTTP index pages (HTML or plaintext) and extracting absolute URLs from the response body. This enables patterns like `/**/` when the server exposes directory listings.
+
+Notes:
+- Relative URLs are resolved against the index page URL.
+- Matching is strict: the pattern must match the full URL, including query string and fragment if present.
+- An empty listing is allowed; HTTP errors (e.g. 404) for index pages raise exceptions.
+- The maximum index page size is limited by [max_http_index_page_size](/operations/server-configuration-parameters/settings.md#max_http_index_page_size).
+
+Example:
+
+```sql
+SELECT count()
+FROM url('https://dumps.wikimedia.org/other/pageviews/2025/2025-01/pageviews*.gz', 'TSV')
+SETTINGS max_threads = 1; 
+--- set max_threads to limit concurrent HTTP requests and avoid server rejecting them with 503 responses
+```
 
 ## Virtual Columns {#virtual-columns}
 
