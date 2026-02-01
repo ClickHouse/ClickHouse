@@ -95,6 +95,10 @@ struct QueryState
     bool stop_read_return_partial_result = false;
     bool stop_query = false;
 
+    /// Connection lost but query continues in background
+    bool connection_lost = false;
+    bool continue_in_background = false;
+
     /// Data was sent.
     bool sent_all_data = false;
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
