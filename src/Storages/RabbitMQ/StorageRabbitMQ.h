@@ -42,13 +42,6 @@ public:
     void startup() override;
     void shutdown(bool is_drop) override;
 
-    /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
-    /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
-    /// actions require an open connection. Therefore there needs to be a way inside shutdown() method to know whether it is called
-    /// because of drop query. And drop() method is not suitable at all, because it will not only require to reopen connection, but also
-    /// it can be called considerable time after table is dropped (for example, in case of Atomic database), which is not appropriate for the case.
-    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { drop_table = true; }
-
     /// Always return virtual columns in addition to required columns
     void read(
         QueryPlan & query_plan,
@@ -135,7 +128,6 @@ private:
     std::vector<String> queues;
 
     std::once_flag flag; /// remove exchange only once
-    std::mutex task_mutex;
     BackgroundSchedulePoolTaskHolder streaming_task;
     BackgroundSchedulePoolTaskHolder looping_task;
     BackgroundSchedulePoolTaskHolder init_task;
@@ -167,7 +159,6 @@ private:
     std::mutex loop_mutex;
 
     size_t read_attempts = 0;
-    mutable bool drop_table = false;
 
     RabbitMQConsumerPtr createConsumer();
     std::atomic<bool> initialized = false;
@@ -177,8 +168,8 @@ private:
     void loopingFunc();
     void connectionFunc();
 
-    void startLoop();
-    void stopLoop();
+    void startBackgroundLoop();
+    void stopBackgroundLoop();
     void stopLoopIfNoReaders();
 
     static Names parseSettings(String settings_list);
@@ -187,7 +178,6 @@ private:
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
-    void deactivateTask(BackgroundSchedulePoolTaskHolder & task, bool wait, bool stop_loop);
 
     void initRabbitMQ();
     void cleanupRabbitMQ() const;
