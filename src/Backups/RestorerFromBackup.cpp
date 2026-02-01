@@ -470,7 +470,7 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
     String create_table_query_str = create_table_query->formatWithSecretsOneLine();
 
     bool is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
-    auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query, context->getCurrentDatabase());
+    auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query, context->getCurrentDatabase(), /*can_throw*/ false, /*validate_current_database*/ false);
     bool table_has_data = backup->hasFiles(data_path_in_backup);
 
     std::lock_guard lock{mutex};
