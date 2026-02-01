@@ -1,0 +1,20 @@
+#V2
+SHOW TABLES;
+\\q
+CREATE EXTERNAL TABLE products ( id INT, \nname STRING,\ncategory STRING,\nprice INT\n) \nSTORED AS CSV\nLOCATION 'Users/sreyasrajasekharuni/Desktop/test_data/products-100.csv'\nOPTIONS ('has_header' 'true');
+SELECT COUNT(*) FROM products;
+CREATE EXTERNAL TABLE products (\n    id INT,\n    name STRING,\n    category STRING,\n    price INT\n)\nSTORED AS CSV\nLOCATION '/Users/yourname/Desktop/test_data/products-100.csv'\nOPTIONS ('has_header' 'true');
+DROP TABLE products;
+show tables;
+CREATE EXTERNAL TABLE products (\n    id INT,\n    name STRING,\n    category STRING,\n    price INT\n)\nSTORED AS CSV\nLOCATION '/Users/yourname/Desktop/test_data/products-100.csv'\nOPTIONS ('has_header' 'true');
+SELECT COUNT(*) FROM products;
+show tables;
+drop table products;
+\\q
+show tables;
+CREATE EXTERNAL TABLE products\n(\n    `idx` Int32,\n    `name` String,\n    `description` String,\n    `brand` String,\n    `category` String,\n    `price` Int32,\n    `currency` String,\n    `stock` Int32,\n    `ean` Int64,\n    `color` String,\n    `size` String,\n    `availability` String,\n    `internal_id` Int32\n)STORED AS CSV\nLOCATION '/Users/yourname/Desktop/test_data/products-100.csv'\nOPTIONS ('has_header' 'true');
+CREATE EXTERNAL TABLE products (\n    idx INT,\n    name STRING,\n    description STRING,\n    brand STRING,\n    category STRING,\n    price INT,\n    currency STRING,\n    stock INT,\n    ean BIGINT,\n    color STRING,\n    size STRING,\n    availability STRING,\n    internal_id INT\n)\nSTORED AS CSV\nLOCATION '/Users/sreyasrajasekharuni/Desktop/test_data/products-100.csv'\nOPTIONS (\n  header 'true'\n);
+CREATE EXTERNAL TABLE products (\n    idx INT,\n    name STRING,\n    description STRING,\n    brand STRING,\n    category STRING,\n    price INT,\n    currency STRING,\n    stock INT,\n    ean BIGINT,\n    color STRING,\n    size STRING,\n    availability STRING,\n    internal_id INT\n)\nSTORED AS CSV\nLOCATION '/Users/sreyasrajasekharuni/Desktop/test_data/products-100.csv'\nOPTIONS (\n  'has_header' 'true'\n);
+SELECT COUNT(*) FROM products;
+SELECT * FROM products LIMIT 5;
+\\q
