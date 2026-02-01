@@ -1515,6 +1515,9 @@ Set the quoting style for identifiers in SHOW CREATE query
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.
 )", 0) \
+    DECLARE(UInt64, input_format_max_block_wait_ms, 0, R"(
+Limits the maximum time in milliseconds to wait before emitting a block during parsing in row-based input formats. 0 means no limit.
+)", 0) \
     DECLARE(Bool, input_format_protobuf_oneof_presence, false, R"(
 Indicate which field of protobuf oneof was found by means of setting enum value in a special column
 )", 0) \
