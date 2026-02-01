@@ -1021,7 +1021,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_cache_compress_entries", trueOrFalseSetting},
     {"query_cache_share_between_users", trueOrFalseSettingNoOracle},
     {"query_cache_squash_partial_results", trueOrFalseSetting},
-    {"query_condition_cache_store_conditions_as_plaintext", trueOrFalseSettingNoOracle},
     {"query_plan_display_internal_aliases", trueOrFalseSettingNoOracle},
     {"query_plan_max_limit_for_top_k_optimization",
      CHSetting(

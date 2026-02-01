@@ -86,6 +86,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
+    ONCE(terminate_with_exception) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
@@ -142,7 +143,8 @@ static struct InitFiu
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
-    ONCE(local_object_storage_network_error_during_remove)
+    ONCE(local_object_storage_network_error_during_remove) \
+    ONCE(parallel_replicas_check_read_mode_always)
 
 namespace FailPoints
 {

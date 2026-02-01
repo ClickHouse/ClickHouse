@@ -28,7 +28,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
@@ -189,28 +188,18 @@ public:
 
     size_t getNumberOfArguments() const override { return 4; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        for (const auto argument_index : collections::range(0, 3))
-        {
-            if (!isNativeNumber(arguments[argument_index]))
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The first three arguments of function {} must be a Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32 "
-                    "or Float64.",
-                    getName());
-            }
-        }
-        if (!WhichDataType(arguments[3]).isNativeUInt())
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The last argument of function {} must be UInt8, UInt16, UInt32 or UInt64, found {}.",
-                getName(),
-                arguments[3]->getName());
-        }
-        switch (arguments[3]->getTypeId())
+        FunctionArgumentDescriptors mandatory_args{
+            {"operand", isNativeNumber, nullptr, "native numeric"},
+            {"min_range", isNativeNumber, nullptr, "native numeric"},
+            {"max_range", isNativeNumber, nullptr, "native numeric"},
+            {"num_buckets", isNativeUInt, nullptr, "UInt8, UInt16, UInt32 or UInt64"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        switch (arguments[3].type->getTypeId())
         {
             case TypeIndex::UInt8:
                 return std::make_shared<DataTypeUInt16>();

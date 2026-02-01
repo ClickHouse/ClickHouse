@@ -2440,7 +2440,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                     data_part->storage.getStorageID().uuid,
                     part_name,
                     *condition_hash,
-                    reader_settings.query_condition_cache_store_conditions_as_plaintext ? output->result_name : "",
+                    output->result_name,
                     remaining_ranges.ranges,
                     data_part->index_granularity->getMarksCount(),
                     data_part->index_granularity->hasFinalMark());

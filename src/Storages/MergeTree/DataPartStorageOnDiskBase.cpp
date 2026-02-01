@@ -727,6 +727,15 @@ void DataPartStorageOnDiskBase::remove(
                 disk->removeSharedRecursive(
                     fs::path(to) / "", !can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove);
             }
+            catch (const fs::filesystem_error & e)
+            {
+                if (e.code() == std::errc::no_such_file_or_directory)
+                {
+                    /// If the directory was already removed (e.g. by clearOldTemporaryDirectories), nothing to do.
+                }
+                else
+                    throw;
+            }
             catch (...)
             {
                 LOG_ERROR(
@@ -860,7 +869,19 @@ void DataPartStorageOnDiskBase::clearDirectory(
     if (checksums.empty() || incomplete_temporary_part)
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        try
+        {
+            disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() == std::errc::no_such_file_or_directory)
+            {
+                /// If the directory was already removed (e.g. by clearOldTemporaryDirectories), nothing to do.
+            }
+            else
+                throw;
+        }
         return;
     }
 
@@ -891,7 +912,19 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Recursive directory removal does many excessive "stat" syscalls under the hood.
 
         LOG_ERROR(log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, dir), getCurrentExceptionMessage(false));
-        disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        try
+        {
+            disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() == std::errc::no_such_file_or_directory)
+            {
+                /// If the directory was already removed (e.g. by clearOldTemporaryDirectories), nothing to do.
+            }
+            else
+                throw;
+        }
     }
 }
 

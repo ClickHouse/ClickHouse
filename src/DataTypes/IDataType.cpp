@@ -419,6 +419,7 @@ bool isInteger(TYPE data_type) { return WhichDataType(data_type).isInteger(); } 
 bool isNativeInteger(TYPE data_type) { return WhichDataType(data_type).isNativeInteger(); } \
 \
 bool isDecimal(TYPE data_type) { return WhichDataType(data_type).isDecimal(); } \
+bool isDecimal64(TYPE data_type) { return WhichDataType(data_type).isDecimal64(); } \
 \
 bool isFloat(TYPE data_type) { return WhichDataType(data_type).isFloat(); } \
 \

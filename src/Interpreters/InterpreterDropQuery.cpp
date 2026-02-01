@@ -228,7 +228,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             query_to_send.if_empty = false;
 
-            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {});
+            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)

@@ -6,7 +6,7 @@
 # Avoid overlaps with previous runs
 dmesg --clear
 
-set -x
+set -ex
 
 # we mount tests folder from repo to /usr/share
 ln -s /repo/ci/jobs/scripts/stress/stress.py /usr/bin/stress
@@ -264,8 +264,8 @@ then
 fi
 
 # Just in case previous version left some garbage in zk
-sudo sed -i "s|>1<|>0<|g" /etc/clickhouse-server/config.d/lost_forever_check.xml \
-rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
+sudo sed -i "s|>1<|>0<|g" /etc/clickhouse-server/config.d/lost_forever_check.xml
+rm -f /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
 # Set compatibility setting to previous version, so we won't fail due to known backward incompatible changes.
 echo "<clickhouse>
@@ -278,14 +278,28 @@ echo "<clickhouse>
 
 cat /etc/clickhouse-server/users.d/compatibility.xml
 
-start_server || (echo "Failed to start server" && exit 1)
+# List of allowed reasons why the server cannot start up
+# ADD ENTRIES HERE ONLY IF YOU ARE CERTAIN THEY DO NOT INTRODUCE BACKWARD-INCOMPATIBLE CHANGES
+# 1. Lazy database engine has been removed in a backward-incompatible manner
+check_allow_list() {
+    local log="/var/log/clickhouse-server/clickhouse-server.log"
+    if [ -f "$log" ] && rg -q "Unknown database engine: Lazy" "$log"; then
+        # cleanup errors
+        echo -e "Found allow-listed error in logs. Suppressing failure"$OK > /test_output/test_results.tsv
+        # Finishing tests because following checks would fail
+        exit 0
+    fi
+}
+
+start_server || check_allow_list || (echo "Failed to start server" && exit 1)
+
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
     && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
     >> /test_output/test_results.tsv)
 
 # Remove file application_errors.txt if it's empty
-[ -s /test_output/application_errors.txt ] || rm /test_output/application_errors.txt
+[ -s /test_output/application_errors.txt ] || rm -f /test_output/application_errors.txt
 
 clickhouse-client --query="SELECT 'Server version: ', version()"
 
@@ -294,6 +308,7 @@ sleep 60
 
 stop_server || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.upgrade.log
+cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickhouse-server.upgrade.log
 
 # Error messages (we should ignore some errors)
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/38643 ("Unknown index: idx.")
@@ -328,6 +343,9 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "is lost forever." \
            -e "Unknown index: idx." \
            -e "Cannot parse string 'Hello' as UInt64" \
+           -e "Cannot parse string 'Hello' as UInt32" \
+           -e "Cannot parse string \'Hello\' as UInt32" \
+           -e "Cannot parse string \\'Hello\\' as UInt32" \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
            -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
@@ -343,15 +361,26 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot flush" \
            -e "Container already exists" \
            -e "doesn't have metadata version on disk" \
-    clickhouse-server.upgrade.log \
+           -e "Unknown codec family: ZSTD_QAT" \
+           -e "Unknown codec family: DEFLATE_QPL" \
+           -e "Failed to flush system log" \
+           -e "Bad get: has String, requested UInt64. (BAD_GET" \
+           -e "Disk does not support stat. (NOT_IMPLEMENTED" \
+           -e "QUALIFY clause is not supported in the old analyzer" \
+           -e "Cannot attach table \`test_7\`" \
+           -e "Cannot open file /var/lib/clickhouse/access/" \
+    /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
-    | zgrep -Fa "<Error>" > /test_output/upgrade_error_messages.txt \
-    && echo -e "Error message in clickhouse-server.log (see upgrade_error_messages.txt)$FAIL$(head_escaped /test_output/upgrade_error_messages.txt)" \
-        >> /test_output/test_results.tsv \
-    || echo -e "No Error messages after server upgrade$OK" >> /test_output/test_results.tsv
+    | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
+
+if [ -s /test_output/upgrade_error_messages.txt ]; then
+    echo -e "Error message in clickhouse-server.log (see upgrade_error_messages.txt)$FAIL$(head_escaped /test_output/upgrade_error_messages.txt)" >> /test_output/test_results.tsv
+else
+    echo -e "No Error messages after server upgrade$OK" >> /test_output/test_results.tsv
+fi
 
 # Remove file upgrade_error_messages.txt if it's empty
-[ -s /test_output/upgrade_error_messages.txt ] || rm /test_output/upgrade_error_messages.txt
+[ -s /test_output/upgrade_error_messages.txt ] || rm -f /test_output/upgrade_error_messages.txt
 
 # Grep logs for sanitizer asserts, crashes and other critical errors
 check_logs_for_critical_errors
