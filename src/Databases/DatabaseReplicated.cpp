@@ -120,8 +120,6 @@ namespace FailPoints
     extern const char database_replicated_startup_pause[];
     extern const char database_replicated_drop_before_removing_keeper_failed[];
     extern const char database_replicated_drop_after_removing_keeper_failed[];
-    extern const char database_replicated_rename_table_after_read_metadata[];
-    extern const char database_replicated_alter_table_before_update_digest[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -2135,16 +2133,12 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
 
     waitDatabaseStarted();
 
+    std::lock_guard lock{metadata_mutex};
+
     String statement = readMetadataFile(table_name);
     String statement_to;
     if (exchange)
         statement_to = readMetadataFile(to_table_name);
-
-    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_rename_table_after_read_metadata);
-
-    /// Latest statements from ZooKeeper (if available) for digest calculation.
-    String latest_statement = statement;
-    String latest_statement_to = statement_to;
 
     if (txn->isInitialQuery())
     {
@@ -2164,11 +2158,6 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
         zookeeper->tryGet(metadata_zk_path, zk_statement, &stat);
         zookeeper->tryGet(metadata_zk_path_to, zk_statement_to, &stat_to);
 
-        if (!zk_statement.empty())
-            latest_statement = zk_statement;
-        if (exchange && !zk_statement_to.empty())
-            latest_statement_to = zk_statement_to;
-
         if (!txn->isCreateOrReplaceQuery())
             txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, stat.version));
 
@@ -2186,15 +2175,13 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
             txn->addOp(zkutil::makeCreateRequest(metadata_zk_path_to, zk_statement, zkutil::CreateMode::Persistent));
     }
 
-    std::lock_guard lock{metadata_mutex};
-
     UInt64 new_digest = tables_metadata_digest;
-    new_digest -= DB::getMetadataHash(table_name, latest_statement);
-    new_digest += DB::getMetadataHash(to_table_name, latest_statement);
+    new_digest -= DB::getMetadataHash(table_name, statement);
+    new_digest += DB::getMetadataHash(to_table_name, statement);
     if (exchange)
     {
-        new_digest -= DB::getMetadataHash(to_table_name, latest_statement_to);
-        new_digest += DB::getMetadataHash(table_name, latest_statement_to);
+        new_digest -= DB::getMetadataHash(to_table_name, statement_to);
+        new_digest += DB::getMetadataHash(table_name, statement_to);
     }
     if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
@@ -2251,8 +2238,6 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
     new_digest += DB::getMetadataHash(table_id.table_name, statement);
     if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
-
-    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_alter_table_before_update_digest);
 
     DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
     tables_metadata_digest = new_digest;
