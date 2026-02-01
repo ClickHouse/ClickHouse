@@ -569,3 +569,48 @@ def test_limit(started_cluster):
     assert TSV(node.query(f"SELECT value FROM {table_func} ORDER BY value LIMIT 5 OFFSET 5 SETTINGS mongodb_throw_on_unsupported_query = 1")) == TSV("5\n6\n7\n8\n9\n")
 
     group_by_limit_mongo_table.drop()
+
+
+def test_named_collection(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test_named_collection"]
+    try:
+        db.command("dropAllUsersFromDatabase")
+        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    except pymongo.errors.OperationFailure:
+        pass
+    simple_table = db["simple_table"]
+    data = [{"key": 1, "data": "a"}, {"key": 2, "data": "b"}]
+    simple_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    # Use named collection 'mongo1_nc' (defined in configs/named_collections.xml) and override
+    # database and collection via key-value arguments. This should be accepted and forwarded
+    # to the storage configuration.
+    result = node.query(
+        "SELECT count() FROM mongodb(mongo1_nc, structure='key UInt64, data String')"
+    )
+    assert result == "2\n"
+
+    simple_table.drop()
+
+def test_named_collection_overrides(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test_named_collection_overrides"]
+    try:
+        db.command("dropAllUsersFromDatabase")
+        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    except pymongo.errors.OperationFailure:
+        pass
+    override_table = db["override_collection"]
+    data = [{"key": 1, "data": "a"}, {"key": 2, "data": "b"}]
+    override_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    # Use named collection 'mongo1_nc' (defined in configs/named_collections.xml) and override
+    # database and collection via key-value arguments. This should be accepted and forwarded
+    # to the storage configuration.
+    result = node.query("SELECT sum(key) FROM mongodb(mongo1_nc, database = 'test_named_collection_overrides', collection = 'override_collection', structure='key UInt64, data String')")
+    assert result == "3\n"
+
+    override_table.drop()
