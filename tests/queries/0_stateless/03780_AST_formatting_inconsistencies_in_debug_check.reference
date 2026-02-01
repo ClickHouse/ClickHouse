@@ -1,4 +1,3 @@
-These tests just need to run, dont care about output
 Test repeated alias for literal as 2nd arg to IN operator:
 [1]	1
 Test repeated alias for statement which is not a literal:
@@ -14,3 +13,5 @@ Test repeated alias for tuple after IN:
 (1,'a')	1
 Alias in ON clause of JOIN:
 Test repeated alias for tuple after NOT fails cleanly:
+Test that INSERT INTO with EXCEPT does not crash debug build:
+Test weird SELECT/EXCEPT/SELECT statement:
