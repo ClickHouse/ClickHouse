@@ -316,7 +316,7 @@ public:
     {
         size_t hash_value = map.hash(key);
         auto it = map.find(key, hash_value);
-        if (it != map.end())
+        if (it == map.end())
             return {};
 
         auto list_itr = it->getMapped();
