@@ -3787,7 +3787,7 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount());
 }
 
-void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final)
+void ReadFromMergeTree::createReadTasksForTextIndex(const TextIndexReadInfos & text_index_read_infos, const UsefulSkipIndexes & skip_indexes, const TextIndexReadColumns & added_columns, const Names & removed_columns, bool is_final)
 {
     index_read_tasks.clear();
 
@@ -3803,7 +3803,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     /// We have to recreate virtual columns and storage snapshot to add new virtual columns for reading from text index.
     auto new_virtual_columns = std::make_shared<VirtualColumnsDescription>(*storage_snapshot->virtual_columns);
 
-    for (const auto & [index_name, columns] : added_columns)
+    for (const auto & [index_name, added_virtual_columns] : added_columns)
     {
         auto [task_it, inserted] = index_read_tasks.try_emplace(index_name);
         auto & index_task = task_it->second;
@@ -3823,15 +3823,35 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
             index_task.is_final = is_final;
         }
 
-        for (const auto & [column_name, column_type] : columns)
+        for (const auto & added_virtual_column : added_virtual_columns)
         {
-            auto it = std::ranges::find(all_column_names, column_name);
+            auto it = std::ranges::find(all_column_names, added_virtual_column.name);
             if (it != all_column_names.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} already added for reading", column_name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} already added for reading", added_virtual_column.name);
 
-            all_column_names.push_back(column_name);
-            new_virtual_columns->addEphemeral(column_name, column_type, "");
-            index_task.columns.emplace_back(column_name, column_type);
+            const auto & text_index_read_info_it = text_index_read_infos.find(index_name);
+            chassert(text_index_read_info_it != text_index_read_infos.end());
+
+            VirtualColumnDescription virtual_column(
+                added_virtual_column.name, added_virtual_column.type, nullptr, index_name, VirtualsKind::Ephemeral);
+
+            /// If the text index is not fully materialized in all parts, we need to add a default expression
+            /// so that parts without the index can evaluate the filter function directly on the column data.
+            if (!text_index_read_info_it->second.is_fully_materialied)
+            {
+                if (!added_virtual_column.default_expression)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Text index '{}' is partially materialized, but column '{}' does not have a default expression.",
+                        index_name,
+                        added_virtual_column.name);
+
+                virtual_column.default_desc.kind = ColumnDefaultKind::Default;
+                virtual_column.default_desc.expression = added_virtual_column.default_expression;
+            }
+
+            all_column_names.push_back(added_virtual_column.name);
+            new_virtual_columns->add(std::move(virtual_column));
+            index_task.columns.emplace_back(added_virtual_column.name, added_virtual_column.type);
         }
     }
 

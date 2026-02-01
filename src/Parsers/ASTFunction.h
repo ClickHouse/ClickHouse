@@ -1,15 +1,20 @@
 #pragma once
 
+#include <Interpreters/ActionsDAG.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/NullsAction.h>
 
+#include <functional>
 
 namespace DB
 {
 
 class ASTSelectWithUnionQuery;
+
+/// TODO(ahmadov): remove include of `ActionsDAG` from ASTFunction.
+using FunctionConfigurator = std::function<void(const ActionsDAG::Node *)>;
 
 /** AST for function application or operator.
   */
@@ -50,6 +55,8 @@ public:
     /// do not print empty parentheses if there are no args - compatibility with engine names.
     bool no_empty_args = false;
 
+    std::vector<FunctionConfigurator> configurators = {};
+
     /// Specifies where this function-like expression is used.
     enum class Kind : UInt8
     {
@@ -81,6 +88,14 @@ public:
     bool is_compound_name = false;
 
     bool hasSecretParts() const override;
+
+    void addConfigurator(FunctionConfigurator configurator) { configurators.emplace_back(std::move(configurator)); }
+
+    void applyConfigurator(const ActionsDAG::Node * function_dag_node) const
+    {
+        for (const auto & configurator : configurators)
+            configurator(function_dag_node);
+    }
 
 protected:
     void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

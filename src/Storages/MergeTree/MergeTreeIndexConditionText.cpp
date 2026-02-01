@@ -1,3 +1,4 @@
+#include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -582,31 +583,18 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             }
         }
 
-        /// TODO(ahmadov): move this block to another place, e.g. optimizations or query tree re-write.
-        const auto * function_dag_node = function_node.getDAGNode();
-        chassert(function_dag_node != nullptr && function_dag_node->function_base != nullptr);
-
-        const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_dag_node->function_base.get());
-        chassert(adaptor != nullptr);
-
         if (function_name == "hasAnyTokens")
         {
             out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Any, direct_read_mode, search_tokens));
-
-            auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAnyTokensTraits> &>(*adaptor->getFunction());
-            search_function.setTokenExtractor(token_extractor->clone());
-            search_function.setSearchTokens(search_tokens);
         }
         else
         {
             out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, search_tokens));
-
-            auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAllTokensTraits> &>(*adaptor->getFunction());
-            search_function.setTokenExtractor(token_extractor->clone());
-            search_function.setSearchTokens(search_tokens);
         }
+
+        applyTextIndexFunctionParams(function_node.getDAGNode(), function_name, token_extractor->clone(), std::move(search_tokens));
 
         return true;
     }
@@ -854,4 +842,29 @@ bool isTextIndexVirtualColumn(const String & column_name)
     return column_name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX);
 }
 
+void applyTextIndexFunctionParams(
+    const ActionsDAG::Node * function_dag_node,
+    String function_name,
+    std::unique_ptr<ITokenExtractor> token_extractor,
+    std::vector<String> search_tokens)
+{
+    chassert(function_dag_node != nullptr && function_dag_node->function_base != nullptr);
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_dag_node->function_base.get());
+    chassert(adaptor != nullptr);
+
+    if (function_name == "hasAnyTokens")
+    {
+        auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAnyTokensTraits> &>(*adaptor->getFunction());
+        search_function.setTokenExtractor(std::move(token_extractor));
+        search_function.setSearchTokens(search_tokens);
+    }
+    else if (function_name == "hasAllTokens")
+    {
+        auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAllTokensTraits> &>(*adaptor->getFunction());
+        search_function.setTokenExtractor(std::move(token_extractor));
+        search_function.setSearchTokens(search_tokens);
+    }
+
+    /// There is nothing to apply for other text index functions yet.
+}
 }

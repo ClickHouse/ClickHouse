@@ -260,4 +260,21 @@ void StorageSnapshot::check(const Names & column_names) const
     }
 }
 
+std::optional<ColumnDefault> StorageSnapshot::getDefault(const String & column_name) const
+{
+    /// First check physical columns
+    if (auto column_default = metadata->getColumns().getDefault(column_name))
+        return column_default;
+
+    /// Then check virtual columns
+    if (virtual_columns)
+    {
+        const auto * virtual_col_desc = virtual_columns->tryGetDescription(column_name);
+        if (virtual_col_desc && virtual_col_desc->default_desc.expression)
+            return virtual_col_desc->default_desc;
+    }
+
+    return std::nullopt;
+}
+
 }
