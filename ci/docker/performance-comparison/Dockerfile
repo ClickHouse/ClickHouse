@@ -3,9 +3,6 @@
 ARG FROM_TAG=latest
 FROM clickhouse/test-base:$FROM_TAG
 
-# Remove problematic Kitware repository
-RUN rm -f /etc/apt/sources.list.d/*kitware* || true
-
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
             bash \
@@ -43,6 +40,7 @@ RUN apt-get update \
 COPY requirements.txt /
 RUN pip3 --no-cache-dir install -r requirements.txt
 
+COPY run.sh /
 
 COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
@@ -51,3 +49,7 @@ ENV PATH="/opt/gdb/bin:${PATH}"
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
     && unzip -q awscliv2.zip && ./aws/install \
     && rm -rf /awscliv2.zip /aws
+
+CMD ["bash", "/run.sh"]
+
+# docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/performance-comparison

@@ -1,6 +1,7 @@
 ---
 description: 'Selects the last encountered value, similar to `anyLast`, but could
   accept NULL.'
+sidebar_position: 160
 slug: /sql-reference/aggregate-functions/reference/last_value
 title: 'last_value'
 doc_type: 'reference'

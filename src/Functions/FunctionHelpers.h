@@ -172,14 +172,13 @@ wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const
 
 /** Return ColumnNullable of src, with input null map
   * Or ColumnConst(ColumnNullable) if the result is always NULL or if the result is constant and always not NULL.
-  * If null_map is nullptr, it's as if it's all 0.
   */
 ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map);
 
 struct NullPresence
 {
-    bool has_nullable = false; /// Nullable(T)
-    bool has_null_constant = false; /// Nullable(Nothing)
+    bool has_nullable = false;
+    bool has_null_constant = false;
 };
 
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args);

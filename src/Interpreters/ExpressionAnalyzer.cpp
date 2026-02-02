@@ -35,7 +35,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/replaceForPositionalArguments.h>
-#include <Interpreters/createSubcolumnsExtractionActions.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -110,6 +109,7 @@ namespace Setting
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
+    extern const SettingsBool allow_not_comparable_types_in_order_by;
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
 }
@@ -1725,8 +1725,8 @@ void SelectQueryExpressionAnalyzer::validateOrderByKeyType(const DataTypePtr & k
                 "its a JSON path subcolumn) or casting this column to a specific data type. "
                 "Set setting allow_suspicious_types_in_order_by = 1 in order to allow it");
 
-        if (!type.isComparable())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Data type {} is not allowed in ORDER BY keys, because its values are not comparable", type.getName());
+        if (!getContext()->getSettingsRef()[Setting::allow_not_comparable_types_in_order_by] && !type.isComparable())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Data type {} is not allowed in ORDER BY keys, because its values are not comparable. Set setting allow_not_comparable_types_in_order_by = 1 in order to allow it", type.getName());
     };
 
     check(*key_type);
@@ -2084,15 +2084,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     before_where_sample = source_header;
                 if (sanitizeBlock(before_where_sample))
                 {
-                    auto dag = before_where->dag.clone();
-                    /// We could have subcolumns used in the WHERE that are not present in before_where_sample.
-                    /// ExpressionActions doesn't know anything about sybcolumns, so we have to extract them beforehand.
-                    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(before_where_sample, dag.getRequiredColumnsNames(), context);
-                    if (!extracting_subcolumns_dag.getNodes().empty())
-                        dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(dag));
-
                     ExpressionActions(
-                        std::move(dag),
+                        before_where->dag.clone(),
                         ExpressionActionsSettings(context->getSettingsRef())).execute(before_where_sample);
 
                     auto & column_elem

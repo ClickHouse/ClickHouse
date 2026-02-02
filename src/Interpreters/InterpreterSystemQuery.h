@@ -73,8 +73,6 @@ private:
     void unloadPrimaryKeys();
     void loadOrUnloadPrimaryKeysImpl(bool load);
 
-    [[clang::xray_never_instrument]] void instrumentWithXRay(bool add, ASTSystemQuery & query);
-
     void syncReplicatedDatabase(ASTSystemQuery & query);
 
     void syncTransactionLog();
@@ -89,7 +87,7 @@ private:
     void dropDatabaseReplica(ASTSystemQuery & query);
     void flushDistributed(ASTSystemQuery & query);
     DatabasePtr
-    restoreDatabaseFromKeeperPath(const String & zookeeper_name, const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name);
+    restoreDatabaseFromKeeperPath(const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name);
     std::optional<String> getDetachedDatabaseFromKeeperPath(const ASTSystemQuery & query_);
     [[noreturn]] void restartDisk(String & name);
 

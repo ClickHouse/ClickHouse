@@ -7,7 +7,7 @@ namespace DB
 
 ASTPtr ASTExpressionList::clone() const
 {
-    auto clone = make_intrusive<ASTExpressionList>(*this);
+    auto clone = std::make_shared<ASTExpressionList>(*this);
     clone->cloneChildren();
     return clone;
 }
