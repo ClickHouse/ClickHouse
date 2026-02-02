@@ -22,7 +22,7 @@ class DataTypeTuple final : public IDataType
 private:
     DataTypes elems;
     Strings names;
-    bool has_explicit_names;
+    bool have_explicit_names;
 
 public:
     static constexpr bool is_parametric = true;
@@ -35,7 +35,7 @@ public:
     std::string doGetPrettyName(size_t indent) const override;
     const char * getFamilyName() const override { return "Tuple"; }
 
-    bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideNullable() const override { return false; }
     bool supportsSparseSerialization() const override { return true; }
     bool canBeInsideSparseColumns() const override { return false; }
 
@@ -52,6 +52,7 @@ public:
     bool isComparable() const override;
     bool textCanContainOnlyValidUTF8() const override;
     bool haveMaximumSizeOfValue() const override;
+    bool hasDynamicSubcolumnsDeprecated() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
 
@@ -65,18 +66,14 @@ public:
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }
 
-    size_t getPositionByName(std::string_view name, bool case_insensitive = false) const;
-    std::optional<size_t> tryGetPositionByName(std::string_view name, bool case_insensitive = false) const;
+    size_t getPositionByName(const String & name, bool case_insensitive = false) const;
+    std::optional<size_t> tryGetPositionByName(const String & name, bool case_insensitive = false) const;
     String getNameByPosition(size_t i) const;
 
-    bool hasExplicitNames() const { return has_explicit_names; }
-
-    void updateHashImpl(SipHash & hash) const override;
+    bool haveExplicitNames() const { return have_explicit_names; }
 
     void forEachChild(const ChildCallback & callback) const override;
-
-private:
-    SerializationInfoMutablePtr getSerializationInfoImpl(const IColumn & column) const;
 };
 
 }
+

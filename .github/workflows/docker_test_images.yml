@@ -1,0 +1,71 @@
+name: Build docker images
+
+'on':
+  workflow_call:
+    inputs:
+      data:
+        description: json with ci data from todo job
+        required: true
+        type: string
+      set_latest:
+        description: set latest tag for resulting multiarch manifest
+        required: false
+        type: boolean
+        default: false
+
+env:
+  PYTHONUNBUFFERED: 1
+
+jobs:
+  DockerBuildAarch64:
+    runs-on: [self-hosted, style-checker-aarch64]
+    if: |
+      !failure() && !cancelled() && toJson(fromJson(inputs.data).docker_data.missing_aarch64) != '[]'
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          ref: ${{ fromJson(inputs.data).git_ref }}
+      - name: Build images
+        run: |
+          python3 "${GITHUB_WORKSPACE}/tests/ci/docker_images_check.py" \
+            --suffix aarch64 \
+            --image-tags '${{ toJson(fromJson(inputs.data).docker_data.images) }}' \
+            --missing-images '${{ toJson(fromJson(inputs.data).docker_data.missing_aarch64) }}'
+  DockerBuildAmd64:
+    runs-on: [self-hosted, style-checker]
+    if: |
+      !failure() && !cancelled() && toJson(fromJson(inputs.data).docker_data.missing_amd64) != '[]'
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          ref: ${{ fromJson(inputs.data).git_ref }}
+      - name: Build images
+        run: |
+          python3 "${GITHUB_WORKSPACE}/tests/ci/docker_images_check.py" \
+            --suffix amd64 \
+            --image-tags '${{ toJson(fromJson(inputs.data).docker_data.images) }}' \
+            --missing-images '${{ toJson(fromJson(inputs.data).docker_data.missing_amd64) }}'
+  DockerMultiArchManifest:
+    needs: [DockerBuildAmd64, DockerBuildAarch64]
+    runs-on: [self-hosted, style-checker]
+    if: |
+      !failure() && !cancelled() && (toJson(fromJson(inputs.data).docker_data.missing_multi) != '[]' || inputs.set_latest)
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          ref: ${{ fromJson(inputs.data).git_ref }}
+      - name: Build images
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          FLAG_LATEST=''
+          if [ "${{ inputs.set_latest }}" == "true" ]; then
+            FLAG_LATEST='--set-latest'
+            echo "latest tag will be set for resulting manifests"
+          fi
+          python3 docker_manifests_merge.py --suffix amd64 --suffix aarch64 \
+            --image-tags '${{ toJson(fromJson(inputs.data).docker_data.images) }}' \
+            --missing-images '${{ toJson(fromJson(inputs.data).docker_data.missing_multi) }}' \
+            $FLAG_LATEST

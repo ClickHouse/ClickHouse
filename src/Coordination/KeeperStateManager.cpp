@@ -12,7 +12,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
 #include <Common/logger_useful.h>
-#include <Coordination/CoordinationSettings.h>
+#include "Coordination/CoordinationSettings.h"
 
 namespace DB
 {
@@ -29,7 +29,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 log_file_overallocate_size;
     extern const CoordinationSettingsUInt64 max_flush_batch_size;
     extern const CoordinationSettingsUInt64 max_log_file_size;
-    extern const CoordinationSettingsNonZeroUInt64 rotate_log_storage_interval;
+    extern const CoordinationSettingsUInt64 rotate_log_storage_interval;
 }
 
 namespace ErrorCodes
@@ -124,7 +124,7 @@ std::optional<AuthenticationData> getClientPasswordAuthentication(const Poco::Ut
 
 }
 
-/// this function is quite long because it contains a lot of sanity checks in config:
+/// this function quite long because contains a lot of sanity checks in config:
 /// 1. No duplicate endpoints
 /// 2. No "localhost" or "127.0.0.1" or another local addresses mixed with normal addresses
 /// 3. Raft internal port is not equal to any other port for client
@@ -275,7 +275,6 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
     return result;
 }
 
-/// Constructor for tests
 KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, KeeperContextPtr keeper_context_)
     : my_server_id(server_id_)
     , secure(false)

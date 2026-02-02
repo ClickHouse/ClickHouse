@@ -4,7 +4,6 @@ description: 'System table containing metadata of each table that the server kno
 keywords: ['system table', 'tables']
 slug: /operations/system-tables/tables
 title: 'system.tables'
-doc_type: 'reference'
 ---
 
 # system.tables
@@ -45,8 +44,6 @@ Columns:
 
 - `as_select` ([String](../../sql-reference/data-types/string.md)) - `SELECT` query for view.
 
-- `parameterized_view_parameters` ([Array](../../sql-reference/data-types/array.md) of [Tuple](../../sql-reference/data-types/tuple.md)) — Parameters of parameterized view.
-
 - `partition_key` ([String](../../sql-reference/data-types/string.md)) - The partition key expression specified in the table.
 
 - `sorting_key` ([String](../../sql-reference/data-types/string.md)) - The sorting key expression specified in the table.
@@ -57,17 +54,17 @@ Columns:
 
 - `storage_policy` ([String](../../sql-reference/data-types/string.md)) - The storage policy:
 
-  - [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
-  - [Distributed](/engines/table-engines/special/distributed)
+    - [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
+    - [Distributed](/engines/table-engines/special/distributed)
 
 - `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise `NULL` (including underlying `Buffer` table).
 
-- `total_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes (including indices and projections), if it is possible to quickly determine exact number of bytes for the table on storage, otherwise `NULL` (does not includes any underlying storage).
+- `total_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes, if it is possible to quickly determine exact number of bytes for the table on storage, otherwise `NULL` (does not includes any underlying storage).
 
-  - If the table stores data on disk, returns used space on disk (i.e. compressed).
-  - If the table stores data in memory, returns approximated number of used bytes in memory.
+    - If the table stores data on disk, returns used space on disk (i.e. compressed).
+    - If the table stores data in memory, returns approximated number of used bytes in memory.
 
-- `total_bytes_uncompressed` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of uncompressed bytes (including indices and projections), if it's possible to quickly determine the exact number of bytes from the part checksums for the table on storage, otherwise `NULL` (does not take underlying storage (if any) into account).
+- `total_bytes_uncompressed` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of uncompressed bytes, if it's possible to quickly determine the exact number of bytes from the part checksums for the table on storage, otherwise `NULL` (does not take underlying storage (if any) into account).
 
 - `lifetime_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows INSERTed since server start (only for `Buffer` tables).
 
@@ -106,8 +103,8 @@ metadata_path:              /var/lib/clickhouse/store/461/461cf698-fd0b-406d-8c0
 metadata_modification_time: 2021-01-25 19:14:32
 dependencies_database:      []
 dependencies_table:         []
-create_table_query:         CREATE TABLE base.t1 (`n` UInt64) ENGINE = MergeTree ORDER BY n
-engine_full:                MergeTree ORDER BY n
+create_table_query:         CREATE TABLE base.t1 (`n` UInt64) ENGINE = MergeTree ORDER BY n SETTINGS index_granularity = 8192
+engine_full:                MergeTree ORDER BY n SETTINGS index_granularity = 8192
 as_select:                  SELECT database AS table_catalog
 partition_key:
 sorting_key:                n
@@ -137,8 +134,8 @@ metadata_path:              /var/lib/clickhouse/metadata/default/53r93yleapyears
 metadata_modification_time: 2020-09-23 09:05:36
 dependencies_database:      []
 dependencies_table:         []
-create_table_query:         CREATE TABLE default.`53r93yleapyears` (`id` Int8, `febdays` Int8) ENGINE = MergeTree ORDER BY id
-engine_full:                MergeTree ORDER BY id
+create_table_query:         CREATE TABLE default.`53r93yleapyears` (`id` Int8, `febdays` Int8) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192
+engine_full:                MergeTree ORDER BY id SETTINGS index_granularity = 8192
 as_select:                  SELECT name AS catalog_name
 partition_key:
 sorting_key:                id

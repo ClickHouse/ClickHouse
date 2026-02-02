@@ -3,6 +3,9 @@
 #include <Access/IAccessEntity.h>
 #include <Access/AuthenticationData.h>
 #include <Core/Types.h>
+#include <Core/UUID.h>
+#include <Parsers/IParser.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Common/SettingsChanges.h>
 #include <Common/callOnce.h>
 #include <Interpreters/ClientInfo.h>
@@ -60,12 +63,6 @@ public:
 
     /// Returns true if this entity is readonly.
     virtual bool isReadOnly(const UUID &) const { return isReadOnly(); }
-
-    /// Returns true if this storage is ephemeral.
-    virtual bool isEphemeral() const { return false; }
-
-    /// Returns true if this entity is ephemeral.
-    virtual bool isEphemeral(const UUID &) const { return isEphemeral(); }
 
     /// Returns true if this storage is replicated.
     virtual bool isReplicated() const { return false; }
@@ -223,14 +220,6 @@ public:
     virtual void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const;
     virtual void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup);
 
-    // Static versions for use in non-member functions (ZookeeperReplicator)
-    [[noreturn]] static void throwIDCollisionCannotInsert(
-        const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name, const String & storage_name);
-    [[noreturn]] static void throwNameCollisionCannotInsert(AccessEntityType type, const String & name, const String & storage_name);
-    [[noreturn]] static void throwNameCollisionCannotRename(AccessEntityType type, const String & old_name, const String & new_name, const String & storage_name);
-    [[noreturn]] static void throwNotFound(const UUID & id, const String & storage_name);
-    [[noreturn]] static void throwNotFound(AccessEntityType type, const String & name, const String & storage_name);
-
 protected:
     virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const = 0;
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
@@ -261,7 +250,13 @@ protected:
     static String formatEntityTypeWithName(AccessEntityType type, const String & name) { return AccessEntityTypeInfo::get(type).formatEntityNameWithType(name); }
     static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, LoggerPtr log_);
     virtual bool acquireReplicatedRestore(RestorerFromBackup &) const { return false; }
+    [[noreturn]] void throwNotFound(const UUID & id) const;
+    [[noreturn]] void throwNotFound(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type);
+    [[noreturn]] void throwIDCollisionCannotInsert(
+    const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name) const;
+    [[noreturn]] void throwNameCollisionCannotInsert(AccessEntityType type, const String & name) const;
+    [[noreturn]] void throwNameCollisionCannotRename(AccessEntityType type, const String & old_name, const String & new_name) const;
     [[noreturn]] void throwReadonlyCannotInsert(AccessEntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotUpdate(AccessEntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotRemove(AccessEntityType type, const String & name) const;
@@ -311,7 +306,7 @@ std::shared_ptr<const EntityClassT> IAccessStorage::read(const String & name, bo
     if (auto id = find<EntityClassT>(name))
         return read<EntityClassT>(*id, throw_if_not_exists);
     if (throw_if_not_exists)
-        throwNotFound(EntityClassT::TYPE, name, storage_name);
+        throwNotFound(EntityClassT::TYPE, name);
     else
         return nullptr;
 }
@@ -355,6 +350,9 @@ std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> IAccessStorage
     return entities;
 }
 
-bool parseAccessStorageName(IParser::Pos & pos, Expected & expected, String & storage_name);
+inline bool parseAccessStorageName(IParser::Pos & pos, Expected & expected, String & storage_name)
+{
+    return parseIdentifierOrStringLiteral(pos, expected, storage_name);
+}
 
 }

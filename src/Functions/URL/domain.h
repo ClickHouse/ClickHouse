@@ -175,7 +175,7 @@ inline std::string_view getURLHost(const char * data, size_t size)
     Pos pos = data;
     Pos end = data + size;
 
-    if (size >= 2 && *pos == '/' && *(pos + 1) == '/')
+    if (*pos == '/' && *(pos + 1) == '/')
     {
         pos += 2;
     }
@@ -280,7 +280,7 @@ struct ExtractDomain
         }
         else
         {
-            if (without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4)) /// NOLINT(bugprone-suspicious-stringview-data-usage)
+            if (without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4))  /// NOLINT(bugprone-suspicious-stringview-data-usage)
                 host = { host.data() + 4, host.size() - 4 };
 
             res_data = host.data();

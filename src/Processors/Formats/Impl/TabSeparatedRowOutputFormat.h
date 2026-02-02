@@ -20,7 +20,7 @@ public:
       */
     TabSeparatedRowOutputFormat(
         WriteBuffer & out_,
-        SharedHeader header_,
+        const Block & header_,
         bool with_names_,
         bool with_types_,
         bool is_raw_,
@@ -28,7 +28,8 @@ public:
 
     String getName() const override { return "TabSeparatedRowOutputFormat"; }
 
-    bool supportsSpecialSerializationKinds() const override { return format_settings.allow_special_serialization_kinds; }
+    /// https://www.iana.org/assignments/media-types/text/tab-separated-values
+    String getContentType() const override { return "text/tab-separated-values; charset=UTF-8"; }
 
 protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;

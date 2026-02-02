@@ -40,7 +40,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = make_intrusive<ASTQueryWithTableAndOutputImpl<AstIDAndQueryNames>>(*this);
+        auto res = std::make_shared<ASTQueryWithTableAndOutputImpl<AstIDAndQueryNames>>(*this);
         res->children.clear();
         cloneOutputOptions(*res);
         cloneTableOptions(*res);
@@ -52,9 +52,9 @@ public:
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        ostr
+        ostr << (settings.hilite ? hilite_keyword : "")
             << (temporary ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query)
-            << " ";
+            << " " << (settings.hilite ? hilite_none : "");
 
         if (database)
         {

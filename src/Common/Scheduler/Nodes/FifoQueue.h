@@ -9,7 +9,6 @@
 #include <boost/intrusive/list.hpp>
 
 #include <mutex>
-#include <vector>
 
 
 namespace DB
@@ -19,7 +18,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SCHEDULER_NODE;
-    extern const int SERVER_OVERLOADED;
 }
 
 /*
@@ -61,9 +59,6 @@ public:
         std::lock_guard lock(mutex);
         if (is_not_usable)
             throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue is about to be destructed");
-
-        if (requests.size() >= static_cast<size_t>(info.queue_size))
-            throw Exception(ErrorCodes::SERVER_OVERLOADED, "Workload limit `max_waiting_queries` has been reached: {} of {}", requests.size(), info.queue_size);
         queue_cost += request->cost;
         bool was_empty = requests.empty();
         requests.push_back(*request);
@@ -79,10 +74,7 @@ public:
         ResourceRequest * result = &requests.front();
         requests.pop_front();
         if (requests.empty())
-        {
             busy_periods++;
-            event_queue->cancelActivation(this); // It is important to avoid scheduling two activations which leads to crash
-        }
         queue_cost -= result->cost;
         incrementDequeued(result->cost);
         return {result, !requests.empty()};
@@ -106,10 +98,7 @@ public:
             requests.erase(requests.iterator_to(*request));
 
             if (requests.empty())
-            {
                 busy_periods++;
-                event_queue->cancelActivation(this); // It is important to avoid scheduling two activations which leads to crash
-            }
             queue_cost -= request->cost;
             canceled_requests++;
             canceled_cost += request->cost;
@@ -120,25 +109,15 @@ public:
 
     void purgeQueue() override
     {
-        // Collect requests to fail while holding the lock, but call failed() outside the lock
-        // to avoid potential deadlock with CPULeaseAllocation::mutex (lock order inversion)
-        std::vector<ResourceRequest *> requests_to_fail;
+        std::lock_guard lock(mutex);
+        is_not_usable = true;
+        while (!requests.empty())
         {
-            std::lock_guard lock(mutex);
-            is_not_usable = true;
-            while (!requests.empty())
-            {
-                ResourceRequest * request = &requests.front();
-                requests.pop_front();
-                requests_to_fail.push_back(request);
-            }
-            event_queue->cancelActivation(this);
+            ResourceRequest * request = &requests.front();
+            requests.pop_front();
+            request->failed(std::make_exception_ptr(
+                Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue with resource request is about to be destructed")));
         }
-        // Now notify all collected requests about the failure without holding the mutex
-        auto exception = std::make_exception_ptr(
-            Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue with resource request is about to be destructed"));
-        for (ResourceRequest * request : requests_to_fail)
-            request->failed(exception);
     }
 
     bool isActive() override

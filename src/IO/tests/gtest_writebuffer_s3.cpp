@@ -24,6 +24,7 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/S3Common.h>
 #include <IO/FileEncryptionCommon.h>
+#include <IO/WriteBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/AsyncReadCounters.h>
 #include <IO/ReadBufferFromS3.h>
@@ -243,13 +244,12 @@ struct Client : DB::S3::Client
             "some-region",
             remote_host_filter,
             /* s3_max_redirects = */ 100,
-            DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
-            /* s3_slow_all_threads_after_network_error = */ true,
-            /* s3_slow_all_threads_after_retryable_error = */ true,
+            /* s3_retry_attempts = */ 0,
             /* enable_s3_requests_logging = */ true,
             /* for_disk_s3 = */ false,
-            /* opt_disk_name = */ {},
-            /* request_throttler = */ {});
+            /* get_request_throttler = */ {},
+            /* put_request_throttler = */ {}
+        );
     }
 
     void setInjectionModel(std::shared_ptr<MockS3::InjectionModel> injections_)

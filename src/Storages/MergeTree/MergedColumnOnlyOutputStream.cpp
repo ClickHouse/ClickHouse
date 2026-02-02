@@ -15,7 +15,6 @@ namespace ErrorCodes
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
-    MergeTreeSettingsPtr data_settings,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & indices_to_recalc,
@@ -24,12 +23,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     size_t part_uncompressed_bytes,
     WrittenOffsetColumns * offset_columns)
-    : IMergedBlockOutputStream(
-          std::move(data_settings),
-          data_part->getDataPartStoragePtr(),
-          metadata_snapshot_,
-          columns_list_,
-          /*reset_columns=*/true)
+    : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, /*reset_columns=*/ true)
 {
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
     bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;
@@ -41,7 +35,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         data_part->storage.getContext()->getSettingsRef(),
         data_part->storage.getContext()->getWriteSettings(),
         storage_settings,
-        data_part,
         data_part->index_granularity_info.mark_type.adaptive,
         /*rewrite_primary_key=*/ false,
         save_marks_in_cache,
@@ -103,13 +96,7 @@ MergedColumnOnlyOutputStream::fillChecksums(
     auto serialization_infos = new_part->getSerializationInfos();
     serialization_infos.replaceData(new_serialization_infos);
 
-    NameSet empty_columns;
-    for (const auto & column : writer->getColumnsSample())
-    {
-        if (new_part->expired_columns.contains(column.name))
-            empty_columns.emplace(column.name);
-    }
-    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, empty_columns, serialization_infos, checksums);
+    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
 
     for (const String & removed_file : removed_files)
     {

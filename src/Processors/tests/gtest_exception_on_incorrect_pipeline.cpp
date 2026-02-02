@@ -11,15 +11,15 @@ using namespace DB;
 
 TEST(Processors, PortsConnected)
 {
-    auto col = ColumnUInt8::create(1, static_cast<UInt8>(1));
+    auto col = ColumnUInt8::create(1, 1);
     Columns columns;
     columns.emplace_back(std::move(col));
     Chunk chunk(std::move(columns), 1);
 
-    SharedHeader header = std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "x")});
+    Block header = {ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "x")};
 
     auto source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
-    auto sink = std::make_shared<NullSink>(source->getPort().getSharedHeader());
+    auto sink = std::make_shared<NullSink>(source->getPort().getHeader());
 
     connect(source->getPort(), sink->getPort());
 
@@ -34,15 +34,15 @@ TEST(Processors, PortsConnected)
 
 TEST(Processors, PortsNotConnected)
 {
-    auto col = ColumnUInt8::create(1, static_cast<UInt8>(1));
+    auto col = ColumnUInt8::create(1, 1);
     Columns columns;
     columns.emplace_back(std::move(col));
     Chunk chunk(std::move(columns), 1);
 
-    SharedHeader header = std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "x")});
+    Block header = {ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "x")};
 
     auto source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
-    auto sink = std::make_shared<NullSink>(source->getPort().getSharedHeader());
+    auto sink = std::make_shared<NullSink>(source->getPort().getHeader());
 
     /// connect(source->getPort(), sink->getPort());
 

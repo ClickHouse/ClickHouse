@@ -54,7 +54,7 @@ class TestHint
 {
 public:
     using ErrorVector = std::vector<int>;
-    explicit TestHint(const std::string_view & query);
+    explicit TestHint(const String & query_);
 
     const auto & serverErrors() const { return server_errors; }
     const auto & clientErrors() const { return client_errors; }
@@ -69,6 +69,7 @@ public:
     bool needRetry(const std::unique_ptr<Exception> & server_exception, size_t * retries_counter);
 
 private:
+    const String & query;
     ErrorVector server_errors{};
     ErrorVector client_errors{};
     std::optional<bool> echo;

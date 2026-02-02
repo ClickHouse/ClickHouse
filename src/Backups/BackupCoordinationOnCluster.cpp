@@ -102,7 +102,7 @@ namespace
     {
         BackupFileInfos file_infos;
 
-        static String serialize(const BackupFileInfos & file_infos_)
+        static String serialize(const BackupFileInfos & file_infos_, bool is_lightweight_snapshot)
         {
             WriteBufferFromOwnString out;
             writeBinary(file_infos_.size(), out);
@@ -115,13 +115,17 @@ namespace
                 writeBinary(info.base_checksum, out);
                 writeBinary(info.encrypted_by_disk, out);
                 writeBinary(info.reference_target, out);
+                if (is_lightweight_snapshot)
+                {
+                    writeBinary(info.object_key, out);
+                }
                 /// We don't store `info.data_file_name` and `info.data_file_index` because they're determined automalically
                 /// after reading file infos for all the hosts (see the class BackupCoordinationFileInfos).
             }
             return out.str();
         }
 
-        static FileInfos deserialize(const String & str)
+        static FileInfos deserialize(const String & str, bool is_lightweight_snapshot)
         {
             ReadBufferFromString in{str};
             FileInfos res;
@@ -138,6 +142,10 @@ namespace
                 readBinary(info.base_checksum, in);
                 readBinary(info.encrypted_by_disk, in);
                 readBinary(info.reference_target, in);
+                if (is_lightweight_snapshot)
+                {
+                    readBinary(info.object_key, in);
+                }
             }
             return res;
         }
@@ -147,7 +155,7 @@ namespace
 Strings BackupCoordinationOnCluster::excludeInitiator(const Strings & all_hosts)
 {
     Strings all_hosts_without_initiator = all_hosts;
-    [[maybe_unused]] bool has_initiator = (std::erase(all_hosts_without_initiator, kInitiator) > 0);
+    bool has_initiator = (std::erase(all_hosts_without_initiator, kInitiator) > 0);
     chassert(has_initiator);
     return all_hosts_without_initiator;
 }
@@ -162,7 +170,9 @@ size_t BackupCoordinationOnCluster::findCurrentHostIndex(const String & current_
 
 
 BackupCoordinationOnCluster::BackupCoordinationOnCluster(
-    const BackupSettings & backup_settings_,
+    const UUID & backup_uuid_,
+    bool is_plain_backup_,
+    bool is_lightweight_snapshot_,
     const String & root_zookeeper_path_,
     zkutil::GetZooKeeper get_zookeeper_,
     const BackupKeeperSettings & keeper_settings_,
@@ -172,35 +182,34 @@ BackupCoordinationOnCluster::BackupCoordinationOnCluster(
     BackupConcurrencyCounters & concurrency_counters_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_,
     QueryStatusPtr process_list_element_)
-    : backup_uuid(*backup_settings_.backup_uuid)
-    , root_zookeeper_path(root_zookeeper_path_)
-    , zookeeper_path(root_zookeeper_path_ + "/backup-" + toString(backup_uuid))
+    : root_zookeeper_path(root_zookeeper_path_)
+    , zookeeper_path(root_zookeeper_path_ + "/backup-" + toString(backup_uuid_))
     , keeper_settings(keeper_settings_)
+    , backup_uuid(backup_uuid_)
     , all_hosts(all_hosts_)
     , all_hosts_without_initiator(excludeInitiator(all_hosts))
     , current_host(current_host_)
     , current_host_index(findCurrentHostIndex(current_host, all_hosts))
-    , plain_backup(!backup_settings_.deduplicate_files)
-    , data_file_name_gen(backup_settings_.data_file_name_generator)
-    , data_file_name_prefix_length(*backup_settings_.data_file_name_prefix_length)
+    , plain_backup(is_plain_backup_)
+    , lightweight_snapshot(is_lightweight_snapshot_)
     , process_list_element(process_list_element_)
     , log(getLogger("BackupCoordinationOnCluster"))
     , with_retries(log, get_zookeeper_, keeper_settings, process_list_element_, [root_zookeeper_path_](Coordination::ZooKeeperWithFaultInjection::Ptr zk) { zk->sync(root_zookeeper_path_); })
     , cleaner(/* is_restore = */ false, zookeeper_path, with_retries, log)
     , stage_sync(/* is_restore = */ false, fs::path{zookeeper_path} / "stage", current_host, all_hosts, allow_concurrent_backup_, concurrency_counters_, with_retries, schedule_, process_list_element_, log)
 {
-    /// If the current host isn't the initiator then there are other hosts working on this backup (at least the initiator itself).
-    if (current_host != kInitiator)
-        setBackupQueryIsSentToOtherHosts();
+    try
+    {
+        createRootNodes();
+    }
+    catch (...)
+    {
+        stage_sync.setError(std::current_exception(), /* throw_if_error = */ false);
+        throw;
+    }
 }
 
 BackupCoordinationOnCluster::~BackupCoordinationOnCluster() = default;
-
-void BackupCoordinationOnCluster::startup()
-{
-    stage_sync.startup();
-    createRootNodes();
-}
 
 void BackupCoordinationOnCluster::createRootNodes()
 {
@@ -241,39 +250,34 @@ Strings BackupCoordinationOnCluster::setStage(const String & new_stage, const St
     return {};
 }
 
-void BackupCoordinationOnCluster::setError(std::exception_ptr exception, bool throw_if_error)
+bool BackupCoordinationOnCluster::setError(std::exception_ptr exception, bool throw_if_error)
 {
-    stage_sync.setError(exception, throw_if_error);
+    return stage_sync.setError(exception, throw_if_error);
 }
 
-bool BackupCoordinationOnCluster::isErrorSet() const
+bool BackupCoordinationOnCluster::waitOtherHostsFinish(bool throw_if_error) const
 {
-    return stage_sync.isErrorSet();
+    return stage_sync.waitOtherHostsFinish(throw_if_error);
 }
 
-void BackupCoordinationOnCluster::waitOtherHostsFinish(bool throw_if_error) const
+bool BackupCoordinationOnCluster::finish(bool throw_if_error)
 {
-    stage_sync.waitOtherHostsFinish(throw_if_error);
+    return stage_sync.finish(throw_if_error);
 }
 
-void BackupCoordinationOnCluster::finish(bool throw_if_error)
+bool BackupCoordinationOnCluster::cleanup(bool throw_if_error)
 {
-    stage_sync.finish(throw_if_error);
-}
-
-bool BackupCoordinationOnCluster::finished() const
-{
-    return stage_sync.finished();
-}
-
-bool BackupCoordinationOnCluster::allHostsFinished() const
-{
-    return stage_sync.allHostsFinished();
-}
-
-void BackupCoordinationOnCluster::cleanup(bool throw_if_error)
-{
-    cleaner.cleanup(throw_if_error);
+    /// All the hosts must finish before we remove the coordination nodes.
+    bool expect_other_hosts_finished = stage_sync.isQuerySentToOtherHosts() || !stage_sync.isErrorSet();
+    bool all_hosts_finished = stage_sync.finished() && (stage_sync.otherHostsFinished() || !expect_other_hosts_finished);
+    if (!all_hosts_finished)
+    {
+        auto unfinished_hosts = expect_other_hosts_finished ? stage_sync.getUnfinishedHosts() : Strings{current_host};
+        LOG_INFO(log, "Skipping removing nodes from ZooKeeper because hosts {} didn't finish",
+                 BackupCoordinationStageSync::getHostsDesc(unfinished_hosts));
+        return false;
+    }
+    return cleaner.cleanup(throw_if_error);
 }
 
 ZooKeeperRetriesInfo BackupCoordinationOnCluster::getOnClusterInitializationKeeperRetriesInfo() const
@@ -755,7 +759,7 @@ void BackupCoordinationOnCluster::addFileInfos(BackupFileInfos && file_infos_)
     }
 
     /// Serialize `file_infos_` and write it to ZooKeeper's nodes.
-    String file_infos_str = FileInfos::serialize(file_infos_);
+    String file_infos_str = FileInfos::serialize(file_infos_, lightweight_snapshot);
     serializeToMultipleZooKeeperNodes(zookeeper_path + "/file_infos/" + current_host, file_infos_str, "addFileInfos");
 }
 
@@ -778,7 +782,7 @@ void BackupCoordinationOnCluster::prepareFileInfos() const
     if (file_infos)
         return;
 
-    file_infos.emplace(BackupCoordinationFileInfos::Config{plain_backup, data_file_name_gen, data_file_name_prefix_length});
+    file_infos.emplace(plain_backup);
 
     Strings hosts_with_file_infos;
     {
@@ -794,7 +798,7 @@ void BackupCoordinationOnCluster::prepareFileInfos() const
     for (const String & host : hosts_with_file_infos)
     {
         String file_infos_str = deserializeFromMultipleZooKeeperNodes(zookeeper_path + "/file_infos/" + host, "prepareFileInfos");
-        auto deserialized_file_infos = FileInfos::deserialize(file_infos_str).file_infos;
+        auto deserialized_file_infos = FileInfos::deserialize(file_infos_str, lightweight_snapshot).file_infos;
         file_infos->addFileInfos(std::move(deserialized_file_infos), host);
     }
 }

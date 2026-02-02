@@ -1,4 +1,3 @@
-#include <Common/CurrentThread.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <chrono>
@@ -624,40 +623,18 @@
     M(742, DELTA_KERNEL_ERROR) \
     M(743, ICEBERG_SPECIFICATION_VIOLATION) \
     M(744, SESSION_ID_EMPTY) \
-    M(745, SERVER_OVERLOADED) \
-    M(746, DEPENDENCIES_NOT_FOUND) \
-    M(747, FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS) /* private error code */ \
-    M(748, AVRO_EXCEPTION) \
-    M(749, TCP_CONNECTION_LIMIT_REACHED) \
-    M(750, ARROWFLIGHT_INTERNAL_ERROR) \
-    M(751, ARROWFLIGHT_CONNECTION_FAILURE) \
-    M(752, ARROWFLIGHT_FETCH_SCHEMA_ERROR) \
-    M(753, ARROWFLIGHT_WRITE_ERROR) \
-    M(754, UDF_EXECUTION_FAILED) \
-    M(755, TOO_LARGE_LIGHTWEIGHT_UPDATES) \
-    M(756, CANNOT_PARSE_PROMQL_QUERY) \
-    M(757, CANNOT_GET_THREAD_PRIORITY) \
-    M(758, TOO_MANY_NAMED_COLLECTIONS) \
-    M(759, LICENSING_EXCEPTION) \
-    M(760, UNICODE_ERROR) \
-    M(761, ACME_ERROR) \
-    M(762, HTTP_CONNECTION_LIMIT_REACHED) \
-    M(763, SESSION_REFUSED) \
-    M(764, DEDUPLICATION_IS_NOT_POSSIBLE) \
-    M(765, UNKNOWN_MASKING_POLICY) \
 \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
     M(902, PROTOCOL_VERSION_MISMATCH) \
-    M(903, DISTRIBUTED_CACHE_REGISTRY_SHUTDOWN) \
+    M(903, LICENSE_EXPIRED) \
 \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
     M(1002, UNKNOWN_EXCEPTION) \
     M(1003, SSH_EXCEPTION) \
-    M(1004, STARTUP_SCRIPTS_ERROR) \
-    /* See END */
+/* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
     #define APPLY_FOR_ERROR_CODES(M) APPLY_FOR_BUILTIN_ERROR_CODES(M) APPLY_FOR_EXTERNAL_ERROR_CODES(M)
@@ -673,7 +650,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1004;
+    constexpr ErrorCode END = 1003;
     ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames
@@ -689,7 +666,7 @@ namespace ErrorCodes
 
     std::string_view getName(ErrorCode error_code)
     {
-        if (error_code < 0 || error_code > END)
+        if (error_code < 0 || error_code >= END)
             return std::string_view();
         return error_codes_names.names[error_code];
     }
@@ -711,7 +688,7 @@ namespace ErrorCodes
 
     ErrorCode end() { return END + 1; }
 
-    size_t increment(ErrorCode error_code, bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
+    size_t increment(ErrorCode error_code, bool remote, const std::string & message, const FramePointers & trace)
     {
         if (error_code < 0 || error_code >= end())
         {
@@ -720,7 +697,7 @@ namespace ErrorCodes
             error_code = end() - 1;
         }
 
-        return values[error_code].increment(remote, message, format_string, trace);
+        return values[error_code].increment(remote, message, trace);
     }
 
     void extendedMessage(ErrorCode error_code, bool remote, size_t error_index, const std::string & message)
@@ -735,7 +712,7 @@ namespace ErrorCodes
         values[error_code].extendedMessage(remote, error_index, message);
     }
 
-    size_t ErrorPairHolder::increment(bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
+    size_t ErrorPairHolder::increment(bool remote, const std::string & message, const FramePointers & trace)
     {
         const auto now = std::chrono::system_clock::now();
 
@@ -744,10 +721,8 @@ namespace ErrorCodes
 
         size_t error_index = error.count++;
         error.message = message;
-        error.format_string = format_string;
         error.trace = trace;
         error.error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-        error.query_id = CurrentThread::getQueryId();
 
         return error_index;
     }

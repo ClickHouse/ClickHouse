@@ -29,8 +29,9 @@ public:
         return std::make_shared<FunctionCoalesce>(context);
     }
 
-    explicit FunctionCoalesce(ContextPtr context)
-        : is_not_null(FunctionFactory::instance().get("isNotNull", context))
+    explicit FunctionCoalesce(ContextPtr context_)
+        : context(context_)
+        , is_not_null(FunctionFactory::instance().get("isNotNull", context))
         , assume_not_null(FunctionFactory::instance().get("assumeNotNull", context))
         , if_function(FunctionFactory::instance().get("if", context))
         , multi_if_function(FunctionFactory::instance().get("multiIf", context))
@@ -168,6 +169,7 @@ public:
     }
 
 private:
+    ContextPtr context;
     FunctionOverloadResolverPtr is_not_null;
     FunctionOverloadResolverPtr assume_not_null;
     FunctionOverloadResolverPtr if_function;
@@ -178,49 +180,7 @@ private:
 
 REGISTER_FUNCTION(Coalesce)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the leftmost non-`NULL` argument.
-    )";
-    FunctionDocumentation::Syntax syntax = "coalesce(x[, y, ...])";
-    FunctionDocumentation::Arguments arguments = {
-        {"x[, y, ...]", "Any number of parameters of non-compound type. All parameters must be of mutually compatible data types.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the first non-`NULL` argument, otherwise `NULL`, if all arguments are `NULL`.", {"Any", "NULL"}};
-    FunctionDocumentation::Examples examples = {
-        {"Usage example",
-         R"(
--- Consider a list of contacts that may specify multiple ways to contact a customer.
-
-CREATE TABLE aBook
-(
-    name String,
-    mail Nullable(String),
-    phone Nullable(String),
-    telegram Nullable(UInt32)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-
-INSERT INTO aBook VALUES ('client 1', NULL, '123-45-67', 123), ('client 2', NULL, NULL, NULL);
-
--- The mail and phone fields are of type String, but the telegram field is UInt32 so it needs to be converted to String.
-
--- Get the first available contact method for the customer from the contact list
-
-SELECT name, coalesce(mail, phone, CAST(telegram,'Nullable(String)')) FROM aBook;
-        )",
-         R"(
-┌─name─────┬─coalesce(mail, phone, CAST(telegram, 'Nullable(String)'))─┐
-│ client 1 │ 123-45-67                                                 │
-│ client 2 │ ᴺᵁᴸᴸ                                                      │
-└──────────┴───────────────────────────────────────────────────────────┘
-        )"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionCoalesce>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionCoalesce>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

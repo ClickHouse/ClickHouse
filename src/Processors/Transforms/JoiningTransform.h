@@ -5,7 +5,9 @@
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
-#include <Interpreters/IJoin.h>
+
+#include <deque>
+#include <memory>
 
 namespace DB
 {
@@ -41,8 +43,8 @@ class JoiningTransform : public IProcessor
 {
 public:
     JoiningTransform(
-        SharedHeader input_header,
-        SharedHeader output_header,
+        const Block & input_header,
+        const Block & output_header,
         JoinPtr join_,
         size_t max_block_size_,
         bool on_totals_ = false,
@@ -65,9 +67,9 @@ protected:
 
 private:
     Chunk input_chunk;
-    std::optional<Chunk> output_chunk;
+    std::deque<Chunk> output_chunks;
     bool has_input = false;
-    bool has_virtual_row = false;
+    bool has_output = false;
     bool stop_reading = false;
     bool process_non_joined = true;
 
@@ -79,13 +81,16 @@ private:
     bool default_totals;
     bool initialized = false;
 
-    JoinResultPtr join_result;
+    /// Only used with ConcurrentHashJoin
+    ExtraScatteredBlocks remaining_blocks;
+
+    ExtraBlockPtr not_processed;
 
     FinishCounterPtr finish_counter;
     IBlocksStreamPtr non_joined_blocks;
     size_t max_block_size;
 
-    Block readExecute(Chunk & chunk);
+    Blocks readExecute(Chunk & chunk);
 };
 
 /// Fills Join with block from right table.
@@ -94,7 +99,7 @@ private:
 class FillingRightJoinSideTransform : public IProcessor
 {
 public:
-    FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
+    FillingRightJoinSideTransform(Block input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
     String getName() const override { return "FillingRightJoinSide"; }
 
     InputPort * addTotalsPort();
@@ -155,7 +160,7 @@ class DelayedJoinedBlocksWorkerTransform : public IProcessor
 public:
     using NonJoinedStreamBuilder = std::function<IBlocksStreamPtr()>;
     explicit DelayedJoinedBlocksWorkerTransform(
-        SharedHeader output_header_,
+        Block output_header_,
         NonJoinedStreamBuilder non_joined_stream_builder_);
 
     String getName() const override { return "DelayedJoinedBlocksWorkerTransform"; }

@@ -39,15 +39,11 @@ protected:
 
 public:
     ISimpleTransform(Block input_header_, Block output_header_, bool skip_empty_chunks_);
-    ISimpleTransform(SharedHeader input_header_, SharedHeader output_header_, bool skip_empty_chunks_);
 
     virtual void transform(Chunk &) = 0;
-    virtual void transform(std::exception_ptr &) {}
 
     Status prepare() override;
     void work() override;
-
-    virtual void onFinish() {}
 
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }

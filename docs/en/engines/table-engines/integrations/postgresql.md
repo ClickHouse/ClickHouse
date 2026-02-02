@@ -4,25 +4,22 @@ description: 'The PostgreSQL engine allows `SELECT` and `INSERT` queries on data
 sidebar_label: 'PostgreSQL'
 sidebar_position: 160
 slug: /engines/table-engines/integrations/postgresql
-title: 'PostgreSQL table Engine'
-doc_type: 'guide'
+title: 'PostgreSQL Table Engine'
 ---
-
-# PostgreSQL table engine
 
 The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a remote PostgreSQL server.
 
 :::note
-Currently, only PostgreSQL versions 12 and up are supported for the table engine.
+Currently, only PostgreSQL versions 12 and up are supported.
 :::
 
-:::tip
-Check out our [Managed Postgres](/docs/cloud/managed-postgres) service. Backed by NVMe storage that is physically co-located with compute, it delivers up to 10x faster performance for workloads that are disk-bound compared to alternatives using network-attached storage like EBS and allows you to replicate your Postgres data to ClickHouse using the Postgres CDC connector in ClickPipes.
+:::note Replicating or migrating Postgres data with with PeerDB
+> In addition to the Postgres table engine, you can use [PeerDB](https://docs.peerdb.io/introduction) by ClickHouse to set up a continuous data pipeline from Postgres to ClickHouse. PeerDB is a tool designed specifically to replicate data from Postgres to ClickHouse using change data capture (CDC).
 :::
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -64,11 +61,11 @@ The table structure can differ from the original PostgreSQL table structure:
 ```
 
 Some parameters can be overridden by key value arguments:
-```sql
+``` sql
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
-## Implementation details {#implementation-details}
+## Implementation Details {#implementation-details}
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
 
@@ -115,11 +112,11 @@ In the example below replica `example01-1` has the highest priority:
 </source>
 ```
 
-## Usage example {#usage-example}
+## Usage Example {#usage-example}
 
 ### Table in PostgreSQL {#table-in-postgresql}
 
-```text
+``` text
 postgres=# CREATE TABLE "public"."test" (
 "int_id" SERIAL,
 "int_nullable" INT NULL DEFAULT NULL,
@@ -144,21 +141,21 @@ postgresql> SELECT * FROM test;
 
 This example uses the [PostgreSQL table engine](/engines/table-engines/integrations/postgresql.md) to connect the ClickHouse table to the PostgreSQL table and use both SELECT and INSERT statements to the PostgreSQL database:
 
-```sql
+``` sql
 CREATE TABLE default.postgresql_table
 (
     `float_nullable` Nullable(Float32),
     `str` String,
     `int_id` Int32
 )
-ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
+ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
 ```
 
 ### Inserting initial data from PostgreSQL table into ClickHouse table, using a SELECT query {#inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query}
 
 The [postgresql table function](/sql-reference/table-functions/postgresql.md) copies the data from PostgreSQL to ClickHouse, which is often used for improving the query performance of the data by querying or performing analytics in ClickHouse rather than in PostgreSQL, or can also be used for migrating data from PostgreSQL to ClickHouse. Since we will be copying the data from PostgreSQL to ClickHouse, we will use a MergeTree table engine in ClickHouse and call it postgresql_copy:
 
-```sql
+``` sql
 CREATE TABLE default.postgresql_copy
 (
     `float_nullable` Nullable(Float32),
@@ -169,9 +166,9 @@ ENGINE = MergeTree
 ORDER BY (int_id);
 ```
 
-```sql
+``` sql
 INSERT INTO default.postgresql_copy
-SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
+SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
 ```
 
 ### Inserting incremental data from PostgreSQL table into ClickHouse table {#inserting-incremental-data-from-postgresql-table-into-clickhouse-table}
@@ -180,13 +177,13 @@ If then performing ongoing synchronization between the PostgreSQL table and Clic
 
 This would require keeping track of the max ID or timestamp previously added, such as the following:
 
-```sql
+``` sql
 SELECT max(`int_id`) AS maxIntID FROM default.postgresql_copy;
 ```
 
 Then inserting values from PostgreSQL table greater than the max
 
-```sql
+``` sql
 INSERT INTO default.postgresql_copy
 SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
 WHERE int_id > maxIntID;
@@ -194,17 +191,17 @@ WHERE int_id > maxIntID;
 
 ### Selecting data from the resulting ClickHouse table {#selecting-data-from-the-resulting-clickhouse-table}
 
-```sql
+``` sql
 SELECT * FROM postgresql_copy WHERE str IN ('test');
 ```
 
-```text
+``` text
 ┌─float_nullable─┬─str──┬─int_id─┐
 │           ᴺᵁᴸᴸ │ test │      1 │
 └────────────────┴──────┴────────┘
 ```
 
-### Using non-default schema {#using-non-default-schema}
+### Using Non-default Schema {#using-non-default-schema}
 
 ```text
 postgres=# CREATE SCHEMA "nice.schema";

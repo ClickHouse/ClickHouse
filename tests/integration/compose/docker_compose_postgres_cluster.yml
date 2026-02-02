@@ -1,7 +1,6 @@
 services:
     postgres2:
         image: postgres
-        stop_grace_period: 5s
         command: ["postgres", "-c", "logging_collector=on", "-c", "log_directory=/postgres/logs", "-c", "log_filename=postgresql.log", "-c", "log_statement=all"]
         restart: always
         environment:
@@ -14,10 +13,8 @@ services:
             - type: ${POSTGRES_LOGS_FS:-tmpfs}
               source: ${POSTGRES2_DIR:-}
               target: /postgres/
-        cpus: 3
     postgres3:
         image: postgres
-        stop_grace_period: 5s
         command: ["postgres", "-c", "logging_collector=on", "-c", "log_directory=/postgres/logs", "-c", "log_filename=postgresql.log", "-c", "log_statement=all"]
         restart: always
         environment:
@@ -30,10 +27,8 @@ services:
             - type: ${POSTGRES_LOGS_FS:-tmpfs}
               source: ${POSTGRES3_DIR:-}
               target: /postgres/
-        cpus: 3
     postgres4:
         image: postgres
-        stop_grace_period: 5s
         command: ["postgres", "-c", "logging_collector=on", "-c", "log_directory=/postgres/logs", "-c", "log_filename=postgresql.log", "-c", "log_statement=all"]
         restart: always
         environment:
@@ -46,4 +41,3 @@ services:
             - type: ${POSTGRES_LOGS_FS:-tmpfs}
               source: ${POSTGRES4_DIR:-}
               target: /postgres/
-        cpus: 3

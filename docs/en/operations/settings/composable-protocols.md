@@ -1,14 +1,13 @@
 ---
 description: 'Composable protocols allows more flexible configuration of TCP access
   to the ClickHouse server.'
-sidebar_label: 'Composable protocols'
+sidebar_label: 'Composable Protocols'
 sidebar_position: 64
 slug: /operations/settings/composable-protocols
-title: 'Composable protocols'
-doc_type: 'reference'
+title: 'Composable Protocols'
 ---
 
-# Composable protocols
+# Composable Protocols
 
 ## Overview {#overview}
 
@@ -139,7 +138,7 @@ Additional endpoints can be defined by referencing any module and omitting the
 `<type>` tag. For example, we can define `another_http` endpoint for the 
 `plain_http` module as follows:
 
-```xml
+``` xml
 <protocols>
 
   <plain_http>

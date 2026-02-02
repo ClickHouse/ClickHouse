@@ -48,7 +48,6 @@ struct SchedulerNodeInfo
 {
     double weight = 1.0; /// Weight of this node among it's siblings
     Priority priority; /// Priority of this node among it's siblings (lower value means higher priority)
-    Int64 queue_size = std::numeric_limits<Int64>::max(); /// Size of a workload queue
 
     /// Arbitrary data accessed/stored by parent
     union {
@@ -68,7 +67,6 @@ struct SchedulerNodeInfo
     {
         setWeight(config.getDouble(config_prefix + ".weight", weight));
         setPriority(config.getInt64(config_prefix + ".priority", priority));
-        setQueueSize(config.getInt64(config_prefix + ".queue_size", queue_size));
     }
 
     void setWeight(double value)
@@ -79,16 +77,6 @@ struct SchedulerNodeInfo
                 "Zero, negative and non-finite node weights are not allowed: {}",
                 value);
         weight = value;
-    }
-
-    void setQueueSize(Int64 value)
-    {
-        if (value <= 0)
-            throw Exception(
-                ErrorCodes::INVALID_SCHEDULER_NODE,
-                "Workload setting `max_waiting_queries` value must be positive, got: {}",
-                value);
-        queue_size = value;
     }
 
     void setPriority(Int64 value)
@@ -211,7 +199,7 @@ protected:
     {
         dequeued_requests++;
         dequeued_cost += cost;
-        throughput.add(static_cast<double>(clock_gettime_ns())/1e9, static_cast<double>(cost));
+        throughput.add(static_cast<double>(clock_gettime_ns())/1e9, cost);
     }
 
 public:

@@ -1,7 +1,7 @@
 #include <Parsers/ASTQueryWithOutput.h>
 
+#include <Common/assert_cast.h>
 #include <Parsers/ASTSetQuery.h>
-
 
 namespace DB
 {
@@ -43,36 +43,28 @@ void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s
 
     if (out_file)
     {
-        ostr << s.nl_or_ws << indent_str << "INTO OUTFILE ";
+        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "INTO OUTFILE " << (s.hilite ? hilite_none : "");
         out_file->format(ostr, s, state, frame);
 
+        ostr << (s.hilite ? hilite_keyword : "");
         if (is_outfile_append)
             ostr << " APPEND";
         if (is_outfile_truncate)
             ostr << " TRUNCATE";
         if (is_into_outfile_with_stdout)
             ostr << " AND STDOUT";
-        if (compression)
-        {
-            ostr << " COMPRESSION ";
-            compression->format(ostr, s, state, frame);
-        }
-        if (compression_level)
-        {
-            ostr << indent_str << " LEVEL ";
-            compression_level->format(ostr, s, state, frame);
-        }
+        ostr << (s.hilite ? hilite_none : "");
     }
 
     if (format_ast)
     {
-        ostr << s.nl_or_ws << indent_str << "FORMAT ";
+        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FORMAT " << (s.hilite ? hilite_none : "");
         format_ast->format(ostr, s, state, frame);
     }
 
     if (settings_ast)
     {
-        ostr << s.nl_or_ws << indent_str << "SETTINGS ";
+        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
         settings_ast->format(ostr, s, state, frame);
     }
 }
@@ -86,7 +78,7 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
         {
             if (p)
             {
-                if (auto it = std::find(ast_with_output->children.begin(), ast_with_output->children.end(), p);
+                if (auto * it = std::find(ast_with_output->children.begin(), ast_with_output->children.end(), p);
                     it != ast_with_output->children.end())
                     ast_with_output->children.erase(it);
                 p.reset();
@@ -105,9 +97,5 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
     return false;
 }
 
-bool ASTQueryWithOutput::hasOutputOptions() const
-{
-    return out_file || format_ast || settings_ast || compression || compression_level;
-}
 
 }

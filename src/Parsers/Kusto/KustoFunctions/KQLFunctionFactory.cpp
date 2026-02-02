@@ -1,3 +1,6 @@
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
 #include <Parsers/Kusto/KustoFunctions/KQLAggregationFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
@@ -11,6 +14,9 @@
 #include <Parsers/Kusto/KustoFunctions/KQLMathematicalFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLTimeSeriesFunctions.h>
+#include <Parsers/Kusto/ParserKQLQuery.h>
+#include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/ParserSetQuery.h>
 
 namespace DB
 {
@@ -229,7 +235,7 @@ std::unordered_map<String, KQLFunctionValue> KQLFunctionFactory::kql_functions
 
 std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String & kql_function)
 {
-    if (!kql_functions.contains(kql_function))
+    if (kql_functions.find(kql_function) == kql_functions.end())
         return nullptr;
 
     auto kql_function_id = kql_functions[kql_function];

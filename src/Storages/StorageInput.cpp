@@ -32,12 +32,12 @@ StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription 
 class StorageInputSource : public ISource, WithContext
 {
 public:
-    StorageInputSource(ContextPtr context_, SharedHeader sample_block) : ISource(std::move(sample_block)), WithContext(context_) {}
+    StorageInputSource(ContextPtr context_, Block sample_block) : ISource(std::move(sample_block)), WithContext(context_) {}
 
     Chunk generate() override
     {
         auto block = getContext()->getInputBlocksReaderCallback()(getContext());
-        if (block.empty())
+        if (!block)
             return {};
 
         UInt64 num_rows = block.rows();
@@ -61,7 +61,7 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromInput(
-        SharedHeader sample_block,
+        Block sample_block,
         Pipe pipe_,
         StorageInput & storage_)
         : ISourceStep(std::move(sample_block))
@@ -86,7 +86,7 @@ void StorageInput::read(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    auto sample_block = std::make_shared<const Block>(storage_snapshot->metadata->getSampleBlock());
+    Block sample_block = storage_snapshot->metadata->getSampleBlock();
     Pipe input_source_pipe;
 
     auto query_context = context->getQueryContext();
@@ -94,11 +94,7 @@ void StorageInput::read(
     if (query_context->getInputBlocksReaderCallback())
     {
         /// Send structure to the client.
-        if (!is_input_initialized)
-        {
-            query_context->initializeInput(shared_from_this());
-            is_input_initialized = true;
-        }
+        query_context->initializeInput(shared_from_this());
         input_source_pipe = Pipe(std::make_shared<StorageInputSource>(query_context, sample_block));
     }
 

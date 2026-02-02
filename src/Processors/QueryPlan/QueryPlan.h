@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
+#include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
-#include <Parsers/IAST_fwd.h>
 
 #include <list>
 #include <memory>
@@ -12,6 +11,9 @@
 
 namespace DB
 {
+
+class Block;
+using Header = Block;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
@@ -30,7 +32,6 @@ class Pipe;
 struct QueryPlanOptimizationSettings;
 struct BuildQueryPipelineSettings;
 
-class ColumnSet;
 namespace JSONBuilder
 {
     class IItem;
@@ -54,16 +55,10 @@ struct ExplainPlanOptions
     bool actions = false;
     /// Add information about indexes actions.
     bool indexes = false;
-    /// Add information about projections.
-    bool projections = false;
     /// Add information about sorting
     bool sorting = false;
     /// Show remote plans for distributed query.
     bool distributed = false;
-    /// Add input headers to step.
-    bool input_headers = false;
-    /// Print structure of columns instead of just their names and types.
-    bool column_structure = false;
 
     SettingsChanges toSettingsChanges() const;
 };
@@ -84,7 +79,7 @@ public:
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
-    const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
+    const Header & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
@@ -96,8 +91,7 @@ public:
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
-        const BuildQueryPipelineSettings & build_pipeline_settings,
-        bool do_optimize=true);
+        const BuildQueryPipelineSettings & build_pipeline_settings);
 
     struct ExplainPipelineOptions
     {
@@ -106,7 +100,7 @@ public:
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
-    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0, size_t max_description_length = 0) const;
+    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0) const;
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
 
@@ -135,19 +129,8 @@ public:
 
     using Nodes = std::list<Node>;
 
-    /// Extract subplan from plan from the root node.
-    /// The root node and all the children will be removed from the nodes.
-    static QueryPlan extractSubplan(Node * root, Nodes & nodes);
-
     Node * getRootNode() const { return root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
-    void replaceNodeWithPlan(Node * node, QueryPlan plan);
-
-    QueryPlan extractSubplan(Node * subplan_root);
-    void cloneInplace(Node * node_to_replace, Node * subplan_root);
-    QueryPlan clone() const;
-
-    static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
 private:
     struct SerializationFlags;
@@ -194,7 +177,6 @@ struct QueryPlanAndSets
     std::list<SetFromSubquery> sets_from_subquery;
 };
 
-std::string debugExplainStep(IQueryPlanStep & step);
-std::string debugExplainPlan(const QueryPlan & plan);
+std::string debugExplainStep(const IQueryPlanStep & step);
 
 }

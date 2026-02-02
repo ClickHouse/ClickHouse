@@ -1,6 +1,3 @@
--- Tags: no-msan
--- ^ slow
-
 DROP TABLE IF EXISTS mt_00160;
 DROP TABLE IF EXISTS merge_00160;
 

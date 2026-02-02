@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/Backup.h>
+#include "Backup.h"
 
 #include <Common/Exception.h>
 #include <Disks/IDiskTransaction.h>

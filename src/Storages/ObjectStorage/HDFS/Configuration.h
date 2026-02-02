@@ -2,16 +2,22 @@
 #include "config.h"
 
 #if USE_HDFS
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/ObjectStorage/Common.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {
-struct HDFSStorageParsedArguments : private StorageParsedArguments
+
+class StorageHDFSConfiguration : public StorageObjectStorage::Configuration
 {
-    friend class StorageHDFSConfiguration;
+public:
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+
+    static constexpr auto type = ObjectStorageType::HDFS;
+    static constexpr auto type_name = "hdfs";
+    static constexpr auto engine_name = "HDFS";
+    /// All possible signatures for HDFS engine with structure argument (for example for hdfs table function).
     static constexpr auto max_number_of_arguments_with_structure = 4;
     static constexpr auto signatures_with_structure =
         " - uri\n"
@@ -25,72 +31,50 @@ struct HDFSStorageParsedArguments : private StorageParsedArguments
         " - uri\n"
         " - uri, format\n"
         " - uri, format, compression_method\n";
-    static constexpr std::string getSignatures(bool with_structure = true)
-    {
-        return with_structure ? signatures_with_structure : signatures_without_structure;
-    }
-    static constexpr size_t getMaxNumberOfArguments(bool with_structure = true)
-    {
-        return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
-    }
-
-    void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure);
-
-    std::string url_str;
-};
-
-class StorageHDFSConfiguration : public StorageObjectStorageConfiguration
-{
-public:
-    static constexpr auto type = ObjectStorageType::HDFS;
-    static constexpr auto type_name = "hdfs";
-    static constexpr auto engine_name = "HDFS";
-    /// All possible signatures for HDFS engine with structure argument (for example for hdfs table function).
 
     StorageHDFSConfiguration() = default;
+    StorageHDFSConfiguration(const StorageHDFSConfiguration & other);
 
     ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return engine_name; }
 
-    bool supportsPartialPathPrefix() const override { return false; }
+    std::string getSignatures(bool with_structure = true) const { return with_structure ? signatures_with_structure : signatures_without_structure; }
+    size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
-    /// Unlike s3 and azure, which are object storages,
-    /// hdfs is a filesystem, so it cannot list files by partial prefix,
-    /// only by directory.
-    /// Therefore in the below methods we use supports_partial_prefix=false.
-    Path getRawPath() const override { return path; }
-    const String & getRawURI() const override { return url; }
+    Path getPath() const override { return path; }
+    void setPath(const Path & path_) override { path = path_; }
 
     const Paths & getPaths() const override { return paths; }
-    void setPaths(const Paths & paths_) override
-    {
-        paths = paths_;
-    }
+    void setPaths(const Paths & paths_) override { paths = paths_; }
+    std::string getPathWithoutGlobs() const override;
 
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return url; }
-    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
+    StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) override;
+    ConfigurationPtr clone() override { return std::make_shared<StorageHDFSConfiguration>(*this); }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
 
     void addStructureAndFormatToArgsIfNeeded(
-        ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) override;
+        ASTs & args,
+        const String & structure_,
+        const String & format_,
+        ContextPtr context,
+        bool with_structure) override;
 
 private:
-    void initializeFromParsedArguments(const HDFSStorageParsedArguments & parsed_arguments);
-    void setURL(const std::string & url_);
-    void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;
-
     void fromNamedCollection(const NamedCollection &, ContextPtr context) override;
+    void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;
+    void setURL(const std::string & url_);
 
     String url;
-    Path path;
-    Paths paths;
+    String path;
+    std::vector<String> paths;
 };
+
 }
 
 #endif

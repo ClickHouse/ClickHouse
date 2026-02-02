@@ -7,7 +7,6 @@
 /// it should be also added to src/Coordination/KeeperConstant.cpp
 #define APPLY_FOR_BUILTIN_METRICS(M) \
     M(Query, "Number of executing queries") \
-    M(QueryNonInternal, "Number of executing non-internal queries (queries initiated by users, excluding internal queries from ClickHouse)") \
     M(Merge, "Number of executing background merges") \
     M(MergeParts, "Number of source parts participating in current background merges") \
     M(Move, "Number of currently executing moves") \
@@ -23,7 +22,6 @@
     M(BackgroundCommonPoolSize, "Limit on number of tasks in an associated background pool") \
     M(BackgroundMovePoolTask, "Number of active tasks in BackgroundProcessingPool for moves") \
     M(BackgroundMovePoolSize, "Limit on number of tasks in BackgroundProcessingPool for moves") \
-    M(AzureRequests, "Number of currently executing Azure requests") \
     M(BackgroundSchedulePoolTask, "Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
     M(BackgroundSchedulePoolSize, "Limit on number of tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
     M(BackgroundBufferFlushSchedulePoolTask, "Number of active tasks in BackgroundBufferFlushSchedulePool. This pool is used for periodic Buffer flushes") \
@@ -63,14 +61,11 @@
     M(SendExternalTables, "Number of connections that are sending data for external tables to remote servers. External tables are used to implement GLOBAL IN and GLOBAL JOIN operators with distributed subqueries.") \
     M(QueryThread, "Number of query processing threads") \
     M(ReadonlyReplica, "Number of Replicated tables that are currently in readonly state due to re-initialization after ZooKeeper session loss or due to startup without ZooKeeper configured.") \
-    M(ReplicaReady, "Indicates if the replica is ready for queries: 0 = no, 1 = yes") \
     M(MemoryTracking, "Total amount of memory (bytes) allocated by the server.") \
     M(MemoryTrackingUncorrected, "Total amount of memory (bytes) allocated by the server not corrected by RSS.") \
     M(MergesMutationsMemoryTracking, "Total amount of memory (bytes) allocated by background tasks (merges and mutations).") \
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
     M(ZooKeeperSession, "Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.") \
-    M(ZooKeeperSessionExpired, "Number of expired global ZooKeeper sessions.") \
-    M(ZooKeeperConnectionLossStartedTimestampSeconds, "Unix timestamp in seconds when ZooKeeper connection was lost, or 0 if connected successfully.") \
     M(ZooKeeperWatch, "Number of watches (event subscriptions) in ZooKeeper.") \
     M(ZooKeeperRequest, "Number of requests to ZooKeeper in fly.") \
     M(DelayedInserts, "Number of INSERT queries that are throttled due to high number of active data parts for partition in a MergeTree table.") \
@@ -120,9 +115,6 @@
     M(ThreadPoolFSReaderThreads, "Number of threads in the thread pool for local_filesystem_read_method=threadpool.") \
     M(ThreadPoolFSReaderThreadsActive, "Number of threads in the thread pool for local_filesystem_read_method=threadpool running a task.") \
     M(ThreadPoolFSReaderThreadsScheduled, "Number of queued or active jobs in the thread pool for local_filesystem_read_method=threadpool.") \
-    M(ObjectStorageQueueShutdownThreads, "Number of threads in object storage queue shutdown pool.") \
-    M(ObjectStorageQueueShutdownThreadsActive, "Number of threads in object storage queue shutdown pool running a task.") \
-    M(ObjectStorageQueueShutdownThreadsScheduled, "Number of queued or active jobs in object storage queue shutdown pool.") \
     M(BackupsIOThreads, "Number of threads in the BackupsIO thread pool.") \
     M(BackupsIOThreadsActive, "Number of threads in the BackupsIO thread pool running a task.") \
     M(BackupsIOThreadsScheduled, "Number of queued or active jobs in the BackupsIO thread pool.") \
@@ -161,6 +153,9 @@
     M(ParallelFormattingOutputFormatThreads, "Number of threads in the ParallelFormattingOutputFormatThreads thread pool.") \
     M(ParallelFormattingOutputFormatThreadsActive, "Number of threads in the ParallelFormattingOutputFormatThreads thread pool running a task.") \
     M(ParallelFormattingOutputFormatThreadsScheduled, "Number of queued or active jobs in the ParallelFormattingOutputFormatThreads thread pool.") \
+    M(ParallelParsingInputFormatThreads, "Number of threads in the ParallelParsingInputFormat thread pool.") \
+    M(ParallelParsingInputFormatThreadsActive, "Number of threads in the ParallelParsingInputFormat thread pool running a task.") \
+    M(ParallelParsingInputFormatThreadsScheduled, "Number of queued or active jobs in the ParallelParsingInputFormat thread pool.") \
     M(MergeTreeBackgroundExecutorThreads, "Number of threads in the MergeTreeBackgroundExecutor thread pool.") \
     M(MergeTreeBackgroundExecutorThreadsActive, "Number of threads in the MergeTreeBackgroundExecutor thread pool running a task.") \
     M(MergeTreeBackgroundExecutorThreadsScheduled, "Number of queued or active jobs in the MergeTreeBackgroundExecutor thread pool.") \
@@ -199,9 +194,6 @@
     M(BuildVectorSimilarityIndexThreads, "Number of threads in the build vector similarity index thread pool.") \
     M(BuildVectorSimilarityIndexThreadsActive, "Number of threads in the build vector similarity index thread pool running a task.") \
     M(BuildVectorSimilarityIndexThreadsScheduled, "Number of queued or active jobs in the build vector similarity index thread pool.") \
-    M(DistributedIndexAnalysisThreads, "Number of threads in the thread pool for distributed index analysis.") \
-    M(DistributedIndexAnalysisThreadsActive, "Number of threads in the thread pool for distributed index analysis running a task.") \
-    M(DistributedIndexAnalysisThreadsScheduled, "Number of queued or active jobs in the distributed idnex analysis thread pool.") \
     M(ObjectStorageQueueRegisteredServers, "Number of registered servers in StorageS3(Azure)Queue")\
     M(IcebergCatalogThreads, "Number of threads in the IcebergCatalog thread pool.") \
     M(IcebergCatalogThreadsActive, "Number of threads in the IcebergCatalog thread pool running a task.") \
@@ -239,32 +231,32 @@
     M(IDiskCopierThreadsActive, "Number of threads for copying data between disks of different types running a task.") \
     M(IDiskCopierThreadsScheduled, "Number of queued or active jobs for copying data between disks of different types.") \
     M(SystemReplicasThreads, "Number of threads in the system.replicas thread pool.") \
-    M(SystemDatabaseReplicasThreads, "Number of threads in the system.database_replicas thread pool.") \
     M(SystemReplicasThreadsActive, "Number of threads in the system.replicas thread pool running a task.") \
-    M(SystemDatabaseReplicasThreadsActive, "Number of threads in the system.database_replicas thread pool running a task.") \
     M(SystemReplicasThreadsScheduled, "Number of queued or active jobs in the system.replicas thread pool.") \
-    M(SystemDatabaseReplicasThreadsScheduled, "Number of queued or active jobs in the system.database_replicas thread pool.") \
     M(RestartReplicaThreads, "Number of threads in the RESTART REPLICA thread pool.") \
     M(RestartReplicaThreadsActive, "Number of threads in the RESTART REPLICA thread pool running a task.") \
     M(RestartReplicaThreadsScheduled, "Number of queued or active jobs in the RESTART REPLICA thread pool.") \
     M(QueryPipelineExecutorThreads, "Number of threads in the PipelineExecutor thread pool.") \
     M(QueryPipelineExecutorThreadsActive, "Number of threads in the PipelineExecutor thread pool running a task.") \
     M(QueryPipelineExecutorThreadsScheduled, "Number of queued or active jobs in the PipelineExecutor thread pool.") \
+    M(ParquetDecoderThreads, "Number of threads in the ParquetBlockInputFormat thread pool.") \
+    M(ParquetDecoderThreadsActive, "Number of threads in the ParquetBlockInputFormat thread pool running a task.") \
+    M(ParquetDecoderThreadsScheduled, "Number of queued or active jobs in the ParquetBlockInputFormat thread pool.") \
+    M(ParquetDecoderIOThreads, "Number of threads in the ParquetBlockInputFormat io thread pool.") \
+    M(ParquetDecoderIOThreadsActive, "Number of threads in the ParquetBlockInputFormat io thread pool running a task.") \
+    M(ParquetDecoderIOThreadsScheduled, "Number of queued or active jobs in the ParquetBlockInputFormat io thread pool.") \
     M(ParquetEncoderThreads, "Number of threads in ParquetBlockOutputFormat thread pool.") \
     M(ParquetEncoderThreadsActive, "Number of threads in ParquetBlockOutputFormat thread pool running a task.") \
     M(ParquetEncoderThreadsScheduled, "Number of queued or active jobs in ParquetBlockOutputFormat thread pool.") \
     M(MergeTreeSubcolumnsReaderThreads, "Number of threads in the thread pool used for subcolumns reading in MergeTree.") \
     M(MergeTreeSubcolumnsReaderThreadsActive, "Number of threads in the thread pool used for subcolumns reading in MergeTree running a task.") \
     M(MergeTreeSubcolumnsReaderThreadsScheduled, "Number of queued or active jobs in the thread pool used for subcolumns reading in MergeTree.") \
-    M(FormatParsingThreads, "Number of threads in the thread pool used for parsing input.") \
-    M(FormatParsingThreadsActive, "Number of threads in the thread pool used for parsing input running a task.") \
-    M(FormatParsingThreadsScheduled, "Number of queued or active jobs in the thread pool used for parsing input.") \
+    M(DWARFReaderThreads, "Number of threads in the DWARFBlockInputFormat thread pool.") \
+    M(DWARFReaderThreadsActive, "Number of threads in the DWARFBlockInputFormat thread pool running a task.") \
+    M(DWARFReaderThreadsScheduled, "Number of queued or active jobs in the DWARFBlockInputFormat thread pool.") \
     M(OutdatedPartsLoadingThreads, "Number of threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsScheduled, "Number of queued or active jobs in the threadpool for loading Outdated data parts.") \
-    M(FreezePartThreads, "Number of threads in the threadpool for freezing data parts.") \
-    M(FreezePartThreadsActive, "Number of active threads in the threadpool for freezing data parts.") \
-    M(FreezePartThreadsScheduled, "Number of queued or active jobs in the threadpool for freezing data parts.") \
     M(PolygonDictionaryThreads, "Number of threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsActive, "Number of active threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsScheduled, "Number of queued or active jobs in the threadpool for polygon dictionaries.") \
@@ -312,55 +304,7 @@
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
     M(FilesystemCacheKeys, "Number of keys in filesystem cache") \
-    M(FilesystemCacheReserveThreads, "Threads number trying to reserve space in cache") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
-    M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
-    M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
-    M(AvroSchemaCacheBytes, "Size of the Avro schema cache in bytes") \
-    M(AvroSchemaCacheCells, "Number of cached Avro schemas") \
-    M(AvroSchemaRegistryCacheBytes, "Size of the Avro schema registry cache in bytes") \
-    M(AvroSchemaRegistryCacheCells, "Number of entries in Avro schema registry cache") \
-    M(HiveFilesCacheBytes, "Size of the hive cache in bytes") \
-    M(HiveFilesCacheFiles, "Number of cached files in the hive cache") \
-    M(HiveMetadataFilesCacheBytes, "Size of the hive metadata cache in bytes") \
-    M(HiveMetadataFilesCacheFiles, "Number of cached files in the hive metadata cache") \
-    M(VectorSimilarityIndexCacheBytes, "Size of the vector similarity index cache in bytes") \
-    M(VectorSimilarityIndexCacheCells, "Number of entries in the vector similarity index cache") \
-    M(TextIndexDictionaryBlockCacheBytes, "Size of the text index dictionary block cache in bytes") \
-    M(TextIndexDictionaryBlockCacheCells, "Number of entries in the text index dictionary block cache") \
-    M(TextIndexHeaderCacheBytes, "Size of the text index header cache in bytes") \
-    M(TextIndexHeaderCacheCells, "Number of entries in text index header cache") \
-    M(TextIndexPostingsCacheBytes, "Size of the text index posting lists cache in bytes") \
-    M(TextIndexPostingsCacheCells, "Number of entries in the text index posting lists cache") \
-    M(DNSHostsCacheBytes, "Size of the DNS hosts cache in bytes") \
-    M(DNSHostsCacheSize, "Number of cached DNS hosts") \
-    M(DNSAddressesCacheBytes, "Size of the DNS addresses cache in bytes") \
-    M(DNSAddressesCacheSize, "Number of cached DNS addresses") \
-    M(MarkCacheBytes, "Total size of mark cache in bytes") \
-    M(MarkCacheFiles, "Total number of mark files cached in the mark cache") \
-    M(NamedCollection, "Number of named collections") \
-    M(PrimaryIndexCacheBytes, "Total size of primary index cache in bytes") \
-    M(PrimaryIndexCacheFiles, "Total number of index files cached in the primary index cache") \
-    M(PageCacheBytes, "Total size of userspace page cache in bytes") \
-    M(PageCacheCells, "Total number of entries in the userspace page cache") \
-    M(UncompressedCacheBytes, "Total size of uncompressed cache in bytes. Uncompressed cache does not usually improve the performance and should be mostly avoided") \
-    M(UncompressedCacheCells, "Total number of entries in the uncompressed cache. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided") \
-    M(IndexMarkCacheBytes, "Total size of mark cache for secondary indices in bytes") \
-    M(IndexMarkCacheFiles, "Total number of mark files cached in the mark cache for secondary indices") \
-    M(IndexUncompressedCacheBytes, "Total size of uncompressed cache in bytes for secondary indices. Uncompressed cache does not usually improve the performance and should be mostly avoided") \
-    M(IndexUncompressedCacheCells, "Total number of entries in the uncompressed cache for secondary indices. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided") \
-    M(MMapCacheCells, "The number of files opened with `mmap` (mapped in memory). This is used for queries with the setting `local_filesystem_read_method` set to  `mmap`. The files opened with `mmap` are kept in the cache to avoid costly TLB flushes.") \
-    M(QueryCacheBytes, "Total size of the query cache in bytes") \
-    M(QueryCacheEntries, "Total number of entries in the query cache") \
-    M(QueryConditionCacheBytes, "Total size of the query condition cache in bytes") \
-    M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
-    M(CompiledExpressionCacheBytes, "Total bytes used for the cache of JIT-compiled code") \
-    M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled code") \
-    M(MergeJoinBlocksCacheBytes, "Total bytes used for cached blocks in MergeJoin") \
-    M(MergeJoinBlocksCacheCount, "Total cached blocks in MergeJoin") \
-    M(BcryptCacheBytes, "Total size of the bcrypt authentication cache in bytes") \
-    M(BcryptCacheSize, "Total number of entries in the bcrypt authentication cache") \
-    M(ColumnsDescriptionsCacheSize, "Size of ColumnsDescriptions cache (per-table cache)") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \
@@ -381,25 +325,17 @@
     M(SharedMergeTreeThreadsActive, "Number of threads in the thread pools in internals of SharedMergeTree running a task") \
     M(SharedMergeTreeThreadsScheduled, "Number of queued or active threads in the thread pools in internals of SharedMergeTree") \
     M(SharedMergeTreeFetch, "Number of fetches in progress") \
-    M(SharedMergeTreeAssignedCurrentParts, "Number of parts locked by merge or mutation") \
-    M(SharedMergeTreeOutdatedPartsInKeeper, "How many outdated part records stored in keeper") \
-    M(SharedMergeTreeCondemnedPartsInKeeper, "How many condemned part records stored in keeper") \
-    M(SharedMergeTreeBrokenCondemnedPartsInKeeper, "How many broken condemned part records stored in keeper") \
     M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
-    M(DistrCacheSharedLimitCount, "Number of opened connections according to DistributedCache::ConnectionPool::SharedLimit") \
     M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
     M(DistrCacheAllocatedConnections, "Number of currently allocated connections to Distributed Cache connection pool") \
     M(DistrCacheBorrowedConnections, "Number of currently borrowed connections to Distributed Cache connection pool") \
     M(DistrCacheReadRequests, "Number of executed Read requests to Distributed Cache") \
     M(DistrCacheWriteRequests, "Number of executed Write requests to Distributed Cache") \
-    M(DistrCacheWriteBuffers, "Number of distributed cache write buffers") \
-    M(DistrCacheReadBuffers, "Number of distributed cache read buffers") \
     M(DistrCacheServerConnections, "Number of open connections to ClickHouse server from Distributed Cache") \
     M(DistrCacheRegisteredServers, "Number of distributed cache registered servers") \
     M(DistrCacheRegisteredServersCurrentAZ, "Number of distributed cache registered servers in current az") \
     M(DistrCacheServerS3CachedClients, "Number of distributed cache S3 cached clients") \
-    M(DistrCacheServerRegistryConnections, "Number of active connections to ClickHouse server from Distributed Cache (not marked as cancelled because of limit)") \
     \
     M(SchedulerIOReadScheduled, "Number of IO reads are being scheduled currently") \
     M(SchedulerIOWriteScheduled, "Number of IO writes are being scheduled currently") \
@@ -419,14 +355,9 @@
     M(FilteringMarksWithPrimaryKey, "Number of threads currently doing filtering of mark ranges by the primary key") \
     M(FilteringMarksWithSecondaryKeys, "Number of threads currently doing filtering of mark ranges by secondary keys") \
     \
-    M(ConcurrencyControlScheduled, "Total number of CPU slot requests are being scheduled currently") \
     M(ConcurrencyControlAcquired, "Total number of acquired CPU slots") \
     M(ConcurrencyControlAcquiredNonCompeting, "Total number of acquired CPU slots that are not considered competing (the first thread if fair_round_robin scheduler is in use)") \
     M(ConcurrencyControlSoftLimit, "Value of soft limit on number of CPU slots") \
-    M(ConcurrencyControlPreempted, "Total number of preempted threads waiting for CPU slot") \
-    \
-    M(ConcurrentQueryScheduled, "Total number of query slot requests are being scheduled currently") \
-    M(ConcurrentQueryAcquired, "Total number of acquired query slots") \
     \
     M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
     \
@@ -442,15 +373,9 @@
     M(SharedCatalogDropZooKeeperThreadsActive, "Number of active threads in the threadpool for drop of object in ZooKeeper in Shared Catalog.") \
     M(SharedCatalogDropZooKeeperThreadsScheduled, "Number of queued or active jobs in the threadpool for drop of object in ZooKeeper in Shared Catalog.") \
     \
-    M(CoordinatedMergesCoordinatorRunningMerges, "Number of running merges visible for merge coordinator.") \
-    M(CoordinatedMergesCoordinatorAssignedMerges, "Number of assigned merges in merge coordinator state.") \
-    M(CoordinatedMergesWorkerAssignedMerges, "Number of assigned merges in merge worker state.") \
-    \
     M(SharedDatabaseCatalogTablesInLocalDropDetachQueue, "Number of tables in the queue for local drop or detach in Shared Catalog.") \
     \
     M(SharedCatalogDropDetachLocalTablesErrors, "Number of errors that occurred when attempting to drop or detach local tables in Shared Catalog.") \
-    \
-    M(SharedCatalogNumberOfObjectsInState, "Number of objects in the current state of Shared Catalog.") \
     \
     M(MetadataFromKeeperCacheObjects, "Number of objects in disk metadata cache.") \
     \
@@ -459,21 +384,6 @@
     M(StartupScriptsExecutionState, "State of startup scripts execution: 0 = not finished, 1 = success, 2 = failure.") \
     \
     M(IsServerShuttingDown, "Indicates if the server is shutting down: 0 = no, 1 = yes") \
-    \
-    M(StatelessWorkerThreads, "Number of threads in the stateless worker thread pool.") \
-    M(StatelessWorkerThreadsActive, "Number of threads in the stateless worker thread pool running a task.") \
-    M(StatelessWorkerThreadsScheduled, "Number of queued or active jobs in the stateless worker thread pool.") \
-    M(ReadonlyDisks, "Number of disks that were marked as readonly during disk check.") \
-    M(BrokenDisks, "Number of disks disks that were marked as broken during disk check.") \
-    M(TaskTrackerThreads, "Number of threads used by the distributed query remote task tracker.") \
-    M(TaskTrackerThreadsActive, "Number of threads in the distributed query remote task tracker thread pool running a task.") \
-    M(TaskTrackerThreadsScheduled, "Number of queued or active jobs in the distributed query remote task tracker thread pool.") \
-    M(DropDistributedCacheThreads, "Number of threads in the threadpool for drop distributed cache query.") \
-    M(DropDistributedCacheThreadsActive, "Number of active threads in the threadpool for drop distributed cache query.") \
-    M(DropDistributedCacheThreadsScheduled, "Number of queued or active jobs in the threadpool for drop distributed cache.") \
-    \
-    M(S3CachedCredentialsProviders, "Total number of cached credentials providers") \
-
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
@@ -489,31 +399,30 @@ namespace CurrentMetrics
     #undef M
     constexpr Metric END = Metric(__COUNTER__);
 
-    /// +1 to allow using END as a placeholder
-    std::atomic<Value> values[END + 1] {};    /// Global variable, initialized by zeros.
+    std::atomic<Value> values[END] {};    /// Global variable, initialized by zeros.
 
-    static const std::array<std::string_view, END> names =
+    const char * getName(Metric event)
     {
-    #define M(NAME, DOCUMENTATION) #NAME,
-        APPLY_FOR_METRICS(M)
-    #undef M
-    };
+        static const char * strings[] =
+        {
+        #define M(NAME, DOCUMENTATION) #NAME,
+            APPLY_FOR_METRICS(M)
+        #undef M
+        };
 
-    const std::string_view & getName(Metric event)
-    {
-        return names[event];
+        return strings[event];
     }
 
-    static const std::array<std::string_view, END> docs =
+    const char * getDocumentation(Metric event)
     {
-    #define M(NAME, DOCUMENTATION) DOCUMENTATION,
-        APPLY_FOR_METRICS(M)
-    #undef M
-    };
+        static const char * strings[] =
+        {
+        #define M(NAME, DOCUMENTATION) DOCUMENTATION,
+            APPLY_FOR_METRICS(M)
+        #undef M
+        };
 
-    const std::string_view & getDocumentation(Metric event)
-    {
-        return docs[event];
+        return strings[event];
     }
 
     Metric end() { return END; }

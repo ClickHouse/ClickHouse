@@ -11,11 +11,7 @@ class ReplicatedDatabaseQueryStatusSource final : public DistributedQueryStatusS
 {
 public:
     ReplicatedDatabaseQueryStatusSource(
-        const String & zookeeper_name_,
-        const String & zk_node_path,
-        const String & zk_replicas_path,
-        ContextPtr context_,
-        const Strings & hosts_to_wait);
+        const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait);
 
     String getName() const override { return "ReplicatedDatabaseQueryStatus"; }
 

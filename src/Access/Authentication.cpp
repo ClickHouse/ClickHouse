@@ -4,27 +4,17 @@
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
 #include <Access/GSSAcceptor.h>
-#include <Common/Base64.h>
-#include <Common/Crypto/X509Certificate.h>
+#include <Poco/SHA1Engine.h>
 #include <Common/Exception.h>
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
-#include <Poco/SHA1Engine.h>
+#include <Access/Common/SSLCertificateSubjects.h>
 
-#include <base/types.h>
 #include "config.h"
 
-#if USE_SSL
-#    include <Common/OpenSSLHelpers.h>
-#endif
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 namespace
 {
@@ -51,12 +41,6 @@ namespace
         return Util::encodeSHA256(String(password).append(salt)) == password_sha256;
     }
 
-    bool checkPasswordScramSHA256(std::string_view password, const Digest & password_scram_sha256, const String & salt)
-    {
-        auto digest = Util::encodeScramSHA256(password, salt);
-        return digest == password_scram_sha256;
-    }
-
     bool checkPasswordDoubleSHA1MySQL(std::string_view scramble, std::string_view scrambled_password, const Digest & password_double_sha1)
     {
         /// scrambled_password = SHA1(password) XOR SHA1(scramble <concat> SHA1(SHA1(password)))
@@ -76,7 +60,7 @@ namespace
 
         Poco::SHA1Engine::Digest calculated_password_sha1(sha1_size);
         for (size_t i = 0; i < sha1_size; ++i)
-            calculated_password_sha1[i] = static_cast<UInt8>(scrambled_password[i] ^ digest[i]);
+            calculated_password_sha1[i] = scrambled_password[i] ^ digest[i];
 
         auto calculated_password_double_sha1 = Util::encodeSHA1(calculated_password_sha1);
         return calculated_password_double_sha1 == password_double_sha1;
@@ -109,44 +93,6 @@ namespace
     {
         return authentication_method.getType() == AuthenticationType::KERBEROS
             && external_authenticators.checkKerberosCredentials(authentication_method.getKerberosRealm(), *gss_acceptor_context);
-    }
-
-    std::string computeScramSHA256ClientProof(const std::vector<uint8_t> & salted_password [[maybe_unused]], const std::string& auth_message [[maybe_unused]])
-    {
-#if USE_SSL
-        auto client_key = hmacSHA256(salted_password, "Client Key");
-        auto stored_key = encodeSHA256(client_key);
-        auto client_signature = hmacSHA256(stored_key, auth_message);
-
-        String client_proof(client_key.size(), 0);
-        for (size_t i = 0; i < client_key.size(); ++i)
-            client_proof[i] = client_key[i] ^ client_signature[i];
-
-        return base64Encode(client_proof);
-#else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Client proof can be computed only with USE_SSL compile flag.");
-#endif
-    }
-
-    bool checkScramSHA256Authentication(
-        const ScramSHA256Credentials * scram_sha256_credentials,
-        const AuthenticationData & authentication_method)
-    {
-        const auto & client_proof = scram_sha256_credentials->getClientProof();
-        const auto & auth_message = scram_sha256_credentials->getAuthMessage();
-        const auto & salt = authentication_method.getSalt();
-        const auto & password = authentication_method.getPasswordHashBinary();
-        auto computed_client_proof = computeScramSHA256ClientProof(password, auth_message);
-
-        if (computed_client_proof.size() != client_proof.size())
-            return false;
-
-        for (size_t i = 0; i < computed_client_proof.size(); ++i)
-        {
-            if (static_cast<UInt8>(computed_client_proof[i]) != static_cast<UInt8>(client_proof[i]))
-                return false;
-        }
-        return true;
     }
 
     bool checkMySQLAuthentication(
@@ -192,11 +138,6 @@ namespace
                 return checkPasswordSHA256(
                     basic_credentials->getPassword(), authentication_method.getPasswordHashBinary(), authentication_method.getSalt());
             }
-            case AuthenticationType::SCRAM_SHA256_PASSWORD:
-            {
-                return checkPasswordScramSHA256(
-                    basic_credentials->getPassword(), authentication_method.getPasswordHashBinary(), authentication_method.getSalt());
-            }
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             {
                 return checkPasswordDoubleSHA1(basic_credentials->getPassword(), authentication_method.getPasswordHashBinary());
@@ -225,7 +166,6 @@ namespace
         return false;
     }
 
-#if USE_SSL
     bool checkSSLCertificateAuthentication(
         const SSLCertificateCredentials * ssl_certificate_credentials,
         const AuthenticationData & authentication_method)
@@ -235,7 +175,7 @@ namespace
             return false;
         }
 
-        for (X509Certificate::Subjects::Type type : {X509Certificate::Subjects::Type::CN, X509Certificate::Subjects::Type::SAN})
+        for (SSLCertificateSubjects::Type type : {SSLCertificateSubjects::Type::CN, SSLCertificateSubjects::Type::SAN})
         {
             for (const auto & subject : authentication_method.getSSLCertificateSubjects().at(type))
             {
@@ -265,7 +205,6 @@ namespace
 
         return false;
     }
-#endif
 
 #if USE_SSH
     bool checkSshAuthentication(
@@ -316,17 +255,10 @@ bool Authentication::areCredentialsValid(
         return checkBasicAuthentication(basic_credentials, authentication_method, external_authenticators, client_info, settings);
     }
 
-    if (const auto * scram_shh256_credentials = typeid_cast<const ScramSHA256Credentials *>(&credentials))
-    {
-        return checkScramSHA256Authentication(scram_shh256_credentials, authentication_method);
-    }
-
-#if USE_SSL
     if (const auto * ssl_certificate_credentials = typeid_cast<const SSLCertificateCredentials *>(&credentials))
     {
         return checkSSLCertificateAuthentication(ssl_certificate_credentials, authentication_method);
     }
-#endif
 
 #if USE_SSH
     if (const auto * ssh_credentials = typeid_cast<const SshCredentials *>(&credentials))

@@ -1,4 +1,4 @@
-#include <Storages/MySQL/MySQLHelpers.h>
+#include "MySQLHelpers.h"
 
 #if USE_MYSQL
 #include <mysqlxx/PoolWithFailover.h>

@@ -76,15 +76,6 @@ const char * toString(JoinAlgorithm join_algorithm)
     }
 }
 
-const char * toString(JoinOrderAlgorithm join_order_algorithm)
-{
-    switch (join_order_algorithm)
-    {
-        case JoinOrderAlgorithm::GREEDY: return "GREEDY";
-        case JoinOrderAlgorithm::DPSIZE: return "DPSIZE";
-    }
-}
-
 const char * toString(JoinTableSide join_table_side)
 {
     switch (join_table_side)
@@ -106,7 +97,6 @@ JoinKind reverseJoinKind(JoinKind kind)
 void serializeJoinKind(JoinKind kind, WriteBuffer & out)
 {
     uint8_t val = uint8_t(kind);
-    chassert(val <= JoinKindMax);
     writeIntBinary(val, out);
 }
 
@@ -115,16 +105,27 @@ JoinKind deserializeJoinKind(ReadBuffer & in)
     uint8_t val;
     readIntBinary(val, in);
 
-    if (val > JoinKindMax)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinKind", val);
+    if (val == uint8_t(JoinKind::Inner))
+        return JoinKind::Inner;
+    if (val == uint8_t(JoinKind::Left))
+        return JoinKind::Left;
+    if (val == uint8_t(JoinKind::Right))
+        return JoinKind::Right;
+    if (val == uint8_t(JoinKind::Full))
+        return JoinKind::Full;
+    if (val == uint8_t(JoinKind::Cross))
+        return JoinKind::Cross;
+    if (val == uint8_t(JoinKind::Comma))
+        return JoinKind::Comma;
+    if (val == uint8_t(JoinKind::Paste))
+        return JoinKind::Paste;
 
-    return static_cast<JoinKind>(val);
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinKind", UInt16(val));
 }
 
 void serializeJoinStrictness(JoinStrictness strictness, WriteBuffer & out)
 {
     uint8_t val = uint8_t(strictness);
-    chassert(val <= JoinStrictnessMax);
     writeIntBinary(val, out);
 }
 
@@ -133,16 +134,27 @@ JoinStrictness deserializeJoinStrictness(ReadBuffer & in)
     uint8_t val;
     readIntBinary(val, in);
 
-    if (val > JoinStrictnessMax)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinStrictness", val);
+    if (val == uint8_t(JoinStrictness::Unspecified))
+        return JoinStrictness::Unspecified;
+    if (val == uint8_t(JoinStrictness::RightAny))
+        return JoinStrictness::RightAny;
+    if (val == uint8_t(JoinStrictness::Any))
+        return JoinStrictness::Any;
+    if (val == uint8_t(JoinStrictness::All))
+        return JoinStrictness::All;
+    if (val == uint8_t(JoinStrictness::Asof))
+        return JoinStrictness::Asof;
+    if (val == uint8_t(JoinStrictness::Semi))
+        return JoinStrictness::Semi;
+    if (val == uint8_t(JoinStrictness::Anti))
+        return JoinStrictness::Anti;
 
-    return static_cast<JoinStrictness>(val);
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinStrictness", UInt16(val));
 }
 
 void serializeJoinLocality(JoinLocality locality, WriteBuffer & out)
 {
     uint8_t val = uint8_t(locality);
-    chassert(val <= JoinLocalityMax);
     writeIntBinary(val, out);
 }
 JoinLocality deserializeJoinLocality(ReadBuffer & in)
@@ -150,10 +162,15 @@ JoinLocality deserializeJoinLocality(ReadBuffer & in)
     uint8_t val;
     readIntBinary(val, in);
 
-    if (val > JoinLocalityMax)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinLocality", UInt16(val));
+    if (val == uint8_t(JoinLocality::Unspecified))
+        return JoinLocality::Unspecified;
+    if (val == uint8_t(JoinLocality::Local))
+        return JoinLocality::Local;
+    if (val == uint8_t(JoinLocality::Global))
+        return JoinLocality::Global;
 
-    return static_cast<JoinLocality>(val);
+
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinLocality", UInt16(val));
 }
 
 }

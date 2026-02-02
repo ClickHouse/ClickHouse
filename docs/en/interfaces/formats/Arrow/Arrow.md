@@ -6,7 +6,6 @@ keywords: ['Arrow']
 output_format: true
 slug: /interfaces/formats/Arrow
 title: 'Arrow'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -18,7 +17,7 @@ doc_type: 'reference'
 [Apache Arrow](https://arrow.apache.org/) comes with two built-in columnar storage formats. ClickHouse supports read and write operations for these formats.
 `Arrow` is Apache Arrow's "file mode" format. It is designed for in-memory random access.
 
-## Data types matching {#data-types-matching}
+## Data Types Matching {#data-types-matching}
 
 The table below shows the supported data types and how they correspond to ClickHouse [data types](/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
@@ -51,7 +50,7 @@ The table below shows the supported data types and how they correspond to ClickH
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 
-The `DICTIONARY` type is supported for `INSERT` queries, and for `SELECT` queries there is an [`output_format_arrow_low_cardinality_as_dictionary`](/operations/settings/formats#output_format_arrow_low_cardinality_as_dictionary) setting that allows to output [LowCardinality](/sql-reference/data-types/lowcardinality.md) type as a `DICTIONARY` type. Note that there might be unused values in `LowCardinality` dictionary, which can lead to unused values in Arrow `DICTIONARY` during output.
+The `DICTIONARY` type is supported for `INSERT` queries, and for `SELECT` queries there is an [`output_format_arrow_low_cardinality_as_dictionary`](/operations/settings/formats#output_format_arrow_low_cardinality_as_dictionary) setting that allows to output [LowCardinality](/sql-reference/data-types/lowcardinality.md) type as a `DICTIONARY` type.
 
 Unsupported Arrow data types: 
 - `FIXED_SIZE_BINARY`
@@ -59,11 +58,11 @@ Unsupported Arrow data types:
 - `UUID`
 - `ENUM`.
 
-The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
+The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#cast) the data to the data type set for the ClickHouse table column.
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-### Inserting data {#inserting-data}
+### Inserting Data {#inserting-data}
 
 You can insert Arrow data from a file into ClickHouse table using the following command:
 
@@ -71,7 +70,7 @@ You can insert Arrow data from a file into ClickHouse table using the following 
 $ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-### Selecting data {#selecting-data}
+### Selecting Data {#selecting-data}
 
 You can select data from a ClickHouse table and save it into some file in the Arrow format using the following command:
 
@@ -79,7 +78,7 @@ You can select data from a ClickHouse table and save it into some file in the Ar
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filename.arrow}
 ```
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}
 
 | Setting                                                                                                                  | Description                                                                                        | Default      |
 |--------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------|--------------|

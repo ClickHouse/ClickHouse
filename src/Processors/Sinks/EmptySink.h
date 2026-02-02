@@ -8,7 +8,7 @@ namespace DB
 class EmptySink : public ISink
 {
 public:
-    explicit EmptySink(SharedHeader header) : ISink(std::move(header)) {}
+    explicit EmptySink(Block header) : ISink(std::move(header)) {}
     String getName() const override { return "EmptySink"; }
 
 protected:

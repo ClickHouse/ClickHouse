@@ -1,3 +1,4 @@
+#include <iostream>
 #include <memory>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -20,7 +21,7 @@ TEST(ActionsVisitor, VisitLiteral)
         {"year", date_type}
     };
 
-    const auto ast = make_intrusive<ASTLiteral>(19870);
+    const auto ast = std::make_shared<ASTLiteral>(19870);
     auto context = Context::createCopy(getContext().context);
     NamesAndTypesList aggregation_keys;
     ColumnNumbersList aggregation_keys_indexes_list;
@@ -50,7 +51,7 @@ TEST(ActionsVisitor, VisitLiteralWithType)
         {"year", date_type}
     };
 
-    const auto ast = make_intrusive<ASTLiteral>(19870, date_type);
+    const auto ast = std::make_shared<ASTLiteral>(19870, date_type);
     auto context = Context::createCopy(getContext().context);
     NamesAndTypesList aggregation_keys;
     ColumnNumbersList aggregation_keys_indexes_list;

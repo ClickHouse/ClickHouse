@@ -2,18 +2,15 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
-#include <Common/SettingsChanges.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Databases/DataLake/DatabaseDataLakeStorageType.h>
-#include <Poco/JSON/Object.h>
 
 namespace DataLake
 {
 
 using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
-StorageType parseStorageTypeFromString(const std::string &type);
 
 struct DataLakeSpecificProperties
 {
@@ -40,7 +37,6 @@ public:
     void setLocation(const std::string & location_);
     std::string getLocation() const;
     std::string getLocationWithEndpoint(const std::string & endpoint_) const;
-    std::string getMetadataLocation(const std::string & iceberg_metadata_file_location) const;
 
     void setEndpoint(const std::string & endpoint_);
     std::string getEndpoint() const { return endpoint; }
@@ -84,13 +80,8 @@ private:
     /// Path to table's data: `/path/to/table/data/`
     std::string path;
     DB::NamesAndTypesList schema;
-    // Type of storage
-    std::string storage_type_str;
 
     std::string bucket;
-    /// For Azure ABFSS URLs: stores the account with suffix (e.g., "account.dfs.core.windows.net")
-    /// This is extracted from URLs like: abfss://container@account.dfs.core.windows.net/path
-    std::string azure_account_with_suffix;
     /// Endpoint is set and used in case we have non-AWS storage implementation, for example, Minio.
     /// Also not all catalogs support non-AWS storages.
     std::string endpoint;
@@ -113,16 +104,6 @@ private:
     std::string constructLocation(const std::string & endpoint_) const;
 };
 
-
-struct CatalogSettings
-{
-    String storage_endpoint;
-    String aws_access_key_id;
-    String aws_secret_access_key;
-    String region;
-
-    DB::SettingsChanges allChanged() const;
-};
 
 /// Base class for catalog implementation.
 /// Used for communication with the catalog.
@@ -165,21 +146,6 @@ public:
     /// Get storage type, where Iceberg tables' data is stored.
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
-
-    /// Creates new table in catalog.
-    virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
-
-    /// Updates metadata in catalog.
-    virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
-
-    /// Drop table from catalog.
-    virtual void dropTable(const String & namespace_name, const String & table_name) const;
-
-    /// Does the catalog support transactions or anything like that?
-    /// For example, the Iceberg REST catalog supports atomic operations "compare if snapshot X is equal to" and "add new snapshot Y".
-    /// So the REST catalog is transactional.
-    /// The Glue catalog does not support such operation.
-    virtual bool isTransactional() const { return false; }
 
 protected:
     /// Name of the warehouse,

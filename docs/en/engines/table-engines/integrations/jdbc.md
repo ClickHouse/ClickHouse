@@ -3,13 +3,12 @@ description: 'Allows ClickHouse to connect to external databases via JDBC.'
 sidebar_label: 'JDBC'
 sidebar_position: 100
 slug: /engines/table-engines/integrations/jdbc
-title: 'JDBC table engine'
-doc_type: 'reference'
+title: 'JDBC'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# JDBC table engine
+# JDBC
 
 <CloudNotSupportedBadge/>
 
@@ -24,34 +23,33 @@ To implement the JDBC connection, ClickHouse uses the separate program [clickhou
 
 This engine supports the [Nullable](../../../sql-reference/data-types/nullable.md) data type.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
 (
     columns list...
 )
-ENGINE = JDBC(datasource, external_database, external_table)
+ENGINE = JDBC(datasource_uri, external_database, external_table)
 ```
 
 **Engine Parameters**
 
-- `datasource` — URI or name of an external DBMS.
+
+- `datasource_uri` — URI or name of an external DBMS.
 
     URI Format: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
     Example for MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
-- `external_database` — Name of a database in an external DBMS, or, instead, an explicitly defined table schema (see examples).
+- `external_database` — Database in an external DBMS.
 
-- `external_table` — Name of the table in an external database or a select query like `select * from table1 where column1=1`.
+- `external_table` — Name of the table in `external_database` or a select query like `select * from table1 where column1=1`.
 
-- These parameters can also be passed using [named collections](operations/named-collections.md).
-
-## Usage example {#usage-example}
+## Usage Example {#usage-example}
 
 Creating a table in MySQL server by connecting directly with it's console client:
 
-```text
+``` text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -74,7 +72,7 @@ mysql> select * from test;
 
 Creating a table in ClickHouse server and selecting data from it:
 
-```sql
+``` sql
 CREATE TABLE jdbc_table
 (
     `int_id` Int32,
@@ -85,23 +83,23 @@ CREATE TABLE jdbc_table
 ENGINE JDBC('jdbc:mysql://localhost:3306/?user=root&password=root', 'test', 'test')
 ```
 
-```sql
+``` sql
 SELECT *
 FROM jdbc_table
 ```
 
-```text
+``` text
 ┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
 │      1 │         ᴺᵁᴸᴸ │     2 │           ᴺᵁᴸᴸ │
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
-```sql
+``` sql
 INSERT INTO jdbc_table(`int_id`, `float`)
 SELECT toInt32(number), toFloat32(number * 1.0)
 FROM system.numbers
 ```
 
-## See also {#see-also}
+## See Also {#see-also}
 
 - [JDBC table function](../../../sql-reference/table-functions/jdbc.md).

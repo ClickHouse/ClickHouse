@@ -10,7 +10,7 @@ INSERT INTO t_merge_profile_events_1 SELECT number, number, number FROM numbers(
 INSERT INTO t_merge_profile_events_1 SELECT number, number, number FROM numbers(10000);
 
 OPTIMIZE TABLE t_merge_profile_events_1 FINAL;
-SYSTEM FLUSH LOGS part_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     merge_algorithm,
@@ -22,9 +22,7 @@ SELECT
     ProfileEvents['MergeTotalMilliseconds'] > 0,
     ProfileEvents['MergeExecuteMilliseconds'] > 0,
     ProfileEvents['MergeHorizontalStageTotalMilliseconds'] > 0,
-    ProfileEvents['MergeHorizontalStageExecuteMilliseconds'] > 0,
-    ProfileEvents['UserTimeMicroseconds'] > 0,
-    ProfileEvents['OSCPUVirtualTimeMicroseconds'] > 0,
+    ProfileEvents['MergeHorizontalStageExecuteMilliseconds'] > 0
 FROM system.part_log WHERE database = currentDatabase() AND table = 't_merge_profile_events_1' AND event_type = 'MergeParts' AND part_name = 'all_1_2_1';
 
 DROP TABLE IF EXISTS t_merge_profile_events_1;
@@ -39,7 +37,7 @@ INSERT INTO t_merge_profile_events_2 SELECT number, number, number FROM numbers(
 INSERT INTO t_merge_profile_events_2 SELECT number, number, number FROM numbers(10000);
 
 OPTIMIZE TABLE t_merge_profile_events_2 FINAL;
-SYSTEM FLUSH LOGS part_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     merge_algorithm,
@@ -54,8 +52,6 @@ SELECT
     ProfileEvents['MergeHorizontalStageExecuteMilliseconds'] > 0,
     ProfileEvents['MergeVerticalStageTotalMilliseconds'] > 0,
     ProfileEvents['MergeVerticalStageExecuteMilliseconds'] > 0,
-    ProfileEvents['UserTimeMicroseconds'] > 0,
-    ProfileEvents['OSCPUVirtualTimeMicroseconds'] > 0,
 FROM system.part_log WHERE database = currentDatabase() AND table = 't_merge_profile_events_2' AND event_type = 'MergeParts' AND part_name = 'all_1_2_1';
 
 DROP TABLE IF EXISTS t_merge_profile_events_2;
@@ -70,7 +66,7 @@ INSERT INTO t_merge_profile_events_3 SELECT number, number, number FROM numbers(
 INSERT INTO t_merge_profile_events_3 SELECT number, number, number FROM numbers(100000);
 
 OPTIMIZE TABLE t_merge_profile_events_3 FINAL;
-SYSTEM FLUSH LOGS part_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     merge_algorithm,
@@ -88,9 +84,7 @@ SELECT
     ProfileEvents['MergeProjectionStageTotalMilliseconds'] > 0,
     ProfileEvents['MergeProjectionStageExecuteMilliseconds'] > 0,
     ProfileEvents['MergeExecuteMilliseconds'] <= duration_ms,
-    ProfileEvents['MergeTotalMilliseconds'] <= duration_ms,
-    ProfileEvents['UserTimeMicroseconds'] > 0,
-    ProfileEvents['OSCPUVirtualTimeMicroseconds'] > 0,
+    ProfileEvents['MergeTotalMilliseconds'] <= duration_ms
 FROM system.part_log WHERE database = currentDatabase() AND table = 't_merge_profile_events_3' AND event_type = 'MergeParts' AND part_name = 'all_1_2_1';
 
 DROP TABLE IF EXISTS t_merge_profile_events_3;

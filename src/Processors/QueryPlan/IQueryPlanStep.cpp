@@ -20,13 +20,13 @@ IQueryPlanStep::IQueryPlanStep()
     step_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0;
 }
 
-void IQueryPlanStep::updateInputHeaders(SharedHeaders input_headers_)
+void IQueryPlanStep::updateInputHeaders(Headers input_headers_)
 {
     input_headers = std::move(input_headers_);
     updateOutputHeader();
 }
 
-void IQueryPlanStep::updateInputHeader(SharedHeader input_header, size_t idx)
+void IQueryPlanStep::updateInputHeader(Header input_header, size_t idx)
 {
     if (idx >= input_headers.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -37,65 +37,12 @@ void IQueryPlanStep::updateInputHeader(SharedHeader input_header, size_t idx)
     updateOutputHeader();
 }
 
-void IQueryPlanStep::setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater)
-{
-    if (!supportsDataflowStatisticsCollection())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Step {} doesn't support dataflow statistics collection", getName());
-    dataflow_cache_updater = std::move(updater);
-}
-
-IQueryPlanStep::RemovedUnusedColumns IQueryPlanStep::removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedColumns is not implemented for step {}", getName());
-}
-
-bool IQueryPlanStep::canRemoveColumnsFromOutput() const
-{
-    return false;
-}
-
-bool IQueryPlanStep::hasCorrelatedExpressions() const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check {} plan step for correlated expressions", getName());
-}
-
-const SharedHeader & IQueryPlanStep::getOutputHeader() const
+const Header & IQueryPlanStep::getOutputHeader() const
 {
     if (!hasOutputHeader())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlanStep {} does not have output stream.", getName());
 
-    return output_header;
-}
-
-std::string_view IQueryPlanStep::getStepDescription() const
-{
-    if (std::holds_alternative<std::string_view>(step_description))
-        return std::get<std::string_view>(step_description);
-    if (std::holds_alternative<std::string>(step_description))
-        return std::get<std::string>(step_description);
-
-    return {};
-}
-
-void IQueryPlanStep::setStepDescription(std::string description, size_t limit)
-{
-    if (description.size() > limit)
-    {
-        description.resize(limit);
-        description.shrink_to_fit();
-    }
-
-    step_description = std::move(description);
-}
-
-void IQueryPlanStep::setStepDescription(const IQueryPlanStep & step)
-{
-    step_description = step.step_description;
-}
-
-QueryPlanStepPtr IQueryPlanStep::clone() const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot clone {} plan step", getName());
+    return *output_header;
 }
 
 const SortDescription & IQueryPlanStep::getSortDescription() const
@@ -116,7 +63,7 @@ static void doDescribeHeader(const Block & header, size_t count, IQueryPlanStep:
 
     settings.out << prefix;
 
-    if (header.empty())
+    if (!header)
     {
         settings.out << " empty\n";
         return;

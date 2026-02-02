@@ -10,45 +10,32 @@
 #include <Interpreters/sortBlock.h>
 
 #include <Processors/Chunk.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/InsertBlockInfo.h>
 
 
 namespace DB
 {
 
-class DeduplicationInfo;
-using DeduplicationInfoPtr = std::shared_ptr<DeduplicationInfo>;
-
-void buildScatterSelector(
-    const ColumnRawPtrs & columns,
-    PODArray<size_t> & partition_num_to_first_row,
-    IColumn::Selector & selector,
-    size_t max_parts,
-    ContextPtr context);
-
-struct MergeTreeTemporaryPart
+struct BlockWithPartition
 {
-    MergeTreeData::MutableDataPartPtr part;
+    Block block;
+    Row partition;
+    std::vector<size_t> offsets;
+    std::vector<String> tokens;
 
-    struct Stream
+    BlockWithPartition(Block && block_, Row && partition_)
+        : block(block_), partition(std::move(partition_))
     {
-        std::unique_ptr<MergedBlockOutputStream> stream;
-        MergedBlockOutputStream::Finalizer finalizer;
-    };
+    }
 
-    std::vector<Stream> streams;
-    scope_guard temporary_directory_lock;
-
-    void cancel();
-    void finalize();
-    void prewarmCaches();
+    BlockWithPartition(Block && block_, Row && partition_, std::vector<size_t> && offsets_, std::vector<String> && tokens_)
+        : block(block_), partition(std::move(partition_)), offsets(std::move(offsets_)), tokens(std::move(tokens_))
+    {
+    }
 };
 
-using MergeTreeTemporaryPartPtr = std::unique_ptr<MergeTreeTemporaryPart>;
 using BlocksWithPartition = std::vector<BlockWithPartition>;
 
 /** Writes new parts of data to the merge tree.
@@ -66,31 +53,45 @@ public:
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
-    static BlocksWithPartition splitBlockIntoParts(Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+    static BlocksWithPartition splitBlockIntoParts(Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, AsyncInsertInfoPtr async_insert_info = nullptr);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
     /// You should call finalize() to wait until all data is written.
 
+    struct TemporaryPart
+    {
+        MergeTreeData::MutableDataPartPtr part;
+
+        struct Stream
+        {
+            std::unique_ptr<MergedBlockOutputStream> stream;
+            MergedBlockOutputStream::Finalizer finalizer;
+        };
+
+        std::vector<Stream> streams;
+
+        scope_guard temporary_directory_lock;
+
+        void cancel();
+        void finalize();
+        void prewarmCaches();
+    };
+
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
-    MergeTreeTemporaryPartPtr writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context);
-
-    MergeTreeTemporaryPartPtr writeTempPatchPart(
-        BlockWithPartition & block,
-        StorageMetadataPtr metadata_snapshot,
-        String partition_id,
-        SourcePartsSetForPatch source_parts_set,
-        ContextPtr context);
+    TemporaryPart writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
 
     MergeTreeData::MergingParams::Mode getMergingMode() const
     {
         return data.merging_params.mode;
     }
 
+    TemporaryPart writeTempPartWithoutPrefix(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, int64_t block_number, ContextPtr context);
+
     /// For insertion.
-    static MergeTreeTemporaryPartPtr writeProjectionPart(
+    static TemporaryPart writeProjectionPart(
         const MergeTreeData & data,
         LoggerPtr log,
         Block block,
@@ -99,7 +100,7 @@ public:
         bool merge_is_needed);
 
     /// For mutation: MATERIALIZE PROJECTION.
-    static MergeTreeTemporaryPartPtr writeTempProjectionPart(
+    static TemporaryPart writeTempProjectionPart(
         const MergeTreeData & data,
         LoggerPtr log,
         Block block,
@@ -109,21 +110,21 @@ public:
 
     static Block mergeBlock(
         Block && block,
-        const StorageMetadataPtr & metadata_snapshot,
         SortDescription sort_description,
+        const Names & partition_key_columns,
         IColumn::Permutation *& permutation,
         const MergeTreeData::MergingParams & merging_params);
 
 private:
-    MergeTreeTemporaryPartPtr writeTempPartImpl(
-        BlockWithPartition & block_with_partition,
-        StorageMetadataPtr metadata_snapshot,
-        String partition_id,
-        SourcePartsSetForPatch source_parts_set,
-        ContextPtr context,
-        UInt64 block_number);
 
-    static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
+    TemporaryPart writeTempPartImpl(
+        BlockWithPartition & block,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        int64_t block_number,
+        bool need_tmp_prefix);
+
+    static TemporaryPart writeProjectionPartImpl(
         const String & part_name,
         bool is_temp,
         IMergeTreeDataPart * parent_part,

@@ -1,17 +1,17 @@
 #pragma once
 
 #include <mutex>
-#include <tuple>
 #include <base/defines.h>
-#include <Common/AggregatedMetrics.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/ExpressionActionsSettings.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/StoragePolicy.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
@@ -27,17 +27,15 @@
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/MergeTree/TemporaryParts.h>
-#include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
-#include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
+#include <Storages/MarkCache.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -47,8 +45,8 @@
 namespace DB
 {
 
-/// Number of streams is not number parts, but number or parts*files, hence 100.
-const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 100;
+/// Number of streams is not number parts, but number or parts*files, hence 1000.
+const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 1000;
 
 struct AlterCommand;
 class AlterCommands;
@@ -57,6 +55,7 @@ class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
 class MutationCommands;
 class Context;
+using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 struct JobAndPool;
 class MergeTreeTransaction;
 struct ZeroCopyLock;
@@ -69,9 +68,6 @@ using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
 struct MergeTreeSettings;
 struct WriteSettings;
-
-class MarkCache;
-using MarkCachePtr = std::shared_ptr<MarkCache>;
 
 /// Auxiliary struct holding information about the future merged or mutated part.
 struct EmergingPartInfo
@@ -88,7 +84,6 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 namespace ErrorCodes
 {
@@ -97,48 +92,13 @@ namespace ErrorCodes
 
 struct DataPartsLock
 {
-    explicit DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_);
+    std::optional<Stopwatch> wait_watch;
+    std::unique_lock<std::mutex> lock;
+    std::optional<Stopwatch> lock_watch;
+    DataPartsLock() = default;
+    explicit DataPartsLock(std::mutex & data_parts_mutex_);
+
     ~DataPartsLock();
-
-    DataPartsLock(const DataPartsLock &) = delete;
-    DataPartsLock & operator=(const DataPartsLock &) = delete;
-    DataPartsLock(DataPartsLock &&) = default;
-    DataPartsLock & operator=(DataPartsLock &&) = default;
-
-private:
-    std::optional<Stopwatch> wait_watch;
-    std::unique_lock<DB::SharedMutex> lock;
-    std::optional<Stopwatch> lock_watch;
-    const MergeTreeData * data;
-};
-
-struct DataPartsSharedLock
-{
-    explicit DataPartsSharedLock(DB::SharedMutex & data_parts_mutex_);
-    ~DataPartsSharedLock();
-
-    DataPartsSharedLock(const DataPartsSharedLock &) = delete;
-    DataPartsSharedLock & operator=(const DataPartsSharedLock &) = delete;
-    DataPartsSharedLock(DataPartsSharedLock &&) = default;
-    DataPartsSharedLock & operator=(DataPartsSharedLock &&) = default;
-
-    void unlock() { lock.unlock(); }
-
-private:
-    std::optional<Stopwatch> wait_watch;
-    std::shared_lock<DB::SharedMutex> lock;
-    std::optional<Stopwatch> lock_watch;
-};
-
-// Some functions can accept either type of lock at the caller's preference.
-class DataPartsAnyLock final
-{
-public:
-    DataPartsAnyLock(const DataPartsAnyLock &) = delete;
-    DataPartsAnyLock(DataPartsAnyLock &&) = delete;
-
-    DataPartsAnyLock(const DataPartsLock &) noexcept {} // NOLINT(google-explicit-constructor)
-    DataPartsAnyLock(const DataPartsSharedLock &) noexcept {} // NOLINT(google-explicit-constructor)
 };
 
 /// Data structure for *MergeTree engines.
@@ -202,17 +162,11 @@ public:
     /// After the DataPart is added to the working set, it cannot be changed.
     using DataPartPtr = std::shared_ptr<const DataPart>;
 
-    using DataPartKind = MergeTreePartInfo::Kind;
-    using DataPartsKinds = std::initializer_list<DataPartKind>;
-
     using DataPartState = MergeTreeDataPartState;
     using DataPartStates = std::initializer_list<DataPartState>;
     using DataPartStateVector = std::vector<DataPartState>;
 
     using PinnedPartUUIDsPtr = std::shared_ptr<const PinnedPartUUIDs>;
-
-    using PartitionIdToMinBlock = std::unordered_map<String, Int64>;
-    using PartitionIdToMinBlockPtr = std::shared_ptr<const PartitionIdToMinBlock>;
 
     constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";
     constexpr static auto DETACHED_DIR_NAME = "detached";
@@ -225,35 +179,14 @@ public:
         const MergeTreePartInfo & info;
     };
 
-    struct DataPartStateAndKind
-    {
-        DataPartState state;
-        DataPartKind kind;
-    };
-
     /// Auxiliary structure for index comparison
     struct DataPartStateAndPartitionID
     {
-        DataPartStateAndPartitionID(DataPartState state_, const String & partition_id_)
-            : state(state_), kind(MergeTreePartInfo::getKind(partition_id_)), partition_id(partition_id_)
-        {
-        }
-
         DataPartState state;
-        MergeTreePartInfo::Kind kind;
         String partition_id;
     };
 
-    struct PartitionID
-    {
-        explicit PartitionID(const String & partition_id_)
-            : kind(MergeTreePartInfo::getKind(partition_id_)), partition_id(partition_id_)
-        {
-        }
-
-        MergeTreePartInfo::Kind kind;
-        String partition_id;
-    };
+    STRONG_TYPEDEF(String, PartitionID)
 
     struct LessDataPart
     {
@@ -262,16 +195,8 @@ public:
         bool operator()(const DataPartPtr & lhs, const MergeTreePartInfo & rhs) const { return lhs->info < rhs; }
         bool operator()(const MergeTreePartInfo & lhs, const DataPartPtr & rhs) const { return lhs < rhs->info; }
         bool operator()(const DataPartPtr & lhs, const DataPartPtr & rhs) const { return lhs->info < rhs->info; }
-
-        bool operator()(const MergeTreePartInfo & lhs, const PartitionID & rhs) const
-        {
-            return std::forward_as_tuple(lhs.getKind(), lhs.getPartitionId()) < std::forward_as_tuple(rhs.kind, rhs.partition_id);
-        }
-
-        bool operator()(const PartitionID & lhs, const MergeTreePartInfo & rhs) const
-        {
-            return std::forward_as_tuple(lhs.kind, lhs.partition_id) < std::forward_as_tuple(rhs.getKind(), rhs.getPartitionId());
-        }
+        bool operator()(const MergeTreePartInfo & lhs, const PartitionID & rhs) const { return lhs.partition_id < rhs.toUnderType(); }
+        bool operator()(const PartitionID & lhs, const MergeTreePartInfo & rhs) const { return lhs.toUnderType() < rhs.partition_id; }
     };
 
     struct LessStateDataPart
@@ -286,64 +211,39 @@ public:
 
         bool operator() (DataPartStateAndInfo info, const DataPartState & state) const
         {
-            return static_cast<UInt8>(info.state) < static_cast<UInt8>(state);
+            return static_cast<size_t>(info.state) < static_cast<size_t>(state);
         }
 
         bool operator() (const DataPartState & state, DataPartStateAndInfo info) const
         {
-            return static_cast<UInt8>(state) < static_cast<UInt8>(info.state);
+            return static_cast<size_t>(state) < static_cast<size_t>(info.state);
         }
 
         bool operator() (const DataPartStateAndInfo & lhs, const DataPartStateAndPartitionID & rhs) const
         {
-            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.info.getKind(), lhs.info.getPartitionId())
-                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.kind, rhs.partition_id);
+            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.info.partition_id)
+                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.partition_id);
         }
 
         bool operator() (const DataPartStateAndPartitionID & lhs, const DataPartStateAndInfo & rhs) const
         {
-            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.kind, lhs.partition_id)
-                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info.getKind(), rhs.info.getPartitionId());
-        }
-
-        bool operator() (const DataPartStateAndKind & lhs, const DataPartStateAndInfo & rhs) const
-        {
-            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.kind)
-                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info.getKind());
-        }
-
-        bool operator() (const DataPartStateAndInfo & lhs, const DataPartStateAndKind & rhs) const
-        {
-            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.info.getKind())
-                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.kind);
+            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.partition_id)
+                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info.partition_id);
         }
     };
 
     using DataParts = std::set<DataPartPtr, LessDataPart>;
     using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
-    using DataPartsVectorPtr = std::shared_ptr<const DataPartsVector>;
 
-    DataPartsLock lockParts() { return DataPartsLock(data_parts_mutex, this); }
-    DataPartsSharedLock readLockParts() const { return DataPartsSharedLock(data_parts_mutex); }
+    DataPartsLock lockParts() const { return DataPartsLock(data_parts_mutex); }
 
     using OperationDataPartsLock = std::unique_lock<std::mutex>;
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
-    MergeTreeDataPartFormat
-    choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const;
-
+    MergeTreeDataPartFormat choosePartFormat(size_t bytes_uncompressed, size_t rows_count) const;
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
-
-    /// return pair <exists, pointer to part>. Sometimes we may fail to load existing part (network issues, oom and so on),
-    /// in this case pair of <true, nullptr> is returned.
-    std::pair<bool, MutableDataPartPtr> loadDataPartForRemovalIfExists(const String & name, bool ignore_no_such_key = false);
-
-    MergeTreeDataPartBuilder getDataPartBuilder(
-        const String & name,
-        const VolumePtr & volume,
-        const String & part_dir,
-        const ReadSettings & read_settings) const;
+    MergeTreeDataPartBuilder getDataPartBuilder(const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreActive parts (the parts are ready, but not yet in the active set).
@@ -355,8 +255,7 @@ public:
     public:
         Transaction(MergeTreeData & data_, MergeTreeTransaction * txn_);
 
-        DataPartsVector commit();
-        DataPartsVector commit(DataPartsLock & lock);
+        DataPartsVector commit(DataPartsLock * acquired_parts_lock = nullptr);
 
         /// Rename should be done explicitly, before calling commit(), to
         /// guarantee that no lock held during rename (since rename is IO
@@ -365,8 +264,7 @@ public:
 
         void addPart(MutableDataPartPtr & part, bool need_rename);
 
-        void rollback();
-        void rollback(DataPartsLock & lock);
+        void rollback(DataPartsLock * lock = nullptr);
 
         /// Immediately remove parts from table's data_parts set and change part
         /// state to temporary. Useful for new parts which not present in table.
@@ -375,7 +273,17 @@ public:
         size_t size() const { return precommitted_parts.size(); }
         bool isEmpty() const { return precommitted_parts.empty(); }
 
-        ~Transaction();
+        ~Transaction()
+        {
+            try
+            {
+                rollback();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("~MergeTreeData::Transaction");
+            }
+        }
         void clear();
 
         TransactionID getTID() const;
@@ -405,21 +313,18 @@ public:
         }
 
         /// Adds part to rename. Both names are relative to relative_data_path.
-        void addPart(const String & part_name, const String & old_dir, const String & new_dir, const DiskPtr & disk);
+        void addPart(const String & old_name, const String & new_name, const DiskPtr & disk);
 
         /// Renames part from old_name to new_name
         void tryRenameAll();
-
-        void rollBackAll();
 
         /// Renames all added parts from new_name to old_name if old name is not empty
         ~PartsTemporaryRename();
 
         struct RenameInfo
         {
-            String part_name;
-            String old_dir;
-            String new_dir;
+            String old_name;
+            String new_name;
             /// Disk cannot be changed
             DiskPtr disk;
         };
@@ -443,7 +348,6 @@ public:
             Replacing           = 5,
             Graphite            = 6,
             VersionedCollapsing = 7,
-            Coalescing          = 8,
         };
 
         Mode mode;
@@ -464,7 +368,7 @@ public:
         Graphite::Params graphite_params;
 
         /// Check that needed columns are present and have correct types.
-        void check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const;
+        void check(const StorageInMemoryMetadata & metadata) const;
 
         String getModeName() const;
     };
@@ -507,7 +411,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
         const ActionsDAG * filter_dag,
-        const RangesInDataParts & parts,
+        const DataPartsVector & parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
 
@@ -527,7 +431,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts & parts, ContextPtr local_context) const override;
+    ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const override;
 
     bool supportsFinal() const override;
 
@@ -535,6 +439,7 @@ public:
 
     bool supportsTTL() const override { return true; }
 
+    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsSparseSerialization() const override { return true; }
 
@@ -548,7 +453,7 @@ public:
 
     /// A snapshot of pending mutations that weren't applied to some of the parts yet
     /// and should be applied on the fly (i.e. when reading from the part).
-    /// Mutations not supported by AlterConversions (isSupported*Mutation) can be omitted.
+    /// Mutations not supported by AlterConversions (supportsMutationCommandType()) can be omitted.
     struct IMutationsSnapshot
     {
         /// Contains info that doesn't depend on state of mutations.
@@ -556,56 +461,32 @@ public:
         {
             Int64 metadata_version = -1;
             Int64 min_part_metadata_version = -1;
-            PartitionIdToMinBlockPtr min_part_data_versions = nullptr;
-            PartitionIdToMaxBlockPtr max_mutation_versions = nullptr;
             bool need_data_mutations = false;
-            bool need_alter_mutations = false;
-            bool need_patch_parts = false;
         };
 
-        static Int64 getMinPartDataVersionForPartition(const Params & params, const String & partition_id);
-        static Int64 getMaxMutationVersionForPartition(const Params & params, const String & partition_id);
+        /// Contains info that depends on state of mutations.
+        struct Info
+        {
+            Int64 num_data_mutations = 0;
+            Int64 num_metadata_mutations = 0;
+        };
 
-        static bool needIncludeMutationToSnapshot(const Params & params, const MutationCommands & commands);
+        Params params;
+        Info info;
 
-        virtual ~IMutationsSnapshot() = default;
-        virtual void addPatches(DataPartsVector patches_) = 0;
+        IMutationsSnapshot() = default;
+        IMutationsSnapshot(Params params_, Info info_): params(std::move(params_)), info(std::move(info_)) {}
 
         /// Returns mutation commands that are required to be applied to the `part`.
-        /// @return list of mutation commands in order: oldest to newest.
-        virtual MutationCommands getOnFlyMutationCommandsForPart(const DataPartPtr & part) const = 0;
-        virtual PatchParts getPatchesForPart(const DataPartPtr & part) const = 0;
+        /// @return list of mutation commands, in *reverse* order (newest to oldest)
+        virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
         virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
         virtual NameSet getAllUpdatedColumns() const = 0;
 
-        virtual bool hasPatchParts() const = 0;
-        virtual bool hasDataMutations() const = 0;
-        virtual bool hasAlterMutations() const = 0;
-        virtual bool hasMetadataMutations() const = 0;
-    };
+        bool hasDataMutations() const { return params.need_data_mutations && info.num_data_mutations > 0; }
+        bool hasMetadataMutations() const { return info.num_metadata_mutations > 0; }
 
-    struct MutationsSnapshotBase : public IMutationsSnapshot
-    {
-    public:
-        Params params;
-        MutationCounters counters;
-        PatchesByPartition patches_by_partition;
-
-        MutationsSnapshotBase() = default;
-        MutationsSnapshotBase(Params params_, MutationCounters counters_, DataPartsVector patches_);
-
-        void addPatches(DataPartsVector patches_) override;
-        PatchParts getPatchesForPart(const DataPartPtr & part) const final;
-
-        bool hasPatchParts() const final { return !patches_by_partition.empty(); }
-        bool hasDataMutations() const final { return counters.num_data > 0; }
-        bool hasAlterMutations() const final { return counters.num_alter > 0; }
-        bool hasMetadataMutations() const final { return counters.num_metadata > 0; }
-        bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
-
-    protected:
-        NameSet getColumnsUpdatedInPatches() const;
-        void addSupportedCommands(const MutationCommands & commands, UInt64 mutation_version, MutationCommands & result_commands) const;
+        virtual ~IMutationsSnapshot() = default;
     };
 
     using MutationsSnapshotPtr = std::shared_ptr<const IMutationsSnapshot>;
@@ -614,14 +495,7 @@ public:
     /// and mutations required to be applied at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
-        /// Hold a reference to the storage since the snapshot cache in query context
-        /// may outlive the storage and delay destruction of data parts.
-        ConstStoragePtr storage;
-
-        // shared_ptr because lifetime is as long as some query still reading it
-        // const because we are sharing across multiple queries, we cannot have things mutating this.
-        RangesInDataPartsPtr parts;
-
+        DataPartsVector parts;
         MutationsSnapshotPtr mutations_snapshot;
     };
 
@@ -632,10 +506,6 @@ public:
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
-
-    /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
-    /// This method allows read-only replicas of tables on a shared storage.
-    void refreshDataParts(UInt64 interval_milliseconds);
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
@@ -663,88 +533,80 @@ public:
     };
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
-    DataParts getDataParts(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds) const;
+    DataParts getDataParts(const DataPartStates & affordable_states) const;
+
+    DataPartsVector getDataPartsVectorForInternalUsage(
+        const DataPartStates & affordable_states, const DataPartsLock & lock, DataPartStateVector * out_states = nullptr) const;
 
     /// Returns sorted list of the parts with specified states
-    /// out_states will contain snapshot of each part state
-    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & lock, DataPartStateVector * out_states = nullptr) const;
-    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states = nullptr) const;
-    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsAnyLock & lock, DataPartStateVector * out_states = nullptr) const;
-    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
-
-    /// Returns parts in Active state.
-    DataParts getDataPartsForInternalUsage() const;
-    DataPartsVector getDataPartsVectorForInternalUsage() const;
-
-    /// Returns patch parts.
-    DataPartsVector getPatchPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsLock & lock, DataPartStateVector * out_states = nullptr) const;
-    DataPartsVector getPatchPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
-    /// Returns patch parts in Active state
-    DataPartsVector getPatchPartsVectorForInternalUsage() const;
-    /// Returns patch parts in Active state that relate to partition_id.
-    DataPartsVector getPatchPartsVectorForPartition(const String & partition_id, const DataPartsAnyLock & lock) const;
-    DataPartsVector getPatchPartsVectorForPartition(const String & partition_id) const;
+    ///  out_states will contain snapshot of each part state
+    DataPartsVector getDataPartsVectorForInternalUsage(
+        const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
+    /// Same as above but only returns projection parts
+    ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
+        const DataPartStates & affordable_states, MergeTreeData::DataPartStateVector * out_states) const;
 
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
-    DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
-    DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
+    size_t getAllPartsCount() const;
 
-    /// Returns the number of data mutations suitable for applying on the fly.
-    virtual MutationCounters getMutationCounters() const = 0;
+    /// Return the number of marks in all parts
+    size_t getTotalMarksCount() const;
+
+    /// Returns the number of data mutations (UPDATEs and DELETEs) suitable for applying on the fly.
+    virtual UInt64 getNumberOnFlyDataMutations() const = 0;
+
+    /// Returns the number of metadata mutations (RENAMEs) suitable for applying on the fly.
+    virtual UInt64 getNumberOnFlyMetadataMutations() const = 0;
 
     /// Same as above but only returns projection parts
     ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
 
-    /// Same as above but only returns projection parts
-    ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
-        const DataPartStates & affordable_states,
-        MergeTreeData::DataPartStateVector * out_states) const;
+    /// Returns parts in Active state
+    DataParts getDataPartsForInternalUsage() const;
+    DataPartsVector getDataPartsVectorForInternalUsage() const;
 
     void filterVisibleDataParts(DataPartsVector & maybe_visible_parts, CSN snapshot_version, TransactionID current_tid) const;
 
     /// Returns parts that visible with current snapshot
     DataPartsVector getVisibleDataPartsVector(ContextPtr local_context) const;
-    /// If using a shared lock (it guarantees no mutation has happened) and there is no transactions, we can return a shared copy of parts ranges
-    std::tuple<RangesInDataPartsPtr, DataPartsVectorPtr> getPossiblySharedVisibleDataPartsRanges(ContextPtr local_context) const;
-    /// Whereas if a unique lock is used, mutations could have happened, meaning shared part list *may* have been invalidated.
     DataPartsVector getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsLock & lock) const;
     DataPartsVector getVisibleDataPartsVector(const MergeTreeTransactionPtr & txn) const;
     DataPartsVector getVisibleDataPartsVector(CSN snapshot_version, TransactionID current_tid) const;
 
-    /// Returns all parts in specified partition
-    DataPartsVector getVisibleDataPartsVectorInPartition(MergeTreeTransaction * txn, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
-    DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id, const DataPartsAnyLock & lock) const;
-    DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id) const;
-    DataPartsVector getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const;
-
-    /// Return the number of marks in all parts
-    size_t getTotalMarksCount() const;
-
     /// Returns a part in Active state with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name) const;
-    DataPartPtr getActiveContainingPart(const String & part_name, const DataPartsAnyLock & lock) const;
+    DataPartPtr getActiveContainingPart(const String & part_name, DataPartsLock & lock) const;
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info) const;
-    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, const DataPartsAnyLock & lock) const;
+    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock & lock) const;
 
     /// Swap part with it's identical copy (possible with another path on another disk).
     /// If original part is not active or doesn't exist exception will be thrown.
     void swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPartsLock &);
 
+    /// Returns all parts in specified partition
+    DataPartsVector getVisibleDataPartsVectorInPartition(MergeTreeTransaction * txn, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
+    DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id, DataPartsLock & lock) const;
+    DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id) const;
+    DataPartsVector getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const;
+
+    DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
+    DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
+
     /// Returns the part with the given name and state or nullptr if no such part.
-    DataPartPtr getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, const DataPartsAnyLock & acquired_lock) const;
-    DataPartPtr getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, const DataPartsAnyLock & acquired_lock) const;
+    DataPartPtr getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, DataPartsLock & acquired_lock) const;
+    DataPartPtr getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock & acquired_lock) const;
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states) const;
     DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states) const;
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
-    size_t getTotalActiveSizeInRows() const;
-    size_t getTotalUncompressedBytesInPatches() const;
 
-    size_t getAllPartsCount() const;
+    size_t getTotalActiveSizeInRows() const;
+
     size_t getActivePartsCount() const;
+
     size_t getOutdatedPartsCount() const;
 
     size_t getNumberOfOutdatedPartsWithExpiredRemovalTime() const;
@@ -752,9 +614,9 @@ public:
     /// Returns a pair with: max number of parts in partition across partitions; sum size of parts inside that partition.
     /// (if there are multiple partitions with max number of parts, the sum size of parts is returned for arbitrary of them)
     std::pair<size_t, size_t> getMaxPartsCountAndSizeForPartitionWithState(DataPartState state) const;
+    std::pair<size_t, size_t> getMaxPartsCountAndSizeForPartition() const;
 
-    virtual std::pair<size_t, size_t> getMaxPartsCountAndSizeForPartition() const;
-    virtual size_t getMaxOutdatedPartsCountForPartition() const;
+    size_t getMaxOutdatedPartsCountForPartition() const;
 
     /// Get min value of part->info.getDataVersion() for all active parts.
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
@@ -767,9 +629,8 @@ public:
 
     void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
 
-    MutableDataPartsVector tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr context, PartsTemporaryRename & renamed_parts);
-
-    bool assertNoPatchesForParts(const DataPartsVector & parts, const DataPartsVector & patches, std::string_view command, bool throw_on_error = true) const;
+    MutableDataPartsVector tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
+                                                ContextPtr context, PartsTemporaryRename & renamed_parts);
 
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
@@ -780,9 +641,6 @@ public:
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     /// The decision to delay or throw is made according to settings 'number_of_mutations_to_delay' and 'number_of_mutations_to_throw'.
     void delayMutationOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const;
-
-    /// If the table contains too many uncompressed bytes in patches, throw an exception.
-    void throwLightweightUpdateIfNeeded(UInt64 added_uncompressed_bytes) const;
 
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
@@ -800,11 +658,6 @@ public:
         MutableDataPartPtr & part,
         Transaction & out_transaction,
         bool rename_in_transaction);
-    DataPartsVector renameTempPartAndReplaceUnlocked(
-        MutableDataPartPtr & part,
-        DataPartsLock & lock,
-        Transaction & out_transaction,
-        bool rename_in_transaction);
 
     /// Unlocked version of previous one. Useful when added multiple parts with a single lock.
     bool renameTempPartAndReplaceUnlocked(
@@ -816,14 +669,13 @@ public:
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
     /// for new parts which aren't already present in table.
-    void removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove);
-    void removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove, DataPartsLock & lock);
+    void removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove, DataPartsLock * acquired_lock = nullptr);
 
     /// Removes parts from the working set parts.
     /// Parts in add must already be in data_parts with PreActive, Active, or Outdated states.
     /// If clear_without_timeout is true, the parts will be deleted at once, or during the next call to
     /// clearOldParts (ignoring old_parts_lifetime).
-    void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout);
+    void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock = nullptr);
     void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock);
 
     /// Removes all parts covered by drop_range from the working set parts.
@@ -831,7 +683,7 @@ public:
     void removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
 
     DataPartsVector grabActivePartsToRemoveForDropRange(
-        MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, const DataPartsAnyLock & lock);
+        MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
 
     /// This wrapper is required to restrict access to parts in Deleting state
     class PartToRemoveFromZooKeeper
@@ -860,10 +712,10 @@ public:
     /// It includes parts that have been just removed by these method
     /// and Outdated parts covered by drop_range that were removed earlier for any reason.
     PartsToRemoveFromZooKeeper removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
-        MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock, bool create_empty_part = true, bool clone_to_detached = false);
+        MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock, bool create_empty_part = true);
 
     /// Restores Outdated part and adds it to working set
-    void restoreAndActivatePart(const DataPartPtr & part);
+    void restoreAndActivatePart(const DataPartPtr & part, DataPartsLock * acquired_lock = nullptr);
 
     /// Renames the part to detached/<prefix>_<part> and removes it from data_parts,
     //// so it will not be deleted in clearOldParts.
@@ -888,7 +740,7 @@ public:
     void rollbackDeletingParts(const DataPartsVector & parts);
 
     /// Removes parts from data_parts, they should be in Deleting state
-    void removePartsFinally(const MergeTreeData::DataPartsVector & parts, MergeTreeData::DataPartsVector * removed_parts = nullptr);
+    void removePartsFinally(const DataPartsVector & parts);
 
     /// Try to clear parts from filesystem.
     /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
@@ -911,9 +763,6 @@ public:
 
     size_t clearEmptyParts();
 
-    /// Moves to outdated state patch parts that do not need to be applied to regular parts.
-    size_t clearUnusedPatchParts();
-
     /// After the call to dropAllData() no method can be called.
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
@@ -935,15 +784,14 @@ public:
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
     /// - all type conversions can be done.
-    /// - columns corresponding to primary key, indices, sign, sampling expression, summed columns, and date are not affected.
+    /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
     /// If something is wrong, throws an exception.
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
-    /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
+    /// Throw exception if command is some kind of DROP command (drop column, drop index, etc)
     /// and we have unfinished mutation which need this column to finish.
-    void checkDropOrRenameCommandDoesntAffectInProgressMutations(
+    void checkDropCommandDoesntAffectInProgressMutations(
         const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr context) const;
-
     /// Return mapping unfinished mutation name -> Mutation command
     virtual std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const = 0;
 
@@ -963,13 +811,12 @@ public:
         const ASTPtr & new_settings,
         AlterLockHolder & table_lock_holder);
 
-    static std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings);
-    static void verifySortingKey(const KeyDescription & sorting_key, const MergeTreeData::MergingParams & merging_params);
+    static void verifySortingKey(const KeyDescription & sorting_key);
 
     /// Should be called if part data is suspected to be corrupted.
     /// Has the ability to check all other parts
     /// which reside on the same disk of the suspicious part.
-    virtual void reportBrokenPart(MergeTreeData::DataPartPtr data_part) const;
+    void reportBrokenPart(MergeTreeData::DataPartPtr data_part) const;
 
     /// TODO (alesap) Duplicate method required for compatibility.
     /// Must be removed.
@@ -1036,44 +883,32 @@ public:
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
-        /// Always keep locks order parts_lock -> sizes_lock
-        auto parts_lock = readLockParts();
-        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
-        calculateColumnAndSecondaryIndexSizesLazily(parts_lock, sizes_lock);
+        auto lock = lockParts();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
         const auto it = column_sizes.find(name);
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
 
     ColumnSizeByName getColumnSizes() const override
     {
-        /// Always keep locks order parts_lock -> sizes_lock
-        auto parts_lock = readLockParts();
-        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
-        calculateColumnAndSecondaryIndexSizesLazily(parts_lock, sizes_lock);
+        auto lock = lockParts();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
         return column_sizes;
     }
 
+    /// Creates description of columns of data type Object from the range of data parts.
+    static ColumnsDescription getConcreteObjectColumns(
+        const DataPartsVector & parts, const ColumnsDescription & storage_columns);
+
     IndexSizeByName getSecondaryIndexSizes() const override
     {
-        /// Always keep locks order parts_lock -> sizes_lock
-        auto parts_lock = readLockParts();
-        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
-        calculateColumnAndSecondaryIndexSizesLazily(parts_lock, sizes_lock);
+        auto lock = lockParts();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
         return secondary_index_sizes;
     }
 
-    IndexSize getPrimaryIndexSize() const
-    {
-        /// Always keep locks order parts_lock -> sizes_lock
-        auto parts_lock = readLockParts();
-        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
-        calculateColumnAndSecondaryIndexSizesLazily(parts_lock, sizes_lock);
-        return primary_index_size;
-    }
-
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
-    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
-    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsAnyLock & lock) const;
+    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, DataPartsLock * acquired_lock = nullptr) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
     std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
 
@@ -1096,14 +931,6 @@ public:
         const WriteSettings & write_settings,
         bool must_on_same_disk);
 
-    /// Clone part for shared merge tree
-    MergeTreeData::MutableDataPartPtr cloneAndLoadDataPartOnSameDiskTransacitonal(
-        const MergeTreeData::DataPartPtr & src_part,
-        const String & tmp_part_prefix,
-        const MergeTreePartInfo & dst_part_info,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings);
-
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
     /// Returns true if table can create new parts with adaptive granularity
@@ -1111,11 +938,12 @@ public:
     virtual bool canUseAdaptiveGranularity() const;
 
     /// Get constant pointer to storage settings.
-    /// Copy this pointer into your scope and you will get consistent settings.
-    /// When `projection` is provided, apply projection-level overrides on top of the table settings.
-    MergeTreeSettingsPtr getSettings(ProjectionDescriptionRawPtr projection = nullptr) const;
-
-    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache = false) const override; /// NOLINT
+    /// Copy this pointer into your scope and you will
+    /// get consistent settings.
+    MergeTreeSettingsPtr getSettings() const
+    {
+        return storage_settings.get();
+    }
 
     String getRelativeDataPath() const { return relative_data_path; }
 
@@ -1176,21 +1004,17 @@ public:
 
     Disks getDisks() const { return getStoragePolicy()->getDisks(); }
 
-    std::map<std::string, DiskPtr> getDistinctDisksForParts(const DataPartsVector & parts_list) const;
-
     /// Returns a snapshot of mutations that probably will be applied on the fly to parts during reading.
     virtual MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const = 0;
 
     /// Returns the minimum version of metadata among parts.
     static Int64 getMinMetadataVersion(const DataPartsVector & parts);
 
-    /// Returns minimum data version among parts inside each of the partitions.
-    static PartitionIdToMinBlockPtr getMinDataVersionForEachPartition(const DataPartsVector & parts);
-
     /// Return alter conversions for part which must be applied on fly.
     static AlterConversionsPtr getAlterConversionsForPart(
         const MergeTreeDataPartPtr & part,
         const MutationsSnapshotPtr & mutations,
+        const StorageMetadataPtr & metadata,
         const ContextPtr & query_context);
 
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
@@ -1258,7 +1082,7 @@ public:
 
     /// Construct a block consisting only of possible virtual columns for part pruning.
     Block getBlockWithVirtualsForFilter(
-        const StorageMetadataPtr & metadata, const RangesInDataParts & parts, bool ignore_empty = false) const;
+        const StorageMetadataPtr & metadata, const MergeTreeData::DataPartsVector & parts, bool ignore_empty = false) const;
 
     /// In merge tree we do inserts with several steps. One of them:
     /// X. write part to temporary directory with some temp name
@@ -1308,7 +1132,7 @@ public:
     /// Overridden in StorageReplicatedMergeTree
     virtual MutableDataPartPtr tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return nullptr; }
 
-    /// Check shared data usage on other replicas for detached/frozen part
+    /// Check shared data usage on other replicas for detached/freezed part
     /// Remove local files and remote files if needed
     virtual bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name);
 
@@ -1336,13 +1160,6 @@ public:
     void waitForUnexpectedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
 
-    /// Returns cached metadata snapshot of a patch part that contains the following columns.
-    StorageMetadataPtr getPatchPartMetadata(const ColumnsDescription & patch_part_desc, const String & patch_partition_id, ContextPtr local_context) const;
-
-    static MergingParams getMergingParamsForPatchParts();
-
-    std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override;
-
     /// TODO: make enabled by default in the next release if no problems found.
     bool allowRemoveStaleMovingParts() const;
 
@@ -1358,10 +1175,6 @@ public:
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
-    static VirtualColumnsDescription createProjectionVirtuals(const StorageInMemoryMetadata & metadata);
-
-    /// Similar to IStorage::getVirtuals but returns only virtual columns valid in projection.
-    VirtualsDescriptionPtr getProjectionVirtualsPtr() const { return projection_virtuals.get(); }
 
     /// Load/unload primary keys of all data parts
     void loadPrimaryKeys() const;
@@ -1380,7 +1193,6 @@ protected:
     friend class MergeTask;
     friend class IPartMetadataManager;
     friend class IMergedBlockOutputStream; // for access to log
-    friend struct DataPartsLock; // for access to shared_parts_list/shared_ranges_in_parts
 
     bool require_part_metadata;
 
@@ -1396,37 +1208,14 @@ private:
     mutable ColumnSizeByName column_sizes;
     /// Current secondary index sizes in compressed and uncompressed form.
     mutable IndexSizeByName secondary_index_sizes;
-    mutable IndexSize primary_index_size;
 
 protected:
-    void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
-
     void resetColumnSizes()
     {
         column_sizes.clear();
         are_columns_and_secondary_indices_sizes_calculated = false;
     }
 
-private:
-    struct NamesAndTypesListHash
-    {
-        size_t operator()(const NamesAndTypesList & list) const noexcept;
-    };
-    struct ColumnsDescriptionCache
-    {
-        std::shared_ptr<const ColumnsDescription> original;
-        std::shared_ptr<const ColumnsDescription> with_collected_nested;
-    };
-    mutable AggregatedMetrics::MetricHandle columns_descriptions_metric_handle;
-    mutable std::mutex columns_descriptions_cache_mutex;
-    mutable std::unordered_map<NamesAndTypesList, ColumnsDescriptionCache, NamesAndTypesListHash> columns_descriptions_cache TSA_GUARDED_BY(columns_descriptions_cache_mutex);
-
-public:
-    ColumnsDescriptionCache getColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
-    void decrefColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
-    size_t getColumnsDescriptionsCacheSize() const;
-
-protected:
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
 
@@ -1479,34 +1268,24 @@ protected:
     >;
 
     /// Current set of data parts.
-    /// On updates shared_parts_list/shared_ranges_in_parts should be reset (will be updated in getPossiblySharedVisibleDataPartsRanges())
-    mutable DB::SharedMutex data_parts_mutex;
-
+    mutable std::mutex data_parts_mutex;
     DataPartsIndexes data_parts_indexes;
     DataPartsIndexes::index<TagByInfo>::type & data_parts_by_info;
     DataPartsIndexes::index<TagByStateAndInfo>::type & data_parts_by_state_and_info;
-
-    /// A readonly shared copy of the `data_parts_by_state_and_info`, so we don't need to copy it for every query
-    /// Pointer may only be updated if you have a DataPartsLock
-    /// Pointer may only be shared if you have a DataPartsSharedLock
-    mutable DataPartsVectorPtr shared_parts_list;
-    /// Same as above, but this time caching a copy of RangesInDataParts
-    mutable RangesInDataPartsPtr shared_ranges_in_parts;
 
     /// Mutex for critical sections which alter set of parts
     /// It is like truncate, drop/detach partition
     mutable std::mutex operation_with_data_parts_mutex;
 
+    /// Current description of columns of data type Object.
+    /// It changes only when set of parts is changed and is
+    /// protected by @data_parts_mutex.
+    ColumnsDescription object_columns;
+
     /// Serialization info accumulated among all active parts.
     /// It changes only when set of parts is changed and is
     /// protected by @data_parts_mutex.
-    SerializationInfoByName serialization_hints{{}};
-
-    /// A cache for metadata snapshots for patch parts.
-    /// The key is a partition id of patch part.
-    /// Patch parts in one partition always have the same structure.
-    mutable std::mutex patch_parts_metadata_mutex;
-    mutable std::unordered_map<String, StorageMetadataPtr> patch_parts_metadata_cache;
+    SerializationInfoByName serialization_hints;
 
     MergeTreePartsMover parts_mover;
 
@@ -1530,49 +1309,49 @@ protected:
     using DataPartIteratorByInfo = DataPartsIndexes::index<TagByInfo>::type::iterator;
     using DataPartIteratorByStateAndInfo = DataPartsIndexes::index<TagByStateAndInfo>::type::iterator;
 
-    boost::iterator_range<DataPartIteratorByStateAndInfo> getDataPartsStateRange(DataPartState state, DataPartKind kind) const
-    {
-        return data_parts_by_state_and_info.equal_range(DataPartStateAndKind{state, kind}, LessStateDataPart());
-    }
-
     boost::iterator_range<DataPartIteratorByStateAndInfo> getDataPartsStateRange(DataPartState state) const
     {
-        return data_parts_by_state_and_info.equal_range(state, LessStateDataPart());
+        auto begin = data_parts_by_state_and_info.lower_bound(state, LessStateDataPart());
+        auto end = data_parts_by_state_and_info.upper_bound(state, LessStateDataPart());
+        return {begin, end};
     }
 
     boost::iterator_range<DataPartIteratorByInfo> getDataPartsPartitionRange(const String & partition_id) const
     {
-        return data_parts_by_info.equal_range(PartitionID(partition_id), LessDataPart());
+        auto begin = data_parts_by_info.lower_bound(PartitionID(partition_id), LessDataPart());
+        auto end = data_parts_by_info.upper_bound(PartitionID(partition_id), LessDataPart());
+        return {begin, end};
     }
 
+    /// Creates description of columns of data type Object from the range of data parts.
+    static ColumnsDescription getConcreteObjectColumns(
+        boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
+
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
-        const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts) const;
+        const ActionsDAG & filter_actions_dag, ContextPtr context, const DataPartsVector & parts) const;
 
     static decltype(auto) getStateModifier(DataPartState state)
     {
         return [state] (const DataPartPtr & part) { part->setState(state); };
     }
 
-    void modifyPartState(DataPartIteratorByStateAndInfo it, DataPartState state, DataPartsLock & /* parts_lock */)
+    void modifyPartState(DataPartIteratorByStateAndInfo it, DataPartState state)
     {
         if (!data_parts_by_state_and_info.modify(it, getStateModifier(state)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't modify {}", (*it)->getNameWithState());
     }
 
-    void modifyPartState(DataPartIteratorByInfo it, DataPartState state, DataPartsLock & /* parts_lock */)
+    void modifyPartState(DataPartIteratorByInfo it, DataPartState state)
     {
         if (!data_parts_by_state_and_info.modify(data_parts_indexes.project<TagByStateAndInfo>(it), getStateModifier(state)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't modify {}", (*it)->getNameWithState());
     }
 
-    void modifyPartState(const DataPartPtr & part, DataPartState state, DataPartsLock & /* parts_lock */)
+    void modifyPartState(const DataPartPtr & part, DataPartState state)
     {
         auto it = data_parts_by_info.find(part->info);
-        if (it == data_parts_by_info.end())
+        if (it == data_parts_by_info.end() || (*it).get() != part.get())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} doesn't exist (info: {})", part->name, part->info.getPartNameForLogs());
-
-        if ((*it).get() != part.get())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot modify part state {} (info: {}) to {}, because there is another copy of the same part in {} state", part->name, part->info.getPartNameForLogs(), state, (*it)->getNameWithState());
 
         if (!data_parts_by_state_and_info.modify(data_parts_indexes.project<TagByStateAndInfo>(it), getStateModifier(state)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't modify {}", (*it)->getNameWithState());
@@ -1606,12 +1385,8 @@ protected:
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
-    /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts. Call with data_parts mutex under lock.
-    void calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & parts_lock) const;
-
-    /// Similar to above but should be called before accessing column and secondary indexes sizes for possible lazy calculation.
-    /// Call it with data_parts mutex under a shared lock, and columns_and_secondary_indices_sizes_mutex mutex under an unique lock.
-    void calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedLock & parts_lock, std::unique_lock<std::mutex> & sizes_lock) const;
+    /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
+    void calculateColumnAndSecondaryIndexSizesIfNeeded() const;
 
     /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
     void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
@@ -1619,7 +1394,7 @@ protected:
     void removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
-    DataPartPtr getAnyPartInPartition(const String & partition_id, const DataPartsAnyLock & data_parts_lock) const;
+    DataPartPtr getAnyPartInPartition(const String & partition_id, DataPartsLock & data_parts_lock) const;
 
     /// Return parts in the Active set that are covered by the new_part_info or the part that covers it.
     /// Will check that the new part doesn't already exist and that it doesn't intersect existing part.
@@ -1627,7 +1402,7 @@ protected:
         const MergeTreePartInfo & new_part_info,
         const String & new_part_name,
         DataPartPtr & out_covering_part,
-        const DataPartsAnyLock & data_parts_lock) const;
+        DataPartsLock & data_parts_lock) const;
 
     DataPartsVector getCoveredOutdatedParts(
         const DataPartPtr & part,
@@ -1644,7 +1419,7 @@ protected:
     PartHierarchy getPartHierarchy(
         const MergeTreePartInfo & part_info,
         DataPartState state,
-        const DataPartsAnyLock & /* data_parts_lock */) const;
+        DataPartsLock & /* data_parts_lock */) const;
 
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node, const StorageMetadataPtr & metadata_snapshot) const;
@@ -1655,14 +1430,13 @@ protected:
 
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
-    void checkTableCanBeDropped(ContextPtr query_context) const override;
 
     /// Tries to drop part in background without any waits or throwing exceptions in case of errors.
     virtual void dropPartNoWaitNoThrow(const String & part_name) = 0;
 
     virtual void dropPart(const String & part_name, bool detach, ContextPtr context) = 0;
     virtual void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) = 0;
-    virtual PartitionCommandsResultInfo attachPartition(const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) = 0;
+    virtual PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) = 0;
     virtual void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) = 0;
     virtual void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr context) = 0;
 
@@ -1686,6 +1460,91 @@ protected:
         const DataPartsVector & source_parts,
         const MergeListEntry * merge_entry,
         std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters);
+
+    class PartMutationBackoffPolicy
+    {
+        struct PartMutationInfo
+        {
+            size_t retry_count;
+            size_t latest_fail_time_us;
+            size_t max_postpone_time_ms;
+            size_t max_postpone_power;
+
+            explicit PartMutationInfo(size_t max_postpone_time_ms_)
+                            : retry_count(0ull)
+                            , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
+                            , max_postpone_time_ms(max_postpone_time_ms_)
+                            , max_postpone_power((max_postpone_time_ms_) ? (static_cast<size_t>(std::log2(max_postpone_time_ms_))) : (0ull))
+            {}
+
+            size_t getNextMinExecutionTimeUsResolution() const
+            {
+                if (max_postpone_time_ms == 0)
+                    return static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+                size_t current_backoff_interval_us = (1 << retry_count) * 1000ul;
+                return latest_fail_time_us + current_backoff_interval_us;
+            }
+
+            void addPartFailure()
+            {
+                if (max_postpone_time_ms == 0)
+                    return;
+                retry_count = std::min(max_postpone_power, retry_count + 1);
+                latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+            }
+
+            bool partCanBeMutated() const
+            {
+                if (max_postpone_time_ms == 0)
+                    return true;
+
+                auto current_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
+                return current_time_us >= getNextMinExecutionTimeUsResolution();
+            }
+        };
+
+        using DataPartsWithRetryInfo = std::unordered_map<String, PartMutationInfo>;
+        DataPartsWithRetryInfo failed_mutation_parts;
+        mutable std::mutex parts_info_lock;
+
+    public:
+
+        void resetMutationFailures()
+        {
+            std::unique_lock lock(parts_info_lock);
+            failed_mutation_parts.clear();
+        }
+
+        void removePartFromFailed(const String & part_name)
+        {
+            std::unique_lock lock(parts_info_lock);
+            failed_mutation_parts.erase(part_name);
+        }
+
+        void addPartMutationFailure (const String& part_name, size_t max_postpone_time_ms_)
+        {
+            std::unique_lock lock(parts_info_lock);
+            auto part_info_it = failed_mutation_parts.find(part_name);
+            if (part_info_it == failed_mutation_parts.end())
+            {
+                auto [it, success] = failed_mutation_parts.emplace(part_name, PartMutationInfo(max_postpone_time_ms_));
+                std::swap(it, part_info_it);
+            }
+            auto& part_info = part_info_it->second;
+            part_info.addPartFailure();
+        }
+
+        bool partCanBeMutated(const String& part_name)
+        {
+            std::unique_lock lock(parts_info_lock);
+            auto iter = failed_mutation_parts.find(part_name);
+            if (iter == failed_mutation_parts.end())
+                return true;
+            return iter->second.partCanBeMutated();
+        }
+    };
+    /// Controls postponing logic for failed mutations.
+    PartMutationBackoffPolicy mutation_backoff_policy;
 
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
@@ -1712,6 +1571,9 @@ protected:
 
     /// Attaches restored parts to the storage.
     virtual void attachRestoredParts(MutableDataPartsVector && parts) = 0;
+
+    void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
+    void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
 
     void resetSerializationHints(const DataPartsLock & lock);
 
@@ -1826,16 +1688,6 @@ protected:
     void startOutdatedAndUnexpectedDataPartsLoadingTask();
     void stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
-    BackgroundSchedulePoolTaskHolder refresh_parts_task;
-
-    BackgroundSchedulePoolTaskHolder refresh_stats_task;
-
-    mutable std::mutex stats_mutex;
-    ConditionSelectivityEstimatorPtr cached_estimator;
-
-    void startStatisticsCache(UInt64 refresh_statistics_seconds);
-    void refreshStatistics(UInt64 interval_seconds);
-
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
@@ -1845,23 +1697,18 @@ protected:
         DataPartsLock & lock,
         DataPartsVector * out_covered_parts);
 
-    std::vector<LoadPartResult> loadDataPartsFromDisk(PartLoadingTreeNodes & parts_to_load);
-
-    QueryPipeline updateLightweightImpl(const MutationCommands & commands, ContextPtr query_context);
-
-    static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
-
 private:
     /// Checking that candidate part doesn't break invariants: correct partition
-    void checkPartPartition(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const;
-    void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, const DataPartsAnyLock & lock) const;
+    void checkPartPartition(MutableDataPartPtr & part, DataPartsLock & lock) const;
+    void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, DataPartsLock & lock) const;
+    void checkPartDynamicColumns(MutableDataPartPtr & part, DataPartsLock & lock) const;
 
     /// Preparing itself to be committed in memory: fill some fields inside part, add it to data_parts_indexes
     /// in precommitted state and to transaction
     ///
     /// @param need_rename - rename the part
     /// @param rename_in_transaction - if set, the rename will be done as part of transaction (without holding DataPartsLock), otherwise inplace (when it does not make sense).
-    void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, DataPartsLock & lock, bool need_rename, bool rename_in_transaction = false);
+    void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename, bool rename_in_transaction = false);
 
     /// Low-level method for preparing parts for commit (in-memory).
     /// FIXME Merge MergeTreeTransaction and Transaction
@@ -1911,15 +1758,11 @@ private:
     void increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts);
     void setDataVolume(size_t bytes, size_t rows, size_t parts);
 
-    void addPartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
-    void removePartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
-
     std::atomic<size_t> total_active_size_bytes = 0;
     std::atomic<size_t> total_active_size_rows = 0;
     std::atomic<size_t> total_active_size_parts = 0;
 
     mutable std::atomic<size_t> total_outdated_parts_count = 0;
-    std::atomic<size_t> total_uncompressed_bytes_in_patches = 0;
 
     // Record all query ids which access the table. It's guarded by `query_id_set_mutex` and is always mutable.
     mutable std::set<String> query_id_set TSA_GUARDED_BY(query_id_set_mutex);
@@ -1936,34 +1779,28 @@ private:
         const String & part_name,
         const DiskPtr & part_disk_ptr,
         MergeTreeDataPartState to_state,
-        DB::SharedMutex & part_loading_mutex);
+        std::mutex & part_loading_mutex);
 
     LoadPartResult loadDataPartWithRetries(
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,
         MergeTreeDataPartState to_state,
-        DB::SharedMutex & part_loading_mutex,
+        std::mutex & part_loading_mutex,
         size_t backoff_ms,
         size_t max_backoff_ms,
         size_t max_tries);
+
+    std::vector<LoadPartResult> loadDataPartsFromDisk(PartLoadingTreeNodes & parts_to_load);
 
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
     virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String &, const DiskPtr &) { return std::nullopt; }
     virtual bool waitZeroCopyLockToDisappear(const ZeroCopyLock &, size_t) { return false; }
 
-    /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
-    /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
-    /// Otherwise, in non-parallel case will break and return.
-    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_succeed);
+    static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
     mutable TemporaryParts temporary_parts;
-
-    MultiVersionVirtualsDescriptionPtr projection_virtuals;
-
-    /// A regexp for files that should be prewarmed in the cache if cache_populated_by_fetch is enabled.
-    MultiVersion<re2::RE2> filename_regexp_for_cache_prewarming;
 
     /// Estimate the number of marks to read to make a decision whether to enable parallel replicas (distributed processing) or not
     /// Note: it could be very rough.
@@ -1974,18 +1811,6 @@ private:
 
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
-
-    StorageSnapshotPtr
-    createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
-
-    bool isReadonlySetting(const std::string & setting_name) const;
-
-    /// Is the disk should be searched for orphaned parts (ones that belong to a table based on file names, but located
-    ///   on disks that are not a part of storage policy of the table).
-    /// Sometimes it is better to bypass a disk e.g. to avoid interactions with a remote storage
-    bool isDiskEligibleForOrphanedPartsSearch(DiskPtr disk) const;
-
-    ConditionSelectivityEstimatorPtr cached_selectivity_estimator;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
@@ -2007,9 +1832,14 @@ struct CurrentlySubmergingEmergingTagger
 };
 
 /// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
-void incrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
-void decrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
+void incrementMutationsCounters(
+    Int64 & num_data_mutations_to_apply,
+    Int64 & num_metadata_mutations_to_apply,
+    const MutationCommands & commands);
 
-String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSettings & storage_settings, const IDataPartStorage * data_part_storage);
+void decrementMutationsCounters(
+    Int64 & num_data_mutations_to_apply,
+    Int64 & num_metadata_mutations_to_apply,
+    const MutationCommands & commands);
 
 }

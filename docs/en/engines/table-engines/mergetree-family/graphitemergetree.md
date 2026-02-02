@@ -3,11 +3,10 @@ description: 'Designed for thinning and aggregating/averaging (rollup) Graphite 
 sidebar_label: 'GraphiteMergeTree'
 sidebar_position: 90
 slug: /engines/table-engines/mergetree-family/graphitemergetree
-title: 'GraphiteMergeTree table engine'
-doc_type: 'guide'
+title: 'GraphiteMergeTree'
 ---
 
-# GraphiteMergeTree table engine
+# GraphiteMergeTree
 
 This engine is designed for thinning and aggregating/averaging (rollup) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
 
@@ -15,9 +14,9 @@ You can use any ClickHouse table engine to store the Graphite data if you do not
 
 The engine inherits properties from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md).
 
-## Creating a table {#creating-table}
+## Creating a Table {#creating-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     Path String,
@@ -62,7 +61,7 @@ When creating a `GraphiteMergeTree` table, the same [clauses](../../../engines/t
 Do not use this method in new projects and, if possible, switch old projects to the method described above.
 :::
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     EventDate Date,
@@ -80,7 +79,7 @@ All of the parameters excepting `config_section` have the same meaning as in `Me
 
 </details>
 
-## Rollup configuration {#rollup-configuration}
+## Rollup Configuration {#rollup-configuration}
 
 The settings for rollup are defined by the [graphite_rollup](../../../operations/server-configuration-parameters/settings.md#graphite) parameter in the server configuration. The name of the parameter could be any. You can create several configurations and use them for different tables.
 
@@ -89,26 +88,26 @@ Rollup configuration structure:
       required-columns
       patterns
 
-### Required columns {#required-columns}
+### Required Columns {#required-columns}
 
-#### `path_column_name` {#path_column_name}
+#### path_column_name {#path_column_name}
 
 `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
 
-#### `time_column_name` {#time_column_name}
+#### time_column_name {#time_column_name}
 `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
 
-#### `value_column_name` {#value_column_name}
+#### value_column_name {#value_column_name}
 `value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. Default value: `Value`.
 
-#### `version_column_name` {#version_column_name}
+#### version_column_name {#version_column_name}
 `version_column_name` — The name of the column storing the version of the metric. Default value: `Timestamp`.
 
 ### Patterns {#patterns}
 
 Structure of the `patterns` section:
 
-```text
+``` text
 pattern
     rule_type
     regexp
@@ -148,10 +147,10 @@ Fields for `pattern` and `default` sections:
 It's unnecessary when performance is not critical, or only one metrics type is used, e.g. plain metrics. By default only one type of rules set is created. Otherwise, if any of special types is defined, two different sets are created. One for plain metrics (root.branch.leaf) and one for tagged metrics (root.branch.leaf;tag1=value1).
 The default rules are ended up in both sets.
 Valid values:
-  - `all` (default) - a universal rule, used when `rule_type` is omitted.
-  - `plain` - a rule for plain metrics. The field `regexp` is processed as regular expression.
-  - `tagged` - a rule for tagged metrics (metrics are stored in DB in the format of `someName?tag1=value1&tag2=value2&tag3=value3`). Regular expression must be sorted by tags' names, first tag must be `__name__` if exists. The field `regexp` is processed as regular expression.
-  - `tag_list` - a rule for tagged metrics, a simple DSL for easier metric description in graphite format `someName;tag1=value1;tag2=value2`, `someName`, or `tag1=value1;tag2=value2`. The field `regexp` is translated into a `tagged` rule. The sorting by tags' names is unnecessary, ti will be done automatically. A tag's value (but not a name) can be set as a regular expression, e.g. `env=(dev|staging)`.
+    - `all` (default) - a universal rule, used when `rule_type` is omitted.
+    - `plain` - a rule for plain metrics. The field `regexp` is processed as regular expression.
+    - `tagged` - a rule for tagged metrics (metrics are stored in DB in the format of `someName?tag1=value1&tag2=value2&tag3=value3`). Regular expression must be sorted by tags' names, first tag must be `__name__` if exists. The field `regexp` is processed as regular expression.
+    - `tag_list` - a rule for tagged metrics, a simple DSL for easier metric description in graphite format `someName;tag1=value1;tag2=value2`, `someName`, or `tag1=value1;tag2=value2`. The field `regexp` is translated into a `tagged` rule. The sorting by tags' names is unnecessary, ti will be done automatically. A tag's value (but not a name) can be set as a regular expression, e.g. `env=(dev|staging)`.
 - `regexp` – A pattern for the metric name (a regular or DSL).
 - `age` – The minimum age of the data in seconds.
 - `precision`– How precisely to define the age of the data in seconds. Should be a divisor for 86400 (seconds in a day).
@@ -159,7 +158,7 @@ Valid values:
 
 ### Configuration Example without rules types {#configuration-example}
 
-```xml
+``` xml
 <graphite_rollup>
     <version_column_name>Version</version_column_name>
     <pattern>
@@ -194,7 +193,7 @@ Valid values:
 
 ### Configuration Example with rules types {#configuration-typed-example}
 
-```xml
+``` xml
 <graphite_rollup>
     <version_column_name>Version</version_column_name>
     <pattern>

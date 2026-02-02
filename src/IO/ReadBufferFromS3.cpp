@@ -5,15 +5,13 @@
 #if USE_AWS_S3
 
 #include <IO/ReadBufferFromS3.h>
-#include <IO/WriteHelpers.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
 
 #include <Common/Stopwatch.h>
+#include <Common/Throttler.h>
 #include <Common/logger_useful.h>
-#include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/CurrentThread.h>
 #include <base/sleep.h>
 
 #include <utility>
@@ -28,6 +26,8 @@ namespace ProfileEvents
     extern const Event ReadBufferSeekCancelConnection;
     extern const Event S3GetObject;
     extern const Event DiskS3GetObject;
+    extern const Event RemoteReadThrottlerBytes;
+    extern const Event RemoteReadThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -38,11 +38,6 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 max_single_read_retries;
 }
 
-namespace FailPoints
-{
-    extern const char s3_read_buffer_throw_expired_token[];
-}
-
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
@@ -50,7 +45,6 @@ namespace ErrorCodes
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
-    extern const int NOT_INITIALIZED;
 }
 
 
@@ -86,10 +80,7 @@ bool ReadBufferFromS3::nextImpl()
     if (read_until_position)
     {
         if (read_until_position == offset)
-        {
-            stop_reason = fmt::format("Last read position was reached ({})", read_until_position.load());
             return false;
-        }
 
         if (read_until_position < offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
@@ -97,27 +88,8 @@ bool ReadBufferFromS3::nextImpl()
 
     if (impl)
     {
-        fiu_do_on(FailPoints::s3_read_buffer_throw_expired_token,
-        {
-            throw Exception(
-                ErrorCodes::S3_ERROR,
-                "Unable to parse ExceptionName: ExpiredToken Message: The provided token has expired. This error happened for S3 disk");
-        });
-
         if (impl->isResultReleased())
-        {
-            if (read_until_position)
-            {
-                LOG_TRACE(
-                    log, "Impl was released, but expected read range is not finished. "
-                    "Current offset: {}, end offset: {}", offset.load(), read_until_position.load());
-            }
-            stop_reason = fmt::format(
-                "Connection was released (read offset: {}/{}, release reason: {})",
-                offset.load(), read_until_position.load(), release_reason);
-
             return false;
-        }
 
         if (use_external_buffer)
         {
@@ -139,8 +111,8 @@ bool ReadBufferFromS3::nextImpl()
             * sure there is no pending data which was not read.
             */
             impl->position() = position();
+            assert(!impl->hasPendingData());
         }
-        chassert(!impl->hasPendingData());
     }
 
     bool next_result = false;
@@ -192,19 +164,8 @@ bool ReadBufferFromS3::nextImpl()
     if (!next_result)
     {
         read_all_range_successfully = true;
-        const auto file_size_str = file_size.has_value() ? toString(*file_size) : "Unknown";
-        stop_reason = fmt::format(
-            "EOF (read offset: {}/{}, expected file size: {}, restricted seek: {})",
-            offset.load(), read_until_position.load(), file_size_str, restricted_seek);
-
-        release_reason = stop_reason;
         // release result to free pooled HTTP session for reuse
         impl->releaseResult();
-        /// We could get EOF only if read_until_position is not set,
-        /// otherwise we'd quit before impl->next().
-        chassert(!read_until_position,
-                 fmt::format("Cannot read all data. Key: {}, size: {}, expected size: {}, position: {}/{}",
-                             key, getObjectSizeFromS3(), file_size_str, offset.load(), read_until_position.load()));
         return false;
     }
 
@@ -215,19 +176,12 @@ bool ReadBufferFromS3::nextImpl()
 
     // release result if possible to free pooled HTTP session for better reuse
     bool is_read_until_position = read_until_position && read_until_position == offset;
-    const bool stream_eof = impl->isStreamEof();
-    if (stream_eof || is_read_until_position)
-    {
-        release_reason = fmt::format(
-            "{} (read {}/{}, file size: {}, restricted seek: {})",
-            impl->isStreamEof() ? "stream EOF" : "read until position reached",
-            offset.load(), read_until_position.load(),
-            file_size.has_value() ? toString(*file_size) : "Unknown", restricted_seek);
-
+    if (impl->isStreamEof() || is_read_until_position)
         impl->releaseResult();
-    }
 
-    stop_reason = "";
+    if (read_settings.remote_throttler)
+        read_settings.remote_throttler->add(working_buffer.size(), ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+
     return true;
 }
 
@@ -257,6 +211,9 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
 
             if (cancelled)
                 return initial_n - n + bytes_copied;
+
+            if (read_settings.remote_throttler)
+                read_settings.remote_throttler->add(bytes_copied, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
 
             /// Read remaining bytes after the end of the payload
             istr.ignore(INT64_MAX);
@@ -333,10 +290,6 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     if (offset_ < 0)
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}", offset_);
 
-    LOG_TEST(
-        log, "Seek to {} (restricted seek: {}, impl: {}, working_buffer size: {})",
-        offset_, restricted_seek, bool(impl), working_buffer.size());
-
     if (!restricted_seek)
     {
         if (!working_buffer.empty()
@@ -379,13 +332,10 @@ std::optional<size_t> ReadBufferFromS3::tryGetFileSize()
     if (file_size)
         return file_size;
 
-    file_size = getObjectSizeFromS3();
-    return file_size;
-}
+    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id);
 
-size_t ReadBufferFromS3::getObjectSizeFromS3() const
-{
-    return S3::getObjectSize(*client_ptr, bucket, key, version_id);
+    file_size = object_size;
+    return file_size;
 }
 
 off_t ReadBufferFromS3::getPosition()
@@ -442,8 +392,6 @@ bool ReadBufferFromS3::atEndOfRequestedRangeGuess()
 
 std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(size_t attempt)
 {
-    stop_reason = "";
-    release_reason = "";
     read_all_range_successfully = false;
 
     /**
@@ -453,8 +401,7 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
     if (read_until_position && offset >= read_until_position)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
 
-    const auto right_offset = read_until_position ? std::make_optional(read_until_position - 1) : std::nullopt;
-    auto read_result = sendRequest(attempt, offset, right_offset);
+    auto read_result = sendRequest(attempt, offset, read_until_position ? std::make_optional(read_until_position - 1) : std::nullopt);
 
     size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
     return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size);
@@ -468,7 +415,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     if (!version_id.empty())
         req.SetVersionId(version_id);
 
-    S3::setClickhouseAttemptNumber(req, attempt);
+    req.SetAdditionalCustomHeaderValue("clickhouse-request", fmt::format("attempt={}", attempt));
 
     if (range_end_incl)
     {
@@ -492,8 +439,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);
 
     // We do not know in advance how many bytes we are going to consume, to avoid blocking estimated it from below
-    CurrentThread::IOSchedulingScope io_scope(read_settings.io_scheduling);
-    CurrentThread::ReadThrottlingScope read_throttling_scope(read_settings.remote_throttler);
+    CurrentThread::IOScope io_scope(read_settings.io_scheduling);
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
     if (outcome.IsSuccess())
@@ -501,14 +447,6 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
 
     const auto & error = outcome.GetError();
     throw S3Exception(error.GetMessage(), error.GetErrorType());
-}
-
-ObjectMetadata ReadBufferFromS3::getObjectMetadataFromTheLastRequest() const
-{
-    if (!impl)
-        throw Exception(ErrorCodes::NOT_INITIALIZED, "No S3 object metadata available because there were no successful requests");
-
-    return impl->getObjectMetadata();
 }
 
 }

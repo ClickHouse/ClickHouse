@@ -4,6 +4,7 @@ from typing import List
 from . import Artifact, Job, Workflow
 from .mangle import _get_workflows
 from .parser import WorkflowConfigParser
+from .runtime import RunConfig
 from .settings import Settings
 from .utils import Shell, Utils
 
@@ -111,14 +112,6 @@ jobs:
         default: {DEFAULT_VALUE}\
 """
 
-        TEMPLATE_OPTIONS_INPUT = """
-      {NAME}:
-        description: {DESCRIPTION}
-        type: choice
-        options: {OPTIONS}
-        default: {DEFAULT_VALUE}\
-"""
-
         TEMPLATE_SECRET_CONFIG = """\
       {SECRET_NAME}:
         required: true
@@ -138,7 +131,6 @@ jobs:
     name: "{JOB_NAME_GH}"
     outputs:
       data: ${{{{ steps.run.outputs.DATA }}}}
-      pipeline_status: ${{{{ steps.run.outputs.pipeline_status || 'undefined' }}}}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -147,14 +139,11 @@ jobs:
 {JOB_ADDONS}
       - name: Prepare env script
         run: |
-          rm -rf {UNIQUE_WORK_DIRS}
-          mkdir -p {UNIQUE_WORK_DIRS}
+          rm -rf {INPUT_DIR} {OUTPUT_DIR} {TEMP_DIR}
+          mkdir -p {TEMP_DIR} {INPUT_DIR} {OUTPUT_DIR}
           cat > {ENV_SETUP_SCRIPT} << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:{PYTHONPATH_EXTRA}
 {SETUP_ENVS}
-          cat > {WORKFLOW_JOB_FILE} << 'EOF'
-          ${{{{ toJson(job) }}}}
-          EOF
           cat > {WORKFLOW_STATUS_FILE} << 'EOF'
           ${{{{ toJson(needs) }}}}
           EOF
@@ -163,7 +152,7 @@ jobs:
       - name: Run
         id: run
         run: |
-          . {ENV_SETUP_SCRIPT}
+          . {TEMP_DIR}/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
             python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee {TEMP_DIR}/job.log
@@ -190,6 +179,12 @@ jobs:
         TEMPLATE_SETUP_ENVS_INPUTS = """\
           cat > {WORKFLOW_INPUTS_FILE} << 'EOF'
           ${{{{ toJson(github.event.inputs) }}}}
+          EOF\
+"""
+
+        TEMPLATE_SETUP_ENV_WF_CONFIG = """\
+          cat > {WORKFLOW_CONFIG_FILE} << 'EOF'
+          ${{{{ needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data }}}}
           EOF\
 """
 
@@ -226,15 +221,15 @@ jobs:
 """
 
         TEMPLATE_IF_EXPRESSION = """
-    if: ${{{{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data).workflow_config.cache_success_base64, '{JOB_NAME_BASE64}') }}}}\
+    if: ${{{{ !failure() && !cancelled() && !contains(fromJson(needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data).cache_success_base64, '{JOB_NAME_BASE64}') }}}}\
+"""
+
+        TEMPLATE_IF_EXPRESSION_SKIPPED_OR_SUCCESS = """
+    if: ${{ !failure() && !cancelled() }}\
 """
 
         TEMPLATE_IF_EXPRESSION_NOT_CANCELLED = """
     if: ${{ !cancelled() }}\
-"""
-
-        TEMPLATE_IF_EXPRESSION_ALWAYS = """
-    if: ${{ always() }}\
 """
 
     def __init__(self):
@@ -309,7 +304,7 @@ class PullRequestPushYamlGen:
 
             if_expression = ""
             if (
-                self.workflow_config.config.enable_cache
+                self.workflow_config.enable_cache
                 and job_name_normalized != config_job_name_normalized
             ):
                 if_expression = YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION.format(
@@ -320,8 +315,6 @@ class PullRequestPushYamlGen:
                 if_expression = (
                     YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION_NOT_CANCELLED
                 )
-            if job.name == Settings.FINISH_WORKFLOW_JOB_NAME:
-                if_expression = YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION_ALWAYS
 
             secrets_envs = []
             for secret in self.workflow_config.secret_names_gh:
@@ -338,6 +331,15 @@ class PullRequestPushYamlGen:
                 secrets_envs.append(
                     YamlGenerator.Templates.TEMPLATE_SETUP_ENVS_INPUTS.format(
                         WORKFLOW_INPUTS_FILE=Settings.WORKFLOW_INPUTS_FILE
+                    )
+                )
+            if self.workflow_config.enable_cache:
+                secrets_envs.append(
+                    YamlGenerator.Templates.TEMPLATE_SETUP_ENV_WF_CONFIG.format(
+                        WORKFLOW_CONFIG_FILE=RunConfig.file_name_static(
+                            self.workflow_config.name
+                        ),
+                        WORKFLOW_CONFIG_JOB_NAME=config_job_name_normalized,
                     )
                 )
 
@@ -358,12 +360,10 @@ class PullRequestPushYamlGen:
                 UPLOADS_GITHUB="\n".join(uploads_github),
                 RUN_LOG=Settings.RUN_LOG,
                 PYTHON=Settings.PYTHON_INTERPRETER,
-                WORKFLOW_JOB_FILE=Settings.WORKFLOW_JOB_FILE,
                 WORKFLOW_STATUS_FILE=Settings.WORKFLOW_STATUS_FILE,
                 TEMP_DIR=Settings.TEMP_DIR,
-                UNIQUE_WORK_DIRS=" ".join(
-                    {Settings.TEMP_DIR, Settings.INPUT_DIR, Settings.OUTPUT_DIR}
-                ),
+                INPUT_DIR=Settings.INPUT_DIR,
+                OUTPUT_DIR=Settings.OUTPUT_DIR,
                 PYTHONPATH_EXTRA=Settings.PYTHONPATHS,
             )
             job_items.append(job_item)
@@ -378,22 +378,12 @@ class PullRequestPushYamlGen:
         # for dispatch workflows only
         dispatch_inputs = ""
         for input_item in self.workflow_config.dispatch_inputs:
-            if not input_item.options:
-                dispatch_inputs += YamlGenerator.Templates.TEMPLATE_INPUT.format(
-                    NAME=input_item.name,
-                    DESCRIPTION=input_item.description,
-                    IS_REQUIRED="true" if input_item.is_required else "false",
-                    DEFAULT_VALUE=input_item.default_value or "''",
-                )
-            else:
-                dispatch_inputs += (
-                    YamlGenerator.Templates.TEMPLATE_OPTIONS_INPUT.format(
-                        NAME=input_item.name,
-                        DESCRIPTION=input_item.description,
-                        OPTIONS=input_item.options,
-                        DEFAULT_VALUE=input_item.default_value or "''",
-                    )
-                )
+            dispatch_inputs += YamlGenerator.Templates.TEMPLATE_INPUT.format(
+                NAME=input_item.name,
+                DESCRIPTION=input_item.description,
+                IS_REQUIRED="true" if input_item.is_required else "false",
+                DEFAULT_VALUE=input_item.default_value or "''",
+            )
 
         if self.workflow_config.event in (
             Workflow.Event.PULL_REQUEST,

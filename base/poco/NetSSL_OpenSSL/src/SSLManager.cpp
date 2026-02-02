@@ -17,6 +17,7 @@
 #include "Poco/Net/Utility.h"
 #include "Poco/Net/PrivateKeyPassphraseHandler.h"
 #include "Poco/Net/RejectCertificateHandler.h"
+#include "Poco/Crypto/OpenSSLInitializer.h"
 #include "Poco/Net/SSLException.h"
 #include "Poco/SingletonHolder.h"
 #include "Poco/Delegate.h"
@@ -59,6 +60,10 @@ const std::string SSLManager::CFG_REQUIRE_TLSV1_2("requireTLSv1_2");
 const std::string SSLManager::CFG_DISABLE_PROTOCOLS("disableProtocols");
 const std::string SSLManager::CFG_DH_PARAMS_FILE("dhParamsFile");
 const std::string SSLManager::CFG_ECDH_CURVE("ecdhCurve");
+#ifdef OPENSSL_FIPS
+const std::string SSLManager::CFG_FIPS_MODE("openSSL.fips");
+const bool        SSLManager::VAL_FIPS_MODE(false);
+#endif
 
 
 SSLManager::SSLManager()
@@ -198,17 +203,16 @@ int SSLManager::verifyCallback(bool server, int ok, X509_STORE_CTX* pStore)
 {
 	if (!ok)
 	{
+		X509* pCert = X509_STORE_CTX_get_current_cert(pStore);
+		X509Certificate x509(pCert, true);
 		int depth = X509_STORE_CTX_get_error_depth(pStore);
 		int err = X509_STORE_CTX_get_error(pStore);
-
 		std::string error(X509_verify_cert_error_string(err));
-		VerificationErrorArgs args(depth, err, error);
-
+		VerificationErrorArgs args(x509, depth, err, error);
 		if (server)
 			SSLManager::instance().ServerVerificationError.notify(&SSLManager::instance(), args);
 		else
 			SSLManager::instance().ClientVerificationError.notify(&SSLManager::instance(), args);
-
 		ok = args.getIgnoreError() ? 1 : 0;
 	}
 
@@ -216,7 +220,7 @@ int SSLManager::verifyCallback(bool server, int ok, X509_STORE_CTX* pStore)
 }
 
 
-int SSLManager::privateKeyPassphraseCallback(char* pBuf, int size, int, void*)
+int SSLManager::privateKeyPassphraseCallback(char* pBuf, int size, int flag, void* userData)
 {
 	std::string pwd;
 	SSLManager::instance().PrivateKeyPassphraseRequired.notify(&SSLManager::instance(), pwd);
@@ -235,8 +239,17 @@ void SSLManager::initDefaultContext(bool server)
 	if (server && _ptrDefaultServerContext) return;
 	if (!server && _ptrDefaultClientContext) return;
 
+	Poco::Crypto::OpenSSLInitializer openSSLInitializer;
 	initEvents(server);
 	Poco::Util::AbstractConfiguration& config = appConfig();
+
+#ifdef OPENSSL_FIPS
+	bool fipsEnabled = config.getBool(CFG_FIPS_MODE, VAL_FIPS_MODE);
+	if (fipsEnabled && !Poco::Crypto::OpenSSLInitializer::isFIPSEnabled())
+	{
+		Poco::Crypto::OpenSSLInitializer::enableFIPSMode(true);
+	}
+#endif
 
 	std::string prefix = server ? CFG_SERVER_PREFIX : CFG_CLIENT_PREFIX;
 
@@ -246,10 +259,7 @@ void SSLManager::initDefaultContext(bool server)
 	params.certificateFile = config.getString(prefix + CFG_CERTIFICATE_FILE, params.privateKeyFile);
 	params.caLocation = config.getString(prefix + CFG_CA_LOCATION, "");
 
-    bool keys_are_explicitly_set = !params.privateKeyFile.empty() && !params.certificateFile.empty();
-    bool acme_certificate_provided = config.has("acme");
-
-	if (server && !keys_are_explicitly_set && !acme_certificate_provided)
+	if (server && params.certificateFile.empty() && params.privateKeyFile.empty())
 		throw SSLException("Configuration error: no certificate file has been specified");
 
 	// optional options for which we have defaults defined
@@ -451,9 +461,16 @@ Poco::Util::AbstractConfiguration& SSLManager::appConfig()
 }
 
 
+void initializeSSL()
+{
+	Poco::Crypto::initializeCrypto();
+}
+
+
 void uninitializeSSL()
 {
 	SSLManager::instance().shutdown();
+	Poco::Crypto::uninitializeCrypto();
 }
 
 

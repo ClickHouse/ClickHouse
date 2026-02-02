@@ -6,8 +6,6 @@
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
-#include <shared_mutex>
-
 
 namespace DB
 {
@@ -18,9 +16,7 @@ ColumnsDescription StorageSystemQueryConditionCache::getColumnsDescription()
     {
         {"table_uuid", std::make_shared<DataTypeUUID>(), "The table UUID."},
         {"part_name", std::make_shared<DataTypeString>(), "The part name."},
-        {"condition", std::make_shared<DataTypeString>(), "The hashed filter condition. Only set if setting query_condition_cache_store_conditions_as_plaintext = true."},
-        {"condition_hash", std::make_shared<DataTypeUInt64>(), "The hash of the filter condition."},
-        {"entry_size", std::make_shared<DataTypeUInt64>(), "The size of the entry in bytes."},
+        {"key_hash", std::make_shared<DataTypeUInt64>(), "The hash of the filter condition."},
         {"matching_marks", std::make_shared<DataTypeString>(), "Matching marks."}
     };
 }
@@ -39,24 +35,14 @@ void StorageSystemQueryConditionCache::fillData(MutableColumns & res_columns, Co
 
     std::vector<QueryConditionCache::Cache::KeyMapped> content = query_condition_cache->dump();
 
-    auto to_string = [](const auto & values)
-    {
-        String str;
-        for (auto val : values)
-            str += std::to_string(val);
-        return str;
-    };
-
     for (const auto & [key, entry] : content)
     {
         res_columns[0]->insert(key.table_id);
         res_columns[1]->insert(key.part_name);
-        res_columns[2]->insert(key.condition);
-        res_columns[3]->insert(key.condition_hash);
-        res_columns[4]->insert(QueryConditionCache::EntryWeight()(*entry));
+        res_columns[2]->insert(key.condition_hash);
 
         std::shared_lock lock(entry->mutex);
-        res_columns[5]->insert(to_string(entry->matching_marks));
+        res_columns[3]->insert(toString(entry->matching_marks));
     }
 }
 

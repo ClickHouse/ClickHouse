@@ -15,8 +15,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeTime.h>
-#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -273,90 +271,6 @@ DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &
 }
 
 template <LeastSupertypeOnError on_error>
-DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
-{
-    Strings element_names;
-    size_t element_size = 0;
-    std::vector<DataTypes> element_types;
-
-    bool have_nullable = false;
-
-    for (const auto & type : types)
-    {
-        const IDataType * unwrapped_type = type.get();
-
-        // Unwrap Nullable if present
-        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(unwrapped_type))
-        {
-            have_nullable = true;
-            unwrapped_type = nullable_type->getNestedType().get();
-        }
-
-        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(unwrapped_type))
-        {
-            const auto & current_elements = type_tuple->getElements();
-            if (element_types.empty())
-            {
-                element_size = current_elements.size();
-                element_types.resize(element_size);
-                for (size_t i = 0; i < element_size; ++i)
-                    element_types[i].reserve(types.size());
-                if (type_tuple->hasExplicitNames())
-                    element_names = type_tuple->getElementNames();
-            }
-
-            if (element_size != type_tuple->getElements().size())
-                return throwOrReturn<on_error>(types, "because Tuples have different sizes", ErrorCodes::NO_COMMON_TYPE);
-            for (size_t i = 0; i < element_size; ++i)
-                element_types[i].emplace_back(current_elements[i]);
-
-            // If there are different names, drop all names. The result will be an unnamed tuple.
-            if (element_names.empty() == type_tuple->hasExplicitNames())
-                element_names.clear();
-            if (!element_names.empty())
-            {
-                const auto & current_element_names = type_tuple->getElementNames();
-                for (size_t i = 0; i < element_size; ++i)
-                {
-                    if (element_names[i] != current_element_names[i])
-                    {
-                        element_names.clear();
-                        break;
-                    }
-                }
-            }
-        }
-        else if (typeid_cast<const DataTypeNothing *>(unwrapped_type)) /// NULL value (i.e. Nullable(Nothing))
-            continue;
-        else
-            return throwOrReturn<on_error>(types, "because some of them are Tuple and some of them are not", ErrorCodes::NO_COMMON_TYPE);
-    }
-
-
-    DataTypes commont_element_types(element_size);
-    for (size_t i = 0; i < element_size; ++i)
-    {
-        auto common_type = getLeastSupertype<on_error>(element_types[i]);
-        /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
-        /// common_type will be nullptr, we should return nullptr in this case.
-        if (!common_type)
-            return nullptr;
-        commont_element_types[i] = common_type;
-    }
-
-    DataTypePtr result_type;
-    if (element_names.empty())
-        result_type = std::make_shared<DataTypeTuple>(commont_element_types);
-    else
-        result_type = std::make_shared<DataTypeTuple>(commont_element_types, element_names);
-
-    if (have_nullable && result_type->canBeInsideNullable())
-        result_type = std::make_shared<DataTypeNullable>(result_type);
-
-    return result_type;
-}
-
-template <LeastSupertypeOnError on_error>
 DataTypePtr getLeastSupertype(const DataTypes & types)
 {
     /// Trivial cases
@@ -453,23 +367,52 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     /// For tuples
     {
         bool have_tuple = false;
+        bool all_tuples = true;
+        size_t tuple_size = 0;
+
+        std::vector<DataTypes> nested_types;
+
         for (const auto & type : types)
         {
-            const IDataType * unwrapped_type = type.get();
-
-            // Unwrap Nullable if present
-            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(unwrapped_type))
-                unwrapped_type = nullable_type->getNestedType().get();
-
-            if (typeid_cast<const DataTypeTuple *>(unwrapped_type))
+            if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
             {
+                if (!have_tuple)
+                {
+                    tuple_size = type_tuple->getElements().size();
+                    nested_types.resize(tuple_size);
+                    for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
+                        nested_types[elem_idx].reserve(types.size());
+                }
+                else if (tuple_size != type_tuple->getElements().size())
+                    return throwOrReturn<on_error>(types, "because Tuples have different sizes", ErrorCodes::NO_COMMON_TYPE);
+
                 have_tuple = true;
-                break;
+
+                for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
+                    nested_types[elem_idx].emplace_back(type_tuple->getElements()[elem_idx]);
             }
+            else
+                all_tuples = false;
         }
 
         if (have_tuple)
-            return getLeastSuperTypeForTuple<on_error>(types);
+        {
+            if (!all_tuples)
+                return throwOrReturn<on_error>(types, "because some of them are Tuple and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+
+            DataTypes common_tuple_types(tuple_size);
+            for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
+            {
+                auto common_type = getLeastSupertype<on_error>(nested_types[elem_idx]);
+                /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
+                /// common_type will be nullptr, we should return nullptr in this case.
+                if (!common_type)
+                    return nullptr;
+                common_tuple_types[elem_idx] = common_type;
+            }
+
+            return std::make_shared<DataTypeTuple>(common_tuple_types);
+        }
     }
 
     /// For maps
@@ -662,59 +605,12 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     if (scale >= max_scale)
                     {
                         max_scale_date_time_index = i;
-                        max_scale = static_cast<UInt8>(scale);
+                        max_scale = scale;
                     }
                 }
             }
 
             return types[max_scale_date_time_index];
-        }
-    }
-
-    {
-        size_t have_time = type_ids.count(TypeIndex::Time);
-        size_t have_time64 = type_ids.count(TypeIndex::Time64);
-
-        if (have_time || have_time64)
-        {
-            bool all_time_or_time64 = type_ids.size() == (have_time + have_time64);
-
-            if (!all_time_or_time64)
-                return throwOrReturn<on_error>(types,
-                    "because some of them are Time/Time64 and some of them are not",
-                    ErrorCodes::NO_COMMON_TYPE);
-
-            if (have_time && !have_time64)
-            {
-                return std::make_shared<DataTypeTime>();
-            }
-
-            /// find the maximum scale
-            UInt8 max_scale = 0;
-            size_t max_scale_time64_index = 0;
-
-            for (size_t i = 0; i < types.size(); ++i)
-            {
-                const auto & type = types[i];
-
-                if (const auto * time64_type = typeid_cast<const DataTypeTime64 *>(type.get()))
-                {
-                    const auto scale = time64_type->getScale();
-
-                    if (scale >= max_scale)
-                    {
-                        max_scale_time64_index = i;
-                        max_scale = static_cast<UInt8>(scale);
-                    }
-                }
-            }
-
-            if (have_time && have_time64)
-            {
-                return std::make_shared<DataTypeTime64>(max_scale);
-            }
-
-            return types[max_scale_time64_index];
         }
     }
 

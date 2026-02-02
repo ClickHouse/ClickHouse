@@ -28,18 +28,6 @@ public:
         const std::string & auth_scope_,
         const std::string & auth_header_,
         const std::string & oauth_server_uri_,
-        bool oauth_server_use_request_body_,
-        DB::ContextPtr context_);
-
-    explicit RestCatalog(
-        const std::string & warehouse_,
-        const std::string & base_url_,
-        const std::string & onelake_tenant_id,
-        const std::string & onelake_client_id,
-        const std::string & onelake_client_secret,
-        const std::string & auth_scope_,
-        const std::string & oauth_server_uri_,
-        bool oauth_server_use_request_body_,
         DB::ContextPtr context_);
 
     ~RestCatalog() override = default;
@@ -64,26 +52,9 @@ public:
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
-        if (tenant_id.empty())
-            return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
-        return DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE;
+        return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
     }
-
-    void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
-
-    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
-
-    bool isTransactional() const override { return true; }
-
-    void dropTable(const String & namespace_name, const String & table_name) const override;
-
-    String getTenantId() const { return tenant_id; }
-    String getClientId() const { return client_id; }
-    String getClientSecret() const { return client_secret; }
-
 private:
-    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
-
     struct Config
     {
         /// Prefix is a path of the catalog endpoint,
@@ -107,12 +78,10 @@ private:
 
     /// Parameters for OAuth.
     bool update_token_if_expired = false;
-    std::string tenant_id;
     std::string client_id;
     std::string client_secret;
     std::string auth_scope;
     std::string oauth_server_uri;
-    bool oauth_server_use_request_body;
     mutable std::optional<std::string> access_token;
 
     Poco::Net::HTTPBasicCredentials credentials{};
@@ -150,12 +119,6 @@ private:
     std::string retrieveAccessToken() const;
     DB::HTTPHeaderEntries getAuthHeaders(bool update_token = false) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
-
-    void sendRequest(
-        const String & endpoint,
-        Poco::JSON::Object::Ptr request_body,
-        const String & method = Poco::Net::HTTPRequest::HTTP_POST,
-        bool ignore_result = false) const;
 };
 
 }

@@ -1,5 +1,3 @@
--- Tags: log-engine
-
 DROP TABLE IF EXISTS numbers_squashed;
 CREATE TABLE numbers_squashed (number UInt8) ENGINE = StripeLog;
 

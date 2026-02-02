@@ -1,18 +1,21 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
 #include <base/types.h>
-#include <Parsers/IASTHash.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/LiteralEscapingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
 
+#include <city.h>
+
+#include <algorithm>
 #include <set>
+#include <list>
+
 
 class SipHash;
 
-#include <boost/container/vector.hpp>
 
 namespace DB
 {
@@ -29,7 +32,7 @@ using Strings = std::vector<String>;
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
-class IAST : public TypePromotion<IAST>, public boost::intrusive_ref_counter<IAST>
+class IAST : public std::enable_shared_from_this<IAST>, public TypePromotion<IAST>
 {
 public:
     ASTs children;
@@ -70,7 +73,7 @@ public:
     /** Get the text that identifies this element. */
     virtual String getID(char delimiter = '_') const = 0; /// NOLINT
 
-    ASTPtr ptr() { return ASTPtr(this); }
+    ASTPtr ptr() { return shared_from_this(); }
 
     /** Get a deep copy of the tree. Cloned object must have the same range. */
     virtual ASTPtr clone() const = 0;
@@ -79,7 +82,8 @@ public:
      *  Hashing by default ignores aliases (e.g. identifier aliases, function aliases, literal aliases) which is
      *  useful for common subexpression elimination. Set 'ignore_aliases = false' if you don't want that behavior.
       */
-    IASTHash getTreeHash(bool ignore_aliases) const;
+    using Hash = CityHash_v1_0_2::uint128;
+    Hash getTreeHash(bool ignore_aliases) const;
     void updateTreeHash(SipHash & hash_state, bool ignore_aliases) const;
     virtual void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const;
 
@@ -109,15 +113,6 @@ public:
     {
         for (const auto & child : children)
             child->collectIdentifierNames(set);
-    }
-
-    ASTPtr getChild(const IAST & child) const
-    {
-        for (const auto & node : children)
-            if (node.get() == &child)
-                return node;
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
     }
 
     template <typename T>
@@ -172,14 +167,10 @@ public:
         if (field == nullptr)
             return;
 
-        auto child = children.begin();
-        while (child != children.end())
+        const auto child = std::find_if(children.begin(), children.end(), [field](const auto & p)
         {
-            if (child->get() == field)
-                break;
-
-            child++;
-        }
+           return p.get() == field;
+        });
 
         if (child == children.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
@@ -189,16 +180,13 @@ public:
     }
 
     /// After changing one of `children` elements, update the corresponding member pointer if needed.
-    void updatePointerToChild(const IAST * old_ptr, const ASTPtr & new_ptr)
+    void updatePointerToChild(void * old_ptr, void * new_ptr)
     {
-        std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f = [old_ptr, new_ptr](IAST ** raw, boost::intrusive_ptr<IAST> * smart)
+        forEachPointerToChild([old_ptr, new_ptr](void ** ptr) mutable
         {
-            if (raw && *raw == old_ptr)
-                *raw = new_ptr.get();
-            else if (smart && smart->get() == old_ptr)
-                *smart = new_ptr;
-        };
-        forEachPointerToChild(f);
+            if (*ptr == old_ptr)
+                *ptr = new_ptr;
+        });
     }
 
     /// Convert to a string.
@@ -207,6 +195,7 @@ public:
     struct FormatSettings
     {
         bool one_line;
+        bool hilite;
         IdentifierQuotingRule identifier_quoting_rule;
         IdentifierQuotingStyle identifier_quoting_style;
         bool show_secrets; /// Show secret parts of the AST (e.g. passwords, encryption keys).
@@ -214,19 +203,18 @@ public:
         LiteralEscapingStyle literal_escaping_style;
         bool print_pretty_type_names;
         bool enforce_strict_identifier_format;
-        /// This is needed for distributed queries with the old analyzer. Remove it after removing the old analyzer.
-        bool collapse_identical_nodes_to_aliases;
 
         explicit FormatSettings(
             bool one_line_,
+            bool hilite_ = false,
             IdentifierQuotingRule identifier_quoting_rule_ = IdentifierQuotingRule::WhenNecessary,
             IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks,
             bool show_secrets_ = true,
             LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular,
             bool print_pretty_type_names_ = false,
-            bool enforce_strict_identifier_format_ = false,
-            bool collapse_identical_nodes_to_aliases_ = false)
+            bool enforce_strict_identifier_format_ = false)
             : one_line(one_line_)
+            , hilite(hilite_)
             , identifier_quoting_rule(identifier_quoting_rule_)
             , identifier_quoting_style(identifier_quoting_style_)
             , show_secrets(show_secrets_)
@@ -234,7 +222,6 @@ public:
             , literal_escaping_style(literal_escaping_style_)
             , print_pretty_type_names(print_pretty_type_names_)
             , enforce_strict_identifier_format(enforce_strict_identifier_format_)
-            , collapse_identical_nodes_to_aliases(collapse_identical_nodes_to_aliases_)
         {
         }
 
@@ -247,12 +234,11 @@ public:
     {
         /** The SELECT query in which the alias was found; identifier of a node with such an alias.
           * It is necessary that when the node has met again, output only the alias.
-          * This is only needed for the old analyzer. Remove it after removing the old analyzer.
           */
         std::set<std::tuple<
             const IAST * /* SELECT query node */,
             std::string /* alias */,
-            IASTHash /* printed content */>> printed_asts_with_alias;
+            Hash /* printed content */>> printed_asts_with_alias;
     };
 
     /// The state that is copied when each node is formatted. For example, nesting level.
@@ -264,11 +250,9 @@ public:
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
         bool surround_each_list_element_with_parens = false;
         bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
-        bool allow_moving_operators_before_parens = true; /// Allow moving operators like "-" before parents: (-...) -> -(...)
         size_t list_element_index = 0;
         std::string create_engine_name;
         const IAST * current_select = nullptr;
-        const IAST * current_function = nullptr;  /// Pointer to the function whose arguments are being formatted
     };
 
     void format(WriteBuffer & ostr, const FormatSettings & settings) const
@@ -326,7 +310,6 @@ public:
         Select,
         Insert,
         Delete,
-        Update,
         Create,
         Drop,
         Undrop,
@@ -354,11 +337,18 @@ public:
         SetTransactionSnapshot,
         AsyncInsertFlush,
         ParallelWithQuery,
-        Copy,
     };
-
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
+
+    /// For syntax highlighting.
+    static const char * hilite_keyword;
+    static const char * hilite_identifier;
+    static const char * hilite_function;
+    static const char * hilite_operator;
+    static const char * hilite_alias;
+    static const char * hilite_substitution;
+    static const char * hilite_none;
 
 protected:
     virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -375,10 +365,16 @@ protected:
 
     /// Some AST classes have naked pointers to children elements as members.
     /// This method allows to iterate over them.
-    virtual void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)>) {}
+    virtual void forEachPointerToChild(std::function<void(void**)>) {}
 
 private:
     size_t checkDepthImpl(size_t max_depth) const;
+
+    /** Forward linked list of ASTPtr to delete.
+      * Used in IAST destructor to avoid possible stack overflow.
+      */
+    ASTPtr next_to_delete = nullptr;
+    ASTPtr * next_to_delete_list_head = nullptr;
 };
 
 }

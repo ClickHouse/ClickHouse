@@ -43,9 +43,7 @@ class WriteBuffer;
 
 /// List of available types supported in Settings object (!= MergeTreeSettings, MySQLSettings, etc)
 #define COMMON_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
-    M(CLASS_NAME, AggregateFunctionInputFormat) \
     M(CLASS_NAME, ArrowCompression) \
-    M(CLASS_NAME, ArrowFlightDescriptorType) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, BoolAuto) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
@@ -63,8 +61,6 @@ class WriteBuffer;
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, Float) \
-    M(CLASS_NAME, FloatAuto) \
-    M(CLASS_NAME, IcebergMetadataLogLevel) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
     M(CLASS_NAME, Int32) \
@@ -73,9 +69,6 @@ class WriteBuffer;
     M(CLASS_NAME, JoinAlgorithm) \
     M(CLASS_NAME, JoinStrictness) \
     M(CLASS_NAME, LightweightMutationProjectionMode) \
-    M(CLASS_NAME, LightweightDeleteMode) \
-    M(CLASS_NAME, AlterUpdateMode) \
-    M(CLASS_NAME, UpdateParallelMode) \
     M(CLASS_NAME, LoadBalancing) \
     M(CLASS_NAME, LocalFSReadMethod) \
     M(CLASS_NAME, LogQueriesType) \
@@ -107,13 +100,7 @@ class WriteBuffer;
     M(CLASS_NAME, TransactionsWaitCSNMode) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \
-    M(CLASS_NAME, URI) \
-    M(CLASS_NAME, VectorSearchFilterStrategy) \
-    M(CLASS_NAME, GeoToH3ArgumentOrder) \
-    M(CLASS_NAME, ObjectStorageGranularityLevel) \
-    M(CLASS_NAME, DecorrelationJoinKind) \
-    M(CLASS_NAME, JoinOrderAlgorithm) \
-    M(CLASS_NAME, DeduplicateInsertSelectMode)
+    M(CLASS_NAME, URI)
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)

@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/PinnedPartUUIDs.h>
+#include "PinnedPartUUIDs.h"
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/JSON/JSON.h>

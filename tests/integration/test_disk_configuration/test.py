@@ -19,13 +19,8 @@ def start_cluster():
             "node1",
             main_configs=[
                 "configs/config.d/storage_configuration.xml",
-                "configs/config.d/include_from_path.xml",
-                "configs/config.d/include_from.xml",
                 "configs/config.d/remote_servers.xml",
             ],
-            env_variables={
-                "MINIO_SECRET": minio_secret_key,
-            },
             with_zookeeper=True,
             stay_alive=True,
             with_minio=True,
@@ -37,7 +32,6 @@ def start_cluster():
                 "configs/config.d/storage_configuration.xml",
                 "configs/config.d/remote_servers.xml",
             ],
-            metrika_xml="configs/metrika.xml",
             with_zookeeper=True,
             stay_alive=True,
             with_minio=True,
@@ -166,14 +160,6 @@ def test_merge_tree_custom_disk_setting(start_cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    zk_client = start_cluster.get_kazoo_client("zoo1")
-
-    if not zk_client.exists("/minio"):
-        zk_client.create("/minio")
-    if not zk_client.exists("/minio/access_key_id"):
-        zk_client.create("/minio/access_key_id")
-
-    zk_client.set("/minio/access_key_id", b"minio")
     node1.query(
         f"""
         DROP TABLE IF EXISTS {TABLE_NAME};
@@ -183,9 +169,9 @@ def test_merge_tree_custom_disk_setting(start_cluster):
         SETTINGS
             disk = disk(
                 type=s3,
-                include = 'include_endpoint',
-                access_key_id = 'from_zk /minio/access_key_id',
-                secret_access_key='from_env MINIO_SECRET');
+                endpoint='http://minio1:9001/root/data/',
+                access_key_id='minio',
+                secret_access_key='{minio_secret_key}');
     """
     )
 
@@ -524,53 +510,3 @@ def test_merge_tree_setting_override(start_cluster):
         len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) > 0
     )
     node.query(f"DROP TABLE {TABLE_NAME} SYNC")
-
-@pytest.mark.parametrize("use_node", ["node1", "node2"])
-def test_merge_tree_custom_encrypted_disk_include(start_cluster, use_node):
-    """Test that encrypted disk configuration works with include parameter.
-
-    This test creates an encrypted disk using the include parameter to reference
-    encryption keys defined in a separate configuration file. It verifies that:
-    - The include mechanism correctly merges encryption keys into the disk config
-    - Data can be successfully encrypted and decrypted using the included keys
-    """
-    node = cluster.instances[use_node]
-
-    node.query(
-        f"""
-        DROP TABLE IF EXISTS {TABLE_NAME}_encrypted;
-        CREATE TABLE {TABLE_NAME}_encrypted (
-            id Int32,
-            data String
-        ) ENGINE = MergeTree()
-        ORDER BY id
-        SETTINGS
-            disk = disk(
-                type = encrypted,
-                disk = disk(
-                    type = s3,
-                    endpoint = 'http://minio1:9001/root/data/',
-                    access_key_id = 'minio',
-                    secret_access_key = '{minio_secret_key}'
-                ),
-                path = 'encrypted_test/',
-                include = 'disk_encrypted_keys',
-                algorithm = 'AES_256_CTR'
-            );
-        """
-    )
-
-    node.query(f"INSERT INTO {TABLE_NAME}_encrypted VALUES (1, 'test_data'), (2, 'more_data')")
-
-    result = node.query(f"SELECT COUNT(*) FROM {TABLE_NAME}_encrypted")
-    assert int(result.strip()) == 2
-
-    result = node.query(f"SELECT data FROM {TABLE_NAME}_encrypted WHERE id = 1")
-    assert result.strip() == "test_data"
-
-    minio = cluster.minio_client
-    s3_objects = list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))
-    assert len(s3_objects) > 0, "Data should be written to S3"
-
-    node.query(f"DROP TABLE {TABLE_NAME}_encrypted SYNC")
-    remove_minio_objects(minio, "data/")

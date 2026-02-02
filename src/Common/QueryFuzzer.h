@@ -9,7 +9,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/IASTHash.h>
 #include <Parsers/NullsAction.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/parseQuery.h>
@@ -70,7 +69,7 @@ public:
 
 private:
     template <typename Parser>
-    ASTPtr tryParseQueryForFuzzedTables(const std::string_view & full_query)
+    ASTPtr tryParseQueryForFuzzedTables(const String & full_query)
     {
         String message;
         const char * pos = full_query.data();
@@ -112,7 +111,7 @@ private:
 
 public:
     template <typename ParsedAST, typename Parser>
-    ASTs getQueriesForFuzzedTables(const std::string_view & full_query)
+    ASTs getQueriesForFuzzedTables(const String & full_query)
     {
         auto parsed_query = tryParseQueryForFuzzedTables<Parser>(full_query);
         if (!parsed_query)
@@ -157,26 +156,6 @@ private:
     // Used to track added tables in join clauses
     uint32_t alias_counter = 0;
 
-    // Similar to current_ast_depth, this is a limit on some measure of query size or number of
-    // steps we take. Without it, with small probability, query size may explode even when depth is
-    // limited. In particular, array lengths and depths in fuzzField() were seen to do that:
-    // https://github.com/ClickHouse/ClickHouse/issues/77408
-    //
-    // I don't fully understand how this happens, but my impression is that recursive random
-    // generators like this just generally tend to produce size distribution with heavy tail.
-    // Maybe if the query size/depth/some-other-property reaches some critical mass, each recursive
-    // call on average causes more than one additional recursive call (e.g. by copying a huge subtree
-    // with some small-but-not-tiny probability), so the expected number of calls becomes infinite.
-    // Despite infinite expected tree size, the p99 size may still be moderate
-    // (see e.g. "St. Petersburg lottery"), so the failures can be rare in practice.
-    //
-    // (What does "infinite expected value" mean in practice? Suppose you keep generating more and
-    //  more values and averaging them. If the expected value is finite, the average will be
-    //  converging to it. If the expected value is infinite, the average will keep growing without
-    //  bound.)
-    size_t iteration_count = 0;
-    static constexpr size_t iteration_limit = 500000;
-
     // These arrays hold parts of queries that we can substitute into the query
     // we are currently fuzzing. We add some part from each new query we are asked
     // to fuzz, and keep this state between queries, so the fuzzing output becomes
@@ -195,7 +174,7 @@ private:
 
     std::unordered_map<std::string, std::unordered_set<std::string>> original_table_name_to_fuzzed;
     std::unordered_map<std::string, size_t> index_of_fuzzed_table;
-    std::set<IASTHash> created_tables_hashes;
+    std::set<IAST::Hash> created_tables_hashes;
 
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
@@ -231,7 +210,6 @@ private:
     void addTableLike(ASTPtr ast);
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
-    void checkIterationLimit();
 
     void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, int negProb);
     ASTPtr permutePredicateClause(const ASTPtr & predicate, int negProb);

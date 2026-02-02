@@ -1,4 +1,0 @@
-profiles:
-  default:
-    max_execution_time: 60
-    max_execution_time_leaf: 60

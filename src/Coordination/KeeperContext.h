@@ -172,7 +172,6 @@ private:
     double precommit_sleep_probability_for_testing = 0.0;
 
     CoordinationSettingsPtr coordination_settings;
-
     bool block_acl = false;
 
     std::atomic<bool> log_requests = false;

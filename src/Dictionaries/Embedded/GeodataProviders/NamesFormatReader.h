@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
-#include <Dictionaries/Embedded/GeodataProviders/INamesProvider.h>
+#include "INamesProvider.h"
 
 namespace DB
 {

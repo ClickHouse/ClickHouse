@@ -12,17 +12,10 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <algorithm>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
+
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool enable_extended_results_for_datetime_functions;
-}
-
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -42,14 +35,9 @@ private:
         Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
     };
     mutable Overload overload;
-    const bool enable_extended_results_for_datetime_functions = false;
 
 public:
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionToStartOfInterval>(context_); }
-
-    explicit FunctionToStartOfInterval(ContextPtr context_): enable_extended_results_for_datetime_functions(context_->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
-    {
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToStartOfInterval>(); }
 
     static constexpr auto name = "toStartOfInterval";
     String getName() const override { return name; }
@@ -117,14 +105,6 @@ public:
                 case IntervalKind::Kind::Year:
                     result_type = ResultType::Date;
                     break;
-            }
-
-            if (enable_extended_results_for_datetime_functions)
-            {
-                if (result_type == ResultType::Date)
-                    result_type = ResultType::Date32;
-                else if (result_type == ResultType::DateTime)
-                    result_type = ResultType::DateTime64;
             }
         };
 
@@ -303,27 +283,15 @@ private:
             auto scale = assert_cast<const DataTypeDateTime64 &>(time_column_type).getScale();
 
             if (time_column_vec)
-                return dispatchForIntervalColumn<ReturnType, DataTypeDateTime64, ColumnDateTime64>(
-                    assert_cast<const DataTypeDateTime64 &>(time_column_type),
-                    *time_column_vec,
-                    interval_column,
-                    origin_column,
-                    result_type,
-                    time_zone,
-                    static_cast<UInt16>(scale));
+                return dispatchForIntervalColumn<ReturnType, DataTypeDateTime64, ColumnDateTime64>(assert_cast<const DataTypeDateTime64 &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone, scale);
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64", getName());
     }
 
     template <typename ReturnType, typename TimeDataType, typename TimeColumnType>
     ColumnPtr dispatchForIntervalColumn(
-        const TimeDataType & time_data_type,
-        const TimeColumnType & time_column,
-        const ColumnWithTypeAndName & interval_column,
-        const ColumnWithTypeAndName & origin_column,
-        const DataTypePtr & result_type,
-        const DateLUTImpl & time_zone,
-        UInt16 scale = 1) const
+        const TimeDataType & time_data_type, const TimeColumnType & time_column, const ColumnWithTypeAndName & interval_column, const ColumnWithTypeAndName & origin_column,
+        const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale = 1) const
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
         if (!interval_type)
@@ -421,11 +389,11 @@ private:
 
             static constexpr Int64 SECONDS_PER_DAY = 86'400;
 
-            Int64 origin = origin_column.column->getInt(0);
+            UInt64 origin = origin_column.column->get64(0);
             for (size_t i = 0; i != size; ++i)
             {
-                Int64 time_arg = time_data[i];
-                if (origin > time_arg)
+                UInt64 time_arg = time_data[i];
+                if (origin > static_cast<size_t>(time_arg))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The origin must be before the end date / date with time");
 
                 if (is_result_date) /// All internal calculations of ToStartOfInterval<...> expect arguments to be seconds or milli-, micro-, nanoseconds.
@@ -445,9 +413,9 @@ private:
                     origin /= SECONDS_PER_DAY;
                 }
 
-                result_data[i] = (result_scale < origin_scale) ? static_cast<ResultDataType::FieldType>((origin + offset) / scale_diff)
-                                                               : static_cast<ResultDataType::FieldType>((origin + offset) * scale_diff);
-        }
+                result_data[i] = 0;
+                result_data[i] += (result_scale < origin_scale) ? (origin + offset) / scale_diff : (origin + offset) * scale_diff;
+            }
         }
         else // Overload: Default
         {
@@ -461,74 +429,7 @@ private:
 
 REGISTER_FUNCTION(ToStartOfInterval)
 {
-    {
-        FunctionDocumentation::Description description = R"(
-This function generalizes other `toStartOf*()` functions with `toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone])` syntax.
-
-For example,
-- `toStartOfInterval(t, INTERVAL 1 YEAR)` returns the same as `toStartOfYear(t)`,
-- `toStartOfInterval(t, INTERVAL 1 MONTH)` returns the same as `toStartOfMonth(t)`,
-- `toStartOfInterval(t, INTERVAL 1 DAY)` returns the same as `toStartOfDay(t)`,
-- `toStartOfInterval(t, INTERVAL 15 MINUTE)` returns the same as `toStartOfFifteenMinutes(t)`.
-
-The calculation is performed relative to specific points in time:
-
-| Interval    | Start                  |
-|-------------|------------------------|
-| YEAR        | year 0                 |
-| QUARTER     | 1900 Q1                |
-| MONTH       | 1900 January           |
-| WEEK        | 1970, 1st week (01-05) |
-| DAY         | 1970-01-01             |
-| HOUR        | (*)                    |
-| MINUTE      | 1970-01-01 00:00:00    |
-| SECOND      | 1970-01-01 00:00:00    |
-| MILLISECOND | 1970-01-01 00:00:00    |
-| MICROSECOND | 1970-01-01 00:00:00    |
-| NANOSECOND  | 1970-01-01 00:00:00    |
-(*) hour intervals are special: the calculation is always performed relative to 00:00:00 (midnight) of the current day. As a result, only
-hour values between 1 and 23 are useful.
-
-If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday.
-
-The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function.
-        )";
-        FunctionDocumentation::Syntax syntax = R"(
-toStartOfInterval(value, INTERVAL x unit[, time_zone])
-toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
-        )";
-        FunctionDocumentation::Arguments arguments = {
-            {"value", "Date or date with time value to round down.", {"Date", "DateTime", "DateTime64"}},
-            {"x", "Interval length number."},
-            {"unit", "Interval unit: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND."},
-            {"time_zone", "Optional. Time zone name as a string."},
-            {"origin", "Optional. Origin point for calculation (second overload only)."}
-        };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns the start of the interval containing the input value.", {"DateTime"}};
-        FunctionDocumentation::Examples examples = {
-            {"Basic interval rounding", R"(
-SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
-            )",
-            R"(
-┌─toStartOfInt⋯alMonth(1))─┐
-│               2023-01-01 │
-└──────────────────────────┘
-            )"},
-            {"Using origin point", R"(
-SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'))
-            )",
-            R"(
-┌─toStartOfInt⋯14:35:30'))─┐
-│      2023-01-01 14:44:30 │
-└──────────────────────────┘
-            )"}
-        };
-        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
-        FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-        factory.registerFunction<FunctionToStartOfInterval>(documentation);
-    }
+    factory.registerFunction<FunctionToStartOfInterval>();
     factory.registerAlias("time_bucket", "toStartOfInterval", FunctionFactory::Case::Insensitive);
     factory.registerAlias("date_bin", "toStartOfInterval", FunctionFactory::Case::Insensitive);
 }

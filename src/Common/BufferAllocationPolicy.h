@@ -2,7 +2,9 @@
 
 #include "config.h"
 
-#include <memory>
+#include "logger_useful.h"
+
+#include <list>
 
 namespace DB
 {

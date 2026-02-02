@@ -1,34 +1,36 @@
 #pragma once
 
-#include <vector>
+#include <algorithm>
+#include <memory>
+#include <absl/container/inlined_vector.h>
 
 namespace DB
 {
-    class IAST;
 
-    void intrusive_ptr_add_ref(const IAST * p);
-    void intrusive_ptr_release(const IAST * p);
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
+/// sizeof(absl::InlinedVector<ASTPtr, N>) == 8 + N * 16.
+/// 7 elements take 120 Bytes which is ~128
+using ASTs = absl::InlinedVector<ASTPtr, 7>;
+
 }
 
-
-#include <boost/container/vector.hpp>
-#include <boost/smart_ptr/intrusive_ptr.hpp>
-#include <boost/smart_ptr/intrusive_ref_counter.hpp>
-
-namespace DB
+namespace std
 {
 
-using ASTPtr = boost::intrusive_ptr<IAST>;
-/// Boost vector with smaller stored size to save memory for AST children vectors.
-using ASTs = boost::container::vector<
-    ASTPtr,
-    boost::container::new_allocator<ASTPtr>,
-    boost::container::vector_options<boost::container::stored_size<uint32_t>>::type>;
-
-template <typename T, typename ... Args>
-constexpr boost::intrusive_ptr<T> make_intrusive(Args && ... args)
+inline typename DB::ASTs::size_type erase(DB::ASTs & asts, const DB::ASTPtr & element) /// NOLINT(cert-dcl58-cpp)
 {
-    return boost::intrusive_ptr<T>(new T(std::forward<Args>(args)...));
+    auto old_size = asts.size();
+    asts.erase(std::remove(asts.begin(), asts.end(), element), asts.end());
+    return old_size - asts.size();
+}
+
+template <class Predicate>
+inline typename DB::ASTs::size_type erase_if(DB::ASTs & asts, Predicate pred) /// NOLINT(cert-dcl58-cpp)
+{
+    auto old_size = asts.size();
+    asts.erase(std::remove_if(asts.begin(), asts.end(), pred), asts.end());
+    return old_size - asts.size();
 }
 
 }

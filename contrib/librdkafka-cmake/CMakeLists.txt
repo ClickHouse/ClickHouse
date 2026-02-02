@@ -8,7 +8,7 @@ endif()
 set(RDKAFKA_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/librdkafka/src")
 
 set(SRCS
-  "${RDKAFKA_SOURCE_DIR}/cJSON.c"    # see below
+#  "${RDKAFKA_SOURCE_DIR}/cJSON.c"    # see below
   "${RDKAFKA_SOURCE_DIR}/crc32c.c"
 #  "${RDKAFKA_SOURCE_DIR}/lz4.c"      # WITH_LZ4_EXT
 #  "${RDKAFKA_SOURCE_DIR}/lz4frame.c" # WITH_LZ4_EXT
@@ -102,19 +102,21 @@ set(SRCS
 )
 
 if(TARGET ch_contrib::curl)
+    message (STATUS "librdkafka with curl")
     set(WITH_CURL 1)
 endif()
 
 if(TARGET ch_contrib::sasl2)
+    message (STATUS "librdkafka with SASL support")
     set(WITH_SASL_CYRUS 1)
 endif()
 
+message (STATUS "librdkafka with SSL support")
 set(WITH_SSL 1)
 if(WITH_SASL_CYRUS)
    set(WITH_SASL_SCRAM 1)
    set(WITH_SASL_OAUTHBEARER 1)
 endif()
-add_definitions(-DOPENSSL_NO_ENGINE)
 list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c")
 
 if(WITH_SSL AND WITH_CURL)
@@ -133,6 +135,14 @@ endif()
 
 if(WITH_SASL_OAUTHBEARER)
   list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer.c")
+endif()
+
+## there is a conflict with the cJSON library from aws-s3
+# so normally we link cJSON lirary from contrib/aws (which have some extra patches to be thread safe)
+# but if we don't use aws-s3, we need to link the cJSON library from librdkafka (hacky)
+# which is (potentially) not thread safe (see https://github.com/confluentinc/librdkafka/issues/4159 ),
+if(NOT ENABLE_AWS_S3)
+   list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/cJSON.c")
 endif()
 
 add_library(_rdkafka ${SRCS})

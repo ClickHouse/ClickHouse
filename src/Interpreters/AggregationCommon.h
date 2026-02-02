@@ -2,6 +2,7 @@
 
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
+#include <base/StringRef.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/KeysNullMap.h>
@@ -68,7 +69,7 @@ void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
             /// It should be ok as long as we do not refer to any value from `out` before filling.
             const char * source = static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<sizeof(T)>();
             T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
-            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest);
+            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest); /// NOLINT(bugprone-sizeof-expression)
             offset += sizeof(T);
         }
     }
@@ -170,7 +171,7 @@ static inline T ALWAYS_INLINE packFixed(
 
     size_t offset = 0;
 
-    static constexpr auto bitmap_size = std::tuple_size_v<KeysNullMap<T>>;
+    static constexpr auto bitmap_size = std::tuple_size<KeysNullMap<T>>::value;
     static constexpr bool has_bitmap = bitmap_size > 0;
 
     if constexpr (has_bitmap)
@@ -224,14 +225,14 @@ static inline T ALWAYS_INLINE packFixed(
 
 /** Serialize keys into a continuous chunk of memory.
   */
-static inline std::string_view ALWAYS_INLINE serializeKeysToPoolContiguous( /// NOLINT
-    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, Arena & pool, const IColumn::SerializationSettings * settings)
+static inline StringRef ALWAYS_INLINE serializeKeysToPoolContiguous( /// NOLINT
+    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, Arena & pool)
 {
     const char * begin = nullptr;
 
     size_t sum_size = 0;
     for (size_t j = 0; j < keys_size; ++j)
-        sum_size += key_columns[j]->serializeValueIntoArena(i, pool, begin, settings).size();
+        sum_size += key_columns[j]->serializeValueIntoArena(i, pool, begin).size;
 
     return {begin, sum_size};
 }

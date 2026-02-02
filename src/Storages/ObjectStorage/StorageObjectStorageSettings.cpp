@@ -11,6 +11,25 @@
 namespace DB
 {
 
+// clang-format off
+
+#define STORAGE_OBJECT_STORAGE_RELATED_SETTINGS(DECLARE, ALIAS) \
+    DECLARE(Bool, allow_dynamic_metadata_for_data_lakes, false, R"(
+If enabled, indicates that metadata is taken from iceberg specification that is pulled from cloud before each query.
+)", 0) \
+    DECLARE(Bool, allow_experimental_delta_kernel_rs, false, R"(
+If enabled, the engine would use delta-kernel-rs for DeltaLake metadata parsing
+)", 0) \
+    DECLARE(String, iceberg_metadata_file_path, "", R"(
+Explicit path to desired Iceberg metadata file, should be relative to path in object storage. Make sense for table function use case only.
+)", 0) \
+
+// clang-format on
+
+#define LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(M, ALIAS) \
+    STORAGE_OBJECT_STORAGE_RELATED_SETTINGS(M, ALIAS) \
+    LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
+
 DECLARE_SETTINGS_TRAITS(StorageObjectStorageSettingsTraits, LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(StorageObjectStorageSettingsTraits, LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS)
 
@@ -18,12 +37,12 @@ struct StorageObjectStorageSettingsImpl : public BaseSettings<StorageObjectStora
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     StorageObjectStorageSettings##TYPE NAME = &StorageObjectStorageSettingsImpl ::NAME;
 
 namespace StorageObjectStorageSetting
 {
-LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -62,14 +81,4 @@ bool StorageObjectStorageSettings::hasBuiltin(std::string_view name)
 {
     return StorageObjectStorageSettingsImpl::hasBuiltin(name);
 }
-
-void StorageObjectStorageSettings::loadFromSettingsChanges(const SettingsChanges & changes)
-{
-    for (const auto & [name, value] : changes)
-    {
-        if (impl->has(name))
-            impl->set(name, value);
-    }
-}
-
 }

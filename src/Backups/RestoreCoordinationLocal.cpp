@@ -22,12 +22,6 @@ ZooKeeperRetriesInfo RestoreCoordinationLocal::getOnClusterInitializationKeeperR
     return {};
 }
 
-bool RestoreCoordinationLocal::acquireCreatingSharedDatabase(const String & database_name)
-{
-    std::lock_guard lock{mutex};
-    return acquired_shared_databases.emplace(database_name).second;
-}
-
 bool RestoreCoordinationLocal::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)
 {
     std::lock_guard lock{mutex};

@@ -1,25 +1,12 @@
 #include <Databases/DataLake/GlueCatalog.h>
-#include <Poco/JSON/Object.h>
-#include <Core/ServerSettings.h>
-#include <IO/SeekableReadBuffer.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 
 #if USE_AWS_S3 && USE_AVRO
 
-#include <aws/glue/GlueClient.h>
 #include <aws/glue/model/GetTablesRequest.h>
 #include <aws/glue/model/GetTableRequest.h>
 #include <aws/glue/model/GetDatabasesRequest.h>
-#include <aws/glue/model/CreateTableRequest.h>
-#include <aws/glue/model/DeleteTableRequest.h>
-#include <aws/glue/model/CreateDatabaseRequest.h>
-#include <aws/glue/model/UpdateTableRequest.h>
-#include <aws/glue/model/TableInput.h>
-#include <aws/glue/model/StorageDescriptor.h>
-#include <aws/glue/model/Column.h>
 
 #include <Common/Exception.h>
-#include <Common/CurrentMetrics.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -41,20 +28,11 @@
 #include <IO/S3/Credentials.h>
 #include <IO/S3/Client.h>
 #include <IO/S3Settings.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
-#include <Databases/DataLake/Common.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
 
 namespace DB::ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
 }
 
@@ -63,16 +41,9 @@ namespace DB::Setting
     extern const SettingsUInt64 s3_max_connections;
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
-    extern const SettingsBool s3_slow_all_threads_after_network_error;
     extern const SettingsBool enable_s3_requests_logging;
     extern const SettingsUInt64 s3_connect_timeout_ms;
     extern const SettingsUInt64 s3_request_timeout_ms;
-}
-
-namespace DB::ServerSetting
-{
-    extern const ServerSettingsUInt64 s3_max_redirects;
-    extern const ServerSettingsUInt64 s3_retry_attempts;
 }
 
 namespace DB::StorageObjectStorageSetting
@@ -80,68 +51,120 @@ namespace DB::StorageObjectStorageSetting
     extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
 }
 
-namespace DB::DatabaseDataLakeSetting
+namespace
 {
-    extern const DatabaseDataLakeSettingsString storage_endpoint;
-    extern const DatabaseDataLakeSettingsString aws_access_key_id;
-    extern const DatabaseDataLakeSettingsString aws_secret_access_key;
-    extern const DatabaseDataLakeSettingsString region;
+
+String trim(const String & str)
+{
+    size_t start = str.find_first_not_of(' ');
+    size_t end = str.find_last_not_of(' ');
+    return (start == String::npos || end == String::npos) ? "" : str.substr(start, end - start + 1);
 }
 
-namespace CurrentMetrics
+std::vector<String> splitTypeArguments(const String & type_str)
 {
-    extern const Metric MarkCacheBytes;
-    extern const Metric MarkCacheFiles;
+    std::vector<String> args;
+    int depth = 0;
+    size_t start = 0;
+    for (size_t i = 0; i < type_str.size(); i++)
+    {
+        if (type_str[i] == '<')
+            depth++;
+        else if (type_str[i] == '>')
+            depth--;
+        else if (type_str[i] == ',' && depth == 0)
+        {
+            args.push_back(trim(type_str.substr(start, i - start)));
+            start = i + 1;
+        }
+    }
+    args.push_back(trim(type_str.substr(start)));
+    return args;
+}
+
+// Recursive function to parse types
+DB::DataTypePtr getType(const String & type_name, bool nullable, const String & prefix = "")
+{
+    String name = trim(type_name);
+
+    if (name.starts_with("array<") && name.ends_with(">"))
+    {
+        String inner = name.substr(6, name.size() - 7);
+        return std::make_shared<DB::DataTypeArray>(getType(inner, nullable));
+    }
+
+    if (name.starts_with("map<") && name.ends_with(">"))
+    {
+        String inner = name.substr(4, name.size() - 5);
+        auto args = splitTypeArguments(inner);
+        if (args.size() != 2)
+            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid data type {}", type_name);
+
+        return std::make_shared<DB::DataTypeMap>(getType(args[0], false), getType(args[1], nullable));
+    }
+
+    if (name.starts_with("struct<") && name.ends_with(">"))
+    {
+        String inner = name.substr(7, name.size() - 8);
+        auto args = splitTypeArguments(inner);
+
+        std::vector<String> field_names;
+        std::vector<DB::DataTypePtr> field_types;
+
+        for (const auto & arg : args)
+        {
+            size_t colon = arg.find(':');
+            if (colon == String::npos)
+                throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid data type {}", type_name);
+
+            String field_name = trim(arg.substr(0, colon));
+            String field_type = trim(arg.substr(colon + 1));
+            String full_field_name = prefix.empty() ? field_name : prefix + "." + field_name;
+
+            field_names.push_back(full_field_name);
+            field_types.push_back(getType(field_type, nullable, full_field_name));
+        }
+        return std::make_shared<DB::DataTypeTuple>(field_types, field_names);
+    }
+
+    return nullable ? DB::makeNullable(DB::IcebergSchemaProcessor::getSimpleType(name)) : DB::IcebergSchemaProcessor::getSimpleType(name);
+}
+
 }
 
 namespace DataLake
 {
 
 GlueCatalog::GlueCatalog(
+    const String & access_key_id,
+    const String & secret_access_key,
+    const String & region_,
     const String & endpoint,
-    DB::ContextPtr context_,
-    const CatalogSettings & settings_,
-    DB::ASTPtr table_engine_definition_)
+    DB::ContextPtr context_)
     : ICatalog("")
     , DB::WithContext(context_)
-    , log(getLogger("GlueCatalog(" + settings_.region + ")"))
-    , credentials(settings_.aws_access_key_id, settings_.aws_secret_access_key)
-    , region(settings_.region)
-    , settings(settings_)
-    , table_engine_definition(table_engine_definition_)
-    , metadata_objects(CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, 1024)
+    , log(getLogger("GlueCatalog(" + region_ + ")"))
+    , credentials(access_key_id, secret_access_key)
+    , region(region_)
 {
     DB::S3::CredentialsConfiguration creds_config;
     creds_config.use_environment_credentials = true;
 
-    const auto & server_settings = getContext()->getGlobalContext()->getServerSettings();
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
 
-    int s3_max_redirects = static_cast<int>(server_settings[DB::ServerSetting::s3_max_redirects]);
-    // just for compatibility with old setting
-    if (global_settings.isChanged("s3_max_redirects"))
-        s3_max_redirects = static_cast<int>(global_settings[DB::Setting::s3_max_redirects]);
-
-    int s3_retry_attempts = static_cast<int>(server_settings[DB::ServerSetting::s3_retry_attempts]);
-    // just for compatibility with old setting
-    if (global_settings.isChanged("s3_retry_attempts"))
-        s3_retry_attempts = static_cast<int>(global_settings[DB::Setting::s3_retry_attempts]);
-
-    bool s3_slow_all_threads_after_network_error = global_settings[DB::Setting::s3_slow_all_threads_after_network_error];
-    bool s3_slow_all_threads_after_retryable_error = false;
+    int s3_max_redirects = static_cast<int>(global_settings[DB::Setting::s3_max_redirects]);
+    int s3_retry_attempts = static_cast<int>(global_settings[DB::Setting::s3_retry_attempts]);
     bool enable_s3_requests_logging = global_settings[DB::Setting::enable_s3_requests_logging];
-
     DB::S3::PocoHTTPClientConfiguration poco_config = DB::S3::ClientFactory::instance().createClientConfiguration(
         region,
         getContext()->getRemoteHostFilter(),
         s3_max_redirects,
-        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = static_cast<unsigned>(s3_retry_attempts)},
-        s3_slow_all_threads_after_network_error,
-        s3_slow_all_threads_after_retryable_error,
+        s3_retry_attempts,
         enable_s3_requests_logging,
-        /* for_disk_s3 = */ false,
-        /* opt_disk_name = */ {},
-        /* request_throttler = */ {});
+        false,
+        nullptr,
+        nullptr
+    );
 
     Aws::Glue::GlueClientConfiguration client_configuration;
     client_configuration.maxConnections = static_cast<unsigned>(global_settings[DB::Setting::s3_max_connections]);
@@ -171,20 +194,18 @@ GlueCatalog::GlueCatalog(
     else
     {
         LOG_TRACE(log, "Creating AWS glue client with credentials empty {}, region '{}', endpoint '{}'", credentials.IsEmpty(), region, endpoint);
-        auto credentials_provider = DB::S3::getCredentialsProvider(poco_config, credentials, creds_config);
-        glue_client = std::make_unique<Aws::Glue::GlueClient>(credentials_provider, endpoint_provider, client_configuration);
+        std::shared_ptr<DB::S3::S3CredentialsProviderChain> chain = std::make_shared<DB::S3::S3CredentialsProviderChain>(poco_config, credentials, creds_config);
+        glue_client = std::make_unique<Aws::Glue::GlueClient>(chain, endpoint_provider, client_configuration);
     }
 
 }
-
-GlueCatalog::~GlueCatalog() = default;
 
 DataLake::ICatalog::Namespaces GlueCatalog::getDatabases(const std::string & prefix, size_t limit) const
 {
     DataLake::ICatalog::Namespaces result;
     Aws::Glue::Model::GetDatabasesRequest request;
     if (limit != 0)
-        request.SetMaxResults(static_cast<int>(limit));
+        request.SetMaxResults(limit);
 
     LOG_TEST(log, "Getting databases for prefix '{}'", prefix);
     std::string next_token;
@@ -229,7 +250,7 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
     Aws::Glue::Model::GetTablesRequest request;
     request.SetDatabaseName(db_name);
     if (limit != 0)
-        request.SetMaxResults(static_cast<int>(limit));
+        request.SetMaxResults(limit);
 
     std::string next_token;
     do
@@ -294,6 +315,15 @@ bool GlueCatalog::tryGetTableMetadata(
     const std::string & table_name,
     TableMetadata & result) const
 {
+    getTableMetadata(database_name, table_name, result);
+    return true;
+}
+
+void GlueCatalog::getTableMetadata(
+    const std::string & database_name,
+    const std::string & table_name,
+    TableMetadata & result) const
+{
     Aws::Glue::Model::GetTableRequest request;
     request.SetDatabaseName(database_name);
     request.SetName(table_name);
@@ -310,7 +340,7 @@ bool GlueCatalog::tryGetTableMetadata(
         if (table_outcome.GetParameters().contains("table_type"))
             table_type = table_outcome.GetParameters().at("table_type");
 
-        if (Poco::toUpper(table_type) != "ICEBERG")
+        if (table_type != "ICEBERG")
         {
             std::string message_part;
             if (!table_type.empty())
@@ -319,48 +349,9 @@ bool GlueCatalog::tryGetTableMetadata(
                 message_part = "no table_type";
 
             result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has {}. " \
-                   "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have equalsIgnoreCase(table_type, '{}')",
+                   "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have table_type == '{}'",
                    database_name + "." + table_name, message_part, "ICEBERG"));
         }
-
-        if (result.requiresCredentials())
-            setCredentials(result);
-
-        auto setup_specific_properties = [&]
-        {
-            const auto & table_params = table_outcome.GetParameters();
-            if (table_params.contains("metadata_location"))
-            {
-                result.setDataLakeSpecificProperties(DataLakeSpecificProperties{.iceberg_metadata_file_location = table_params.at("metadata_location")});
-            }
-            else if (const auto & location = table_outcome.GetStorageDescriptor().GetLocation(); !location.empty())
-            {
-                String location_with_slash = location;
-                if (!location_with_slash.ends_with('/'))
-                    location_with_slash += '/';
-
-                String resolved_metadata_path = resolveMetadataPathFromTableLocation(location_with_slash, result);
-                if (resolved_metadata_path.empty())
-                {
-                    result.setTableIsNotReadable(fmt::format("Could not determine metadata_location of table `{}`. ",
-                        database_name + "." + table_name));
-                }
-                else
-                {
-                    result.setDataLakeSpecificProperties(DataLakeSpecificProperties{.iceberg_metadata_file_location = resolved_metadata_path});
-                }
-            }
-            else
-            {
-                result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has no metadata_location and Location. " \
-                    "It means that it's unreadable with Glue catalog in ClickHouse, " \
-                    "readable tables must have 'metadata_location' or `Location` in table metadata",
-                    database_name + "." + table_name));
-            }
-        };
-
-        if (result.requiresDataLakeSpecificProperties())
-            setup_specific_properties();
 
         if (result.requiresSchema())
         {
@@ -370,52 +361,35 @@ bool GlueCatalog::tryGetTableMetadata(
             {
                 const auto column_params = column.GetParameters();
                 bool can_be_nullable = column_params.contains("iceberg.field.optional") && column_params.at("iceberg.field.optional") == "true";
-
-                /// Skip field if it's not "current" (for example Renamed). No idea how someone can utilize "non current fields" but for some reason
-                /// they are returned by Glue API. So if you do "RENAME COLUMN a to new_a" glue will return two fields: a and new_a.
-                /// And a will be marked as "non current" field.
-                if (column_params.contains("iceberg.field.current") && column_params.at("iceberg.field.current") == "false")
-                    continue;
-
-                String column_type = column.GetType();
-                if (column_type == "timestamp")
-                {
-                    if (!result.requiresDataLakeSpecificProperties())
-                        setup_specific_properties();
-                    if (classifyTimestampTZ(column.GetName(), result))
-                        column_type = "timestamptz";
-                }
-
-                schema.push_back({column.GetName(), getType(column_type, can_be_nullable)});
+                schema.push_back({column.GetName(), getType(column.GetType(), can_be_nullable)});
             }
             result.setSchema(schema);
+        }
+
+        if (result.requiresCredentials())
+            setCredentials(result);
+
+        if (result.requiresDataLakeSpecificProperties())
+        {
+            const auto & table_params = table_outcome.GetParameters();
+            if (table_params.contains("metadata_location"))
+            {
+                result.setDataLakeSpecificProperties(DataLakeSpecificProperties{.iceberg_metadata_file_location = table_params.at("metadata_location")});
+            }
+            else
+            {
+                 result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has no metadata_location. " \
+                     "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have 'metadata_location' in table parameters",
+                     database_name + "." + table_name));
+            }
         }
     }
     else
     {
-        if (outcome.GetError().GetErrorType() == Aws::Glue::GlueErrors::ENTITY_NOT_FOUND)
-            return false; // Table does not exist
-
         throw DB::Exception(
             DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
             "Exception calling GetTable for table {}: {}",
             database_name + "." + table_name, outcome.GetError().GetMessage());
-    }
-
-    return true;
-}
-
-void GlueCatalog::getTableMetadata(
-    const std::string & database_name,
-    const std::string & table_name,
-    TableMetadata & result) const
-{
-    if (!tryGetTableMetadata(database_name, table_name, result))
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "Table {} does not exist in Glue catalog",
-            database_name + "." + table_name);
     }
 }
 
@@ -444,225 +418,6 @@ bool GlueCatalog::empty() const
             return false;
     }
     return true;
-}
-
-bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const
-{
-    auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
-    if (!table_specific_properties.has_value())
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Failed to read table metadata, reason why table is unreadable: {}", table_metadata.getReasonWhyTableIsUnreadable());
-
-    const String & metadata_uri = table_specific_properties->iceberg_metadata_file_location;
-
-    if (!metadata_objects.get(metadata_uri))
-    {
-        auto [object_storage, bucket_name, metadata_path] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
-        const auto & read_settings = getContext()->getReadSettings();
-
-        DB::StoredObject metadata_stored_object(metadata_path);
-        auto read_buf = object_storage->readObject(metadata_stored_object, read_settings);
-        String metadata_file_content;
-        readStringUntilEOF(metadata_file_content, *read_buf);
-
-        Poco::JSON::Parser parser;
-        Poco::Dynamic::Var result = parser.parse(metadata_file_content);
-        auto metadata_object = result.extract<Poco::JSON::Object::Ptr>();
-        metadata_objects.set(metadata_uri, std::make_shared<Poco::JSON::Object::Ptr>(metadata_object));
-    }
-
-    auto metadata_object = *metadata_objects.get(metadata_uri);
-    auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");
-    auto schemas = metadata_object->getArray(DB::Iceberg::f_schemas);
-    for (size_t i = 0; i < schemas->size(); ++i)
-    {
-        auto schema = schemas->getObject(static_cast<UInt32>(i));
-        if (schema->getValue<Int64>("schema-id") == current_schema_id)
-        {
-            auto fields = schema->getArray(DB::Iceberg::f_fields);
-            for (size_t j = 0; j < fields->size(); ++j)
-            {
-                auto field = fields->getObject(static_cast<UInt32>(j));
-                if (field->getValue<String>(DB::Iceberg::f_name) == column_name)
-                    return field->getValue<String>(DB::Iceberg::f_type) == DB::Iceberg::f_timestamptz;
-            }
-        }
-    }
-
-    return false;
-}
-
-GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const
-{
-    DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
-    DB::ASTs args = storage->engine->arguments->children;
-
-    String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : s3_location;
-    if (args.empty())
-        args.emplace_back(DB::make_intrusive<DB::ASTLiteral>(storage_endpoint));
-    else
-        args[0] = DB::make_intrusive<DB::ASTLiteral>(storage_endpoint);
-
-    if (args.size() == 1)
-    {
-        if (table_metadata.hasStorageCredentials())
-            table_metadata.getStorageCredentials()->addCredentialsToEngineArgs(args);
-        else if (!credentials.IsExpiredOrEmpty())
-            DataLake::S3Credentials(credentials.GetAWSAccessKeyId(), credentials.GetAWSSecretKey(), credentials.GetSessionToken()).addCredentialsToEngineArgs(args);
-    }
-
-    auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
-    storage_settings->loadFromSettingsChanges(settings.allChanged());
-    auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
-    DB::StorageObjectStorageConfiguration::initialize(*configuration, args, getContext(), false);
-
-    auto object_storage = configuration->createObjectStorage(getContext(), true);
-
-    /// Parse S3 path to extract bucket and table path
-    String table_path = s3_location;
-    if (table_path.starts_with("s3://"))
-        table_path = table_path.substr(5);
-    else if (table_path.starts_with("s3:/"))
-        table_path = table_path.substr(4);
-
-    std::size_t pos = table_path.find('/');
-    String bucket_name;
-    if (pos != std::string::npos)
-    {
-        bucket_name = table_path.substr(0, pos);
-        table_path = table_path.substr(pos + 1);
-    }
-
-    if (table_path.ends_with('/'))
-        table_path = table_path.substr(0, table_path.size() - 1);
-
-    return {object_storage, bucket_name, table_path};
-}
-
-String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const
-{
-    auto [object_storage, bucket_name, table_path] = createObjectStorageForEarlyTableAccess(table_location, table_metadata);
-
-    auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
-    storage_settings->loadFromSettingsChanges(settings.allChanged());
-
-    try
-    {
-        auto [metadata_version, metadata_path, compression_method] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
-            object_storage,
-            table_path,
-            *storage_settings,
-            nullptr,
-            getContext(),
-            log.get(),
-            std::nullopt
-        );
-
-        LOG_TRACE(log, "Resolved metadata path '{}' (version {}) for table location '{}'", metadata_path, metadata_version, table_location);
-
-        return "s3://" + bucket_name + "/" + metadata_path;
-    }
-    catch (const DB::Exception & e)
-    {
-        LOG_TRACE(log, "Failed to resolve metadata path from table location '{}': {}", table_location, e.what());
-        return "";
-    }
-}
-
-void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) const
-{
-    Aws::Glue::Model::CreateDatabaseRequest create_request;
-    Aws::Glue::Model::DatabaseInput db_input;
-    db_input.SetName(namespace_name);
-    create_request.SetDatabaseInput(db_input);
-
-    glue_client->CreateDatabase(create_request);
-}
-
-void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*metadata_content*/) const
-{
-    createNamespaceIfNotExists(namespace_name);
-
-    Aws::Glue::Model::CreateTableRequest request;
-    request.SetDatabaseName(namespace_name);
-
-    Aws::Glue::Model::TableInput table_input;
-    table_input.SetName(table_name);
-
-    Aws::Glue::Model::StorageDescriptor sd;
-    fs::path original_path = new_metadata_path;
-
-    fs::path parent = original_path.parent_path();
-    fs::path grandparent = parent.parent_path();
-
-    sd.SetLocation(grandparent.c_str());
-
-    table_input.SetStorageDescriptor(sd);
-    table_input.SetTableType("ICEBERG");
-
-    Aws::Map<Aws::String, Aws::String> parameters;
-    parameters["metadata_location"] = new_metadata_path;
-    parameters["table_type"] = "ICEBERG";
-
-    table_input.SetParameters(parameters);
-
-    request.SetTableInput(table_input);
-
-    auto response = glue_client->CreateTable(request);
-
-    if (!response.IsSuccess())
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not create metadata in glue catalog: {}", response.GetError().GetMessage());
-}
-
-bool GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*new_snapshot*/) const
-{
-    Aws::Glue::Model::UpdateTableRequest request;
-    request.SetDatabaseName(namespace_name);
-
-    Aws::Glue::Model::TableInput table_input;
-    table_input.SetName(table_name);
-
-    Aws::Glue::Model::StorageDescriptor sd;
-    fs::path original_path = new_metadata_path;
-
-    fs::path parent = original_path.parent_path();
-    fs::path grandparent = parent.parent_path();
-
-    /// `new_metadata_path` looks like s3://<bucket>/some/your/path/metadata/v<i>-metadata.json
-    /// We should drop `metadata/v<i>-metadata.json` suffix to get location.
-    sd.SetLocation(grandparent.c_str());
-
-    table_input.SetStorageDescriptor(sd);
-    table_input.SetTableType("ICEBERG");
-
-    Aws::Map<Aws::String, Aws::String> parameters;
-    parameters["metadata_location"] = new_metadata_path;
-    parameters["table_type"] = "ICEBERG";
-
-    table_input.SetParameters(parameters);
-
-    request.SetTableInput(table_input);
-
-    auto response = glue_client->UpdateTable(request);
-
-    if (!response.IsSuccess())
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
-
-    return true;
-}
-
-void GlueCatalog::dropTable(const String & namespace_name, const String & table_name) const
-{
-    Aws::Glue::Model::DeleteTableRequest request;
-    request.SetDatabaseName(namespace_name);
-    request.SetName(table_name);
-
-    auto response = glue_client->DeleteTable(request);
-
-    if (!response.IsSuccess())
-        throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "Can not delete table from glue catalog: {}",
-            response.GetError().GetMessage());
 }
 
 }

@@ -4,7 +4,7 @@
 namespace DB
 {
 
-ISourceStep::ISourceStep(SharedHeader output_header_)
+ISourceStep::ISourceStep(Header output_header_)
 {
     output_header = std::move(output_header_);
 }

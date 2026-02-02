@@ -1,2 +1,4 @@
-SELECT *
+SELECT
+    a,
+    b
 FROM a

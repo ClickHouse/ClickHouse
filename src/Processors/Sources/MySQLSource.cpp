@@ -30,7 +30,7 @@ namespace Setting
 {
     extern const SettingsUInt64 external_storage_max_read_bytes;
     extern const SettingsUInt64 external_storage_max_read_rows;
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
 }
 
 namespace ErrorCodes
@@ -64,7 +64,7 @@ MySQLSource::MySQLSource(
     const std::string & query_str,
     const Block & sample_block,
     const StreamSettings & settings_)
-    : ISource(std::make_shared<const Block>(sample_block.cloneEmpty()))
+    : ISource(sample_block.cloneEmpty())
     , log(getLogger("MySQLSource"))
     , connection{std::make_unique<Connection>(entry, query_str)}
     , settings{std::make_unique<StreamSettings>(settings_)}
@@ -75,7 +75,7 @@ MySQLSource::MySQLSource(
 
 /// For descendant MySQLWithFailoverSource
 MySQLSource::MySQLSource(const Block &sample_block_, const StreamSettings & settings_)
-    : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
+    : ISource(sample_block_.cloneEmpty())
     , log(getLogger("MySQLSource"))
     , settings(std::make_unique<StreamSettings>(settings_))
 {
@@ -151,11 +151,11 @@ namespace
         switch (type)
         {
             case ValueType::vtUInt8:
-                assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value.getUInt()));
+                assert_cast<ColumnUInt8 &>(column).insertValue(value.getUInt());
                 read_bytes_size += 1;
                 break;
             case ValueType::vtUInt16:
-                assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value.getUInt()));
+                assert_cast<ColumnUInt16 &>(column).insertValue(value.getUInt());
                 read_bytes_size += 2;
                 break;
             case ValueType::vtUInt32:
@@ -188,11 +188,11 @@ namespace
                 break;
             }
             case ValueType::vtInt8:
-                assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value.getInt()));
+                assert_cast<ColumnInt8 &>(column).insertValue(value.getInt());
                 read_bytes_size += 1;
                 break;
             case ValueType::vtInt16:
-                assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value.getInt()));
+                assert_cast<ColumnInt16 &>(column).insertValue(value.getInt());
                 read_bytes_size += 2;
                 break;
             case ValueType::vtInt32:
@@ -235,11 +235,11 @@ namespace
                 read_bytes_size += 8;
                 break;
             case ValueType::vtEnum8:
-                assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).safeGet<Int8>()));
+                assert_cast<ColumnInt8 &>(column).insertValue(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).safeGet<Int8>());
                 read_bytes_size += assert_cast<ColumnInt8 &>(column).byteSize();
                 break;
             case ValueType::vtEnum16:
-                assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).safeGet<Int16>()));
+                assert_cast<ColumnInt16 &>(column).insertValue(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).safeGet<Int16>());
                 read_bytes_size += assert_cast<ColumnInt16 &>(column).byteSize();
                 break;
             case ValueType::vtString:

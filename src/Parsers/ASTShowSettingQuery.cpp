@@ -9,16 +9,17 @@ namespace DB
 
 ASTPtr ASTShowSettingQuery::clone() const
 {
-    auto res = make_intrusive<ASTShowSettingQuery>(*this);
+    auto res = std::make_shared<ASTShowSettingQuery>(*this);
     res->children.clear();
     cloneOutputOptions(*res);
     res->setting_name = setting_name;
     return res;
 }
 
-void ASTShowSettingQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
+void ASTShowSettingQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr << "SHOW SETTING " << backQuoteIfNeed(setting_name);
+    ostr << (settings.hilite ? hilite_keyword : "") << "SHOW SETTING " << (settings.hilite ? hilite_none : "")
+                  << backQuoteIfNeed(setting_name);
 }
 
 }
