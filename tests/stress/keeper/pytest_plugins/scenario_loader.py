@@ -198,7 +198,18 @@ def _load_scenarios_from_files(files):
 
 def _parse_include_ids(cfg):
     include_ids_str = _getopt(cfg, "--keeper-include-ids")
-    return {sid for sid in include_ids_str.split(",") if sid} if include_ids_str else set()
+    if include_ids_str:
+        return {sid.strip() for sid in include_ids_str.split(",") if sid.strip()}
+    # When -k is a single scenario id (no spaces, no boolean expr), use exact match
+    try:
+        keyword = (cfg.getoption("keyword", default="") or "").strip()
+    except Exception:
+        keyword = ""
+    if keyword and " " not in keyword:
+        low = keyword.lower()
+        if "and" not in low and "or" not in low and "not" not in low:
+            return {keyword}
+    return set()
 
 
 def _resolve_matrix_backends(cfg):
@@ -226,7 +237,6 @@ def _build_params(scenarios_raw, *, cli_duration, include_ids, mb, mtops):
             print(f"scenario id already seen: {sid_val}")
             continue
         if include_ids and sid_val not in include_ids:
-            print(f"scenario id not in include_ids: {sid_val}")
             continue
         if not _tags_ok(s.get("tags")):
             print(f"scenario tags not ok: {s.get('tags')}")

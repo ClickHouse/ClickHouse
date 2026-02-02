@@ -225,6 +225,14 @@ class KeeperBench:
                 err_msg += f"; stderr: {stderr_text}"
             raise AssertionError(err_msg)
         
+        # If stdout is keeper-bench's exception message (not JSON), fail with a clear error
+        if out_text.strip().startswith("Got exception while trying to run benchmark:"):
+            first_line = out_text.strip().split("\n")[0]
+            raise AssertionError(
+                f"keeper-bench failed on startup (connection/timeout): {first_line}. "
+                "Ensure Keeper cluster is ready and reachable, or increase operation_timeout_ms/connection_timeout_ms."
+            )
+        
         return self._parse_output_json(out_text)
     
     def _run_in_background(self):

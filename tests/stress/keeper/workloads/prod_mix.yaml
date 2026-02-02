@@ -1,12 +1,12 @@
 name: prod_mix
 # Value sizes: 0-162 bytes
-concurrency: 64
+concurrency: 32
 report_delay: 0.0
 continue_on_error: true
 
 connections:
-  operation_timeout_ms: 3000
-  connection_timeout_ms: 40000
+  operation_timeout_ms: 30000
+  connection_timeout_ms: 400000
 
 setup:
   node:

@@ -1,5 +1,6 @@
 #include <Runner.h>
 #include <atomic>
+#include <chrono>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Columns/IColumn.h>
@@ -392,13 +393,10 @@ bool Runner::tryPushRequestInteractively(ZooKeeperRequestWithCallbacks && reques
 
 void Runner::runBenchmark()
 {
-    // When --input-request-log is set, always replay (ignore generator/setup in config).
-    if (!input_request_log.empty())
-        runBenchmarkFromLog();
-    else if (generator)
+    if (generator)
         runBenchmarkWithGenerator();
     else
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Need either --input-request-log or config with generator");
+        runBenchmarkFromLog();
 }
 
 
@@ -987,8 +985,10 @@ void requestFromLogExecutor(
     {
         auto request_promise = std::make_shared<std::promise<void>>();
         last_request = request_promise->get_future();
+        auto start_time = std::chrono::steady_clock::now();
         Coordination::ResponseCallback callback = [&,
                                                   request_promise,
+                                                  start_time,
                                                   request = request_from_log.request,
                                                   expected_result = request_from_log.expected_result,
                                                   subrequest_expected_results = std::move(request_from_log.subrequest_expected_results),
@@ -998,6 +998,17 @@ void requestFromLogExecutor(
             auto & stats = request->isReadRequest() ? request_stats.read_requests : request_stats.write_requests;
 
             stats.total.fetch_add(1, std::memory_order_relaxed);
+
+            if (bench_info)
+            {
+                auto end_time = std::chrono::steady_clock::now();
+                auto microseconds = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count());
+                size_t response_bytes = 0;
+                if (request->isReadRequest())
+                    bench_info->addRead(microseconds, 1, request->bytesSize() + response_bytes);
+                else
+                    bench_info->addWrite(microseconds, 1, request->bytesSize() + response_bytes);
+            }
 
             if (expected_result)
             {
@@ -1098,8 +1109,7 @@ void Runner::runBenchmarkFromLog()
             info->report(concurrency);
             DB::WriteBufferFromOwnString out;
             info->writeJSON(out, concurrency, 0);
-            auto output_string = std::move(out.str());
-            writeOutputString(output_string, 0);
+            writeOutputString(out.str(), 0);
         }
     });
 
