@@ -8,6 +8,8 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include "DataTypes/DataTypeMap.h"
+#include "DataTypes/IDataType.h"
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
@@ -48,6 +50,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int INCOMPATIBLE_COLUMNS;
     extern const int CORRUPTED_DATA;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -1151,11 +1154,12 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         return;
 
     const ColumnWithTypeAndName & index_column = block.getByName(index_column_name);
+    const TypeIndex input_column_type_id = index_column.type->getTypeId();
 
-    if (isArray(index_column.type->getTypeId()))
+    auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
+
+    if (isArray(input_column_type_id))
     {
-        auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
-
         const auto & column_array = assert_cast<const ColumnArray &>(*preprocessed_column);
         const auto & column_data = column_array.getData();
         const auto & column_offsets = column_array.getOffsets();
@@ -1170,9 +1174,8 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
             granule_builder.incrementCurrentRow();
         }
     }
-    else
+    else if (isStringOrFixedString(input_column_type_id) || (index_column.type->lowCardinality()))
     {
-        auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
         for (size_t i = 0; i < rows_read; ++i)
         {
             std::string_view ref = preprocessed_column->getDataAt(offset + i);
@@ -1180,6 +1183,11 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
             granule_builder.incrementCurrentRow();
         }
     }
+    else
+        throw Exception(
+            ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "Column: '{}' has incompatible or unsupported type for preprocessor: {}.",
+            index_column_name, index_column.type->getName());
 
     *pos += rows_read;
 }
@@ -1438,7 +1446,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
         data_type = WhichDataType(low_cardinality.getDictionaryType());
     }
 
-    if (!data_type.isString() && !data_type.isFixedString())
+    if (!data_type.isString() && !data_type.isFixedString() && !data_type.isMap())
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -1456,12 +1464,13 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
         /// validation. That way we skip the ActionsDAG and ExpressionActions constructions.
         ExpressionActions expression = MergeTreeIndexTextPreprocessor::parseExpression(index, preprocessor.value());
 
-        const Names required_columns = expression.getRequiredColumns();
+        const NamesAndTypesList &required_columns = expression.getRequiredColumnsWithTypes();
+        chassert(required_columns.size() == 1);
 
         /// This is expected that never happen because the `validatePreprocessorASTExpression` already checks that we have a single identifier.
         /// But once again, with user inputs: Don't trust, validate!
-        if (required_columns.size() != 1 || required_columns.front() != index.column_names.front())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index preprocessor expression must depend only of column: {}", index.column_names.front());
+        if (required_columns.front().name != index.column_names.front())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index preprocessor expression must depend of column: {}", index.column_names.front());
     }
 }
 
