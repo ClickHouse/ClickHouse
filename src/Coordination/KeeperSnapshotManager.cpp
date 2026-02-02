@@ -495,14 +495,41 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     {
         LOG_TRACE(getLogger("KeeperSnapshotManager"), "Building structure for children nodes");
 
+        /// Collect orphaned nodes (nodes whose parent doesn't exist)
+        std::vector<std::string> orphaned_nodes;
+
         for (const auto & itr : storage.container)
         {
             if (itr.key != "/")
             {
                 auto parent_path = Coordination::parentNodePath(itr.key);
-                storage.container.updateValue(
-                    parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
+                if (storage.container.find(parent_path) != storage.container.end())
+                {
+                    storage.container.updateValue(
+                        parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
+                }
+                else
+                {
+                    LOG_WARNING(
+                        getLogger("KeeperSnapshotManager"),
+                        "Found orphaned node (parent '{}' doesn't exist), will be removed: {}",
+                        parent_path,
+                        itr.key);
+                    orphaned_nodes.push_back(std::string(itr.key));
+                }
             }
+        }
+
+        /// Remove orphaned nodes from storage
+        if (!orphaned_nodes.empty())
+        {
+            LOG_WARNING(
+                getLogger("KeeperSnapshotManager"),
+                "Removing {} orphaned nodes from snapshot",
+                orphaned_nodes.size());
+
+            for (const auto & orphan : orphaned_nodes)
+                storage.container.erase(orphan);
         }
 
         for (const auto & itr : storage.container)
