@@ -391,7 +391,7 @@ namespace detail
                     if (index == BIG_THRESHOLD)
                         break;
                     if (index - SMALL_THRESHOLD >= BIG_SIZE)
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect index {} of QuantileTimingLarge deserialization", index);
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect index {} in 'large' kind of quantileTiming deserialization", index);
 
                     UInt64 elem_count = 0;
                     readBinaryLittleEndian(elem_count, buf);
