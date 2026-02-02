@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
             {"default_dictionary_database", "", "", "New setting"},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
+            {"optimize_if_transform_const_strings_to_lowcardinality", false, false, "New setting to allow optimizing results of const branches from if/multiif/transform into LowCardinality"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
