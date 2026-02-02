@@ -9,7 +9,7 @@
 
 struct Stats
 {
-    size_t errors = 0;
+    std::atomic<size_t> errors{0};
 
     using Sampler = ReservoirSampler<double>;
     struct StatsCollector
@@ -38,5 +38,3 @@ struct Stats
     void report(size_t concurrency);
     void writeJSON(DB::WriteBuffer & out, size_t concurrency, int64_t start_timestamp);
 };
-
-
