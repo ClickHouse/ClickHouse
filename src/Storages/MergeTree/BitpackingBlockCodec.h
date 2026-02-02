@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <cstring>
 #include <span>
 #include <config.h>
 #include <Common/Exception.h>
@@ -47,8 +49,8 @@ struct BitpackingBlockCodecImpl<true>
             return 0;
 
         uint32_t n = static_cast<uint32_t>(data.size());
-        auto bits = maxbits_length(data.data(), n);
-        auto bytes = simdpack_compressedbytes(n, bits);
+        uint32_t bits = maxbits_length(data.data(), n);
+        size_t bytes = simdpack_compressedbytes(n, bits);
         return 1 + bytes;  // 1 byte header + payload
     }
 
@@ -59,7 +61,7 @@ struct BitpackingBlockCodecImpl<true>
 
         /// Calculate max bits
         uint32_t n = static_cast<uint32_t>(in.size());
-        auto max_bits = maxbits_length(in.data(), n);
+        uint32_t max_bits = maxbits_length(in.data(), n);
 
         if (max_bits > 32)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
@@ -74,7 +76,7 @@ struct BitpackingBlockCodecImpl<true>
         /// simdcomp expects __m128i* output pointer; we compute consumed bytes
         /// from the returned end pointer (in units of 16-byte vectors).
         __m128i * m128_out = reinterpret_cast<__m128i *>(payload_out.data());
-        __m128i * m128_out_end = simdpack_length(in.data(), in.size(), m128_out, max_bits);
+        __m128i * m128_out_end = simdpack_length(in.data(), static_cast<uint32_t>(in.size()), m128_out, max_bits);
         size_t payload_bytes = static_cast<size_t>(m128_out_end - m128_out) * sizeof(__m128i);
         size_t total_bytes = 1 + payload_bytes;
 
@@ -92,7 +94,7 @@ struct BitpackingBlockCodecImpl<true>
             throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "Input buffer is empty but need to decode {} integers", n);
 
         /// Read max_bits header (1 byte)
-        uint32_t max_bits = static_cast<uint32_t>(in[0]);
+        uint32_t max_bits = static_cast<uint32_t>(static_cast<uint8_t>(in[0]));
         auto payload_in = in.subspan(1);
 
         if (max_bits > 32)
@@ -110,7 +112,7 @@ struct BitpackingBlockCodecImpl<true>
         /// simdcomp expects __m128i* input pointer; we compute consumed bytes
         /// from the returned end pointer (in units of 16-byte vectors).
         const __m128i * m128i_in = reinterpret_cast<const __m128i *>(payload_in.data());
-        const __m128i * m128i_in_end = simdunpack_length(m128i_in, n, out.data(), max_bits);
+        const __m128i * m128i_in_end = simdunpack_length(m128i_in, static_cast<uint32_t>(n), out.data(), max_bits);
         size_t payload_bytes = static_cast<size_t>(m128i_in_end - m128i_in) * sizeof(__m128i);
         size_t total_bytes = 1 + payload_bytes;
 
@@ -168,7 +170,7 @@ struct BitpackingBlockCodecImpl<false>
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
 
         /// Write max_bits header (1 byte)
-        if (out.size() < 1)
+        if (out.empty())
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Output buffer too small for header");
 
         out[0] = static_cast<char>(max_bits);
@@ -199,7 +201,7 @@ struct BitpackingBlockCodecImpl<false>
             throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "Input buffer is empty but need to decode {} integers", n);
 
         /// Read max_bits header (1 byte)
-        uint32_t max_bits = static_cast<uint32_t>(in[0]);
+        uint32_t max_bits = static_cast<uint32_t>(static_cast<uint8_t>(in[0]));
         auto payload_in = in.subspan(1);
 
         if (max_bits > 32)
@@ -703,12 +705,14 @@ private:
     using packing_func = char * (*)(const uint32_t *, size_t, char *) noexcept;
 
 /// Macro to generate all 33 function pointer entries (0..32) for a template function
+/// NOLINTBEGIN(bugprone-macro-parentheses)
 #define BITPACKING_FUNC_TABLE_33(func) \
     &func<0>,  &func<1>,  &func<2>,  &func<3>,  &func<4>,  &func<5>,  &func<6>,  &func<7>,  \
     &func<8>,  &func<9>,  &func<10>, &func<11>, &func<12>, &func<13>, &func<14>, &func<15>, \
     &func<16>, &func<17>, &func<18>, &func<19>, &func<20>, &func<21>, &func<22>, &func<23>, \
     &func<24>, &func<25>, &func<26>, &func<27>, &func<28>, &func<29>, &func<30>, &func<31>, \
     &func<32>
+/// NOLINTEND(bugprone-macro-parentheses)
 
     static packing_func getPackFixedFunc(uint32_t bits)
     {
