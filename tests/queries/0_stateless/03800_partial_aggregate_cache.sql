@@ -14,8 +14,10 @@ CREATE TABLE test_partial_agg_cache (
     category String,
     value Int64
 ) ENGINE = MergeTree()
-PARTITION BY date
 ORDER BY (date, category);
+
+-- Disable merging so parts are not merged in the background
+SYSTEM STOP MERGES test_partial_agg_cache;
 
 -- Insert data for different dates (creates multiple parts)
 INSERT INTO test_partial_agg_cache SELECT '2024-01-01', 'A', number FROM numbers(10000);
