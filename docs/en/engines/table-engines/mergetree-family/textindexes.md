@@ -187,14 +187,9 @@ Optional parameter `posting_list_block_size` (default: 1048576) specifies the si
 Optional parameter `posting_list_codec` (default: `bitpacking`) specifies the codec for posting list compression:
 - `none` - the posting lists are stored without additional compression.
 - `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size).
-- `fastpfor` - FastPFor (Fast Patched Frame-of-Reference) with SIMD acceleration. High compression ratio with very fast decode speed. Recommended for general-purpose posting lists.
+- `fastpfor` - Fast Patched Frame-of-Reference with SIMD acceleration. High compression ratio with very fast decode speed. Recommended for general-purpose posting lists.
 - `binarypacking` - SIMD Binary Packing. Medium compression but fastest decode speed. Ideal for query latency-critical scenarios.
-- `streamvbyte` - Byte-aligned variable-byte encoding with SIMD. Lower compression but predictable performance with good random access.
 - `optpfor` - Optimized Patched Frame-of-Reference. Highest compression ratio among all codecs. Best for storage-constrained scenarios.
-
-:::note
-The `fastpfor`, `binarypacking`, `streamvbyte`, and `optpfor` codecs require the FastPFor library and are not available in fasttest builds. All these codecs use SIMD acceleration (SSE/AVX on x86_64, SIMDE on ARM64) for optimal performance.
-:::
 
 </details>
 
