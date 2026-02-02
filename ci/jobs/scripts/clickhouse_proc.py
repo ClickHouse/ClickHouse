@@ -284,25 +284,10 @@ profiles:
     <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
 </clickhouse>
 """
-        c2 = """
-<clickhouse>
-    <core_dump>
-        <!-- 100GiB -->
-        <size_limit>107374182400</size_limit>
-    </core_dump>
-    <!-- NOTE: no need to configure core_path,
-    since clickhouse is not started as daemon (via clickhouse start)
-    -->
-    <core_path>$PWD</core_path>
-</clickhouse>
-"""
         file_path = f"{temp_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
         with open(file_path, "w") as file:
             file.write(c1)
 
-        file_path = f"{temp_dir}/config.d/core.xml"
-        with open(file_path, "w") as file:
-            file.write(c2)
         res = True
         for command in commands:
             res = res and Shell.check(command, verbose=True)
