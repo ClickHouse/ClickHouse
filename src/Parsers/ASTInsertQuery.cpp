@@ -1,6 +1,5 @@
 #include <iomanip>
 
-#include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -38,7 +37,7 @@ void ASTInsertQuery::setDatabase(const String & name)
     if (name.empty())
         database.reset();
     else
-        database = make_intrusive<ASTIdentifier>(name);
+        database = std::make_shared<ASTIdentifier>(name);
 }
 
 void ASTInsertQuery::setTable(const String & name)
@@ -46,7 +45,7 @@ void ASTInsertQuery::setTable(const String & name)
     if (name.empty())
         table.reset();
     else
-        table = make_intrusive<ASTIdentifier>(name);
+        table = std::make_shared<ASTIdentifier>(name);
 }
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

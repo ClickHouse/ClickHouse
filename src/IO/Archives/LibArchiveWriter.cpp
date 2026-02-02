@@ -17,7 +17,6 @@ namespace ErrorCodes
 {
 extern const int CANNOT_PACK_ARCHIVE;
 extern const int NOT_IMPLEMENTED;
-extern const int LIMIT_EXCEEDED;
 }
 
 namespace
@@ -49,19 +48,8 @@ public:
 class LibArchiveWriter::WriteBufferFromLibArchive : public WriteBufferFromFileBase
 {
 public:
-    WriteBufferFromLibArchive(
-        std::shared_ptr<LibArchiveWriter> archive_writer_,
-        const String & filename_,
-        const size_t & size_,
-        const size_t buf_size_,
-        bool use_adaptive_buffer_size_,
-        size_t adaptive_buffer_max_size_)
-        : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-        , use_adaptive_buffer_size(use_adaptive_buffer_size_)
-        , adaptive_max_buffer_size(adaptive_buffer_max_size_)
-        , archive_writer(archive_writer_)
-        , filename(filename_)
-        , size(size_)
+    WriteBufferFromLibArchive(std::shared_ptr<LibArchiveWriter> archive_writer_, const String & filename_, const size_t & size_)
+        : WriteBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0), archive_writer(archive_writer_), filename(filename_), size(size_)
     {
         startWritingFile();
         archive = archive_writer_->getArchive();
@@ -83,13 +71,7 @@ public:
 
     void finalizeImpl() override
     {
-        if (use_adaptive_buffer_size)
-        {
-            if (offset())
-                writeDataChunk();
-        }
-        else
-            next();
+        next();
         closeFile(/* throw_if_error=*/true);
         endWritingFile();
     }
@@ -100,42 +82,8 @@ public:
 private:
     void nextImpl() override
     {
-        if (use_adaptive_buffer_size)
-        {
-            if (!available())
-            {
-                if (memory.size() == adaptive_max_buffer_size)
-                    throw Exception(
-                        ErrorCodes::LIMIT_EXCEEDED,
-                        "Adaptive buffer size limit of {} bytes is exceeded for the file '{}'. "
-                        "Consider using ZIP format or increase archive_adaptive_buffer_max_size_bytes",
-                        adaptive_max_buffer_size,
-                        filename);
-
-                /// Prevents overwriting the beginning of the chunk.
-                nextimpl_working_buffer_offset = offset();
-                resize(std::min(memory.size() * 2, adaptive_max_buffer_size));
-            }
+        if (!offset())
             return;
-        }
-
-        if (offset())
-            writeDataChunk();
-    }
-
-    void writeEntry()
-    {
-        expected_size = getSize();
-        entry = archive_entry_new();
-        archive_entry_set_pathname(entry, filename.c_str());
-        archive_entry_set_size(entry, expected_size);
-        archive_entry_set_filetype(entry, static_cast<__LA_MODE_T>(0100000));
-        archive_entry_set_perm(entry, 0644);
-        checkResult(archive_write_header(archive, entry));
-    }
-
-    void writeDataChunk()
-    {
         if (entry == nullptr)
             writeEntry();
         ssize_t to_write = offset();
@@ -149,6 +97,17 @@ private:
                 to_write,
                 quoteString(filename));
         }
+    }
+
+    void writeEntry()
+    {
+        expected_size = getSize();
+        entry = archive_entry_new();
+        archive_entry_set_pathname(entry, filename.c_str());
+        archive_entry_set_size(entry, expected_size);
+        archive_entry_set_filetype(entry, static_cast<__LA_MODE_T>(0100000));
+        archive_entry_set_perm(entry, 0644);
+        checkResult(archive_write_header(archive, entry));
     }
 
     size_t getSize() const
@@ -165,8 +124,7 @@ private:
             archive_entry_free(entry);
             entry = nullptr;
         }
-        /// Bytes counter is incorrect for adaptive buffer because of adjusted nextimpl_working_buffer_offset.
-        if (throw_if_error and (!use_adaptive_buffer_size and bytes != expected_size))
+        if (throw_if_error and bytes != expected_size)
         {
             throw Exception(
                 ErrorCodes::CANNOT_PACK_ARCHIVE,
@@ -191,9 +149,6 @@ private:
 
     void checkResult(int code) { checkResultCodeImpl(code, filename); }
 
-    const bool use_adaptive_buffer_size;
-    const size_t adaptive_max_buffer_size;
-
     std::weak_ptr<LibArchiveWriter> archive_writer;
     const String filename;
     Entry entry;
@@ -202,11 +157,8 @@ private:
     size_t expected_size;
 };
 
-LibArchiveWriter::LibArchiveWriter(
-    const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_, size_t buf_size_, size_t adaptive_buffer_max_size_)
+LibArchiveWriter::LibArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_)
     : path_to_archive(path_to_archive_)
-    , buf_size(buf_size_)
-    , adaptive_buffer_max_size(std::max(adaptive_buffer_max_size_, buf_size_))
 {
     if (archive_write_buffer_)
         stream_info = std::make_unique<StreamInfo>(std::move(archive_write_buffer_));
@@ -237,26 +189,12 @@ LibArchiveWriter::~LibArchiveWriter()
 
 std::unique_ptr<WriteBufferFromFileBase> LibArchiveWriter::writeFile(const String & filename, size_t size)
 {
-    return std::make_unique<WriteBufferFromLibArchive>(
-        std::static_pointer_cast<LibArchiveWriter>(shared_from_this()),
-        filename,
-        size,
-        buf_size,
-        /*use_adaptive_buffer_size*/ false,
-        adaptive_buffer_max_size);
+    return std::make_unique<WriteBufferFromLibArchive>(std::static_pointer_cast<LibArchiveWriter>(shared_from_this()), filename, size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> LibArchiveWriter::writeFile(const String & filename)
 {
-    /// Size is not known in advance. If it exceeds the buffer, archive_entry_set_size() cannot be used
-    /// so an adaptive buffer is used instead of writing in chunks.
-    return std::make_unique<WriteBufferFromLibArchive>(
-        std::static_pointer_cast<LibArchiveWriter>(shared_from_this()),
-        filename,
-        /*size*/ 0,
-        buf_size,
-        /*use_adaptive_buffer_size*/ true,
-        adaptive_buffer_max_size);
+    return std::make_unique<WriteBufferFromLibArchive>(std::static_pointer_cast<LibArchiveWriter>(shared_from_this()), filename, 0);
 }
 
 bool LibArchiveWriter::isWritingFile() const
