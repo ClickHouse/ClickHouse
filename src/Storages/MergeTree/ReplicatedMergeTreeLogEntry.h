@@ -169,7 +169,7 @@ struct ReplicatedMergeTreeLogEntry : public ReplicatedMergeTreeLogEntryData, std
 {
     using Ptr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;
 
-    std::condition_variable execution_complete; /// Awake when currently_executing becomes false.
+    std::condition_variable_any execution_complete; /// Awake when currently_executing becomes false.
 
     static Ptr parse(const String & s, const Coordination::Stat & stat, MergeTreeDataFormatVersion format_version);
 };
