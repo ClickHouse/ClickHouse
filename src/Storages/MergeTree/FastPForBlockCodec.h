@@ -1,28 +1,27 @@
 #pragma once
 
-/// FastPFor block codec wrappers for posting list compression.
-///
-/// This file provides static interface wrappers around FastPFor library codecs,
-/// enabling them to be used as BlockCodec template parameters in PostingListCodecImpl.
-///
-/// All codecs here are SIMD-accelerated (where available) and designed for
-/// compressing sorted integer sequences (posting lists).
-///
-/// Interface semantics match BitpackingBlockCodec:
-///   - encode()/decode() take span references and advance them past consumed/written data
-///   - calculateNeededBytesAndMaxBits() returns {bytes, max_bits} pair
-///   - bitpackingCompressedBytes() calculates compressed size for given count and bits
-
 #include <config.h>
-#include <span>
+#include <cstring>
 #include <cstdint>
+#include <span>
 #include <Common/Exception.h>
 
 #if USE_FASTPFOR
-
+#include <fastpfor.h>
 #include <codecfactory.h>
 #include <compositecodec.h>
 #include <variablebyte.h>
+
+// Forward declarations for SIMD functions from FastPFor library
+// These are needed because of header include ordering issues
+namespace FastPForLib
+{
+extern void SIMD_fastpack_32(const uint32_t *__restrict__ in, __m128i *__restrict__ out, const uint32_t bit);
+extern void SIMD_fastunpack_32(const __m128i *__restrict__ in, uint32_t *__restrict__ out, const uint32_t bit);
+extern void SIMD_fastpackwithoutmask_32(const uint32_t *__restrict__ in, __m128i *__restrict__ out, const uint32_t bit);
+}
+
+#include <simdbitpacking.h>
 #include <simdfastpfor.h>
 #include <simdoptpfor.h>
 #include <simdbinarypacking.h>
@@ -34,7 +33,21 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CORRUPTED_DATA;
 }
+
+/// FastPFor block codec wrappers for posting list compression.
+///
+/// This file provides static interface wrappers around FastPFor library codecs,
+/// enabling them to be used as BlockCodec template parameters in PostingListCodecImpl.
+///
+/// All codecs here are SIMD-accelerated (where available) and designed for
+/// compressing sorted integer sequences (posting lists).
+///
+/// Interface semantics match BitpackingBlockCodec:
+///   - encode()/decode() take span references and advance them past consumed/written data
+///   - calculateNeededBytes() returns estimated bytes needed for compression
+
 
 namespace impl
 {
@@ -46,10 +59,9 @@ namespace impl
 /// FastPFor codecs maintain internal state.
 ///
 /// Interface matches BitpackingBlockCodec:
-///   - encode(span<uint32_t>&, max_bits, span<char>&) -> bytes written, advances both spans
-///   - decode(span<const std::byte>&, count, max_bits, span<uint32_t>&) -> bytes consumed, advances both spans
-///   - calculateNeededBytesAndMaxBits(span<uint32_t>&) -> {bytes, max_bits}
-///   - bitpackingCompressedBytes(count, bits) -> compressed size
+///   - encode(span<uint32_t>&, span<char>&) -> bytes written, advances both spans
+///   - decode(span<const std::byte>&, count, span<uint32_t>&) -> bytes consumed, advances both spans
+///   - calculateNeededBytes(span<uint32_t>&) -> estimated bytes needed
 ///
 /// Note: For FastPFor codecs, max_bits parameter is ignored in encode/decode since
 /// FastPFor internally determines and stores bit widths. We keep the parameter for
@@ -61,108 +73,142 @@ namespace impl
 template <typename CodecType, typename Derived>
 struct FastPForCodecBase
 {
+    /// Block size for compression (128 elements).
+    /// This matches the BlockSize of SIMDFastPFor<4>, SIMDBinaryPacking, and SIMDOPTPFor<4>.
+    /// StreamVByte has no block size requirement but uses 128 for consistency.
+    static constexpr size_t BLOCK_SIZE = 128;
+
     /// Returns the codec name for identification.
     static constexpr const char * name() noexcept { return Derived::NAME; }
 
-    /// Calculates compressed byte size for `count` integers with `bits` bit-width.
-    /// For FastPFor, this returns a worst-case estimate since actual compression
-    /// depends on data distribution.
-    static size_t bitpackingCompressedBytes(size_t count, uint32_t /*bits*/) noexcept
-    {
-        // FastPFor worst case: slightly larger than input + overhead for metadata
-        return count * sizeof(uint32_t) + 1024;
-    }
-
-    /// Calculates needed bytes and max bits for encoding.
-    /// For FastPFor, max_bits is computed but actual compression may vary.
+    /// Calculates needed bytes for encoding.
+    /// For FastPFor, we don't need max_bits since the codec handles its own metadata.
     /// @param data  Input integers (span reference, not modified)
-    /// @return      {estimated_bytes, max_bits} pair
-    static std::pair<size_t, uint32_t> calculateNeededBytesAndMaxBits(std::span<uint32_t> & data) noexcept
+    /// @return      estimated_bytes needed for compression
+    static size_t calculateNeededBytes(const std::span<uint32_t> & data) noexcept
     {
         if (data.empty())
-            return {0, 0};
+            return 0;
 
-        // Calculate max bits by OR-reducing all values
-        uint32_t or_result = 0;
-        for (uint32_t v : data)
-            or_result |= v;
-
-        uint32_t max_bits = (or_result == 0) ? 0 : (32 - static_cast<uint32_t>(__builtin_clz(or_result)));
-
-        // Worst-case estimate for FastPFor
-        size_t needed_bytes = data.size() * sizeof(uint32_t) + 1024;
-
-        return {needed_bytes, max_bits};
+        /// 4 bytes length prefix + worst-case uncompressed size + overhead for codec metadata.
+        /// FastPFor may expand slightly in worst case, but typically compresses well.
+        return sizeof(uint32_t) + data.size() * sizeof(uint32_t) + 256;
     }
 
     /// Encodes integers from `in` to compressed bytes in `out`.
     /// Advances both `in` and `out` spans past the consumed/written data.
     ///
+    /// Format: [4-byte length prefix][compressed data]
+    /// The length prefix stores the size of compressed data in bytes, allowing
+    /// correct decoding when multiple blocks are stored sequentially.
+    ///
     /// @param in       Input integers (span reference, advanced to end after encoding)
     /// @param out      Output buffer (span reference, advanced past written bytes)
     /// @return         Number of bytes written to `out`
-    /// @note           The second parameter (max_bits) is ignored for FastPFor but kept for interface compatibility.
-    static size_t encode(std::span<uint32_t> & in, int32_t /*max_bits*/, std::span<char> & out)
+    static size_t encode(std::span<uint32_t> & in, std::span<char> & out)
     {
         if (in.empty())
             return 0;
 
         thread_local CodecType codec;
 
-        size_t out_capacity = out.size() / sizeof(uint32_t);
+        /// Reserve space for length prefix
+        constexpr size_t prefix_size = sizeof(uint32_t);
+        if (out.size() < prefix_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "{} encode: output buffer too small for length prefix", Derived::NAME);
+
+        /// Encode data after the length prefix
+        char * data_start = out.data() + prefix_size;
+        size_t out_capacity = (out.size() - prefix_size) / sizeof(uint32_t);
         size_t out_count = out_capacity;
 
         codec.encodeArray(
             in.data(), in.size(),
-            reinterpret_cast<uint32_t*>(out.data()), out_count);
+            reinterpret_cast<uint32_t*>(data_start), out_count);
 
-        size_t written_bytes = out_count * sizeof(uint32_t);
+        size_t compressed_bytes = out_count * sizeof(uint32_t);
 
-        // Advance spans
-        in = in.subspan(in.size());  // All input consumed
-        out = out.subspan(written_bytes);
+        /// Write length prefix (little-endian)
+        uint32_t length_prefix = static_cast<uint32_t>(compressed_bytes);
+        std::memcpy(out.data(), &length_prefix, sizeof(length_prefix));
 
-        return written_bytes;
+        size_t total_written = prefix_size + compressed_bytes;
+
+        /// Advance spans
+        in = in.subspan(in.size());
+        out = out.subspan(total_written);
+
+        return total_written;
     }
 
     /// Decodes compressed bytes from `in` to integers in `out`.
     /// Advances both `in` and `out` spans past the consumed/written data.
     ///
+    /// Format: [4-byte length prefix][compressed data]
+    /// The length prefix tells us exactly how many bytes belong to this block.
+    ///
     /// @param in       Compressed input (span reference, advanced past consumed bytes)
     /// @param count    Number of integers to decode
     /// @param out      Output buffer (span reference, advanced past decoded integers)
     /// @return         Number of bytes consumed from `in`
-    /// @note           The third parameter (max_bits) is ignored for FastPFor but kept for interface compatibility.
-    static size_t decode(std::span<const std::byte> & in, size_t count, uint32_t /*max_bits*/, std::span<uint32_t> & out)
+    static size_t decode(std::span<const std::byte> & in, size_t count, std::span<uint32_t> & out)
     {
-        if (count == 0 || in.empty())
+        if (count == 0)
             return 0;
+
+        if (in.empty())
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "{} decode: input buffer is empty but need to decode {} integers", Derived::NAME, count);
 
         if (out.size() < count)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "FastPFor decode: output buffer too small, need {} but got {}", count, out.size());
+                "{} decode: output buffer too small, need {} but got {}", Derived::NAME, count, out.size());
+
+        /// Read length prefix
+        constexpr size_t prefix_size = sizeof(uint32_t);
+        if (in.size() < prefix_size)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "{} decode: input buffer too small for length prefix", Derived::NAME);
+
+        uint32_t compressed_bytes;
+        std::memcpy(&compressed_bytes, in.data(), sizeof(compressed_bytes));
+
+        size_t total_block_size = prefix_size + compressed_bytes;
+        if (in.size() < total_block_size)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "{} decode: input buffer too small, need {} but got {}",
+                Derived::NAME, total_block_size, in.size());
 
         thread_local CodecType codec;
 
-        size_t in_count = in.size() / sizeof(uint32_t);
+        /// Only pass the exact compressed data size to the codec
+        const std::byte * data_start = in.data() + prefix_size;
+        size_t in_count = compressed_bytes / sizeof(uint32_t);
         size_t out_count = count;
 
-        const uint32_t * consumed_end = codec.decodeArray(
-            reinterpret_cast<const uint32_t*>(in.data()), in_count,
-            out.data(), out_count);
+        try
+        {
+            codec.decodeArray(
+                reinterpret_cast<const uint32_t*>(data_start), in_count,
+                out.data(), out_count);
 
-        size_t consumed_bytes = reinterpret_cast<const char*>(consumed_end)
-                              - reinterpret_cast<const char*>(in.data());
+            /// Advance spans
+            in = in.subspan(total_block_size);
+            out = out.subspan(out_count);
 
-        // Advance spans
-        in = in.subspan(consumed_bytes);
-        out = out.subspan(count);
-
-        return consumed_bytes;
+            return total_block_size;
+        }
+        catch (...)
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "{} decode failed: compressed_bytes={}, in_count={}, count={}",
+                Derived::NAME, compressed_bytes, in_count, count);
+        }
     }
 };
 
-} // namespace impl
+}
 
 /// SIMD-FastPFor: Patched Frame-of-Reference with SIMD acceleration.
 /// High compression ratio, very fast decode. Best for large posting lists with outliers.
@@ -182,15 +228,6 @@ struct SIMDBinaryPackingBlockCodec : impl::FastPForCodecBase<
     SIMDBinaryPackingBlockCodec>
 {
     static constexpr const char * NAME = "binarypacking";
-};
-
-/// StreamVByte: Byte-aligned variable-byte encoding with SIMD.
-/// Lower compression but very fast streaming decode with good random access.
-struct StreamVByteBlockCodec : impl::FastPForCodecBase<
-    FastPForLib::StreamVByte,
-    StreamVByteBlockCodec>
-{
-    static constexpr const char * NAME = "streamvbyte";
 };
 
 /// SIMD-OptPFor: Optimized Patched Frame-of-Reference with SIMD.

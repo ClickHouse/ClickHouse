@@ -16,9 +16,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CORRUPTED_DATA;
 }
-
-static constexpr size_t BLOCK_SIZE = 128;
 
 namespace impl
 {
@@ -34,50 +33,90 @@ template<>
 struct BitpackingBlockCodecImpl<true>
 {
     static constexpr const char * NAME = "bitpacking";
+    /// Block size for bitpacking compression. SIMDComp works best with 128-element blocks.
+    static constexpr size_t BLOCK_SIZE = 128;
 
     /// Returns the codec name for identification.
     static constexpr const char * name() noexcept { return NAME; }
 
-    static size_t bitpackingCompressedBytes(size_t count, uint32_t bits) noexcept
+    /// Returns the estimated compressed bytes needed for encoding the data.
+    /// The actual max_bits calculation and serialization is handled by encode().
+    static size_t calculateNeededBytes(const std::span<uint32_t> & data) noexcept
     {
-        /// Type cast is required by simdcomp function signature (expects int).
-        /// This conversion is safe because count never exceeds 128 (BLOCK_SIZE) in current usage.
-        return static_cast<size_t>(simdpack_compressedbytes(static_cast<int>(count), bits));
-    }
-    /// Returns {compressed_bytes, bits} where bits is the max bit-width required
-    /// to represent all values in [0..n).
-    static std::pair<size_t, uint32_t> calculateNeededBytesAndMaxBits(std::span<uint32_t> & data) noexcept
-    {
+        if (data.empty())
+            return 0;
+
         uint32_t n = static_cast<uint32_t>(data.size());
         auto bits = maxbits_length(data.data(), n);
         auto bytes = simdpack_compressedbytes(n, bits);
-        return {bytes, bits};
+        return 1 + bytes;  // 1 byte header + payload
     }
 
-    static size_t encode(std::span<uint32_t> & in, int32_t max_bits, std::span<char> & out)
+    static size_t encode(std::span<uint32_t> & in, std::span<char> & out)
     {
+        if (in.empty())
+            return 0;
+
+        /// Calculate max bits
+        uint32_t n = static_cast<uint32_t>(in.size());
+        auto max_bits = maxbits_length(in.data(), n);
+
         if (max_bits > 32)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
+
+        /// Write max_bits header (1 byte)
+        if (out.size() < 1)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Output buffer too small for header");
+
+        out[0] = static_cast<char>(max_bits);
+        auto payload_out = out.subspan(1);
+
         /// simdcomp expects __m128i* output pointer; we compute consumed bytes
         /// from the returned end pointer (in units of 16-byte vectors).
-        __m128i * m128_out = reinterpret_cast<__m128i *>(out.data());
+        __m128i * m128_out = reinterpret_cast<__m128i *>(payload_out.data());
         __m128i * m128_out_end = simdpack_length(in.data(), in.size(), m128_out, max_bits);
-        size_t written_bytes = static_cast<size_t>(m128_out_end - m128_out) * sizeof(__m128i);
-        out = out.subspan(written_bytes);
-        return written_bytes;
+        size_t payload_bytes = static_cast<size_t>(m128_out_end - m128_out) * sizeof(__m128i);
+        size_t total_bytes = 1 + payload_bytes;
+
+        in = in.subspan(in.size());
+        out = out.subspan(total_bytes);
+        return total_bytes;
     }
 
-    static size_t decode(std::span<const std::byte> & in, size_t n, uint32_t max_bits, std::span<uint32_t> & out)
+    static size_t decode(std::span<const std::byte> & in, size_t n, std::span<uint32_t> & out)
     {
+        if (n == 0)
+            return 0;
+
+        if (in.empty())
+            throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "Input buffer is empty but need to decode {} integers", n);
+
+        /// Read max_bits header (1 byte)
+        uint32_t max_bits = static_cast<uint32_t>(in[0]);
+        auto payload_in = in.subspan(1);
+
         if (max_bits > 32)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
+            throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "Invalid bit width {}, must be in [0, 32]", max_bits);
+
+        /// Special case: if max_bits == 0, all values are 0
+        if (max_bits == 0)
+        {
+            std::memset(out.data(), 0, n * sizeof(uint32_t));
+            in = in.subspan(1);
+            out = out.subspan(n);
+            return 1;
+        }
+
         /// simdcomp expects __m128i* input pointer; we compute consumed bytes
         /// from the returned end pointer (in units of 16-byte vectors).
-        const __m128i * m128i_in = reinterpret_cast<const __m128i *>(in.data());
+        const __m128i * m128i_in = reinterpret_cast<const __m128i *>(payload_in.data());
         const __m128i * m128i_in_end = simdunpack_length(m128i_in, n, out.data(), max_bits);
-        size_t read_bytes = static_cast<size_t>(m128i_in_end - m128i_in) * sizeof(__m128);
-        in = in.subspan(read_bytes);
-        return read_bytes;
+        size_t payload_bytes = static_cast<size_t>(m128i_in_end - m128i_in) * sizeof(__m128i);
+        size_t total_bytes = 1 + payload_bytes;
+
+        in = in.subspan(total_bytes);
+        out = out.subspan(n);
+        return total_bytes;
     }
 };
 #else
@@ -92,12 +131,103 @@ template<>
 struct BitpackingBlockCodecImpl<false>
 {
     static constexpr const char * NAME = "bitpacking";
+    /// Block size for bitpacking compression. Must match the SIMD version (128 elements).
+    static constexpr size_t BLOCK_SIZE = 128;
 
     /// Returns the codec name for identification.
     static constexpr const char * name() noexcept { return NAME; }
+
+    /// Returns the estimated compressed bytes needed for encoding the data.
+    /// The actual max_bits calculation and serialization is handled by encode().
+    static size_t calculateNeededBytes(const std::span<uint32_t> & data) noexcept
+    {
+        if (data.empty())
+            return 0;
+
+        size_t n = data.size();
+        uint32_t bits = maxbitsLength(data);
+        chassert(bits <= 32);
+        size_t bytes = bitpackingCompressedBytes(n, bits);
+        return 1 + bytes;  // 1 byte header + payload
+    }
+
+    /// Encodes (packs) a sequence of 32-bit integers into the SIMDComp-compatible bitpacked byte stream.
+    /// - `in`: input values to compress.
+    /// - `out`: destination buffer; the function writes the packed stream into it
+    ///          and advances `out` to point past the written bytes.
+    /// Returns: number of bytes written into `out` (including 1-byte header + packed payload).
+    static size_t encode(std::span<uint32_t> & in, std::span<char> & out)
+    {
+        if (in.empty())
+            return 0;
+
+        /// Calculate max bits
+        uint32_t max_bits = maxbitsLength(in);
+
+        if (max_bits > 32)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
+
+        /// Write max_bits header (1 byte)
+        if (out.size() < 1)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Output buffer too small for header");
+
+        out[0] = static_cast<char>(max_bits);
+        auto payload_out = out.subspan(1);
+
+        char * data_out = payload_out.data();
+        char * data_out_end = packingLength(in.data(), in.size(), data_out, max_bits);
+        size_t payload_bytes = static_cast<size_t>(data_out_end - data_out);
+        size_t total_bytes = 1 + payload_bytes;
+
+        in = in.subspan(in.size());
+        out = out.subspan(total_bytes);
+        return total_bytes;
+    }
+
+    /// Decodes (unpacks) a SIMDComp-compatible bitpacked byte stream back into 32-bit integers.
+    /// - `in`: source byte stream; the function consumes exactly the bytes needed
+    ///         to decode `n` integers and advances `in` past the consumed bytes.
+    /// - `n`: number of integers to decode.
+    /// - `out`: destination span for decoded integers; must have at least `n` slots.
+    /// Returns: number of bytes consumed from `in` (including 1-byte header + packed payload).
+    static size_t decode(std::span<const std::byte> & in, size_t n, std::span<uint32_t> & out)
+    {
+        if (n == 0)
+            return 0;
+
+        if (in.empty())
+            throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "Input buffer is empty but need to decode {} integers", n);
+
+        /// Read max_bits header (1 byte)
+        uint32_t max_bits = static_cast<uint32_t>(in[0]);
+        auto payload_in = in.subspan(1);
+
+        if (max_bits > 32)
+            throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "Invalid bit width {}, must be in [0, 32]", max_bits);
+
+        /// Special case: if max_bits == 0, all values are 0
+        if (max_bits == 0)
+        {
+            std::memset(out.data(), 0, n * sizeof(uint32_t));
+            in = in.subspan(1);
+            out = out.subspan(n);
+            return 1;
+        }
+
+        const char * data_in = reinterpret_cast<const char *>(payload_in.data());
+        const char * data_in_end = unpackingLength(data_in, n, out.data(), max_bits);
+        size_t payload_bytes = static_cast<size_t>(data_in_end - data_in);
+        size_t total_bytes = 1 + payload_bytes;
+
+        in = in.subspan(total_bytes);
+        out = out.subspan(n);
+        return total_bytes;
+    }
+
+private:
     /// Non-SSE version: equivalent to SIMDComp maxbits_length.
     /// It OR-reduces all values to compute required bit width.
-    [[maybe_unused]] static uint32_t maxbitsLength(const std::span<uint32_t> & in) noexcept
+    static uint32_t maxbitsLength(const std::span<uint32_t> & in) noexcept
     {
         size_t n = in.size();
         uint32_t xored_in = 0;
@@ -123,67 +253,20 @@ struct BitpackingBlockCodecImpl<false>
             return 32u - static_cast<uint32_t>(__builtin_clz(xored_in));
     }
 
-    [[maybe_unused]] static size_t bitpackingCompressedBytes(size_t count, uint32_t bits) noexcept
+    static size_t bitpackingCompressedBytes(size_t count, uint32_t bits) noexcept
     {
         if (bits == 0)
-            return 0;
+            return 0; // no payload for bits==0
         if (bits == 32)
-            return count * sizeof(uint32_t);
+            return count * sizeof(uint32_t); // raw data (payload only)
 
         size_t groups = (count + 3) / 4;
         size_t words32 = (groups * static_cast<size_t>(bits) + 31) / 32;
 
-        return words32 * 16;
+        return words32 * 16; // payload only, no header
     }
 
-    /// Returns {compressed_bytes, bits} where bits is the max bit-width required
-    /// to represent all values in [0..n).
-    [[maybe_unused]] static std::pair<size_t, uint32_t> calculateNeededBytesAndMaxBits(const std::span<uint32_t> & data) noexcept
-    {
-        size_t n = data.size();
-        uint32_t bits = maxbitsLength(data);
-        chassert(bits >= 0 && bits <= 32);
-        size_t bytes = bitpackingCompressedBytes(n, bits);
-        return {bytes, bits};
-    }
-
-    /// Encodes (packs) a sequence of 32-bit integers into the SIMDComp-compatible bitpacked byte stream.
-    /// - `in`: input values to compress.
-    /// - `max_bits`: bit-width used for each value (0..32). Must match the decoder.
-    /// - `out`: destination buffer; the function writes the packed stream into it
-    ///          and advances `out` to point past the written bytes.
-    /// Returns: number of bytes written into `out` (the packed payload size).
-    [[maybe_unused]] static size_t encode(std::span<uint32_t> & in, uint32_t max_bits, std::span<char> & out)
-    {
-        if (max_bits > 32)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
-        char * data_out = out.data();
-        char * data_out_end = packingLength(in.data(), in.size(), data_out, max_bits);
-        size_t written_bytes = static_cast<size_t>(data_out_end - data_out);
-        out = out.subspan(written_bytes);
-        return written_bytes;
-    }
-
-    /// Decodes (unpacks) a SIMDComp-compatible bitpacked byte stream back into 32-bit integers.
-    /// - `in`: source byte stream; the function consumes exactly the bytes needed
-    ///         to decode `n` integers and advances `in` past the consumed bytes.
-    /// - `n`: number of integers to decode.
-    /// - `max_bits`: bit-width that was used during encoding (0..32). Must match
-    ///               the encoder's `max_bits`.
-    /// - `out`: destination span for decoded integers; must have at least `n` slots.
-    /// Returns: number of bytes consumed from `in` (the packed payload size).
-    [[maybe_unused]] static size_t decode(std::span<const std::byte> & in, size_t n, uint32_t max_bits, std::span<uint32_t> & out)
-    {
-        if (max_bits > 32)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
-        const char * data_in = reinterpret_cast<const char *>(in.data());
-        const char * data_in_end = unpackingLength(data_in, n, out.data(), max_bits);
-        size_t read_bytes = static_cast<size_t>(data_in_end - data_in);
-        in = in.subspan(read_bytes);
-        return read_bytes;
-    }
-
-    [[maybe_unused]] static uint32_t maskForBits(size_t bits) noexcept
+    static uint32_t maskForBits(size_t bits) noexcept
     {
         return (bits == 32) ? 0xFFFFFFFFu :
             (bits == 0)  ? 0u :
@@ -212,7 +295,7 @@ struct BitpackingBlockCodecImpl<false>
     /// Returns:
     /// - Pointer to the first byte *after* the written output.
     template<uint32_t Bits>
-    [[maybe_unused]] static char * packFixed(const uint32_t * in, size_t groups, char * out) noexcept
+    static char * packFixed(const uint32_t * in, size_t groups, char * out) noexcept
     {
         static_assert(Bits <= 32, "Bits must be 0..32");
 
@@ -311,7 +394,7 @@ struct BitpackingBlockCodecImpl<false>
     /// Returns:
     /// - Pointer to the first byte *after* the consumed input.
     template<uint32_t Bits>
-    [[maybe_unused]] static const char * unpackFixed(const char * in, size_t groups, uint32_t * out) noexcept
+    static const char * unpackFixed(const char * in, size_t groups, uint32_t * out) noexcept
     {
         static_assert(Bits <= 32, "Bits must be 0..32");
         if (groups == 0) return in;
@@ -403,7 +486,7 @@ struct BitpackingBlockCodecImpl<false>
     /// Returns:
     /// - Pointer to the first byte after the written output.
     template<uint32_t Bits>
-    [[maybe_unused]] static char * packTail(const uint32_t * in, size_t tail, char * out) noexcept
+    static char * packTail(const uint32_t * in, size_t tail, char * out) noexcept
     {
         static_assert(Bits <= 32, "Bits must be 0..32");
         if (tail == 0) return out;
@@ -472,7 +555,7 @@ struct BitpackingBlockCodecImpl<false>
         if (rem != 0)
         {
             const size_t base = full_groups * 4;
-            const uint32_t v0 = (rem > 0 ? in[base + 0] : 0u) & mask;
+            const uint32_t v0 = in[base + 0] & mask;
             const uint32_t v1 = (rem > 1 ? in[base + 1] : 0u) & mask;
             const uint32_t v2 = (rem > 2 ? in[base + 2] : 0u) & mask;
             const uint32_t v3 = 0u;
@@ -528,7 +611,7 @@ struct BitpackingBlockCodecImpl<false>
     /// Returns:
     /// - Pointer to the first byte after the consumed input.
     template<uint32_t Bits>
-    [[maybe_unused]] static const char * unpackTail(const char * in, size_t tail, uint32_t * out) noexcept
+    static const char * unpackTail(const char * in, size_t tail, uint32_t * out) noexcept
     {
         static_assert(Bits <= 32, "Bits must be 0..32");
         if (tail == 0) return in;
@@ -607,7 +690,7 @@ struct BitpackingBlockCodecImpl<false>
             else if (rem != 0)
             {
                 const size_t base = 4 * g;
-                if (rem > 0) out[base + 0] = v0;
+                out[base + 0] = v0;
                 if (rem > 1) out[base + 1] = v1;
                 if (rem > 2) out[base + 2] = v2;
                 /// lane3 is omitted when rem < 4
@@ -619,174 +702,45 @@ struct BitpackingBlockCodecImpl<false>
 
     using packing_func = char * (*)(const uint32_t *, size_t, char *) noexcept;
 
-    [[maybe_unused]] static packing_func getPackFixedFunc(uint32_t bits)
+/// Macro to generate all 33 function pointer entries (0..32) for a template function
+#define BITPACKING_FUNC_TABLE_33(func) \
+    &func<0>,  &func<1>,  &func<2>,  &func<3>,  &func<4>,  &func<5>,  &func<6>,  &func<7>,  \
+    &func<8>,  &func<9>,  &func<10>, &func<11>, &func<12>, &func<13>, &func<14>, &func<15>, \
+    &func<16>, &func<17>, &func<18>, &func<19>, &func<20>, &func<21>, &func<22>, &func<23>, \
+    &func<24>, &func<25>, &func<26>, &func<27>, &func<28>, &func<29>, &func<30>, &func<31>, \
+    &func<32>
+
+    static packing_func getPackFixedFunc(uint32_t bits)
     {
         chassert(bits <= 32);
-
-        static const packing_func table[33] = {
-            &packFixed<0>,
-            &packFixed<1>,
-            &packFixed<2>,
-            &packFixed<3>,
-            &packFixed<4>,
-            &packFixed<5>,
-            &packFixed<6>,
-            &packFixed<7>,
-            &packFixed<8>,
-            &packFixed<9>,
-            &packFixed<10>,
-            &packFixed<11>,
-            &packFixed<12>,
-            &packFixed<13>,
-            &packFixed<14>,
-            &packFixed<15>,
-            &packFixed<16>,
-            &packFixed<17>,
-            &packFixed<18>,
-            &packFixed<19>,
-            &packFixed<20>,
-            &packFixed<21>,
-            &packFixed<22>,
-            &packFixed<23>,
-            &packFixed<24>,
-            &packFixed<25>,
-            &packFixed<26>,
-            &packFixed<27>,
-            &packFixed<28>,
-            &packFixed<29>,
-            &packFixed<30>,
-            &packFixed<31>,
-            &packFixed<32>,
-        };
+        static const packing_func table[33] = { BITPACKING_FUNC_TABLE_33(packFixed) };
         return table[bits];
     }
 
-    [[maybe_unused]] static packing_func getPackTailFunc(uint32_t bits)
+    static packing_func getPackTailFunc(uint32_t bits)
     {
         chassert(bits <= 32);
-
-        static const packing_func table[33] = {
-            &packTail<0>,
-            &packTail<1>,
-            &packTail<2>,
-            &packTail<3>,
-            &packTail<4>,
-            &packTail<5>,
-            &packTail<6>,
-            &packTail<7>,
-            &packTail<8>,
-            &packTail<9>,
-            &packTail<10>,
-            &packTail<11>,
-            &packTail<12>,
-            &packTail<13>,
-            &packTail<14>,
-            &packTail<15>,
-            &packTail<16>,
-            &packTail<17>,
-            &packTail<18>,
-            &packTail<19>,
-            &packTail<20>,
-            &packTail<21>,
-            &packTail<22>,
-            &packTail<23>,
-            &packTail<24>,
-            &packTail<25>,
-            &packTail<26>,
-            &packTail<27>,
-            &packTail<28>,
-            &packTail<29>,
-            &packTail<30>,
-            &packTail<31>,
-            &packTail<32>,
-        };
+        static const packing_func table[33] = { BITPACKING_FUNC_TABLE_33(packTail) };
         return table[bits];
     }
 
     using unpack_func = const char * (*)(const char *, size_t, uint32_t *) noexcept;
-    [[maybe_unused]] static unpack_func getUnpackFixedFunc(uint32_t bit)
+
+    static unpack_func getUnpackFixedFunc(uint32_t bit)
     {
         chassert(bit <= 32);
-
-        static const unpack_func table[33] = {
-            &unpackFixed<0>,
-            &unpackFixed<1>,
-            &unpackFixed<2>,
-            &unpackFixed<3>,
-            &unpackFixed<4>,
-            &unpackFixed<5>,
-            &unpackFixed<6>,
-            &unpackFixed<7>,
-            &unpackFixed<8>,
-            &unpackFixed<9>,
-            &unpackFixed<10>,
-            &unpackFixed<11>,
-            &unpackFixed<12>,
-            &unpackFixed<13>,
-            &unpackFixed<14>,
-            &unpackFixed<15>,
-            &unpackFixed<16>,
-            &unpackFixed<17>,
-            &unpackFixed<18>,
-            &unpackFixed<19>,
-            &unpackFixed<20>,
-            &unpackFixed<21>,
-            &unpackFixed<22>,
-            &unpackFixed<23>,
-            &unpackFixed<24>,
-            &unpackFixed<25>,
-            &unpackFixed<26>,
-            &unpackFixed<27>,
-            &unpackFixed<28>,
-            &unpackFixed<29>,
-            &unpackFixed<30>,
-            &unpackFixed<31>,
-            &unpackFixed<32>,
-        };
+        static const unpack_func table[33] = { BITPACKING_FUNC_TABLE_33(unpackFixed) };
         return table[bit];
     }
 
-    [[maybe_unused]] static unpack_func getUnpackTailFunc(uint32_t bit)
+    static unpack_func getUnpackTailFunc(uint32_t bit)
     {
         chassert(bit <= 32);
-
-        static const unpack_func table[33] = {
-            &unpackTail<0>,
-            &unpackTail<1>,
-            &unpackTail<2>,
-            &unpackTail<3>,
-            &unpackTail<4>,
-            &unpackTail<5>,
-            &unpackTail<6>,
-            &unpackTail<7>,
-            &unpackTail<8>,
-            &unpackTail<9>,
-            &unpackTail<10>,
-            &unpackTail<11>,
-            &unpackTail<12>,
-            &unpackTail<13>,
-            &unpackTail<14>,
-            &unpackTail<15>,
-            &unpackTail<16>,
-            &unpackTail<17>,
-            &unpackTail<18>,
-            &unpackTail<19>,
-            &unpackTail<20>,
-            &unpackTail<21>,
-            &unpackTail<22>,
-            &unpackTail<23>,
-            &unpackTail<24>,
-            &unpackTail<25>,
-            &unpackTail<26>,
-            &unpackTail<27>,
-            &unpackTail<28>,
-            &unpackTail<29>,
-            &unpackTail<30>,
-            &unpackTail<31>,
-            &unpackTail<32>,
-        };
+        static const unpack_func table[33] = { BITPACKING_FUNC_TABLE_33(unpackTail) };
         return table[bit];
     }
+
+#undef BITPACKING_FUNC_TABLE_33
 
     /// Pack (encode) `length` 32-bit integers into the SIMDComp-compatible bitpacked stream.
     /// The input is processed in two parts:
@@ -807,7 +761,7 @@ struct BitpackingBlockCodecImpl<false>
     ///
     /// Returns:
     /// - Pointer to the first output position after the written compressed data.
-    [[maybe_unused]] static char * packingLength(const uint32_t * in, size_t length, char * out, uint32_t bit) noexcept
+    static char * packingLength(const uint32_t * in, size_t length, char * out, uint32_t bit) noexcept
     {
         /// Select the fixed-block packer for this bit width.
         auto func = getPackFixedFunc(bit);
@@ -836,8 +790,8 @@ struct BitpackingBlockCodecImpl<false>
     /// 1) Full blocks of BLOCK_SIZE integers (typically 128). Each full block corresponds
     ///    to exactly 32 groups of 4 integers (4 lanes). We therefore call the fixed-block
     ///    unpacker with groups=32. The fixed-block unpacker advances the input pointer by
-    ///    the exact number of chars consumed for this bit width (BIT for 1..31,
-    ///    32 for BIT==32, and 0 for BIT==0).
+    ///    the exact number of bytes consumed for this bit width (BIT × 16 bytes for 1..31,
+    ///    128 × 4 bytes for BIT==32, and 0 for BIT==0).
     /// 2) A remaining tail (length % BLOCK_SIZE). The tail unpacker handles short-length
     ///    behavior and must preserve SIMDComp semantics, including:
     ///    - padding-aware decoding for BIT<32 (the encoder may have zero-padded the last group),
@@ -852,7 +806,7 @@ struct BitpackingBlockCodecImpl<false>
     ///
     /// Returns:
     /// - Pointer to the first input position after the consumed compressed data.
-    [[maybe_unused]] static const char * unpackingLength(const char * in, size_t length, uint32_t * out, uint32_t bit) noexcept
+    static const char * unpackingLength(const char * in, size_t length, uint32_t * out, uint32_t bit) noexcept
     {
         /// Select the fixed-block decoder for this bit width.
         auto func = getUnpackFixedFunc(bit);

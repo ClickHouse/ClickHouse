@@ -35,7 +35,10 @@ set (SRCS
 add_library (_fastpfor ${SRCS})
 target_include_directories (_fastpfor SYSTEM PUBLIC "${LIBRARY_DIR}/headers")
 
-if (ARCH_AARCH64 AND TARGET ch_contrib::simde)
+if (ARCH_AMD64)
+    # Enable SSE4.1 for SIMD bitpacking operations
+    target_compile_options (_fastpfor PRIVATE -msse4.1)
+elseif (ARCH_AARCH64 AND TARGET ch_contrib::simde)
     target_link_libraries (_fastpfor PUBLIC ch_contrib::simde)
     # Enable native SSE type aliases (__m128i, etc.) in SIMDE
     target_compile_definitions (_fastpfor PUBLIC SIMDE_ENABLE_NATIVE_ALIASES SIMDE_X86_SSE_ENABLE_NATIVE_ALIASES SIMDE_X86_SSE2_ENABLE_NATIVE_ALIASES SIMDE_X86_SSE3_ENABLE_NATIVE_ALIASES SIMDE_X86_SSSE3_ENABLE_NATIVE_ALIASES SIMDE_X86_SSE4_1_ENABLE_NATIVE_ALIASES)

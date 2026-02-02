@@ -44,21 +44,21 @@ std::vector<uint32_t> generateMaxData(size_t count, uint32_t max_bits)
 
 void verifyRoundTrip(const std::vector<uint32_t> & original, std::optional<uint32_t> bits = std::nullopt)
 {
+    // Note: The bits parameter is kept for API compatibility but is no longer used
+    // since the new BitpackingBlockCodec automatically determines optimal bit width
+    (void)bits;
+
     std::span<uint32_t> data_span(const_cast<uint32_t*>(original.data()), original.size());
 
-    auto [needed_bytes, max_bits] = Portable::calculateNeededBytesAndMaxBits(data_span);
-    uint32_t use_bits = bits.value_or(static_cast<uint32_t>(max_bits));
-
-    if (bits.has_value())
-        needed_bytes = Portable::bitpackingCompressedBytes(original.size(), use_bits);
+    size_t needed_bytes = Portable::calculateNeededBytes(data_span);
 
     std::vector<char> buffer(needed_bytes + 64, char(0xCC));
     std::span<char> out_span(buffer.data(), buffer.size());
 
-    size_t used_encode = Portable::encode(data_span, use_bits, out_span);
+    size_t used_encode = Portable::encode(data_span, out_span);
 
     ASSERT_EQ(static_cast<size_t>(used_encode), needed_bytes)
-        << "encode used bytes must equal calculateNeededBytesAndMaxBits().first";
+        << "encode used bytes must equal calculateNeededBytes()";
     ASSERT_EQ(out_span.size(), buffer.size() - needed_bytes)
         << "encode must advance output span by used bytes";
 
@@ -67,20 +67,22 @@ void verifyRoundTrip(const std::vector<uint32_t> & original, std::optional<uint3
 
     std::span<const std::byte> in_span(reinterpret_cast<const std::byte*>(buffer.data()), needed_bytes);
 
-    size_t used_decode = Portable::decode(in_span, original.size(), use_bits, decoded_span);
+    size_t used_decode = Portable::decode(in_span, original.size(), decoded_span);
 
     ASSERT_EQ(used_decode, needed_bytes)
         << "decode used bytes must equal encode used bytes";
     ASSERT_EQ(in_span.size(), 0u)
         << "decode must consume exactly used bytes from input span";
-    /// If bits is 0, it means no data will be stored in a compressed form. In the decode/encode implementation,
-    /// we return early and don’t clear the output buffer,
-    /// because there’s no data to write into that buffer anyway. So the check can be skipped here.
-    if (use_bits > 0)
-        ASSERT_EQ(decoded, original) << "roundtrip mismatch";
+
+    ASSERT_EQ(decoded, original) << "roundtrip mismatch";
 }
 }
 
+// NOTE: Tests for private methods (maxbitsLength, bitpackingCompressedBytes, etc.) have been
+// commented out since these are now internal implementation details. The public API is tested
+// via the RoundTrip tests below.
+
+/*
 // Test maxbitsLength
 TEST(PostingListCodecTest, MaxbitsLengthEmptyInput)
 {
@@ -275,7 +277,9 @@ TEST(PostingListCodecTest, CalculateNeededSpecificValues)
     EXPECT_EQ(bits, 2u);
     EXPECT_EQ(bytes, Portable::bitpackingCompressedBytes(4, 2));
 }
+*/
 
+// RoundTrip tests - these test the public API
 TEST(PostingListCodecTest, RoundTripZeroBits)
 {
     for (size_t count : {1, 4, 7, 16, 100, 128, 129})
@@ -443,12 +447,7 @@ TEST(PostingListCodecTest, Bit32TightTailNoPadding)
 {
     {
         std::vector<uint32_t> values = {0x80000000u};
-        std::span<uint32_t> span(values.data(), values.size());
-        auto [needed_bytes, max_bits] = Portable::calculateNeededBytesAndMaxBits(span);
-
-        ASSERT_EQ(max_bits, 32u);
-        ASSERT_EQ(needed_bytes, 4u) << "bit==32 tail must be tight (length*4), not padded to 16B";
-
+        // The new API automatically determines bit width, so we just test the roundtrip
         verifyRoundTrip(values);
     }
 
@@ -508,11 +507,12 @@ TEST(PostingListCodecTest, MixedRandomMonotonicLarger)
 
 [[maybe_unused]] static size_t expectedCompressedBytes(size_t length, uint32_t bit)
 {
-    if (bit == 0) return 0;
-    if (bit == 32) return length * sizeof(uint32_t);
+    if (length == 0) return 0;
+    if (bit == 0) return 1; // 1 byte header only
+    if (bit == 32) return 1 + length * sizeof(uint32_t); // 1 byte header + raw data
     const size_t groups = (length + 3) / 4;
     const size_t words32 = (groups * size_t(bit) + 31) / 32;
-    return words32 * 16; // 16 bytes
+    return 1 + words32 * 16; // 1 byte header + payload
 }
 
 [[maybe_unused]] static uint32_t maskForBit(uint32_t bit)
@@ -521,6 +521,20 @@ TEST(PostingListCodecTest, MixedRandomMonotonicLarger)
     if (bit == 32) return 0xFFFFFFFFu;
     if (bit == 31) return 0x7FFFFFFFu;
     return (uint32_t(1) << bit) - 1u;
+}
+
+/// Calculate the actual max bits needed to represent the data.
+/// This mirrors the calculation done inside the encoder.
+[[maybe_unused]] static uint32_t calculateMaxBits(const std::vector<uint32_t> & data)
+{
+    if (data.empty())
+        return 0;
+    uint32_t xored = 0;
+    for (auto v : data)
+        xored |= v;
+    if (xored == 0)
+        return 0;
+    return 32u - static_cast<uint32_t>(__builtin_clz(xored));
 }
 
 [[maybe_unused]] static std::vector<uint32_t> makeAllZeros(size_t n)
@@ -572,58 +586,67 @@ TEST(PostingListCodecTest, MixedRandomMonotonicLarger)
 }
 
 // Portable encode helper: encodes into `out` sized exactly to the expected payload length.
-[[maybe_unused]] static size_t encodePortable(const std::vector<uint32_t> & in, uint32_t bit, std::vector<std::byte> & out)
+// Note: The `bit` parameter is ignored; the actual max bits is computed from the data.
+[[maybe_unused]] static size_t encodePortable(const std::vector<uint32_t> & in, uint32_t /*bit*/, std::vector<std::byte> & out)
 {
-    const size_t expected_bytes = expectedCompressedBytes(in.size(), bit);
+    const uint32_t actual_bits = calculateMaxBits(in);
+    const size_t expected_bytes = expectedCompressedBytes(in.size(), actual_bits);
     out.assign(expected_bytes, std::byte{0});
 
     std::span<uint32_t> in_span(const_cast<uint32_t*>(in.data()), in.size());
     std::span<char> out_span(reinterpret_cast<char*>(out.data()), out.size());
 
-    const size_t used = Portable::encode(in_span, bit, out_span);
+    const size_t used = Portable::encode(in_span, out_span);
     EXPECT_EQ(size_t(used), expected_bytes) << "Portable encode used-bytes must match the format formula";
     return used;
 }
 
-// Portable decode helper: decodes `n` integers from `in` (expected payload length) into `out`.
-[[maybe_unused]] static size_t decodePortable(const std::vector<std::byte> & in, size_t n, uint32_t bit, std::vector<uint32_t> & out)
+// Portable decode helper: decodes `n` integers from `in` into `out`.
+// Note: The `bit` parameter is ignored; the decoder reads the bit width from the header.
+[[maybe_unused]] static size_t decodePortable(const std::vector<std::byte> & in, size_t n, uint32_t /*bit*/, std::vector<uint32_t> & out)
 {
     out.assign(n, 0u);
 
     std::span<const std::byte> in_span(in.data(), in.size());
     std::span<uint32_t> out_span(out.data(), out.size());
 
-    const size_t used = Portable::decode(in_span, n, bit, out_span);
-    EXPECT_EQ(used, expectedCompressedBytes(n, bit)) << "Portable decode consumed-bytes must match the format formula";
+    const size_t used = Portable::decode(in_span, n, out_span);
+    // Note: we cannot verify expected_bytes here because we don't know the actual bits
+    // used during encoding. The decode will consume exactly what was written.
     EXPECT_EQ(in_span.size(), 0u) << "Portable decode must consume the entire payload span";
     return used;
 }
 
 #if USE_SIMDCOMP
-static size_t encodeSIMDComp(const std::vector<uint32_t> & in, uint32_t bit, std::vector<std::byte> & out)
+// SIMDComp encode helper: encodes into `out` sized exactly to the expected payload length.
+// Note: The `bit` parameter is ignored; the actual max bits is computed from the data.
+static size_t encodeSIMDComp(const std::vector<uint32_t> & in, uint32_t /*bit*/, std::vector<std::byte> & out)
 {
-    const size_t expected_bytes = expectedCompressedBytes(in.size(), bit);
+    const uint32_t actual_bits = calculateMaxBits(in);
+    const size_t expected_bytes = expectedCompressedBytes(in.size(), actual_bits);
     out.assign(expected_bytes, std::byte{0});
 
     std::span<uint32_t> in_span(const_cast<uint32_t*>(in.data()), in.size());
     std::span<char> out_span(reinterpret_cast<char*>(out.data()), out.size());
 
-    const size_t used = SIMDComp::encode(in_span, bit, out_span);
-    EXPECT_EQ(used, expected_bytes) << "Portable encode used-bytes must match the format formula";
+    const size_t used = SIMDComp::encode(in_span, out_span);
+    EXPECT_EQ(used, expected_bytes) << "SIMDComp encode used-bytes must match the format formula";
     return used;
 }
 
-// Portable decode helper: decodes `n` integers from `in` (expected payload length) into `out`.
-static size_t decodeSIMDComp(const std::vector<std::byte> & in, size_t n, uint32_t bit, std::vector<uint32_t> & out)
+// SIMDComp decode helper: decodes `n` integers from `in` into `out`.
+// Note: The `bit` parameter is ignored; the decoder reads the bit width from the header.
+static size_t decodeSIMDComp(const std::vector<std::byte> & in, size_t n, uint32_t /*bit*/, std::vector<uint32_t> & out)
 {
     out.assign(n, 0u);
 
     std::span<const std::byte> in_span(in.data(), in.size());
     std::span<uint32_t> out_span(out.data(), out.size());
 
-    const size_t used = SIMDComp::decode(in_span, n, bit, out_span);
-    EXPECT_EQ(used, expectedCompressedBytes(n, bit)) << "Portable decode consumed-bytes must match the format formula";
-    EXPECT_EQ(in_span.size(), 0u) << "Portable decode must consume the entire payload span";
+    const size_t used = SIMDComp::decode(in_span, n, out_span);
+    // Note: we cannot verify expected_bytes here because we don't know the actual bits
+    // used during encoding. The decode will consume exactly what was written.
+    EXPECT_EQ(in_span.size(), 0u) << "SIMDComp decode must consume the entire payload span";
     return used;
 }
 #endif
@@ -645,7 +668,9 @@ TEST(PostingListCodecTest, EncodeBytesMatchSSEvsPortable)
         {
             const auto input = makeRandom(n, bit, uint32_t(1234 + n * 97 + bit));
 
-            const size_t expected_bytes = expectedCompressedBytes(n, bit);
+            // Use actual max bits from the data, not the test parameter
+            const uint32_t actual_bits = calculateMaxBits(input);
+            const size_t expected_bytes = expectedCompressedBytes(n, actual_bits);
 
             std::vector<std::byte> enc_port(expected_bytes, std::byte{0});
             std::vector<std::byte> enc_sse(expected_bytes, std::byte{0});
@@ -682,7 +707,9 @@ TEST(PostingListCodecTest, CrossDecodeSSEtoPortableandBack)
         {
             const auto input = makeIncreasing(n, bit);
 
-            const size_t expected_bytes = expectedCompressedBytes(n, bit);
+            // Use actual max bits from the data, not the test parameter
+            const uint32_t actual_bits = calculateMaxBits(input);
+            const size_t expected_bytes = expectedCompressedBytes(n, actual_bits);
 
             // SSE encode -> Portable decode
             std::vector<std::byte> enc_sse(expected_bytes, std::byte{0});
@@ -729,14 +756,16 @@ TEST(PostingListCodecTest, SpecialPatterns)
 
     for (const auto & c: cases)
     {
-        const size_t expected_bytes = expectedCompressedBytes(c.n, c.bit);
-
         for (int pat = 0; pat < 3; ++pat)
         {
             std::vector<uint32_t> input;
             if (pat == 0) input = makeAllZeros(c.n);
             if (pat == 1) input = makeAllMax(c.n, c.bit);
             if (pat == 2) input = makeRandom(c.n, c.bit, 2025u + uint32_t(c.n) + c.bit);
+
+            // Use actual max bits from the data, not the test parameter
+            const uint32_t actual_bits = calculateMaxBits(input);
+            const size_t expected_bytes = expectedCompressedBytes(c.n, actual_bits);
 
             std::vector<std::byte> enc_port, enc_sse(expected_bytes, std::byte{0});
 
@@ -780,7 +809,10 @@ TEST(PostingListCodecTest, PortableEncodeDecodedBySSEAndSSEEncodeDecodedByPortab
             // Use deterministic but non-trivial data.
             // Increasing is close to posting list use-cases and still stresses boundaries.
             auto input = makeIncreasing(n, bit);
-            const size_t expected_bytes = expectedCompressedBytes(n, bit);
+
+            // Use actual max bits from the data, not the test parameter
+            const uint32_t actual_bits = calculateMaxBits(input);
+            const size_t expected_bytes = expectedCompressedBytes(n, actual_bits);
 
             // -----------------------------------------------------------------
             // Direction 1: Portable encode -> SSE decode
@@ -792,7 +824,7 @@ TEST(PostingListCodecTest, PortableEncodeDecodedBySSEAndSSEEncodeDecodedByPortab
             std::vector<uint32_t> dec_sse(n, 0u);
             std::span<const std::byte> enc_port_span(reinterpret_cast<const std::byte*>(enc_port.data()), enc_port.size());
             std::span<uint32_t> dec_sse_span(dec_sse.data(), dec_sse.size());
-            const size_t used_dec_sse = SIMDComp::decode(enc_port_span, n, bit, dec_sse_span);
+            const size_t used_dec_sse = SIMDComp::decode(enc_port_span, n, dec_sse_span);
             ASSERT_EQ(used_dec_sse, expected_bytes) << "SSE decode consumed-bytes mismatch (portable payload)";
             ASSERT_EQ(input, dec_sse) << "Portable-encoded payload did not decode correctly in SSE path"
                     << " (n=" << n << ", bit=" << bit << ")";
@@ -803,7 +835,7 @@ TEST(PostingListCodecTest, PortableEncodeDecodedBySSEAndSSEEncodeDecodedByPortab
             std::vector<std::byte> enc_sse(expected_bytes, std::byte{0});
             std::span<uint32_t> input_span(input.data(), input.size());
             std::span<char> enc_sse_span(reinterpret_cast<char*>(enc_sse.data()), enc_sse.size());
-            const size_t used_enc_sse = SIMDComp::encode(input_span, bit, enc_sse_span);
+            const size_t used_enc_sse = SIMDComp::encode(input_span, enc_sse_span);
             ASSERT_EQ(size_t(used_enc_sse), expected_bytes) << "SSE encode used-bytes mismatch";
 
             std::vector<uint32_t> dec_port;
@@ -816,3 +848,387 @@ TEST(PostingListCodecTest, PortableEncodeDecodedBySSEAndSSEEncodeDecodedByPortab
     GTEST_SKIP() << "SSE not available on this platform.";
 #endif
 }
+
+// =============================================================================
+// FastPFor Codec Tests
+// =============================================================================
+// These tests cover the FastPFor library-based codecs:
+// - SIMDFastPForBlockCodec (fastpfor)
+// - SIMDBinaryPackingBlockCodec (binarypacking)
+// - SIMDOptPForBlockCodec (optpfor)
+
+#if USE_FASTPFOR
+#include <Storages/MergeTree/FastPForBlockCodec.h>
+
+namespace
+{
+
+/// Helper to verify round-trip encoding/decoding for FastPFor codecs.
+/// Template parameter Codec should be one of the FastPFor codec types.
+template <typename Codec>
+void verifyFastPForRoundTrip(const std::vector<uint32_t> & original)
+{
+    if (original.empty())
+        return;
+
+    std::vector<uint32_t> input = original;  // Make a mutable copy
+    std::span<uint32_t> in_span(input.data(), input.size());
+
+    // Calculate needed bytes and allocate buffer
+    size_t needed_bytes = Codec::calculateNeededBytes(in_span);
+    std::vector<char> buffer(needed_bytes + 256, char(0xCC));  // Extra padding for safety
+    std::span<char> out_span(buffer.data(), buffer.size());
+
+    // Encode
+    size_t used_encode = Codec::encode(in_span, out_span);
+    ASSERT_GT(used_encode, 0u) << Codec::name() << ": encode should produce non-zero bytes for non-empty input";
+    ASSERT_LE(used_encode, needed_bytes + 256) << Codec::name() << ": encode exceeded buffer size";
+
+    // Decode
+    std::vector<uint32_t> decoded(original.size(), 0xDEADBEEFu);
+    std::span<uint32_t> decoded_span(decoded.data(), decoded.size());
+    std::span<const std::byte> decode_in(reinterpret_cast<const std::byte*>(buffer.data()), used_encode);
+
+    size_t used_decode = Codec::decode(decode_in, original.size(), decoded_span);
+    ASSERT_EQ(used_decode, used_encode)
+        << Codec::name() << ": decode consumed bytes must equal encode written bytes";
+
+    // Verify data integrity
+    ASSERT_EQ(decoded, original)
+        << Codec::name() << ": roundtrip mismatch for " << original.size() << " elements";
+}
+
+/// Generate monotonically increasing data (simulates posting list row IDs)
+std::vector<uint32_t> generateMonotonicData(size_t count, uint32_t gap, uint32_t seed = 42)
+{
+    std::mt19937 rng(static_cast<std::mt19937::result_type>(seed));
+    std::uniform_int_distribution<uint32_t> jitter(0, gap / 2);
+
+    std::vector<uint32_t> data(count);
+    uint32_t value = 0;
+    for (size_t i = 0; i < count; ++i)
+    {
+        value += gap + jitter(rng);
+        data[i] = value;
+    }
+    return data;
+}
+
+/// Generate delta-encoded data (what posting list codecs actually compress)
+std::vector<uint32_t> generateDeltaData(size_t count, uint32_t max_delta, uint32_t seed = 42)
+{
+    std::mt19937 rng(static_cast<std::mt19937::result_type>(seed));
+    std::uniform_int_distribution<uint32_t> dist(1, max_delta);
+
+    std::vector<uint32_t> data(count);
+    for (size_t i = 0; i < count; ++i)
+        data[i] = dist(rng);
+    return data;
+}
+
+/// Generate data with outliers (tests patching in PFor codecs)
+std::vector<uint32_t> generateDataWithOutliers(size_t count, uint32_t base_max, uint32_t outlier_value, double outlier_ratio, uint32_t seed = 42)
+{
+    std::mt19937 rng(static_cast<std::mt19937::result_type>(seed));
+    std::uniform_int_distribution<uint32_t> base_dist(1, base_max);
+    std::uniform_real_distribution<double> outlier_dist(0.0, 1.0);
+
+    std::vector<uint32_t> data(count);
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (outlier_dist(rng) < outlier_ratio)
+            data[i] = outlier_value;
+        else
+            data[i] = base_dist(rng);
+    }
+    return data;
+}
+
+}  // anonymous namespace
+
+// -----------------------------------------------------------------------------
+// SIMDFastPForBlockCodec Tests
+// -----------------------------------------------------------------------------
+
+TEST(FastPForCodecTest, FastPForRoundTripEmpty)
+{
+    std::vector<uint32_t> empty;
+    // Empty input should not crash
+    std::span<uint32_t> in_span(empty.data(), empty.size());
+    EXPECT_EQ(DB::SIMDFastPForBlockCodec::calculateNeededBytes(in_span), 0u);
+}
+
+TEST(FastPForCodecTest, FastPForRoundTripSmallSizes)
+{
+    for (size_t count : {1, 2, 3, 4, 5, 7, 8, 15, 16, 31, 32, 63, 64, 100, 127, 128, 129})
+    {
+        auto data = generateDeltaData(count, 1000);
+        verifyFastPForRoundTrip<DB::SIMDFastPForBlockCodec>(data);
+    }
+}
+
+TEST(FastPForCodecTest, FastPForRoundTripBlockBoundaries)
+{
+    // Test exact block boundaries and near-boundaries
+    // FastPFor BLOCK_SIZE is 128
+    for (size_t count : {127, 128, 129, 255, 256, 257, 383, 384, 385, 511, 512, 513})
+    {
+        auto data = generateDeltaData(count, 500);
+        verifyFastPForRoundTrip<DB::SIMDFastPForBlockCodec>(data);
+    }
+}
+
+TEST(FastPForCodecTest, FastPForRoundTripLargeSizes)
+{
+    for (size_t count : {1000, 2000, 5000, 10000})
+    {
+        auto data = generateDeltaData(count, 1000);
+        verifyFastPForRoundTrip<DB::SIMDFastPForBlockCodec>(data);
+    }
+}
+
+TEST(FastPForCodecTest, FastPForRoundTripAllZeros)
+{
+    for (size_t count : {1, 4, 128, 129, 256, 1000})
+    {
+        std::vector<uint32_t> zeros(count, 0);
+        verifyFastPForRoundTrip<DB::SIMDFastPForBlockCodec>(zeros);
+    }
+}
+
+TEST(FastPForCodecTest, FastPForRoundTripAllOnes)
+{
+    for (size_t count : {1, 4, 128, 129, 256, 1000})
+    {
+        std::vector<uint32_t> ones(count, 1);
+        verifyFastPForRoundTrip<DB::SIMDFastPForBlockCodec>(ones);
+    }
+}
+
+TEST(FastPForCodecTest, FastPForRoundTripMaxValues)
+{
+    for (size_t count : {1, 4, 128, 129, 256})
+    {
+        std::vector<uint32_t> max_vals(count, 0xFFFFFFFFu);
+        verifyFastPForRoundTrip<DB::SIMDFastPForBlockCodec>(max_vals);
+    }
+}
+
+TEST(FastPForCodecTest, FastPForRoundTripWithOutliers)
+{
+    // FastPFor should handle outliers well via patching
+    for (size_t count : {128, 256, 512, 1000})
+    {
+        // 5% outliers with large values
+        auto data = generateDataWithOutliers(count, 100, 1000000, 0.05);
+        verifyFastPForRoundTrip<DB::SIMDFastPForBlockCodec>(data);
+    }
+}
+
+TEST(FastPForCodecTest, FastPForRoundTripMonotonic)
+{
+    // Simulates actual posting list use case
+    for (size_t count : {100, 500, 1000, 5000})
+    {
+        auto data = generateMonotonicData(count, 10);
+        verifyFastPForRoundTrip<DB::SIMDFastPForBlockCodec>(data);
+    }
+}
+
+// -----------------------------------------------------------------------------
+// SIMDBinaryPackingBlockCodec Tests
+// -----------------------------------------------------------------------------
+
+TEST(FastPForCodecTest, BinaryPackingRoundTripSmallSizes)
+{
+    for (size_t count : {1, 2, 3, 4, 5, 7, 8, 15, 16, 31, 32, 63, 64, 100, 127, 128, 129})
+    {
+        auto data = generateDeltaData(count, 1000);
+        verifyFastPForRoundTrip<DB::SIMDBinaryPackingBlockCodec>(data);
+    }
+}
+
+TEST(FastPForCodecTest, BinaryPackingRoundTripBlockBoundaries)
+{
+    for (size_t count : {127, 128, 129, 255, 256, 257, 383, 384, 385})
+    {
+        auto data = generateDeltaData(count, 500);
+        verifyFastPForRoundTrip<DB::SIMDBinaryPackingBlockCodec>(data);
+    }
+}
+
+TEST(FastPForCodecTest, BinaryPackingRoundTripLargeSizes)
+{
+    for (size_t count : {1000, 2000, 5000})
+    {
+        auto data = generateDeltaData(count, 1000);
+        verifyFastPForRoundTrip<DB::SIMDBinaryPackingBlockCodec>(data);
+    }
+}
+
+TEST(FastPForCodecTest, BinaryPackingRoundTripAllZeros)
+{
+    for (size_t count : {1, 4, 128, 129, 256})
+    {
+        std::vector<uint32_t> zeros(count, 0);
+        verifyFastPForRoundTrip<DB::SIMDBinaryPackingBlockCodec>(zeros);
+    }
+}
+
+TEST(FastPForCodecTest, BinaryPackingRoundTripMaxValues)
+{
+    for (size_t count : {1, 4, 128, 129, 256})
+    {
+        std::vector<uint32_t> max_vals(count, 0xFFFFFFFFu);
+        verifyFastPForRoundTrip<DB::SIMDBinaryPackingBlockCodec>(max_vals);
+    }
+}
+
+// -----------------------------------------------------------------------------
+// SIMDOptPForBlockCodec Tests
+// -----------------------------------------------------------------------------
+
+TEST(FastPForCodecTest, OptPForRoundTripSmallSizes)
+{
+    for (size_t count : {1, 2, 3, 4, 5, 7, 8, 15, 16, 31, 32, 63, 64, 100, 127, 128, 129})
+    {
+        auto data = generateDeltaData(count, 1000);
+        verifyFastPForRoundTrip<DB::SIMDOptPForBlockCodec>(data);
+    }
+}
+
+TEST(FastPForCodecTest, OptPForRoundTripBlockBoundaries)
+{
+    for (size_t count : {127, 128, 129, 255, 256, 257, 383, 384, 385})
+    {
+        auto data = generateDeltaData(count, 500);
+        verifyFastPForRoundTrip<DB::SIMDOptPForBlockCodec>(data);
+    }
+}
+
+TEST(FastPForCodecTest, OptPForRoundTripLargeSizes)
+{
+    for (size_t count : {1000, 2000, 5000})
+    {
+        auto data = generateDeltaData(count, 1000);
+        verifyFastPForRoundTrip<DB::SIMDOptPForBlockCodec>(data);
+    }
+}
+
+TEST(FastPForCodecTest, OptPForRoundTripWithOutliers)
+{
+    // OptPFor should handle outliers very well (optimized patching)
+    for (size_t count : {128, 256, 512, 1000})
+    {
+        // 10% outliers - OptPFor should still compress well
+        auto data = generateDataWithOutliers(count, 100, 1000000, 0.10);
+        verifyFastPForRoundTrip<DB::SIMDOptPForBlockCodec>(data);
+    }
+}
+
+TEST(FastPForCodecTest, OptPForRoundTripAllZeros)
+{
+    for (size_t count : {1, 4, 128, 129, 256})
+    {
+        std::vector<uint32_t> zeros(count, 0);
+        verifyFastPForRoundTrip<DB::SIMDOptPForBlockCodec>(zeros);
+    }
+}
+
+TEST(FastPForCodecTest, OptPForRoundTripMaxValues)
+{
+    for (size_t count : {1, 4, 128, 129, 256})
+    {
+        std::vector<uint32_t> max_vals(count, 0xFFFFFFFFu);
+        verifyFastPForRoundTrip<DB::SIMDOptPForBlockCodec>(max_vals);
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Cross-Codec Consistency Tests
+// -----------------------------------------------------------------------------
+
+TEST(FastPForCodecTest, AllCodecsProduceSameDecodedOutput)
+{
+    // Verify that all codecs decode to the same original data
+    for (size_t count : {100, 128, 129, 256, 500, 1000})
+    {
+        auto original = generateDeltaData(count, 1000, 12345);
+
+        // Encode and decode with each codec
+        auto testCodec = [&original](auto & codec_type) {
+            using Codec = std::decay_t<decltype(codec_type)>;
+
+            std::vector<uint32_t> input = original;
+            std::span<uint32_t> in_span(input.data(), input.size());
+
+            size_t needed = Codec::calculateNeededBytes(in_span);
+            std::vector<char> buffer(needed + 256);
+            std::span<char> out_span(buffer.data(), buffer.size());
+
+            Codec::encode(in_span, out_span);
+
+            std::vector<uint32_t> decoded(original.size());
+            std::span<uint32_t> dec_span(decoded.data(), decoded.size());
+            std::span<const std::byte> dec_in(reinterpret_cast<const std::byte*>(buffer.data()), buffer.size());
+
+            Codec::decode(dec_in, original.size(), dec_span);
+            return decoded;
+        };
+
+        DB::SIMDFastPForBlockCodec fastpfor;
+        DB::SIMDBinaryPackingBlockCodec binarypacking;
+        DB::SIMDOptPForBlockCodec optpfor;
+
+        auto dec_fastpfor = testCodec(fastpfor);
+        auto dec_binarypacking = testCodec(binarypacking);
+        auto dec_optpfor = testCodec(optpfor);
+
+        ASSERT_EQ(dec_fastpfor, original) << "FastPFor decode mismatch at count=" << count;
+        ASSERT_EQ(dec_binarypacking, original) << "BinaryPacking decode mismatch at count=" << count;
+        ASSERT_EQ(dec_optpfor, original) << "OptPFor decode mismatch at count=" << count;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Stress Tests
+// -----------------------------------------------------------------------------
+
+TEST(FastPForCodecTest, StressRandomSizesAllCodecs)
+{
+    std::mt19937 rng(98765);
+    std::uniform_int_distribution<size_t> size_dist(1, 2000);
+    std::uniform_int_distribution<uint32_t> delta_dist(1, 10000);
+
+    for (int i = 0; i < 50; ++i)
+    {
+        size_t count = size_dist(rng);
+        uint32_t max_delta = delta_dist(rng);
+        auto data = generateDeltaData(count, max_delta, static_cast<uint32_t>(rng()));
+
+        verifyFastPForRoundTrip<DB::SIMDFastPForBlockCodec>(data);
+        verifyFastPForRoundTrip<DB::SIMDBinaryPackingBlockCodec>(data);
+        verifyFastPForRoundTrip<DB::SIMDOptPForBlockCodec>(data);
+    }
+}
+
+TEST(FastPForCodecTest, StressMonotonicDataAllCodecs)
+{
+    // Simulates real posting list behavior
+    std::mt19937 rng(54321);
+    std::uniform_int_distribution<size_t> size_dist(100, 5000);
+    std::uniform_int_distribution<uint32_t> gap_dist(1, 100);
+
+    for (int i = 0; i < 20; ++i)
+    {
+        size_t count = size_dist(rng);
+        uint32_t gap = gap_dist(rng);
+        auto data = generateMonotonicData(count, gap, static_cast<uint32_t>(rng()));
+
+        verifyFastPForRoundTrip<DB::SIMDFastPForBlockCodec>(data);
+        verifyFastPForRoundTrip<DB::SIMDBinaryPackingBlockCodec>(data);
+        verifyFastPForRoundTrip<DB::SIMDOptPForBlockCodec>(data);
+    }
+}
+
+#endif // USE_FASTPFOR

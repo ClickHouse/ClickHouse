@@ -51,9 +51,6 @@ std::unique_ptr<IPostingListCodec> PostingListCodecFactory::createPostingListCod
     if (codec_name == PostingListCodecBinaryPacking::getName())
         return std::make_unique<PostingListCodecBinaryPacking>();
 
-    if (codec_name == PostingListCodecStreamVByte::getName())
-        return std::make_unique<PostingListCodecStreamVByte>();
-
     if (codec_name == PostingListCodecOptPFor::getName())
         return std::make_unique<PostingListCodecOptPFor>();
 #endif

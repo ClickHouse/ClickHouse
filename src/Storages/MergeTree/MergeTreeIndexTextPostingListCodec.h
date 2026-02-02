@@ -36,8 +36,9 @@ namespace ErrorCodes
 /// - BlockCodec: The underlying block compression algorithm (e.g., BitpackingBlockCodec, SIMDFastPForBlockCodec)
 /// - codec_type: The IPostingListCodec::Type enum value for header identification
 ///
-/// Block format (for codecs that store bit-width like Bitpacking):
-///   [1 byte: bits-width][payload]
+/// Block format:
+///   Each BlockCodec defines its own format (e.g., Bitpacking: [1 byte: bits-width][payload])
+///   FastPFor codecs handle their own metadata internally
 ///
 /// Segment format:
 ///   [Header: codec_type | payload_bytes | cardinality | first_row_id] (all VarUInt)
@@ -112,16 +113,16 @@ public:
 
     /// Add a single increasing row id.
     ///
-    /// Internally we store deltas (gaps) in `current_segment` until reaching BLOCK_SIZE,
+    /// Internally we store deltas (gaps) in `current_segment` until reaching BlockCodec::BLOCK_SIZE,
     /// then compress the full block into `compressed_data`.
     /// When the segment reaches `max_rowids_in_segment`, flush it.
     void insert(uint32_t row_id);
 
-    /// Add a block of BLOCK_SIZE-many row ids (batch insert).
+    /// Add a block of BlockCodec::BLOCK_SIZE-many row ids (batch insert).
     ///
     /// Assumes:
-    /// - row_ids.size() == BLOCK_SIZE
-    /// - total is aligned by BLOCK_SIZE
+    /// - row_ids.size() == BlockCodec::BLOCK_SIZE
+    /// - total is aligned by BlockCodec::BLOCK_SIZE
     ///
     /// It computes deltas in-place using adjacent_difference for better throughput.
     void insert(std::span<uint32_t> row_ids);
@@ -183,19 +184,18 @@ private:
 
     /// Encode one block of delta values and append it to `compressed_data`.
     ///
-    /// Block layout:
-    ///   [1 byte bits][payload]
-    ///
-    /// - bits: max bit-width among deltas in this block
-    /// - payload: BlockCodec::encode(...) compressed bytes
+    /// Each BlockCodec defines its own block layout:
+    /// - Bitpacking: [1 byte bits][payload]
+    /// - FastPFor codecs: [internal metadata][payload]
     ///
     /// Also updates current segment metadata (count, max, payload size).
     void encodeBlock(std::span<uint32_t> segment);
 
     /// Decode one compressed block into `current_segment` and reconstruct absolute row ids.
     ///
-    /// - Reads bits-width byte
-    /// - BlockCodec::decode fills `current_segment` with delta values
+    /// Each BlockCodec handles its own decoding format:
+    /// - Bitpacking: reads bits-width byte, then decodes payload
+    /// - FastPFor codecs: handle their own metadata internally
     /// - inclusive_scan converts deltas -> row ids using `prev_row_id` as initial prefix
     /// - Updates prev_row_id to the last decoded row id
     static void decodeBlock(std::span<const std::byte> & in, size_t count, uint32_t & prev_row_id, std::vector<uint32_t> & current_segment);
@@ -224,8 +224,10 @@ private:
 /// A codec for a postings list stored in a compact block-compressed format.
 ///
 /// Values are first delta-compressed then block-packed, each within fixed-size blocks
-/// (physical chunks, controlled by BLOCK_SIZE).
-/// Each compressed block is stored as: [1 byte: bits-width][payload].
+/// (physical chunks, controlled by BlockCodec::BLOCK_SIZE).
+/// Each compressed block format is defined by the BlockCodec:
+/// - Bitpacking: [1 byte: bits-width][payload]
+/// - FastPFor codecs: [internal metadata][payload]
 ///
 /// Posting lists are additionally split into "segments" (logical chunks, controlled by postings_list_block_size)
 /// to simplify metadata and to support multiple ranges per token (min/max row id per segment).
@@ -253,11 +255,11 @@ public:
         postings.toUint32Array(rowids.data());
 
         std::span<uint32_t> rowids_view(rowids.data(), rowids.size());
-        while (rowids_view.size() >= BLOCK_SIZE)
+        while (rowids_view.size() >= BlockCodec::BLOCK_SIZE)
         {
-            auto front = rowids_view.first(BLOCK_SIZE);
+            auto front = rowids_view.first(BlockCodec::BLOCK_SIZE);
             impl.insert(front);
-            rowids_view = rowids_view.subspan(BLOCK_SIZE);
+            rowids_view = rowids_view.subspan(BlockCodec::BLOCK_SIZE);
         }
 
         if (!rowids_view.empty())
@@ -324,21 +326,6 @@ using PostingListCodecFastPFor = PostingListCodecGeneric<SIMDFastPForBlockCodec,
 ///
 /// Trade-off: Sacrifices some compression ratio for maximum decode throughput.
 using PostingListCodecBinaryPacking = PostingListCodecGeneric<SIMDBinaryPackingBlockCodec, IPostingListCodec::Type::BinaryPacking>;
-
-/// StreamVByte codec for posting list compression.
-///
-/// A byte-aligned variable-byte encoding with SIMD-accelerated decoding.
-/// Separates control bytes (describing value lengths) from data bytes,
-/// enabling vectorized parallel decoding of multiple integers.
-///
-/// Characteristics:
-/// - Compression ratio: Lower than bit-packing methods (byte-aligned)
-/// - Encode speed: Fast
-/// - Decode speed: Very fast with good cache behavior (sequential memory access)
-/// - Best for: Streaming scenarios, random access patterns, or when byte-alignment is preferred
-///
-/// Advantage: Predictable performance regardless of data distribution.
-using PostingListCodecStreamVByte = PostingListCodecGeneric<StreamVByteBlockCodec, IPostingListCodec::Type::StreamVByte>;
 
 /// OptPFor (Optimized Patched Frame-of-Reference) codec for posting list compression.
 ///
