@@ -1348,7 +1348,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
     }
 }
 
-BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags)
+BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags, DDLGuardPtr && database_guard)
 {
     waitDatabaseStarted();
 
@@ -1391,7 +1391,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     }
 
 
-    return getQueryStatus(node_path, fs::path(zookeeper_path) / "replicas", query_context, hosts_to_wait);
+    return getQueryStatus(node_path, fs::path(zookeeper_path) / "replicas", query_context, hosts_to_wait, std::move(database_guard));
 }
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
@@ -2551,13 +2551,13 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
 }
 
 BlockIO DatabaseReplicated::getQueryStatus(
-    const String & node_path, const String & replicas_path, ContextPtr context_, const Strings & hosts_to_wait)
+    const String & node_path, const String & replicas_path, ContextPtr context_, const Strings & hosts_to_wait, DDLGuardPtr && database_guard)
 {
     BlockIO io;
     if (context_->getSettingsRef()[Setting::distributed_ddl_task_timeout] == 0)
         return io;
 
-    auto source = std::make_shared<ReplicatedDatabaseQueryStatusSource>(node_path, replicas_path, context_, hosts_to_wait);
+    auto source = std::make_shared<ReplicatedDatabaseQueryStatusSource>(node_path, replicas_path, context_, hosts_to_wait, std::move(database_guard));
     io.pipeline = QueryPipeline(std::move(source));
 
     if (context_->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE

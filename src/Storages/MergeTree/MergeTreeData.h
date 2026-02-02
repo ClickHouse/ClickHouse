@@ -614,6 +614,10 @@ public:
     /// and mutations required to be applied at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
+        /// Hold a reference to the storage since the snapshot cache in query context
+        /// may outlive the storage and delay destruction of data parts.
+        ConstStoragePtr storage;
+
         // shared_ptr because lifetime is as long as some query still reading it
         // const because we are sharing across multiple queries, we cannot have things mutating this.
         RangesInDataPartsPtr parts;

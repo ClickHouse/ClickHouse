@@ -92,7 +92,7 @@ void CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 t
 
 void CancellationChecker::appendDoneTasks(const QueryStatusPtr & query)
 {
-    std::unique_lock<std::mutex> lock(m);
+    std::unique_lock lock(m);
     removeQueryFromSet(query);
     cond_var.notify_all();
 }

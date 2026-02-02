@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-release
 -- Tag no-parallel: Messes with internal cache
+-- Tag no-release: Checks fields in system.query_condition_cache which are not available in release builds
 -- add_minmax_index_for_numeric_columns=0: Would use indices instead of the projections that we want to test
 
 SET use_statistics_for_part_pruning = 0; -- Prevent auto_statistics_types from pruning parts before query condition cache
