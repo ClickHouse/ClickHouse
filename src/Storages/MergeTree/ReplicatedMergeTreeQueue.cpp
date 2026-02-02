@@ -2334,7 +2334,7 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
 
 MutationCounters ReplicatedMergeTreeQueue::getMutationCounters() const
 {
-    std::lock_guard lock(state_mutex);
+    std::shared_lock lock(state_mutex);
     return mutation_counters;
 }
 
@@ -2491,7 +2491,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 
 ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 {
-    std::lock_guard lock(state_mutex);
+    std::shared_lock lock(state_mutex);
 
     Status res;
 
@@ -2559,7 +2559,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 void ReplicatedMergeTreeQueue::getEntries(LogEntriesData & res) const
 {
     res.clear();
-    std::lock_guard lock(state_mutex);
+    std::shared_lock lock(state_mutex);
 
     res.reserve(queue.size());
     for (const auto & entry : queue)
@@ -2577,7 +2577,7 @@ void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_inser
 std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMutationsStatus(const String & znode_name, std::set<String> * mutation_ids) const
 {
 
-    std::lock_guard lock(state_mutex);
+    std::shared_lock lock(state_mutex);
     auto current_mutation_it = mutations_by_znode.find(znode_name);
     /// killed
     if (current_mutation_it == mutations_by_znode.end())
@@ -2614,7 +2614,7 @@ std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMu
 
 std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatus() const
 {
-    std::lock_guard lock(state_mutex);
+    std::shared_lock lock(state_mutex);
 
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & pair : mutations_by_znode)
