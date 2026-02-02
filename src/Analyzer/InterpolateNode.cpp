@@ -51,7 +51,7 @@ QueryTreeNodePtr InterpolateNode::cloneImpl() const
 
 ASTPtr InterpolateNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto result = make_intrusive<ASTInterpolateElement>();
+    auto result = std::make_shared<ASTInterpolateElement>();
 
     /// Interpolate parser supports only identifier node.
     /// In case of alias, identifier is replaced to expression, which can't be parsed.

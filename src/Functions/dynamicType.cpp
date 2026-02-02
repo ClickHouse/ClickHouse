@@ -87,9 +87,9 @@ public:
         return res;
     }
 
-    String getTypeNameFromSharedVariantValue(std::string_view value) const
+    String getTypeNameFromSharedVariantValue(StringRef value) const
     {
-        ReadBufferFromMemory buf(value);
+        ReadBufferFromMemory buf(value.data, value.size);
         return decodeDataType(buf)->getName();
     }
 };
@@ -109,11 +109,17 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"dynamic", isDynamic, nullptr, "Dynamic"}
-        };
+        if (arguments.empty() || arguments.size() > 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 1",
+                getName(), arguments.empty());
 
-        validateFunctionArguments(*this, arguments, mandatory_args);
+        if (!isDynamic(arguments[0].type.get()))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be Dynamic, got {} instead",
+                getName(), arguments[0].type->getName());
 
         return DataTypeFactory::instance().get("Bool");
     }
@@ -180,7 +186,7 @@ SELECT d, dynamicType(d) FROM test;
     };
     FunctionDocumentation::IntroducedIn dynamicType_introduced_in = {24, 1};
     FunctionDocumentation::Category dynamicType_category = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation dynamicType_documentation = {dynamicType_description, dynamicType_syntax, dynamicType_arguments, {}, dynamicType_returned_value, dynamicType_examples, dynamicType_introduced_in, dynamicType_category};
+    FunctionDocumentation dynamicType_documentation = {dynamicType_description, dynamicType_syntax, dynamicType_arguments, dynamicType_returned_value, dynamicType_examples, dynamicType_introduced_in, dynamicType_category};
 
     factory.registerFunction<FunctionDynamicType>(dynamicType_documentation);
 
@@ -221,7 +227,7 @@ SELECT d, isDynamicElementInSharedData(d) FROM test;
     };
     FunctionDocumentation::IntroducedIn isDynamicElementInSharedData_introduced_in = {24, 1};
     FunctionDocumentation::Category isDynamicElementInSharedData_category = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation isDynamicElementInSharedData_documentation = {isDynamicElementInSharedData_description, isDynamicElementInSharedData_syntax, isDynamicElementInSharedData_arguments, {}, isDynamicElementInSharedData_returned_value, isDynamicElementInSharedData_examples, isDynamicElementInSharedData_introduced_in, isDynamicElementInSharedData_category};
+    FunctionDocumentation isDynamicElementInSharedData_documentation = {isDynamicElementInSharedData_description, isDynamicElementInSharedData_syntax, isDynamicElementInSharedData_arguments, isDynamicElementInSharedData_returned_value, isDynamicElementInSharedData_examples, isDynamicElementInSharedData_introduced_in, isDynamicElementInSharedData_category};
 
     factory.registerFunction<FunctionIsDynamicElementInSharedData>(isDynamicElementInSharedData_documentation);
 }

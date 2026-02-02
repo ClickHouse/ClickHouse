@@ -22,7 +22,6 @@
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
-#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
@@ -32,6 +31,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -45,7 +45,6 @@
 #include <Poco/Net/HTTPMessage.h>
 
 #include <algorithm>
-#include <boost/algorithm/string/trim.hpp>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -184,7 +183,7 @@ void HTTPHandler::processQuery(
     HTMLForm & params,
     HTTPServerResponse & response,
     Output & used_output,
-    CurrentThread::QueryScope & query_scope,
+    std::optional<CurrentThread::QueryScope> & query_scope,
     const ProfileEvents::Event & write_event)
 {
     using namespace Poco::Net;
@@ -303,7 +302,7 @@ void HTTPHandler::processQuery(
 
     /// Initialize query scope, once query_id is initialized.
     /// (To track as much allocations as possible)
-    query_scope = CurrentThread::QueryScope::create(context);
+    query_scope.emplace(context);
 
     const auto & settings = context->getSettingsRef();
 
@@ -520,11 +519,11 @@ void HTTPHandler::processQuery(
         if (details.timezone)
             response.add("X-ClickHouse-Timezone", *details.timezone);
 
-        if (details.query_cache_entry_created_at)
-            response.add("Age", std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - *details.query_cache_entry_created_at).count()));
+        if (details.query_cache_created_at)
+            response.add("Age", std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - *details.query_cache_created_at).count()));
 
-        if (details.query_cache_entry_expires_at)
-            response.add("Expires", std::format("{:%a, %d %b %Y %H:%M:%S} GMT", *details.query_cache_entry_expires_at));
+        if (details.query_cache_expires_at)
+            response.add("Expires", std::format("{:%a, %d %b %Y %H:%M:%S} GMT", *details.query_cache_expires_at));
 
         for (const auto & [name, value] : details.additional_headers)
             response.set(name, value);
@@ -684,7 +683,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     SCOPE_EXIT({ session.reset(); });
-    CurrentThread::QueryScope query_scope;
+    std::optional<CurrentThread::QueryScope> query_scope;
 
     Output used_output;
 
@@ -773,8 +772,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /** If exception is received from remote server, then stack trace is embedded in message.
           * If exception is thrown on local server, then stack trace is in separate field.
           */
-        const bool include_version = session && session->sessionContext();
-        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace, include_version);
+        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
         auto error_sent = trySendExceptionToClient(status.code, status.message, request, response, used_output);
 
         used_output.cancel();
@@ -1005,9 +1003,6 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}.handler.query' in configuration file.", config_prefix);
 
     std::string predefined_query = config.getString(config_prefix + ".handler.query");
-    /// Remove leading and trailing whitespace that may come from XML formatting in the config file.
-    /// This prevents whitespace from being interpreted as data for binary formats like MsgPack.
-    boost::algorithm::trim(predefined_query);
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
 
     std::unordered_map<String, CompiledRegexPtr> headers_name_with_regex;

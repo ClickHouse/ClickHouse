@@ -23,7 +23,7 @@ namespace ProfileEvents
     extern const Event FileSegmentCompleteMicroseconds;
     extern const Event FileSegmentLockMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
-    extern const Event FileSegmentIncreasePriorityMicroseconds;
+    extern const Event FileSegmentUseMicroseconds;
     extern const Event FileSegmentHolderCompleteMicroseconds;
     extern const Event FileSegmentFailToIncreasePriority;
     extern const Event FilesystemCacheHoldFileSegments;
@@ -689,9 +689,6 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
         return;
     }
 
-    LOG_TEST(log, "Shrinking file segment {} -> {} (downloaded size: {})",
-             range().size(), result_size, downloaded_size.load());
-
     if (downloaded_size == result_size)
         setDownloadState(State::DOWNLOADED, lock);
     else
@@ -780,8 +777,8 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
     });
 
     LOG_TEST(
-        log, "Complete based on current state (is_last_holder: {}, force shrink: {}, {})",
-        is_last_holder, force_shrink_to_downloaded_size, getInfoForLogUnlocked(segment_lock));
+        log, "Complete based on current state (is_last_holder: {}, {})",
+        is_last_holder, getInfoForLogUnlocked(segment_lock));
 
     if (is_downloader)
     {
@@ -910,8 +907,7 @@ String FileSegment::getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const
     info << "current write offset: " << getCurrentWriteOffset() << ", ";
     info << "caller id: " << getCallerId() << ", ";
     info << "kind: " << toString(segment_kind) << ", ";
-    info << "unbound: " << is_unbound << ", ";
-    info << "background download: " << background_download_enabled;
+    info << "unbound: " << is_unbound;
 
     return info.str();
 }
@@ -953,21 +949,9 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         if (!it)
             return;
 
-        auto entry = it->getEntry();
-        auto entry_size = entry->size.load(std::memory_order_relaxed);
-        if (entry_size == 0)
-        {
-            /// A race in case of SLRU eviction is possible here
-            /// when we do setIterator during downgrade.
-            /// Then as entry is invalidated right after we set a new iterator
-            /// - just fetch entry once more.
-            entry = it->getEntry();
-            entry_size = entry->size;
-        }
-        if (download_state != State::DOWNLOADING && entry_size != reserved_size)
-            throw_logical(
-                fmt::format("Expected entry.size == reserved_size ({} == {}, entry: {})",
-                            entry_size, reserved_size.load(), entry->toString()));
+        const auto & entry = it->getEntry();
+        if (download_state != State::DOWNLOADING && entry->size != reserved_size)
+            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size.load(), reserved_size.load()));
 
         chassert(entry->key == key());
         chassert(entry->offset == offset());
@@ -1151,30 +1135,24 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
 
 void FileSegment::increasePriority()
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentUseMicroseconds);
+
     if (!cache)
     {
         chassert(isDetached());
         return;
     }
 
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentIncreasePriorityMicroseconds);
-
-    /// In case of concurrently called increasePriority()
-    /// we want to increase a priority only once
-    /// (because it does not really make any sense
-    /// to do it immediately again after we've just done it)
-    std::unique_lock<std::mutex> lock(increase_priority_mutex, std::defer_lock);
-    if (lock.try_lock())
+    auto it = getQueueIterator();
+    if (it)
     {
-        auto it = getQueueIterator();
-        if (it)
-        {
-            if (!cache->tryIncreasePriority(*this))
-                ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
+        if (auto cache_lock = cache->tryLockCache())
+            it->increasePriority(cache_lock);
+        else
+            ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
 
-            /// Used only for system.filesystem_cache.
-            ++hits_count;
-        }
+        /// Used only for system.filesystem_cache.
+        ++hits_count;
     }
 }
 

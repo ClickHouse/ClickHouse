@@ -408,11 +408,11 @@ FunctionArrayIntersect<Mode>::UnpackedArrays FunctionArrayIntersect<Mode>::prepa
                 {
                     /// Compare original and cast columns. It seem to be the easiest way.
                     auto overflow_mask = callFunctionNotEquals(
-                            {arg.nested_column->getPtr(), nested_cast_type, ""},
-                            {initial_column->getPtr(), nested_init_type, ""},
+                            {arg.nested_column->getPtr(), nested_init_type, ""},
+                            {initial_column->getPtr(), nested_cast_type, ""},
                             context);
 
-                    arg.overflow_mask = &typeid_cast<const ColumnUInt8 &>(*removeNullable(overflow_mask)).getData();
+                    arg.overflow_mask = &typeid_cast<const ColumnUInt8 &>(*overflow_mask).getData();
                     arrays.column_holders.emplace_back(std::move(overflow_mask));
                 }
             }
@@ -487,8 +487,8 @@ ColumnPtr FunctionArrayIntersect<Mode>::executeImpl(const ColumnsWithTypeAndName
         DataTypeDateTime::FieldType, size_t,
         DefaultHash<DataTypeDateTime::FieldType>, INITIAL_SIZE_DEGREE>;
 
-    using StringMap = ClearableHashMapWithStackMemory<std::string_view, size_t,
-        StringViewHash, INITIAL_SIZE_DEGREE>;
+    using StringMap = ClearableHashMapWithStackMemory<StringRef, size_t,
+        StringRefHash, INITIAL_SIZE_DEGREE>;
 
     if (!result_column)
     {
@@ -662,7 +662,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
             {
                 ++result_offset;
                 result_data.insertDefault();
-                null_map.push_back(true);
+                null_map.push_back(1);
                 null_added = true;
             }
         }
@@ -679,7 +679,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
             {
                 ++result_offset;
                 result_data.insertDefault();
-                null_map.push_back(true);
+                null_map.push_back(1);
                 null_added = true;
             }
         }
@@ -699,7 +699,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                     {
                         ++result_offset;
                         result_data.insertDefault();
-                        null_map.push_back(true);
+                        null_map.push_back(1);
                         null_added = true;
                     }
                     if (null_added)
@@ -750,15 +750,15 @@ void FunctionArrayIntersect<Mode>::insertElement(typename Map::LookupResult & pa
     }
     else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
     {
-        result_data.insertData(pair->getKey().data(), pair->getKey().size());
+        result_data.insertData(pair->getKey().data, pair->getKey().size);
     }
     else
     {
-        ReadBufferFromString in(pair->getKey());
+        ReadBufferFromString in({pair->getKey().data, pair->getKey().size});
         result_data.deserializeAndInsertFromArena(in, /*settings=*/nullptr);
     }
     if (use_null_map)
-        null_map.push_back(false);
+        null_map.push_back(0);
 }
 
 
@@ -782,7 +782,7 @@ arrayIntersect([1, 2], [1, 3], [1, 4]) AS non_empty_intersection
 )"}};
     FunctionDocumentation::IntroducedIn intersect_introduced_in = {1, 1};
     FunctionDocumentation::Category intersect_category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation intersect_documentation = {intersect_description, intersect_syntax, intersect_argument, {}, intersect_returned_value, intersect_example, intersect_introduced_in, intersect_category};
+    FunctionDocumentation intersect_documentation = {intersect_description, intersect_syntax, intersect_argument, intersect_returned_value, intersect_example, intersect_introduced_in, intersect_category};
 
     factory.registerFunction<ArrayIntersect>(intersect_documentation);
 
@@ -801,7 +801,7 @@ arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
 )"}};
     FunctionDocumentation::IntroducedIn union_introduced_in = {24, 10};
     FunctionDocumentation::Category union_category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation union_documentation = {union_description, union_syntax, union_argument, {}, union_returned_value, union_example, union_introduced_in, union_category};
+    FunctionDocumentation union_documentation = {union_description, union_syntax, union_argument, union_returned_value, union_example, union_introduced_in, union_category};
 
     factory.registerFunction<ArrayUnion>(union_documentation);
 
@@ -825,7 +825,7 @@ arraySymmetricDifference([1, 2], [1, 2], [1, 3]) AS non_empty_symmetric_differen
 )"}};
     FunctionDocumentation::IntroducedIn symdiff_introduced_in = {25, 4};
     FunctionDocumentation::Category symdiff_category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation symdiff_documentation = {symdiff_description, symdiff_syntax, symdiff_argument, {}, symdiff_returned_value, symdiff_example, symdiff_introduced_in, symdiff_category};
+    FunctionDocumentation symdiff_documentation = {symdiff_description, symdiff_syntax, symdiff_argument, symdiff_returned_value, symdiff_example, symdiff_introduced_in, symdiff_category};
 
     factory.registerFunction<ArraySymmetricDifference>(symdiff_documentation);
 }

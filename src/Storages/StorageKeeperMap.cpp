@@ -1157,9 +1157,7 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         }
 
         TemporaryDataOnDiskSettings tmp_data_settings;
-        auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
-        tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
-
+        tmp_data_settings.buffer_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
         auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
 
         auto with_retries = std::make_shared<WithRetries>
@@ -1412,7 +1410,7 @@ StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr 
     return table_status;
 }
 
-Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const
+Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const
 {
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageKeeperMap supports only one key, got: {}", keys.size());
@@ -1696,7 +1694,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
     if (!args.storage_def->primary_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");
 
-    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->primary_key), metadata.columns, args.getContext());
+    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     if (primary_key_names.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");

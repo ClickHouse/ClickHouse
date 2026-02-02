@@ -1,3 +1,5 @@
+SET allow_experimental_qbit_type = 1;
+
 DROP TABLE IF EXISTS qbits;
 
 SELECT 'Test QBit with SummingMergeTree engine';

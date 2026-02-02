@@ -15,7 +15,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/convertFieldToType.h>
 
-
 namespace DB
 {
 namespace Setting
@@ -166,8 +165,8 @@ bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function, const 
     if (argument_nodes.size() != 2)
         return false;
 
-    auto first_src = getExpressionSource(argument_nodes[0]).first;
-    auto second_src = getExpressionSource(argument_nodes[1]).first;
+    auto first_src = getExpressionSource(argument_nodes[0]);
+    auto second_src = getExpressionSource(argument_nodes[1]);
     if (!first_src || !second_src)
         return false;
 
@@ -1467,11 +1466,10 @@ private:
 
         if (!function_node_type->equals(*node->getResultType()))
         {
-            /// Result of replacement_function can be low cardinality or nullable, while redundant equal
+            /// Result of replacement_function can be low cardinality, while redundant equal
             /// returns UInt8, and this equal can be an argument of external function -
             /// so we want to convert replacement_function to the expected UInt8
-            /// An example when it can be Nullable - using GROUP BY with GROUPING SETS and group_by_use_nulls = true
-            chassert(removeNullable(removeLowCardinality(function_node_type))->equals(*removeNullable(removeLowCardinality(node->getResultType()))));
+            chassert(function_node_type->equals(*removeLowCardinality(node->getResultType())));
             node = createCastFunction(node, function_node_type, getContext());
         }
     }
