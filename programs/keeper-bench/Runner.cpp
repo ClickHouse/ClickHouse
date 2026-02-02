@@ -1097,8 +1097,7 @@ void Runner::runBenchmarkFromLog()
             info->report(concurrency);
             DB::WriteBufferFromOwnString out;
             info->writeJSON(out, concurrency, 0);
-            auto output_string = std::move(out.str());
-            writeOutputString(output_string, 0);
+            writeOutputString(out.str(), 0);
         }
     });
 
