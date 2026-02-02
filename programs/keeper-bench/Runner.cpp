@@ -391,13 +391,10 @@ bool Runner::tryPushRequestInteractively(ZooKeeperRequestWithCallbacks && reques
 
 void Runner::runBenchmark()
 {
-    // When --input-request-log is set, always replay (ignore generator/setup in config).
-    if (!input_request_log.empty())
-        runBenchmarkFromLog();
-    else if (generator)
+    if (generator)
         runBenchmarkWithGenerator();
     else
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Need either --input-request-log or config with generator");
+        runBenchmarkFromLog();
 }
 
 
