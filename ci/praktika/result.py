@@ -8,6 +8,7 @@ import random
 import sys
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
@@ -71,6 +72,7 @@ class Result(MetaClasses.Serializable):
     duration: Optional[float] = None
     results: List["Result"] = dataclasses.field(default_factory=list)
     files: List[Union[str, Path]] = dataclasses.field(default_factory=list)
+    assets: List[Union[str, Path]] = dataclasses.field(default_factory=list)
     links: List[str] = dataclasses.field(default_factory=list)
     info: str = ""
     ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
@@ -82,6 +84,7 @@ class Result(MetaClasses.Serializable):
         stopwatch: Utils.Stopwatch = None,
         status="",
         files=None,
+        assets=None,
         info: Union[List[str], str] = "",
         with_info_from_results=False,
         links=None,
@@ -156,6 +159,7 @@ class Result(MetaClasses.Serializable):
             duration=duration,
             info="\n".join(infos) if infos else "",
             results=results or [],
+            assets=assets or [],
             files=files or [],
             links=links or [],
         ).set_label(labels or [])
@@ -349,6 +353,12 @@ class Result(MetaClasses.Serializable):
             self.ext["labels"].extend(label)
         else:
             self.ext["labels"].append(label)
+        return self
+
+    def remove_label(self, label):
+        if not self.ext.get("labels", None):
+            return
+        self.ext["labels"] = [l for l in self.ext["labels"] if l != label]
         return self
 
     def get_labels(self):
@@ -735,10 +745,42 @@ class Result(MetaClasses.Serializable):
         # Apply truncation if info_lines exceeds MAX_LINES_IN_INFO
         truncated = False
         if len(info_lines) > MAX_LINES_IN_INFO:
-            truncated_count = len(info_lines) - MAX_LINES_IN_INFO
-            info_lines = [
-                f"~~~~~ truncated {truncated_count} lines ~~~~~"
-            ] + info_lines[-MAX_LINES_IN_INFO:]
+            # For clang-tidy and similar builds, find the first error/warning
+            # and show context around it instead of just the last lines
+            first_error_idx = None
+            for idx, line in enumerate(info_lines):
+                # Match clang-tidy format: "file:line:col: error:" or "file:line:col: warning:"
+                if ": error:" in line or ": warning:" in line:
+                    first_error_idx = idx
+                    break
+
+            if first_error_idx is not None:
+                # Show context around the first error (lines before and after)
+                CONTEXT_BEFORE = 50
+                CONTEXT_AFTER = MAX_LINES_IN_INFO - CONTEXT_BEFORE - 1
+                start_idx = max(0, first_error_idx - CONTEXT_BEFORE)
+                end_idx = min(len(info_lines), first_error_idx + CONTEXT_AFTER + 1)
+
+                truncated_before = start_idx
+                truncated_after = len(info_lines) - end_idx
+
+                new_info_lines = []
+                if truncated_before > 0:
+                    new_info_lines.append(
+                        f"~~~~~ truncated {truncated_before} lines at the beginning ~~~~~"
+                    )
+                new_info_lines.extend(info_lines[start_idx:end_idx])
+                if truncated_after > 0:
+                    new_info_lines.append(
+                        f"~~~~~ truncated {truncated_after} lines at the end ~~~~~"
+                    )
+                info_lines = new_info_lines
+            else:
+                # Default behavior: keep the last MAX_LINES_IN_INFO lines
+                truncated_count = len(info_lines) - MAX_LINES_IN_INFO
+                info_lines = [
+                    f"~~~~~ truncated {truncated_count} lines ~~~~~"
+                ] + info_lines[-MAX_LINES_IN_INFO:]
             truncated = True
 
         # Create and return the result object with status and log file (if any)
@@ -1050,8 +1092,8 @@ class _ResultS3:
     def upload_result_files_to_s3(
         cls, result: Result, s3_subprefix="", _uploaded_file_link=None
     ):
-        s3_subprefix = "/".join([s3_subprefix, Utils.normalize_string(result.name)])
-
+        parts = [s3_subprefix.strip("/"), Utils.normalize_string(result.name).strip("/")]
+        s3_subprefix = "/".join([p for p in parts if p])
         if not _uploaded_file_link:
             _uploaded_file_link = {}
 
@@ -1100,6 +1142,23 @@ class _ResultS3:
                 )
                 result.set_info(f"ERROR: Failed to upload file [{file}]: {e}")
         result.files = []
+
+        # Upload assets in parallel (preserving relative paths for HTML interlinking)
+        if result.assets:
+            asset_paths = [Path(a).resolve() for a in result.assets if Path(a).is_file()]
+            if asset_paths:
+                common_root = os.path.commonpath([p.parent for p in asset_paths])
+                env = _Environment.get()
+                base_s3_prefix = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{s3_subprefix}".replace("//", "/")
+
+                print(f"INFO: Uploading {len(asset_paths)} assets to {base_s3_prefix} in parallel")
+                print(asset_paths)
+                with ThreadPoolExecutor(max_workers=10) as executor:
+                    for asset in asset_paths:
+                        rel_path = asset.relative_to(common_root)
+                        s3_path = f"{base_s3_prefix}/{rel_path}"
+                        executor.submit(S3.upload_asset_streaming, asset, s3_path)
+        result.assets = []
 
         if result.results:
             for result_ in result.results:

@@ -871,6 +871,11 @@
     <!-- System profile of settings. This settings are used by internal processes (Distributed DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
 
+    <!-- Background profile of settings. This profile is used by background operations (e.g. Merge, Mutate). 
+         Default profile name is 'background', which can be changed via the following setting. If such profile is not configured, system_profile is used.
+    -->
+    <!-- <background_profile>background</background_profile> -->
+
     <!-- Buffer profile of settings.
          This settings are used by Buffer storage to flush data to the underlying table.
          Default: used from system_profile directive.

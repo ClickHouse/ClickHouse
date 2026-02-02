@@ -245,5 +245,5 @@ def _update_workflow_with_native_jobs(workflow):
                 to_visit.extend(job_map[artifact_map[dep_name]].requires)
                 all_deps.add(artifact_map[dep_name])
             else:
-                assert False, f"dependency [{dep_name}] not found"
+                assert False, f"dependency [{dep_name}] not found, [{job.name}]"
         job.requires = sorted(list(all_deps))

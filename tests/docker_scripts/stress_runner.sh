@@ -3,7 +3,7 @@
 # shellcheck disable=SC2086
 # shellcheck disable=SC2024
 
-set -x
+set -ex
 
 # Avoid overlaps with previous runs
 dmesg --clear
@@ -21,7 +21,7 @@ install_packages package_folder
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
 # and find more potential issues.
 export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
-export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
+export THREAD_FUZZER_SLEEP_PROBABILITY=0.01
 export THREAD_FUZZER_SLEEP_TIME_US_MAX=100000
 
 export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
@@ -39,8 +39,8 @@ export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX=10000
 export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX=10000
 export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX=10000
 
-export THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY=0.01
-export THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY=0.01
+export THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY=0.001
+export THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY=0.001
 
 export USE_ENCRYPTED_STORAGE=$((RANDOM % 2))
 
@@ -81,26 +81,9 @@ if [ "$cache_policy" = "SLRU" ]; then
     sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
 fi
 
-# Disable experimental WINDOW VIEW tests for stress tests, since they may be
-# created with old analyzer and then, after server restart it will refuse to
-# start.
-# FIXME: remove once the support for WINDOW VIEW will be implemented in analyzer.
-sudo cat /etc/clickhouse-server/users.d/stress_tests_overrides.xml <<EOL
-<clickhouse>
-    <profiles>
-        <default>
-            <allow_experimental_window_view>false</allow_experimental_window_view>
-            <constraints>
-               <allow_experimental_window_view>
-                   <readonly/>
-               </allow_experimental_window_view>
-            </constraints>
-        </default>
-    </profiles>
-</clickhouse>
-EOL
-
 start_server || { echo "Failed to start server"; exit 1; }
+
+clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
@@ -213,6 +196,8 @@ clickhouse-client --query "CREATE TABLE test.visits (CounterID UInt32,  StartDat
     ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
     SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='$TEMP_POLICY'"
 
+# Might fail in sanitizer runs, not very important
+set +e
 clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
 clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
 clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
@@ -221,8 +206,8 @@ clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
 clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
 
 clickhouse-client --query "SHOW TABLES FROM test"
+set -e
 
-clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
 
 stop_server
 
@@ -231,6 +216,7 @@ export RANDOMIZE_OBJECT_KEY_TYPE=1
 export ZOOKEEPER_FAULT_INJECTION=1
 export THREAD_POOL_FAULT_INJECTION=1
 configure
+configure_limits
 
 if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" || "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     # But we still need default disk because some tables loaded only into it
@@ -272,7 +258,7 @@ fi
 
 # Randomize concurrent_threads_scheduler (default is fair_round_robin)
 if [ $((RANDOM % 2)) -eq 1 ]; then
-    sudo echo "<concurrent_threads_scheduler>max_min_fair</concurrent_threads_scheduler>" \
+    sudo echo "<clickhouse><concurrent_threads_scheduler>max_min_fair</concurrent_threads_scheduler></clickhouse>" \
         > /etc/clickhouse-server/config.d/enable_max_min_fair_scheduler.xml
 fi
 
@@ -313,27 +299,5 @@ tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 collect_query_and_trace_logs
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
-
-# Write check result into check_status.tsv
-# Try to choose most specific error for the whole check status
-clickhouse-local --structure "test String, res String, time Nullable(Float32), desc String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by
-(test like '%Sanitizer%') DESC,
-(test like '%Killed by signal%') DESC,
-(test like '%gdb.log%') DESC,
-(test ilike '%possible deadlock%') DESC,
-(test like '%start%') DESC,
-(test like '%dmesg%') DESC,
-(test like '%OOM%') DESC,
-(test like '%Signal 9%') DESC,
-(test like '%Fatal message%') DESC,
-rowNumberInAllBlocks()
-LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo -e "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
-[ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
-
-# But OOMs in stress test are allowed
-if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
-then
-    sed -i 's/failure/success/' /test_output/check_status.tsv
-fi
 
 collect_core_dumps

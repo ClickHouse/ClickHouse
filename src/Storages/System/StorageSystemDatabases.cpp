@@ -55,7 +55,7 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
     while (true)
     {
         String name = database->getDatabaseName();
-        guard = DatabaseCatalog::instance().getDDLGuard(name, "");
+        guard = DatabaseCatalog::instance().getDDLGuard(name, "", nullptr);
 
         /// Ensure that the database was not renamed before we acquired the lock
         auto locked_database = DatabaseCatalog::instance().tryGetDatabase(name);

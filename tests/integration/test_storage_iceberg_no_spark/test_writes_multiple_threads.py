@@ -12,6 +12,9 @@ from helpers.iceberg_utils import (
 @pytest.mark.parametrize("storage_type", ["s3",])
 def test_writes_multiple_threads(started_cluster_iceberg_no_spark, format_version, storage_type):
     instance = started_cluster_iceberg_no_spark.instances["node1"]
+    r1 = instance.is_built_with_llvm_coverage()
+    if r1:
+        pytest.skip("Flaky under llvm_coverage")
     TABLE_NAME = "test_writes_multiple_threads_" + storage_type + "_" + get_uuid_str()
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_no_spark, "(x Int32)", format_version)

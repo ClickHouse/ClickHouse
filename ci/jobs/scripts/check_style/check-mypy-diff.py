@@ -19,11 +19,7 @@ def run_command(cmd: List[str], cwd: Optional[str] = None) -> Tuple[int, str, st
     """Run a command and return exit code, stdout, and stderr."""
     try:
         result = subprocess.run(
-            cmd,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=False
+            cmd, cwd=cwd, capture_output=True, text=True, check=False
         )
         return result.returncode, result.stdout, result.stderr
     except Exception as e:
@@ -40,11 +36,9 @@ def get_git_root() -> Path:
 
 def get_merge_base_with_master() -> str:
     """Get the merge base commit with master."""
-    exit_code, stdout, stderr = run_command(
-        ["git", "merge-base", "HEAD", "master"])
+    exit_code, stdout, stderr = run_command(["git", "merge-base", "HEAD", "master"])
     if exit_code != 0:
-        print(
-            f"Error finding merge base with master: {stderr}", file=sys.stderr)
+        print(f"Error finding merge base with master: {stderr}", file=sys.stderr)
         sys.exit(1)
     return stdout.strip()
 
@@ -63,37 +57,34 @@ def get_changed_files(merge_base: str) -> Tuple[List[str], List[str], List[str]]
         Tuple of (modified_files, added_files, deleted_files)
     """
     # Get all files in the diff
-    exit_code, stdout, stderr = run_command([
-        "git", "diff", "--name-only", merge_base, "HEAD"
-    ])
+    exit_code, stdout, stderr = run_command(
+        ["git", "diff", "--name-only", merge_base, "HEAD"]
+    )
     if exit_code != 0:
         print(f"Error getting diff files: {stderr}", file=sys.stderr)
         sys.exit(1)
 
-    diff_files = set(f.strip()
-                     for f in stdout.strip().split("\n") if f.strip())
+    diff_files = set(f.strip() for f in stdout.strip().split("\n") if f.strip())
 
     # Get all files in base branch
-    exit_code, stdout, stderr = run_command([
-        "git", "ls-tree", "-r", "--name-only", merge_base
-    ])
+    exit_code, stdout, stderr = run_command(
+        ["git", "ls-tree", "-r", "--name-only", merge_base]
+    )
     if exit_code != 0:
         print(f"Error getting base branch files: {stderr}", file=sys.stderr)
         sys.exit(1)
 
-    base_files = set(f.strip()
-                     for f in stdout.strip().split("\n") if f.strip())
+    base_files = set(f.strip() for f in stdout.strip().split("\n") if f.strip())
 
     # Get all files in current branch
-    exit_code, stdout, stderr = run_command([
-        "git", "ls-tree", "-r", "--name-only", "HEAD"
-    ])
+    exit_code, stdout, stderr = run_command(
+        ["git", "ls-tree", "-r", "--name-only", "HEAD"]
+    )
     if exit_code != 0:
         print(f"Error getting current branch files: {stderr}", file=sys.stderr)
         sys.exit(1)
 
-    current_files = set(f.strip()
-                        for f in stdout.strip().split("\n") if f.strip())
+    current_files = set(f.strip() for f in stdout.strip().split("\n") if f.strip())
 
     # Modified: files in diff that exist in both branches
     modified_files = diff_files & base_files & current_files
@@ -144,7 +135,12 @@ def parse_mypy_error_count(output: str) -> int | None:
     return None
 
 
-def run_mypy_on_file(file_path: str, git_root: Path, config_path: Path, worktree_path: Optional[Path] = None) -> MyPyResult | None:
+def run_mypy_on_file(
+    file_path: str,
+    git_root: Path,
+    config_path: Path,
+    worktree_path: Optional[Path] = None,
+) -> MyPyResult | None:
     """
     Run mypy on a single file.
 
@@ -180,7 +176,9 @@ def run_mypy_on_file(file_path: str, git_root: Path, config_path: Path, worktree
     return MyPyResult(errors=error_count)
 
 
-def run_mypy_on_files_dict(file_paths: List[str], git_root: Path, worktree_path: Optional[Path] = None) -> Dict[str, MyPyResult]:
+def run_mypy_on_files_dict(
+    file_paths: List[str], git_root: Path, worktree_path: Optional[Path] = None
+) -> Dict[str, MyPyResult]:
     """
     Run mypy on multiple files and return a dictionary mapping file path to MyPyResult.
 
@@ -198,12 +196,18 @@ def run_mypy_on_files_dict(file_paths: List[str], git_root: Path, worktree_path:
     results = {}
     for file_path in file_paths:
         results[file_path] = run_mypy_on_file(
-            file_path, git_root, config_path, worktree_path)
+            file_path, git_root, config_path, worktree_path
+        )
 
     return results
 
 
-def run_mypy_on_files(files: List[str], git_root: Path, branch: Optional[str] = None, worktree_path: Optional[Path] = None) -> Tuple[int, str]:
+def run_mypy_on_files(
+    files: List[str],
+    git_root: Path,
+    branch: Optional[str] = None,
+    worktree_path: Optional[Path] = None,
+) -> Tuple[int, str]:
     """
     Run mypy on given files in the specified branch.
     If branch is provided, uses worktree_path as the base directory.
@@ -239,7 +243,9 @@ def run_mypy_on_files(files: List[str], git_root: Path, branch: Optional[str] = 
     return exit_code, stdout + stderr
 
 
-def normalize_mypy_output(output: str, files: List[str], git_root: Optional[Path] = None) -> Set[str]:
+def normalize_mypy_output(
+    output: str, files: List[str], git_root: Optional[Path] = None
+) -> Set[str]:
     """
     Normalize mypy output by replacing absolute paths with relative paths.
     Returns a set of normalized error lines.
@@ -276,8 +282,7 @@ def normalize_mypy_output(output: str, files: List[str], git_root: Optional[Path
             if file_path_obj.is_absolute() and git_root:
                 try:
                     abs_in_line = str(file_path_obj)
-                    normalized_line = normalized_line.replace(
-                        abs_in_line, rel_file)
+                    normalized_line = normalized_line.replace(abs_in_line, rel_file)
                 except Exception:
                     pass
 
@@ -327,7 +332,8 @@ def main():
 
     # Get current branch name
     exit_code, current_branch, _ = run_command(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"])
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"]
+    )
     current_branch = current_branch.strip() if exit_code == 0 else "HEAD"
 
     # Create a worktree for the base branch (master) to compare
@@ -336,9 +342,9 @@ def main():
         # Create temporary worktree for master branch
         worktree_dir = Path(tempfile.mkdtemp(prefix="mypy-check-"))
         print(f"Creating worktree for master branch at {worktree_dir}...")
-        exit_code, stdout, stderr = run_command([
-            "git", "worktree", "add", str(worktree_dir), "master"
-        ], cwd=git_root)
+        exit_code, stdout, stderr = run_command(
+            ["git", "worktree", "add", str(worktree_dir), "master"], cwd=git_root
+        )
         if exit_code != 0:
             print(f"Error creating worktree: {stderr}", file=sys.stderr)
             sys.exit(1)
@@ -371,34 +377,43 @@ def main():
             )
 
         # Normalize outputs for comparison (only for modified files that exist in both)
-        base_errors = normalize_mypy_output(
-            base_output, modified_files, git_root=worktree_dir) if base_output else set()
-        current_errors = normalize_mypy_output(
-            current_output, modified_files, git_root=git_root) if current_output else set()
+        base_errors = (
+            normalize_mypy_output(base_output, modified_files, git_root=worktree_dir)
+            if base_output
+            else set()
+        )
+        current_errors = (
+            normalize_mypy_output(current_output, modified_files, git_root=git_root)
+            if current_output
+            else set()
+        )
 
         # Errors in new files
-        new_file_errors = normalize_mypy_output(
-            new_files_output, added_files, git_root=git_root) if new_files_output else set()
+        new_file_errors = (
+            normalize_mypy_output(new_files_output, added_files, git_root=git_root)
+            if new_files_output
+            else set()
+        )
 
         # Compare errors for modified files
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("MYPY ERROR DIFF")
-        print("="*80)
+        print("=" * 80)
 
         # Errors in modified files
         new_errors_in_modified = current_errors - base_errors
         fixed_errors_in_modified = base_errors - current_errors
 
         if new_errors_in_modified:
-            print(
-                f"\n❌ NEW ERRORS in modified files ({len(new_errors_in_modified)}):")
+            print(f"\n❌ NEW ERRORS in modified files ({len(new_errors_in_modified)}):")
             print("-" * 80)
             for error in sorted(new_errors_in_modified):
                 print(error)
 
         if fixed_errors_in_modified:
             print(
-                f"\n✅ FIXED ERRORS in modified files ({len(fixed_errors_in_modified)}):")
+                f"\n✅ FIXED ERRORS in modified files ({len(fixed_errors_in_modified)}):"
+            )
             print("-" * 80)
             for error in sorted(fixed_errors_in_modified):
                 print(error)
@@ -412,17 +427,25 @@ def main():
 
         # Summary
         total_new_errors = len(new_errors_in_modified) + len(new_file_errors)
-        if not new_errors_in_modified and not fixed_errors_in_modified and not new_file_errors:
+        if (
+            not new_errors_in_modified
+            and not fixed_errors_in_modified
+            and not new_file_errors
+        ):
             if base_errors:
                 print("\n⚠️  No change in errors (same errors as base branch)")
             else:
                 print("\n✅ No mypy errors!")
 
         # Show full output if there are differences
-        if total_new_errors > 0 or (current_exit_code != 0 and base_exit_code == 0) or new_files_exit_code != 0:
-            print("\n" + "="*80)
+        if (
+            total_new_errors > 0
+            or (current_exit_code != 0 and base_exit_code == 0)
+            or new_files_exit_code != 0
+        ):
+            print("\n" + "=" * 80)
             print("FULL CURRENT BRANCH OUTPUT:")
-            print("="*80)
+            print("=" * 80)
             if current_output:
                 print("Modified files:")
                 print(current_output)
@@ -434,7 +457,11 @@ def main():
 
         # Exit with error if there are new errors
         exit_code = 0
-        if total_new_errors > 0 or (current_exit_code != 0 and base_exit_code == 0) or new_files_exit_code != 0:
+        if (
+            total_new_errors > 0
+            or (current_exit_code != 0 and base_exit_code == 0)
+            or new_files_exit_code != 0
+        ):
             exit_code = 1
 
         return exit_code
@@ -443,8 +470,10 @@ def main():
         # Cleanup worktree
         if worktree_dir and worktree_dir.exists():
             print(f"\nCleaning up worktree...")
-            run_command(["git", "worktree", "remove", "--force",
-                        str(worktree_dir)], cwd=git_root)
+            run_command(
+                ["git", "worktree", "remove", "--force", str(worktree_dir)],
+                cwd=git_root,
+            )
             try:
                 if worktree_dir.exists():
                     worktree_dir.rmdir()

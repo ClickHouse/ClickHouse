@@ -46,6 +46,7 @@ The updated values are:
 - **Immediately visible** in `SELECT` queries through patches application
 - **Physically materialized** only during subsequent merges and mutations
 - **Automatically cleaned up** once all active parts have the patches materialized
+
 ## Lightweight updates requirements {#lightweight-update-requirements}
 
 Lightweight updates are supported for [`MergeTree`](/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/engines/table-engines/mergetree-family/collapsingmergetree) engines and their [`Replicated`](/engines/table-engines/mergetree-family/replication.md) and [`Shared`](/cloud/reference/shared-merge-tree) versions.
@@ -122,3 +123,4 @@ The join mode is slower and requires more memory than the merge mode, but it is 
 
 - [`ALTER UPDATE`](/sql-reference/statements/alter/update) - Heavy `UPDATE` operations
 - [Lightweight `DELETE`](/sql-reference/statements/delete) - Lightweight `DELETE` operations
+- [`APPLY PATCHES`](/sql-reference/statements/alter/apply-patches) - Force physical materialization of patches to data parts (mutation operation)

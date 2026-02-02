@@ -14,7 +14,10 @@ profiles:
         # first_or_random - if first replica one has higher number of errors, pick a random one from replicas with minimum number of errors.
         load_balancing: random
 
-        # Profile that allows only read queries.
+    # Settings for background operations (e.g. Merge, Mutate)
+    #background:
+
+    # Profile that allows only read queries.
     readonly:
         readonly: 1
 

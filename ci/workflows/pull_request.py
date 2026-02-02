@@ -156,6 +156,7 @@ workflow = Workflow.Config(
             0
         ].name,  # plain integration test job, no old analyzer, no dist plan
         "functional": PLAIN_FUNCTIONAL_TEST_JOB.name,
+        "build": "Build (amd_binary)",
     },
 )
 
