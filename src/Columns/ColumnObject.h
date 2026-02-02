@@ -290,6 +290,8 @@ public:
     /// offset argument - is the offset from which we should check for duplicates.
     void repairDuplicatesInDynamicPathsAndSharedData(size_t offset = 0);
 
+    void validateDynamicPathsSizes() const;
+
     /// Class that allows to iterate over paths inside single row in ColumnObject in sorted order.
     class SortedPathsIterator
     {

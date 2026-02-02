@@ -649,7 +649,7 @@ uint8_t prefixToCopy(UInt64 mask)
     /// So the length of the prefix to copy is 64 - #(leading zeroes).
     const UInt64 leading_zeroes = __builtin_clzll(mask);
     if (mask == ((static_cast<UInt64>(-1) << leading_zeroes) >> leading_zeroes))
-        return 64 - leading_zeroes;
+        return static_cast<uint8_t>(64 - leading_zeroes);
     return 0xFF;
 }
 

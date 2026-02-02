@@ -131,7 +131,7 @@ Cluster::Address::Address(
     if (!port)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
 
-    is_local = isLocal(config.getInt(port_type, 0));
+    is_local = isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
 
     /// if bind_host is set, then force is_local to false for easier testing
     if (!bind_host.empty())

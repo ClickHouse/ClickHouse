@@ -64,6 +64,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
+    extern const int REQUIRED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
     extern const int USER_EXPIRED;
 }
@@ -337,6 +338,10 @@ void Client::initialize(Poco::Util::Application & self)
     /// Use <server_client_version_message/> unless --server-client-version-message is specified
     if (!config().has("no-server-client-version-message") && !config().getBool("server_client_version_message", true))
         config().setBool("no-server-client-version-message", true);
+
+    /// Use <warnings/> unless --no-warnings is specified
+    if (!config().has("no-warnings") && !config().getBool("warnings", true))
+        config().setBool("no-warnings", true);
 }
 
 
@@ -373,20 +378,45 @@ try
     }
 #endif
 
-    try
+    bool asked_password = false;
+    bool asked_2fa = false;
+    for (;;)
     {
-        connect();
-    }
-    catch (const Exception & e)
-    {
-        if ((e.code() != ErrorCodes::AUTHENTICATION_FAILED && e.code() != ErrorCodes::REQUIRED_PASSWORD) ||
-            config().has("password") ||
-            config().getBool("ask-password", false) ||
-            !is_interactive)
-            throw;
+        try
+        {
+            connect();
+            break;
+        }
+        catch (const Exception & e)
+        {
+            auto code = e.code();
 
-        config().setBool("ask-password", true);
-        connect();
+            bool should_ask_password = !asked_password && is_interactive &&
+                (code == ErrorCodes::AUTHENTICATION_FAILED || code == ErrorCodes::REQUIRED_PASSWORD) &&
+                !config().has("password") && !config().getBool("ask-password", false);
+
+            if (should_ask_password)
+            {
+                asked_password = true;
+                config().setBool("ask-password", true);
+                continue;
+            }
+
+            bool should_ask_2fa = !asked_2fa && (code == ErrorCodes::REQUIRED_SECOND_FACTOR) &&
+                (config().getBool("ask-password", false) || is_interactive) && !config().has("one-time-password");
+
+            if (should_ask_2fa)
+            {
+                asked_2fa = true;
+                if (!connection_parameters.password.empty())
+                    config().setString("password", connection_parameters.password);
+                config().setBool("ask-password", false);
+                config().setBool("ask-password-2fa", true);
+                continue;
+            }
+
+            throw;
+        }
     }
 
     /// Show warnings at the beginning of connection.
@@ -714,6 +744,7 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
         ("connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")
         ("secure,s", "Use TLS connection")
+        ("tls-sni-override", po::value<std::string>(), "Override the SNI host name used for TLS connections")
         ("no-secure", "Don't use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         ("password", po::value<std::string>(), "password")
@@ -722,6 +753,7 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
         ("jwt", po::value<std::string>(), "Use JWT for authentication")
+        ("one-time-password", po::value<std::string>(), "Time-based one-time password (TOTP) for two-factor authentication")
 #if USE_JWT_CPP && USE_SSL
         ("login", po::bool_switch(), "Use OAuth 2.0 to login")
         ("oauth-url", po::value<std::string>(), "The base URL for the OAuth 2.0 authorization server")
@@ -853,6 +885,8 @@ void Client::processOptions(
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
     if (options.contains("secure"))
         config().setBool("secure", true);
+    if (options.contains("tls-sni-override"))
+        config().setString("tls-sni-override", options["tls-sni-override"].as<std::string>());
     if (options.contains("no-secure"))
         config().setBool("no-secure", true);
     if (options.contains("user") && !options["user"].defaulted())
@@ -861,6 +895,8 @@ void Client::processOptions(
         config().setString("password", options["password"].as<std::string>());
     if (options.contains("ask-password"))
         config().setBool("ask-password", true);
+    if (options.contains("one-time-password"))
+        config().setString("one-time-password", options["one-time-password"].as<std::string>());
     if (options.contains("ssh-key-file"))
         config().setString("ssh-key-file", options["ssh-key-file"].as<std::string>());
     if (options.contains("ssh-key-passphrase"))
@@ -957,7 +993,7 @@ void Client::processOptions(
 
     initClientContext(Context::createCopy(global_context));
     /// Initialize query context for the current thread to avoid sharing global context (i.e. for obtaining session_timezone)
-    query_scope.emplace(client_context);
+    query_scope = CurrentThread::QueryScope::create(client_context);
 
 
     /// Allow to pass-through unknown settings to the server.
@@ -1038,6 +1074,7 @@ void Client::readArguments(
         {
             std::string hostname(argv[1]);
             std::string port;
+            bool has_auth_in_connection_string = false;
 
             try
             {
@@ -1047,13 +1084,15 @@ void Client::readArguments(
                     hostname = host;
                     port = std::to_string(uri.getPort());
                 }
+                /// Check if connection string contains user credentials (e.g., clickhouse://user:password@host)
+                has_auth_in_connection_string = !uri.getUserInfo().empty();
             }
             catch (const Poco::URISyntaxException &) // NOLINT(bugprone-empty-catch)
             {
                 // intentionally ignored. argv[1] is not a uri, but could be a query.
             }
 
-            if (isCloudEndpoint(hostname))
+            if (isCloudEndpoint(hostname) && !has_auth_in_connection_string)
             {
                 is_hostname_argument = true;
 
@@ -1071,8 +1110,8 @@ void Client::readArguments(
                     }
                 }
 
-                /// Only auto-add --login if no authentication credentials provided via command line
-                if (!has_auth_in_cmdline)
+                /// Only auto-add --login if no authentication credentials provided via command line or connection string
+                if (!has_auth_in_cmdline && !has_auth_in_connection_string)
                 {
                     common_arguments.emplace_back("--login");
                     login_was_auto_added = true;
@@ -1107,6 +1146,23 @@ void Client::readArguments(
     for (int arg_num = start_argument_index; arg_num < argc; ++arg_num)
     {
         std::string_view arg = argv[arg_num];
+
+        /// Support arguments with a space on both sides of equals sign.
+        /// Ex: --param = value
+        std::string fused_arg;
+        if (arg.starts_with('-') && arg_num + 2 < argc)
+        {
+            std::string_view next_arg = argv[arg_num + 1];
+            if (next_arg == "=" && !arg.contains('='))
+            {
+                fused_arg = std::string(arg);
+                fused_arg += "=";
+                fused_arg += argv[arg_num + 2];
+
+                arg = fused_arg;
+                arg_num += 2;
+            }
+        }
 
         if (has_connection_string || is_hostname_argument)
             checkIfCmdLineOptionCanBeUsedWithConnectionString(arg);

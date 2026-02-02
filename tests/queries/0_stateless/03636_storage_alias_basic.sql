@@ -264,3 +264,44 @@ FROM system.tables
 WHERE database = currentDatabase() AND name = 'alias_with_missing_target';
 
 DROP TABLE alias_with_missing_target;
+
+-- Test: Materialized views on both Alias and target table
+DROP TABLE IF EXISTS mv_test_from_alias;
+DROP TABLE IF EXISTS mv_test_from_target;
+DROP TABLE IF EXISTS mv_test_alias_dest;
+DROP TABLE IF EXISTS mv_test_target_dest;
+DROP TABLE IF EXISTS mv_test_alias;
+DROP TABLE IF EXISTS mv_test_source;
+
+-- Create source table and alias
+CREATE TABLE mv_test_source (id UInt32, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE mv_test_alias ENGINE = Alias('mv_test_source');
+
+-- Create destination tables for MVs
+CREATE TABLE mv_test_alias_dest (id UInt32, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE mv_test_target_dest (id UInt32, value String) ENGINE = MergeTree ORDER BY id;
+
+-- Create MV on Alias table
+CREATE MATERIALIZED VIEW mv_test_from_alias TO mv_test_alias_dest AS SELECT id, value FROM mv_test_alias;
+
+-- Create MV on target table (mv_test_source)
+CREATE MATERIALIZED VIEW mv_test_from_target TO mv_test_target_dest AS SELECT id, value FROM mv_test_source;
+
+-- Test: Insert into mv_test_alias should trigger BOTH MVs
+INSERT INTO mv_test_alias VALUES (1, 'a'), (2, 'b');
+
+SELECT * FROM mv_test_alias_dest ORDER BY id;
+SELECT * FROM mv_test_target_dest ORDER BY id;
+
+-- Test: Insert into mv_test_source should trigger only target MV
+INSERT INTO mv_test_source VALUES (3, 'c'), (4, 'd');
+
+SELECT * FROM mv_test_alias_dest ORDER BY id;
+SELECT * FROM mv_test_target_dest ORDER BY id;
+
+DROP TABLE mv_test_from_alias;
+DROP TABLE mv_test_from_target;
+DROP TABLE mv_test_alias_dest;
+DROP TABLE mv_test_target_dest;
+DROP TABLE mv_test_alias;
+DROP TABLE mv_test_source;

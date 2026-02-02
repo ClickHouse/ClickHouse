@@ -42,7 +42,9 @@ Positions: 0
         Expression (Right Pre Join Actions)
         Actions: INPUT :: 0 -> __table1.c_nationkey Int32 : 0
         Positions: 0
-          BuildRuntimeFilter (Build runtime join filter on __table1.c_nationkey (_runtime_filter_UNIQ_ID_0))
+          BuildRuntimeFilter (Build runtime join filter on __table1.c_nationkey)
+          Filter id: _runtime_filter_UNIQ_ID_0
+          Allow not exact filter: 1
             Expression (Change column names to column identifiers)
             Actions: INPUT : 0 -> c_nationkey Int32 : 0
                      ALIAS c_nationkey :: 0 -> __table1.c_nationkey Int32 : 1
@@ -88,7 +90,9 @@ Positions: 0
         Expression (Right Pre Join Actions)
         Actions: INPUT :: 0 -> exists(__table2).__table1.c_nationkey Int32 : 0
         Positions: 0
-          BuildRuntimeFilter (Build runtime join filter on exists(__table2).__table1.c_nationkey (_exclusion__runtime_filter_UNIQ_ID_0))
+          BuildRuntimeFilter (Build runtime join filter on exists(__table2).__table1.c_nationkey)
+          Filter id: _exclusion__runtime_filter_UNIQ_ID_0
+          Allow not exact filter: 0
             Expression (Create result for always true EXISTS expression)
             Actions: INPUT : 0 -> __table1.c_nationkey Int32 : 0
                      ALIAS __table1.c_nationkey :: 0 -> exists(__table2).__table1.c_nationkey Int32 : 1

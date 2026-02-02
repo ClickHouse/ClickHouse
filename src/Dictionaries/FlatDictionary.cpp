@@ -456,12 +456,13 @@ void FlatDictionary::updateData()
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
 
         io.executeWithCallbacks([&]()
         {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
             Block block;
             while (executor.pull(block))
             {
@@ -501,11 +502,11 @@ void FlatDictionary::loadData()
     {
         BlockIO io = source_ptr->loadAll();
 
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
-
         io.executeWithCallbacks([&]()
         {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
             Block block;
             while (executor.pull(block))
                 blockToAttributes(block);

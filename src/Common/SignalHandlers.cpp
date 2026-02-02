@@ -38,6 +38,10 @@ static const std::vector<FramePointers> empty_stack;
 using namespace DB;
 
 
+static std::atomic_bool is_crashed = false;
+bool isCrashed() { return is_crashed.load(std::memory_order_relaxed); }
+
+
 void call_default_signal_handler(int sig)
 {
     if (SIG_ERR == signal(sig, SIG_DFL))
@@ -96,6 +100,9 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
+    if (sig != SIGTSTP)
+        is_crashed.store(true, std::memory_order_relaxed);
 
     char buf[signal_pipe_buf_size];
     auto & signal_pipe = HandledSignals::instance().signal_pipe;
@@ -527,7 +534,7 @@ try
     if (std::string_view(VERSION_OFFICIAL).contains("official build"))
     {
         /// Approximate support period, upper bound.
-        if (time(nullptr) - makeDate(DateLUT::instance(), 2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
+        if (time(nullptr) - makeDate(DateLUT::instance(), static_cast<UInt8>(2000 + VERSION_MAJOR), static_cast<UInt8>(VERSION_MINOR), 1) < (365 + 30) * 86400)
         {
             LOG_FATAL(log, "Report this error to https://github.com/ClickHouse/ClickHouse/issues");
         }

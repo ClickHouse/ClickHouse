@@ -33,13 +33,18 @@
 
 #include <Poco/Util/XMLConfiguration.h>
 
-#include <incbin.h>
-
 #include "config.h"
 
 /// Embedded configuration files used inside the install program
-INCBIN(resource_config_xml, SOURCE_DIR "/programs/server/config.xml");
-INCBIN(resource_users_xml, SOURCE_DIR "/programs/server/users.xml");
+constexpr unsigned char resource_config_xml[] =
+{
+#embed "../server/config.xml"
+};
+
+constexpr unsigned char resource_users_xml[] =
+{
+#embed "../server/users.xml"
+};
 
 
 /** This tool can be used to install ClickHouse without a deb/rpm/tgz package, having only "clickhouse" binary.
@@ -581,7 +586,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(main_config_file))
         {
-            std::string_view main_config_content(reinterpret_cast<const char *>(gresource_config_xmlData), gresource_config_xmlSize);
+            std::string_view main_config_content(reinterpret_cast<const char *>(resource_config_xml), std::size(resource_config_xml));
             if (main_config_content.empty())
             {
                 fmt::print("There is no default config.xml, you have to download it and place to {}.\n", main_config_file.string());
@@ -692,7 +697,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(users_config_file))
         {
-            std::string_view users_config_content(reinterpret_cast<const char *>(gresource_users_xmlData), gresource_users_xmlSize);
+            std::string_view users_config_content(reinterpret_cast<const char *>(resource_users_xml), std::size(resource_users_xml));
             if (users_config_content.empty())
             {
                 fmt::print("There is no default users.xml, you have to download it and place to {}.\n", users_config_file.string());

@@ -8,13 +8,14 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Common/ContainersWithMemoryTracking.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -58,7 +59,7 @@ public:
     struct State
     {
         /// Maps bucket index to the set of all timestamps and values
-        std::unordered_map<size_t, Bucket> buckets;
+        UnorderedMapWithMemoryTracking<size_t, Bucket> buckets;
     };
 
     explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_,
@@ -78,7 +79,7 @@ public:
         , end_timestamp(static_cast<TimestampType>(start_timestamp_ + (bucket_count - 1) * step_))  /// Align end timestamp down by step
         , step(step_)
         , window(window_)
-        , timestamp_scale_multiplier(DecimalUtils::scaleMultiplier<Int64>(timestamp_scale_))
+        , timestamp_scale_multiplier(static_cast<TimestampType>(DecimalUtils::scaleMultiplier<Int64>(timestamp_scale_)))
     {
         if (window < 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window should be non-negative");

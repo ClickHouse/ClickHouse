@@ -5,7 +5,6 @@
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ReadBufferFromString.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -644,7 +643,13 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
     }
 
     /// Finally, insert paths from shared data.
-    insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), n, 1);
+    /// If limit on dynamic paths is reached and set of dynamic paths is the same for both source
+    /// and destination columns, we can insert into shared data from source shared data directly.
+    if (!canAddNewDynamicPath() && sorted_dynamic_paths == src_object_column.sorted_dynamic_paths)
+        shared_data->insertFrom(*src_object_column.shared_data, n);
+    /// Otherwise we might need to insert dynamic paths into shared data and vice versa.
+    else
+        insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), n, 1);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -684,7 +689,13 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
     }
 
     /// Finally, insert paths from shared data.
-    insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), start, length);
+    /// If limit on dynamic paths is reached and set of dynamic paths is the same for both source
+    /// and destination columns, we can insert into shared data from source shared data directly.
+    if (!canAddNewDynamicPath() && sorted_dynamic_paths == src_object_column.sorted_dynamic_paths)
+        shared_data->insertRangeFrom(*src_object_column.shared_data, start, length);
+    /// Otherwise we might need to insert dynamic paths into shared data and vice versa.
+    else
+        insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), start, length);
 }
 
 void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length)
@@ -2199,6 +2210,17 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
     if (new_shared_data->size() != size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of new shared data: {} != {}", new_shared_data->size(), size);
     shared_data = std::move(new_shared_data);
+}
+
+void ColumnObject::validateDynamicPathsSizes() const
+{
+    size_t expected_size = shared_data->size();
+    for (const auto & [path, column] : dynamic_paths)
+    {
+        if (column->size() != expected_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
+    }
+
 }
 
 }

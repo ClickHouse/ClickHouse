@@ -1,6 +1,5 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
-#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>

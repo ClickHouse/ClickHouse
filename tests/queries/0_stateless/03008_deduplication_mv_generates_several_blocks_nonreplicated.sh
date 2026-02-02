@@ -10,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ENGINE="MergeTree"
 
 RUN_ONLY=""
-#RUN_ONLY="Test case 20: engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True"
+#RUN_ONLY="Test case 17: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False"
 
 i=0
 for insert_method in "InsertSelect" "InsertValues"; do

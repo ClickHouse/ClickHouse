@@ -1,4 +1,5 @@
 #include <chrono>
+#include <ranges>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/OSThreadNiceValue.h>
@@ -351,7 +352,7 @@ void ZooKeeper::flushWriteBuffer()
 void ZooKeeper::cancelWriteBuffer() noexcept
 {
     if (compressed_out)
-         compressed_out->cancel();
+        compressed_out->cancel();
     if (out)
         out->cancel();
 }
@@ -590,7 +591,6 @@ void ZooKeeper::connect(
                     throw;
                 }
 
-                connected = true;
                 if (use_compression)
                 {
                     compressed_in.emplace(*in);
@@ -598,6 +598,8 @@ void ZooKeeper::connect(
                 }
 
                 original_index.store(node.original_index);
+
+                connected = true;
                 break;
             }
             catch (...)
@@ -1184,7 +1186,10 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
     bool already_started = finalization_started.test_and_set();
 
     if (already_started)
+    {
+        LOG_INFO(log, "Session {} already finalized. Current reason: '{}'", session_id, reason);
         return;
+    }
 
     LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
              session_id, already_started, requests_queue.isFinished(), reason);
@@ -1639,10 +1644,24 @@ void ZooKeeper::list(
     const String & path,
     ListRequestType list_request_type,
     ListCallback callback,
-    WatchCallbackPtrOrEventPtr watch)
+    WatchCallbackPtrOrEventPtr watch,
+    bool with_stat,
+    bool with_data)
 {
     std::shared_ptr<ZooKeeperListRequest> request{nullptr};
-    if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
+
+    if (with_stat || with_data)
+    {
+        if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA) || !isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
+            throw Exception::fromMessage(Error::ZBADARGUMENTS, "List with stat/data cannot be used because it's not supported by the server");
+
+        auto list_with_stats_request = std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>();
+        list_with_stats_request->list_request_type = list_request_type;
+        list_with_stats_request->with_stat = with_stat;
+        list_with_stats_request->with_data = with_data;
+        request = std::move(list_with_stats_request);
+    }
+    else if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
     {
         if (list_request_type != ListRequestType::ALL)
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "Filtered list request type cannot be used because it's not supported by the server");
@@ -1890,6 +1909,9 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
 
     auto maybe_zk_log = getZooKeeperLog();
     if (!maybe_zk_log)
+        return;
+
+    if (elapsed_microseconds < maybe_zk_log->getDurationMicrosecondsThreshold())
         return;
 
     ZooKeeperLogElement::Type log_type = ZooKeeperLogElement::UNKNOWN;

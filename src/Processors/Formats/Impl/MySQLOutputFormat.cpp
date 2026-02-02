@@ -105,8 +105,8 @@ void MySQLOutputFormat::finalizeImpl()
                 info.read_rows,
                 ReadableSize(info.read_bytes),
                 elapsed_seconds,
-                static_cast<size_t>(info.read_rows / elapsed_seconds),
-                ReadableSize(info.read_bytes / elapsed_seconds));
+                static_cast<size_t>(static_cast<double>(info.read_rows) / elapsed_seconds),
+                ReadableSize(static_cast<double>(info.read_bytes) / elapsed_seconds));
         }
 
         const auto & header = getPort(PortKind::Main).getHeader();

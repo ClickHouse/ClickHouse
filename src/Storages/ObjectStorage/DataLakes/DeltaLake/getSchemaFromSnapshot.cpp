@@ -1,6 +1,7 @@
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
+#include <DataTypes/DataTypeFactory.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
@@ -11,7 +12,6 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeNullable.h>

@@ -103,6 +103,7 @@ public:
     NamesAndTypesList getNamesAndTypesList() const;
     NamesAndTypes getNamesAndTypes() const;
     Names getNames() const;
+    NameSet getNameSet() const;
     DataTypes getDataTypes() const;
     Names getDataTypeNames() const;
 

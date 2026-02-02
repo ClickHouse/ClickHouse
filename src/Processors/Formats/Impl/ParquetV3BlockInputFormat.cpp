@@ -90,10 +90,13 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 parser_shared_resources->opaque = ext;
             });
 
-        reader.emplace();
-        reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
-        reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
-        reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
+        {
+            std::lock_guard lock(reader_mutex);
+            reader.emplace();
+            reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
+            reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
+            reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
+        }
     }
 }
 
@@ -137,13 +140,17 @@ const BlockMissingValues * ParquetV3BlockInputFormat::getMissingValues() const
 
 void ParquetV3BlockInputFormat::onCancel() noexcept
 {
+    std::lock_guard lock(reader_mutex);
     if (reader)
         reader->cancel();
 }
 
 void ParquetV3BlockInputFormat::resetParser()
 {
-    reader.reset();
+    {
+        std::lock_guard lock(reader_mutex);
+        reader.reset();
+    }
     previous_block_missing_values.clear();
     IInputFormat::resetParser();
 }

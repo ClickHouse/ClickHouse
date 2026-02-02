@@ -202,6 +202,10 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
     return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true;
 }
 
+std::string MergeTreeIndexConditionMinMax::getDescription() const
+{
+    return condition.getDescription().condition;
+}
 
 MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 {
@@ -267,6 +271,9 @@ void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, Rea
 
 void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMaxGranule> & result)
 {
+    if (n == 0)
+        return;
+
     if (n >= granules.size())
     {
         result.insert(result.end(), granules.begin(), granules.end());
@@ -301,6 +308,9 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
                                                     const std::vector<std::vector<MinMaxGranule>> & parts,
                                                     std::vector<MarkRanges> & result)
 {
+    if (n == 0)
+        return;
+
     std::priority_queue<MinMaxGranuleItem> queue;
 
     for (size_t part_index = 0; part_index < parts.size(); ++part_index)

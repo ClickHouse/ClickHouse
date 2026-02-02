@@ -19,6 +19,7 @@ services:
         aliases:
           - warehouse.minio
     stop_grace_period: 5s
+    cpus: 3
   # HTTP proxies for Minio.
   proxy1:
     stop_grace_period: 5s
@@ -27,6 +28,7 @@ services:
       - "8080" # Redirect proxy port
       - "80"   # Reverse proxy port
       - "443"  # Reverse proxy port (secure)
+    cpus: 3
 
   proxy2:
     stop_grace_period: 5s
@@ -35,6 +37,7 @@ services:
       - "8080"
       - "80"
       - "443"
+    cpus: 3
 
   # Empty container to run proxy resolver.
   resolver:
@@ -50,6 +53,7 @@ services:
       - type: ${RESOLVER_LOGS_FS:-tmpfs}
         source: ${RESOLVER_LOGS:-}
         target: /var/log/resolver
+    cpus: 3
 
 volumes:
   data1-1:

@@ -3,7 +3,6 @@
 #include <Columns/ColumnCompressed.h>
 
 #include <IO/WriteHelpers.h>
-#include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
@@ -11,8 +10,6 @@
 #include <Common/assert_cast.h>
 #include <base/memcmpSmall.h>
 #include <Common/memcpySmall.h>
-#include <base/sort.h>
-#include <base/scope_guard.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>

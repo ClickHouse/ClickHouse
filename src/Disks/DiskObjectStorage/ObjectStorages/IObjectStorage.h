@@ -168,6 +168,9 @@ public:
 
     virtual std::string getName() const = 0;
 
+    /// Returns the disk name for logging purposes. Empty if not associated with a disk.
+    virtual std::string getDiskName() const { return {}; }
+
     virtual ObjectStorageType getType() const = 0;
 
     /// The logical root or base path used to group a set of related objects.

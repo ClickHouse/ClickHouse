@@ -4,6 +4,11 @@
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnNullable.h>
 
+#if USE_EMBEDDED_COMPILER
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
+
 
 namespace DB
 {
@@ -42,9 +47,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return removeNullable(arguments[0]);
+        return removeNullable(arguments[0].type);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
@@ -58,6 +63,22 @@ public:
             return nullable_col->getNestedColumnPtr();
         return col;
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
+
+    llvm::Value *
+    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        if (arguments[0].type->isNullable())
+            return b.CreateExtractValue(arguments[0].value, {0});
+        else
+            return arguments[0].value;
+    }
+#endif
+
+
 };
 
 }

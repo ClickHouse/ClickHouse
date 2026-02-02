@@ -23,7 +23,7 @@ namespace ProfileEvents
     extern const Event FileSegmentCompleteMicroseconds;
     extern const Event FileSegmentLockMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
-    extern const Event FileSegmentUseMicroseconds;
+    extern const Event FileSegmentIncreasePriorityMicroseconds;
     extern const Event FileSegmentHolderCompleteMicroseconds;
     extern const Event FileSegmentFailToIncreasePriority;
     extern const Event FilesystemCacheHoldFileSegments;
@@ -953,9 +953,21 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         if (!it)
             return;
 
-        const auto & entry = it->getEntry();
-        if (download_state != State::DOWNLOADING && entry->size != reserved_size)
-            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size.load(), reserved_size.load()));
+        auto entry = it->getEntry();
+        auto entry_size = entry->size.load(std::memory_order_relaxed);
+        if (entry_size == 0)
+        {
+            /// A race in case of SLRU eviction is possible here
+            /// when we do setIterator during downgrade.
+            /// Then as entry is invalidated right after we set a new iterator
+            /// - just fetch entry once more.
+            entry = it->getEntry();
+            entry_size = entry->size;
+        }
+        if (download_state != State::DOWNLOADING && entry_size != reserved_size)
+            throw_logical(
+                fmt::format("Expected entry.size == reserved_size ({} == {}, entry: {})",
+                            entry_size, reserved_size.load(), entry->toString()));
 
         chassert(entry->key == key());
         chassert(entry->offset == offset());
@@ -1139,24 +1151,30 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
 
 void FileSegment::increasePriority()
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentUseMicroseconds);
-
     if (!cache)
     {
         chassert(isDetached());
         return;
     }
 
-    auto it = getQueueIterator();
-    if (it)
-    {
-        if (auto cache_lock = cache->tryLockCache())
-            it->increasePriority(cache_lock);
-        else
-            ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentIncreasePriorityMicroseconds);
 
-        /// Used only for system.filesystem_cache.
-        ++hits_count;
+    /// In case of concurrently called increasePriority()
+    /// we want to increase a priority only once
+    /// (because it does not really make any sense
+    /// to do it immediately again after we've just done it)
+    std::unique_lock<std::mutex> lock(increase_priority_mutex, std::defer_lock);
+    if (lock.try_lock())
+    {
+        auto it = getQueueIterator();
+        if (it)
+        {
+            if (!cache->tryIncreasePriority(*this))
+                ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
+
+            /// Used only for system.filesystem_cache.
+            ++hits_count;
+        }
     }
 }
 

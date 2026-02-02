@@ -37,6 +37,14 @@ namespace Nested
     /// Columns: "a.x", "b", "c". Name: "a.x.y.z". Result: "a.x".
     std::string_view getColumnFromSubcolumn(std::string_view name, const NameSet & storage_columns);
 
+    /// Given all existing columns, return column name, or the name of the subcolumn with specified name in storage.
+    /// Returns std::nullopt if column or subcolumn is not in the storage.
+    /// For example:
+    /// Columns: "a.x", "b", "c".
+    /// Name: "a.x.y.z". Result: "a.x".
+    /// Name: "b". Result "b";
+    std::optional<String> tryGetColumnNameInStorage(const String & name, const NameSet & storage_columns);
+
     /// Returns the prefix of the name to the first '.'. Or the name is unchanged if there is no dot.
     std::string extractTableName(const std::string & nested_name);
 

@@ -228,7 +228,7 @@ std::optional<String> optimizeUseNormalProjections(
     {
         for (const auto & col : required_columns)
         {
-            if (!projection->sample_block.has(col) && !projection_virtuals->has(col))
+            if (!projection->sample_block.findColumnOrSubcolumnByName(col) && !projection_virtuals->has(col))
                 return false;
         }
 
@@ -452,6 +452,12 @@ std::optional<String> optimizeUseNormalProjections(
             expr_node.children.push_back(next_node);
             next_node = &expr_node;
         }
+
+        /// Verify headers are compatible before creating the Union.
+        /// If they differ (e.g., different columns due to different query DAGs being applied),
+        /// skip this optimization to avoid "Block structure mismatch" errors.
+        if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
+            return {};
 
         auto & union_node = nodes.emplace_back();
         SharedHeaders input_headers = {main_stream, *proj_stream};

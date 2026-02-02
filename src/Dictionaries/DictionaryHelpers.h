@@ -594,10 +594,10 @@ Block mergeBlockWithPipe(
 
     auto result_fetched_columns = block_to_update.cloneEmptyColumns();
 
-    PullingPipelineExecutor executor(io.pipeline);
-
     io.executeWithCallbacks([&]()
     {
+        PullingPipelineExecutor executor(io.pipeline);
+
         Block block;
         while (executor.pull(block))
         {

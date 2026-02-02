@@ -180,7 +180,7 @@ public:
 
     PartsRanges select(
         const PartsRanges & parts_ranges,
-        const MergeSizes & max_merge_sizes,
+        const MergeConstraints & merge_constraints,
         const RangeFilter & range_filter) const override;
 
 private:

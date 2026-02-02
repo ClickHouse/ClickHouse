@@ -105,7 +105,7 @@ private:
             size_t token_start = 0;
             size_t token_length = 0;
 
-            while (cur < data.size() && extractor.nextInString(data.data(), data.size(), &cur, &token_start, &token_length))
+            while (cur < data.size() && extractor.nextInString(data.data(), data.size(), cur, token_start, token_length))
             {
                 result_data_column.insertData(data.data() + token_start, token_length);
                 ++current_tokens_size;

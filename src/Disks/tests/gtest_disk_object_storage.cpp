@@ -12,9 +12,7 @@
 
 #include "Common/Exception.h"
 #include <Common/tests/gtest_global_context.h>
-#include <Common/tests/gtest_global_register.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/Config/ConfigHelper.h>
 #include <Common/FailPoint.h>
 #include <Core/Defines.h>
 

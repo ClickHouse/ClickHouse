@@ -283,10 +283,10 @@ private:
         void addWeighted(size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc, double weight)
         {
             queries += weight;
-            read_rows += weight * read_rows_inc;
-            read_bytes += weight * read_bytes_inc;
-            result_rows += weight * result_rows_inc;
-            result_bytes += weight * result_bytes_inc;
+            read_rows += weight * static_cast<double>(read_rows_inc);
+            read_bytes += weight * static_cast<double>(read_bytes_inc);
+            result_rows += weight * static_cast<double>(result_rows_inc);
+            result_bytes += weight * static_cast<double>(result_bytes_inc);
         }
 
         void sample(double duration)
@@ -343,7 +343,7 @@ private:
             if (reported || end_ns == std::numeric_limits<UInt64>::max())
                 return;
             reported = true;
-            benchmark.report(stats, (end_ns - start_ns) / 1e9, threads);
+            benchmark.report(stats, static_cast<double>(end_ns - start_ns) / 1e9, threads);
         }
     };
 
@@ -692,7 +692,7 @@ private:
         watch.stop();
         double duration = (display_client_side_time || progress.elapsed_ns == 0)
             ? watch.elapsedSeconds()
-            : progress.elapsed_ns / 1e9;
+            : static_cast<double>(progress.elapsed_ns) / 1e9;
         size_t info_index = round_robin ? 0 : connection_index;
 
         if (precise && cur_interval)
@@ -719,8 +719,8 @@ private:
                     continue;
                 if (cur_interval->start_ns >= watch.getEnd())
                     break;
-                const double overlap_ns = std::min(cur_interval->end_ns, watch.getEnd()) - std::max(cur_interval->start_ns, watch.getStart());
-                const double weight = overlap_ns / duration_ns;
+                const double overlap_ns = static_cast<double>(std::min(cur_interval->end_ns, watch.getEnd()) - std::max(cur_interval->start_ns, watch.getStart()));
+                const double weight = overlap_ns / static_cast<double>(duration_ns);
                 if (overlap_ns > 0 && duration_ns > 0)
                     cur_interval->stats[info_index]->addWeighted(progress.read_rows, progress.read_bytes, info.rows, info.bytes, weight);
             }
@@ -746,9 +746,9 @@ private:
         size_t executed = queries_executed.load();
         log << "\nQueries executed: " << executed;
         if (max_iterations > 1)
-            log << " (" << (executed * 100.0 / max_iterations) << "%)";
+            log << " (" << (static_cast<double>(executed) * 100.0 / static_cast<double>(max_iterations)) << "%)";
         else if (queries.size() > 1)
-            log << " (" << (executed * 100.0 / queries.size()) << "%)";
+            log << " (" << (static_cast<double>(executed) * 100.0 / static_cast<double>(queries.size())) << "%)";
         log << ".\n" << flush;
 
         if (used_threads > 0 && concurrency < max_concurrency)

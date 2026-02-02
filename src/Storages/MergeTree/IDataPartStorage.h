@@ -344,6 +344,10 @@ public:
     /// It may be flush of buffered data or similar.
     virtual void precommitTransaction() = 0;
     virtual bool hasActiveTransaction() const = 0;
+
+    /// Returns true if underlying filesystem is case-insensitive,
+    /// e.g. file_name and FILE_NAME are the same files.
+    virtual bool isCaseInsensitive() const = 0;
 };
 
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;

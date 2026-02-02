@@ -58,17 +58,6 @@ PartsRanges checkRanges(PartsRanges && ranges)
     return ranges;
 }
 
-std::string convertMaxMergeSizesToString(const std::vector<size_t> & max_merge_sizes)
-{
-    std::vector<ReadableSize> readable_sizes;
-    readable_sizes.reserve(max_merge_sizes.size());
-
-    for (size_t merge_size : max_merge_sizes)
-        readable_sizes.emplace_back(merge_size);
-
-    return fmt::format("[{}]", fmt::join(readable_sizes, ", "));
-}
-
 size_t calculatePartsCount(const PartsRanges & ranges)
 {
     size_t count = 0;
@@ -286,6 +275,19 @@ MergeSelectorChoices chooseMergesFrom(
 
 }
 
+std::string convertMergeConstraintsToString(const MergeConstraints & constraints)
+{
+    std::string res = "[";
+    for (size_t i = 0; i < constraints.size(); ++i)
+    {
+        if (i != 0)
+            res += ", ";
+        res += fmt::format("(max bytes: {}, max rows: {})", constraints[i].max_size_bytes, constraints[i].max_size_rows);
+    }
+    res += "]";
+    return res;
+}
+
 MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
     : data(data_)
     , log(getLogger(data.getLogName() + " (MergerMutator)"))
@@ -371,17 +373,17 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
             partitions_hint.insert(partition_id);
         else
             LOG_TEST(log, "Nothing to merge in partition {} with max_merge_sizes = {} (looked up {} ranges)",
-                partition_id, convertMaxMergeSizesToString(selector.max_merge_sizes), ranges_in_partition.size());
+                partition_id, convertMergeConstraintsToString(selector.merge_constraints), ranges_in_partition.size());
     }
 
-    if (auto best = getBestPartitionToOptimizeEntire(selector.max_merge_sizes[0], context, settings, partitions_stats, log); !best.empty())
+    if (auto best = getBestPartitionToOptimizeEntire(selector.merge_constraints[0].max_size_bytes, context, settings, partitions_stats, log); !best.empty())
         partitions_hint.insert(std::move(best));
 
     LOG_TRACE(log,
             "Checked {} partitions, found {} partitions with parts that may be merged: [{}] "
             "(max_total_size_to_merge={}, merge_with_ttl_allowed={}, can_use_ttl_merges={})",
             ranges_by_partitions.size(), partitions_hint.size(), fmt::join(partitions_hint, ", "),
-            convertMaxMergeSizesToString(selector.max_merge_sizes), selector.merge_with_ttl_allowed, can_use_ttl_merges);
+            convertMergeConstraintsToString(selector.merge_constraints), selector.merge_with_ttl_allowed, can_use_ttl_merges);
 
     return partitions_hint;
 }
@@ -431,7 +433,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         return merge_choices;
     }
 
-    if (auto best = getBestPartitionToOptimizeEntire(selector.max_merge_sizes[0], context, settings, partitions_stats, log); !best.empty())
+    if (auto best = getBestPartitionToOptimizeEntire(selector.merge_constraints[0].max_size_bytes, context, settings, partitions_stats, log); !best.empty())
     {
         return selectAllPartsToMergeWithinPartition(
             metadata_snapshot,
@@ -522,6 +524,22 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
                 "Not enough free space to merge parts from {} to {}. Has {} free and unreserved, {} required now",
                 parts.front().name, parts.back().name, ReadableSize(available_disk_space), ReadableSize(required_disk_space)),
         });
+    }
+
+    const UInt64 max_result_part_rows = CompactionStatistics::getMaxResultPartRowsCount(data);
+
+    if (max_result_part_rows != std::numeric_limits<UInt64>::max())
+    {
+        const UInt64 result_rows_count = CompactionStatistics::estimateResultPartRowsCount(parts);
+
+        if (result_rows_count > max_result_part_rows)
+        {
+            return std::unexpected(SelectMergeFailure{
+                .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                .explanation = PreformattedMessage::create("Result part will have {} rows, which is greater than max allowed rows in part ({})",
+                result_rows_count, max_result_part_rows),
+            });
+        }
     }
 
     bool apply_patch_parts = (*data.getSettings())[MergeTreeSetting::apply_patches_on_merge];

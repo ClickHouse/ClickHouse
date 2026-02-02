@@ -415,11 +415,11 @@ void IPAddressDictionary::loadData()
     {
         BlockIO io = source_ptr->loadAll();
 
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
-
         io.executeWithCallbacks([&]()
         {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
             Block block;
             while (executor.pull(block))
             {

@@ -129,12 +129,12 @@ Float64 ColumnStatistics::estimateLess(const Field & val) const
         return stats.at(StatisticsType::TDigest)->estimateLess(val);
     if (stats.contains(StatisticsType::MinMax))
         return stats.at(StatisticsType::MinMax)->estimateLess(val);
-    return rows * ConditionSelectivityEstimator::default_cond_range_factor;
+    return static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cond_range_factor;
 }
 
 Float64 ColumnStatistics::estimateGreater(const Field & val) const
 {
-    return rows - estimateLess(val);
+    return static_cast<Float64>(rows) - estimateLess(val);
 }
 
 Float64 ColumnStatistics::estimateEqual(const Field & val) const
@@ -158,10 +158,10 @@ Float64 ColumnStatistics::estimateEqual(const Field & val) const
         UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
         if (cardinality == 0 || rows == 0)
             return 0;
-        return Float64(rows) / cardinality; /// assume uniform distribution
+        return static_cast<Float64>(rows) / static_cast<Float64>(cardinality); /// assume uniform distribution
     }
 
-    return rows * ConditionSelectivityEstimator::default_cond_equal_factor;
+    return static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cond_equal_factor;
 }
 
 Float64 ColumnStatistics::estimateRange(const Range & range) const
@@ -173,7 +173,7 @@ Float64 ColumnStatistics::estimateRange(const Range & range) const
 
     if (range.isInfinite())
     {
-        return rows;
+        return static_cast<Float64>(rows);
     }
 
     if (range.left == range.right)
@@ -203,7 +203,7 @@ UInt64 ColumnStatistics::estimateCardinality() const
         return stats.at(StatisticsType::Uniq)->estimateCardinality();
     }
     /// if we don't have uniq statistics, we use a mock one, assuming there are 90% different unique values.
-    return UInt64(rows * ConditionSelectivityEstimator::default_cardinality_ratio);
+    return UInt64(static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cardinality_ratio);
 }
 
 Estimate ColumnStatistics::getEstimate() const

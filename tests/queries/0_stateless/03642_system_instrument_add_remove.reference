@@ -23,3 +23,9 @@ QueryMetricLog::finishQuery	log	Entry	DB::QueryMetricLog::finishQuery(std::__1::
 -- Remove with wrong arguments fails
 -- Remove everything
 0
+-- Add several functions that match
+1	executeQuery	log	Entry
+-- Remove functions that match
+QueryMetricLog::startQuery	log	Entry	DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)	['my log in startQuery']
+-- Remove everything
+0

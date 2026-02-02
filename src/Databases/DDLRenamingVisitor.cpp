@@ -127,7 +127,7 @@ namespace
         if (new_qualified_name == qualified_name)
             return;
 
-        expr.database_and_table_name = std::make_shared<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
+        expr.database_and_table_name = make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
         expr.children.push_back(expr.database_and_table_name);
     }
 
@@ -231,7 +231,7 @@ namespace
                 return;
 
             auto new_qualified_name = data.renaming_map.getNewTableName(qualified_name);
-            arg = std::make_shared<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
+            arg = make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
             return;
         }
     }

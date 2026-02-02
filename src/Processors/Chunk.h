@@ -19,6 +19,10 @@ public:
     ChunkInfo(ChunkInfo&&) = default;
 
     virtual Ptr clone() const = 0;
+    virtual Ptr merge(const Ptr & right) const
+    {
+        return right; // merge left into right by default returns right
+    }
     virtual ~ChunkInfo() = default;
 };
 

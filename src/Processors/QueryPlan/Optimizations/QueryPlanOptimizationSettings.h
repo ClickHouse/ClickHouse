@@ -79,8 +79,8 @@ struct QueryPlanOptimizationSettings
     bool aggregation_in_order;
     bool optimize_projection;
     bool use_query_condition_cache;
-    bool query_condition_cache_store_conditions_as_plaintext;
     bool read_in_order_through_join;
+    bool correlated_subqueries_use_in_memory_buffer;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -148,6 +148,9 @@ struct QueryPlanOptimizationSettings
     UInt64 join_runtime_filter_exact_values_limit = 0;
     UInt64 join_runtime_bloom_filter_bytes = 0;
     UInt64 join_runtime_bloom_filter_hash_functions = 0;
+    Float64 join_runtime_filter_pass_ratio_threshold_for_disabling = 0.7;
+    UInt64 join_runtime_filter_blocks_to_skip_before_reenabling = 30;
+    Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
 
     std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
 
@@ -169,6 +172,8 @@ struct QueryPlanOptimizationSettings
     bool is_explain;
 
     std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
+
+    bool parallel_replicas_filter_pushdown = false;
 };
 
 }

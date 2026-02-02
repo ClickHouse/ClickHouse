@@ -1,5 +1,6 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: funny EXPLAIN PLAN output
+-- add_minmax_index_for_numeric_columns=0: Different plan
 
 -- Test that the skip indexes are utilized for AND and OR connected filter conditions
 -- This test uses all the skip index types - minmax, set, bloom filter, text
@@ -34,7 +35,8 @@ SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
     max_bytes_to_merge_at_max_space_in_pool = 1,
-    use_const_adaptive_granularity = 1;
+    use_const_adaptive_granularity = 1,
+    add_minmax_index_for_numeric_columns=0;
 
 -- 600 rows, 100 granules
 INSERT INTO tab

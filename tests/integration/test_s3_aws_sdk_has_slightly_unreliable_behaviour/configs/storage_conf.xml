@@ -14,7 +14,8 @@
                 <!-- ClickHouse starts earlier than custom S3 endpoint. Skip access check to avoid fail on start-up -->
                 <skip_access_check>true</skip_access_check>
                 <!-- Avoid extra retries to speed up tests -->
-                <retry_attempts>0</retry_attempts>
+                <!-- never set retry_attempts to 0, as it disables retries on all errors including sporadic timeouts -->
+                <retry_attempts>2</retry_attempts>
                 <skip_access_check>true</skip_access_check>
             </s3>
         </disks>

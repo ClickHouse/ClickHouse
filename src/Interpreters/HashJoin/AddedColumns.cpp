@@ -255,7 +255,7 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
         for (size_t j = 0; j < right_indexes_size; ++j)
         {
             const auto [column_from_block, row_num] = getBlockColumnAndRow(row_ref, lazy_output.right_indexes[j]);
-            columns[j]->insertFrom(*column_from_block, row_ref->row_num);
+            columns[j]->insertFrom(*column_from_block, row_num);
         }
     }
 }

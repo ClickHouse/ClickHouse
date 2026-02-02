@@ -386,7 +386,7 @@ int ZipArchiveWriter::compressionMethodToInt(const String & compression_method_)
 
 String ZipArchiveWriter::intToCompressionMethod(int compression_method_)
 {
-    switch (compression_method_) // NOLINT(bugprone-switch-missing-default-case)
+    switch (compression_method_)
     {
         case MZ_COMPRESS_METHOD_STORE:   return kStore;
         case MZ_COMPRESS_METHOD_DEFLATE: return kDeflate;
@@ -394,14 +394,15 @@ String ZipArchiveWriter::intToCompressionMethod(int compression_method_)
         case MZ_COMPRESS_METHOD_LZMA:    return kLzma;
         case MZ_COMPRESS_METHOD_ZSTD:    return kZstd;
         case MZ_COMPRESS_METHOD_XZ:      return kXz;
+        default:
+            throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Unknown compression method specified for a zip archive: {}", compression_method_);
     }
-    throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Unknown compression method specified for a zip archive: {}", compression_method_);
 }
 
 /// Checks that a passed compression method can be used.
 void ZipArchiveWriter::checkCompressionMethodIsEnabled(int compression_method_)
 {
-    switch (compression_method_) // NOLINT(bugprone-switch-missing-default-case)
+    switch (compression_method_)
     {
         case MZ_COMPRESS_METHOD_STORE: [[fallthrough]];
         case MZ_COMPRESS_METHOD_DEFLATE:
@@ -418,8 +419,10 @@ void ZipArchiveWriter::checkCompressionMethodIsEnabled(int compression_method_)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "bzip2 compression method is disabled");
 #endif
         }
+
+        default:
+            throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Unknown compression method specified for a zip archive: {}", compression_method_);
     }
-    throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Unknown compression method specified for a zip archive: {}", compression_method_);
 }
 
 /// Checks that encryption is enabled.

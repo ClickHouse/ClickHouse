@@ -714,7 +714,7 @@ for earlier versions something might not be supported.
 
 #### Cache commands {#cache-commands-file-cache}
 
-##### `SYSTEM DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` {#system-drop-filesystem-cache-on-cluster}
+##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` {#system-clear-filesystem-cache-on-cluster}
 
 This command is only supported when no `<cache_name>` is provided
 

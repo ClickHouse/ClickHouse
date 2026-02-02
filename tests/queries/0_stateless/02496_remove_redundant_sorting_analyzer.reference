@@ -399,11 +399,11 @@ Expression ((Project names + Projection))
       Sorting (Sorting for ORDER BY)
         Union
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
 -- execute
 Float64	9007199254740994
 -- sum() with Nullable(Floats) depends on order, -> sorting is not removed here
@@ -431,11 +431,11 @@ Expression ((Project names + Projection))
       Sorting (Sorting for ORDER BY)
         Union
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
 -- execute
 Nullable(Float64)	9007199254740994
 -- sumIf() with Floats depends on order, -> sorting is not removed here
@@ -463,11 +463,11 @@ Expression ((Project names + Projection))
       Sorting (Sorting for ORDER BY)
         Union
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
 -- execute
 Float64	9007199254740994
 -- presence of an inner OFFSET retains the ORDER BY

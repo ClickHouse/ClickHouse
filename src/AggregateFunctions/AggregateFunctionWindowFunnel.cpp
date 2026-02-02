@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <base/range.h>
+#include <Common/ContainersWithMemoryTracking.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -300,7 +301,7 @@ private:
     UInt8 getEventLevelNonStrictOnce(const AggregateFunctionWindowFunnelData<T>::TimestampEvents & events_list) const
     {
         /// events_timestamp stores the timestamp of the first and previous i-th level event happen within time window
-        std::vector<std::optional<std::pair<UInt64, UInt64>>> events_timestamp(events_size);
+        VectorWithMemoryTracking<std::optional<std::pair<UInt64, UInt64>>> events_timestamp(events_size);
         bool first_event = false;
         for (size_t i = 0; i < events_list.size(); ++i)
         {
@@ -314,7 +315,7 @@ private:
             }
             if (event_idx == 0)
             {
-                events_timestamp[0] = std::make_pair(timestamp, timestamp);
+                events_timestamp[0] = std::make_pair(static_cast<UInt64>(timestamp), static_cast<UInt64>(timestamp));
                 first_event = true;
             }
             else if (strict_deduplication && events_timestamp[event_idx].has_value())
@@ -330,7 +331,7 @@ private:
                 for (size_t event = 0; event < events_timestamp.size(); ++event)
                 {
                     if (!events_timestamp[event].has_value())
-                        return event;
+                        return static_cast<UInt8>(event);
                 }
             }
             else if (events_timestamp[event_idx - 1].has_value())
@@ -341,7 +342,7 @@ private:
                     time_matched = time_matched && events_timestamp[event_idx - 1]->second < timestamp;
                 if (time_matched)
                 {
-                    events_timestamp[event_idx] = std::make_pair(first_timestamp, timestamp);
+                    events_timestamp[event_idx] = std::make_pair(first_timestamp, static_cast<UInt64>(timestamp));
                     if (event_idx + 1 == events_size)
                         return events_size;
                 }
@@ -351,7 +352,7 @@ private:
         for (size_t event = events_timestamp.size(); event > 0; --event)
         {
             if (events_timestamp[event - 1].has_value())
-                return event;
+                return static_cast<UInt8>(event);
         }
         return 0;
     }
@@ -375,7 +376,7 @@ private:
         /// For example: for events 'start', 'a', 'b', 'a', 'end'.
         /// The second occurrence of 'a' should be counted only once in one sequence.
         /// However, we do not know in advance if the next event will be 'b' or 'end', so we try to keep both paths.
-        std::vector<std::list<EventMatchTimeWindow>> event_sequences(events_size);
+        VectorWithMemoryTracking<ListWithMemoryTracking<EventMatchTimeWindow>> event_sequences(events_size);
 
         bool has_first_event = false;
         for (size_t i = 0; i < events_list.size(); ++i)
@@ -394,7 +395,7 @@ private:
             }
             else if (event_idx == 0)
             {
-                auto & event_seq = event_sequences[0].emplace_back(timestamp, timestamp);
+                auto & event_seq = event_sequences[0].emplace_back(static_cast<UInt64>(timestamp), static_cast<UInt64>(timestamp));
                 event_seq.event_path[0] = unique_id;
                 has_first_event = true;
             }
@@ -411,7 +412,7 @@ private:
                 for (size_t event = 0; event < event_sequences.size(); ++event)
                 {
                     if (event_sequences[event].empty())
-                        return event;
+                        return static_cast<UInt8>(event);
                 }
             }
             else if (!event_sequences[event_idx - 1].empty())
@@ -446,7 +447,7 @@ private:
                     {
                         prev_path[event_idx] = unique_id;
 
-                        auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, timestamp);
+                        auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, static_cast<UInt64>(timestamp));
                         new_seq.event_path = std::move(prev_path);
                         if (event_idx + 1 == events_size)
                             return events_size;
@@ -459,7 +460,7 @@ private:
         for (size_t event = event_sequences.size(); event > 0; --event)
         {
             if (!event_sequences[event - 1].empty())
-                return event;
+                return static_cast<UInt8>(event);
         }
         return 0;
     }
@@ -489,7 +490,7 @@ public:
     AggregateFunctionWindowFunnel(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionWindowFunnel<T, Data>>(arguments, params, std::make_shared<DataTypeUInt8>())
     {
-        events_size = arguments.size() - 1;
+        events_size = static_cast<UInt8>(arguments.size() - 1);
         window = params.at(0).safeGet<UInt64>();
 
         strict_deduplication = false;

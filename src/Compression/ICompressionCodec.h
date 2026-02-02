@@ -1,10 +1,10 @@
 #pragma once
 
 #include <memory>
+#include <Parsers/IAST_fwd.h>
 #include <boost/noncopyable.hpp>
 #include <Compression/CompressionInfo.h>
 #include <base/types.h>
-#include <Parsers/IAST_fwd.h>
 
 class SipHash;
 
@@ -107,10 +107,11 @@ protected:
     virtual UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const = 0;
 
     /// Actually decompress data without header
-    virtual void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const = 0;
+    virtual UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const = 0;
 
     /// Construct and set codec description from codec name and arguments. Must be called in codec constructor.
-    void setCodecDescription(const String & name, const ASTs & arguments = {});
+    void setCodecDescription(const String & name, const ASTs & arguments);
+    void setCodecDescription(const String & name) { setCodecDescription(name, ASTs{}); }
 
     int decompression_error_code = ErrorCodes::CORRUPTED_DATA;
 

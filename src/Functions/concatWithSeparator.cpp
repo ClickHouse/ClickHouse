@@ -7,7 +7,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
-#include <base/range.h>
 
 
 namespace DB

@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-parallel
+-- Test depends on mark cache, don't run with others in parallel
 
 drop table if exists data;
 create table data (key Int) engine=MergeTree() order by () settings prewarm_mark_cache=0;

@@ -17,6 +17,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 /// A ColumnVector for Decimals
 template <is_decimal T>
 class ColumnDecimal final : public COWHelper<IColumnHelper<ColumnDecimal<T>, ColumnFixedSizeHelper>, ColumnDecimal<T>>
@@ -89,6 +94,9 @@ public:
 
     void popBack(size_t n) override
     {
+        if (n > size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, this->getName(), size());
+
         data.resize_assume_reserved(data.size() - n);
     }
 

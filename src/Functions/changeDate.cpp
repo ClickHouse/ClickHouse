@@ -106,7 +106,7 @@ public:
         {
             auto scale = DataTypeDateTime64::default_scale;
             if constexpr (std::is_same_v<InputDataType, DateTime64>)
-                scale = typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale();
+                scale = static_cast<UInt8>(typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale());
             result_col = ResultDataType::ColumnType::create(input_rows_count, scale);
         }
         else
@@ -172,14 +172,14 @@ public:
             {
                 Int64 time;
                 if (isDate(input_type))
-                    time = static_cast<Int64>(date_lut.toNumYYYYMMDD(DayNum(date_time_col_data[i]))) * 1'000'000;
+                    time = static_cast<Int64>(date_lut.toNumYYYYMMDD(DayNum(static_cast<UInt16>(date_time_col_data[i])))) * 1'000'000;
                 else
                     time = static_cast<Int64>(date_lut.toNumYYYYMMDD(ExtendedDayNum(date_time_col_data[i]))) * 1'000'000;
 
                 if (isDate(result_type))
                     result_col_data[i] = static_cast<UInt16>(getChangedDate(time, value_col_data[i], result_type, date_lut));
                 else
-                    result_col_data[i] = static_cast<Int32>(getChangedDate(time, value_col_data[i], result_type, date_lut));
+                    result_col_data[i] = static_cast<ResultDataType::FieldType>(getChangedDate(time, value_col_data[i], result_type, date_lut));
             }
         }
 
@@ -188,17 +188,17 @@ public:
 
     Int64 getChangedDate(Int64 time, Float64 new_value, const DataTypePtr & result_type, const DateLUTImpl & date_lut, Int64 scale = 0, Int64 fraction = 0) const
     {
-        auto year = time / 10'000'000'000;
-        auto month = (time % 10'000'000'000) / 100'000'000;
-        auto day = (time % 100'000'000) / 1'000'000;
-        auto hours = (time % 1'000'000) / 10'000;
-        auto minutes = (time % 10'000) / 100;
-        auto seconds = time % 100;
+        auto year = static_cast<UInt16>(time / 10'000'000'000);
+        auto month = static_cast<UInt8>((time % 10'000'000'000) / 100'000'000);
+        auto day = static_cast<UInt8>((time % 100'000'000) / 1'000'000);
+        auto hours = static_cast<UInt8>((time % 1'000'000) / 10'000);
+        auto minutes = static_cast<UInt8>((time % 10'000) / 100);
+        auto seconds = static_cast<UInt8>(time % 100);
 
         Int64 min_date = 0;
         Int64 max_date = 0;
-        Int16 min_year;
-        Int16 max_year;
+        Int16 min_year = 0;
+        Int16 max_year = 0;
         if (isDate(result_type))
         {
             min_date = date_lut.makeDayNum(1970, 1, 1);

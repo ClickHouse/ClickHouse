@@ -25,7 +25,7 @@ void RewriteArrayExistsFunctionMatcher::visit(ASTPtr & ast, Data & data)
     {
         if (join->using_expression_list)
         {
-            auto * it = std::find(join->children.begin(), join->children.end(), join->using_expression_list);
+            auto it = std::find(join->children.begin(), join->children.end(), join->using_expression_list);
             if (it == join->children.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find join->using_expression_list in '{}'", join->formatForLogging());
 
@@ -35,7 +35,7 @@ void RewriteArrayExistsFunctionMatcher::visit(ASTPtr & ast, Data & data)
 
         if (join->on_expression)
         {
-            auto * it = std::find(join->children.begin(), join->children.end(), join->on_expression);
+            auto it = std::find(join->children.begin(), join->children.end(), join->on_expression);
             if (it == join->children.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find join->on_expression in '{}'", join->formatForLogging());
 

@@ -91,13 +91,13 @@ private:
 
 
 template <typename... Args>
-std::shared_ptr<ASTFunction> makeASTFunction(std::string_view name, Args &&... args)
+boost::intrusive_ptr<ASTFunction> makeASTFunction(std::string_view name, Args &&... args)
 {
-    auto function = std::make_shared<ASTFunction>();
+    auto function = make_intrusive<ASTFunction>();
 
     function->name = name;
 
-    function->arguments = std::make_shared<ASTExpressionList>();
+    function->arguments = make_intrusive<ASTExpressionList>();
     function->children.push_back(function->arguments);
 
     function->arguments->children = { std::forward<Args>(args)... };
@@ -106,7 +106,7 @@ std::shared_ptr<ASTFunction> makeASTFunction(std::string_view name, Args &&... a
 }
 
 template <typename... Args>
-std::shared_ptr<ASTFunction> makeASTOperator(const String & name, Args &&... args)
+boost::intrusive_ptr<ASTFunction> makeASTOperator(const String & name, Args &&... args)
 {
     auto function = makeASTFunction(name, std::forward<Args>(args)...);
     function->is_operator = true;

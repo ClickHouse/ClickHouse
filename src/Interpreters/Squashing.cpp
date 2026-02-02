@@ -1,9 +1,12 @@
+#include <utility>
 #include <vector>
 #include <Interpreters/Squashing.h>
+#include <Interpreters/InsertDeduplication.h>
+#include <Core/Block.h>
+#include <Columns/ColumnSparse.h>
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
-#include <Columns/ColumnSparse.h>
 #include <base/defines.h>
 
 namespace DB
@@ -31,17 +34,56 @@ Chunk Squashing::flush()
     return result;
 }
 
-Chunk Squashing::squash(Chunk && input_chunk)
+Chunk Squashing::squash(Chunk && input_chunk, SharedHeader header)
 {
     if (!input_chunk)
-        return Chunk();
+        return std::move(input_chunk);
 
     auto squash_info = input_chunk.getChunkInfos().extract<ChunksToSquash>();
 
     if (!squash_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no ChunksToSquash in ChunkInfoPtr");
 
-    return squash(std::move(squash_info->chunks), std::move(input_chunk.getChunkInfos()));
+    return squash(std::move(squash_info->chunks), std::move(input_chunk.getChunkInfos()), header);
+}
+
+Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos, SharedHeader header)
+{
+    auto input_chunks_size = input_chunks.size();
+    LOG_TEST(getLogger("squashing"), "input chunks count {}", input_chunks_size);
+
+    Chunk::ChunkInfoCollection result_info;
+    /// merge all infos before squashing the chunks in order to release original block in deduplication info
+    for (auto & chunk : input_chunks)
+    {
+        LOG_TEST(getLogger("squashing"), "merge deduplication info debug: {}",
+            chunk.getChunkInfos().get<DeduplicationInfo>() ? chunk.getChunkInfos().get<DeduplicationInfo>()->debug() : "null");
+        result_info.mergeWith(std::move(chunk.getChunkInfos()));
+    }
+    LOG_TEST(getLogger("squashing"), "merge deduplication info debug: {}",
+    infos.get<DeduplicationInfo>() ? infos.get<DeduplicationInfo>()->debug() : "null");
+    result_info.mergeWith(std::move(infos));
+
+    auto result = [](std::vector<Chunk> && input_chunks_) -> Chunk
+    {
+        if (input_chunks_.size() == 1)
+            /// this is just optimization, no logic changes
+            return std::move(input_chunks_.front());
+        return Squashing::squash(std::move(input_chunks_));
+    }(std::move(input_chunks));
+
+    // Update original block in deduplication info after squashing
+    if (auto deduplication_info = result_info.get<DeduplicationInfo>())
+    {
+        LOG_TEST(getLogger("squashing"), "Updating original block in deduplication info after squashing, rows: {}, input_chunks count {}, debug: {}",
+            result.getNumRows(), input_chunks_size, deduplication_info->debug());
+        deduplication_info->updateOriginalBlock(result, header);
+    }
+
+    result.setChunkInfos(std::move(result_info));
+
+    chassert(result);
+    return result;
 }
 
 Chunk Squashing::add(Chunk && input_chunk, bool flush_if_enough_size)
@@ -104,30 +146,11 @@ Chunk Squashing::convertToChunk(CurrentData && data) const
     return aggr_chunk;
 }
 
-Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos)
-{
-    if (input_chunks.size() == 1)
-    {
-        /// this is just optimization, no logic changes
-        Chunk result = std::move(input_chunks.front());
-        infos.appendIfUniq(std::move(result.getChunkInfos()));
-        result.setChunkInfos(infos);
-
-        chassert(result);
-        return result;
-    }
-
-    auto chunk_infos = std::move(input_chunks.back().getChunkInfos());
-    auto result = Squashing::squash(std::move(input_chunks));
-    result.setChunkInfos(infos);
-    result.getChunkInfos().appendIfUniq(std::move(chunk_infos));
-
-    chassert(result);
-    return result;
-}
-
 Chunk Squashing::squash(std::vector<Chunk> && input_chunks)
 {
+    if (input_chunks.empty())
+        return {};
+
     std::vector<IColumn::MutablePtr> mutable_columns;
     size_t rows = 0;
     for (const Chunk & chunk : input_chunks)
@@ -182,6 +205,8 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks)
 
     Chunk result;
     result.setColumns(std::move(mutable_columns), rows);
+
+    chassert(result);
     return result;
 }
 

@@ -143,7 +143,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         QueryNormalizer(normalizer_data).visit(function_body_to_update);
     }
 
-    auto expression_list = std::make_shared<ASTExpressionList>();
+    auto expression_list = make_intrusive<ASTExpressionList>();
     expression_list->children.emplace_back(std::move(function_body_to_update));
 
     std::stack<ASTPtr> ast_nodes_to_update;
