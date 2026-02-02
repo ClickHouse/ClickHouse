@@ -283,9 +283,6 @@ class Runner:
         if job.enable_gh_auth:
             _GH_Auth(workflow=workflow)
 
-        # core.COMM.PID-TID
-        Shell.check("sysctl kernel.core_pattern='core.%e.%p-%P'", verbose=True)
-
         if job.run_in_docker and not no_docker:
             job.run_in_docker, docker_settings = (
                 job.run_in_docker.split("+")[0],
