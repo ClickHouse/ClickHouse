@@ -17,7 +17,7 @@ class IMergedBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
-        MergeTreeSettingsPtr storage_settings_,
+        const MergeTreeSettingsPtr & storage_settings_,
         MutableDataPartStoragePtr data_part_storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list,
@@ -33,11 +33,6 @@ public:
     MergeTreeIndexGranularityPtr getIndexGranularity() const
     {
         return writer->getIndexGranularity();
-    }
-
-    MergeTreeWriterSettings getWriterSettings() const
-    {
-        return writer->getWriterSettings();
     }
 
     PlainMarksByName releaseCachedMarks()
@@ -69,8 +64,7 @@ protected:
     MergeTreeDataPartWriterPtr writer;
 
     bool reset_columns = false;
-    SerializationInfo::Settings info_settings;
-    SerializationInfoByName new_serialization_infos{{}};
+    SerializationInfoByName new_serialization_infos;
 };
 
 using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;

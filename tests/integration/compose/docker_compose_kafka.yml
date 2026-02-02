@@ -72,4 +72,3 @@ services:
     security_opt:
       - label:disable
     stop_grace_period: 5s
-    cpus: 3

@@ -9,7 +9,7 @@ if (SANITIZE STREQUAL "undefined")
 endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
-set(WITH_COVERAGE OFF)
+
 # add_contrib cmake_folder[ base_folder1[, ...base_folderN]]
 function(add_contrib cmake_folder)
     if (ARGN)
@@ -40,9 +40,7 @@ endfunction()
 
 # Use the original launchers for the projects that are needed for source code generation:
 # protoc and llvm-tlbgen.
-disable_heavy_build_check_if_needed()
 disable_dummy_launchers_if_needed()
-
 # We need to add OpenSSL first so that all our projects use our own version instead of the system one.
 add_contrib (openssl-cmake openssl)  # Needed for delta-lake
 add_contrib (abseil-cpp-cmake abseil-cpp)
@@ -50,9 +48,7 @@ add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (grpc-cmake grpc)
 add_contrib (llvm-project-cmake llvm-project)
-
 enable_dummy_launchers_if_needed()
-enable_heavy_build_check_if_needed()
 
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
@@ -84,7 +80,6 @@ add_contrib (bzip2-cmake bzip2)
 add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
 add_contrib (thrift-cmake thrift)
-add_contrib (StringZilla-cmake StringZilla)
 # parquet/arrow/orc
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
 add_contrib (avro-cmake avro) # requires: snappy
@@ -132,7 +127,7 @@ add_contrib (aws-cmake
     aws-cmake
 )
 
-add_contrib (base64-cmake base64)
+add_contrib (aklomp-base64-cmake aklomp-base64)
 add_contrib (simdjson-cmake simdjson)
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
@@ -164,6 +159,7 @@ add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
 add_contrib (idna-cmake idna)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
+add_contrib (incbin-cmake incbin)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
@@ -184,24 +180,49 @@ add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
 
+if (OS_LINUX AND ARCH_AMD64 AND ENABLE_SSE42)
+    option (ENABLE_QPL "Enable Intel® Query Processing Library (QPL)" ${ENABLE_LIBRARIES})
+elseif(ENABLE_QPL)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "QPL library is only supported on x86_64 with SSE 4.2 or higher")
+endif()
+if (ENABLE_QPL)
+    add_contrib (idxd-config-cmake idxd-config)
+    add_contrib (qpl-cmake qpl) # requires: idxd-config
+else()
+    message(STATUS "Not using QPL")
+endif ()
+
+if (OS_LINUX AND ARCH_AMD64 AND NOT NO_SSE3_OR_HIGHER)
+    option (ENABLE_QATLIB "Enable Intel® QuickAssist Technology Library (QATlib)" ${ENABLE_LIBRARIES})
+elseif(ENABLE_QATLIB)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "QATLib is only supported on x86_64")
+endif()
+if (ENABLE_QATLIB)
+    option (ENABLE_QAT_USDM_DRIVER "A User Space DMA-able Memory (USDM) component which allocates/frees DMA-able memory" OFF)
+    option (ENABLE_QAT_OUT_OF_TREE_BUILD "Using out-of-tree driver, user needs to customize ICP_ROOT variable" OFF)
+    set(ICP_ROOT "" CACHE STRING "ICP_ROOT variable to define the path of out-of-tree driver package")
+    if (ENABLE_QAT_OUT_OF_TREE_BUILD)
+        if (ICP_ROOT STREQUAL "")
+            message(FATAL_ERROR "Please define the path of out-of-tree driver package with -DICP_ROOT=xxx or disable out-of-tree build with -DENABLE_QAT_OUT_OF_TREE_BUILD=OFF; \
+                                 If you want out-of-tree build but have no package available, please download and build ICP package from: https://www.intel.com/content/www/us/en/download/765501.html")
+        endif ()
+    else()
+        add_contrib (qatlib-cmake qatlib) # requires: isa-l
+    endif ()
+    add_contrib (QAT-ZSTD-Plugin-cmake QAT-ZSTD-Plugin)
+else()
+    message(STATUS "Not using QATLib")
+endif ()
+
 add_contrib (morton-nd-cmake morton-nd)
 if (ARCH_S390X)
     add_contrib(crc32-s390x-cmake crc32-s390x)
 endif()
 
-option(ENABLE_SIMSIMD "Enable SimSIMD" ${ENABLE_LIBRARIES})
-if (ENABLE_SIMSIMD)
-    add_contrib (SimSIMD-cmake SimSIMD)
-else ()
-    message(STATUS "Not using SimSIMD")
-endif ()
-
 option(ENABLE_USEARCH "Enable USearch" ${ENABLE_LIBRARIES})
 if (ENABLE_USEARCH)
     add_contrib (FP16-cmake FP16)
-    if (NOT ENABLE_SIMSIMD)
-        add_contrib (SimSIMD-cmake SimSIMD)
-    endif()
+    add_contrib (SimSIMD-cmake SimSIMD)
     add_contrib (usearch-cmake usearch) # requires: FP16, SimdSIMD
 else ()
     message(STATUS "Not using USearch")
@@ -219,8 +240,6 @@ add_contrib (libssh-cmake libssh)
 add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
 add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
 add_contrib (antlr4-grammars-cmake antlr4-grammars)
-
-add_contrib(simdcomp-cmake simdcomp)
 
 add_contrib (numactl-cmake numactl)
 
@@ -246,6 +265,16 @@ add_contrib (sha3iuf-cmake SHA3IUF)
 add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 
 add_contrib (bech32)
+
+option(ENABLE_FASTPFOR "Enable FastPFOR" ${ENABLE_LIBRARIES})
+if (ENABLE_FASTPFOR AND ((ARCH_AMD64 AND NOT NO_SSE3_OR_HIGHER) OR ARCH_AARCH64))
+    if (ARCH_AARCH64)
+        add_contrib(simde-cmake simde)
+    endif()
+    add_contrib(FastPFOR-cmake FastPFOR) # requires simde (only on ARM)
+else ()
+    message(STATUS "Not using FastPFOR")
+endif ()
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

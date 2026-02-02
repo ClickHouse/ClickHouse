@@ -31,11 +31,7 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override
-    {
-        /// Technically it's MergeTreeProjection but it doesn't register itself
-        return "";
-    }
+    const char * getStorageEngineName() const override { return "MergeTreeProjection"; }
 
     StorageID source_table_id{StorageID::createEmpty()};
     String projection_name;

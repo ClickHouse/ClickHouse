@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Storages/MergeTree/Compaction/MergeSelectors/PartitionStatistics.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
@@ -27,20 +26,19 @@ using MergeSelectorChoices = std::vector<MergeSelectorChoice>;
 class MergeSelectorApplier
 {
 public:
-    const std::vector<MergeConstraint> merge_constraints;
+    const std::vector<size_t> max_merge_sizes;
     const bool merge_with_ttl_allowed = false;
     const bool aggressive = false;
     const IMergeSelector::RangeFilter range_filter = nullptr;
 
     MergeSelectorApplier(
-        std::vector<MergeConstraint> && merge_constraints_,
+        std::vector<size_t> && max_merge_sizes_,
         bool merge_with_ttl_allowed_,
         bool aggressive_,
         IMergeSelector::RangeFilter range_filter_);
 
     MergeSelectorChoices chooseMergesFrom(
         const PartsRanges & ranges,
-        const PartitionsStatistics & partitions_stats,
         const IMergePredicate & predicate,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeSettingsPtr & merge_tree_settings,

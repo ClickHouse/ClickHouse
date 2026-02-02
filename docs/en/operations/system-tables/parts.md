@@ -3,7 +3,6 @@ description: 'System table containing information about parts of MergeTree'
 keywords: ['system table', 'parts']
 slug: /operations/system-tables/parts
 title: 'system.parts'
-doc_type: 'reference'
 ---
 
 # system.parts
@@ -61,8 +60,6 @@ Columns:
 
 - `marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The size of the file with marks.
 
-- `files` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The number of files in the data part.
-
 - `secondary_indices_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – Total size of compressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included.
 
 - `secondary_indices_uncompressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – Total size of uncompressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included.
@@ -93,9 +90,9 @@ Columns:
 
 - `data_version` ([UInt64](../../sql-reference/data-types/int-uint.md)) – Number that is used to determine which mutations should be applied to the data part (mutations with a version higher than `data_version`).
 
-- `primary_key_bytes_in_memory` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) used by primary key values (will be `0` in case of `primary_key_lazy_load=1` and `use_primary_key_cache=1`).
+- `primary_key_bytes_in_memory` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) used by primary key values.
 
-- `primary_key_bytes_in_memory_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) reserved for primary key values (will be `0` in case of `primary_key_lazy_load=1` and `use_primary_key_cache=1`).
+- `primary_key_bytes_in_memory_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) reserved for primary key values.
 
 - `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. For more details, see [FREEZE PARTITION](/sql-reference/statements/alter/partition#freeze-partition)
 
@@ -109,11 +106,11 @@ Columns:
 
 - `disk_name` ([String](../../sql-reference/data-types/string.md)) – Name of a disk that stores the data part.
 
-- `hash_of_all_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#sipHash128) of compressed files.
+- `hash_of_all_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#siphash128) of compressed files.
 
-- `hash_of_uncompressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#sipHash128) of uncompressed files (files with marks, index file etc.).
+- `hash_of_uncompressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#siphash128) of uncompressed files (files with marks, index file etc.).
 
-- `uncompressed_hash_of_compressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#sipHash128) of data in the compressed files as if they were uncompressed.
+- `uncompressed_hash_of_compressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#siphash128) of data in the compressed files as if they were uncompressed.
 
 - `delete_ttl_info_min` ([DateTime](../../sql-reference/data-types/datetime.md)) — The minimum value of the date and time key for [TTL DELETE rule](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-ttl).
 

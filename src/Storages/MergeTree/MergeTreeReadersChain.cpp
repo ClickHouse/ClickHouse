@@ -61,23 +61,13 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
     if (max_rows == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
 
-    ReadResult read_result{log};
-
     if (range_readers.empty())
-        return read_result;
+        return ReadResult{log};
 
     auto & first_reader = range_readers.front();
+    auto read_result = first_reader.startReadingChain(max_rows, ranges);
 
-    try
-    {
-        read_result = first_reader.startReadingChain(max_rows, ranges);
-        LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("While reading part {}", first_reader.getReader()->data_part_info_for_read->getPartName());
-        throw;
-    }
+    LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
 
     if (read_result.num_rows != 0)
     {
@@ -355,6 +345,17 @@ void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, size_t 
         suitable_orders,
         result.columns_for_patches);
 }
+
+struct NamesHash
+{
+    size_t operator()(const Names & column_names) const
+    {
+        SipHash hash;
+        for (const auto & column_name : column_names)
+            hash.update(column_name);
+        return hash.get64();
+    }
+};
 
 void MergeTreeReadersChain::applyPatches(
     const Block & result_header,

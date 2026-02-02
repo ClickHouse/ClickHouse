@@ -6,7 +6,6 @@ keywords: ['PrettySpaceMonoBlock']
 output_format: true
 slug: /interfaces/formats/PrettySpaceMonoBlock
 title: 'PrettySpaceMonoBlock'
-doc_type: 'reference'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
