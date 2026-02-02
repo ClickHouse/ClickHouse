@@ -369,6 +369,12 @@
 [submodule "contrib/simdcomp"]
 	path = contrib/simdcomp
 	url = https://github.com/fast-pack/simdcomp.git
+[submodule "contrib/FastPFOR"]
+	path = contrib/FastPFOR
+	url = https://github.com/fast-pack/FastPFOR.git
+[submodule "contrib/simde"]
+	path = contrib/simde
+	url = https://github.com/simd-everywhere/simde.git
 [submodule "contrib/antlr4-cpp-runtime"]
 	path = contrib/antlr4-cpp-runtime
 	url = https://github.com/antlr/antlr4.git

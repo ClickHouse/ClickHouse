@@ -1,2 +1,18 @@
-tab_bitpacking	1028012	265050
-tab_uncompressed	1028012	393910
+Scenario 1: Gap=100 (10 tokens, 100K postings each, 7 bits/delta)
+binarypacking	100000	100422
+bitpacking	100000	64424
+fastpfor	100000	100422
+none	100000	151329
+optpfor	100000	81690
+Scenario 2: Gap=1000 (100 tokens, 100K postings each, 10 bits/delta)
+binarypacking	100000	139237
+bitpacking	100000	103647
+fastpfor	100000	139237
+none	100000	203582
+optpfor	100000	121464
+Scenario 3: Gap=10000 (1000 tokens, 10K postings each, 14 bits/delta)
+binarypacking	1000000	1832659
+bitpacking	1000000	1420925
+fastpfor	1000000	1832659
+none	1000000	2147479
+optpfor	1000000	1654914
