@@ -38,7 +38,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 def get_spark():
     builder = (
-        pyspark.sql.SparkSession.builder.appName("test_storage_hudi")
+        pyspark.sql.SparkSession.builder.appName("spark_test")
         .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
         .config(
             "spark.sql.catalog.local", "org.apache.spark.sql.hudi.catalog.HoodieCatalog"
@@ -319,7 +319,7 @@ def test_types(started_cluster):
             ["a", "Nullable(Int32)"],
             ["b", "Nullable(String)"],
             ["c", "Nullable(Date32)"],
-            ["d", "Array(String)"],
+            ["d", "Array(Nullable(String))"],
             ["e", "Nullable(Bool)"],
         ]
     )

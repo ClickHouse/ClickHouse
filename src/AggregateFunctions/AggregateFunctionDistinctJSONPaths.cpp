@@ -2,15 +2,14 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
-#include <Columns/ColumnDynamic.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnObject.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Common/ContainersWithMemoryTracking.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnMap.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -34,9 +33,9 @@ struct AggregateFunctionDistinctJSONPathsData
 {
     static constexpr auto name = "distinctJSONPaths";
 
-    UnorderedSetWithMemoryTracking<String> data;
+    std::unordered_set<String> data;
 
-    void add(const ColumnObject & column, size_t row_num, const UnorderedMapWithMemoryTracking<String, String> &)
+    void add(const ColumnObject & column, size_t row_num, const std::unordered_map<String, String> &)
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data.insert(path);
@@ -53,10 +52,10 @@ struct AggregateFunctionDistinctJSONPathsData
         const size_t start = shared_data_offsets[static_cast<ssize_t>(row_num) - 1];
         const size_t end = shared_data_offsets[static_cast<ssize_t>(row_num)];
         for (size_t i = start; i != end; ++i)
-            data.insert(std::string{shared_data_paths->getDataAt(i)});
+            data.insert(shared_data_paths->getDataAt(i).toString());
     }
 
-    void addWholeColumn(const ColumnObject & column, const UnorderedMapWithMemoryTracking<String, String> &)
+    void addWholeColumn(const ColumnObject & column, const std::unordered_map<String, String> &)
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data.insert(path);
@@ -71,7 +70,7 @@ struct AggregateFunctionDistinctJSONPathsData
         /// Iterate over all paths in shared data.
         const auto [shared_data_paths, _] = column.getSharedDataPathsAndValues();
         for (size_t i = 0; i != shared_data_paths->size(); ++i)
-            data.insert(std::string{shared_data_paths->getDataAt(i)});
+            data.insert(shared_data_paths->getDataAt(i).toString());
     }
 
     void merge(const AggregateFunctionDistinctJSONPathsData & other)
@@ -106,7 +105,7 @@ struct AggregateFunctionDistinctJSONPathsData
         /// Insert paths in sorted order for better output.
         auto & array_column = assert_cast<ColumnArray &>(column);
         auto & string_column = assert_cast<ColumnString &>(array_column.getData());
-        VectorWithMemoryTracking<String> sorted_data(data.begin(), data.end());
+        std::vector<String> sorted_data(data.begin(), data.end());
         std::sort(sorted_data.begin(), sorted_data.end());
         for (const auto & path : sorted_data)
             string_column.insertData(path.data(), path.size());
@@ -123,9 +122,9 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
 {
     static constexpr auto name = "distinctJSONPathsAndTypes";
 
-    UnorderedMapWithMemoryTracking<String, std::unordered_set<String>> data;
+    std::unordered_map<String, std::unordered_set<String>> data;
 
-    void add(const ColumnObject & column, size_t row_num, const UnorderedMapWithMemoryTracking<String, String> & typed_paths_type_names)
+    void add(const ColumnObject & column, size_t row_num, const std::unordered_map<String, String> & typed_paths_type_names)
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data[path].insert(typed_paths_type_names.at(path));
@@ -135,16 +134,16 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
                 data[path].insert(dynamic_column->getTypeNameAt(row_num));
         }
 
-        /// Iterate over paths on shared data in this row and decode the data types.
+        /// Iterate over paths om shared data in this row and decode the data types.
         const auto [shared_data_paths, shared_data_values] = column.getSharedDataPathsAndValues();
         const auto & shared_data_offsets = column.getSharedDataOffsets();
         const size_t start = shared_data_offsets[static_cast<ssize_t>(row_num) - 1];
         const size_t end = shared_data_offsets[static_cast<ssize_t>(row_num)];
         for (size_t i = start; i != end; ++i)
         {
-            std::string path{shared_data_paths->getDataAt(i)};
+            auto path = shared_data_paths->getDataAt(i).toString();
             auto value = shared_data_values->getDataAt(i);
-            ReadBufferFromMemory buf(value);
+            ReadBufferFromMemory buf(value.data, value.size);
             auto type = decodeDataType(buf);
             /// We should not have Nulls here but let's check just in case.
             chassert(!isNothing(type));
@@ -152,7 +151,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         }
     }
 
-    void addWholeColumn(const ColumnObject & column, const UnorderedMapWithMemoryTracking<String, String> & typed_paths_type_names)
+    void addWholeColumn(const ColumnObject & column, const std::unordered_map<String, String> & typed_paths_type_names)
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data[path].insert(typed_paths_type_names.at(path));
@@ -168,9 +167,9 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         const auto [shared_data_paths, shared_data_values] = column.getSharedDataPathsAndValues();
         for (size_t i = 0; i != shared_data_paths->size(); ++i)
         {
-            std::string path{shared_data_paths->getDataAt(i)};
+            auto path = shared_data_paths->getDataAt(i).toString();
             auto value = shared_data_values->getDataAt(i);
-            ReadBufferFromMemory buf(value);
+            ReadBufferFromMemory buf(value.data, value.size);
             auto type = decodeDataType(buf);
             /// We should not have Nulls here but let's check just in case.
             chassert(!isNothing(type));
@@ -231,11 +230,11 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         auto & key_column = assert_cast<ColumnString &>(tuple_column.getColumn(0));
         auto & value_column = assert_cast<ColumnArray &>(tuple_column.getColumn(1));
         auto & value_column_data = assert_cast<ColumnString &>(value_column.getData());
-        VectorWithMemoryTracking<std::pair<String, VectorWithMemoryTracking<String>>> sorted_data;
+        std::vector<std::pair<String, std::vector<String>>> sorted_data;
         sorted_data.reserve(data.size());
         for (const auto & [path, types] : data)
         {
-            VectorWithMemoryTracking<String> sorted_types(types.begin(), types.end());
+            std::vector<String> sorted_types(types.begin(), types.end());
             std::sort(sorted_types.begin(), sorted_types.end());
             sorted_data.emplace_back(path, std::move(sorted_types));
         }
@@ -326,7 +325,7 @@ public:
     }
 
 private:
-    UnorderedMapWithMemoryTracking<String, String> typed_paths_type_names;
+    std::unordered_map<String, String> typed_paths_type_names;
 };
 
 template <typename Data>
@@ -346,106 +345,8 @@ static AggregateFunctionPtr createAggregateFunctionDistinctJSONPathsAndTypes(
 
 void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory & factory)
 {
-    /// distinctJSONPaths documentation
-    FunctionDocumentation::Description description_distinctJSONPaths = R"(
-Calculates a list of distinct paths stored in a [JSON](https://clickhouse.com/docs/sql-reference/data-types/newjson) column.
-    )";
-    FunctionDocumentation::Syntax syntax_distinctJSONPaths = R"(
-distinctJSONPaths(json)
-    )";
-    FunctionDocumentation::Arguments arguments_distinctJSONPaths = {
-        {"json", "JSON column.", {"JSON"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_distinctJSONPaths = {"Returns the sorted list of paths.", {"Array(String)"}};
-    FunctionDocumentation::Examples examples_distinctJSONPaths = {
-    {
-        "Basic usage with nested JSON",
-        R"(
-DROP TABLE IF EXISTS test_json;
-CREATE TABLE test_json(json JSON) ENGINE = Memory;
-INSERT INTO test_json VALUES ('{"a" : 42, "b" : "Hello"}'), ('{"b" : [1, 2, 3], "c" : {"d" : {"e" : "2020-01-01"}}}'), ('{"a" : 43, "c" : {"d" : {"f" : [{"g" : 42}]}}}');
-
-SELECT distinctJSONPaths(json) FROM test_json;
-        )",
-        R"(
-┌─distinctJSONPaths(json)───┐
-│ ['a','b','c.d.e','c.d.f'] │
-└───────────────────────────┘
-        )"
-    },
-    {
-        "With declared JSON paths",
-        R"(
-DROP TABLE IF EXISTS test_json;
-CREATE TABLE test_json(json JSON) ENGINE = Memory;
-INSERT INTO test_json VALUES ('{"a" : 42, "b" : "Hello"}'), ('{"b" : [1, 2, 3], "c" : {"d" : {"e" : "2020-01-01"}}}'), ('{"a" : 43, "c" : {"d" : {"f" : [{"g" : 42}]}}}')
-
-SELECT distinctJSONPaths(json) FROM test_json;
-        )",
-        R"(
-┌─distinctJSONPaths(json)─┐
-│ ['a','b','c']           │
-└─────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_distinctJSONPaths = {24, 9};
-    FunctionDocumentation::Category category_distinctJSONPaths = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation_distinctJSONPaths = {description_distinctJSONPaths, syntax_distinctJSONPaths, arguments_distinctJSONPaths, {}, returned_value_distinctJSONPaths, examples_distinctJSONPaths, introduced_in_distinctJSONPaths, category_distinctJSONPaths};
-
-    /// distinctJSONPathsAndTypes documentation
-    FunctionDocumentation::Description description_distinctJSONPathsAndTypes = R"(
-Calculates the list of distinct paths and their types stored in [JSON](https://clickhouse.com/docs/sql-reference/data-types/newjson) column.
-
-:::note
-If JSON declaration contains paths with specified types, these paths will be always included in the result of `distinctJSONPaths/distinctJSONPathsAndTypes` functions even if input data didn't have values for these paths.
-:::
-    )";
-    FunctionDocumentation::Syntax syntax_distinctJSONPathsAndTypes = R"(
-distinctJSONPathsAndTypes(json)
-    )";
-    FunctionDocumentation::Arguments arguments_distinctJSONPathsAndTypes = {
-        {"json", "JSON column.", {"JSON"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_distinctJSONPathsAndTypes = {"Returns the sorted map of paths and types.", {"Map(String, Array(String))"}};
-    FunctionDocumentation::Examples examples_distinctJSONPathsAndTypes = {
-    {
-        "Basic usage with mixed types",
-        R"(
-DROP TABLE IF EXISTS test_json;
-CREATE TABLE test_json(json JSON) ENGINE = Memory;
-INSERT INTO test_json VALUES ('{"a" : 42, "b" : "Hello"}'), ('{"b" : [1, 2, 3], "c" : {"d" : {"e" : "2020-01-01"}}}'), ('{"a" : 43, "c" : {"d" : {"f" : [{"g" : 42}]}}}');
-
-SELECT distinctJSONPathsAndTypes(json) FROM test_json;
-        )",
-        R"(
-┌─distinctJSONPathsAndTypes(json)───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ {'a':['Int64'],'b':['Array(Nullable(Int64))','String'],'c.d.e':['Date'],'c.d.f':['Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))']} │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-        )"
-    },
-    {
-        "With declared JSON paths",
-        R"(
-DROP TABLE IF EXISTS test_json;
-CREATE TABLE test_json(json JSON(a UInt32)) ENGINE = Memory;
-INSERT INTO test_json VALUES ('{"b" : "Hello"}'), ('{"b" : "World", "c" : [1, 2, 3]}');
-
-SELECT distinctJSONPathsAndTypes(json) FROM test_json;
-        )",
-        R"(
-┌─distinctJSONPathsAndTypes(json)────────────────────────────────┐
-│ {'a':['UInt32'],'b':['String'],'c':['Array(Nullable(Int64))']} │
-└────────────────────────────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_distinctJSONPathsAndTypes = {24, 9};
-    FunctionDocumentation::Category category_distinctJSONPathsAndTypes = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation_distinctJSONPathsAndTypes = {description_distinctJSONPathsAndTypes, syntax_distinctJSONPathsAndTypes, arguments_distinctJSONPathsAndTypes, {}, returned_value_distinctJSONPathsAndTypes, examples_distinctJSONPathsAndTypes, introduced_in_distinctJSONPathsAndTypes, category_distinctJSONPathsAndTypes};
-
-    factory.registerFunction("distinctJSONPaths", {createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsData>, {}, documentation_distinctJSONPaths});
-    factory.registerFunction("distinctJSONPathsAndTypes", {createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsAndTypesData>, {}, documentation_distinctJSONPathsAndTypes});
+    factory.registerFunction("distinctJSONPaths", createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsData>);
+    factory.registerFunction("distinctJSONPathsAndTypes", createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsAndTypesData>);
 }
 
 }

@@ -5,7 +5,6 @@ sidebar_label: 'generateRandom'
 sidebar_position: 75
 slug: /sql-reference/table-functions/generate
 title: 'generateRandom'
-doc_type: 'reference'
 ---
 
 # generateRandom Table Function
@@ -61,7 +60,7 @@ SELECT * FROM random;
 └──────────────────────────────┴──────────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-In combination with [generateRandomStructure](../../sql-reference/functions/other-functions.md#generateRandomStructure):
+In combination with [generateRandomStructure](../../sql-reference/functions/other-functions.md#generaterandomstructure):
 
 ```sql
 SELECT * FROM generateRandom(generateRandomStructure(4, 101), 101) LIMIT 3;

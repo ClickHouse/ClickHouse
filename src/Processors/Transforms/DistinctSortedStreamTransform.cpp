@@ -202,7 +202,7 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
     if (unlikely(0 == chunk_rows))
         return;
 
-    removeSpecialColumnRepresentations(chunk);
+    convertToFullIfSparse(chunk);
     convertToFullIfConst(chunk);
 
     Columns input_columns = chunk.detachColumns();

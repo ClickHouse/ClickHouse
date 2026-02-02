@@ -1,6 +1,5 @@
 #include <cstring>
 
-#include <Common/TargetSpecific.h>
 #include <Common/SipHash.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
@@ -11,6 +10,7 @@
 #include <IO/WriteHelpers.h>
 #include <Core/Types.h>
 #include <bit>
+
 
 namespace DB
 {
@@ -269,15 +269,14 @@ void reverseTranspose64x8(UInt64 * src_dst)
 
     for (UInt32 i = 0; i < 64; ++i)
     {
-        dst8[i] = static_cast<UInt8>(
-            ((src_dst[0] >> i) & 0x1)
+        dst8[i] = ((src_dst[0] >> i) & 0x1)
             | (((src_dst[1] >> i) & 0x1) << 1)
             | (((src_dst[2] >> i) & 0x1) << 2)
             | (((src_dst[3] >> i) & 0x1) << 3)
             | (((src_dst[4] >> i) & 0x1) << 4)
             | (((src_dst[5] >> i) & 0x1) << 5)
             | (((src_dst[6] >> i) & 0x1) << 6)
-            | (((src_dst[7] >> i) & 0x1) << 7));
+            | (((src_dst[7] >> i) & 0x1) << 7);
     }
 
     memcpy(src_dst, dst8, 8 * sizeof(UInt64));
@@ -398,10 +397,9 @@ void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
     }
 }
 
-MULTITARGET_FUNCTION_AVX512BW_AVX2(
-MULTITARGET_FUNCTION_HEADER(
-template <typename T, bool full>
-void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * buf, UInt32 num_bits, UInt32 tail) /// NOLINT
+/// UInt64[N] transposed matrix -> UIntX[64]
+template <typename T, bool full = false>
+void reverseTranspose(const char * src, T * buf, UInt32 num_bits, UInt32 tail = 64)
 {
     UInt64 matrix[64] = {};
     memcpy(matrix, src, num_bits * sizeof(UInt64));
@@ -425,28 +423,6 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * bu
     clear(buf);
     for (UInt32 col = 0; col < tail; ++col)
         reverseTransposeBytes(matrix, col, buf[col]);
-})
-)
-
-/// UInt64[N] transposed matrix -> UIntX[64]
-template <typename T, bool full = false>
-ALWAYS_INLINE void reverseTranspose(const char * src, T * buf, UInt32 num_bits, UInt32 tail = 64)
-{
-#if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::AVX512BW))
-    {
-        reverseTransposeImplAVX512BW<T, full>(src, buf, num_bits, tail);
-        return;
-    }
-    if (isArchSupported(TargetArch::AVX2))
-    {
-        reverseTransposeImplAVX2<T, full>(src, buf, num_bits, tail);
-        return;
-    }
-#endif
-    {
-        reverseTransposeImpl<T, full>(src, buf, num_bits, tail);
-    }
 }
 
 template <typename T, typename MinMaxT = std::conditional_t<is_signed_v<T>, Int64, UInt64>>
@@ -524,18 +500,14 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     static constexpr const UInt32 matrix_size = 64;
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
 
-    UInt8 bytes_to_skip = bytes_size % sizeof(T);
-    bytes_size -= bytes_to_skip;
-    memcpy(dst, src, bytes_to_skip);
-    src += bytes_to_skip;
-    dst += bytes_to_skip;
-
-    if (bytes_size == 0)
-        return bytes_to_skip;
+    if (bytes_size % sizeof(T))
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64 codec, data size {} is not multiplier of {}",
+                        bytes_size, sizeof(T));
 
     UInt32 src_size = bytes_size / sizeof(T);
     UInt32 num_full = src_size / matrix_size;
     UInt32 tail = src_size % matrix_size;
+
     T min;
     T max;
     findMinMax<T>(src, bytes_size, min, max);
@@ -551,7 +523,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 
     UInt32 num_bits = getValuableBitsNumber(min64, max64);
     if (!num_bits)
-        return header_size + bytes_to_skip;
+        return header_size;
 
     T buf[matrix_size];
     UInt32 src_shift = sizeof(T) * matrix_size;
@@ -573,7 +545,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
         dst_bytes += dst_shift;
     }
 
-    return header_size + dst_bytes + bytes_to_skip;
+    return header_size + dst_bytes;
 }
 
 template <typename T, bool full>
@@ -583,23 +555,17 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
 
     static constexpr const UInt32 matrix_size = 64;
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
-
+  
     const char * const original_dst = dst;
-    UInt8 bytes_to_skip = uncompressed_size % sizeof(T);
-    memcpy(dst, src, bytes_to_skip);
 
-    uncompressed_size -= bytes_to_skip;
-    bytes_size -= bytes_to_skip;
-    src += bytes_to_skip;
-    dst += bytes_to_skip;
+    if (bytes_size < header_size)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, data size ({}) is less than the size of T64 header",
+                        bytes_size);
 
-    if (uncompressed_size % sizeof(T) != 0)
+    if (uncompressed_size % sizeof(T))
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, unexpected uncompressed size ({})"
                         " isn't a multiple of the data type size ({})",
                         uncompressed_size, sizeof(T));
-
-    if (uncompressed_size == 0)
-        return static_cast<UInt32>(dst - original_dst);
 
     UInt64 num_elements = uncompressed_size / sizeof(T);
     MinMaxType min;
@@ -619,7 +585,7 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
         T min_value = static_cast<T>(min);
         for (UInt32 i = 0; i < num_elements; ++i, dst += sizeof(T))
             unalignedStore<T>(dst, min_value);
-        return static_cast<UInt32>(dst - original_dst);
+        return dst - original_dst;
     }
 
     UInt32 src_shift = sizeof(UInt64) * num_bits;
@@ -673,7 +639,7 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
         dst += tail * sizeof(T);
     }
 
-    return static_cast<UInt32>(dst - original_dst);
+    return dst - original_dst;
 }
 
 template <typename T>
@@ -698,9 +664,10 @@ UInt32 decompressData(const char * src, UInt32 src_size, char * dst, UInt32 unco
 
 UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, char * dst) const
 {
-    UInt8 cookie = static_cast<UInt8>(serializeTypeId(type_idx)) | static_cast<UInt8>(static_cast<UInt8>(variant) << 7);
+    UInt8 cookie = static_cast<UInt8>(serializeTypeId(type_idx)) | (static_cast<UInt8>(variant) << 7);
     memcpy(dst, &cookie, 1);
     dst += 1;
+
     switch (baseType(*type_idx))
     {
         case TypeIndex::Int8:
@@ -773,7 +740,7 @@ CompressionCodecT64::CompressionCodecT64(std::optional<TypeIndex> type_idx_, Var
     if (variant == Variant::Byte)
         setCodecDescription("T64");
     else
-        setCodecDescription("T64", {make_intrusive<ASTLiteral>("bit")});
+        setCodecDescription("T64", {std::make_shared<ASTLiteral>("bit")});
 }
 
 void CompressionCodecT64::updateHash(SipHash & hash) const

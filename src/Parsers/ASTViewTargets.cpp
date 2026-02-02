@@ -16,12 +16,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ViewTarget::~ViewTarget() = default;
-ViewTarget::ViewTarget() = default;
-ViewTarget::ViewTarget(const ViewTarget & other) = default;
-ViewTarget & ViewTarget::operator=(const ViewTarget & other) = default;
-
-ViewTarget::ViewTarget(Kind kind_) : kind(kind_) {}
 
 std::string_view toString(ViewTarget::Kind kind)
 {
@@ -142,7 +136,7 @@ bool ASTViewTargets::hasInnerUUIDs() const
 
 void ASTViewTargets::setInnerEngine(ViewTarget::Kind kind, ASTPtr storage_def)
 {
-    auto new_inner_engine = boost::static_pointer_cast<ASTStorage>(storage_def);
+    auto new_inner_engine = typeid_cast<std::shared_ptr<ASTStorage>>(storage_def);
     if (!new_inner_engine && storage_def)
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Bad cast from type {} to ASTStorage", storage_def->getID());
 
@@ -168,21 +162,21 @@ void ASTViewTargets::setInnerEngine(ViewTarget::Kind kind, ASTPtr storage_def)
     }
 }
 
-ASTStorage * ASTViewTargets::getInnerEngine(ViewTarget::Kind kind) const
+std::shared_ptr<ASTStorage> ASTViewTargets::getInnerEngine(ViewTarget::Kind kind) const
 {
-    if (const auto * target = tryGetTarget(kind); target && target->inner_engine)
-        return target->inner_engine->as<ASTStorage>();
+    if (const auto * target = tryGetTarget(kind))
+        return target->inner_engine;
     return nullptr;
 }
 
-std::vector<ASTStorage *> ASTViewTargets::getInnerEngines() const
+std::vector<std::shared_ptr<ASTStorage>> ASTViewTargets::getInnerEngines() const
 {
-    std::vector<ASTStorage *> res;
+    std::vector<std::shared_ptr<ASTStorage>> res;
     res.reserve(targets.size());
     for (const auto & target : targets)
     {
         if (target.inner_engine)
-            res.push_back(target.inner_engine->as<ASTStorage>());
+            res.push_back(target.inner_engine);
     }
     return res;
 }
@@ -199,13 +193,13 @@ const ViewTarget * ASTViewTargets::tryGetTarget(ViewTarget::Kind kind) const
 
 ASTPtr ASTViewTargets::clone() const
 {
-    auto res = make_intrusive<ASTViewTargets>(*this);
+    auto res = std::make_shared<ASTViewTargets>(*this);
     res->children.clear();
     for (auto & target : res->targets)
     {
         if (target.inner_engine)
         {
-            target.inner_engine = boost::static_pointer_cast<ASTStorage>(target.inner_engine->clone());
+            target.inner_engine = typeid_cast<std::shared_ptr<ASTStorage>>(target.inner_engine->clone());
             res->children.push_back(target.inner_engine);
         }
     }
@@ -298,49 +292,23 @@ std::optional<Keyword> ASTViewTargets::getKeywordForInnerUUID(ViewTarget::Kind k
     UNREACHABLE();
 }
 
-void ASTViewTargets::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
+void ASTViewTargets::forEachPointerToChild(std::function<void(void**)> f)
 {
     for (auto & target : targets)
     {
-        f(nullptr, &target.table_ast);
-        f(nullptr, &target.inner_engine);
-    }
-}
-
-void ASTViewTargets::setTableASTWithQueryParams(ViewTarget::Kind kind, const ASTPtr & table_)
-{
-    for (auto & target : targets)
-    {
-        if (target.kind == kind)
+        if (target.inner_engine)
         {
-            target.table_ast = table_;
-            return;
+            ASTStorage * new_inner_engine = target.inner_engine.get();
+            f(reinterpret_cast<void **>(&new_inner_engine));
+            if (new_inner_engine != target.inner_engine.get())
+            {
+                if (new_inner_engine)
+                    target.inner_engine = typeid_cast<std::shared_ptr<ASTStorage>>(new_inner_engine->ptr());
+                else
+                    target.inner_engine.reset();
+            }
         }
     }
-    if (table_)
-        targets.emplace_back(kind).table_ast = table_;
 }
 
-bool ASTViewTargets::hasTableASTWithQueryParams(ViewTarget::Kind kind) const
-{
-    for (const auto & target : targets)
-        if (target.kind == kind)
-            return target.table_ast != nullptr;
-    return false;
-}
-
-ASTPtr ASTViewTargets::getTableASTWithQueryParams(ViewTarget::Kind kind)
-{
-    for (const auto & target : targets)
-        if (target.kind == kind)
-            return target.table_ast;
-    return nullptr;
-}
-
-void ASTViewTargets::resetTableASTWithQueryParams(ViewTarget::Kind kind)
-{
-    for (auto & target : targets)
-        if (target.kind == kind)
-            target.table_ast.reset();
-}
 }

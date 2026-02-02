@@ -61,11 +61,11 @@ public:
 
             if (result.column->isNullAt(0))
             {
-                node = make_intrusive<ASTLiteral>(Field());
+                node = std::make_shared<ASTLiteral>(Field());
             }
             else if (isNumber(result.type))
             {
-                node = make_intrusive<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
+                node = std::make_shared<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
             }
             else
             {
@@ -75,7 +75,7 @@ public:
 
                 WriteBufferFromOwnString out;
                 result.type->getDefaultSerialization()->serializeText(inner_column, 0, out, FormatSettings());
-                node = make_intrusive<ASTLiteral>(out.str());
+                node = std::make_shared<ASTLiteral>(out.str());
             }
         }
     }
@@ -97,9 +97,9 @@ struct ReplaceLiteralToExprVisitorData
                 {
                     /// 1 -> 1=1, 0 -> 1=0.
                     if (value)
-                        argument = makeASTOperator("equals", make_intrusive<ASTLiteral>(1), make_intrusive<ASTLiteral>(1));
+                        argument = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(1));
                     else
-                        argument = makeASTOperator("equals", make_intrusive<ASTLiteral>(1), make_intrusive<ASTLiteral>(0));
+                        argument = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(0));
                 }
             }
         }
@@ -193,9 +193,6 @@ bool isCompatible(ASTPtr & node)
             if (!isCompatible(expr))
                 return false;
 
-        /// It should be formatted in the operator form.
-        function->is_operator = true;
-
         return true;
     }
 
@@ -207,7 +204,7 @@ bool isCompatible(ASTPtr & node)
             auto tuple_value = literal->value.safeGet<Tuple>();
             if (tuple_value.size() == 1)
             {
-                node = makeASTFunction("", make_intrusive<ASTLiteral>(tuple_value[0]));
+                node = makeASTFunction("", std::make_shared<ASTLiteral>(tuple_value[0]));
                 return true;
             }
         }
@@ -302,13 +299,13 @@ String transformQueryForExternalDatabaseImpl(
 {
     bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
 
-    auto select = make_intrusive<ASTSelectQuery>();
+    auto select = std::make_shared<ASTSelectQuery>();
 
     select->replaceDatabaseAndTable(database, table);
 
-    auto select_expr_list = make_intrusive<ASTExpressionList>();
+    auto select_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & name : used_columns)
-        select_expr_list->children.push_back(make_intrusive<ASTIdentifier>(name));
+        select_expr_list->children.push_back(std::make_shared<ASTIdentifier>(name));
 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
 
@@ -331,7 +328,7 @@ String transformQueryForExternalDatabaseImpl(
 
         if (isCompatible(original_where))
         {
-            select->setExpression(ASTSelectQuery::Expression::WHERE, ASTPtr(original_where));
+            select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
         }
         else if (strict)
         {
@@ -341,7 +338,7 @@ String transformQueryForExternalDatabaseImpl(
         {
             if (function->name == "and" || function->name == "tuple")
             {
-                auto new_function_and = makeASTOperator("and");
+                auto new_function_and = makeASTFunction("and");
                 std::queue<const ASTFunction *> predicates;
                 predicates.push(function);
 
@@ -378,14 +375,14 @@ String transformQueryForExternalDatabaseImpl(
     {
         /// WHERE 1 -> WHERE 1=1, WHERE 0 -> WHERE 1=0.
         if (value)
-            original_where = makeASTOperator("equals", make_intrusive<ASTLiteral>(1), make_intrusive<ASTLiteral>(1));
+            original_where = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(1));
         else
-            original_where = makeASTOperator("equals", make_intrusive<ASTLiteral>(1), make_intrusive<ASTLiteral>(0));
+            original_where = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(0));
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
     }
 
     if (limit)
-        select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(*limit));
+        select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::make_shared<ASTLiteral>(*limit));
 
     ASTPtr select_ptr = select;
     dropAliases(select_ptr);
