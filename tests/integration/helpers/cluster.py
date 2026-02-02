@@ -2030,7 +2030,7 @@ class ClickHouseCluster:
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/debug/it-%4m.profraw"
+            "/var/lib/clickhouse/server_%h_%p_%m.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd
@@ -3030,7 +3030,7 @@ class ClickHouseCluster:
             "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
         ) from err
 
-    def wait_kafka_is_available(self, kafka_docker_id, kafka_port, max_retries=120):
+    def wait_kafka_is_available(self, kafka_docker_id, kafka_port, max_retries=50):
         retries = 0
         while True:
             if check_kafka_is_available(kafka_docker_id, kafka_port):
@@ -4170,7 +4170,7 @@ services:
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
             - {HELPERS_DIR}/../integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
-            - {CLICKHOUSE_ROOT_DIR}:/debug:rw
+            - {CLICKHOUSE_ROOT_DIR}:/debug:ro
             {metrika_xml}
             {binary_volume}
             {external_dirs_volumes}
@@ -4471,12 +4471,6 @@ class ClickHouseInstance:
             "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
         )
         return "NDEBUG" not in build_opts
-    
-    def is_built_with_llvm_coverage(self):
-        with_coverage = self.query(
-            "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'"
-        )
-        return "ON" in with_coverage.upper()
 
     def is_built_with_thread_sanitizer(self):
         return self.is_built_with_sanitizer("thread")
@@ -4818,7 +4812,7 @@ class ClickHouseInstance:
                 return False
 
             self.exec_in_container(
-                ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "-15")],
+                ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")],
                 user="root",
             )
 

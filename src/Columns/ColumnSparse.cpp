@@ -300,8 +300,7 @@ void ColumnSparse::insertManyDefaults(size_t length)
 
 void ColumnSparse::popBack(size_t n)
 {
-    if (n > size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+    assert(n <= _size);
 
     auto & offsets_data = getOffsetsData();
     size_t new_size = _size - n;

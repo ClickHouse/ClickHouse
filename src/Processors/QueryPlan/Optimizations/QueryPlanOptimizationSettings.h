@@ -79,6 +79,7 @@ struct QueryPlanOptimizationSettings
     bool aggregation_in_order;
     bool optimize_projection;
     bool use_query_condition_cache;
+    bool query_condition_cache_store_conditions_as_plaintext;
     bool read_in_order_through_join;
     bool correlated_subqueries_use_in_memory_buffer;
 

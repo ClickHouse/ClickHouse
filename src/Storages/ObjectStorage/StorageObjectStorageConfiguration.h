@@ -258,11 +258,6 @@ public:
         return false;
     }
 
-    virtual bool supportsPrewhere() const
-    {
-        return true;
-    }
-
     virtual void drop(ContextPtr) {}
 
     String format = "auto";

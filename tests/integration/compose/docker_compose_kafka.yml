@@ -11,12 +11,6 @@ services:
     security_opt:
       - label:disable
     stop_grace_period: 5s
-    healthcheck:
-      test: ["CMD-SHELL", "zkServer.sh status"]
-      interval: 5s
-      timeout: 10s
-      retries: 20
-      start_period: 30s
   kafka1:
     image: confluentinc/cp-kafka:5.2.0
     hostname: kafka1
@@ -32,8 +26,7 @@ services:
       KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     depends_on:
-      kafka_zookeeper:
-        condition: service_healthy
+      - kafka_zookeeper
     security_opt:
       - label:disable
     sysctls:
