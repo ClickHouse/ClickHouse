@@ -37,7 +37,7 @@ scenarios:
       - { kind: dm_delay, on: all, ms: 3, duration_s: 120, target_parallel: true }
     gates:
       - { type: single_leader }
-      # Replay uses parquet with bootstrap CREATEs (paths exist); errors = unexpected results only → reliable metrics
+      # Replay: bootstrap + version tracking; errors = unexpected results only
       - { type: error_rate_le, max_ratio: 0.05 }
       # Replay latency can be higher under load (bootstrap CREATEs + full log); allow p99 up to 20s
       - { type: p99_le, max_ms: 20000 }

@@ -7,6 +7,7 @@ __pycache__/
 /tests/_instances-*/
 # Generated configs for local runs
 /tests/configs/
+/tests/_keeper_configs/
 # Local virtualenvs
 .venv/
 .keeper-venv/

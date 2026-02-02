@@ -65,8 +65,6 @@ def _patch_keeper_bench_config(src, servers, clients, duration_s):
     return out
 
 
-
-
 class KeeperBench:
     """Runs keeper-bench workload on the host machine."""
     
@@ -130,7 +128,8 @@ class KeeperBench:
 
             reads = summary.get("read_total_requests", 0)
             writes = summary.get("write_total_requests", 0)
-            summary["ops"] = reads + writes
+            # Prefer top-level ops from keeper-bench when present (read_total + write_total)
+            summary["ops"] = int(data["ops"]) if data.get("ops") is not None else (reads + writes)
             summary["reads"] = reads
             summary["writes"] = writes
             summary["read_rps"] = summary.get("read_requests_per_second", 0)
@@ -153,12 +152,14 @@ class KeeperBench:
         # Replay mode: remove generator section
         if self.replay_path:
             bench_cfg.pop("generator", None)
+            bench_cfg.pop("setup", None)
+            bench_cfg["concurrency"] = 1
 
         # Set unique output path (with_timestamp: false to use exact path) and stdout for fallback
         opath = f"/tmp/keeper_bench_out_{uuid.uuid4().hex[:8]}.json"
         out = bench_cfg.setdefault("output", {})
         # TODO: uncomment this when we figure out reason of bench core dumps when using file output
-        # out["file"] = {"path": opath, "with_timestamp": False}
+        out["file"] = {"path": opath, "with_timestamp": False}
         out["stdout"] = True
         self.output_json_path = opath
 

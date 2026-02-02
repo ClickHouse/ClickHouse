@@ -36,6 +36,7 @@ void Stats::clear()
 {
     read_collector.clear();
     write_collector.clear();
+    errors = 0;
 }
 
 std::pair<double, double> Stats::StatsCollector::getThroughput(size_t concurrency)
@@ -127,6 +128,8 @@ void Stats::writeJSON(DB::WriteBuffer & out, size_t concurrency, int64_t start_t
     results.SetObject();
 
     results.AddMember("timestamp", Value(start_timestamp), allocator);
+    results.AddMember("errors", Value(static_cast<uint64_t>(errors.load())), allocator);
+    results.AddMember("ops", Value(static_cast<uint64_t>(read_collector.requests + write_collector.requests)), allocator);
 
     const auto get_results = [&](auto & collector)
     {
