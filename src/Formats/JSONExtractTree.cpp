@@ -1529,7 +1529,7 @@ public:
             auto & variant = column_variant.getVariantByGlobalDiscriminator(i);
             if (variant_nodes[i]->insertResultToColumn(variant, element, insert_settings, format_settings, error))
             {
-                column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(static_cast<ColumnVariant::Discriminator>(i)));
+                column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(i));
                 column_variant.getOffsets().push_back(variant.size() - 1);
                 return true;
             }
@@ -1600,7 +1600,7 @@ public:
 
                     if (it->second->insertResultToColumn(variant_column.getVariantByGlobalDiscriminator(i), element, insert_settings_with_no_type_conversion, format_settings, error))
                     {
-                        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(static_cast<ColumnVariant::Discriminator>(i)));
+                        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(i));
                         variant_column.getOffsets().push_back(variant_column.getVariantByGlobalDiscriminator(i).size() - 1);
                         return true;
                     }
@@ -1852,12 +1852,12 @@ private:
         MutableColumnPtr & tmp_dynamic_column,
         bool is_root) const
     {
-        if (shouldSkipPath(current_path, insert_settings))
+        if (shouldSkipPath(current_path))
             return true;
 
         if (element.isObject() && !typed_path_nodes.contains(current_path))
         {
-            std::unordered_map<std::string_view, std::unordered_set<JSONElementType>> visited_keys;
+            std::unordered_set<std::string_view> visited_keys;
             for (auto [key, value] : element.getObject())
             {
                 String path = current_path;
@@ -1868,34 +1868,12 @@ private:
                 else
                     path += key;
 
-                auto it = visited_keys.find(key);
-                auto value_element_type = getJSONElementType(value);
-                if (it != visited_keys.end())
+                if (!visited_keys.insert(key).second)
                 {
-                    if (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object)
-                    {
-                        /// We can't have duplicated key with the same type (literal/object).
-                        if (it->second.contains(value_element_type))
-                        {
-                            if (format_settings.json.type_json_skip_duplicated_paths)
-                                continue;
-                            error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
-                            return false;
-                        }
-
-                        it->second.insert(value_element_type);
-                    }
-                    else
-                    {
-                        if (format_settings.json.type_json_skip_duplicated_paths)
-                            continue;
-                        error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert or setting type_json_allow_duplicated_key_with_literal_and_nested_object to allow duplicated path with literal and nested object", path);
-                        return false;
-                    }
-                }
-                else
-                {
-                    visited_keys[key].insert(value_element_type);
+                    if (format_settings.json.type_json_skip_duplicated_paths)
+                        continue;
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
+                    return false;
                 }
 
                 if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, tmp_dynamic_column, false))
@@ -1990,7 +1968,7 @@ private:
         return true;
     }
 
-    bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
+    bool shouldSkipPath(const String & path) const
     {
         if (paths_to_skip.contains(path))
             return true;
@@ -2004,16 +1982,8 @@ private:
 
         for (const auto & regexp : path_regexps_to_skip)
         {
-            if (insert_settings.use_partial_match_to_skip_paths_by_regexp)
-            {
-                if (re2::RE2::PartialMatch(path, regexp))
-                    return true;
-            }
-            else
-            {
-                if (re2::RE2::FullMatch(path, regexp))
-                    return true;
-            }
+            if (re2::RE2::FullMatch(path, regexp))
+                return true;
         }
 
         return false;
@@ -2032,23 +2002,6 @@ private:
     std::list<re2::RE2> path_regexps_to_skip;
     std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
     std::shared_ptr<SerializationDynamic> dynamic_serialization;
-
-    enum class JSONElementType
-    {
-        LITERAL = 0,
-        OBJECT = 1,
-    };
-
-    JSONElementType getJSONElementType(const typename JSONParser::Element & element) const
-    {
-        switch (element.type())
-        {
-            case ElementType::OBJECT:
-                return JSONElementType::OBJECT;
-            default:
-                return JSONElementType::LITERAL;
-        }
-    }
 };
 
 }

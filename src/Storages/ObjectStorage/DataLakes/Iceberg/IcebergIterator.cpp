@@ -59,8 +59,6 @@ extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergMinMaxIndexPrunedFiles;
 extern const Event IcebergMetadataReadWaitTimeMicroseconds;
 extern const Event IcebergMetadataReturnedObjectInfos;
-extern const Event IcebergMinMaxNonPrunedDeleteFiles;
-extern const Event IcebergMinMaxPrunedDeleteFiles;
 };
 
 
@@ -81,13 +79,9 @@ using namespace Iceberg;
 
 namespace
 {
-std::span<const ManifestFileEntryPtr> defineDeletesSpan(
-    ManifestFileEntryPtr data_object_, const std::vector<ManifestFileEntryPtr> & deletes_objects, bool is_equality_delete, LoggerPtr logger)
+std::span<const ManifestFileEntry>
+defineDeletesSpan(ManifestFileEntry data_object_, const std::vector<ManifestFileEntry> & deletes_objects, bool is_equality_delete)
 {
-    if (deletes_objects.empty())
-    {
-        return {};
-    }
     ///Object in deletes_objects are sorted by common_partition_specification, partition_key_value and added_sequence_number.
     /// It is done to have an invariant that position deletes objects which corresponds
     /// to the data object form a subsegment in a deletes_objects vector.
@@ -101,53 +95,27 @@ std::span<const ManifestFileEntryPtr> defineDeletesSpan(
         deletes_objects.begin(),
         deletes_objects.end(),
         data_object_,
-        [](const ManifestFileEntryPtr & lhs, const ManifestFileEntryPtr & rhs)
+        [](const ManifestFileEntry & lhs, const ManifestFileEntry & rhs)
         {
-            return std::tie(lhs->common_partition_specification, lhs->partition_key_value)
-                < std::tie(rhs->common_partition_specification, rhs->partition_key_value);
+            return std::tie(lhs.common_partition_specification, lhs.partition_key_value)
+                < std::tie(rhs.common_partition_specification, rhs.partition_key_value);
         });
     if (beg_it - deletes_objects.begin() > end_it - deletes_objects.begin())
     {
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
-            "{} deletes objects are not sorted by common_partition_specification and partition_key_value, "
+            "Position deletes objects are not sorted by common_partition_specification and partition_key_value, "
             "beginning: {}, end: {}, position_deletes_objects size: {}",
-            is_equality_delete ? "Equality" : "Position",
             beg_it - deletes_objects.begin(),
             end_it - deletes_objects.begin(),
             deletes_objects.size());
-    }
-    if (beg_it != end_it)
-    {
-        auto previous_it = std::prev(end_it);
-        assert(*beg_it);
-        assert(*previous_it);
-        LOG_DEBUG(
-            logger,
-            "Got {} {} delete elements for data file {}, taken data file object info: {}, first taken delete object info is {}, last taken "
-            "delete object info is {}",
-            std::distance(beg_it, end_it),
-            is_equality_delete ? "equality" : "position",
-            data_object_->file_path,
-            data_object_->dumpDeletesMatchingInfo(),
-            (*beg_it)->dumpDeletesMatchingInfo(),
-            (*previous_it)->dumpDeletesMatchingInfo());
-    }
-    else
-    {
-        LOG_DEBUG(
-            logger,
-            "No {} delete elements for data file {}, taken data file object info: {}",
-            is_equality_delete ? "equality" : "position",
-            data_object_->file_path,
-            data_object_->dumpDeletesMatchingInfo());
     }
     return {beg_it, end_it};
 }
 
 }
 
-std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
+std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
 {
     if (!data_snapshot)
     {
@@ -172,15 +140,15 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
                 data_snapshot->manifest_list_entries[manifest_file_index].added_sequence_number,
                 data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
             internal_data_index = 0;
-            files = files_generator(current_manifest_file_content);
         }
+        auto files = files_generator(current_manifest_file_content);
         while (internal_data_index < files.size())
         {
-            const ManifestFileEntryPtr & manifest_file_entry = files[internal_data_index++];
-            if ((manifest_file_entry->schema_id != previous_entry_schema) && (use_partition_pruning))
+            const auto & manifest_file_entry = files[internal_data_index++];
+            if ((manifest_file_entry.schema_id != previous_entry_schema) && (use_partition_pruning))
             {
-                previous_entry_schema = manifest_file_entry->schema_id;
-                if (previous_entry_schema > manifest_file_entry->schema_id)
+                previous_entry_schema = manifest_file_entry.schema_id;
+                if (previous_entry_schema > manifest_file_entry.schema_id)
                 {
                     LOG_WARNING(
                         log,
@@ -190,7 +158,7 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
                 current_pruner.emplace(
                     *persistent_components.schema_processor,
                     table_snapshot->schema_id,
-                    manifest_file_entry->schema_id,
+                    manifest_file_entry.schema_id,
                     filter_dag.get(),
                     *current_manifest_file_content,
                     local_context);
@@ -202,7 +170,7 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
                 DB::IcebergMetadataLogLevel::ManifestFileEntry,
                 persistent_components.table_path,
                 current_manifest_file_content->getPathToManifestFile(),
-                manifest_file_entry->row_number,
+                manifest_file_entry.row_number,
                 pruning_status);
             switch (pruning_status)
             {
@@ -219,7 +187,6 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
             }
         }
         current_manifest_file_content = nullptr;
-        files.clear();
         current_pruner = std::nullopt;
         ++manifest_file_index;
         internal_data_index = 0;
@@ -278,8 +245,7 @@ IcebergIterator::IcebergIterator(
     Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
     PersistentTableComponents persistent_components_)
-    : logger(getLogger("IcebergIterator"))
-    , filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
+    : filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , object_storage(std::move(object_storage_))
     , table_state_snapshot(table_snapshot_)
     , persistent_components(persistent_components_)
@@ -315,7 +281,7 @@ IcebergIterator::IcebergIterator(
     auto delete_file = deletes_iterator.next();
     while (delete_file.has_value())
     {
-        if (delete_file.value()->equality_ids.has_value())
+        if (delete_file->equality_ids.has_value())
         {
             equality_deletes_files.emplace_back(std::move(delete_file.value()));
         }
@@ -325,7 +291,6 @@ IcebergIterator::IcebergIterator(
         }
         delete_file = deletes_iterator.next();
     }
-    LOG_DEBUG(logger, "Taken {} position deletes file and {} equality deletes files in iceberg iterator", position_deletes_files.size(), equality_deletes_files.size());
     std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
     std::sort(position_deletes_files.begin(), position_deletes_files.end());
     producer_task.emplace(
@@ -333,7 +298,7 @@ IcebergIterator::IcebergIterator(
         {
             while (!blocking_queue.isFinished())
             {
-                std::optional<ManifestFileEntryPtr> entry;
+                std::optional<ManifestFileEntry> entry;
                 try
                 {
                     entry = data_files_iterator.next();
@@ -365,49 +330,16 @@ IcebergIterator::IcebergIterator(
 ObjectInfoPtr IcebergIterator::next(size_t)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataReadWaitTimeMicroseconds);
-    Iceberg::ManifestFileEntryPtr manifest_file_entry;
+    Iceberg::ManifestFileEntry manifest_file_entry;
     if (blocking_queue.pop(manifest_file_entry))
     {
         IcebergDataObjectInfoPtr object_info
             = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, table_state_snapshot->schema_id);
-        for (const auto & position_delete :
-             defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
+        for (const auto & position_delete : defineDeletesSpan(manifest_file_entry, position_deletes_files, false))
         {
-            const auto & data_file_path = object_info->info.data_object_file_path_key;
-            const auto & lower = position_delete->lower_reference_data_file_path;
-            const auto & upper = position_delete->upper_reference_data_file_path;
-            bool can_contain_data_file_deletes
-                = (!lower.has_value() || lower.value() <= data_file_path) && (!upper.has_value() || upper.value() >= data_file_path);
-            /// Skip position deletes that do not match the data file path.
-            if (!can_contain_data_file_deletes)
-            {
-                ProfileEvents::increment(ProfileEvents::IcebergMinMaxPrunedDeleteFiles);
-                LOG_TEST(
-                    logger,
-                    "Skipping position delete file `{}` for data file `{}` because position delete has out of bounds reference data file "
-                    "bounds: "
-                    "(lower bound: `{}`, upper bound: `{}`)",
-                    position_delete->file_path,
-                    data_file_path,
-                    lower.value_or("[no lower bound]"),
-                    upper.value_or("[no upper bound]"));
-            }
-            else
-            {
-                ProfileEvents::increment(ProfileEvents::IcebergMinMaxNonPrunedDeleteFiles);
-                LOG_TEST(
-                    logger,
-                    "Processing position delete file `{}` for data file `{}` with reference data file bounds: "
-                    "(lower bound: `{}`, upper bound: `{}`)",
-                    position_delete->file_path,
-                    data_file_path,
-                    lower.value_or("[no lower bound]"),
-                    upper.value_or("[no upper bound]"));
-                object_info->addPositionDeleteObject(position_delete);
-            }
+            object_info->addPositionDeleteObject(position_delete);
         }
-        for (const auto & equality_delete :
-             defineDeletesSpan(manifest_file_entry, equality_deletes_files, /* is_equality_delete */ true, logger))
+        for (const auto & equality_delete : defineDeletesSpan(manifest_file_entry, equality_deletes_files, true))
         {
             object_info->addEqualityDeleteObject(equality_delete);
         }

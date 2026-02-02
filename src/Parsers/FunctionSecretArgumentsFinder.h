@@ -388,19 +388,8 @@ protected:
 
     void findURLSecretArguments()
     {
-        if (isNamedCollectionName(0))
-            return;
-
-        excludeS3OrURLNestedMaps();
-
-        String uri;
-        if (tryGetStringFromArgument(0, &uri) && maskURIPassword(&uri))
-        {
-            chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
-            result.start = 0;
-            result.count = 1;
-            result.replacement = std::move(uri);
-        }
+        if (!isNamedCollectionName(0))
+            excludeS3OrURLNestedMaps();
     }
 
     bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const
@@ -745,9 +734,6 @@ protected:
 
     void findBackupDatabaseSecretArguments()
     {
-        if (function->arguments->size() < 2)
-            return;
-
         auto storage_arg = function->arguments->at(1);
         auto storage_function = storage_arg->getFunction();
 

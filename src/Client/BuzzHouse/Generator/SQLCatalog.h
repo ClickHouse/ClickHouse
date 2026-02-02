@@ -13,8 +13,7 @@ enum class ColumnSpecial
     SIGN = 1,
     IS_DELETED = 2,
     VERSION = 3,
-    TTL_COL = 4,
-    ID_COL = 5
+    TTL_COL = 4
 };
 
 enum class DetachStatus
@@ -207,7 +206,7 @@ public:
     uint32_t tname = 0, replica_counter = 0, shard_counter = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
     std::optional<String> cluster, file_comp, partition_strategy, partition_columns_in_data_file, storage_class_name, host_params,
-        bucket_path, topic, group;
+        bucket_path;
     String keeper_path, shard_name, replica_db, replica_table, replica_name;
     DetachStatus attached = DetachStatus::ATTACHED;
     std::optional<TableEngineOption> toption;
@@ -324,8 +323,6 @@ public:
     bool isArrowFlightEngine() const;
 
     bool isAliasEngine() const;
-
-    bool isKafkaEngine() const;
 
     bool isNotTruncableEngine() const;
 

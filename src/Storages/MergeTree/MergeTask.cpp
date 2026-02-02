@@ -8,7 +8,6 @@
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Settings.h>
-#include <Core/ServerSettings.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Disks/SingleDiskVolume.h>
@@ -131,11 +130,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool vertical_merge_optimize_lightweight_delete;
     extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_wide_part;
-    extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_compact_part;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
-    extern const MergeTreeSettingsBool materialize_statistics_on_merge;
 }
 
 namespace ErrorCodes
@@ -152,12 +149,8 @@ namespace
 
 ColumnsStatistics getStatisticsForColumns(
     const NamesAndTypesList & columns_to_read,
-    const StorageMetadataPtr & metadata_snapshot,
-    const MergeTreeSettings & merge_tree_settings
-    )
+    const StorageMetadataPtr & metadata_snapshot)
 {
-    if (!merge_tree_settings[MergeTreeSetting::materialize_statistics_on_merge])
-        return {};
     ColumnsStatistics all_statistics;
     const auto & all_columns = metadata_snapshot->getColumns();
 
@@ -183,7 +176,7 @@ public:
     static constexpr auto FILE_ID = "rows_sources";
 
     explicit RowsSourcesTemporaryFile(TemporaryDataOnDiskScopePtr temporary_data_on_disk_)
-        : temporary_data_on_disk(temporary_data_on_disk_->childScope({CurrentMetrics::TemporaryFilesForMerge}))
+        : temporary_data_on_disk(temporary_data_on_disk_->childScope(CurrentMetrics::TemporaryFilesForMerge))
     {
     }
 
@@ -368,13 +361,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
     for (const auto * projection : global_ctx->projections_to_rebuild)
     {
-        for (const auto & column : projection->getRequiredColumns())
-        {
-            if (projection->with_parent_part_offset && column == "_part_offset")
-                continue;
-
-            key_columns.insert(getColumnNameInStorage(column, storage_columns));
-        }
+        Names projection_columns_vec = projection->getRequiredColumns();
+        std::copy(projection_columns_vec.cbegin(), projection_columns_vec.cend(),
+                  std::inserter(key_columns, key_columns.end()));
     }
 
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
@@ -765,7 +754,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->merging_columns,
         /// indices,
         MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes),
-        getStatisticsForColumns(global_ctx->merging_columns, global_ctx->metadata_snapshot, *global_ctx->data_settings),
+        getStatisticsForColumns(global_ctx->merging_columns, global_ctx->metadata_snapshot),
         global_ctx->compression_codec,
         std::move(index_granularity_ptr),
         global_ctx->txn ? global_ctx->txn->tid : Tx::PrehistoricTID,
@@ -966,22 +955,22 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 }
 
 
-void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Block & block, UInt64 starting_offset) const
+void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Block & block) const
 {
     for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
     {
         const auto & projection = *global_ctx->projections_to_rebuild[i];
-        Block block_to_squash = projection.calculate(block, starting_offset, global_ctx->context);
+        Block block_with_required_columns;
+        for (const auto & name : projection.getRequiredColumns())
+            if (name != "_part_offset")
+                block_with_required_columns.insert(block.getByName(name));
+        Block block_to_squash = projection.calculate(block_with_required_columns, global_ctx->context);
         /// Avoid replacing the projection squash header if nothing was generated (it used to return an empty block)
         if (block_to_squash.rows() == 0)
-            continue;
-
+            return;
         auto & projection_squash_plan = ctx->projection_squashes[i];
         projection_squash_plan.setHeader(block_to_squash.cloneEmpty());
-        Chunk squashed_chunk = Squashing::squash(
-            projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()}),
-            projection_squash_plan.getHeader());
-
+        Chunk squashed_chunk = Squashing::squash(projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()}));
         if (squashed_chunk)
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
@@ -1002,10 +991,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
     {
         const auto & projection = *global_ctx->projections_to_rebuild[i];
         auto & projection_squash_plan = ctx->projection_squashes[i];
-        auto squashed_chunk = Squashing::squash(
-            projection_squash_plan.flush(),
-            projection_squash_plan.getHeader());
-
+        auto squashed_chunk = Squashing::squash(projection_squash_plan.flush());
         if (squashed_chunk)
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
@@ -1094,7 +1080,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
             }
         }
 
-        size_t starting_offset = global_ctx->rows_written;
         global_ctx->rows_written += block.rows();
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
@@ -1104,7 +1089,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
                 block, MergeTreeData::getMinMaxColumnsNames(global_ctx->metadata_snapshot->getPartitionKey()));
         }
 
-        calculateProjections(block, starting_offset);
+        calculateProjections(block);
 
         UInt64 result_rows = 0;
         UInt64 result_bytes = 0;
@@ -1118,10 +1103,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
             /// The same progress from merge_entry could be used for both algorithms (it should be more accurate)
             /// But now we are using inaccurate row-based estimation in Horizontal case for backward compatibility
             Float64 progress = (global_ctx->chosen_merge_algorithm == MergeAlgorithm::Horizontal)
-                ? std::min(1., 1. * static_cast<double>(global_ctx->rows_written) / static_cast<double>(ctx->sum_input_rows_upper_bound))
+                ? std::min(1., 1. * global_ctx->rows_written / ctx->sum_input_rows_upper_bound)
                 : std::min(1., global_ctx->merge_list_element_ptr->progress.load(std::memory_order_relaxed));
 
-            global_ctx->space_reservation->update(static_cast<size_t>((1. - progress) * static_cast<double>(ctx->initial_reservation)));
+            global_ctx->space_reservation->update(static_cast<size_t>((1. - progress) * ctx->initial_reservation));
         }
     } while (watch.elapsedMilliseconds() < step_time_ms);
 
@@ -1318,8 +1303,6 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
         if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_wide_part].valueOrNullopt();
-        else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
-            max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
         bool is_result_sparse = ISerialization::hasKind(global_ctx->new_data_part->getSerialization(column_name)->getKindStack(), ISerialization::Kind::SPARSE);
         auto merge_step = std::make_unique<ColumnGathererStep>(
@@ -1398,7 +1381,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->metadata_snapshot,
         columns_list,
         column_pipepline.indexes_to_recalc,
-        getStatisticsForColumns(columns_list, global_ctx->metadata_snapshot, *global_ctx->data_settings),
+        getStatisticsForColumns(columns_list, global_ctx->metadata_snapshot),
         global_ctx->compression_codec,
         global_ctx->to->getIndexGranularity(),
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
@@ -1512,8 +1495,8 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->merging_columns.size(),
             global_ctx->gathering_columns.size(),
             elapsed_seconds,
-            static_cast<double>(global_ctx->merge_list_element_ptr->rows_read) / elapsed_seconds,
-            ReadableSize(static_cast<double>(global_ctx->merge_list_element_ptr->bytes_read_uncompressed) / elapsed_seconds));
+            global_ctx->merge_list_element_ptr->rows_read / elapsed_seconds,
+            ReadableSize(global_ctx->merge_list_element_ptr->bytes_read_uncompressed / elapsed_seconds));
     }
 
     if (global_ctx->merged_part_offsets && !global_ctx->merged_part_offsets->isFinalized())
@@ -2461,8 +2444,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
         if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_wide_part].valueOrNullopt();
-        else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
-            max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
         auto merge_step = std::make_unique<MergePartsStep>(
             merge_parts_query_plan.getCurrentHeader(),

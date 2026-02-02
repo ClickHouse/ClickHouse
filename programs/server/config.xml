@@ -871,11 +871,6 @@
     <!-- System profile of settings. This settings are used by internal processes (Distributed DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
 
-    <!-- Background profile of settings. This profile is used by background operations (e.g. Merge, Mutate). 
-         Default profile name is 'background', which can be changed via the following setting. If such profile is not configured, system_profile is used.
-    -->
-    <!-- <background_profile>background</background_profile> -->
-
     <!-- Buffer profile of settings.
          This settings are used by Buffer storage to flush data to the underlying table.
          Default: used from system_profile directive.
@@ -1491,16 +1486,6 @@
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </aggregated_zookeeper_log>
 
-    <!--
-    <zookeeper_log>
-        <database>system</database>
-        <table>zookeeper_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <ttl>event_date + INTERVAL 30 DAY</ttl>
-        <duration_threshold_microseconds>0</duration_threshold_microseconds>
-    </zookeeper_log>
-    -->
-
     <!-- ZooKeeper connection log.
     -->
     <zookeeper_connection_log>
@@ -1670,7 +1655,7 @@
     <!-- <throw_on_unknown_workload>true</throw_on_unknown_workload> -->
 
     <!-- Workload scheduling: if enabled during CPU overloaded periods, long-running queries will downscale to lower number of threads dynamically.
-         Ensures more fair CPU resource distribution. (Enabled by default)
+         Ensures more fair CPU resource distribution.
     -->
     <!--
     <cpu_slot_preemption>true</cpu_slot_preemption>

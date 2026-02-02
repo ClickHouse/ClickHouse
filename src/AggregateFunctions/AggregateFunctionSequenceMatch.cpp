@@ -12,7 +12,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
 #include <bitset>
@@ -330,7 +329,7 @@ protected:
     template <typename EventEntry>
     bool dfaMatch(EventEntry & events_it, const EventEntry events_end) const
     {
-        using ActiveStates = VectorWithMemoryTracking<bool>;
+        using ActiveStates = std::vector<bool>;
 
         /// Those two vectors keep track of which states should be considered for the current
         /// event as well as the states which should be considered for the next event.
@@ -384,7 +383,7 @@ protected:
     }
 
     template <typename EventEntry, bool remember_matched_events = false>
-    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, VectorWithMemoryTracking<T> * best_matched_events = nullptr) const
+    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, std::vector<T> * best_matched_events = nullptr) const
     {
         const auto action_begin = std::begin(actions);
         const auto action_end = std::end(actions);
@@ -397,8 +396,8 @@ protected:
         using backtrack_info = std::tuple<decltype(action_it), EventEntry, EventEntry>;
         std::stack<backtrack_info> back_stack;
 
-        VectorWithMemoryTracking<T> current_matched_events;
-        VectorWithMemoryTracking<decltype(action_it)> current_matched_actions;
+        std::vector<T> current_matched_events;
+        std::vector<decltype(action_it)> current_matched_actions;
 
         const auto do_push_event = [&]
         {
@@ -554,10 +553,10 @@ protected:
     }
 
     template <typename EventEntry>
-    VectorWithMemoryTracking<T> backtrackingMatchEvents(EventEntry & events_it, const EventEntry events_end) const
+    std::vector<T> backtrackingMatchEvents(EventEntry & events_it, const EventEntry events_end) const
     {
 
-        VectorWithMemoryTracking<T> best_matched_events;
+        std::vector<T> best_matched_events;
         backtrackingMatch<EventEntry, true>(events_it, events_end, &best_matched_events);
 
         return best_matched_events;
@@ -656,7 +655,7 @@ private:
         DFATransition transition;
     };
 
-    using DFAStates = VectorWithMemoryTracking<DFAState>;
+    using DFAStates = std::vector<DFAState>;
 
 protected:
     /// `True` if the parsed pattern contains time assertions (?t...), `false` otherwise.
@@ -743,9 +742,9 @@ public:
     }
 
 private:
-    VectorWithMemoryTracking<T> getEvents(ConstAggregateDataPtr __restrict place) const
+    std::vector<T> getEvents(ConstAggregateDataPtr __restrict place) const
     {
-        VectorWithMemoryTracking<T> res;
+        std::vector<T> res;
         const auto & data_ref = this->data(place);
 
         const auto events_begin = std::begin(data_ref.events_list);

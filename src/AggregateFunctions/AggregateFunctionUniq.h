@@ -470,7 +470,7 @@ public:
     {
         if constexpr (is_parallelize_merge_prepare_needed)
         {
-            VectorWithMemoryTracking<DataSet *> data_vec;
+            std::vector<DataSet *> data_vec;
             data_vec.resize(places.size());
 
             for (size_t i = 0; i < data_vec.size(); ++i)

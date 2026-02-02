@@ -7,16 +7,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 
-namespace ProfileEvents
-{
-    extern const Event RuntimeFiltersCreated;
-    extern const Event RuntimeFilterBlocksProcessed;
-    extern const Event RuntimeFilterBlocksSkipped;
-    extern const Event RuntimeFilterRowsChecked;
-    extern const Event RuntimeFilterRowsPassed;
-    extern const Event RuntimeFilterRowsSkipped;
-}
-
 namespace DB
 {
 
@@ -24,58 +14,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
-}
-
-void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
-{
-    stats.blocks_processed++;
-    stats.rows_checked += rows_checked;
-    stats.rows_passed += rows_passed;
-
-    ProfileEvents::increment(ProfileEvents::RuntimeFilterBlocksProcessed);
-    ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsChecked, rows_checked);
-    ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsPassed, rows_passed);
-
-    /// Skip next 30 blocks if too few rows got filtered out
-    if (static_cast<double>(rows_passed) > pass_ratio_threshold_for_disabling * static_cast<double>(rows_checked))
-        rows_to_skip = rows_checked * blocks_to_skip_before_reenabling;
-}
-
-bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
-{
-    if (is_fully_disabled)
-    {
-        stats.rows_skipped += next_block_rows;
-        stats.blocks_skipped++;
-        ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsSkipped, next_block_rows);
-        ProfileEvents::increment(ProfileEvents::RuntimeFilterBlocksSkipped);
-        return true;
-    }
-
-    rows_to_skip -= next_block_rows;
-    if (rows_to_skip > 0)
-    {
-        stats.rows_skipped += next_block_rows;
-        stats.blocks_skipped++;
-        ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsSkipped, next_block_rows);
-        ProfileEvents::increment(ProfileEvents::RuntimeFilterBlocksSkipped);
-        return true;
-    }
-
-    rows_to_skip = 0;
-    return false;
-}
-
-ColumnPtr IRuntimeFilter::find(const ColumnWithTypeAndName & values) const
-{
-    if (!inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before builiding it was finished");
-
-    const size_t rows_in_block = values.column->size();
-    if (shouldSkip(rows_in_block))
-        return DataTypeUInt8().createColumnConst(rows_in_block, true);
-
-    return findImpl(values);
 }
 
 static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & source)
@@ -94,31 +32,6 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
 
-void ExactContainsRuntimeFilter::merge(const IRuntimeFilter * source)
-{
-    if (inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge into runtime filter after it was marked as finished");
-
-    const auto * source_typed = typeid_cast<const ExactContainsRuntimeFilter *>(source);
-    if (!source_typed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
-
-    insert(source_typed->getValuesColumn());
-    --filters_to_merge;
-}
-
-void ExactContainsRuntimeFilter::finishInsert()
-{
-    Base::finishInsert();
-
-    if (isFull())
-    {
-        /// Some keys were dropped so we cannot filter by partial set of keys
-        setFullyDisabled();
-        releaseExactValues();
-    }
-}
-
 void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
 {
     if (inserts_are_finished)
@@ -132,25 +45,14 @@ void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
     --filters_to_merge;
 }
 
-bool ApproximateRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
-{
-    /// Current BloomFilter implementation relies on IColumn::getDataAt method that returns a string_view of contiguous
-    /// memory chunk containing the value
-    return data_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
-}
-
 ApproximateRuntimeFilter::ApproximateRuntimeFilter(
     size_t filters_to_merge_,
     const DataTypePtr & filter_column_target_type_,
-    Float64 pass_ratio_threshold_for_disabling_,
-    UInt64 blocks_to_skip_before_reenabling_,
     UInt64 bytes_limit_,
     UInt64 exact_values_limit_,
-    UInt64 bloom_filter_hash_functions_,
-    Float64 max_ratio_of_set_bits_in_bloom_filter_)
-    : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_, bytes_limit_, exact_values_limit_)
+    UInt64 bloom_filter_hash_functions_)
+    : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, bytes_limit_, exact_values_limit_)
     , bloom_filter_hash_functions(bloom_filter_hash_functions_)
-    , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , bloom_filter(nullptr)
 {}
 
@@ -165,9 +67,6 @@ void ApproximateRuntimeFilter::insert(ColumnPtr values)
     }
     else
     {
-        if (isFull())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected 'full' state of ApproximateRuntimeFilter");
-
         Base::insert(std::move(values));
 
         if (isFull())
@@ -183,10 +82,7 @@ void ApproximateRuntimeFilter::finishInsert()
     inserts_are_finished = true;
 
     if (bloom_filter)
-    {
-        checkBloomFilterWorthiness();
         return;
-    }
 
     Base::finishInsert();
 }
@@ -229,17 +125,16 @@ static size_t countPassedStats(ColumnPtr values)
 }
 
 template <bool negate>
-ColumnPtr RuntimeFilterBase<negate>::findImpl(const ColumnWithTypeAndName & values) const
+ColumnPtr RuntimeFilterBase<negate>::find(const ColumnWithTypeAndName & values) const
 {
-    chassert(inserts_are_finished);
-
     switch (values_count)
     {
         case ValuesCount::UNKNOWN:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Run time filter set is not ready for lookups");
         case ValuesCount::ZERO:
-            updateStats(values.column->size(), negate ? values.column->size() : 0);
-            return DataTypeUInt8().createColumnConst(values.column->size(), negate);
+            stats.rows_checked += values.column->size();
+            stats.rows_passed += negate ? values.column->size() : 0;
+            return std::make_shared<DataTypeUInt8>()->createColumnConst(values.column->size(), negate);
         case ValuesCount::ONE:
         {
             /// If only 1 element in the set then use "value == const" instead of set lookup
@@ -250,22 +145,25 @@ ColumnPtr RuntimeFilterBase<negate>::findImpl(const ColumnWithTypeAndName & valu
             };
             auto single_element_equals_function = FunctionFactory::instance().get(negate ? "notEquals" : "equals", nullptr)->build(arguments);
             auto result = single_element_equals_function->execute(arguments, single_element_equals_function->getResultType(), values.column->size(), /* dry_run = */ false);
-            updateStats(values.column->size(), countPassedStats(result));
+            stats.rows_checked += values.column->size();
+            stats.rows_passed += countPassedStats(result);
             return result;
         }
         case ValuesCount::MANY:
         {
             auto result = exact_values->execute({values}, negate);
-            updateStats(values.column->size(), countPassedStats(result));
+            stats.rows_checked += values.column->size();
+            stats.rows_passed += countPassedStats(result);
             return result;
         }
     }
     UNREACHABLE();
 }
 
-ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & values) const
+ColumnPtr ApproximateRuntimeFilter::find(const ColumnWithTypeAndName & values) const
 {
-    chassert(inserts_are_finished);
+    if (!inserts_are_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before builiding it was finished");
 
     if (bloom_filter)
     {
@@ -282,13 +180,14 @@ ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & value
             found_count += found ? 1 : 0;
             dst_data[row] = found;
         }
-        updateStats(values.column->size(), found_count);
+        stats.rows_checked += values.column->size();
+        stats.rows_passed += found_count;
 
         return dst;
     }
     else
     {
-        return Base::findImpl(values);
+        return Base::find(values);
     }
 }
 
@@ -314,18 +213,6 @@ void ApproximateRuntimeFilter::switchToBloomFilter()
     releaseExactValues();
 }
 
-void ApproximateRuntimeFilter::checkBloomFilterWorthiness()
-{
-    const auto & raw_filter_words = bloom_filter->getFilter();
-    const size_t total_bits = raw_filter_words.size() * sizeof(raw_filter_words[0]) * 8;
-    size_t set_bits = 0;
-    for (auto word : raw_filter_words)
-        set_bits += std::popcount(word);
-    /// If too many bits are set then it is likely that the filter will not filter out much
-    if (static_cast<double>(set_bits) > max_ratio_of_set_bits_in_bloom_filter * static_cast<double>(total_bits))
-        setFullyDisabled();
-}
-
 class RuntimeFilterLookup : public IRuntimeFilterLookup
 {
 public:
@@ -335,7 +222,6 @@ public:
         auto & filter = filters_by_name[name];
         if (!filter)
         {
-            ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
             filter.reset(runtime_filter.release());   /// Save new filter
         }
         else
@@ -361,9 +247,8 @@ public:
         for (const auto & [filter_name, filter] : filters_by_name)
         {
             const auto & stats = filter->getStats();
-            LOG_TRACE(getLogger("RuntimeFilter"),
-                "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}",
-                filter_name, stats.rows_skipped.load(), stats.rows_checked.load(), stats.rows_passed.load(), stats.blocks_skipped.load(), stats.blocks_processed.load());
+            LOG_TRACE(getLogger("RuntimeFilter"), "Stats for '{}': rows checked {}, rows passed {}",
+                filter_name, stats.rows_checked.load(), stats.rows_passed.load());
         }
     }
 

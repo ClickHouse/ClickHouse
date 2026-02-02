@@ -35,7 +35,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/replaceForPositionalArguments.h>
-#include <Interpreters/createSubcolumnsExtractionActions.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -2084,15 +2083,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     before_where_sample = source_header;
                 if (sanitizeBlock(before_where_sample))
                 {
-                    auto dag = before_where->dag.clone();
-                    /// We could have subcolumns used in the WHERE that are not present in before_where_sample.
-                    /// ExpressionActions doesn't know anything about sybcolumns, so we have to extract them beforehand.
-                    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(before_where_sample, dag.getRequiredColumnsNames(), context);
-                    if (!extracting_subcolumns_dag.getNodes().empty())
-                        dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(dag));
-
                     ExpressionActions(
-                        std::move(dag),
+                        before_where->dag.clone(),
                         ExpressionActionsSettings(context->getSettingsRef())).execute(before_where_sample);
 
                     auto & column_elem

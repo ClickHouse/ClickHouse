@@ -59,28 +59,28 @@
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
-#include <IO/Ask.h>
-#include <IO/CompressionMethod.h>
-#include <IO/ForkWriteBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/SharedThreadPools.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromOStream.h>
-#include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/ProfileEventsExt.h>
-#include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Interpreters/processColumnTransformers.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/Impl/NullFormat.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/processColumnTransformers.h>
+#include <IO/Ask.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/CompressionMethod.h>
+#include <IO/ForkWriteBuffer.h>
+#include <IO/SharedThreadPools.h>
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
@@ -108,10 +108,6 @@
 namespace fs = std::filesystem;
 using namespace std::literals;
 
-#if USE_FUZZING_MODE
-int clickhouseMain(int argc_, char ** argv_);
-#endif
-
 namespace DB
 {
 namespace Setting
@@ -121,9 +117,6 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
-    extern const SettingsUInt64 max_insert_block_size_bytes;
-    extern const SettingsUInt64 min_insert_block_size_rows;
-    extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -334,7 +327,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         }
     }
 
-    /// Copy rows from src that dst does not contain.
+    /// Copy rows from src that dst does not contains.
     for (const auto & [id, pos] : rows_by_name)
     {
         for (size_t col = 0; col < src.columns(); ++col)
@@ -960,16 +953,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     }
 
     if (getClientConfiguration().has("insert_format_max_block_size"))
-        insert_format_max_block_size_rows_from_config = getClientConfiguration().getUInt64("insert_format_max_block_size");
-
-    if (getClientConfiguration().has("insert_format_max_block_size_bytes"))
-        insert_format_max_block_size_bytes_from_config = getClientConfiguration().getUInt64("insert_format_max_block_size_bytes");
-
-    if (getClientConfiguration().has("insert_format_min_block_size_rows"))
-        insert_format_min_block_size_rows_from_config = getClientConfiguration().getUInt64("insert_format_min_block_size_rows");
-
-    if (getClientConfiguration().has("insert_format_min_block_size_bytes"))
-        insert_format_min_block_size_bytes_from_config = getClientConfiguration().getUInt64("insert_format_min_block_size_bytes");
+        insert_format_max_block_size_from_config = getClientConfiguration().getUInt64("insert_format_max_block_size");
 }
 
 void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option)
@@ -1595,8 +1579,8 @@ void ClientBase::onProfileEvents(Block & block)
         const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
         const auto & array_values = typeid_cast<const ColumnInt64 &>(*block.getByName("value").column).getData();
 
-        std::string_view user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
-        std::string_view system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+        auto user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+        auto system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
@@ -2054,34 +2038,13 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             current_format = insert->format;
     }
 
-    const Settings & settings = client_context->getSettingsRef();
-
     /// Setting value from cmd arg overrides one from config.
-    size_t insert_format_max_block_size_rows = settings[Setting::max_insert_block_size].changed
-        ? settings[Setting::max_insert_block_size]
-        : insert_format_max_block_size_rows_from_config.value_or(settings[Setting::max_insert_block_size]);
+    size_t insert_format_max_block_size = client_context->getSettingsRef()[Setting::max_insert_block_size];
+    if (!client_context->getSettingsRef()[Setting::max_insert_block_size].changed &&
+        insert_format_max_block_size_from_config.has_value())
+        insert_format_max_block_size = insert_format_max_block_size_from_config.value();
 
-    size_t insert_format_max_block_size_bytes = settings[Setting::max_insert_block_size_bytes].changed
-        ? settings[Setting::max_insert_block_size_bytes]
-        : insert_format_max_block_size_bytes_from_config.value_or(settings[Setting::max_insert_block_size_bytes]);
-
-    size_t insert_format_min_block_size_rows = settings[Setting::min_insert_block_size_rows].changed
-        ? settings[Setting::min_insert_block_size_rows]
-        : insert_format_min_block_size_rows_from_config.value_or(settings[Setting::min_insert_block_size_rows]);
-
-    size_t insert_format_min_block_size_bytes = settings[Setting::min_insert_block_size_bytes].changed
-        ? settings[Setting::min_insert_block_size_bytes]
-        : insert_format_min_block_size_bytes_from_config.value_or(settings[Setting::min_insert_block_size_bytes]);
-
-    auto source = client_context->getInputFormat(
-        current_format,
-        buf,
-        sample,
-        insert_format_max_block_size_rows,
-        std::nullopt,
-        insert_format_max_block_size_bytes,
-        insert_format_min_block_size_rows,
-        insert_format_min_block_size_bytes);
+    auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
     Pipe pipe(source);
 
     if (columns_description.hasDefaults())
@@ -3041,7 +3004,7 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
 
     if (!ast_create.storage->settings)
     {
-        auto settings_ast = make_intrusive<ASTSetQuery>();
+        auto settings_ast = std::make_shared<ASTSetQuery>();
         settings_ast->is_standalone = false;
         ast_create.storage->set(ast_create.storage->settings, settings_ast);
     }
@@ -3295,9 +3258,9 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("log-level", po::value<std::string>(), "Log level")
         ("server_logs_file", po::value<std::string>(), "Write server logs to specified file")
 
-        ("format,f", po::value<std::string>(), "Default input and output format. In clickhouse-client only the default output format.")
-        ("output-format", po::value<std::string>(), "Default output format. Takes precedence over --format.")
-        ("vertical,E", "Same as --format=Vertical or FORMAT Vertical or \\G at end of command")
+        ("format,f", po::value<std::string>(), "Default output format (and input format for clickhouse-local)")
+        ("output-format", po::value<std::string>(), "Default output format (this option has preference over --format)")
+        ("vertical,E", "Vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
         ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting in interactive mode (can also use --hilite)")
 
@@ -3598,7 +3561,6 @@ void ClientBase::runInteractive()
         .multiline = getClientConfiguration().has("multiline"),
         .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
         .embedded_mode = isEmbeeddedClient(),
-        .interactive_history_legacy_keymap = getClientConfiguration().getBool("interactive_history_legacy_keymap", false),
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
@@ -3846,7 +3808,43 @@ fs::path ClientBase::getHistoryFilePath()
     throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Neither $CLICKHOUSE_HISTORY_FILE, $HOME nor $XDG_STATE_HOME is set; cannot place history file.");
 }
 
-#if !USE_FUZZING_MODE
+
+#if USE_FUZZING_MODE
+extern "C" int LLVMFuzzerRunDriver(int * argc, char *** argv, int (*callback)(const uint8_t * data, size_t size));
+ClientBase * app;
+
+void ClientBase::runLibFuzzer()
+{
+    app = this;
+    std::vector<String> fuzzer_args_holder;
+
+    if (const char * fuzzer_args_env = getenv("FUZZER_ARGS")) // NOLINT(concurrency-mt-unsafe)
+        boost::split(fuzzer_args_holder, fuzzer_args_env, isWhitespaceASCII, boost::token_compress_on);
+
+    std::vector<char *> fuzzer_args;
+    fuzzer_args.push_back(argv0);
+    for (auto & arg : fuzzer_args_holder)
+        fuzzer_args.emplace_back(arg.data());
+
+    int fuzzer_argc = static_cast<int>(fuzzer_args.size());
+    char ** fuzzer_argv = fuzzer_args.data();
+
+    LLVMFuzzerRunDriver(&fuzzer_argc, &fuzzer_argv, [](const uint8_t * data, size_t size)
+    {
+        try
+        {
+            String query(reinterpret_cast<const char *>(data), size);
+            app->processQueryText(query);
+        }
+        catch (...)
+        {
+            return -1;
+        }
+
+        return 0;
+    });
+}
+#else
 void ClientBase::runLibFuzzer() {}
 #endif
 
