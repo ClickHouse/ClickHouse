@@ -17,10 +17,12 @@ public:
     StatisticsPartPruner(const StorageMetadataPtr & metadata, const ActionsDAG::Node & filter_node, ContextPtr context);
 
     /// Check if the part can potentially match the filter condition based on statistics.
-    /// Returns BoolMask indicating whether the condition can be true/false for this part.
+    /// Returns BoolMask with the same semantics as KeyCondition::checkInHyperrectangle:
+    ///   - can_be_true: whether any rows in the part might satisfy the condition
+    ///   - can_be_false: whether any rows in the part might not satisfy the condition
     BoolMask checkPartCanMatch(const Estimates & estimates);
 
-    /// Returns true if the pruner has no useful conditions, then all parts will match.
+    /// Returns true if no columns with MinMax statistics are used in the filter, then all parts will match.
     bool isUseless() const { return useless; }
 
     /// Get the list of column names used in the filter condition that have statistics.

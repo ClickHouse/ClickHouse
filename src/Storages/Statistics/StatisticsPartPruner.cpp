@@ -28,31 +28,33 @@ static UInt32 getDecimalPrecisionOrZero(const DataTypePtr & data_type)
     return getDecimalPrecision(*unwrapped);
 }
 
-static std::optional<Field> tryConvertFloat64(Float64 value, const DataTypePtr & data_type)
+std::optional<Field> tryConvertFloat64(Float64 value, const DataTypePtr & data_type)
 {
+    static const DataTypePtr float64_type = std::make_shared<DataTypeFloat64>();
+
+    auto float64_column = float64_type->createColumn();
+    float64_column->insert(Field(value));
+
+    ColumnWithTypeAndName src_column(std::move(float64_column), float64_type, "");
+    auto unwrapped_type = removeLowCardinalityAndNullable(data_type);
+
+    ColumnPtr casted_column;
     try
     {
-        static const DataTypePtr float64_type = std::make_shared<DataTypeFloat64>();
-
-        auto float64_column = float64_type->createColumn();
-        float64_column->insert(Field(value));
-
-        ColumnWithTypeAndName src_column(std::move(float64_column), float64_type, "");
-        auto unwrapped_type = removeLowCardinalityAndNullable(data_type);
-        ColumnPtr casted_column = castColumnAccurate(src_column, unwrapped_type);
-
-        if (!casted_column || casted_column->empty())
-            return std::nullopt;
-
-        Field result_field;
-        casted_column->get(0, result_field);
-        return result_field;
+        /// castColumnAccurate throws on conversion failure (overflow, etc.)
+        casted_column = castColumnAccurate(src_column, unwrapped_type);
     }
     catch (...)
     {
-        /// castColumnAccurate throws on conversion failure (overflow, etc.)
         return std::nullopt;
     }
+
+    if (!casted_column || casted_column->empty())
+        return std::nullopt;
+
+    Field result_field;
+    casted_column->get(0, result_field);
+    return result_field;
 }
 
 /// Create a Range from statistics estimate for use in part pruning.
@@ -62,13 +64,13 @@ static std::optional<Field> tryConvertFloat64(Float64 value, const DataTypePtr &
 ///   For Int64/UInt64 and BigInt with values >= 2^53
 ///   For Nullable
 /// So, the Range is conservatively extended.
-static std::optional<Range> createRangeFromEstimate(const Estimate & est, const DataTypePtr & data_type, bool is_nullable)
+static std::optional<Range> createRangeFromEstimate(const Estimate & estimate, const DataTypePtr & data_type, bool is_nullable)
 {
-    if (!est.estimated_min.has_value() || !est.estimated_max.has_value())
+    if (!estimate.estimated_min.has_value() || !estimate.estimated_max.has_value())
         return std::nullopt;
 
-    Float64 min_value = est.estimated_min.value();
-    Float64 max_value = est.estimated_max.value();
+    Float64 min_value = estimate.estimated_min.value();
+    Float64 max_value = estimate.estimated_max.value();
 
     auto make_whole_universe = [is_nullable]() -> Range
     {
@@ -215,10 +217,10 @@ BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates)
 {
     /// Filter estimates with loaded MinMax statistics.
     Estimates minmax_estimates;
-    for (const auto & [col_name, est] : estimates)
+    for (const auto & [col_name, estimate] : estimates)
     {
-        if (est.types.contains(StatisticsType::MinMax))
-            minmax_estimates[col_name] = est;
+        if (estimate.types.contains(StatisticsType::MinMax))
+            minmax_estimates[col_name] = estimate;
     }
 
     if (minmax_estimates.empty())

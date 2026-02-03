@@ -1108,10 +1108,8 @@ They can be used for prewhere optimization only if we enable `set use_statistics
 #### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
-Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
-
 Currently, only `MinMax` statistics support part pruning. When MinMax statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
-During query execution, if the WHERE clause contains range conditions on that column, ClickHouse can skip parts where the min/max range doesn't overlap with the query condition.
+Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
 
 **Example:**
 
@@ -1127,11 +1125,11 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(d)
 ORDER BY id;
 
-SET use_statistics_for_part_pruning = 1;
-
 -- Insert data in separate inserts to create multiple parts
 INSERT INTO test_stats SELECT '2025-01-11', number, number FROM numbers(1000);      -- Part 1: value range [0, 999]
 INSERT INTO test_stats SELECT '2025-01-12', number, number + 10000 FROM numbers(1000); -- Part 2: value range [10000, 10999]
+
+SET use_statistics_for_part_pruning = 1;
 
 -- This query will skip Part 1 entirely because its max value (999) < 5000
 SELECT count() FROM test_stats WHERE value > 5000;
