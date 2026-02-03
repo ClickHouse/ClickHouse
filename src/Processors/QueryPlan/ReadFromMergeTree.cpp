@@ -2544,9 +2544,15 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     updateSortDescription();
 
     /// Re-calculate analysis result to have correct read_type
-    /// For some reason for projection it breaks aggregation in order, so skip it
-    if (analyzed_result_ptr && !analyzed_result_ptr->readFromProjection())
-        selectRangesToRead();
+    if (analyzed_result_ptr)
+    {
+        /// For some reason for projection it breaks aggregation in order, so skip it
+        /// But still set read_type to be InOrder
+        if (analyzed_result_ptr->readFromProjection())
+            analyzed_result_ptr->read_type = (direction > 0) ? ReadType::InOrder : ReadType::InReverseOrder;
+        else
+            selectRangesToRead();
+    }
 
     return true;
 }

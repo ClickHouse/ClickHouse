@@ -469,9 +469,7 @@ std::optional<String> optimizeUseNormalProjections(
         iter->node->children[iter->next_child - 1] = &union_node;
     }
 
-    /// Apply read-in-order now that the projection (with its own sorting key) is in place.
-    /// optimizeReadInOrder runs before projection optimization, so it saw the base table's
-    /// sorting key and skipped. Re-run it so it can match the projection's sorting key.
+    /// Now the projection is used, re-do optimizeReadInOrder
     if (optimization_settings.read_in_order && typeid_cast<SortingStep *>(iter->node->step.get()))
         optimizeReadInOrder(*iter->node, nodes, optimization_settings);
 
