@@ -14,12 +14,14 @@
 
 // Forward declarations for SIMD functions from FastPFor library
 // These are needed because of header include ordering issues
+// NOLINTBEGIN(readability-avoid-const-params-in-decls)
 namespace FastPForLib
 {
 extern void SIMD_fastpack_32(const uint32_t *__restrict__ in, __m128i *__restrict__ out, const uint32_t bit);
 extern void SIMD_fastunpack_32(const __m128i *__restrict__ in, uint32_t *__restrict__ out, const uint32_t bit);
 extern void SIMD_fastpackwithoutmask_32(const uint32_t *__restrict__ in, __m128i *__restrict__ out, const uint32_t bit);
 }
+// NOLINTEND(readability-avoid-const-params-in-decls)
 
 #include <simdbitpacking.h>
 #include <simdfastpfor.h>
