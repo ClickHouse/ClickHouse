@@ -77,6 +77,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", true, false, "It becomes obsolete."},
             {"database_datalake_require_metadata_access", true, true, "New setting."},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 1_MiB, "Better default value derived from testing results"},
+            {"text_index_brute_force_apply", false, false, "New setting to enable brute-force intersection algorithm for text index queries."},
+            {"text_index_brute_force_density_threshold", 0.2, 0.2, "New setting to control the density threshold for switching to brute-force algorithm in text index."},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {

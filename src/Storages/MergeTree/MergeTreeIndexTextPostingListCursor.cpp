@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
 
 #include <algorithm>
 #include <numeric>
@@ -130,7 +129,7 @@ bool PostingListCursor::seekImpl(uint32_t target)
     {
         size_t block_size = (i + 1 == block_count && tail_size) ? tail_size : POSTING_LIST_UNIT_SIZE;
         PostingListCodecBitpackingImpl::decodeBlock(compressed_data_span, block_size, current_values);
-        auto values_it = std::lower_bound(current_values.begin(),  current_values.begin() + block_size, target);
+        auto values_it = std::lower_bound(current_values.begin(), current_values.begin() + block_size, target);
         if (values_it != current_values.begin() + block_size && *values_it >= target)
         {
             index = static_cast<size_t>(values_it - current_values.begin());
@@ -218,22 +217,18 @@ void PostingListCursor::linearOrImpl(size_t segment, UInt8 * __restrict out, siz
         return;
     }
 
-    size_t block_start = 0;
-    size_t block_end = block_count;
-    size_t offset = 0;
-
-    const auto &row_ends = block_row_ends;
-    const auto &offsets = block_offsets;
+    const auto & row_ends = block_row_ends;
+    const auto & offsets = block_offsets;
     size_t skip_block_begin = static_cast<size_t>(std::ranges::lower_bound(row_ends, row_begin) - row_ends.begin());
     if (skip_block_begin >= block_count)
         return;
     size_t skip_block_end = static_cast<size_t>(std::ranges::lower_bound(row_ends, row_end) - row_ends.begin());
 
-    block_start = skip_block_begin;
-    block_end = std::min(skip_block_end + 1, block_count);
-    offset = offsets[block_start];
+    size_t block_start = skip_block_begin;
+    size_t block_end = std::min(skip_block_end + 1, block_count);
+    size_t offset = offsets[block_start];
 
-    std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte *>(compressed_data.data()),compressed_data.size());
+    std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte *>(compressed_data.data()), compressed_data.size());
     compressed_data_span = compressed_data_span.subspan(offset);
 
     for (size_t i = block_start; i < block_end; i++)
@@ -321,10 +316,6 @@ void PostingListCursor::linearAndImpl(size_t segment, UInt8 * __restrict out, si
         return;
     }
 
-    size_t block_start = 0;
-    size_t block_end = block_count;
-    size_t offset = 0;
-
     const auto & row_ends = block_row_ends;
     const auto & offsets = block_offsets;
 
@@ -333,11 +324,11 @@ void PostingListCursor::linearAndImpl(size_t segment, UInt8 * __restrict out, si
         return;
     size_t skip_block_end = static_cast<size_t>(std::ranges::lower_bound(row_ends, row_end) - row_ends.begin());
 
-    block_start = skip_block_begin;
-    block_end = std::min(skip_block_end + 1, block_count);
-    offset = offsets[block_start];
+    size_t block_start = skip_block_begin;
+    size_t block_end = std::min(skip_block_end + 1, block_count);
+    size_t offset = offsets[block_start];
 
-    std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte *>(compressed_data.data()),compressed_data.size());
+    std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte *>(compressed_data.data()), compressed_data.size());
     compressed_data_span = compressed_data_span.subspan(offset);
 
     for (size_t i = block_start; i < block_end; i++)
@@ -649,19 +640,32 @@ void intersectLeapfrogHeap(UInt8 * out, const std::vector<PostingListCursorPtr> 
 ///   - 9+ lists: heap-based leapfrog
 void intersectLeapfrog(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t effective_end)
 {
+    chassert(cursors.size() > 1);
     if (cursors.size() == 2)
-        return intersectTwo(out, cursors[0], cursors[1], row_offset, effective_end);
+    {
+        intersectTwo(out, cursors[0], cursors[1], row_offset, effective_end);
+        return;
+    }
 
     if (cursors.size() == 3)
-        return intersectThree(out, cursors[0], cursors[1], cursors[2], row_offset, effective_end);
+    {
+        intersectThree(out, cursors[0], cursors[1], cursors[2], row_offset, effective_end);
+        return;
+    }
 
     if (cursors.size() == 4)
-        return intersectFour(out, cursors[0], cursors[1], cursors[2], cursors[3], row_offset, effective_end);
+    {
+        intersectFour(out, cursors[0], cursors[1], cursors[2], cursors[3], row_offset, effective_end);
+        return;
+    }
 
     if (cursors.size() <= 8)
-        return intersectLeapfrogLinear(out, cursors, row_offset, effective_end);
+    {
+        intersectLeapfrogLinear(out, cursors, row_offset, effective_end);
+        return;
+    }
 
-    return intersectLeapfrogHeap(out, cursors, row_offset, effective_end);
+    intersectLeapfrogHeap(out, cursors, row_offset, effective_end);
 }
 
 /// Brute-force intersection using bitmap counting.
@@ -779,7 +783,10 @@ void lazyIntersectPostingLists(IColumn & column, const PostingListCursorMap & po
     ///   - User explicitly requested brute-force
     /// Note: n < 256 check ensures we don't overflow UInt8 counter in brute-force
     if (n < 256 && (density >= density_threshold || brute_force_apply))
-        return intersectBruteForce(out, cursors, row_offset, num_rows);
+    {
+        intersectBruteForce(out, cursors, row_offset, num_rows);
+        return;
+    }
 
     /// Skip-list based intersection: position all cursors to start of range
     const auto end_u32 = static_cast<uint32_t>(end);
@@ -791,7 +798,7 @@ void lazyIntersectPostingLists(IColumn & column, const PostingListCursorMap & po
             return;
     }
 
-    return intersectLeapfrog(out, cursors, row_offset, end);
+    intersectLeapfrog(out, cursors, row_offset, end);
 }
 
 }

@@ -595,7 +595,7 @@ void applyPostingsAll(
     }
 }
 
-void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows)
+void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows) const
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
@@ -676,7 +676,7 @@ void MergeTreeReaderTextIndex::readStreamPostingsIfNeeded(size_t mark)
     }
 }
 
-void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & column_name, PostingListCursorMap & postings, size_t row_offset, size_t num_rows)
+void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & column_name, PostingListCursorMap & postings, size_t row_offset, size_t num_rows) const
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);

@@ -62,8 +62,8 @@ private:
     void readGranule();
     void analyzeTokensCardinality();
     void initializePostingStreams();
-    void fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows);
-    void fillColumn(IColumn & column, const String & column_name, PostingListCursorMap & postings, size_t row_offset, size_t num_rows);
+    void fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows) const;
+    void fillColumn(IColumn & column, const String & column_name, PostingListCursorMap & postings, size_t row_offset, size_t num_rows) const;
 
     /// Template helper to fill all columns with postings from either PostingsMap or PostingListCursorMap.
     template <typename PostingsContainer>
@@ -97,7 +97,7 @@ private:
     size_t current_row = 0;
     size_t current_mark = 0;
 
-    PaddedPODArray<UInt32> indices_buffer;
+    mutable PaddedPODArray<UInt32> indices_buffer;
     roaring::Roaring analyzed_granules;
     roaring::Roaring may_be_true_granules;
 
