@@ -281,7 +281,8 @@ size_t MergeTreeReaderTextIndex::readRows(
         /// contains no more data rows than actually exist in the part
         size_t rows_to_read = std::min(data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark), data_part_info_for_read->getRowsCount());
         // Fix reading the row count of the last granule in the fixed index granularity case.
-        if (auto last_granule_rows_count = data_part_info_for_read->getRowsCountForLastGranuleOrZero(from_mark))
+        size_t last_granule_rows_count = data_part_info_for_read->getRowsCountForLastGranuleOrZero(from_mark);
+        if (last_granule_rows_count > 0)
             rows_to_read = last_granule_rows_count;
 
         /// If our reader is not first in the chain, canSkipMark is not called in RangeReader.

@@ -95,14 +95,19 @@ public:
 
     size_t getRowsCount() const override { return data_part->rows_count; }
 
+    /// Returns actual row count for the last granule if `from_mark` points to it, otherwise returns 0.
+    /// Used by index readers to avoid reading more rows than exist when the last granule is incomplete.
     size_t getRowsCountForLastGranuleOrZero(size_t from_mark) const override
     {
         const auto & index_granularity_info = data_part->index_granularity_info;
         const auto & index_granularity = data_part->index_granularity;
+        /// Only handle the last granule; for other granules return 0 to indicate no special handling needed.
         if (from_mark + 1 != index_granularity->getMarksCount())
             return 0;
+        /// Fixed index granularity mode: last granule may have fewer rows than `index_granularity`.
         if (!index_granularity_info.index_granularity_bytes)
             return data_part->rows_count % index_granularity_info.fixed_index_granularity;
+        /// Adaptive index granularity mode: row count is stored per granule.
         return index_granularity->getLastMarkRows();
     }
 private:
