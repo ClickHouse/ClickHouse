@@ -43,7 +43,7 @@ workflow = Workflow.Config(
         #   job error: java.lang.AssertionError: CREATE TABLE IF NOT EXISTS database0NoREC.t1 (c0 String MATERIALIZED (-1457864079) CODEC (NONE)) ENGINE = MergeTree()  ORDER BY tuple()  SETTINGS allow_suspicious_indices=1;
         # *JobConfigs.sqlancer_master_jobs,
         JobConfigs.sqltest_master_job,
-        JobConfigs.llvm_coverage_merge_job
+        JobConfigs.llvm_coverage_merge_job,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
@@ -54,7 +54,7 @@ workflow = Workflow.Config(
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
         *ArtifactConfigs.llvm_profdata_file,
-        ArtifactConfigs.llvm_coverage_html_report
+        ArtifactConfigs.llvm_coverage_html_report,
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,

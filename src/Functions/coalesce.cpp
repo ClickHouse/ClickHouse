@@ -54,6 +54,22 @@ public:
         return args;
     }
 
+    bool hasInformationAboutMonotonicity() const override { return true; }
+
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & /*left*/, const Field & right) const override
+    {
+        /// coalesce() is identity when its first argument cannot be NULL, so it preserves ordering and thus monotonic.
+        /// For Nullable types, coalesce() substitutes NULLs with other arguments and is not
+        /// monotonic in general. We treat it as monotonic only when the analyzed range is guaranteed to not contain
+        /// NULLs. NULLs always represented as POSITIVE_INFINITY and they will always be at the end of ordering.
+        /// So, we do not need to check left.isNull().
+        bool is_nullable_or_lc_nullable = type.isNullable() || type.isLowCardinalityNullable();
+        if (is_nullable_or_lc_nullable && right.isNull())
+            return {};
+
+        return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !is_nullable_or_lc_nullable };
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// Skip all NULL arguments. If any argument is non-Nullable, skip all next arguments.

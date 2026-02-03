@@ -45,6 +45,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheBackgroundEvictedFileSegments;
     extern const Event FilesystemCacheBackgroundEvictedBytes;
     extern const Event FilesystemCacheCheckCorrectness;
+    extern const Event FilesystemCacheCheckCorrectnessMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -1970,6 +1971,7 @@ void FileCache::assertCacheCorrectness()
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
     LOG_TEST(log, "Checking cache correctness");
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheCheckCorrectnessMicroseconds);
     ProfileEvents::increment(ProfileEvents::FilesystemCacheCheckCorrectness);
 
     metadata.iterate([&](LockedKey & locked_key)

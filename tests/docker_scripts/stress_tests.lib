@@ -98,13 +98,9 @@ function configure()
     sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
     sudo chgrp clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
 
-    if [[ -n "$ZOOKEEPER_FAULT_INJECTION" ]] && [[ "$ZOOKEEPER_FAULT_INJECTION" -eq 1 ]]; then
-        randomize_config_boolean_value use_compression zookeeper_fault_injection
-        randomize_config_boolean_value use_xid_64 zookeeper_fault_injection
-    else
-        randomize_config_boolean_value use_compression zookeeper
-        randomize_config_boolean_value use_xid_64 zookeeper
-    fi
+    # Always randomize in zookeeper.xml (the base config)
+    randomize_config_boolean_value use_compression zookeeper
+    randomize_config_boolean_value use_xid_64 zookeeper
 
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
