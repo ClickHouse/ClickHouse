@@ -32,6 +32,11 @@ function(PROTOBUF_GENERATE_GRPC_CPP SRCS HDRS)
     set(NATIVE_protoc $<TARGET_FILE:protoc>)
   endif()
 
+  set(_native_tools_dep)
+  if (DEFINED NATIVE_TOOLS_TARGET)
+    set(_native_tools_dep ${NATIVE_TOOLS_TARGET})
+  endif()
+
   cmake_parse_arguments(protobuf_generate_grpc_cpp "" "EXPORT_MACRO;DESCRIPTORS" "" ${ARGN})
 
   set(_proto_files "${protobuf_generate_grpc_cpp_UNPARSED_ARGUMENTS}")
@@ -205,7 +210,7 @@ function(protobuf_generate_grpc)
            --grpc_out ${_dll_export_decl}${protobuf_generate_grpc_PROTOC_OUT_DIR}
            --plugin=protoc-gen-grpc=${protobuf_generate_grpc_PLUGIN}
            ${_dll_desc_out} ${_protobuf_include_path} ${_abs_file}
-      DEPENDS ${_abs_file} ${NATIVE_protoc} ${protobuf_generate_grpc_PLUGIN}
+      DEPENDS ${_abs_file} ${NATIVE_protoc} ${protobuf_generate_grpc_PLUGIN} ${_native_tools_dep}
       COMMENT "Running ${protobuf_generate_grpc_LANGUAGE} protocol buffer compiler on ${_proto}"
       VERBATIM)
   endforeach()

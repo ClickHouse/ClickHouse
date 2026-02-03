@@ -76,13 +76,18 @@ else ()
     set(PROTOBUF_EXECUTABLE $<TARGET_FILE:protoc>)
     set(GRPC_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
 endif()
+set(_native_tools_dep)
+if (DEFINED NATIVE_TOOLS_TARGET)
+    set(_native_tools_dep ${NATIVE_TOOLS_TARGET})
+endif()
 set(PROTO_DIR "${ORC_SOURCE_DIR}/../proto")
 
 add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
         COMMAND ${PROTOBUF_EXECUTABLE}
         -I ${PROTO_DIR}
         --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
-        "${PROTO_DIR}/orc_proto.proto")
+        "${PROTO_DIR}/orc_proto.proto"
+        DEPENDS "${PROTO_DIR}/orc_proto.proto" ${PROTOBUF_EXECUTABLE} ${_native_tools_dep})
 
 # === flatbuffers
 set(FLATBUFFERS_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/flatbuffers")

@@ -650,7 +650,7 @@ if (COMPILER_CACHE STREQUAL "chcache" AND CHCACHE_EXECUTABLE_PATH STREQUAL "")
     endforeach()
 endif()
 
-# Build native targets if necessary
+# Build native targets if necessary (during build, not configure)
 get_property(NATIVE_BUILD_TARGETS GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
 # Native builds are needed when:
 # 1. Cross-compiling (host system/processor differs from target), OR
@@ -665,26 +665,28 @@ elseif (USE_MUSL)
 endif()
 
 if (NATIVE_BUILD_TARGETS AND NEED_NATIVE_BUILD)
-    message (STATUS "Building native targets: ${NATIVE_BUILD_TARGETS}")
+    message (STATUS "Native targets will be built during build: ${NATIVE_BUILD_TARGETS}")
 
     set (NATIVE_BUILD_DIR "${PROJECT_BINARY_DIR}/native")
+    set (NATIVE_BUILD_STAMP "${NATIVE_BUILD_DIR}/native-tools.stamp")
 
-    execute_process(
+    set(NATIVE_BUILD_C_LAUNCHER "${CMAKE_C_COMPILER_LAUNCHER}")
+    set(NATIVE_BUILD_CXX_LAUNCHER "${CMAKE_CXX_COMPILER_LAUNCHER}")
+    if (ENABLE_DUMMY_LAUNCHERS AND USING_DUMMY_LAUNCHERS)
+        set(NATIVE_BUILD_C_LAUNCHER "${DUMMY_LAUNCHER_ORIGINAL_CMAKE_C_COMPILER_LAUNCHER}")
+        set(NATIVE_BUILD_CXX_LAUNCHER "${DUMMY_LAUNCHER_ORIGINAL_CMAKE_CXX_COMPILER_LAUNCHER}")
+    endif()
+
+    add_custom_command(
+        OUTPUT "${NATIVE_BUILD_STAMP}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${NATIVE_BUILD_DIR}"
-        COMMAND_ECHO STDOUT
-        COMMAND_ERROR_IS_FATAL ANY
-    )
-
-    disable_dummy_launchers_if_needed()
-
-    execute_process(
         COMMAND ${CMAKE_COMMAND}
             "-G${CMAKE_GENERATOR}"
             "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
             "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
             "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
-            "-DCMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER}"
-            "-DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}"
+            "-DCMAKE_C_COMPILER_LAUNCHER=${NATIVE_BUILD_C_LAUNCHER}"
+            "-DCMAKE_CXX_COMPILER_LAUNCHER=${NATIVE_BUILD_CXX_LAUNCHER}"
             "-DCMAKE_BUILD_TYPE=Release"
             # Avoid overriding .cargo/config.toml with native toolchain.
             "-DENABLE_RUST=OFF"
@@ -692,15 +694,12 @@ if (NATIVE_BUILD_TARGETS AND NEED_NATIVE_BUILD)
             "-DUSE_BINARY_HASH=${USE_BINARY_HASH}"
         ${PROJECT_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
-        COMMAND_ECHO STDOUT
-        COMMAND_ERROR_IS_FATAL ANY
-    )
-
-    enable_dummy_launchers_if_needed()
-
-    execute_process(
         COMMAND ${CMAKE_COMMAND} --build "${NATIVE_BUILD_DIR}" ${NATIVE_BUILD_TARGETS}
-        COMMAND_ECHO STDOUT
-        COMMAND_ERROR_IS_FATAL ANY
+        COMMAND ${CMAKE_COMMAND} -E touch "${NATIVE_BUILD_STAMP}"
+        COMMENT "Building native targets"
+        VERBATIM
     )
+
+    add_custom_target(native-tools DEPENDS "${NATIVE_BUILD_STAMP}")
+    set(NATIVE_TOOLS_TARGET native-tools CACHE INTERNAL "Native tools build target")
 endif ()
