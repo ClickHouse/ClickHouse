@@ -20,16 +20,14 @@ class MockPostingListCursor
 public:
     explicit MockPostingListCursor(std::vector<uint32_t> row_ids_)
         : row_ids(std::move(row_ids_))
-        , index(0)
-        , is_valid(!row_ids.empty())
     {
         if (!row_ids.empty())
             density_val = static_cast<double>(row_ids.size()) / static_cast<double>(row_ids.back() - row_ids.front() + 1);
     }
 
-    bool valid() const { return is_valid && index < row_ids.size(); }
+    [[nodiscard]] bool valid() const { return is_valid && index < row_ids.size(); }
 
-    uint32_t value() const
+    [[nodiscard]] uint32_t value() const
     {
         if (!valid())
             throw std::runtime_error("MockPostingListCursor::value() called on invalid cursor");
@@ -56,7 +54,7 @@ public:
     }
 
     /// For brute force algorithms
-    void linearOr(UInt8 * data, size_t row_offset, size_t num_rows)
+    void linearOr(UInt8 * data, size_t row_offset, size_t num_rows) const
     {
         size_t row_end = row_offset + num_rows;
         for (uint32_t row_id : row_ids)
@@ -66,7 +64,7 @@ public:
         }
     }
 
-    void linearAnd(UInt8 * data, size_t row_offset, size_t num_rows)
+    void linearAnd(UInt8 * data, size_t row_offset, size_t num_rows) const
     {
         size_t row_end = row_offset + num_rows;
         for (uint32_t row_id : row_ids)
@@ -75,6 +73,8 @@ public:
                 ++data[row_id - row_offset];
         }
     }
+
+    [[nodiscard]] double density() const { return density_val; }
 
 private:
     std::vector<uint32_t> row_ids;
@@ -111,9 +111,7 @@ std::set<uint32_t> computeUnion(const std::vector<std::vector<uint32_t>> & posti
 {
     std::set<uint32_t> result;
     for (const auto & list : posting_lists)
-    {
         result.insert(list.begin(), list.end());
-    }
     return result;
 }
 
@@ -125,11 +123,9 @@ std::vector<uint32_t> generateRandomPostingList(size_t count, uint32_t max_row_i
     std::uniform_int_distribution<uint32_t> dist(0, max_row_id - 1);
 
     while (unique_ids.size() < count)
-    {
         unique_ids.insert(dist(rng));
-    }
 
-    return std::vector<uint32_t>(unique_ids.begin(), unique_ids.end());
+    return {unique_ids.begin(), unique_ids.end()};
 }
 
 /// Helper to run brute force intersection and verify result
@@ -157,7 +153,7 @@ void verifyBruteForceIntersection(const std::vector<std::vector<uint32_t>> & pos
     // Finalize: check if count equals number of cursors
     size_t n = cursors.size();
     for (size_t i = 0; i < num_rows; ++i)
-        out[i] = (out[i] == n);
+        out[i] = static_cast<UInt8>(out[i] == n);
 
     // Compute expected result
     auto expected = computeIntersection(posting_lists);
@@ -167,7 +163,7 @@ void verifyBruteForceIntersection(const std::vector<std::vector<uint32_t>> & pos
     {
         uint32_t row_id = static_cast<uint32_t>(row_offset + i);
         bool in_result = (result[i] == 1);
-        bool in_expected = (expected.count(row_id) > 0);
+        bool in_expected = expected.contains(row_id);
         EXPECT_EQ(in_result, in_expected)
             << "Mismatch at row_id=" << row_id << ": result=" << in_result << ", expected=" << in_expected;
     }
@@ -199,7 +195,7 @@ void verifyUnion(const std::vector<std::vector<uint32_t>> & posting_lists, size_
     {
         uint32_t row_id = static_cast<uint32_t>(row_offset + i);
         bool in_result = (result[i] == 1);
-        bool in_expected = (expected.count(row_id) > 0);
+        bool in_expected = expected.contains(row_id);
         EXPECT_EQ(in_result, in_expected)
             << "Mismatch at row_id=" << row_id << ": result=" << in_result << ", expected=" << in_expected;
     }
@@ -293,7 +289,7 @@ TEST(PostingListCursorTest, LinearOrSingleElement)
     cursor.linearOr(result.data(), 0, 100);
 
     EXPECT_EQ(result[50], 1u);
-    size_t count = std::count(result.begin(), result.end(), 1);
+    auto count = static_cast<size_t>(std::count(result.begin(), result.end(), 1));
     EXPECT_EQ(count, 1u);
 }
 
@@ -309,7 +305,7 @@ TEST(PostingListCursorTest, LinearOrMultipleElements)
     EXPECT_EQ(result[40], 1u);
     EXPECT_EQ(result[50], 1u);
 
-    size_t count = std::count(result.begin(), result.end(), 1);
+    auto count = static_cast<size_t>(std::count(result.begin(), result.end(), 1));
     EXPECT_EQ(count, 5u);
 }
 
@@ -323,7 +319,7 @@ TEST(PostingListCursorTest, LinearOrWithOffset)
     EXPECT_EQ(result[10], 1u);  // row_id 110 -> index 10
     EXPECT_EQ(result[20], 1u);  // row_id 120 -> index 20
 
-    size_t count = std::count(result.begin(), result.end(), 1);
+    auto count = static_cast<size_t>(std::count(result.begin(), result.end(), 1));
     EXPECT_EQ(count, 3u);
 }
 
@@ -338,7 +334,7 @@ TEST(PostingListCursorTest, LinearOrPartialOverlap)
     EXPECT_EQ(result[15], 1u);  // row_id 30 -> index 15
     // row_id 40 is at index 25, out of range
 
-    size_t count = std::count(result.begin(), result.end(), 1);
+    auto count = static_cast<size_t>(std::count(result.begin(), result.end(), 1));
     EXPECT_EQ(count, 2u);
 }
 
@@ -376,12 +372,12 @@ TEST(PostingListCursorTest, LinearAndMultipleCursorsIntersection)
 
     // Finalize
     for (size_t i = 0; i < 50; ++i)
-        result[i] = (result[i] == 2);
+        result[i] = static_cast<UInt8>(result[i] == 2);
 
     EXPECT_EQ(result[20], 1u);
     EXPECT_EQ(result[30], 1u);
 
-    size_t count = std::count(result.begin(), result.end(), 1);
+    size_t count = static_cast<size_t>(std::count(result.begin(), result.end(), 1));
     EXPECT_EQ(count, 2u);
 }
 
@@ -587,7 +583,8 @@ TEST(PostingListCursorTest, StressDensePostingLists)
 TEST(PostingListCursorTest, StressSparsePostingLists)
 {
     // Sparse lists (low density)
-    std::vector<uint32_t> list1, list2;
+    std::vector<uint32_t> list1;
+    std::vector<uint32_t> list2;
     for (uint32_t i = 0; i < 10000; i += 100)
         list1.push_back(i);
     for (uint32_t i = 50; i < 10000; i += 100)
@@ -670,4 +667,3 @@ TEST(PostingListCursorTest, EdgeCaseAllSameElement)
     };
     verifyBruteForceIntersection(lists, 0, 100);
 }
-
