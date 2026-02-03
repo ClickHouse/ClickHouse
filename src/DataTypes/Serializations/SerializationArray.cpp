@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -729,34 +728,16 @@ void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t 
         return;
     }
 
-    auto nested_column_type = removeNullable(column_array.getDataPtr())->getDataType();
-    bool print_each_element_on_separate_line =
-        nested_column_type == TypeIndex::Array ||
-        nested_column_type == TypeIndex::Map ||
-        nested_column_type == TypeIndex::Object ||
-        nested_column_type == TypeIndex::Tuple;
-
-
-    writeChar('[', ostr);
+    writeCString("[\n", ostr);
     for (size_t i = offset; i < next_offset; ++i)
     {
         if (i != offset)
-            writeChar(',', ostr);
-
-        if (print_each_element_on_separate_line)
-        {
-            writeChar('\n', ostr);
-            writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
-        }
-
+            writeCString(",\n", ostr);
+        writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
         nested->serializeTextJSONPretty(nested_column, i, ostr, settings, indent + 1);
     }
-
-    if (print_each_element_on_separate_line)
-    {
-        writeChar('\n', ostr);
-        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
-    }
+    writeChar('\n', ostr);
+    writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
     writeChar(']', ostr);
 }
 

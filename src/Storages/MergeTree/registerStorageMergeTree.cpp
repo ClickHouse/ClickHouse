@@ -55,9 +55,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
-    extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
     extern const MergeTreeSettingsString auto_statistics_types;
-    extern const MergeTreeSettingsBool escape_index_filenames;
 }
 
 namespace ServerSetting
@@ -179,7 +177,7 @@ static void evaluateEngineArgs(ASTs & engine_args, const ContextPtr & context)
             if (arg_func->name == "array" || arg_func->name == "tuple")
                 continue;
             Field value = evaluateConstantExpression(arg, context).first;
-            arg = make_intrusive<ASTLiteral>(value);
+            arg = std::make_shared<ASTLiteral>(value);
         }
     }
     catch (Exception & e)
@@ -307,8 +305,8 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         assert(arg_num == 0);
         ASTs old_args;
         std::swap(engine_args, old_args);
-        auto path_arg = make_intrusive<ASTLiteral>("");
-        auto name_arg = make_intrusive<ASTLiteral>("");
+        auto path_arg = std::make_shared<ASTLiteral>("");
+        auto name_arg = std::make_shared<ASTLiteral>("");
         auto * ast_zk_path = path_arg.get();
         auto * ast_replica_name = name_arg.get();
 
@@ -642,7 +640,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         ASTPtr partition_by_key;
         if (args.storage_def->partition_by)
-            partition_by_key = args.storage_def->getChild(*args.storage_def->partition_by);
+            partition_by_key = args.storage_def->partition_by->ptr();
 
         /// Partition key may be undefined, but despite this we store it's empty
         /// value in partition_key structure. MergeTree checks this case and use
@@ -675,7 +673,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// before storage creation. After that storage will just copy this
         /// column if sorting key will be changed.
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
-            args.storage_def->getChild(*args.storage_def->order_by), metadata.columns, context, merging_param_key_arg);
+            args.storage_def->order_by->ptr(), metadata.columns, context, merging_param_key_arg);
 
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
             MergeTreeData::verifySortingKey(metadata.sorting_key, merging_params);
@@ -687,7 +685,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
         else /// Otherwise we don't have explicit primary key and copy it from order by
         {
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->order_by), metadata.columns, context);
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, context);
             /// and set it's definition_ast to nullptr (so isPrimaryKeyDefined()
             /// will return false but hasPrimaryKey() will return true.
             metadata.primary_key.definition_ast = nullptr;
@@ -700,7 +698,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             columns, partition_key, minmax_columns, metadata.primary_key, context));
 
         if (args.storage_def->sample_by)
-            metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->sample_by), metadata.columns, context);
+            metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
 
         bool allow_suspicious_ttl
             = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || local_settings[Setting::allow_suspicious_ttl_expressions];
@@ -708,7 +706,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->getChild(*args.storage_def->ttl_table), metadata.columns, context, metadata.primary_key, allow_suspicious_ttl);
+                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, allow_suspicious_ttl);
         }
 
         storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
@@ -718,23 +716,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             if (args.mode <= LoadingStrictnessLevel::CREATE)
                 args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
-            metadata.settings_changes = args.storage_def->getChild(*args.storage_def->settings);
+            metadata.settings_changes = args.storage_def->settings->ptr();
         }
 
         metadata.add_minmax_index_for_numeric_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns];
         metadata.add_minmax_index_for_string_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns];
-        metadata.add_minmax_index_for_temporal_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_temporal_columns];
-        metadata.escape_index_filenames = (*storage_settings)[MergeTreeSetting::escape_index_filenames];
         if (args.query.columns_list && args.query.columns_list->indices)
         {
             for (const auto & index : args.query.columns_list->indices->children)
             {
-                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
-                auto using_auto_minmax_index = metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns
-                    || metadata.add_minmax_index_for_temporal_columns;
-                if (args.mode <= LoadingStrictnessLevel::CREATE && using_auto_minmax_index
+                if (args.mode <= LoadingStrictnessLevel::CREATE
+                    && (metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns)
                     && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
@@ -784,7 +779,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (!tryGetIdentifierNameInto(engine_args[arg_num], date_column_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Date column name must be an unquoted string{}", verbose_help_message);
 
-        auto partition_by_ast = makeASTFunction("toYYYYMM", make_intrusive<ASTIdentifier>(date_column_name));
+        auto partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
 
         metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, metadata.columns, context);
 

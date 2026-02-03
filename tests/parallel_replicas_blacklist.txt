@@ -1,9 +1,5 @@
     # BUGS
 
-    https://github.com/ClickHouse/ClickHouse/issues/94612
-    Filter pushdown for distributed table with datetime
-02915_input_table_function_in_subquery
-
     Can't select from temporary table
     ReadFromParallelRemoteReplicasStep: There is no table `_temporary_and_external_tables`.`_tmp_fad23aad-ce65-4447-81fe-114409a5f0f9` on server: 127.0.0.2:9000
 00600_create_temporary_table_if_not_exists
@@ -457,3 +453,6 @@
 
     Produces different result:
 03658_joined_block_split_single_row_bytes
+
+# https://github.com/ClickHouse/ClickHouse/issues/92056
+03712_nested_loop_join_merge_tree

@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -9,6 +9,10 @@
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
+
+#include <constants.h>
+#include <h3api.h>
+
 
 namespace DB
 {
@@ -75,8 +79,6 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 index = data[row];
-
-            validateH3Cell(index);
 
             CellBoundary boundary{};
             auto err = cellToBoundary(index, &boundary);

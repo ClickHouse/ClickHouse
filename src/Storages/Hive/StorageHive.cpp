@@ -531,7 +531,7 @@ void StorageHive::initMinMaxIndexExpression()
 ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
 {
     if (!node)
-        return make_intrusive<ASTExpressionList>();
+        return std::make_shared<ASTExpressionList>();
 
     const auto * expr_func = node->as<ASTFunction>();
     if (expr_func && expr_func->name == "tuple")
@@ -541,7 +541,7 @@ ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
     }
 
     /// Primary key consists of one column.
-    auto res = make_intrusive<ASTExpressionList>();
+    auto res = std::make_shared<ASTExpressionList>();
     res->children.push_back(node);
     return res;
 }
@@ -1095,7 +1095,7 @@ void registerStorageHive(StorageFactory & factory)
                 args.columns,
                 args.constraints,
                 args.comment,
-                args.storage_def->getChild(*partition_by),
+                partition_by->ptr(),
                 std::move(hive_settings),
                 args.getContext());
         },

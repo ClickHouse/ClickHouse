@@ -2,7 +2,6 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
-#include <Formats/EscapingRuleUtils.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
@@ -30,7 +29,6 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <Storages/HivePartitioningUtils.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
@@ -117,7 +115,6 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString after_processing_move_container;
     extern const ObjectStorageQueueSettingsString after_processing_tag_key;
     extern const ObjectStorageQueueSettingsString after_processing_tag_value;
-    extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
 }
 
 namespace ErrorCodes
@@ -283,7 +280,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
     , can_be_moved_between_databases((*queue_settings_)[ObjectStorageQueueSetting::keeper_path].changed)
     , keep_data_in_keeper(keep_data_in_keeper_)
-    , use_hive_partitioning((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
 {
     const auto & read_path = configuration->getPathForRead();
     if (read_path.path.empty())
@@ -311,55 +307,19 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
     configuration->check(context_);
 
-    bool is_path_with_hive_partitioning = false;
-    if (use_hive_partitioning)
-    {
-        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(
-            columns, configuration->getRawPath().path, format_settings, context_);
-
-        is_path_with_hive_partitioning = !hive_partition_columns_to_read_from_file_path.empty();
-        if (is_path_with_hive_partitioning)
-        {
-            auto hive_columns_set = hive_partition_columns_to_read_from_file_path.getNameSet();
-            for (const auto & column : columns.getAllPhysical())
-            {
-                auto hive_column = hive_columns_set.find(column.getNameInStorage());
-                if (hive_column == hive_columns_set.end())
-                    file_columns.emplace_back(column);
-                else
-                    hive_columns_set.erase(hive_column);
-            }
-
-            /// All hive columns must be in storage schema
-            if (!hive_columns_set.empty())
-            {
-                throw Exception(
-                    ErrorCodes::BAD_QUERY_PARAMETER,
-                    "All hive partitioning columns must be in engine schema. "
-                    "Next columns not found: {}",
-                    fmt::join(hive_columns_set, ", "));
-            }
-        }
-    }
-
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     if (engine_args->settings)
-        storage_metadata.settings_changes = engine_args->getChild(*engine_args->settings);
+        storage_metadata.settings_changes = engine_args->settings->ptr();
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
-        zk_path, *queue_settings_,
-        storage_metadata.getColumns(),
-        configuration_->format,
-        context_,
-        is_attach,
-        log);
+        zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
 
@@ -589,7 +549,6 @@ void StorageObjectStorageQueue::read(
     }
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
-
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
 
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
@@ -798,7 +757,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
-    auto insert = make_intrusive<ASTInsertQuery>();
+    auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = table_id;
 
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
@@ -853,11 +812,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             block_io.pipeline.getHeader().getNames(),
             storage_snapshot,
             queue_context,
-            supportsSubsetOfColumns(queue_context),
-            /*supports_tuple_elements*/ false,
-            PrepareReadingFromFormatHiveParams {file_columns,
-                hive_partition_columns_to_read_from_file_path.getNameToTypeMap()}
-        );
+            supportsSubsetOfColumns(queue_context));
 
         Pipes pipes;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;
@@ -968,22 +923,8 @@ void StorageObjectStorageQueue::commit(
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
-
-    PartitionLastProcessedFileInfoMap last_processed_file_per_partition;
-    auto created_nodes = std::make_shared<LastProcessedFileInfoMap>();
     for (auto & source : sources)
-    {
-        source->prepareCommitRequests(
-            requests, insert_succeeded, successful_objects,
-            last_processed_file_per_partition, created_nodes, exception_message, error_code);
-    }
-
-    // Use partition-based processing for both HIVE and REGEX modes
-    bool has_partitioning = files_metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
-    if (has_partitioning)
-        ObjectStorageQueueSource::preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
-    else
-        chassert(last_processed_file_per_partition.empty());
+        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message, error_code);
 
     if (requests.empty())
     {
@@ -1330,9 +1271,6 @@ void StorageObjectStorageQueue::alter(
         std::set<std::string> new_settings_set;
 
         const auto mode = getTableMetadata().getMode();
-        const size_t dependencies_count = getDependencies();
-        bool requires_detached_mv = false;
-
         for (auto & setting : new_settings)
         {
             LOG_TEST(log, "New setting {}: {}", setting.name, setting.value);
@@ -1363,6 +1301,7 @@ void StorageObjectStorageQueue::alter(
 
             if (requiresDetachedMV(setting.name))
             {
+                const size_t dependencies_count = getDependencies();
                 if (dependencies_count)
                 {
                     throw Exception(
@@ -1371,34 +1310,12 @@ void StorageObjectStorageQueue::alter(
                         "(dependencies count: {})",
                         setting.name, dependencies_count);
                 }
-                requires_detached_mv = true;
             }
 
             changed_settings.push_back(setting);
         }
-        if (requires_detached_mv)
-        {
-            LOG_TRACE(log, "Deactivating {} streaming tasks", streaming_tasks.size());
 
-            for (auto & task : streaming_tasks)
-                task->deactivate();
-
-            LOG_TRACE(log, "Deactivated streaming tasks");
-        }
-        SCOPE_EXIT({
-            if (requires_detached_mv)
-            {
-                for (auto & task : streaming_tasks)
-                    task->activateAndSchedule();
-
-                LOG_TRACE(log, "Re-activated streaming tasks");
-            }
-        });
-
-        LOG_TRACE(
-            log, "New settings changes: {} (requires_detached_mv: {}, changed settings ({}):  {})",
-            new_metadata.settings_changes->formatForLogging(),
-            requires_detached_mv, changed_settings.size(), changed_settings.namesToString());
+        LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatForLogging());
 
         /// Alter settings which are stored in keeper.
         ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
@@ -1434,7 +1351,7 @@ void StorageObjectStorageQueue::alter(
             else if (change.name == "enable_hash_ring_filtering")
                 enable_hash_ring_filtering = change.value.safeGet<bool>();
             else if (change.name == "after_processing_retries")
-                after_processing_settings.after_processing_retries = static_cast<UInt32>(change.value.safeGet<UInt32>());
+                after_processing_settings.after_processing_retries = change.value.safeGet<UInt32>();
             else if (change.name == "after_processing_move_uri")
                 after_processing_settings.after_processing_move_uri = change.value.safeGet<String>();
             else if (change.name == "after_processing_move_prefix")
@@ -1456,9 +1373,6 @@ void StorageObjectStorageQueue::alter(
         }
 
         files_metadata->updateSettings(changed_settings);
-        /// Reset streaming_iterator as it can hold state which we could have just altered.
-        if (requires_detached_mv)
-            streaming_file_iterator.reset();
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
         setInMemoryMetadata(new_metadata);
@@ -1500,7 +1414,6 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         list_objects_batch_size_copy,
         predicate,
         getVirtualsList(),
-        hive_partition_columns_to_read_from_file_path,
         local_context,
         log,
         enable_hash_ring_filtering_copy,
@@ -1532,9 +1445,9 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
 
     auto cleanup_interval_ms = files_metadata->getCleanupIntervalMS();
-    settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = static_cast<UInt32>(cleanup_interval_ms.first);
-    settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
-    settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(files_metadata->getPersistentProcessingNodeTTLSeconds());
+    settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = cleanup_interval_ms.first;
+    settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = cleanup_interval_ms.second;
+    settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = files_metadata->getPersistentProcessingNodeTTLSeconds();
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = files_metadata->usePersistentProcessingNode();
 
     {

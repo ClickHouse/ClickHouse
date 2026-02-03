@@ -42,7 +42,7 @@ class ClickHouseProc:
 """
     MINIO_LOG = f"{temp_dir}/minio.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
-    LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_rows_to_read=0 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
+    LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
     DMESG_LOG = f"{temp_dir}/dmesg.log"
     GDB_LOG = f"{temp_dir}/gdb.log"
     # TODO: run servers in  dedicated wds to keep trash localised
@@ -93,7 +93,8 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         nproc = int(Utils.cpu_count() / 2)
-        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{self.test_output_file}\""
+        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' \
+        | tee -a \"{self.test_output_file}\""
         self.minio_proc = None
         self.azurite_proc = None
         self.debug_artifacts = []
@@ -419,9 +420,6 @@ profiles:
             Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
         )
 
-        # set profile file for the server
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-server-%m.profraw"
-
         env = os.environ.copy()
         env["TSAN_OPTIONS"] = " ".join(
             filter(
@@ -434,6 +432,7 @@ profiles:
         )
         tsan_options = env["TSAN_OPTIONS"]
         print(f"TSAN_OPTIONS = {tsan_options}")
+
         proc = subprocess.Popen(
             command,
             stderr=subprocess.STDOUT,
@@ -698,14 +697,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         return self
 
-    @staticmethod
-    def _chmod(files):
-        for file in files:
-            try:
-                os.chmod(file, 0o666)
-            except Exception as ex:
-                print(f"WARNING: Failed to chmod {file}: {ex}")
-
     def prepare_logs(self, info, all=False):
         res = []
         try:
@@ -729,7 +720,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 if Path(self.CH_LOCAL_LOG).exists():
                     res.append(self.CH_LOCAL_LOG)
             self.logs = res
-            self._chmod(self.logs)
         except Exception as e:
             print(f"WARNING: Failed to collect logs: {e}")
             traceback.print_exc()
@@ -865,7 +855,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         name="Sanitizer assert or Fatal messages in server logs",
                         info="no server logs found",
                         status=Result.StatusExtended.FAIL,
-                        labels=[Result.Label.BLOCKER],  # to explicitly block the merge
                     )
                 )
             else:
@@ -875,16 +864,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         stderr_log=str(stderr_log),
                         fuzzer_log="",
                     )
-                    name, description, files = log_parser.parse_failure()
+                    name, description = log_parser.parse_failure()
                     results.append(
                         Result.create_from(
                             name=name,
                             info=description,
                             status=Result.StatusExtended.FAIL,
-                            files=files,
-                            labels=[
-                                Result.Label.BLOCKER
-                            ],  # to explicitly block the merge
                         )
                     )
                 except Exception:
@@ -893,9 +878,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                             name="Failed to parse sanitizer/fatal failure from server logs",
                             info=traceback.format_exc(),
                             status=Result.StatusExtended.FAIL,
-                            labels=[
-                                Result.Label.BLOCKER
-                            ],  # to explicitly block the merge
                         )
                     )
 
@@ -1046,7 +1028,6 @@ quit
             "minio_audit_logs",
             "minio_server_logs",
         ]
-        ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 10_000_000
 
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
@@ -1088,7 +1069,7 @@ quit
             for cache_status_path in cache_status_files:
                 Shell.check(f"rm {cache_status_path}", verbose=True)
 
-        scraping_system_table = Result(name=f"Scraping system tables", status="OK")
+        scrapping_system_table = Result(name=f"Scrapping system tables", status="OK")
         for table in TABLES:
             path_arg = f" --path {self.run_path0}"
             res, stdout, stderr = Shell.get_res_stdout_stderr(
@@ -1097,21 +1078,9 @@ quit
             )
             if res != 0:
                 print(f"ERROR: Failed to dump system table: {table}\nError: {stderr}")
-                scraping_system_table.set_info(
+                scrapping_system_table.set_info(
                     f"Failed to dump system table: {table}\nError: {stderr}"
                 )
-            else:
-                lines_count = int(
-                    Shell.get_output_or_raise(
-                        f"cd {self.run_path0} && wc -l < {temp_dir}/system_tables/{table}.tsv",
-                        verbose=True,
-                    ).strip()
-                )
-                if lines_count > ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT:
-                    scraping_system_table.set_info(
-                        f"System table {table} has too many rows {lines_count} > {ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT}"
-                    )
-
             if "minio" in table:
                 # minio tables are not replicated
                 continue
@@ -1125,22 +1094,10 @@ quit
                     print(
                         f"ERROR: Failed to dump system table from replica 1: {table}\nError: {stderr}"
                     )
-                    scraping_system_table.set_info(
+                    scrapping_system_table.set_info(
                         f"Failed to dump system table from replica 1: {table}\nError: {stderr}"
                     )
                     res = False
-                else:
-                    lines_count = int(
-                        Shell.get_output_or_raise(
-                            f"cd {self.run_path1} && wc -l < {temp_dir}/system_tables/{table}.1.tsv",
-                            verbose=True,
-                        ).strip()
-                    )
-                    if lines_count > ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT:
-                        scraping_system_table.set_info(
-                            f"System table {table} on replica 1 has too many rows {lines_count} > {ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT}"
-                        )
-
             if self.is_db_replicated:
                 path_arg = f" --path {self.run_path2}"
                 res, stdout, stderr = Shell.get_res_stdout_stderr(
@@ -1151,25 +1108,13 @@ quit
                     print(
                         f"ERROR: Failed to dump system table from replica 2: {table}\nError: {stderr}"
                     )
-                    scraping_system_table.set_info(
+                    scrapping_system_table.set_info(
                         f"Failed to dump system table from replica 2: {table}\nError: {stderr}"
                     )
                     res = False
-                else:
-                    lines_count = int(
-                        Shell.get_output_or_raise(
-                            f"cd {self.run_path2} && wc -l < {temp_dir}/system_tables/{table}.2.tsv",
-                            verbose=True,
-                        ).strip()
-                    )
-                    if lines_count > ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT:
-                        scraping_system_table.set_info(
-                            f"System table {table} on replica 2 has too many rows {lines_count} > {ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT}"
-                        )
-
-        if scraping_system_table.info:
-            scraping_system_table.set_status(Result.StatusExtended.FAIL)
-            self.extra_tests_results.append(scraping_system_table)
+        if scrapping_system_table.info:
+            scrapping_system_table.set_status(Result.StatusExtended.FAIL)
+            self.extra_tests_results.append(scrapping_system_table)
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
 
     @staticmethod
@@ -1267,29 +1212,14 @@ if __name__ == "__main__":
     res = False
     try:
         if command == "logs_export_config":
-            if not Info().is_local_run:
-                # Disable log export for local runs - ideally this command wouldn't be triggered,
-                # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
-                res = ch.create_log_export_config()
-            else:
-                res = True
+            res = ch.create_log_export_config()
         elif command == "logs_export_start":
             # FIXME: the start_time must be preserved globally in ENV or something like that
             # to get the same values in different DBs
             # As a wild idea, it could be stored in a Info.check_start_timestamp
-            if not Info().is_local_run:
-                # Disable log export for local runs - ideally this command wouldn't be triggered,
-                # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
-                res = ch.start_log_exports(check_start_time=Utils.timestamp())
-            else:
-                res = True
+            res = ch.start_log_exports(check_start_time=Utils.timestamp())
         elif command == "logs_export_stop":
-            if not Info().is_local_run:
-                # Disable log export for local runs - ideally this command wouldn't be triggered,
-                # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
-                res = ch.stop_log_exports()
-            else:
-                res = True
+            res = ch.stop_log_exports()
         elif command == "start_minio":
             param = sys.argv[2]
             assert param in ["stateless"]

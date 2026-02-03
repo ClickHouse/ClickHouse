@@ -917,7 +917,6 @@ void IcebergMetadata::addDeleteTransformers(
     ObjectInfoPtr object_info,
     QueryPipelineBuilder & builder,
     const std::optional<FormatSettings> & format_settings,
-    FormatParserSharedResourcesPtr parser_shared_resources,
     ContextPtr local_context) const
 {
     auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
@@ -928,7 +927,7 @@ void IcebergMetadata::addDeleteTransformers(
     {
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
-            { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, parser_shared_resources, local_context); });
+            { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, local_context); });
     }
     const auto & delete_files = iceberg_object_info->info.equality_deletes_objects;
     LOG_DEBUG(log, "Constructing filter transform for equality delete, there are {} delete files", delete_files.size());
@@ -972,7 +971,7 @@ void IcebergMetadata::addDeleteTransformers(
                 local_context,
                 local_context->getSettingsRef()[DB::Setting::max_block_size],
                 format_settings,
-                parser_shared_resources,
+                nullptr,
                 nullptr,
                 true,
                 compression_method);

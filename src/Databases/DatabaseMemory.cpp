@@ -24,8 +24,8 @@ DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
     , data_path(DatabaseCatalog::getDataDirPath(name_) / "")
 {
-    /// Temporary database should not have any data at the moment of its creation.
-    /// In case of starting up after sudden server shutdown, remove the database folder of the temporary database.
+    /// Temporary database should not have any data on the moment of its creation
+    /// In case of sudden server shutdown remove database folder of temporary database
     if (name_ == DatabaseCatalog::TEMPORARY_DATABASE)
         removeDataPath(context_);
 }
@@ -94,15 +94,15 @@ void DatabaseMemory::dropTable(
 
 ASTPtr DatabaseMemory::getCreateDatabaseQueryImpl() const
 {
-    auto create_query = make_intrusive<ASTCreateQuery>();
+    auto create_query = std::make_shared<ASTCreateQuery>();
     create_query->setDatabase(database_name);
-    create_query->set(create_query->storage, make_intrusive<ASTStorage>());
+    create_query->set(create_query->storage, std::make_shared<ASTStorage>());
     auto engine = makeASTFunction(getEngineName());
     engine->no_empty_args = true;
     create_query->storage->set(create_query->storage->engine, engine);
 
     if (!comment.empty())
-        create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment));
 
     return create_query;
 }
