@@ -674,6 +674,7 @@ void optimizeTreeSecondPass(
             if (auto applied_projection = optimizeUseNormalProjections(
                 stack,
                 nodes,
+                optimization_settings,
                 optimization_settings.is_parallel_replicas_initiator_with_projection_support,
                 optimization_settings.max_step_description_length))
             {
