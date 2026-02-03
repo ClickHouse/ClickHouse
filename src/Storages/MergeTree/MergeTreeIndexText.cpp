@@ -8,8 +8,6 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include "DataTypes/DataTypeMap.h"
-#include "DataTypes/IDataType.h"
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
@@ -1186,7 +1184,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     else
         throw Exception(
             ErrorCodes::INCOMPATIBLE_COLUMNS,
-            "Column: '{}' has incompatible or unsupported type for preprocessor: {}.",
+            "Column: '{}' has incompatible or unsupported type: {} for preprocessor.",
             index_column_name, index_column.type->getName());
 
     *pos += rows_read;
@@ -1446,7 +1444,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
         data_type = WhichDataType(low_cardinality.getDictionaryType());
     }
 
-    if (!data_type.isString() && !data_type.isFixedString() && !data_type.isMap())
+    if (!data_type.isString() && !data_type.isFixedString())
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,

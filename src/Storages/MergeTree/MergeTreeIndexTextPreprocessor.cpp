@@ -20,7 +20,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Storages/IndicesDescription.h>
-#include "base/defines.h"
+#include <base/defines.h>
 
 
 namespace DB
@@ -37,53 +37,16 @@ namespace ErrorCodes
 namespace
 {
 
-/// On map columns the preprocessor expression should be on index definition.
-size_t validatePreprocessorASTExpressionForMaps(const ASTFunction * preprocessor_function, const IndexDescription & index_description)
+void validatePreprocessorASTRecurse(
+    const ASTFunction * subfunction,
+    const std::string &index_identifier_name,
+    const ASTFunction *index_expression_function,
+    const ASTIdentifier *index_expression_identifier)
 {
+    if (index_expression_function != nullptr && subfunction->getColumnNameWithoutAlias() == index_expression_function->getColumnNameWithoutAlias())
+        return;
 
-    const ASTIndexDeclaration &index_definition_ast = index_description.definition_ast->as<ASTIndexDeclaration &>();
-    ASTPtr index_expresion_ast = index_definition_ast.getExpression();
-    const ASTFunction *index_expression_function = index_expresion_ast->as<ASTFunction>();
-    if (index_expression_function == nullptr)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index definition on map columns must be an expression, but got: {}", index_expresion_ast->getColumnName());
-
-    size_t counter = 0;
-
-    if (index_expression_function->getColumnNameWithoutAlias() == preprocessor_function->getColumnNameWithoutAlias())
-        return 1;
-
-    for (const auto & argument : preprocessor_function->arguments->children)
-    {
-        /// In principle all literals are valid
-        if (argument->as<ASTLiteral>())
-            continue;
-
-        /// We must have only the index definition as argument, no Identifiers at this point.
-        if (const ASTIdentifier * argument_identifier = argument->as<ASTIdentifier>())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Preprocessor function on map column indices must only reference index definition expression: {}, but also got also: {}",
-                index_description.column_names.front(), argument_identifier->name());
-
-        /// Check the arguments recursively (won't happen more than 2 or 3 times on average so it's fine).
-        if (const ASTFunction * subfunction = argument->as<ASTFunction>())
-        {
-            counter += validatePreprocessorASTExpressionForMaps(subfunction, index_description);
-            continue;
-        }
-
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Preprocessor function on map columns expects a literal or function as argument");
-    }
-
-    return counter;
-}
-
-void validatePreprocessorASTExpressionGeneric(const ASTFunction * preprocessor_function, const IndexDescription & index_description)
-{
-    const std::string &index_identifier_name = index_description.column_names.front();
-    chassert(!index_identifier_name.empty());
-
-    for (const auto & argument : preprocessor_function->arguments->children)
+    for (const auto & argument : subfunction->arguments->children)
     {
         /// In principle all literals are valid
         if (argument->as<ASTLiteral>())
@@ -92,17 +55,21 @@ void validatePreprocessorASTExpressionGeneric(const ASTFunction * preprocessor_f
         /// We must have only the valid identifier_name as argument
         if (const ASTIdentifier * argument_identifier = argument->as<ASTIdentifier>())
         {
+            if (index_expression_identifier == nullptr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Preprocessor expression must only reference expression: {}",
+                    index_identifier_name);
+
             if (index_identifier_name != argument_identifier->name())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Preprocessor function must only reference column: {}, also got: {}",
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Preprocessor function must only reference column: {}, but got: {}",
                     index_identifier_name, argument_identifier->name());
 
             continue;
         }
 
         /// Check the arguments recursively (won't happen more than 2 or 3 times on average so it's fine).
-        if (const ASTFunction * subfunction = argument->as<ASTFunction>())
+        if (const ASTFunction * subsubfunction = argument->as<ASTFunction>())
         {
-            validatePreprocessorASTExpressionGeneric(subfunction, index_description);
+            validatePreprocessorASTRecurse(subsubfunction, index_identifier_name, index_expression_function, index_expression_identifier);
             continue;
         }
 
@@ -113,7 +80,7 @@ void validatePreprocessorASTExpressionGeneric(const ASTFunction * preprocessor_f
 /// Early preprocessor argument validation.
 /// Maybe we could omit this validation and use only the validate function. But here we do it early and simpler to ensure that what we parse
 /// later is correct.
-void validatePreprocessorASTExpression(const ASTFunction * preprocessor_function, const IndexDescription & index_description)
+void validatePreprocessorAST(const ASTFunction * preprocessor_function, const IndexDescription & index_description)
 {
     chassert(preprocessor_function != nullptr);
     if (preprocessor_function->arguments == nullptr)
@@ -128,19 +95,10 @@ void validatePreprocessorASTExpression(const ASTFunction * preprocessor_function
     const ASTIndexDeclaration &index_definition_ast = index_description.definition_ast->as<ASTIndexDeclaration &>();
     ASTPtr index_expresion_ast = index_definition_ast.getExpression();
 
-    if (isMap(index_description.data_types.front()))
-    {
-        const size_t expression_counter = validatePreprocessorASTExpressionForMaps(preprocessor_function, index_description);
-        if (expression_counter == 0)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Preprocessor function for index {} must contain the expression: {}",
-                index_description.name,
-                index_definition_ast.getExpression()->as<ASTFunction>()->getColumnNameWithoutAlias()
-            );
-    }
-    else
-        validatePreprocessorASTExpressionGeneric(preprocessor_function, index_description);
+    const ASTFunction *index_expression_function = index_expresion_ast->as<ASTFunction>();
+    const ASTIdentifier *index_expression_identifier = index_expresion_ast->as<ASTIdentifier>();
+
+    validatePreprocessorASTRecurse(preprocessor_function, index_identifier_name, index_expression_function, index_expression_identifier);
 }
 
 DataTypePtr getInnerType(DataTypePtr type)
@@ -262,7 +220,7 @@ ExpressionActions MergeTreeIndexTextPreprocessor::parseExpression(const IndexDes
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Preprocessor argument must be an expression");
 
         /// Now we know that the only valid identifier_name must be the text indexed column.
-        validatePreprocessorASTExpression(preprocessor_function, index_description);
+        validatePreprocessorAST(preprocessor_function, index_description);
     }
 
     /// Convert ASTPtr -> ActionsDAG

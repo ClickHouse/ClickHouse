@@ -40,24 +40,6 @@ Positive tests on preprocessor construction and use.
 1
 1
 1
-- Test simple preprocessor expression with Array(String).
-1
-1
-1
-1
-1
-1
-1
-1
-- Test simple preprocessor expression with Array(FixedString).
-1
-1
-1
-1
-1
-1
-1
-1
 - Test preprocessor declaration using column more than once.
 1
 0
@@ -90,12 +72,76 @@ Positive tests on preprocessor construction and use.
 0
 1
 1
+- Index definition must be the an expression used in the preprocessor
+-- Single arguments
+1
+0
+1
+1
+0
+0
+0
+1
+0
+1
+1
+1
+0
+1
+1
+-- Multiple arguments
+1
+0
+1
+1
+0
+0
+0
+1
+0
+1
+1
+1
+0
+1
+1
 Negative tests on preprocessor construction validations.
 - The preprocessor argument must not reference non-indexed columns
-- Index definition may not be and expression when there is preprocessor
--- Not even the same expression
+- Index definition may not be a different expression than used in the preprocessor
 - The preprocessor must be an expression
 - The preprocessor must be an expression, with existing functions
 - The preprocessor must have input and output values of the same type (here: String)
 - The preprocessor expression must use the column identifier
 - The preprocessor expression must use only deterministic functions
+- Test simple preprocessor expression with Array(String).
+1
+1
+1
+1
+1
+1
+1
+1
+- Test simple preprocessor expression with Array(FixedString).
+1
+1
+1
+1
+1
+1
+1
+1
+Maps support
+- Map positive tests
+-- Index definition must be an expression
+1
+1
+1
+1
+1
+1
+1
+1
+- Map negative tests
+-- Index on whole map must fail
+-- Index definition must appear literally in the preprocessor expression
