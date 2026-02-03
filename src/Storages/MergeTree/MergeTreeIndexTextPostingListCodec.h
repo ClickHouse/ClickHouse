@@ -314,8 +314,8 @@ template<typename T>
 static void writeArrayU32(const std::vector<T> & arr, WriteBuffer & wb)
 {
     writeVarUInt(arr.size(), wb);
-    for (size_t i = 0; i < arr.size(); ++i)
-        writeVarUInt(arr[i], wb);
+    for (const auto & val : arr)
+        writeVarUInt(val, wb);
 }
 
 template<typename T>

@@ -6,6 +6,9 @@
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
 #include <Common/PODArray.h>
 
+#include <limits>
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -55,17 +58,17 @@ public:
     void next();
 
     /// Returns true if cursor points to a valid row ID.
-    bool valid() const { return is_valid; }
+    [[nodiscard]] bool valid() const { return is_valid; }
 
     /// Returns current row ID. Requires valid() == true.
-    uint32_t value() const { return current_values[index]; }
+    [[nodiscard]] uint32_t value() const { return current_values[index]; }
 
     /// Advance to first row ID >= target.
     void seek(uint32_t target);
 
     /// Returns posting list density: count / (max - min + 1).
     /// Used to decide between skip-list vs brute-force algorithm.
-    double density() const { return density_val; }
+    [[nodiscard]] double density() const { return density_val; }
 
 private:
     /// Load and decode header for the given segment.
@@ -75,8 +78,6 @@ private:
     void linearAndImpl(size_t segment, UInt8 *, size_t row_begin, size_t row_end);
 
     bool seekImpl(uint32_t target);
-    uint32_t min() const { return header.first_row_id; }
-    uint32_t max() const { return block_row_ends.back(); }
 
     inline void maybeEraseUnusedSegments(int unused_segment_index)
     {

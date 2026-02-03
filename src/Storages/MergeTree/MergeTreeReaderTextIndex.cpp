@@ -645,8 +645,8 @@ void MergeTreeReaderTextIndex::readStreamPostingsIfNeeded(size_t mark)
     if (!rows_range.has_value())
         return;
 
-    auto &granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
-    const auto &remaining_tokens = granule_text.getRemainingTokens();
+    auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+    const auto & remaining_tokens = granule_text.getRemainingTokens();
 
     auto read_token_postings = [&](std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range)
     {
@@ -667,12 +667,10 @@ void MergeTreeReaderTextIndex::readStreamPostingsIfNeeded(size_t mark)
             }
         }
     };
-    for (const auto &[token, token_info]: remaining_tokens)
+    for (const auto & [token, token_info] : remaining_tokens)
     {
         if (!useful_tokens.contains(token))
-        {
             continue;
-        }
 
         read_token_postings(token, token_info, *rows_range);
     }
@@ -689,8 +687,6 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
 
     if (postings.empty() || search_query->tokens.empty())
         return;
-
-    const auto context = data_part_info_for_read->getContext();
 
     const auto & settings = condition_text.getContext()->getSettingsRef();
     bool brute_force_apply = settings[Setting::text_index_brute_force_apply];
