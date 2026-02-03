@@ -729,6 +729,9 @@ void ColumnVariant::insertManyDefaults(size_t length)
 
 void ColumnVariant::popBack(size_t n)
 {
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
     /// If we have only NULLs, just pop back from local_discriminators and offsets.
     if (hasOnlyNulls())
     {
@@ -1601,7 +1604,7 @@ ColumnPtr ColumnVariant::compress(bool force_compression) const
 double ColumnVariant::getRatioOfDefaultRows(double) const
 {
     UInt64 num_defaults = getNumberOfDefaultRows();
-    return static_cast<double>(num_defaults) / local_discriminators->size();
+    return static_cast<double>(num_defaults) / static_cast<double>(local_discriminators->size());
 }
 
 UInt64 ColumnVariant::getNumberOfDefaultRows() const

@@ -1030,12 +1030,16 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
         if (parallel_loader)
             parallel_loader->finish();
 
-        LOG_DEBUG(log,
-            "Finished {}reading {} blocks with {} rows to dictionary {} from pipeline in {:.2f} sec and inserted into hashtable in {:.2f} sec",
+        LOG_DEBUG(
+            log,
+            "Finished {}reading {} blocks with {} rows to dictionary {} from pipeline in {:.2f} sec and inserted into hashtable in {:.2f} "
+            "sec",
             configuration.use_async_executor ? "asynchronous " : "",
-            total_blocks, total_rows,
+            total_blocks,
+            total_rows,
             dictionary_name,
-            pull_time_microseconds / 1000000.0, process_time_microseconds / 1000000.0);
+            static_cast<double>(pull_time_microseconds) / 1000000.0,
+            static_cast<double>(process_time_microseconds) / 1000000.0);
     }
     else
     {

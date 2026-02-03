@@ -102,7 +102,7 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
         for (size_t i = 0; i < total_buckets - 2; ++i) // Skip the first and last bucket
         {
             // the end index of next bucket
-            size_t end_index = 1 + static_cast<int>(floor(single_bucket_size * (i + 2)));
+            size_t end_index = 1 + static_cast<int>(floor(single_bucket_size * static_cast<Float64>(i + 2)));
             // current bucket is the last bucket
             end_index = std::min(end_index, size);
 
@@ -243,7 +243,7 @@ public:
             case TypeIndex::DateTime:
                 return static_cast<const ColumnDateTime &>(*column).getData()[row_num];
             case TypeIndex::DateTime64:
-                return static_cast<const ColumnDateTime64 &>(*column).getData()[row_num];
+                return static_cast<Float64>(static_cast<const ColumnDateTime64 &>(*column).getData()[row_num]);
             default:
                 return column->getFloat64(row_num);
         }

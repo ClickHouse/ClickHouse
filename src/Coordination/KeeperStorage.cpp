@@ -1486,6 +1486,7 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
             return function(static_cast<const Coordination::ZooKeeperSetRequest &>(zk_request));
         case Coordination::OpNum::List:
         case Coordination::OpNum::FilteredList:
+        case Coordination::OpNum::FilteredListWithStatsAndData:
         case Coordination::OpNum::SimpleList:
             return function(static_cast<const Coordination::ZooKeeperListRequest &>(zk_request));
         case Coordination::OpNum::Check:
@@ -2758,9 +2759,13 @@ std::list<KeeperStorageBase::Delta> preprocess(
 template <bool local, typename Storage>
 Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperListRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t /*session_id*/)
 {
-    std::shared_ptr<Coordination::ZooKeeperListResponse> response = zk_request.getOpNum() == Coordination::OpNum::SimpleList
-        ? std::make_shared<Coordination::ZooKeeperSimpleListResponse>()
-        : std::make_shared<Coordination::ZooKeeperListResponse>();
+    std::shared_ptr<Coordination::ZooKeeperListResponse> response;
+    if (zk_request.getOpNum() == Coordination::OpNum::FilteredListWithStatsAndData)
+        response = std::make_shared<Coordination::ZooKeeperFilteredListWithStatsAndDataResponse>();
+    else if (zk_request.getOpNum() == Coordination::OpNum::SimpleList)
+        response = std::make_shared<Coordination::ZooKeeperSimpleListResponse>();
+    else
+        response = std::make_shared<Coordination::ZooKeeperListResponse>();
 
     if constexpr (!local)
     {
@@ -2788,22 +2793,40 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperList
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Path cannot be empty");
 
         auto list_request_type = Coordination::ListRequestType::ALL;
+        bool with_stat = false;
+        bool with_data = false;
+
         if (const auto * filtered_list = dynamic_cast<const Coordination::ZooKeeperFilteredListRequest *>(&zk_request))
         {
             list_request_type = filtered_list->list_request_type;
+
+            // Check if it's the extended version with stats/data support
+            if (const auto * with_stats = dynamic_cast<const Coordination::ZooKeeperFilteredListWithStatsAndDataRequest *>(filtered_list))
+            {
+                with_stat = with_stats->with_stat;
+                with_data = with_stats->with_data;
+            }
         }
 
         const auto get_children = [&]()
         {
             /// if list_request_type will read all the children, we don't have to read any meta, just list all the paths.
             if constexpr (Storage::use_rocksdb)
-                return std::optional{container.getChildren(zk_request.path, list_request_type != Coordination::ListRequestType::ALL)};
+                return std::optional{container.getChildren(zk_request.path,
+                                                           list_request_type != Coordination::ListRequestType::ALL || with_stat || with_data,
+                                                           with_data)};
             else
                 return &node_it->value.getChildren();
         };
 
         const auto children = get_children();
         response->names.reserve(children->size());
+
+        /// Reserve space for optional fields if requested
+        if (with_stat)
+            response->stats.reserve(children->size());
+        if (with_data)
+            response->data.reserve(children->size());
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
         if (!zk_request.path.starts_with(keeper_system_path) && static_cast<size_t>(node_it->value.stats.numChildren()) != children->size())
@@ -2843,9 +2866,41 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperList
             if (Coordination::ListRequestType::ALL == list_request_type || add_child(child))
             {
                 if constexpr (Storage::use_rocksdb)
+                {
                     response->names.push_back(child.first);
+
+                    /// Populate optional fields if requested
+                    if (with_stat)
+                    {
+                        Coordination::Stat child_stat;
+                        child.second.setResponseStat(child_stat);
+                        response->stats.emplace_back(child_stat);
+                    }
+                    if (with_data)
+                        response->data.emplace_back(child.second.getData());
+                }
                 else
+                {
                     response->names.push_back(std::string{child});
+
+                    /// Populate optional fields if requested
+                    if (with_stat || with_data)
+                    {
+                        auto child_path = (std::filesystem::path(zk_request.path) / child).generic_string();
+                        auto child_it = container.find(child_path);
+                        if (child_it == container.end())
+                            onStorageInconsistency("Failed to find a child for stats/data");
+
+                        if (with_stat)
+                        {
+                            Coordination::Stat child_stat;
+                            child_it->value.setResponseStat(child_stat);
+                            response->stats.emplace_back(child_stat);
+                        }
+                        if (with_data)
+                            response->data.emplace_back(child_it->value.getData());
+                    }
+                }
             }
         }
 
@@ -3777,7 +3832,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
                 if (resp->error == Coordination::Error::ZOK)
                 {
                     static constexpr std::array list_requests{
-                        Coordination::OpNum::List, Coordination::OpNum::SimpleList, Coordination::OpNum::FilteredList};
+                        Coordination::OpNum::List, Coordination::OpNum::SimpleList, Coordination::OpNum::FilteredList, Coordination::OpNum::FilteredListWithStatsAndData};
 
                     auto watch_type = std::ranges::contains(list_requests, req->getOpNum()) ? WatchType::LIST_WATCH : WatchType::WATCH;
 

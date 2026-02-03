@@ -43,6 +43,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"text_index_brute_force_apply", false, false, "New setting to enable brute-force intersection algorithm for text index queries."},
             {"text_index_brute_force_density_threshold", 0.2, 0.2, "New setting to control the density threshold for switching to brute-force algorithm in text index."},
+            {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
+            {"default_dictionary_database", "", "", "New setting"},
+            {"parallel_replicas_filter_pushdown", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
@@ -72,7 +75,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"archive_adaptive_buffer_max_size_bytes", 8 * 1024 * 1024, 8 * 1024 * 1024, "New setting"},
             {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, false, "Add a new setting to allow duplicated paths in JSON type with literal and nested object"},
             {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
-            {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_when_possible", "change the default behavior of deduplicate_insert_select to ENABLE_WHEN_PROSSIBLE"},
+            {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_when_possible", "change the default behavior of deduplicate_insert_select to ENABLE_WHEN_POSSIBLE"},
             {"allow_experimental_qbit_type", false, true, "QBit was moved to Beta"},
             {"enable_qbit_type", false, true, "QBit was moved to Beta. Added an alias for setting 'allow_experimental_qbit_type'."},
             {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
@@ -128,7 +131,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
             {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_even_for_bad_queries", "New setting, replace insert_select_deduplicate"},
-
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
@@ -1036,6 +1038,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.2",
+        {
+            {"add_minmax_index_for_temporal_columns", false, false, "New setting"},
+            {"distributed_index_analysis_min_parts_to_activate", 10, 10, "New setting"},
+            {"distributed_index_analysis_min_indexes_size_to_activate", 1_GiB, 1_GiB, "New setting"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {
             {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},

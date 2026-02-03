@@ -36,6 +36,7 @@
 
 #include <Formats/FormatFactory.h>
 
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -861,7 +862,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
         LOG_DEBUG(log, "Processing column {}", column_type_and_name.name);
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
         column_declaration->name = column_type_and_name.name;
-        column_declaration->type = makeASTDataType(column_type_and_name.type->getName());
+        column_declaration->setType(makeASTDataType(column_type_and_name.type->getName()));
         columns_expression_list->children.emplace_back(column_declaration);
     }
 

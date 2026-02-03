@@ -172,11 +172,11 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
                 data_snapshot->manifest_list_entries[manifest_file_index].added_sequence_number,
                 data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
             internal_data_index = 0;
+            files = files_generator(current_manifest_file_content);
         }
-        auto files = files_generator(current_manifest_file_content);
         while (internal_data_index < files.size())
         {
-            const auto & manifest_file_entry = files[internal_data_index++];
+            const ManifestFileEntryPtr & manifest_file_entry = files[internal_data_index++];
             if ((manifest_file_entry->schema_id != previous_entry_schema) && (use_partition_pruning))
             {
                 previous_entry_schema = manifest_file_entry->schema_id;
@@ -219,6 +219,7 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
             }
         }
         current_manifest_file_content = nullptr;
+        files.clear();
         current_pruner = std::nullopt;
         ++manifest_file_index;
         internal_data_index = 0;

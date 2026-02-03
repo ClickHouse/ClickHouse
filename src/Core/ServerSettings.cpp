@@ -814,7 +814,7 @@ namespace
     :::
     )", 0) \
     DECLARE(UInt64, concurrent_threads_soft_limit_ratio_to_cores, 0, "Same as [`concurrent_threads_soft_limit_num`](#concurrent_threads_soft_limit_num), but with ratio to cores.", 0) \
-    DECLARE(String, concurrent_threads_scheduler, "fair_round_robin", R"(
+    DECLARE(String, concurrent_threads_scheduler, "max_min_fair", R"(
 The policy on how to perform a scheduling of CPU slots specified by `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores`. Algorithm used to govern how limited number of CPU slots are distributed among concurrent queries. Scheduler may be changed at runtime without server restart.
 
     Possible values:
@@ -1094,7 +1094,13 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Tick period of background memory worker which corrects memory tracker memory usages and cleans up unused pages during higher memory usage. If set to 0, default value will be used depending on the memory usage source
     )", 0) \
     DECLARE(Double, memory_worker_purge_dirty_pages_threshold_ratio, 0.2, R"(
-    The threshold ratio for jemalloc dirty pages relative to the memory available to ClickHouse server. When dirty pages size exceeds this ratio, the background memory worker forces purging of dirty pages. If set to 0, forced purging is disabled.
+    The threshold ratio for jemalloc dirty pages relative to the memory available to ClickHouse server. When dirty pages size exceeds this ratio, the background memory worker forces purging of dirty pages. If set to 0, forced purging based on dirty pages ratio is disabled.
+    )", 0) \
+    DECLARE(Double, memory_worker_purge_total_memory_threshold_ratio, 0.9, R"(
+    The threshold ratio for purging jemalloc relative to the memory available to ClickHouse server. When total memory usage exceeds this ratio, the background memory worker forces purging of dirty pages. If set to 0, forced purging based on total memory is disabled.
+    )", 0) \
+    DECLARE(UInt64, memory_worker_decay_adjustment_period_ms, 5000, R"(
+    Duration in milliseconds that memory pressure must persist before dynamically adjusting jemalloc's `dirty_decay_ms`. When memory usage remains above the purge threshold for this period, automatic dirty page decay is disabled (`dirty_decay_ms=0`) to aggressively reclaim memory. When usage stays below the threshold for this period, the default decay behavior is restored. Set to 0 to disable dynamic adjustment and use jemalloc's default decay settings.
     )", 0) \
     DECLARE(Bool, memory_worker_correct_memory_tracker, 0, R"(
     Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups

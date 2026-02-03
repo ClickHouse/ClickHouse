@@ -26,8 +26,8 @@ namespace
     size_t getRatio(size_t total, double ratio, bool ceil = false)
     {
         if (ceil)
-            return static_cast<size_t>(std::ceil(total * std::clamp(ratio, 0.0, 1.0)));
-        return std::lround(total * std::clamp(ratio, 0.0, 1.0));
+            return static_cast<size_t>(std::ceil(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0)));
+        return std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0));
     }
 }
 
@@ -839,7 +839,7 @@ void SLRUFileCachePriority::SLRUIterator::invalidate()
     lru_iterator.invalidate();
 }
 
-bool SLRUFileCachePriority::SLRUIterator::isValid(const CachePriorityGuard::WriteLock & lock)
+bool SLRUFileCachePriority::SLRUIterator::isValid(const CachePriorityGuard::WriteLock & lock) const
 {
     return lru_iterator.isValid(lock);
 }

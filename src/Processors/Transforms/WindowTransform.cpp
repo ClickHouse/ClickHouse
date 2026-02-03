@@ -2216,7 +2216,7 @@ public:
         }
 
         UInt64 remaining_rows = state.current_partition_rows;
-        Float64 percent_rank_denominator = remaining_rows == 1 ? 1 : remaining_rows - 1;
+        Float64 percent_rank_denominator = remaining_rows == 1 ? 1 : static_cast<Float64>(remaining_rows - 1);
 
         while (remaining_rows > 0)
         {
@@ -2323,7 +2323,7 @@ public:
         }
 
         UInt64 remaining_rows = state.current_partition_rows;
-        Float64 cume_dist_denominator = remaining_rows;
+        Float64 cume_dist_denominator = static_cast<Float64>(remaining_rows);
 
         while (remaining_rows > 0)
         {
@@ -2736,9 +2736,9 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
             const auto & column = transform->blockAt(transform->current_row.block).input_columns[workspace.argument_column_indices[ARGUMENT_TIMESTAMP]];
             const auto & curr_timestamp = checkAndGetColumn<DataTypeDateTime64::ColumnType>(*column).getInt(transform->current_row.row);
 
-            Float64 time_elapsed = curr_timestamp - state.previous_timestamp;
-            result = (time_elapsed > 0) ? (metric_diff * ts_scale_multiplier / time_elapsed  * interval_duration) : 0;
-            state.previous_timestamp = curr_timestamp;
+            Float64 time_elapsed = static_cast<Float64>(curr_timestamp) - state.previous_timestamp;
+            result = (time_elapsed > 0) ? (metric_diff * static_cast<Float64>(ts_scale_multiplier) / time_elapsed  * interval_duration) : 0;
+            state.previous_timestamp = static_cast<Float64>(curr_timestamp);
         }
         else
         {

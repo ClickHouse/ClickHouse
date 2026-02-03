@@ -87,7 +87,7 @@ public:
 
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
-    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags) override;
+    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags, DDLGuardPtr && database_guard) override;
 
     bool canExecuteReplicatedMetadataAlter() const override;
 
@@ -212,7 +212,7 @@ private:
     void reinitializeDDLWorker();
 
     static BlockIO
-    getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait);
+    getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait, DDLGuardPtr && database_guard);
 
     const String zookeeper_path;
     const String shard_name;

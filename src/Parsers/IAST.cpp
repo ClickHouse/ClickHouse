@@ -82,6 +82,9 @@ namespace boost::sp_adl_block
 namespace DB
 {
 
+/// Verify that we did not increase the size of IAST by accident.
+static_assert(sizeof(IAST) <= 32);
+
 void intrusive_ptr_add_ref(const IAST* p)
 {
     boost::sp_adl_block::intrusive_ptr_add_ref<IAST, boost::thread_safe_counter>(p);

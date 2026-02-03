@@ -556,10 +556,19 @@ enum class DeduplicateInsertSelectMode : uint8_t
 {
     DISABLE = 0,
     FORCE_ENABLE,
-    ENABLE_WHEN_PROSSIBLE,
+    ENABLE_WHEN_POSSIBLE,
     ENABLE_EVEN_FOR_BAD_QUERIES
 };
 
 DECLARE_SETTING_ENUM(DeduplicateInsertSelectMode)
+
+enum class DeduplicateInsertMode : uint8_t
+{
+    BACKWARD_COMPATIBLE_CHOICE = 0,
+    ENABLE,
+    DISABLE
+};
+
+DECLARE_SETTING_ENUM(DeduplicateInsertMode)
 
 }

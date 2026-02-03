@@ -30,6 +30,7 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::SetACL),
     static_cast<int32_t>(OpNum::GetACL),
     static_cast<int32_t>(OpNum::FilteredList),
+    static_cast<int32_t>(OpNum::FilteredListWithStatsAndData),
     static_cast<int32_t>(OpNum::CheckNotExists),
     static_cast<int32_t>(OpNum::RemoveRecursive),
     static_cast<int32_t>(OpNum::CheckStat),
@@ -57,6 +58,7 @@ const char * toOperationTypeMetricLabel(OpNum op_num)
         case OpNum::SimpleList:
         case OpNum::List:
         case OpNum::FilteredList:
+        case OpNum::FilteredListWithStatsAndData:
         case OpNum::Check:
         case OpNum::CheckNotExists:
         case OpNum::CheckWatch:

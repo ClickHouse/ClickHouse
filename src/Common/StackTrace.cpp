@@ -180,7 +180,7 @@ static constexpr std::string_view SigillErrorString(int si_code)
     }
 }
 
-std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
+std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
 {
     switch (sig)
     {

@@ -22,7 +22,6 @@ struct DataTypeValidationSettings
     bool validate_nested_types = true;
     bool enable_time_time64_type = true;
     bool allow_experimental_nullable_tuple_type = true;
-    bool enable_qbit_type = true;
 };
 
 void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings & settings);

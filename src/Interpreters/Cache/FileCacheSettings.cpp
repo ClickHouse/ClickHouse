@@ -257,7 +257,7 @@ void FileCacheSettings::validate()
         struct statvfs stat = getStatVFS(settings[FileCacheSetting::path]);
         const auto total_space = stat.f_blocks * stat.f_frsize;
         settings[FileCacheSetting::max_size] =
-            static_cast<UInt64>(std::floor(settings[FileCacheSetting::max_size_ratio_to_total_space].value * total_space));
+            static_cast<UInt64>(std::floor(settings[FileCacheSetting::max_size_ratio_to_total_space].value * static_cast<double>(total_space)));
 
         LOG_INFO(
             getLogger("FileCacheSettings"),

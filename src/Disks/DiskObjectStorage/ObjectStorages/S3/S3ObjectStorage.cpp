@@ -235,7 +235,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     /// default user's .xml config. It's obscure and unclear behavior. For them it's always better
     /// to rely on settings from disk.
     if (auto query_context = CurrentThread::getQueryContext();
-        query_context && !query_context->isBackgroundOperationContext())
+        query_context && !query_context->isBackgroundContext())
     {
         const auto & settings = query_context->getSettingsRef();
         request_settings.updateFromSettings(settings, /* if_changed */ true, settings[Setting::s3_validate_request_settings]);

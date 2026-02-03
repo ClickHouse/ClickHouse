@@ -244,7 +244,7 @@ public:
 
     EntryPtr getEntry() const override;
 
-    bool isValid(const CachePriorityGuard::WriteLock &) override;
+    bool isValid(const CachePriorityGuard::WriteLock &) const override;
 
     void remove(const CachePriorityGuard::WriteLock &) override;
 
@@ -262,7 +262,14 @@ private:
     bool assertValid() const;
 
     LRUFileCachePriority * cache_priority;
-    mutable LRUQueue::iterator iterator;
+
+    LRUQueue::iterator iterator;
+    /// We store entry separately from iterator,
+    /// because we want to be able to change its atomic state
+    /// without any queue lock - both shared and unique locks - (in invalidate() method).
+    /// A non-zero size entry will always stay in the queue by the same iterator
+    /// until its state becomes Invalidated and it is removed.
+    std::weak_ptr<Entry> entry;
 };
 
 }

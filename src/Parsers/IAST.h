@@ -12,6 +12,7 @@
 
 class SipHash;
 
+#include <boost/container/vector.hpp>
 
 namespace DB
 {
@@ -108,15 +109,6 @@ public:
     {
         for (const auto & child : children)
             child->collectIdentifierNames(set);
-    }
-
-    ASTPtr getChild(const IAST & child) const
-    {
-        for (const auto & node : children)
-            if (node.get() == &child)
-                return node;
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
     }
 
     template <typename T>

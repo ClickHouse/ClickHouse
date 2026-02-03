@@ -929,8 +929,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
-    ReplaseAliasColumnsVisitor replase_alias_columns_visitor;
-    replase_alias_columns_visitor.visit(query_tree_to_modify);
+    ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
+    replace_alias_columns_visitor.visit(query_tree_to_modify);
 
     const auto & settings = query_context->getSettingsRef();
 
@@ -1989,7 +1989,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
         throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
             "Too many bytes pending for async INSERT: {} (bytes_to_throw_insert={})",
             formatReadableSizeWithBinarySuffix(total_bytes),
-            formatReadableSizeWithBinarySuffix((*distributed_settings)[DistributedSetting::bytes_to_throw_insert]));
+            formatReadableSizeWithBinarySuffix((*distributed_settings)[DistributedSetting::bytes_to_throw_insert].value));
     }
 
     if ((*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert])
@@ -2019,7 +2019,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
             throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
                 "Too many bytes pending for async INSERT: {} (bytes_to_delay_insert={})",
                 formatReadableSizeWithBinarySuffix(new_total_bytes),
-                formatReadableSizeWithBinarySuffix((*distributed_settings)[DistributedSetting::bytes_to_delay_insert]));
+                formatReadableSizeWithBinarySuffix((*distributed_settings)[DistributedSetting::bytes_to_delay_insert].value));
         }
     }
 }

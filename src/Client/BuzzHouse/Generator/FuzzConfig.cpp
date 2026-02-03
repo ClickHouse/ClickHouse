@@ -770,8 +770,8 @@ void FuzzConfig::comparePerformanceResults(const String & oracle_name, Performan
             if (val.enabled)
             {
                 if (val.minimum < server.metrics.at(key)
-                    && server.metrics.at(key)
-                        > static_cast<uint64_t>(peer.metrics.at(key) * (1 + (static_cast<double>(val.threshold) / 100.0f))))
+                    && server.metrics.at(key) > static_cast<uint64_t>(
+                           static_cast<double>(peer.metrics.at(key)) * (1 + (static_cast<double>(val.threshold) / 100.0f))))
                 {
                     throw DB::Exception(
                         DB::ErrorCodes::BUZZHOUSE,
