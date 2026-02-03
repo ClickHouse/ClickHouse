@@ -1087,18 +1087,19 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// that is exactly representable in a Decimal type from another branch, treat it as that Decimal
     /// so getLeastSupertype succeeds. This allows if(cond, toDecimal64(1, 2), 0.) without allowing
     /// if(cond, toDecimal64(2, 2), 1/3) (1/3 would round).
-    if (function_name == "if" || function_name == "multiIf" || function_name == "coalesce")
+    const auto function_name_lower = Poco::toLower(function_name);
+    if (function_name_lower == "if" || function_name_lower == "multiif" || function_name_lower == "coalesce")
     {
         std::vector<size_t> value_indices;
-        if (function_name == "if" && function_arguments_size == 3)
+        if (function_name_lower == "if" && function_arguments_size == 3)
             value_indices = {1, 2};
-        else if (function_name == "multiIf" && function_arguments_size >= 3 && function_arguments_size % 2 == 1)
+        else if (function_name_lower == "multiif" && function_arguments_size >= 3 && function_arguments_size % 2 == 1)
         {
             for (size_t i = 1; i < function_arguments_size - 1; i += 2)
                 value_indices.push_back(i);
             value_indices.push_back(function_arguments_size - 1);
         }
-        else if (function_name == "coalesce")
+        else if (function_name_lower == "coalesce")
         {
             for (size_t i = 0; i < function_arguments_size; ++i)
                 value_indices.push_back(i);
@@ -1130,9 +1131,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     constant_node->getValue(), *arg_type, *decimal_type_strict);
                 if (converted)
                 {
-                    argument_types[i] = decimal_type;
-                    argument_columns[i].type = decimal_type;
-                    argument_columns[i].column = decimal_type->createColumnConst(1, *converted);
+                    /// Use strict decimal type for the promoted constant so getLeastSupertype
+                    /// sees e.g. [Nullable(Decimal), Decimal] and succeeds.
+                    argument_types[i] = decimal_type_strict;
+                    argument_columns[i].type = decimal_type_strict;
+                    argument_columns[i].column = decimal_type_strict->createColumnConst(1, *converted);
                 }
             }
         }
