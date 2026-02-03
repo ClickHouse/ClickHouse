@@ -19,7 +19,7 @@ static constexpr UInt32 MAX_FLOAT64_DECIMAL_PRECISION = std::numeric_limits<Floa
 /// Float64 can exactly represent integers in the range [-2^53, 2^53].
 static constexpr Float64 MAX_EXACT_FLOAT64_INTEGER = static_cast<Float64>(1ULL << std::numeric_limits<Float64>::digits);
 
-static UInt32 getDecimalPrecisionOrZero(const DataTypePtr & data_type)
+UInt32 getDecimalPrecisionOrZero(const DataTypePtr & data_type)
 {
     const auto unwrapped = removeLowCardinalityAndNullable(data_type);
     WhichDataType which(unwrapped);
@@ -64,7 +64,7 @@ std::optional<Field> tryConvertFloat64(Float64 value, const DataTypePtr & data_t
 ///   For Int64/UInt64 and BigInt with values >= 2^53
 ///   For Nullable
 /// So, the Range is conservatively extended.
-static std::optional<Range> createRangeFromEstimate(const Estimate & estimate, const DataTypePtr & data_type, bool is_nullable)
+std::optional<Range> createRangeFromEstimate(const Estimate & estimate, const DataTypePtr & data_type, bool is_nullable)
 {
     if (!estimate.estimated_min.has_value() || !estimate.estimated_max.has_value())
         return std::nullopt;
