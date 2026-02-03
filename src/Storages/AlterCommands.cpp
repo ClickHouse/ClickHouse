@@ -1376,7 +1376,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                 struct EnumTypeInfo
                 {
                     const IDataTypeEnum * enum_type = nullptr;
-                    bool is_nullale = false;
+                    bool is_nullable = false;
                     bool is_enum16 = false;
                 };
 
@@ -1436,7 +1436,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                             }
 
 
-                            if (eti.is_nullale)
+                            if (eti.is_nullable)
                             {
                                 command.data_type = std::make_shared<DataTypeNullable>(command.data_type);
                             }

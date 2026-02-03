@@ -39,7 +39,6 @@ public:
         REWRITE_PARTS,
         MATERIALIZE_TTL,
         MODIFY_SETTING,
-        ADD_ENUM_VALUES,
         RESET_SETTING,
         MODIFY_QUERY,
         MODIFY_REFRESH,

@@ -20,6 +20,8 @@ ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Thousand' = 1000);
 ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Thousand' = 1000); -- { serverError ARGUMENT_OUT_OF_BOUND }
 {% endif %}
 ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Hundred' = 100);
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Four' = 4); -- It is Ok to repeat elements while name and value are the same
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Four' = 4, 'Seven' = 7);
 ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Four' = 44, 'Five' = 5); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('FortyFour' = 4, 'Five' = 5); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('ThousandOne');
@@ -37,9 +39,15 @@ DROP TABLE enum;
 
 CREATE TABLE nonenum (x Int8) ENGINE = Memory;
 ALTER TABLE nonenum MODIFY COLUMN x ADD ENUM VALUES('A' = 1); -- { serverError ILLEGAL_COLUMN }
-ALTER TABLE nonenum ADD COLUMN z ADD ENUM VALUES('A' = 1); -- { clientError SYNTAX_ERROR }
 DROP TABLE nonenum;
 
 CREATE TABLE enumoverflow (x Enum8('a' = 127)) ENGINE = Memory;
 ALTER TABLE enumoverflow MODIFY COLUMN x ADD ENUM VALUES('b'); -- { serverError ARGUMENT_OUT_OF_BOUND }
 DROP TABLE enumoverflow;
+
+CREATE TABLE syntaxerrors ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
+ALTER TABLE syntaxerrors ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
+ALTER TABLE syntaxerrors ADD COLUMN z ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
+ALTER TABLE syntaxerrors MODIFY COLUMN x ADD ENUM VALUES('Hundred' = 100), ADD COLUMN z ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
+ALTER TABLE syntaxerrors MODIFY COLUMN x RESET SETTING min_compress_block_size ADD ENUM VALUES('Hundred' = 100); -- { clientError SYNTAX_ERROR }
+ALTER TABLE syntaxerrors MODIFY COLUMN x Nullable(Enum ('c')) ADD ENUM VALUES('Hundred' = 100); -- { clientError SYNTAX_ERROR }
