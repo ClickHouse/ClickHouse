@@ -8,6 +8,7 @@
 #include <DataTypes/Serializations/SerializationObjectDynamicPath.h>
 #include <DataTypes/Serializations/SerializationSubObject.h>
 #include <DataTypes/Serializations/SerializationObjectDistinctPaths.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
 #include <Columns/ColumnObject.h>
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
@@ -129,6 +130,10 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
     for (const auto & [path, type] : typed_paths)
         typed_paths_serializations[path] = type->getSerialization(settings);
 
+    SerializationPtr dynamic_serialization = settings.propagate_types_serialization_versions_to_nested_types
+        ? getDynamicType()->getSerialization(settings)
+        : getDynamicType()->getDefaultSerialization();
+
     switch (schema_format)
     {
         case SchemaFormat::JSON:
@@ -143,7 +148,7 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                     paths_to_skip,
                     path_regexps_to_skip,
                     getDynamicType(),
-                    getDynamicType()->getSerialization(settings),
+                    dynamic_serialization,
                     buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
 #endif
 
@@ -154,7 +159,7 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                 paths_to_skip,
                 path_regexps_to_skip,
                 getDynamicType(),
-                getDynamicType()->getSerialization(settings),
+                dynamic_serialization,
                 buildJSONExtractTree<RapidJSONParser>(getPtr(), "JSON serialization"));
 #else
             return std::make_shared<SerializationJSON<DummyJSONParser>>(
@@ -163,7 +168,7 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                 paths_to_skip,
                 path_regexps_to_skip,
                 getDynamicType(),
-                getDynamicType()->getSerialization(settings),
+                dynamic_serialization,
                 buildJSONExtractTree<DummyJSONParser>(getPtr(), "JSON serialization"));
 #endif
     }
@@ -359,7 +364,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
         return res;
     }
 
-    const auto & object_serialization = dynamic_cast<const SerializationObject &>(*data.serialization);
+    const auto & object_serialization = dynamic_cast<const SerializationObject &>(*removeNamedSerialization(data.serialization));
     const auto & typed_paths_serializations = object_serialization.getTypedPathsSerializations();
     const auto & dynamic_path_serialization = object_serialization.getDynamicPathSerialization();
 

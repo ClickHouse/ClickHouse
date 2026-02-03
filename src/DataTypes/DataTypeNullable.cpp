@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Columns/ColumnNullable.h>
@@ -111,7 +112,7 @@ void DataTypeNullable::forEachChild(const ChildCallback & callback) const
 std::unique_ptr<ISerialization::SubstreamData> DataTypeNullable::getDynamicSubcolumnData(std::string_view subcolumn_name, const DB::IDataType::SubstreamData & data, bool throw_if_null) const
 {
     auto nested_type = assert_cast<const DataTypeNullable &>(*data.type).nested_data_type;
-    const auto & nullable_serialization = assert_cast<const SerializationNullable &>(*data.serialization);
+    const auto & nullable_serialization = assert_cast<const SerializationNullable &>(*removeNamedSerialization(data.serialization));
     ISerialization::SubstreamData nested_data(nullable_serialization.getNested());
     nested_data.type = nested_type;
     nested_data.column = data.column ? assert_cast<const ColumnNullable &>(*data.column).getNestedColumnPtr() : nullptr;

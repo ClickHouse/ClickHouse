@@ -412,6 +412,7 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
 
         if (seek_to_substream_mark)
         {
+            LOG_DEBUG(getLogger("MergeTreeReaderCompact"), "Get buffer for stream {}\n", substream_path.toString());
             size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings);
             stream.seekToMarkAndColumn(from_mark, substream_position);
         }

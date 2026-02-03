@@ -57,7 +57,9 @@ Field DataTypeDynamic::getDefault() const
 
 SerializationPtr DataTypeDynamic::doGetSerialization(const SerializationInfoSettings & settings) const
 {
-    return std::make_shared<SerializationDynamic>(max_dynamic_types, settings);
+    if (settings.propagate_types_serialization_versions_to_nested_types)
+        return std::make_shared<SerializationDynamic>(max_dynamic_types, settings);
+    return std::make_shared<SerializationDynamic>(max_dynamic_types);
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
