@@ -259,6 +259,9 @@ using BlockMarshallingCallback = std::function<Block(const Block & block)>;
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
+class QueryPlan;
+using QueryPlanWithParallelReplicasBuilder = std::function<std::unique_ptr<QueryPlan>()>;
+
 struct QueryPlanAndSets;
 using QueryPlanDeserializationCallback = std::function<std::shared_ptr<QueryPlanAndSets>()>;
 
@@ -397,6 +400,7 @@ protected:
 
     BlockMarshallingCallback block_marshalling_callback;
 
+    QueryPlanWithParallelReplicasBuilder query_plan_with_parallel_replicas_builder;
     mutable RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 
     bool is_under_restore = false;
@@ -1618,6 +1622,9 @@ public:
 
     BlockMarshallingCallback getBlockMarshallingCallback() const;
     void setBlockMarshallingCallback(BlockMarshallingCallback && callback);
+
+    QueryPlanWithParallelReplicasBuilder getQueryPlanWithParallelReplicasBuilder() const;
+    void setQueryPlanWithParallelReplicasBuilder(const QueryPlanWithParallelReplicasBuilder & builder);
 
     UUID getParallelReplicasGroupUUID() const;
     void setParallelReplicasGroupUUID(UUID uuid);

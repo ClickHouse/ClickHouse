@@ -1857,6 +1857,12 @@ void Planner::buildPlanForQueryNode()
     else
     {
         auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "__PRETTY_FUNCTION__={}, __LINE__={}, builder={}",
+            __PRETTY_FUNCTION__,
+            __LINE__,
+            !!planner_context->getQueryContext()->getQueryPlanWithParallelReplicasBuilder());
         join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
             select_query_info,
             select_query_options,

@@ -374,10 +374,11 @@ void considerEnablingParallelReplicas(
         LOG_DEBUG(
             &Poco::Logger::get("debug"),
             "optimization_settings.automatic_parallel_replicas_mode={}, "
-            "!!optimization_settings.query_plan_with_parallel_replicas_builder={}, optimization_settings.parallel_replicas_enabled);={}",
+            "!!optimization_settings.query_plan_with_parallel_replicas_builder={}, optimization_settings.parallel_replicas_enabled={}",
             optimization_settings.automatic_parallel_replicas_mode,
             !!optimization_settings.query_plan_with_parallel_replicas_builder,
             optimization_settings.parallel_replicas_enabled);
+        LOG_DEBUG(&Poco::Logger::get("debug"), "StackTrace().toString());={}", StackTrace().toString());
         LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         return;
     }
@@ -606,7 +607,15 @@ void optimizeTreeSecondPass(
     while (!stack.empty())
     {
         if (optimization_settings.query_plan_optimize_primary_key)
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("debug"),
+                "__PRETTY_FUNCTION__={}, __LINE__={}, builder={}",
+                __PRETTY_FUNCTION__,
+                __LINE__,
+                !!optimization_settings.query_plan_with_parallel_replicas_builder);
             optimizePrimaryKeyConditionAndLimit(stack);
+        }
 
         updateQueryConditionCache(stack, optimization_settings);
 

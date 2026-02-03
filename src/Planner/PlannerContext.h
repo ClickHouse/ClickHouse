@@ -77,6 +77,9 @@ public:
 
     const FiltersForTableExpressionMap filters_for_table_expressions;
 
+    using QueryPlanWithParallelReplicasBuilder = std::function<std::unique_ptr<QueryPlan>()>;
+    QueryPlanWithParallelReplicasBuilder query_plan_with_parallel_replicas_builder;
+
 private:
     std::unordered_set<ColumnIdentifier> column_identifiers;
 

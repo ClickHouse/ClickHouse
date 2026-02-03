@@ -1163,6 +1163,7 @@ ContextData::ContextData(const ContextData &o) :
     merge_tree_all_ranges_callback(o.merge_tree_all_ranges_callback),
     parallel_replicas_group_uuid(o.parallel_replicas_group_uuid),
     block_marshalling_callback(o.block_marshalling_callback),
+    query_plan_with_parallel_replicas_builder(o.query_plan_with_parallel_replicas_builder),
     is_under_restore(o.is_under_restore),
     client_protocol_version(o.client_protocol_version),
     partition_id_to_max_block(o.partition_id_to_max_block),
@@ -6877,6 +6878,16 @@ BlockMarshallingCallback Context::getBlockMarshallingCallback() const
 void Context::setBlockMarshallingCallback(BlockMarshallingCallback && callback)
 {
     block_marshalling_callback = std::move(callback);
+}
+
+QueryPlanWithParallelReplicasBuilder Context::getQueryPlanWithParallelReplicasBuilder() const
+{
+    return query_plan_with_parallel_replicas_builder;
+}
+
+void Context::setQueryPlanWithParallelReplicasBuilder(const QueryPlanWithParallelReplicasBuilder & builder)
+{
+    query_plan_with_parallel_replicas_builder = builder;
 }
 
 void Context::setParallelReplicasGroupUUID(UUID uuid)

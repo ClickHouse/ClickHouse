@@ -245,6 +245,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
             && from->getSettingsRef()[Setting::parallel_replicas_local_plan]
             && from->getSettingsRef()[Setting::parallel_replicas_support_projection])
 {
+    query_plan_with_parallel_replicas_builder = from->getQueryPlanWithParallelReplicasBuilder();
 }
 
 }

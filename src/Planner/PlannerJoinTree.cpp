@@ -1077,6 +1077,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                     else
                     {
+                        LOG_DEBUG(
+                            &Poco::Logger::get("debug"),
+                            "__PRETTY_FUNCTION__={}, __LINE__={}, builder={}",
+                            __PRETTY_FUNCTION__,
+                            __LINE__,
+                            !!query_context->getQueryPlanWithParallelReplicasBuilder());
                         storage->read(
                             query_plan,
                             storage_column_names,

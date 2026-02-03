@@ -413,6 +413,11 @@ ReadFromMergeTree::ReadFromMergeTree(
     setStepDescription(description, context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
     enable_vertical_final = query_info.isFinal() && context->getSettingsRef()[Setting::enable_vertical_final]
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
+
+    if (!context->getQueryPlanWithParallelReplicasBuilder())
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "RMT StackTrace().toString()={}", StackTrace().toString());
+    }
 }
 
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
@@ -2044,6 +2049,12 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         if (filter_actions_dag)
             query_info.filter_actions_dag = filter_actions_dag;
 
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "__PRETTY_FUNCTION__={}, __LINE__={}, builder={}",
+            __PRETTY_FUNCTION__,
+            __LINE__,
+            !!context->getQueryPlanWithParallelReplicasBuilder());
         buildIndexes(
             indexes,
             query_info.filter_actions_dag.get(),

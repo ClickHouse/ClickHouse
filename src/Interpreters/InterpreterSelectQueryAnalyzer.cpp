@@ -11,9 +11,10 @@
 
 #include <DataTypes/DataTypesNumber.h>
 
+#include <Planner/PlannerContext.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Storages/IStorage.h>
@@ -215,6 +216,9 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
               return std::make_unique<QueryPlan>(std::move(plan));
           })
 {
+    context->setQueryPlanWithParallelReplicasBuilder(query_plan_with_parallel_replicas_builder);
+    planner.getPlannerContext()->getMutableQueryContext()->setQueryPlanWithParallelReplicasBuilder(
+        query_plan_with_parallel_replicas_builder);
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -262,6 +266,9 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
               return std::make_unique<QueryPlan>(std::move(plan));
           })
 {
+    context->setQueryPlanWithParallelReplicasBuilder(query_plan_with_parallel_replicas_builder);
+    planner.getPlannerContext()->getMutableQueryContext()->setQueryPlanWithParallelReplicasBuilder(
+        query_plan_with_parallel_replicas_builder);
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -301,6 +308,9 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
               return std::make_unique<QueryPlan>(std::move(plan));
           })
 {
+    context->setQueryPlanWithParallelReplicasBuilder(query_plan_with_parallel_replicas_builder);
+    planner.getPlannerContext()->getMutableQueryContext()->setQueryPlanWithParallelReplicasBuilder(
+        query_plan_with_parallel_replicas_builder);
 }
 
 SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
@@ -359,6 +369,12 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
 
 QueryPlan & InterpreterSelectQueryAnalyzer::getQueryPlan()
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("debug"),
+        "__PRETTY_FUNCTION__={}, __LINE__={}, builder={}",
+        __PRETTY_FUNCTION__,
+        __LINE__,
+        !!context->getQueryPlanWithParallelReplicasBuilder());
     planner.buildQueryPlanIfNeeded();
     return planner.getQueryPlan();
 }
@@ -375,7 +391,7 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     auto & query_plan = planner.getQueryPlan();
 
     QueryPlanOptimizationSettings optimization_settings(context);
-    optimization_settings.query_plan_with_parallel_replicas_builder = query_plan_with_parallel_replicas_builder;
+    //optimization_settings.query_plan_with_parallel_replicas_builder = query_plan_with_parallel_replicas_builder;
 
     BuildQueryPipelineSettings build_pipeline_settings(context);
 
