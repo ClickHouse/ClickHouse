@@ -21,8 +21,6 @@ public:
     explicit MockPostingListCursor(std::vector<uint32_t> row_ids_)
         : row_ids(std::move(row_ids_))
     {
-        if (!row_ids.empty())
-            density_val = static_cast<double>(row_ids.size()) / static_cast<double>(row_ids.back() - row_ids.front() + 1);
     }
 
     [[nodiscard]] bool valid() const { return is_valid && index < row_ids.size(); }
@@ -74,13 +72,10 @@ public:
         }
     }
 
-    [[nodiscard]] double density() const { return density_val; }
-
 private:
     std::vector<uint32_t> row_ids;
     size_t index = 0;
     bool is_valid = true;
-    double density_val = 0.0;
 };
 
 using MockPostingListCursorPtr = std::shared_ptr<MockPostingListCursor>;
