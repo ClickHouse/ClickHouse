@@ -1,5 +1,5 @@
 #pragma once
-#include <memory>
+
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
