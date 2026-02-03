@@ -14,6 +14,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
+#include <Columns/ColumnString.h>
+
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HyperLogLogWithSmallSetOptimization.h>
@@ -298,7 +300,8 @@ struct Adder
             const auto & column = *columns[0];
             if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
             {
-                auto value = column.getDataAt(row_num);
+                using ColumnType = std::conditional_t<std::is_same_v<T, String>, ColumnString, ColumnIPv6>;
+                auto value = assert_cast<const ColumnType &>(column).getDataAt(row_num);
                 data.set.insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()));
             }
             else
@@ -313,7 +316,8 @@ struct Adder
             const auto & column = *columns[0];
             if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
             {
-                auto value = column.getDataAt(row_num);
+                using ColumnType = std::conditional_t<std::is_same_v<T, String>, ColumnString, ColumnIPv6>;
+                auto value = assert_cast<const ColumnType &>(column).getDataAt(row_num);
 
                 SipHash hash;
                 hash.update(value);
