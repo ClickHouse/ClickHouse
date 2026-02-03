@@ -28,9 +28,11 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Interpreters/convertFieldToType.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/exists.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -1079,6 +1081,61 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         argument_types.push_back(argument_column.type);
         argument_columns.emplace_back(std::move(argument_column));
+    }
+
+    /// Option 2 from issue #94671: for if/multiIf/coalesce, when a value argument is a Float constant
+    /// that is exactly representable in a Decimal type from another branch, treat it as that Decimal
+    /// so getLeastSupertype succeeds. This allows if(cond, toDecimal64(1, 2), 0.) without allowing
+    /// if(cond, toDecimal64(2, 2), 1/3) (1/3 would round).
+    if (function_name == "if" || function_name == "multiIf" || function_name == "coalesce")
+    {
+        std::vector<size_t> value_indices;
+        if (function_name == "if" && function_arguments_size == 3)
+            value_indices = {1, 2};
+        else if (function_name == "multiIf" && function_arguments_size >= 3 && function_arguments_size % 2 == 1)
+        {
+            for (size_t i = 1; i < function_arguments_size - 1; i += 2)
+                value_indices.push_back(i);
+            value_indices.push_back(function_arguments_size - 1);
+        }
+        else if (function_name == "coalesce")
+        {
+            for (size_t i = 0; i < function_arguments_size; ++i)
+                value_indices.push_back(i);
+        }
+
+        DataTypePtr decimal_type;
+        for (size_t i : value_indices)
+        {
+            const auto & t = argument_types[i];
+            if (WhichDataType(t).isDecimal() || WhichDataType(removeNullable(t)).isDecimal())
+            {
+                decimal_type = t;
+                break;
+            }
+        }
+
+        if (decimal_type)
+        {
+            const auto & decimal_type_strict = removeNullable(decimal_type);
+            for (size_t i : value_indices)
+            {
+                const auto * constant_node = function_arguments[i]->as<ConstantNode>();
+                if (!constant_node)
+                    continue;
+                const auto & arg_type = argument_types[i];
+                if (!WhichDataType(arg_type).isFloat32() && !WhichDataType(arg_type).isFloat64())
+                    continue;
+                auto converted = convertFieldToTypeStrict(
+                    constant_node->getValue(), *arg_type, *decimal_type_strict);
+                if (converted)
+                {
+                    argument_types[i] = decimal_type;
+                    argument_columns[i].type = decimal_type;
+                    argument_columns[i].column = decimal_type->createColumnConst(1, *converted);
+                }
+            }
+        }
     }
 
     /// Calculate function projection name
