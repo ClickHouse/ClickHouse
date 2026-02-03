@@ -4,7 +4,7 @@
 --- These tests verify the caching of a deserialized text index dictionary block in the consecutive executions.
 
 SET enable_analyzer = 1;
-SET enable_full_text_index = 1;
+SET allow_experimental_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_text_index_dictionary_cache = 1;
@@ -61,9 +61,20 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_127');
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_127');
 
+SELECT '--- no profile events when cache is disabled.';
+
+SET use_text_index_dictionary_cache = 0;
+
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_126');
+
+SET use_text_index_dictionary_cache = 1;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT * FROM text_index_cache_stats(filter = 'text_126');
+
 SELECT 'Clear text index cache';
 
-SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE;
+SYSTEM DROP TEXT INDEX DICTIONARY CACHE;
 
 SELECT '--- cache miss on the first dictionary block.';
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_125');
@@ -77,5 +88,5 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_129');
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_129');
 
-SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE;
+SYSTEM DROP TEXT INDEX DICTIONARY CACHE;
 DROP TABLE tab;

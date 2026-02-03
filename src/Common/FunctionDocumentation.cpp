@@ -81,8 +81,6 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/map)";
         else if (type.starts_with("Variant")) /// "Variant(T1, T2, ...)", "Variant(UInt8, String)", ...
             result += "`](/sql-reference/data-types/variant)";
-        else if (type.starts_with("Geometry"))
-            result += "`](/sql-reference/data-types/geo)";
         else if (type.starts_with("LowCardinality")) /// "LowCardinality(T)", "LowCardinality(UInt8)", "LowCardinality(String)", ...
             result += "`](/sql-reference/data-types/lowcardinality)";
         else if (type.starts_with("Nullable")) /// "Nullable(T)", "Nullable(UInt8)", "Nullable(String)", ...
@@ -91,8 +89,6 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/aggregatefunction)";
         else if (type.starts_with("SimpleAggregateFunction")) /// "SimpleAggregateFunction(agg_func, T)", "SimpleAggregateFunction(any, UInt8)", ...
             result += "`](/sql-reference/data-types/simpleaggregatefunction)";
-        else if (type == "Geo")
-            result += "`](/sql-reference/data-types/geo)";
         else if (type == "Point")
             result += "`](/sql-reference/data-types/geo#point)";
         else if (type == "Ring")
@@ -105,6 +101,8 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/geo#polygon)";
         else if (type == "MultiPolygon")
             result += "`](/sql-reference/data-types/geo#multipolygon)";
+        else if (type == "Geometry")
+            result += "`](/sql-reference/data-types/geo#geometry)";
         else if (type == "numericIndexedVector")
             result += "`](/sql-reference/functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)";
         else if (type == "Expression")
@@ -133,7 +131,6 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
     result += "\n";
     return result;
 }
-}
 
 template <typename Type>
 String argumentsOrParametersAsString(const Type & arguments_or_parameters, const FunctionDocumentation::Syntax & syntax)
@@ -151,6 +148,8 @@ String argumentsOrParametersAsString(const Type & arguments_or_parameters, const
     return result;
 }
 
+}
+
 String FunctionDocumentation::argumentsAsString() const
 {
     return argumentsOrParametersAsString(arguments, syntax);
@@ -158,7 +157,9 @@ String FunctionDocumentation::argumentsAsString() const
 
 String FunctionDocumentation::parametersAsString() const
 {
-    return argumentsOrParametersAsString(parameters, syntax);
+    /// TODO Replace dummy parameters by actual parameters
+    Parameters dummy_parameters;
+    return argumentsOrParametersAsString(dummy_parameters, syntax);
 }
 
 /// Documentation is often defined with raw strings, therefore we need to trim leading and trailing whitespace + newlines.
@@ -238,7 +239,6 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Distance, "Distance"},
         {Category::EmbeddedDictionary, "Embedded Dictionary"},
         {Category::Geo, "Geo"},
-        {Category::GeoPolygon, "Geo Polygon"},
         {Category::Encoding, "Encoding"},
         {Category::Encryption, "Encryption"},
         {Category::Financial, "Financial"},
@@ -279,4 +279,5 @@ String FunctionDocumentation::categoryAsString() const
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Category has no mapping to string");
 }
+
 }

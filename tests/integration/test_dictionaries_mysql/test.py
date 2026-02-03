@@ -53,8 +53,7 @@ def started_cluster():
         mysql_connection.close()
 
         # Create database in ClickHouse
-        instance.query("DROP DATABASE IF EXISTS test")
-        instance.query("CREATE DATABASE test")
+        instance.query("CREATE DATABASE IF NOT EXISTS test")
 
         # Create database in ClickChouse using MySQL protocol (will be used for data insertion)
         instance.query(

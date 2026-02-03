@@ -10,7 +10,6 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -40,7 +39,6 @@
 #include <Common/Allocator.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
-#include <base/arithmeticOverflow.h>
 #include <Common/memory.h>
 #include <Common/AllocationInterceptors.h>
 
@@ -1222,7 +1220,7 @@ void ORCColumnToCHColumn::orcTableToCHChunk(
 static ColumnPtr readByteMapFromORCColumn(const orc::ColumnVectorBatch * orc_column)
 {
     if (!orc_column->hasNulls)
-        return ColumnUInt8::create(orc_column->numElements, static_cast<UInt8>(0));
+        return ColumnUInt8::create(orc_column->numElements, 0);
 
     auto nullmap_column = ColumnUInt8::create();
     PaddedPODArray<UInt8> & bytemap_data = assert_cast<ColumnVector<UInt8> &>(*nullmap_column).getData();
@@ -1266,7 +1264,7 @@ readColumnWithBooleanData(const orc::ColumnVectorBatch * orc_column, const Strin
         if (!orc_bool_column->hasNulls || orc_bool_column->notNull[i])
             column_data.push_back(static_cast<UInt8>(orc_bool_column->data[i]));
         else
-            column_data.push_back(static_cast<UInt8>(0));
+            column_data.push_back(0);
     }
 
     return {std::move(internal_column), internal_type, column_name};
@@ -1314,11 +1312,7 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     size_t rows = orc_str_column.numElements;
     const auto & orc_dict = *orc_str_column.dictionary;
     if (orc_dict.dictionaryOffset.size() <= 1)
-    {
-        auto result_column = internal_type->createColumn();
-        result_column->insertManyDefaults(rows);
-        return {std::move(result_column), internal_type, column_name};
-    }
+        return {internal_type->createColumn(), internal_type, column_name};
 
     size_t dict_size = orc_dict.dictionaryOffset.size() - 1;
     auto holder_column = holder_type->createColumn();
@@ -1600,21 +1594,11 @@ static ColumnWithTypeAndName readColumnWithDateData(
     const orc::ColumnVectorBatch * orc_column, const String & column_name, const DataTypePtr & type_hint)
 {
     DataTypePtr internal_type;
-    bool check_date32_range = false;
     bool check_date_range = false;
-
     /// Make result type Date32 when requested type is actually Date32 or when we use schema inference
-    if (!type_hint || isDate32(*type_hint))
+    if (!type_hint || (type_hint && isDate32(*type_hint)))
     {
         internal_type = std::make_shared<DataTypeDate32>();
-        check_date32_range = true;
-    }
-    else if (isDate(*type_hint))
-    {
-        /// Date type is not supported in ORC format according to the docs
-        /// ORC date type is INT32, which can represent dates outside the Date
-        /// type range [0, 65535]. Validate the range and throw an error
-        internal_type = std::make_shared<DataTypeInt32>();
         check_date_range = true;
     }
     else
@@ -1632,22 +1616,12 @@ static ColumnWithTypeAndName readColumnWithDateData(
         if (!orc_int_column->hasNulls || orc_int_column->notNull[i])
         {
             Int32 days_num = static_cast<Int32>(orc_int_column->data[i]);
-            if (check_date32_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH))
+            if (check_date_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH))
                 throw Exception(
                     ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "Input value {} of a column \"{}\" exceeds the range of type Date32, which is [{}, {}]",
+                    "Input value {} of a column \"{}\" exceeds the range of type Date32",
                     days_num,
-                    column_name,
-                    -DAYNUM_OFFSET_EPOCH,
-                    DATE_LUT_MAX_EXTEND_DAY_NUM);
-
-            if (check_date_range && (days_num > DATE_LUT_MAX_DAY_NUM || days_num < 0))
-                throw Exception(
-                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "Input value {} of a column \"{}\" exceeds the range of type Date, which is [0, {}]",
-                    days_num,
-                    column_name,
-                    DATE_LUT_MAX_DAY_NUM);
+                    column_name);
 
             column_data.push_back(days_num);
         }
@@ -1675,24 +1649,8 @@ readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const Str
     {
         if (!orc_ts_column->hasNulls || orc_ts_column->notNull[i])
         {
-            Int64 timestamp_value;
-            Int64 seconds = orc_ts_column->data[i];
-            Int64 nanoseconds = orc_ts_column->nanoseconds[i];
-
-            /// Check for overflow when converting timestamp to DateTime64(9)
-            bool overflow = common::mulOverflow(seconds, multiplier, timestamp_value);
-            overflow |= common::addOverflow(timestamp_value, nanoseconds, timestamp_value);
-
-            if (overflow)
-                throw Exception(
-                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "Timestamp value in column \"{}\" is out of range for DateTime64: seconds={}, nanoseconds={}",
-                    column_name,
-                    seconds,
-                    nanoseconds);
-
             Decimal64 decimal64;
-            decimal64.value = timestamp_value;
+            decimal64.value = orc_ts_column->data[i] * multiplier + orc_ts_column->nanoseconds[i];
             column_data.emplace_back(std::move(decimal64));
         }
         else

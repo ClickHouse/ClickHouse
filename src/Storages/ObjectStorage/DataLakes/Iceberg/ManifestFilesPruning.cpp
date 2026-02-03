@@ -37,7 +37,7 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
 
     std::string transform_name = Poco::toLower(transform_name_src);
     if (transform_name == "identity")
-        return make_intrusive<ASTIdentifier>(column_name);
+        return std::make_shared<ASTIdentifier>(column_name);
 
     if (transform_name == "void")
         return makeASTOperator("tuple");
@@ -45,9 +45,9 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
     if (transform_and_argument->argument.has_value())
     {
         return makeASTFunction(
-                transform_and_argument->transform_name, make_intrusive<ASTLiteral>(*transform_and_argument->argument), make_intrusive<ASTIdentifier>(column_name));
+                transform_and_argument->transform_name, std::make_shared<DB::ASTLiteral>(*transform_and_argument->argument), std::make_shared<DB::ASTIdentifier>(column_name));
     }
-    return makeASTFunction(transform_and_argument->transform_name, make_intrusive<ASTIdentifier>(column_name));
+    return makeASTFunction(transform_and_argument->transform_name, std::make_shared<DB::ASTIdentifier>(column_name));
 }
 
 std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const
@@ -146,11 +146,11 @@ ManifestFilesPruner::ManifestFilesPruner(
     }
 }
 
-PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntryPtr & entry) const
+PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
 {
     if (partition_key_condition.has_value())
     {
-        const auto & partition_value = entry->partition_key_value;
+        const auto & partition_value = entry.partition_key_value;
         std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
         for (auto & field : index_value)
         {
@@ -178,8 +178,8 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntryPtr 
             continue;
         }
 
-        auto it = entry->columns_infos.find(column_id);
-        if (it == entry->columns_infos.end())
+        auto it = entry.columns_infos.find(column_id);
+        if (it == entry.columns_infos.end())
         {
             continue;
         }

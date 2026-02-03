@@ -120,7 +120,7 @@ void ObjectStorageQueueFactory::shutdown()
 
     for (const auto & storage : shutdown_storages)
     {
-        runner.enqueueAndKeepTrack([&]()
+        runner([&]()
         {
             DatabaseCatalog::instance().tryGetTable(storage, Context::getGlobalContextInstance())->shutdown();
         });

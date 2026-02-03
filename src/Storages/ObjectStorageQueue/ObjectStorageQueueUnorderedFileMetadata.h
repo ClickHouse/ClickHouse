@@ -28,9 +28,11 @@ public:
         const std::filesystem::path & zk_path_,
         LoggerPtr log_);
 
+    void prepareProcessedAtStartRequests(Coordination::Requests & requests) override;
+
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
-    void prepareProcessedRequestsImpl(Coordination::Requests & requests, LastProcessedFileInfoMapPtr created_nodes) override;
+    void prepareProcessedRequestsImpl(Coordination::Requests & requests) override;
     SetProcessingResponseIndexes prepareProcessingRequestsImpl(
         Coordination::Requests & requests,
         const std::string & processing_id) override;

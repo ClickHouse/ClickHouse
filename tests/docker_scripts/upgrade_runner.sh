@@ -9,7 +9,7 @@ dmesg --clear
 set -x
 
 # we mount tests folder from repo to /usr/share
-ln -s /repo/ci/jobs/scripts/stress/stress.py /usr/bin/stress
+ln -s /repo/tests/ci/stress.py /usr/bin/stress
 ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 ln -s /repo/tests/ci/download_release_packages.py /usr/bin/download_release_packages
 ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
@@ -47,11 +47,11 @@ echo $previous_release_tag | download_release_packages && echo -e "Download scri
 if ! [ "$(ls -A previous_release_repository/tests/queries)" ]
 then
     echo -e 'failure\tFailed to clone previous release tests' > /test_output/check_status.tsv
-    exit 1
+    exit
 elif ! [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
 then
     echo -e 'failure\tFailed to download previous release packages' > /test_output/check_status.tsv
-    exit 1
+    exit
 fi
 
 echo -e "Successfully cloned previous release tests$OK" >> /test_output/test_results.tsv
@@ -278,7 +278,7 @@ echo "<clickhouse>
 
 cat /etc/clickhouse-server/users.d/compatibility.xml
 
-start_server || (echo "Failed to start server" && exit 1)
+start_server 500 || (echo "Failed to start server" && exit 1)
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
     && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
@@ -361,5 +361,31 @@ tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 collect_query_and_trace_logs
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
+
+# Write check result into check_status.tsv
+# Try to choose most specific error for the whole check status
+clickhouse-local --structure "test String, res String, time Nullable(Float32), desc String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by
+(test like '%Sanitizer%') DESC,
+(test like '%Killed by signal%') DESC,
+(test like '%gdb.log%') DESC,
+(test ilike '%possible deadlock%') DESC,
+(test like '%start%') DESC,
+(test like '%dmesg%') DESC,
+(test like '%OOM%') DESC,
+(test like '%Signal 9%') DESC,
+(test like '%Fatal message%') DESC,
+(test like '%Error message%') DESC,
+(test like '%previous release%') DESC,
+(test like '%Changed settings%') DESC,
+(test like '%New settings%') DESC,
+rowNumberInAllBlocks()
+LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo -e "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
+[ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
+
+# But OOMs in stress test are allowed
+if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
+then
+    sed -i 's/failure/success/' /test_output/check_status.tsv
+fi
 
 collect_core_dumps
