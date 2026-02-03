@@ -1,7 +1,11 @@
 #pragma once
 
 #include <memory>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 
+#include "Columns/ColumnString.h"
+#include "Core/Field.h"
 #include "DataTypes/Serializations/ISerialization.h"
 
 namespace DB
@@ -17,6 +21,13 @@ struct CompressedField
 {
     Field value;
     size_t uncompressed_size;
+};
+
+class ColumnFSST;
+
+template <bool compressed>
+struct SerializeFsstState : public ISerialization::SerializeBinaryBulkState
+{
 };
 
 class SerializationStringFsst final : public ISerialization
@@ -90,9 +101,11 @@ public:
         nested->deserializeTextQuoted(column, istr, settings);
     }
 
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & /* settings */) const override
     {
-        nested->serializeText(column, row_num, ostr, settings);
+        Field x;
+        column.get(row_num, x);
+        writeString(x.dump(), ostr);
     }
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
@@ -109,8 +122,23 @@ public:
     }
 
 private:
-    void serializeState(SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const;
+    template<bool compressed>
+    void serializeState(SerializeBinaryBulkSettings & settings, SerializeFsstState<compressed> & state) const;
     size_t deserializeState(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state) const;
+
+    void serializeBinaryBulkWithMultipleStreams(
+        const ColumnString * column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const;
+
+    void serializeBinaryBulkWithMultipleStreams(
+        const ColumnFSST * column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const;
 
     struct SubcolumnCreator : public ISubcolumnCreator
     {

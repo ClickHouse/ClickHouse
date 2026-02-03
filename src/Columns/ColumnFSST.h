@@ -3,14 +3,16 @@
 #include <cstddef>
 #include <memory>
 
-#include <Common/COW.h>
-#include <Common/WeakHash.h>
-#include <Common/PODArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/Serializations/SerializationStringFsst.h>
 #include <base/types.h>
+#include <Common/COW.h>
+#include <Common/PODArray.h>
+#include <Common/WeakHash.h>
+
+#include "fsst_fwd.h"
 
 namespace DB
 {
@@ -22,7 +24,6 @@ extern const int INCORRECT_DATA;
 extern const int LOGICAL_ERROR;
 }
 
-struct fsst_decoder_t;
 
 class ColumnFSST final : public COWHelper<IColumnHelper<ColumnFSST>, ColumnFSST>
 {
@@ -63,6 +64,13 @@ private:
 public:
     using Base = COWHelper<IColumnHelper<ColumnFSST>, ColumnFSST>;
     static Ptr create(const ColumnPtr & nested) { return Base::create(nested->assumeMutable()); }
+
+    ColumnFSST(MutableColumnPtr && _nested, std::vector<BatchDsc> _decoders, std::vector<UInt64> _origin_lengths)
+        : string_column(std::move(_nested))
+        , origin_lengths(std::move(_origin_lengths))
+        , decoders(std::move(_decoders))
+    {
+    }
 
     std::string getName() const override { return "FixedString(FSST)"; }
     const char * getFamilyName() const override { return "FixedString"; }
@@ -159,6 +167,8 @@ public:
     }
 
     WrappedPtr getStringColumn() const { return string_column; }
+    const std::vector<BatchDsc> & getDecoders() const { return decoders; }
+    const std::vector<UInt64> & getLengths() const { return origin_lengths; }
 
     void append(const CompressedField & x);
     void appendNewBatch(const CompressedField & x, std::shared_ptr<fsst_decoder_t> decoder);

@@ -305,6 +305,12 @@ String getNameForSubstreamPath(
             stream_name += ".sparse";
         else if (it->type == Substream::SparseOffsets)
             stream_name += ".sparse.idx";
+        else if(it->type == Substream::Fsst)
+            stream_name += ".fsst.table";
+        else if(it->type == Substream::FsstCompressed)
+            stream_name += ".fsst.data";
+        else if(it->type == Substream::FsstOffsets)
+            stream_name += ".fsst.idx";
         else if (it->type == Substream::ReplicatedElements)
             stream_name += ".repl";
         else if (it->type == Substream::ReplicatedIndexes)
