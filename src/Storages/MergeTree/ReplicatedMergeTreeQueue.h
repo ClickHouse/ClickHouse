@@ -69,6 +69,15 @@ private:
     };
 
     UInt64 getPostponeTimeMsForEntry(const LogEntry & entry, const MergeTreeData & data) const;
+
+    /// Check if wait backoff should be applied for this entry based on postpone_reason.
+    /// Returns true for TTL recompression wait, single-replica merge wait, etc.
+    bool shouldApplyWaitBackoff(const LogEntry & entry) const;
+
+    /// Get backoff time for waiting operations (TTL recompression, single-replica merge, etc.)
+    /// Returns 0 if no backoff needed, otherwise returns milliseconds to wait.
+    UInt64 getWaitBackoffTimeMsForEntry(const LogEntry & entry, const MergeTreeData & data) const;
+
     /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
