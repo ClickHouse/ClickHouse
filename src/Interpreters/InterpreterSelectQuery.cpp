@@ -439,7 +439,7 @@ ASTPtr parseAdditionalFilterConditionForTable(
         const auto & filter = tuple.at(1).safeGet<String>();
 
         if (table == target.alias ||
-            (table == target.table && context.getCurrentDatabase() == target.database) ||
+            (table == target.table && context.getCurrentDatabase().database == target.database) ||
             (table == target.database + '.' + target.table))
         {
             /// Try to parse expression
@@ -659,7 +659,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
-        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase(), context->getSettingsRef());
+        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase().database, context->getSettingsRef());
 
         joined_tables.reset(getSelectQuery());
         joined_tables.resolveTables();

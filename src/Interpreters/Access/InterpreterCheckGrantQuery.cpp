@@ -18,7 +18,7 @@ BlockIO InterpreterCheckGrantQuery::execute()
 
     /// Collect access rights elements which will be checked.
     AccessRightsElements & elements_to_check_grant = query.access_rights_elements;
-    String current_database = getContext()->getCurrentDatabase();
+    String current_database = getContext()->getCurrentDatabase().database;
     elements_to_check_grant.replaceEmptyDatabase(current_database);
 
     auto current_user_access = getContext()->getAccess();

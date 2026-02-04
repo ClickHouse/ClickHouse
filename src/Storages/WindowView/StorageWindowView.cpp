@@ -1345,7 +1345,7 @@ ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr contex
     select_query = query.clone();
     output_header.clear();
 
-    String select_database_name = getContext()->getCurrentDatabase();
+    String select_database_name = getContext()->getCurrentDatabase().database;
     String select_table_name;
     auto select_query_tmp = query.clone();
     extractDependentTable(context_, select_query_tmp, select_database_name, select_table_name);

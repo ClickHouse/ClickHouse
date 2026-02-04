@@ -113,7 +113,7 @@ namespace DB
         {
             String database_name = loop_database_name;
             if (database_name.empty())
-                database_name = context->getCurrentDatabase();
+                database_name = context->getCurrentDatabase().database;
 
             auto database = DatabaseCatalog::instance().getDatabase(database_name);
             storage = database->tryGetTable(loop_table_name, context);

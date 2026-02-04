@@ -147,7 +147,7 @@ QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase
     /// If dictionary was not qualified with database name, try to resolve dictionary as xml dictionary.
     if (qualified_name->database.empty() && !has(qualified_name->table))
     {
-        std::string current_database_name = query_context->getCurrentDatabase();
+        std::string current_database_name = query_context->getCurrentDatabase().database;
         std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, query_context);
 
         /// If after qualify dictionary_name with default_database_name we find it, add default_database to qualified name.
@@ -203,7 +203,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
         if (is_xml_dictionary)
             return res;
 
-        qualified_name->database = local_context->getCurrentDatabase();
+        qualified_name->database = local_context->getCurrentDatabase().database;
         res = qualified_name->database + '.' + name;
 
         std::tie(db, table) = DatabaseCatalog::instance().tryGetDatabaseAndTable(

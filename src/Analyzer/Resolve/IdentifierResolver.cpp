@@ -170,32 +170,48 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         table_name = table_identifier[0];
     }
 
-    StorageID storage_id(database_name, table_name);
-    storage_id = context->resolveStorageID(storage_id);
-    bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
+    auto current_db_info = context->getCurrentDatabase();
+    const String & current_database = current_db_info.database;
+    bool is_current_db_datalake = DatabaseCatalog::instance().isDatalakeCatalog(current_database);
 
     StoragePtr storage;
     TableLockHolder storage_lock;
+    bool is_temporary_table = false;
 
-    if (is_temporary_table)
-        storage = DatabaseCatalog::instance().getTable(storage_id, context);
-    else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
-    {
-        /// If table is the target of a refreshable materialized view, it needs additional
-        /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
-        std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
-    }
-    else
-        storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+    /// for datalake context, we might need fallback resolution in case we have namespaces
+    StorageID storage_id = is_current_db_datalake
+        ? context->tryResolveStorageID(StorageID(database_name, table_name))
+        : context->resolveStorageID(StorageID(database_name, table_name));
 
-    if (!storage && storage_id.hasUUID())
+    if (storage_id)
     {
-        // If `storage_id` has UUID, it is possible that the UUID is removed from `DatabaseCatalog` after `context->resolveStorageID(storage_id)`
-        // We try to get the table with the database name and the table name.
-        auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
-        if (database)
-            storage = database->tryGetTable(table_name, context);
+        is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
+
+        if (is_temporary_table)
+            storage = DatabaseCatalog::instance().getTable(storage_id, context);
+        else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
+        {
+            /// If table is the target of a refreshable materialized view, it needs additional
+            /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
+            std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
+        }
+        else
+            storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+
+        if (!storage && storage_id.hasUUID())
+        {
+            // If `storage_id` has UUID, it is possible that the UUID is removed from `DatabaseCatalog` after `context->resolveStorageID(storage_id)`
+            // We try to get the table with the database name and the table name.
+            auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
+            if (database)
+                storage = database->tryGetTable(table_name, context);
+        }
     }
+
+    /// for DataLakeCatalog databases, try fallback resolution (like "namespace.table" as table name)
+    if (!storage && is_current_db_datalake)
+        storage = tryResolveDatalakeTable(table_identifier, context, current_db_info);
+
     if (!storage)
         return {};
 
@@ -209,6 +225,44 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         result->setTemporaryTableName(table_name);
 
     return result;
+}
+
+/// used as a fallback when normal resolution fails for DataLakeCatalog databases
+StoragePtr IdentifierResolver::tryResolveDatalakeTable(
+    const Identifier & table_identifier,
+    const ContextPtr & context,
+    const CurrentDatabaseInfo & current_db_info)
+{
+    const String & current_database = current_db_info.database;
+    const String & table_prefix = current_db_info.table_prefix;
+
+    auto current_db = DatabaseCatalog::instance().tryGetDatabase(current_database);
+    if (!current_db)
+        return nullptr;
+
+    size_t parts_size = table_identifier.getPartsSize();
+
+    if (parts_size == 1)
+    {
+        /// Single-part identifier: apply table prefix if set
+        /// for example, with USE catalog.namespace, "table" becomes "namespace.table"
+        if (!table_prefix.empty())
+        {
+            String combined_table_name = table_prefix + "." + table_identifier[0];
+            if (auto storage = current_db->tryGetTable(combined_table_name, context))
+                return storage;
+        }
+    }
+    else if (parts_size == 2)
+    {
+        /// Two-part identifier where first part could be a namespace
+        /// for example, "namespace.table" -> try as "namespace.table" within current catalog
+        String combined_table_name = table_identifier[0] + "." + table_identifier[1];
+        if (auto storage = current_db->tryGetTable(combined_table_name, context))
+            return storage;
+    }
+
+    return nullptr;
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)

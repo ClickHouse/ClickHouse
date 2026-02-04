@@ -296,7 +296,7 @@ void JoinedTables::rewriteDistributedInAndJoins(ASTPtr & query)
 
     String database;
     if (!renamed_tables.empty())
-        database = context->getCurrentDatabase();
+        database = context->getCurrentDatabase().database;
 
     for (auto & [subquery, ast_tables] : renamed_tables)
     {

@@ -2,6 +2,7 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <Common/typeid_cast.h>
 
@@ -124,6 +125,21 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             database = table;
             if (!name_p.parse(pos, table, expected))
                 return false;
+
+            /// Support db.namespace1.namespace2...table for DataLakeCatalog databases
+            /// Join all additional parts into the table name
+            while (s_dot.ignore(pos, expected))
+            {
+                ASTPtr next_part;
+                if (!name_p.parse(pos, next_part, expected))
+                    return false;
+
+                String current_table_name;
+                String next_part_name;
+                tryGetIdentifierNameInto(table, current_table_name);
+                tryGetIdentifierNameInto(next_part, next_part_name);
+                table = make_intrusive<ASTIdentifier>(current_table_name + "." + next_part_name);
+            }
         }
     }
 
