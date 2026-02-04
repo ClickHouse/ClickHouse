@@ -1,6 +1,4 @@
-  Prefix sort description: __table1.ts ASC
-      ReadFromMergeTree (p)
-      ReadType: InOrder
+ReadType: InOrder
 0	2025-01-01 00:00:00	0
 1	2025-01-01 00:00:01	1
 2	2025-01-01 00:00:02	2
