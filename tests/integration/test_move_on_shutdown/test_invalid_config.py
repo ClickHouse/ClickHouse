@@ -15,12 +15,11 @@ def test_self_reference_config():
     )
 
     try:
-        cluster.start(expected_to_fail=True)
-        # If we reach here, the server started when it shouldn't have
-        pytest.fail("Server should have failed to start with self-referencing move_on_shutdown_to")
-    except Exception as e:
-        # Expected: server failed to start
-        assert "move_on_shutdown_to pointing to itself" in str(e) or "cannot" in str(e).lower()
+        cluster.start()
+        node.start_clickhouse(start_wait_sec=60, expected_to_fail=True)
+        assert node.contains_in_log(
+            "move_on_shutdown_to pointing to itself"
+        ) or node.contains_in_log("BAD_ARGUMENTS")
     finally:
         cluster.shutdown()
 
@@ -37,9 +36,10 @@ def test_circular_reference_config():
     )
 
     try:
-        cluster.start(expected_to_fail=True)
-        pytest.fail("Server should have failed to start with circular move_on_shutdown_to references")
-    except Exception as e:
-        assert "circular" in str(e).lower() or "cannot" in str(e).lower()
+        cluster.start()
+        node.start_clickhouse(start_wait_sec=60, expected_to_fail=True)
+        assert node.contains_in_log("Circular reference") or node.contains_in_log(
+            "BAD_ARGUMENTS"
+        )
     finally:
         cluster.shutdown()
