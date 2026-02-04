@@ -157,7 +157,7 @@ def test_partition_timezone(started_cluster):
     # server timezone is Asia/Istanbul (UTC+3)
     assert node.query(f"""
                       SELECT datetime, value
-                      FROM {CATALOG_NAME}.`{namespace}}.tz_table`
+                      FROM {CATALOG_NAME}.`{namespace}.tz_table`
                       ORDER BY datetime
                       """, timeout=10) == TSV(
         [
@@ -169,7 +169,7 @@ def test_partition_timezone(started_cluster):
     # partitioning works correctly
     assert node.query(f"""
                       SELECT datetime, value
-                      FROM {CATALOG_NAME}.`{namespace}}.tz_table`
+                      FROM {CATALOG_NAME}.`{namespace}.tz_table`
                       WHERE datetime >= '2024-01-02 00:00:00'
                       ORDER BY datetime
                       """, timeout=10) == TSV(
