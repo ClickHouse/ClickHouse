@@ -87,7 +87,7 @@ public:
     {
         selector.registerImplementation<TargetArch::Default, Parent>();
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
         using Parentv3 = TargetSpecific::x86_64_v3::FunctionGenerateUUIDv7Base;
         selector.registerImplementation<TargetArch::x86_64_v3, Parentv3>();
 #endif
