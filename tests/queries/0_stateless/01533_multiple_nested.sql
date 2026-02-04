@@ -45,7 +45,7 @@ WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT col1.a FROM %n
 SYSTEM CLEAR MARK CACHE;
 SELECT col3.n2.s FROM nested FORMAT Null;
 
--- 6 files: (col3.size0, col3.n2.size1, col3.n2.s) x2
+-- 8 files: (col3.size0, col3.n2.size1, col3.n2.s, col3.n2.s.size) x2
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen'] - ProfileEvents['CreatedReadBufferDirectIOFailed']
 FROM system.query_log
