@@ -75,7 +75,7 @@ public:
 
         WhichDataType which(type);
 
-        if (isBool(type) || which.isInteger() || which.isDate())
+        if (isBool(type) || which.isInteger() || which.isDate32() || which.isDate())
         {
             for (size_t i = 0; i < input_rows_count; ++i)
             {

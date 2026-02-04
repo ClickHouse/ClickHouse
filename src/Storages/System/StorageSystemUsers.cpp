@@ -165,6 +165,16 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
                     auth_params_json.set("subject_alt_names", subject_alt_names);
             }
 #endif
+            else if (const auto & otp_data = auth_data.getOneTimePassword(); otp_data.has_value())
+            {
+                auth_params_json.set("second_factor", "one_time_password");
+                if (otp_data->params != OneTimePasswordParams{})
+                {
+                    auth_params_json.set("otp_algorithm", toString(otp_data->params.algorithm));
+                    auth_params_json.set("otp_num_digits", toString(otp_data->params.num_digits));
+                    auth_params_json.set("otp_period", toString(otp_data->params.period));
+                }
+            }
 
             std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             oss.exceptions(std::ios::failbit);

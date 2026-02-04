@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Parsers/ASTDataType.h>
-
 
 namespace DB
 {

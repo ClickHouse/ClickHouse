@@ -578,6 +578,12 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             settings.prefixes_prefetch_callback(path);
         };
 
+        auto safe_release_stream_callback = [&](const SubstreamPath & path)
+        {
+            std::unique_lock lock(callbacks_mutex);
+            settings.release_stream_callback(path);
+        };
+
         size_t task_size = std::max(structure_state_concrete->sorted_dynamic_paths->size() / num_tasks, 1ul);
         for (size_t i = 0; i != num_tasks; ++i)
         {
@@ -590,6 +596,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
                 settings_copy.getter = safe_getter;
                 settings_copy.dynamic_subcolumns_callback = settings.dynamic_subcolumns_callback ? safe_dynamic_subcolumns_callback : StreamCallback{};
                 settings_copy.prefixes_prefetch_callback = settings.prefixes_prefetch_callback ? safe_prefixes_prefetch_callback : StreamCallback{};
+                settings_copy.release_stream_callback = settings.release_stream_callback ? safe_release_stream_callback : StreamCallback{};
                 for (size_t j = batch_start; j != batch_end; ++j)
                 {
                     settings_copy.path.push_back(Substream::ObjectDynamicPath);
@@ -599,7 +606,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
                 }
             };
 
-            auto task = std::make_shared<DeserializationTask>(deserialize);
+            auto task = std::make_shared<DeserializationTask>(std::move(deserialize));
             static_cast<void>(settings.prefixes_deserialization_thread_pool->trySchedule([task_ptr = task, thread_group = CurrentThread::getGroup()]()
             {
                 ThreadGroupSwitcher switcher(thread_group, ThreadName::PREFIX_READER);
@@ -750,6 +757,10 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
 
         state = std::move(structure_state);
         addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+
+        /// We won't read from this stream anymore so we can release it.
+        if (settings.release_stream_callback)
+            settings.release_stream_callback(settings.path);
     }
 
     settings.path.pop_back();

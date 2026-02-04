@@ -7594,6 +7594,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         const String part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
         const String part_directory = command.from_path.empty() ? part_name : command.from_path;
         validateDetachedPartName(part_name);
+        validateDetachedPartName(part_directory);
 
         if (temporary_parts.contains(source_dir / part_directory))
         {
@@ -9177,7 +9178,8 @@ void MergeTreeData::writePartLog(
     const DataPartPtr & result_part,
     const DataPartsVector & source_parts,
     const MergeListEntry * merge_entry,
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters)
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters,
+    const Strings & mutation_ids)
 try
 {
     auto table_id = getStorageID();
@@ -9250,6 +9252,8 @@ try
     {
         part_log_elem.profile_counters = profile_counters;
     }
+
+    part_log_elem.mutation_ids = mutation_ids;
 
     part_log->add(std::move(part_log_elem));
 }

@@ -144,9 +144,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_keyword(" FROM TABLE ");
             print_database_table();
         }
-        else if (!full_replica_zk_path.empty())
+        else if (!replica_zk_path.empty())
         {
-            print_keyword(" FROM ZKPATH ") << quoteString(full_replica_zk_path);
+            print_keyword(" FROM ZKPATH ") << quoteString(replica_zk_path);
         }
         else if (database)
         {
@@ -168,6 +168,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     std::unordered_set<Type> queries_with_on_cluster_at_end = {
         Type::CLEAR_FILESYSTEM_CACHE,
         Type::SYNC_FILESYSTEM_CACHE,
+        Type::CLEAR_QUERY_CACHE,
     };
 
     if (!queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
@@ -359,6 +360,15 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                 print_keyword(" CONNECTIONS");
             else if (!distributed_cache_server_id.empty())
                 ostr << " " << distributed_cache_server_id;
+            break;
+        }
+        case Type::CLEAR_QUERY_CACHE:
+        {
+            if (query_result_cache_tag.has_value())
+            {
+                print_keyword(" TAG ");
+                ostr << quoteString(*query_result_cache_tag);
+            }
             break;
         }
         case Type::UNFREEZE:
@@ -562,7 +572,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:
-        case Type::CLEAR_QUERY_CACHE:
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_INDEX_MARK_CACHE:

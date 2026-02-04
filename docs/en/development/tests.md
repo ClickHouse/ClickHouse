@@ -145,7 +145,8 @@ List of available tags:
 | `no-ordinary-database` |||
 | `no-parallel` | Disables running other tests in parallel with this one | Test reads from `system` tables and invariants may be broken|
 | `no-parallel-replicas` |||
-| `no-debug` |||
+| `no-debug` | Disables tests in Debug builds ||
+| `no-release` | Disables tests in Release builds ||
 | `no-stress` |||
 | `no-polymorphic-parts` |||
 | `no-random-settings` |||
