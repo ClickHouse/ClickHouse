@@ -155,7 +155,7 @@ struct NumComparisonImpl
     using ContainerA = PaddedPODArray<A>;
     using ContainerB = PaddedPODArray<B>;
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4_V3_SVE(
     MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
@@ -193,13 +193,19 @@ struct NumComparisonImpl
             vectorVectorImpl_x86_64_v3(a, b, c);
             return;
         }
+#elif USE_ARM_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::SVE))
+        {
+            vectorVectorImpl_SVE(a, b, c);
+            return;
+        }
 #endif
 
         vectorVectorImpl(a, b, c);
     }
 
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4_V3_SVE(
     MULTITARGET_FUNCTION_HEADER(static void), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
@@ -228,6 +234,12 @@ struct NumComparisonImpl
         if (isArchSupported(TargetArch::x86_64_v3))
         {
             vectorConstantImpl_x86_64_v3(a, b, c);
+            return;
+        }
+#elif USE_ARM_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::SVE))
+        {
+            vectorConstantImpl_SVE(a, b, c);
             return;
         }
 #endif

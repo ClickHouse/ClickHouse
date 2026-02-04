@@ -17,7 +17,7 @@ namespace ErrorCodes
 extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4_V3_SVE(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T>
 void), convertColumnToBoolImpl, MULTITARGET_FUNCTION_BODY((const typename ColumnVector<T>::Container & data, IColumnFilter & res)

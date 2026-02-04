@@ -112,6 +112,7 @@ String toString(TargetArch arch);
 
 
 #define USE_MULTITARGET_CODE 1
+#define USE_ARM_MULTITARGET_CODE 0
 
 /// Function-specific attributes using arch= for cleaner specification
 /// This matches -march= compiler flags and avoids long feature lists
@@ -302,7 +303,7 @@ DECLARE_SVE_SPECIFIC_CODE(
   * class TestClass
   * {
   * public:
-  *     MULTITARGET_FUNCTION_X86_V4_V3(
+  *     MULTITARGET_FUNCTION_X86_V4_V3_SVE(
   *     MULTITARGET_FUNCTION_HEADER(int), testFunctionImpl, MULTITARGET_FUNCTION_BODY((int value)
   *     {
   *          return value;
@@ -335,7 +336,7 @@ DECLARE_SVE_SPECIFIC_CODE(
 
 #if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
 
-#define MULTITARGET_FUNCTION_X86_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
+#define MULTITARGET_FUNCTION_X86_V4_V3_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
     X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE \
@@ -366,9 +367,29 @@ DECLARE_SVE_SPECIFIC_CODE(
     FUNCTION_BODY \
 
 
+#elif ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__)
+
+#define MULTITARGET_FUNCTION_X86_V4_V3_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    SVE_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_SVE \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_X86_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
 #else
 
-#define MULTITARGET_FUNCTION_X86_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
+#define MULTITARGET_FUNCTION_X86_V4_V3_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
     name \

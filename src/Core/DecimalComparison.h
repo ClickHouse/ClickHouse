@@ -276,7 +276,7 @@ private:
         }
     }
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4_V3_SVE(
     MULTITARGET_FUNCTION_HEADER(
     template <bool check_overflow, bool scale_left, bool scale_right> static void NO_INLINE
     ), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
