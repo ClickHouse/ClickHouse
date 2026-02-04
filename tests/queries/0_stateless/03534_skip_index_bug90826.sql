@@ -1,15 +1,16 @@
 -- Test for https://github.com/ClickHouse/ClickHouse/issues/90826
 -- This test verifies that skip indexes (bloom_filter and text index) work correctly
 -- when the last granule contains fewer rows than `index_granularity` (default 8192).
-
--- { echo ON }
+-- This used to return wrong results because the index reader would read more rows
+-- than actually exist in the last granule. This could crash the process.
 
 SET use_skip_indexes_on_data_read = 1;
 SET allow_experimental_full_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 
--- Test Case 1: bloom_filter index with last granule containing 2 rows (8194 - 8192 = 2)
+-- Test Case 1: bloom_filter index with last granule containing 2 rows (8194 - 8192 = 2).
+-- This used to crash.
 
 CREATE TABLE tab
 (
@@ -29,7 +30,8 @@ SELECT i, text FROM tab WHERE text = '8192';
 
 DROP TABLE tab;
 
--- Test Case 2: text index (full-text index) with last granule containing 1 row (8193 - 8192 = 1)
+-- Test Case 2: text index (full-text index) with last granule containing 1 row (8193 - 8192 = 1).
+-- This used to crash.
 
 CREATE TABLE tab
 (
