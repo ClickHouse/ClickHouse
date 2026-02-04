@@ -28,18 +28,18 @@ Float32 MergeTreeCleanupThread::iterate()
 
     auto storage_settings = storage.getSettings();
 
+    auto shared_lock
+        = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage_settings)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
     if (auto lock = storage.time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
-            (*storage_settings)[MergeTreeSetting::merge_tree_clear_old_temporary_directories_interval_seconds]))
+            static_cast<double>((*storage_settings)[MergeTreeSetting::merge_tree_clear_old_temporary_directories_interval_seconds])))
     {
-        auto shared_lock = storage.lockForShare(
-            RWLockImpl::NO_QUERY, (*storage.getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
         /// Both use relative_data_path which changes during rename, so we do it under share lock
         cleaned_part_like += storage.clearOldTemporaryDirectories(
             (*storage.getSettings())[MergeTreeSetting::temporary_directories_lifetime].totalSeconds());
     }
 
     if (auto lock = storage.time_after_previous_cleanup_parts.compareAndRestartDeferred(
-            (*storage_settings)[MergeTreeSetting::merge_tree_clear_old_parts_interval_seconds]))
+            static_cast<double>((*storage_settings)[MergeTreeSetting::merge_tree_clear_old_parts_interval_seconds])))
     {
         cleaned_parts += storage.clearOldPartsFromFilesystem(/* force */ false, /* with_pause_point */ true);
         cleaned_other += storage.clearOldMutations();
@@ -49,8 +49,8 @@ Float32 MergeTreeCleanupThread::iterate()
     }
 
     constexpr Float32 parts_number_amplification = 1.3f; /// Assuming we merge 4-5 parts each time
-    Float32 cleaned_inserted_parts = cleaned_parts / parts_number_amplification;
-    return cleaned_inserted_parts + cleaned_part_like + cleaned_other;
+    Float32 cleaned_inserted_parts = static_cast<Float32>(cleaned_parts) / parts_number_amplification;
+    return cleaned_inserted_parts + static_cast<Float32>(cleaned_part_like) + static_cast<Float32>(cleaned_other);
 }
 
 }

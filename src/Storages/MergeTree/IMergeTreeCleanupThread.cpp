@@ -62,7 +62,7 @@ void IMergeTreeCleanupThread::wakeupEarlierIfNeeded()
         return;
 
     /// Do not re-check all parts too often (avoid constantly calling getNumberOfOutdatedPartsWithExpiredRemovalTime())
-    if (!wakeup_check_timer.compareAndRestart((*storage_settings)[MergeTreeSetting::cleanup_delay_period] / 4.0))
+    if (!wakeup_check_timer.compareAndRestart(static_cast<double>((*storage_settings)[MergeTreeSetting::cleanup_delay_period]) / 4.0))
         return;
 
     UInt64 prev_run_timestamp_ms = prev_cleanup_timestamp_ms.load(std::memory_order_relaxed);
@@ -132,11 +132,11 @@ void IMergeTreeCleanupThread::run()
         auto expected_cleanup_points = (*storage_settings)[MergeTreeSetting::cleanup_thread_preferred_points_per_iteration];
 
         /// How long should we sleep to remove cleanup_thread_preferred_points_per_iteration on the next iteration?
-        Float32 ratio = cleanup_points / expected_cleanup_points;
+        Float32 ratio = cleanup_points / static_cast<Float32>(expected_cleanup_points);
         if (ratio == 0)
             sleep_ms = (*storage_settings)[MergeTreeSetting::max_cleanup_delay_period] * 1000;
         else
-            sleep_ms = static_cast<UInt64>(sleep_ms / ratio);
+            sleep_ms = static_cast<UInt64>(static_cast<Float32>(sleep_ms) / ratio);
 
         sleep_ms = std::clamp(
             sleep_ms,
@@ -151,12 +151,11 @@ void IMergeTreeCleanupThread::run()
             cleanup_points,
             interval_ms,
             ratio,
-            cleanup_points / interval_ms * 60'000);
+            cleanup_points / static_cast<Float32>(interval_ms * 60'000));
     }
     prev_cleanup_timestamp_ms.store(now_ms, std::memory_order_relaxed);
 
-    sleep_ms
-        += std::uniform_int_distribution<UInt64>(0, (*storage_settings)[MergeTreeSetting::cleanup_delay_period_random_add] * 1000)(rng);
+    sleep_ms += std::uniform_int_distribution<UInt64>(0, (*storage_settings)[MergeTreeSetting::cleanup_delay_period_random_add] * 1000)(rng);
     task->scheduleAfter(sleep_ms);
 }
 
