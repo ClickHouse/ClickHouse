@@ -92,7 +92,7 @@ public:
                 if (faces[i] >= 0 && faces[i] <= 19)
                 {
                     ++current_offset;
-                    result_data.emplace_back(faces[i]);
+                    result_data.emplace_back(static_cast<UInt8>(faces[i]));
                 }
             }
 

@@ -20,6 +20,7 @@
 #include <fmt/format.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -132,6 +133,11 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int ALL_CONNECTION_TRIES_FAILED;
+}
+
+namespace FailPoints
+{
+    extern const char parallel_replicas_check_read_mode_always[];
 }
 
 class ParallelReplicasReadingCoordinator::ImplInterface
@@ -1102,6 +1108,18 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
 {
     ProfileEvents::increment(ProfileEvents::ParallelReplicasNumRequests);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleAnnouncementMicroseconds);
+
+    fiu_do_on(FailPoints::parallel_replicas_check_read_mode_always, {
+        if (pimpl && announcement.mode != pimpl->getCoordinationMode())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Replica {} decided to read in {} mode, not in {}. This is a bug",
+                announcement.replica_num,
+                magic_enum::enum_name(announcement.mode),
+                magic_enum::enum_name(pimpl->getCoordinationMode()));
+        }
+    });
 
     if (is_reading_completed)
         return;

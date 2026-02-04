@@ -441,6 +441,9 @@ public:
         /// Callback used to update avg_value_size_hint for each substream.
         std::function<void(const SubstreamPath &, const IColumn &)> update_avg_value_size_hint_callback;
 
+        /// Callback used to mark a specific stream as unneeded indicating that it won't be used anymore.
+        std::function<void(const SubstreamPath &)> release_stream_callback;
+
         /// Type of MergeTree data part we deserialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
@@ -450,6 +453,10 @@ public:
         /// with rows only from current range. If this flag is true and
         /// there is a column in cache, insert only rows from current range from it.
         bool insert_only_rows_in_current_range_from_substreams_cache = false;
+
+        /// If true, call release_stream on all streams used in the prefixes deserialization
+        /// even for streams that will be used later for data deserialization.
+        bool release_all_prefixes_streams = false;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -651,7 +658,7 @@ public:
     /// into resulting column and return true, otherwise do nothing and return false.
     static bool insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column);
     /// Perform insertion from column found in substreams cache.
-    static void insertDataFromCachedColumn(const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache);
+    static void insertDataFromCachedColumn(const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache, bool update_cache_after_insert = false);
 
 protected:
     void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, Substream substream) const;

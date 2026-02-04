@@ -487,7 +487,7 @@ namespace Net
         bool _isBrokenTimeout;
 
         static constexpr size_t THROTTLER_QUANTUM = 32 * 1024;
-        static constexpr size_t THROTTLER_MAX_BLOCK_NS = 20 * 1000 * 1000 * 1000U;
+        static constexpr size_t THROTTLER_MAX_BLOCK_NS = 20'000'000'000ull;
         size_t _recvThrottlerBudget;
         size_t _sndThrottlerBudget;
         ThrottlerPtr _recvThrottler;

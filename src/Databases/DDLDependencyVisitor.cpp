@@ -79,7 +79,7 @@ namespace
             }
             else if (const auto * function = ast->as<ASTFunction>())
             {
-                if (function->kind == ASTFunction::Kind::TABLE_ENGINE)
+                if (function->getKind() == ASTFunction::Kind::TABLE_ENGINE)
                     visitTableEngine(*function);
                 else
                     visitFunction(*function);
@@ -207,7 +207,6 @@ namespace
         /// (for example, CREATE VIEW).
         void visitTableExpression(const ASTTableExpression & expr)
         {
-            LOG_TRACE(&Poco::Logger::get("DDLDependencyVisitor"), "visitTableExpression for {}", expr.formatForLogging());
             if (!expr.database_and_table_name)
                 return;
 

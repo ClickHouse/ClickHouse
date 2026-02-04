@@ -6,8 +6,6 @@
 #include <variant>
 #include <vector>
 
-#include <Parsers/ASTTablesInSelectQuery.h>
-
 #include <Interpreters/IJoin.h>
 #include <Interpreters/RowRefs.h>
 
@@ -389,7 +387,6 @@ public:
     struct RightTableData
     {
         Type type = Type::EMPTY;
-        bool empty = true;
 
         /// tab1 join tab2 on t1.x = t2.x or t1.y = t2.y
         /// =>

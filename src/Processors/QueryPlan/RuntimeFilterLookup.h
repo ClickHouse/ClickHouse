@@ -42,7 +42,7 @@ public:
     virtual void insert(ColumnPtr values) = 0;
 
     /// No more insert()-s after this call, only find()-s
-    virtual void finishInsert() = 0;
+    void finishInsert();
 
     /// Looks up each value and returns column of Bool-s
     ColumnPtr find(const ColumnWithTypeAndName & values) const;
@@ -70,6 +70,8 @@ protected:
 
     /// Checks if a block of rows should be skipped because this filter was disabled.
     bool shouldSkip(size_t next_block_rows) const;
+
+    virtual void finishInsertImpl() = 0;
 
     virtual ColumnPtr findImpl(const ColumnWithTypeAndName & values) const = 0;
 
@@ -103,9 +105,12 @@ public:
         UInt64 exact_values_limit_
     )
         : IRuntimeFilter(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_)
+        , argument_can_have_nulls(filter_column_target_type->isNullable() ||
+            filter_column_target_type->isLowCardinalityNullable() ||
+            WhichDataType(filter_column_target_type).isDynamic())
         , bytes_limit(bytes_limit_)
         , exact_values_limit(exact_values_limit_)
-        , exact_values(std::make_shared<Set>(SizeLimits{}, -1, false))
+        , exact_values(std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls))
     {
         ColumnsWithTypeAndName set_header = { ColumnWithTypeAndName(filter_column_target_type, String()) };
         exact_values->setHeader(set_header);
@@ -124,13 +129,8 @@ public:
         is_full = exact_values->getTotalRowCount() > exact_values_limit || exact_values->getTotalByteCount() > bytes_limit;
     }
 
-    void finishInsert() override
+    void finishInsertImpl() override
     {
-        if (filters_to_merge != 0)
-            return;
-
-        inserts_are_finished = true;
-
         exact_values->finishInsert();
 
         /// If the set is empty just return Const False column
@@ -141,7 +141,8 @@ public:
         }
 
         /// If only 1 element in the set then use " == const" instead of set lookup
-        if (exact_values->getTotalRowCount() == 1)
+        /// But if the argument is Nullable we cannot use "==" so fallback to Set because it can handle NULLs
+        if (exact_values->getTotalRowCount() == 1 && !argument_can_have_nulls)
         {
             values_count = ValuesCount::ONE;
             single_element_in_set = (*exact_values->getSetElements().front())[0];
@@ -176,6 +177,7 @@ private:
         MANY,
     };
 
+    const bool argument_can_have_nulls;
     const UInt64 bytes_limit;
     const UInt64 exact_values_limit;
 
@@ -187,6 +189,26 @@ private:
     std::optional<Field> single_element_in_set;
 };
 
+class ExactContainsRuntimeFilter : public RuntimeFilterBase<false>
+{
+    using Base = RuntimeFilterBase<false>;
+
+public:
+    ExactContainsRuntimeFilter(
+        size_t filters_to_merge_,
+        const DataTypePtr & filter_column_target_type_,
+        Float64 pass_ratio_threshold_for_disabling_,
+        UInt64 blocks_to_skip_before_reenabling_,
+        UInt64 bytes_limit_,
+        UInt64 exact_values_limit_
+    )
+        : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_, bytes_limit_, exact_values_limit_)
+    {}
+
+    void merge(const IRuntimeFilter * source) override;
+
+    void finishInsertImpl() override;
+};
 
 class ExactNotContainsRuntimeFilter : public RuntimeFilterBase<true>
 {
@@ -211,6 +233,8 @@ class ApproximateRuntimeFilter : public RuntimeFilterBase<false>
 {
     using Base = RuntimeFilterBase<false>;
 public:
+    static bool isDataTypeSupported(const DataTypePtr & data_type);
+
     ApproximateRuntimeFilter(
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,
@@ -224,7 +248,7 @@ public:
     void insert(ColumnPtr values) override;
 
     /// No more insert()-s after this call, only find()-s
-    void finishInsert() override;
+    void finishInsertImpl() override;
 
     /// Looks up each value and returns column of Bool-s
     ColumnPtr findImpl(const ColumnWithTypeAndName & values) const override;

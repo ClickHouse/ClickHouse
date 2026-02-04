@@ -12,6 +12,7 @@
 #include <Interpreters/Context.h>
 
 #include <absl/container/flat_hash_map.h>
+#include <boost/dynamic_bitset.hpp>
 
 namespace DB
 {
@@ -54,8 +55,6 @@ void FunctionHasAnyAllTokens<HasTokensTraits>::setTokenExtractor(std::unique_ptr
 template <class HasTokensTraits>
 void FunctionHasAnyAllTokens<HasTokensTraits>::setSearchTokens(const std::vector<String> & new_search_tokens)
 {
-    static constexpr size_t max_number_of_tokens = 64;
-
     if (search_tokens.has_value())
         return;
 
@@ -64,8 +63,6 @@ void FunctionHasAnyAllTokens<HasTokensTraits>::setSearchTokens(const std::vector
         if (auto [_, inserted] = search_tokens->emplace(new_search_token, pos); inserted)
             ++pos;
 
-    if (search_tokens->size() > max_number_of_tokens)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports a max of {} search tokens", name, max_number_of_tokens);
 }
 
 namespace
@@ -175,10 +172,9 @@ struct HasAllTokensMatcher
 {
     explicit HasAllTokensMatcher(const TokensWithPosition & tokens_)
         : tokens(tokens_)
+        , mask(tokens.size())
+        , num_set_bits(0)
     {
-        const size_t ns = tokens.size();
-        /// It is equivalent to ((2 ^ ns) - 1), but avoids overflow in case of ns = 64.
-        expected_mask = ((1ULL << (ns - 1)) + ((1ULL << (ns - 1)) - 1));
     }
 
     template <typename OnMatchCallback>
@@ -187,24 +183,30 @@ struct HasAllTokensMatcher
         return [&](const char * token_start, size_t token_len)
         {
             if (auto it = tokens.find(std::string_view(token_start, token_len)); it != tokens.end())
-                mask |= (1ULL << it->second);
-
-            if (mask == expected_mask)
             {
-                onMatchCallback();
-                return true;
+                num_set_bits += !mask.test_set(it->second);
+
+                if (num_set_bits == tokens.size())
+                {
+                    onMatchCallback();
+                    return true;
+                }
             }
 
             return false;
         };
     }
 
-    void reset() { mask = 0; }
+    void reset()
+    {
+        mask.reset();
+        num_set_bits = 0;
+    }
 
 private:
     const TokensWithPosition & tokens;
-    UInt64 expected_mask;
-    UInt64 mask = 0;
+    boost::dynamic_bitset<> mask;
+    UInt64 num_set_bits;
 };
 
 template <typename T>
@@ -453,7 +455,7 @@ hasAnyTokens(input, needles)
 )";
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
         {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
-        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"String", "Array(String)"}}
+        {"needles", "Tokens to be searched.", {"String", "Array(String)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAnyTokens = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAnyTokens = {
@@ -587,7 +589,7 @@ hasAllTokens(input, needles)
 )";
     FunctionDocumentation::Arguments arguments_hasAllTokens = {
         {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
-        {"needles", "Tokens to be searched. Supports at most 64 tokens.", {"String", "Array(String)"}}
+        {"needles", "Tokens to be searched.", {"String", "Array(String)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAllTokens = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAllTokens = {

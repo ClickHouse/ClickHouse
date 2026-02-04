@@ -65,7 +65,7 @@ SELECT * FROM text_index_cache_stats(filter = 'text_pl_2');
 
 SELECT 'Clear text index postings cache';
 
-SYSTEM DROP TEXT INDEX POSTINGS CACHE;
+SYSTEM CLEAR TEXT INDEX POSTINGS CACHE;
 
 SELECT '--- cache miss on the first token.';
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_pl_1');
@@ -79,6 +79,6 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_pl_1');
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_pl_1');
 
-SYSTEM DROP TEXT INDEX POSTINGS CACHE;
+SYSTEM CLEAR TEXT INDEX POSTINGS CACHE;
 DROP VIEW text_index_cache_stats;
 DROP TABLE tab;

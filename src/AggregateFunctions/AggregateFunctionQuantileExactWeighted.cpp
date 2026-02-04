@@ -155,7 +155,7 @@ private:
         Float64 sum_weight = 0;
         for (const auto & pair : map)
         {
-            sum_weight += pair.getMapped();
+            sum_weight += static_cast<Float64>(pair.getMapped());
             array[i] = pair.getValue();
             ++i;
         }
@@ -169,7 +169,7 @@ private:
         const Pair * end = array + size;
         while (it < end)
         {
-            accumulated += it->second;
+            accumulated += static_cast<Float64>(it->second);
 
             if (accumulated >= threshold)
                 break;
@@ -204,7 +204,7 @@ private:
         Float64 sum_weight = 0;
         for (const auto & pair : map)
         {
-            sum_weight += pair.getMapped();
+            sum_weight += static_cast<Float64>(pair.getMapped());
             array[i] = pair.getValue();
             ++i;
         }
@@ -221,7 +221,7 @@ private:
 
         while (it < end)
         {
-            accumulated += it->second;
+            accumulated += static_cast<Float64>(it->second);
 
             while (accumulated >= threshold)
             {
@@ -320,7 +320,7 @@ private:
         ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
         std::partial_sum(array, array + size, array, [](const Pair & acc, const Pair & p) { return Pair(p.first, acc.second + p.second); });
         Weight max_position = array[size - 1].second - 1;
-        Float64 position = max_position * level;
+        Float64 position = static_cast<Float64>(max_position) * level;
         return quantileInterpolated(array, size, position);
     }
 
@@ -353,7 +353,7 @@ private:
 
         for (size_t j = 0; j < num_levels; ++j)
         {
-            Float64 position = max_position * levels[indices[j]];
+            Float64 position = static_cast<Float64>(max_position) * levels[indices[j]];
             result[indices[j]] = quantileInterpolated(array, size, position);
         }
     }
@@ -378,7 +378,7 @@ private:
         if (lower == higher || lower_key == higher_key)
             return static_cast<Float64>(lower_key);
 
-        return (static_cast<Float64>(higher) - position) * lower_key + (position - static_cast<Float64>(lower)) * higher_key;
+        return (static_cast<Float64>(higher) - position) * static_cast<Float64>(lower_key) + (position - static_cast<Float64>(lower)) * static_cast<Float64>(higher_key);
     }
 };
 

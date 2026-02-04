@@ -7,6 +7,7 @@
 #include <Common/TraceSender.h>
 #include <Common/setThreadName.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 
 #include <string_view>
 
@@ -19,7 +20,7 @@ namespace
     /// The performance test query ids can be surprisingly long like
     /// `aggregating_merge_tree_simple_aggregate_function_string.query100.profile100`,
     /// so make some allowance for them as well.
-    constexpr size_t QUERY_ID_MAX_LEN = 100;
+    constexpr size_t QUERY_ID_MAX_LEN = 95;
     static_assert(QUERY_ID_MAX_LEN <= std::numeric_limits<uint8_t>::max());
 }
 
@@ -40,6 +41,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     if (unlikely(inside_send))
         return;
     inside_send = true;
+    SCOPE_EXIT({ inside_send = false; });
     DENY_ALLOCATIONS_IN_SCOPE;
 
     constexpr size_t buf_size = sizeof(char) /// TraceCollector stop flag
@@ -48,6 +50,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         + sizeof(UInt8)                      /// Number of stack frames
         + sizeof(FramePointers)              /// Collected stack trace, maximum capacity
         + sizeof(TraceType)                  /// trace type
+        + sizeof(UInt64)                     /// cpu_id
         + sizeof(UInt64)                     /// thread_id
         + sizeof(ThreadName)                 /// thread name enum
         + sizeof(Int64)                      /// size
@@ -114,7 +117,8 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     out.next();
     out.finalize();
 
-    inside_send = false;
+    /// Multiple threads are calling this function concurrently, so writes to pipe should be atomic (single flush).
+    chassert(out.getFlushCount() == 1);
 }
 
 }

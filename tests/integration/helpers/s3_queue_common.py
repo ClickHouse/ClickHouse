@@ -148,6 +148,9 @@ def create_table(
     no_settings=False,
     hive_partitioning_path="",
     hive_partitioning_columns="",
+    partitioning_mode="",
+    partition_regex="",
+    partition_component="",
     after_processing="keep",
     move_to_prefix=None,
     move_to_bucket=None,
@@ -186,8 +189,17 @@ def create_table(
 
     if hive_partitioning_columns:
         hive_partitioning_columns = f", {hive_partitioning_columns}"
-        settings["use_hive_partitioning"] = True
+        if not partitioning_mode:  # Backward compatibility
+            settings["use_hive_partitioning"] = True
         settings["allow_experimental_object_storage_queue_hive_partitioning"] = True
+
+    # Add regex partitioning settings
+    if partitioning_mode:
+        settings["partitioning_mode"] = partitioning_mode
+    if partition_regex:
+        settings["partition_regex"] = partition_regex
+    if partition_component:
+        settings["partition_component"] = partition_component
 
     engine_def = None
     if engine_name == "S3Queue":

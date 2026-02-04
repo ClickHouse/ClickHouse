@@ -1,6 +1,8 @@
 #include <string_view>
 #include <unordered_map>
 
+#include <base/scope_guard.h>
+
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
 
@@ -60,7 +62,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parseUtil(pos, expected, parse_element, *separator_parser, allow_empty))
         return false;
 
-    node = std::make_shared<ASTExpressionList>(result_separator);
+    node = make_intrusive<ASTExpressionList>(result_separator);
     node->children = std::move(elements);
 
     return true;
@@ -126,7 +128,7 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parseUtil(pos, parse_element, parse_separator))
         return false;
 
-    node = std::make_shared<ASTExpressionList>();
+    node = make_intrusive<ASTExpressionList>();
     node->children = std::move(elements);
     return true;
 }
@@ -196,36 +198,36 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
         return false;
 
     /// subquery --> (SELECT aggregate_function(*) FROM subquery)
-    auto aggregate_function = makeASTFunction(aggregate_function_name, std::make_shared<ASTAsterisk>());
+    auto aggregate_function = makeASTFunction(aggregate_function_name, make_intrusive<ASTAsterisk>());
     auto subquery_node = function->children[0]->children[1];
 
-    auto table_expression = std::make_shared<ASTTableExpression>();
+    auto table_expression = make_intrusive<ASTTableExpression>();
     table_expression->subquery = std::move(subquery_node);
     table_expression->children.push_back(table_expression->subquery);
 
-    auto tables_in_select_element = std::make_shared<ASTTablesInSelectQueryElement>();
+    auto tables_in_select_element = make_intrusive<ASTTablesInSelectQueryElement>();
     tables_in_select_element->table_expression = std::move(table_expression);
     tables_in_select_element->children.push_back(tables_in_select_element->table_expression);
 
-    auto tables_in_select = std::make_shared<ASTTablesInSelectQuery>();
+    auto tables_in_select = make_intrusive<ASTTablesInSelectQuery>();
     tables_in_select->children.push_back(std::move(tables_in_select_element));
 
-    auto select_exp_list = std::make_shared<ASTExpressionList>();
+    auto select_exp_list = make_intrusive<ASTExpressionList>();
     select_exp_list->children.push_back(aggregate_function);
 
-    auto select_query = std::make_shared<ASTSelectQuery>();
+    auto select_query = make_intrusive<ASTSelectQuery>();
     select_query->children.push_back(select_exp_list);
     select_query->children.push_back(tables_in_select);
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_exp_list);
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
 
-    auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
-    select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
+    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
     select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
     select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
 
-    auto new_subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
+    auto new_subquery = make_intrusive<ASTSubquery>(std::move(select_with_union_query));
     ast->children[0]->children.back() = std::move(new_subquery);
 
     return true;
@@ -345,7 +347,7 @@ bool ParserAliasesExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
 bool ParserGroupingSetsExpressionListElements::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto command_list = std::make_shared<ASTExpressionList>();
+    auto command_list = make_intrusive<ASTExpressionList>();
     node = command_list;
 
     ParserToken s_comma(TokenType::Comma);
@@ -366,7 +368,7 @@ bool ParserGroupingSetsExpressionListElements::parseImpl(Pos & pos, ASTPtr & nod
             {
                 return false;
             }
-            auto list = std::make_shared<ASTExpressionList>(',');
+            auto list = make_intrusive<ASTExpressionList>(',');
             list->children.push_back(command);
             command = std::move(list);
         }
@@ -438,7 +440,7 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         with_brackets = true;
     }
 
-    auto pair = std::make_shared<ASTPair>(with_brackets);
+    auto pair = make_intrusive<ASTPair>(with_brackets);
     pair->first = Poco::toLower(identifier->as<ASTIdentifier>()->name());
     pair->set(pair->second, value);
     node = pair;
@@ -519,14 +521,14 @@ struct Operator
 };
 
 template <typename... Args>
-static std::shared_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&... args)
+static boost::intrusive_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&... args)
 {
     auto ast_function = makeASTOperator(op.function_name, std::forward<Args>(args)...);
 
     if (op.type == OperatorType::Lambda)
     {
-        ast_function->is_lambda_function = true;
-        ast_function->kind = ASTFunction::Kind::LAMBDA_FUNCTION;
+        ast_function->setIsLambdaFunction(true);
+        ast_function->setKind(ASTFunction::Kind::LAMBDA_FUNCTION);
     }
     return ast_function;
 }
@@ -879,10 +881,18 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     if (!literal || literal->value.getType() != Field::Types::String)
         return;
 
+    /// Look up token position from the map stored in Expected
+    if (!expected.literal_token_map)
+        return;
+
+    auto it = expected.literal_token_map->find(literal);
+    if (it == expected.literal_token_map->end())
+        return;
+
     chassert(is_like || is_regexp);
     expected.highlight({
-       .begin = literal->begin.value()->begin,
-       .end = literal->begin.value()->end,
+       .begin = it->second.begin,
+       .end = it->second.end,
        .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
 }
 
@@ -1138,7 +1148,7 @@ public:
 
                 if (allow_function_parameters && !parameters && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
                 {
-                    parameters = std::make_shared<ASTExpressionList>();
+                    parameters = make_intrusive<ASTExpressionList>();
                     std::swap(parameters->children, elements);
                     action = Action::OPERAND;
 
@@ -1188,8 +1198,8 @@ public:
                 function_name += "Distinct";
 
             auto function_node = makeASTFunction(function_name, std::move(elements));
-            function_node->is_compound_name = is_compound_name;
-            function_node->is_operator = is_operator;
+            function_node->setIsCompoundName(is_compound_name);
+            function_node->setIsOperator(is_operator);
 
             if (parameters)
             {
@@ -1217,14 +1227,14 @@ public:
             }
 
             if (respect_nulls.ignore(pos, expected))
-                function_node->nulls_action = NullsAction::RESPECT_NULLS;
+                function_node->setNullsAction(NullsAction::RESPECT_NULLS);
             else if (ignore_nulls.ignore(pos, expected))
-                function_node->nulls_action = NullsAction::IGNORE_NULLS;
+                function_node->setNullsAction(NullsAction::IGNORE_NULLS);
 
             if (over.ignore(pos, expected))
             {
-                function_node->is_window_function = true;
-                function_node->kind = ASTFunction::Kind::WINDOW_FUNCTION;
+                function_node->setIsWindowFunction(true);
+                function_node->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
 
                 ASTPtr function_node_as_iast = function_node;
 
@@ -1665,7 +1675,7 @@ public:
         if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             return false;
 
-        auto subquery = std::make_shared<ASTSubquery>(std::move(node));
+        auto subquery = make_intrusive<ASTSubquery>(std::move(node));
         elements = {makeASTOperator("exists", subquery)};
 
         finished = true;
@@ -1905,9 +1915,9 @@ protected:
         if (parsed_interval_kind)
         {
             if (elements.size() == 2)
-                node = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1]);
+                node = makeASTFunction("dateDiff", make_intrusive<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1]);
             else if (elements.size() == 3)
-                node = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1], elements[2]);
+                node = makeASTFunction("dateDiff", make_intrusive<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1], elements[2]);
             else
                 return false;
         }
@@ -2089,7 +2099,7 @@ public:
 
                 Field field_with_null;
                 ASTLiteral null_literal(field_with_null);
-                elements.push_back(std::make_shared<ASTLiteral>(null_literal));
+                elements.push_back(make_intrusive<ASTLiteral>(null_literal));
 
                 if (has_case_expr)
                     elements = {makeASTFunction("caseWithExpression", elements)};
@@ -2411,6 +2421,13 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
 
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// Set up map to capture literal token positions for regex highlighting.
+    /// Only needed when highlighting is enabled and no map is already set.
+    LiteralTokenMap local_token_map;
+    SCOPE_EXIT({ expected.literal_token_map = nullptr; });
+    if (expected.enable_highlighting && !expected.literal_token_map)
+        expected.literal_token_map = &local_token_map;
+
     auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
     if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
     {
@@ -2460,7 +2477,7 @@ bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, 
     if (ParserIdentifier().parse(pos, node, expected))
     {
         node = makeASTFunction(node->as<ASTIdentifier>()->name());
-        node->as<ASTFunction &>().no_empty_args = true;
+        node->as<ASTFunction &>().setNoEmptyArgs(true);
         return true;
     }
 
@@ -2682,7 +2699,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         if (cur_op->second.type == OperatorType::Not && pos->type == TokenType::OpeningRoundBracket)
         {
             ++pos;
-            auto identifier = std::make_shared<ASTIdentifier>(cur_op->second.function_name);
+            auto identifier = make_intrusive<ASTIdentifier>(cur_op->second.function_name);
             layers.push_back(getFunctionLayer(identifier, layers.front()->is_table_function, isFirstIdentifier(layers)));
         }
         else
@@ -2900,7 +2917,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         if (ParserIdentifier().parse(pos, tmp, expected))
         {
             layers.back()->pushOperator(op);
-            layers.back()->pushOperand(std::make_shared<ASTLiteral>(tmp->as<ASTIdentifier>()->name()));
+            layers.back()->pushOperand(make_intrusive<ASTLiteral>(tmp->as<ASTIdentifier>()->name()));
             return Action::OPERATOR;
         }
     }
@@ -2925,7 +2942,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         if (!ParserDataType().parse(pos, type_ast, expected))
             return Action::NONE;
 
-        layers.back()->pushOperand(std::make_shared<ASTLiteral>(type_ast->formatWithSecretsOneLine()));
+        layers.back()->pushOperand(make_intrusive<ASTLiteral>(type_ast->formatWithSecretsOneLine()));
         return Action::OPERATOR;
     }
 

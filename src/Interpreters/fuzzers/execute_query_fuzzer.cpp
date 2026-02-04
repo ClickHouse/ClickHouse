@@ -72,10 +72,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         query_context->makeQueryContext();
         query_context->setCurrentQueryId({});
 
-        std::unique_ptr<CurrentThread::QueryScope> query_scope;
+        CurrentThread::QueryScope query_scope;
         if (!CurrentThread::getGroup())
         {
-            query_scope = std::make_unique<CurrentThread::QueryScope>(query_context);
+            query_scope = CurrentThread::QueryScope::create(query_context);
         }
 
         auto io = DB::executeQuery(input, std::move(query_context), QueryFlags{ .internal = true }, QueryProcessingStage::Complete).second;

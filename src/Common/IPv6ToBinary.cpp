@@ -51,7 +51,7 @@ static constexpr RawMaskArrayT generateBitMask(size_t prefix)
     for (; prefix >= 8; ++i, prefix -= 8)
         arr[i] = 0xff;
     if (prefix > 0)
-        arr[i++] = ~(0xff >> prefix);
+        arr[i++] = static_cast<uint8_t>(~(0xff >> prefix));
     while (i < arr.size())
         arr[i++] = 0x00;
     return arr;
@@ -83,10 +83,10 @@ bool matchIPv4Subnet(UInt32 addr, UInt32 cidr_addr, UInt8 prefix)
 
 bool matchIPv6Subnet(const uint8_t * addr, const uint8_t * cidr_addr, UInt8 prefix)
 {
-    uint16_t mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
+    uint16_t mask = static_cast<uint16_t>(_mm_movemask_epi8(_mm_cmpeq_epi8(
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(addr)),
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(cidr_addr))));
-    mask = ~mask;
+        _mm_loadu_si128(reinterpret_cast<const __m128i *>(cidr_addr)))));
+    mask = static_cast<uint16_t>(~mask);
 
     if (mask)
     {
@@ -105,7 +105,7 @@ bool matchIPv6Subnet(const uint8_t * addr, const uint8_t * cidr_addr, UInt8 pref
 
 bool matchIPv6Subnet(const uint8_t * addr, const uint8_t * cidr_addr, UInt8 prefix)
 {
-    prefix = std::min<size_t>(prefix, IPV6_BINARY_LENGTH * 8U);
+    prefix = std::min(prefix, static_cast<UInt8>(IPV6_BINARY_LENGTH * 8U));
 
     size_t i = 0;
     for (; prefix >= 8; ++i, prefix -= 8)

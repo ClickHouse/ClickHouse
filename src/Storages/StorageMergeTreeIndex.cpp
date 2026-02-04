@@ -248,8 +248,8 @@ private:
             uncompressed_data[i] = mark.offset_in_decompressed_block;
         }
 
-        auto compressed_nullable = ColumnNullable::create(std::move(compressed), ColumnUInt8::create(num_rows, 0));
-        auto uncompressed_nullable = ColumnNullable::create(std::move(uncompressed), ColumnUInt8::create(num_rows, 0));
+        auto compressed_nullable = ColumnNullable::create(std::move(compressed), ColumnUInt8::create(num_rows, static_cast<UInt8>(0)));
+        auto uncompressed_nullable = ColumnNullable::create(std::move(uncompressed), ColumnUInt8::create(num_rows, static_cast<UInt8>(0)));
 
         return ColumnTuple::create(Columns{std::move(compressed_nullable), std::move(uncompressed_nullable)});
     }

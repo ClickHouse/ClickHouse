@@ -69,7 +69,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
         std::cerr << std::fixed << std::setprecision(2) << "Vector. Size: " << n << ", elapsed: " << watch.elapsedSeconds() << " ("
-                  << n / watch.elapsedSeconds() << " elem/sec.)" << std::endl;
+                  << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)" << std::endl;
     }
 
     if (!m || m == 1)

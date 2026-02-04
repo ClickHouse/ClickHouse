@@ -55,7 +55,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     const String & source_file_path_,
     const FileCache::Key & cache_key_,
     FileCachePtr cache_,
-    const FileCacheUserInfo & user_,
+    const FileCacheOriginInfo & origin_,
     ImplementationBufferCreator implementation_buffer_creator_,
     const ReadSettings & settings_,
     const String & query_id_,
@@ -82,7 +82,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , implementation_buffer_creator(implementation_buffer_creator_)
     , query_id(query_id_)
     , current_buffer_id(getRandomASCIIString(8))
-    , user(user_)
+    , origin(origin_)
     , allow_seeks_after_first_read(allow_seeks_after_first_read_)
     , use_external_buffer(use_external_buffer_)
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
@@ -103,6 +103,14 @@ std::optional<size_t> CachedOnDiskReadBufferFromFile::tryGetFileSize()
 
     file_size = implementation_buffer_creator()->tryGetFileSize();
     return file_size;
+}
+
+size_t CachedOnDiskReadBufferFromFile::getFileSize()
+{
+    const auto object_size = tryGetFileSize();
+    if (!object_size.has_value())
+        throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot get file size for object {}", source_file_path);
+    return object_size.value();
 }
 
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
@@ -126,7 +134,7 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
         .read_buffer_id = current_buffer_id,
         .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(
             current_file_segment_counters.getPartiallyAtomicSnapshot()),
-        .user_id = user.user_id,
+        .user_id = origin.user_id,
     };
 
     current_file_segment_counters.reset();
@@ -156,18 +164,16 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
 
     if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
-        file_segments = cache->get(cache_key, file_offset_of_buffer_end, size, settings.filesystem_cache_segments_batch_size, user.user_id);
+        file_segments = cache->get(cache_key, file_offset_of_buffer_end, size, settings.filesystem_cache_segments_batch_size, origin.user_id);
     }
     else
     {
-        const auto object_size = tryGetFileSize();
-        if (!object_size.has_value())
-            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot get file size for object {}", source_file_path);
-
+        const auto object_size = getFileSize();
         CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
+
         file_segments = cache->getOrSet(
-            cache_key, file_offset_of_buffer_end, size, object_size.value(),
-            create_settings, settings.filesystem_cache_segments_batch_size, user, settings.filesystem_cache_boundary_alignment);
+            cache_key, file_offset_of_buffer_end, size, object_size,
+            create_settings, settings.filesystem_cache_segments_batch_size, origin, settings.filesystem_cache_boundary_alignment);
     }
 
     return !file_segments->empty();
@@ -482,7 +488,12 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
     /// (same different threads of the same query), it will allow read buffer to be reused,
     /// reducing number of s3 requests. This does apply however only to case when
     /// those different threads hold the file segment at the same time, making its ref count > 2.
-    read_buffer_for_file_segment->setReadUntilPosition(range.right + 1); /// [..., range.right]
+    ///
+    /// We add min with getFileSize here, because only in case of DistributedCache
+    /// we do not resize file segment when write-through cache buffer is destructed,
+    /// because we do not know at that moment if all data was fully sent or we just disconnected (this is in TODO to fix).
+    /// So here we can have file segment size bigger than actual object size.
+    read_buffer_for_file_segment->setReadUntilPosition(std::min(range.right + 1, getFileSize())); /// [..., range.right]
 
     switch (read_type)
     {

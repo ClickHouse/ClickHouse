@@ -38,7 +38,7 @@ def started_cluster():
         yield cluster
 
     finally:
-        cluster.shutdown()
+        cluster.shutdown(ignore_logical_errors=True)
 
 
 def random_string(length):

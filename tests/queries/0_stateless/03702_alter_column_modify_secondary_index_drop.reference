@@ -12,7 +12,7 @@ CREATE TABLE test_table
     ENGINE = MergeTree()
     ORDER BY id
     PARTITION BY id
-    SETTINGS alter_column_secondary_index_mode = 'drop', min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0;
+    SETTINGS alter_column_secondary_index_mode = 'drop', add_minmax_index_for_numeric_columns=0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0;
 INSERT INTO test_table VALUES (1, '10', '127.0.0.1'), (2, '20', '127.0.0.2'), (3, '300', '127.0.0.3');
 SELECT 'IP column tests';
 IP column tests
@@ -288,7 +288,7 @@ CREATE TABLE test_table
     ENGINE = MergeTree()
     ORDER BY id
     PARTITION BY id
-    SETTINGS alter_column_secondary_index_mode = 'drop', min_bytes_for_full_part_storage ='1G';
+    SETTINGS alter_column_secondary_index_mode = 'drop', add_minmax_index_for_numeric_columns=0, min_bytes_for_full_part_storage ='1G';
 INSERT INTO test_table VALUES (1, '10', '127.0.0.1'), (2, '20', '127.0.0.2'), (3, '300', '127.0.0.3');
 SELECT 'IP column tests';
 IP column tests

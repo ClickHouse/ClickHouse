@@ -59,6 +59,8 @@ extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergMinMaxIndexPrunedFiles;
 extern const Event IcebergMetadataReadWaitTimeMicroseconds;
 extern const Event IcebergMetadataReturnedObjectInfos;
+extern const Event IcebergMinMaxNonPrunedDeleteFiles;
+extern const Event IcebergMinMaxPrunedDeleteFiles;
 };
 
 
@@ -170,11 +172,11 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
                 data_snapshot->manifest_list_entries[manifest_file_index].added_sequence_number,
                 data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
             internal_data_index = 0;
+            files = files_generator(current_manifest_file_content);
         }
-        auto files = files_generator(current_manifest_file_content);
         while (internal_data_index < files.size())
         {
-            const auto & manifest_file_entry = files[internal_data_index++];
+            const ManifestFileEntryPtr & manifest_file_entry = files[internal_data_index++];
             if ((manifest_file_entry->schema_id != previous_entry_schema) && (use_partition_pruning))
             {
                 previous_entry_schema = manifest_file_entry->schema_id;
@@ -217,6 +219,7 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
             }
         }
         current_manifest_file_content = nullptr;
+        files.clear();
         current_pruner = std::nullopt;
         ++manifest_file_index;
         internal_data_index = 0;
@@ -370,7 +373,38 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         for (const auto & position_delete :
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {
-            object_info->addPositionDeleteObject(position_delete);
+            const auto & data_file_path = object_info->info.data_object_file_path_key;
+            const auto & lower = position_delete->lower_reference_data_file_path;
+            const auto & upper = position_delete->upper_reference_data_file_path;
+            bool can_contain_data_file_deletes
+                = (!lower.has_value() || lower.value() <= data_file_path) && (!upper.has_value() || upper.value() >= data_file_path);
+            /// Skip position deletes that do not match the data file path.
+            if (!can_contain_data_file_deletes)
+            {
+                ProfileEvents::increment(ProfileEvents::IcebergMinMaxPrunedDeleteFiles);
+                LOG_TEST(
+                    logger,
+                    "Skipping position delete file `{}` for data file `{}` because position delete has out of bounds reference data file "
+                    "bounds: "
+                    "(lower bound: `{}`, upper bound: `{}`)",
+                    position_delete->file_path,
+                    data_file_path,
+                    lower.value_or("[no lower bound]"),
+                    upper.value_or("[no upper bound]"));
+            }
+            else
+            {
+                ProfileEvents::increment(ProfileEvents::IcebergMinMaxNonPrunedDeleteFiles);
+                LOG_TEST(
+                    logger,
+                    "Processing position delete file `{}` for data file `{}` with reference data file bounds: "
+                    "(lower bound: `{}`, upper bound: `{}`)",
+                    position_delete->file_path,
+                    data_file_path,
+                    lower.value_or("[no lower bound]"),
+                    upper.value_or("[no upper bound]"));
+                object_info->addPositionDeleteObject(position_delete);
+            }
         }
         for (const auto & equality_delete :
              defineDeletesSpan(manifest_file_entry, equality_deletes_files, /* is_equality_delete */ true, logger))

@@ -1,5 +1,57 @@
 Positive tests on preprocessor construction and use.
-- Test single tokenizer and preprocessor argument.
+- Test simple preprocessor expression.
+1
+1
+1
+1
+1
+1
+0
+1
+1
+1
+1
+1
+1
+1
+1
+- Test simple preprocessor expression with LowCardinality.
+1
+1
+1
+1
+1
+1
+0
+1
+1
+1
+1
+1
+1
+1
+1
+- Test simple preprocessor expression with FixedString.
+1
+1
+1
+1
+1
+1
+1
+1
+- Test simple preprocessor expression with Array(String).
+1
+1
+1
+1
+1
+1
+1
+1
+- Test simple preprocessor expression with Array(FixedString).
+1
+1
 1
 1
 1
@@ -13,6 +65,15 @@ Positive tests on preprocessor construction and use.
 1
 0
 0
+0
+1
+0
+1
+1
+1
+0
+1
+1
 - Test preprocessor declaration using udf.
 1
 0
@@ -20,6 +81,15 @@ Positive tests on preprocessor construction and use.
 1
 0
 0
+0
+1
+0
+1
+1
+1
+0
+1
+1
 Negative tests on preprocessor construction validations.
 - The preprocessor argument must not reference non-indexed columns
 - Index definition may not be and expression when there is preprocessor
@@ -29,4 +99,3 @@ Negative tests on preprocessor construction validations.
 - The preprocessor must have input and output values of the same type (here: String)
 - The preprocessor expression must use the column identifier
 - The preprocessor expression must use only deterministic functions
-- The preprocessor expression is not compatible with array columns (yet)

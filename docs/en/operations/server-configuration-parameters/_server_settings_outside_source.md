@@ -397,17 +397,6 @@ See also:
 <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
-## format_schema_path {#format_schema_path}
-
-The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](/interfaces/formats/CapnProto) format.
-
-**Example**
-
-```xml
-<!-- Directory containing schema files for various input formats. -->
-<format_schema_path>format_schemas/</format_schema_path>
-```
-
 ## graphite {#graphite}
 
 Sending data to [Graphite](https://github.com/graphite-project).
@@ -468,16 +457,6 @@ For more details, see [GraphiteMergeTree](../../engines/table-engines/mergetree-
         </retention>
     </default>
 </graphite_rollup_example>
-```
-
-## google_protos_path {#google_protos_path}
-
-Defines a directory containing proto files for Protobuf types.
-
-Example:
-
-```xml
-<google_protos_path>/usr/share/clickhouse/protos/</google_protos_path>
 ```
 
 ## http_handlers {#http_handlers}
@@ -604,33 +583,6 @@ A value of `0` means ClickHouse disables HSTS. If you set a positive number, the
 <hsts_max_age>600000</hsts_max_age>
 ```
 
-## mlock_executable {#mlock_executable}
-
-Perform `mlockall` after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load.
-
-:::note
-Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
-Keep in mind that this setting would not work without "CAP_IPC_LOCK" capability.
-:::
-
-**Example**
-
-```xml
-<mlock_executable>false</mlock_executable>
-```
-
-## include_from {#include_from}
-
-The path to the file with substitutions. Both XML and YAML formats are supported.
-
-For more information, see the section "[Configuration files](/operations/configuration-files)".
-
-**Example**
-
-```xml
-<include_from>/etc/metrica.xml</include_from>
-```
-
 ## interserver_listen_host {#interserver_listen_host}
 
 Restriction on hosts that can exchange data between ClickHouse servers.
@@ -650,50 +602,6 @@ By default, the value is equal to the [`listen_host`](#listen_host) setting.
 Type:
 
 Default:
-
-## interserver_http_port {#interserver_http_port}
-
-Port for exchanging data between ClickHouse servers.
-
-**Example**
-
-```xml
-<interserver_http_port>9009</interserver_http_port>
-```
-
-## interserver_http_host {#interserver_http_host}
-
-The hostname that can be used by other servers to access this server.
-
-If omitted, it is defined in the same way as the `hostname -f` command.
-
-Useful for breaking away from a specific network interface.
-
-**Example**
-
-```xml
-<interserver_http_host>example.clickhouse.com</interserver_http_host>
-```
-
-## interserver_https_port {#interserver_https_port}
-
-Port for exchanging data between ClickHouse servers over `HTTPS`.
-
-**Example**
-
-```xml
-<interserver_https_port>9010</interserver_https_port>
-```
-
-## interserver_https_host {#interserver_https_host}
-
-Similar to [`interserver_http_host`](#interserver_http_host), except that this hostname can be used by other servers to access this server over `HTTPS`.
-
-**Example**
-
-```xml
-<interserver_https_host>example.clickhouse.com</interserver_https_host>
-```
 
 ## interserver_http_credentials {#interserver_http_credentials}
 
@@ -758,19 +666,19 @@ The following settings can be configured by sub-tags:
 
 | Setting                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                              |
 |--------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `host`                         | LDAP server hostname or IP, this parameter is mandatory and cannot be empty.                                                                                                                                                                                                                                                                                                                                                             |
-| `port`                         | LDAP server port, default is 636 if `enable_tls` is set to true, `389` otherwise.                                                                                                                                                                                                                                                                                                                                                        |
-| `bind_dn`                      | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `\{user_name\}` substrings of the template with the actual user name during each authentication attempt.                                                                                                                                                                                                                               |
-| `user_dn_detection`            | Section with LDAP search parameters for detecting the actual user DN of the bound user. This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `\{user_dn\}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated with to the actual detected user DN value. |
-| `verification_cooldown`        | A period of time, in seconds, after a successful bind attempt, during which a user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. Specify `0` (the default) to disable caching and force contacting the LDAP server for each authentication request.                                                                                                                  |
-| `enable_tls`                   | Flag to trigger use of secure connection to the LDAP server. Specify `no` for plain text (`ldap://`) protocol (not recommended). Specify `yes` for LDAP over SSL/TLS (`ldaps://`) protocol (recommended, the default). Specify `starttls` for legacy StartTLS protocol (plain text (`ldap://`) protocol, upgraded to TLS).                                                                                                               |
+| `bind_dn` | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `\{user_name\}` substrings of the template with the actual user name during each authentication attempt.                                                                                                                                                                                                                               |
+| `enable_tls` | Flag to trigger use of secure connection to the LDAP server. Specify `no` for plain text (`ldap://`) protocol (not recommended). Specify `yes` for LDAP over SSL/TLS (`ldaps://`) protocol (recommended, the default). Specify `starttls` for legacy StartTLS protocol (plain text (`ldap://`) protocol, upgraded to TLS).                                                                                                               |
+| `host` | LDAP server hostname or IP, this parameter is mandatory and cannot be empty.                                                                                                                                                                                                                                                                                                                                                             |
+| `port` | LDAP server port, default is 636 if `enable_tls` is set to true, `389` otherwise.                                                                                                                                                                                                                                                                                                                                                        |
+| `tls_ca_cert_dir` | path to the directory containing CA certificates.                                                                                                                                                                                                                                                                                                                                                                                        |
+| `tls_ca_cert_file` | path to CA certificate file.                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `tls_cert_file` | path to certificate file.                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `tls_cipher_suite` | allowed cipher suite (in OpenSSL notation).                                                                                                                                                                                                                                                                                                                                                                                              |
+| `tls_key_file` | path to certificate key file.                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `tls_minimum_protocol_version` | The minimum protocol version of SSL/TLS. Accepted values are: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2` (the default).                                                                                                                                                                                                                                                                                                                |
-| `tls_require_cert`             | SSL/TLS peer certificate verification behavior. Accepted values are: `never`, `allow`, `try`, `demand` (the default).                                                                                                                                                                                                                                                                                                                    |
-| `tls_cert_file`                | path to certificate file.                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `tls_key_file`                 | path to certificate key file.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `tls_ca_cert_file`             | path to CA certificate file.                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `tls_ca_cert_dir`              | path to the directory containing CA certificates.                                                                                                                                                                                                                                                                                                                                                                                        |
-| `tls_cipher_suite`             | allowed cipher suite (in OpenSSL notation).                                                                                                                                                                                                                                                                                                                                                                                              |
+| `tls_require_cert` | SSL/TLS peer certificate verification behavior. Accepted values are: `never`, `allow`, `try`, `demand` (the default).                                                                                                                                                                                                                                                                                                                    |
+| `user_dn_detection` | Section with LDAP search parameters for detecting the actual user DN of the bound user. This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `\{user_dn\}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated with to the actual detected user DN value. |
+| `verification_cooldown` | A period of time, in seconds, after a successful bind attempt, during which a user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. Specify `0` (the default) to disable caching and force contacting the LDAP server for each authentication request.                                                                                                                  |
 
 Setting `user_dn_detection` can be configured with sub-tags:
 
@@ -825,48 +733,6 @@ Examples:
 <listen_host>127.0.0.1</listen_host>
 ```
 
-## listen_try {#listen_try}
-
-The server will not exit if IPv6 or IPv4 networks are unavailable while trying to listen.
-
-**Example**
-
-```xml
-<listen_try>0</listen_try>
-```
-
-## listen_reuse_port {#listen_reuse_port}
-
-Allow multiple servers to listen on the same address:port. Requests will be routed to a random server by the operating system. Enabling this setting is not recommended.
-
-**Example**
-
-```xml
-<listen_reuse_port>0</listen_reuse_port>
-```
-
-Type:
-
-Default:
-
-## listen_backlog {#listen_backlog}
-
-Backlog (queue size of pending connections) of the listen socket. The default value of `4096` is the same as that of linux [5.4+](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=19f92a030ca6d772ab44b22ee6a01378a8cb32d4)).
-
-Usually this value does not need to be changed, since:
-- The default value is large enough,
-- For accepting client's connections server has separate thread.
-
-So even if you have `TcpExtListenOverflows` (from `nstat`) non-zero and this counter grows for ClickHouse server it does not mean that this value needs to be increased, since:
-- Usually if `4096` is not enough it shows some internal ClickHouse scaling issue, so it is better to report an issue.
-- It does not mean that the server can handle more connections later (and even if it could, by that moment clients may be gone or disconnected).
-
-**Example**
-
-```xml
-<listen_backlog>4096</listen_backlog>
-```
-
 ## logger {#logger}
 
 The location and format of log messages.
@@ -875,22 +741,22 @@ The location and format of log messages.
 
 | Key                    | Description                                                                                                                                                        |
 |------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `level`                | Log level. Acceptable values: `none` (turn logging off), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                 |
-| `log`                  | The path to the log file.                                                                                                                                          |
-| `errorlog`             | The path to the error log file.                                                                                                                                    |
-| `size`                 | Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created. |
-| `rotation`             | Rotation policy: Controls when log files are rotated. Rotation can be based on size, time, or a combination of both. Examples: 100M, daily, 100M,daily. Once the log file exceeds the specified size or when the specified time interval is reached, it is renamed and archived, and a new log file is created. |
-| `count`                | Rotation policy: How many historical log files ClickHouse are kept at most.                                                                                        |
-| `stream_compress`      | Compress log messages using LZ4. Set to `1` or `true` to enable.                                                                                                   |
-| `console`              | Enable logging to the console. Set to `1` or `true` to enable. Default is `1` if ClickHouse does not run in daemon mode, `0` otherwise.                            |
-| `console_log_level`    | Log level for console output. Defaults to `level`.                                                                                                                 |
-| `formatting.type`      | Log format for console output. Currently, only `json` is supported                                                                                                 |
-| `use_syslog`           | Also forward log output to syslog.                                                                                                                                 |
-| `syslog_level`         | Log level for logging to syslog.                                                                                                                                   |
-| `async`                | When `true` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG           |
+| `async` | When `true` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG           |
 | `async_queue_max_size` | When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped                       |
-| `startup_level`        | Startup level is used to set the root logger level at server startup. After startup log level is reverted to the `level` setting                                   |
-| `shutdown_level`       | Shutdown level is used to set the root logger level at server Shutdown.                                                                                            |
+| `console` | Enable logging to the console. Set to `1` or `true` to enable. Default is `1` if ClickHouse does not run in daemon mode, `0` otherwise.                            |
+| `console_log_level` | Log level for console output. Defaults to `level`.                                                                                                                 |
+| `count` | Rotation policy: How many historical log files ClickHouse are kept at most.                                                                                        |
+| `errorlog` | The path to the error log file.                                                                                                                                    |
+| `formatting.type` | Log format for console output. Currently, only `json` is supported                                                                                                 |
+| `level` | Log level. Acceptable values: `none` (turn logging off), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                 |
+| `log` | The path to the log file.                                                                                                                                          |
+| `rotation` | Rotation policy: Controls when log files are rotated. Rotation can be based on size, time, or a combination of both. Examples: 100M, daily, 100M,daily. Once the log file exceeds the specified size or when the specified time interval is reached, it is renamed and archived, and a new log file is created. |
+| `shutdown_level` | Shutdown level is used to set the root logger level at server Shutdown.                                                                                            |
+| `size` | Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created. |
+| `startup_level` | Startup level is used to set the root logger level at server startup. After startup log level is reverted to the `level` setting                                   |
+| `stream_compress` | Compress log messages using LZ4. Set to `1` or `true` to enable.                                                                                                   |
+| `syslog_level` | Log level for logging to syslog.                                                                                                                                   |
+| `use_syslog` | Also forward log output to syslog.                                                                                                                                 |
 
 **Log format specifiers**
 
@@ -1068,9 +934,9 @@ Keys:
 
 | Key                   | Description                                                                                                                          |
 |-----------------------|--------------------------------------------------------------------------------------------------------------------------------------|
-| `enabled`             | Boolean flag to enable the feature, `true` by default. Set to `false` to avoid sending crash reports.                                |
+| `enabled` | Boolean flag to enable the feature, `true` by default. Set to `false` to avoid sending crash reports.                                |
+| `endpoint` | You can override the endpoint URL for sending crash reports.                                                                         |
 | `send_logical_errors` | `LOGICAL_ERROR` is like an `assert`, it is a bug in ClickHouse. This boolean flag enables sending this exceptions (Default: `true`). |
-| `endpoint`            | You can override the endpoint URL for sending crash reports.                                                                         |
 
 **Recommended usage**
 
@@ -1212,34 +1078,6 @@ Empty by default.
 <replica_group_name>backups</replica_group_name>
 ```
 
-## remap_executable {#remap_executable}
-
-Setting to reallocate memory for machine code ("text") using huge pages.
-
-:::note
-This feature is highly experimental.
-:::
-
-Example:
-
-```xml
-<remap_executable>false</remap_executable>
-```
-
-## max_open_files {#max_open_files}
-
-The maximum number of open files.
-
-:::note
-We recommend using this option in macOS since the `getrlimit()` function returns an incorrect value.
-:::
-
-**Example**
-
-```xml
-<max_open_files>262144</max_open_files>
-```
-
 ## max_session_timeout {#max_session_timeout}
 
 Maximum session timeout, in seconds.
@@ -1348,26 +1186,26 @@ Keys for server/client settings:
 
 | Option                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Default Value                              |
 |-------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------|
-| `privateKeyFile`              | Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.                                                                                                                                                                                                                                                                                                                                              |                                            |
-| `certificateFile`             | Path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contains the certificate.                                                                                                                                                                                                                                                                                                                                                |                                            |
-| `caConfig`                    | Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). |                                            |
-| `verificationMode`            | The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.                                                                                                                                                                                                         | `relaxed`                                  |
-| `verificationDepth`           | The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.                                                                                                                                                                                                                                                                                                                                            | `9`                                        |
-| `loadDefaultCAFile`           | Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).                                                                                                                                                                        | `true`                                     |
-| `cipherList`                  | Supported OpenSSL encryptions.                                                                                                                                                                                                                                                                                                                                                                                                                                         | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`  |
-| `cacheSessions`               | Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.                                                                                                                                                                                                                                                                                                                                         | `false`                                    |
-| `sessionIdContext`            | A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching.                                                                                                                                                        | `$\{application.name\}`                      |
-| `sessionCacheSize`            | The maximum number of sessions that the server caches. A value of `0` means unlimited sessions.                                                                                                                                                                                                                                                                                                                                                                        | [1024\*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978)                            |
-| `sessionTimeout`              | Time for caching the session on the server in hours.                                                                                                                                                                                                                                                                                                                                                                                                                   | `2`                                        |
-| `extendedVerification`        | If enabled, verify that the certificate CN or SAN matches the peer hostname.                                                                                                                                                                                                                                                                                                                                                                                           | `false`                                    |
-| `requireTLSv1`                | Require a TLSv1 connection. Acceptable values: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                        | `false`                                    |
-| `requireTLSv1_1`              | Require a TLSv1.1 connection. Acceptable values: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                      | `false`                                    |
-| `requireTLSv1_2`              | Require a TLSv1.2 connection. Acceptable values: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                      | `false`                                    |
-| `fips`                        | Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.                                                                                                                                                                                                                                                                                                                                                                                 | `false`                                    |
+| `cacheSessions` | Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.                                                                                                                                                                                                                                                                                                                                         | `false`                                    |
+| `caConfig` | Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). |                                            |
+| `certificateFile` | Path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contains the certificate.                                                                                                                                                                                                                                                                                                                                                |                                            |
+| `cipherList` | Supported OpenSSL encryptions.                                                                                                                                                                                                                                                                                                                                                                                                                                         | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`  |
+| `disableProtocols` | Protocols that are not allowed to be used.                                                                                                                                                                                                                                                                                                                                                                                                                             |                                            |
+| `extendedVerification` | If enabled, verify that the certificate CN or SAN matches the peer hostname.                                                                                                                                                                                                                                                                                                                                                                                           | `false`                                    |
+| `fips` | Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.                                                                                                                                                                                                                                                                                                                                                                                 | `false`                                    |
+| `invalidCertificateHandler` | Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .                                                                                                                                                                                                                                                                           | `RejectCertificateHandler`                 |
+| `loadDefaultCAFile` | Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).                                                                                                                                                                        | `true`                                     |
+| `preferServerCiphers` | Client-preferred server ciphers.                                                                                                                                                                                                                                                                                                                                                                                                                                       | `false`                                    |
+| `privateKeyFile` | Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.                                                                                                                                                                                                                                                                                                                                              |                                            |
 | `privateKeyPassphraseHandler` | Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.                                                                                                                                                                                                | `KeyConsoleHandler`                        |
-| `invalidCertificateHandler`   | Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .                                                                                                                                                                                                                                                                           | `RejectCertificateHandler`                 |
-| `disableProtocols`            | Protocols that are not allowed to be used.                                                                                                                                                                                                                                                                                                                                                                                                                             |                                            |
-| `preferServerCiphers`         | Client-preferred server ciphers.                                                                                                                                                                                                                                                                                                                                                                                                                                       | `false`                                    |
+| `requireTLSv1` | Require a TLSv1 connection. Acceptable values: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                        | `false`                                    |
+| `requireTLSv1_1` | Require a TLSv1.1 connection. Acceptable values: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                      | `false`                                    |
+| `requireTLSv1_2` | Require a TLSv1.2 connection. Acceptable values: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                      | `false`                                    |
+| `sessionCacheSize` | The maximum number of sessions that the server caches. A value of `0` means unlimited sessions.                                                                                                                                                                                                                                                                                                                                                                        | [1024\*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978)                            |
+| `sessionIdContext` | A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching.                                                                                                                                                        | `$\{application.name\}`                      |
+| `sessionTimeout` | Time for caching the session on the server in hours.                                                                                                                                                                                                                                                                                                                                                                                                                   | `2`                                        |
+| `verificationDepth` | The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.                                                                                                                                                                                                                                                                                                                                            | `9`                                        |
+| `verificationMode` | The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.                                                                                                                                                                                                         | `relaxed`                                  |
 
 **Example of settings:**
 
@@ -1420,20 +1258,6 @@ Queries are logged in the [system.part_log](/operations/system-tables/part_log) 
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </part_log>
-```
-
-## path {#path}
-
-The path to the directory containing data.
-
-:::note
-The trailing slash is mandatory.
-:::
-
-**Example**
-
-```xml
-<path>/var/lib/clickhouse/</path>
 ```
 
 ## processors_profile_log {#processors_profile_log}
@@ -1563,10 +1387,10 @@ The following settings are available:
 
 | Setting                   | Description                                                                            | Default Value |
 |---------------------------|----------------------------------------------------------------------------------------|---------------|
-| `max_size_in_bytes`       | The maximum cache size in bytes. `0` means the query cache is disabled.                | `1073741824`  |
-| `max_entries`             | The maximum number of `SELECT` query results stored in the cache.                      | `1024`        |
+| `max_entries` | The maximum number of `SELECT` query results stored in the cache.                      | `1024`        |
 | `max_entry_size_in_bytes` | The maximum size in bytes `SELECT` query results may have to be saved in the cache.    | `1048576`     |
-| `max_entry_size_in_rows`  | The maximum number of rows `SELECT` query results may have to be saved in the cache.   | `30000000`    |
+| `max_entry_size_in_rows` | The maximum number of rows `SELECT` query results may have to be saved in the cache.   | `30000000`    |
+| `max_size_in_bytes` | The maximum cache size in bytes. `0` means the query cache is disabled.                | `1073741824`  |
 
 :::note
 - Changed settings take effect immediately.
@@ -1719,19 +1543,19 @@ The following settings can be configured by sub-tags:
 
 | Setting                            | Description                                                                                                                                             | Default             | Note                                                                                                               |
 |------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|--------------------------------------------------------------------------------------------------------------------|
-| `database`                         | Name of the database.                                                                                                                                   |                     |                                                                                                                    |
-| `table`                            | Name of the system table.                                                                                                                               |                     |                                                                                                                    |
-| `engine`                           | [MergeTree Engine Definition](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) for a system table. |                     | Cannot be used if `partition_by` or `order_by` defined. If not specified `MergeTree` is selected by default        |
-| `partition_by`                     | [Custom partitioning key](/engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table.                               |                     | If `engine` is specified for system table, `partition_by` parameter should be specified directly inside 'engine'   |
-| `ttl`                              | Specifies the table [TTL](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).                                              |                     | If `engine` is specified for system table, `ttl` parameter should be specified directly inside 'engine'            |
-| `order_by`                         | [Custom sorting key](/engines/table-engines/mergetree-family/mergetree#order_by) for a system table. Can't be used if `engine` defined.      |                     | If `engine` is specified for system table, `order_by` parameter should be specified directly inside 'engine'       |
-| `storage_policy`                   | Name of the storage policy to use for the table (optional).                                                                                             |                     | If `engine` is specified for system table, `storage_policy` parameter should be specified directly inside 'engine' |
-| `settings`                         | [Additional parameters](/engines/table-engines/mergetree-family/mergetree/#settings) that control the behavior of the MergeTree (optional).   |                     | If `engine` is specified for system table, `settings` parameter should be specified directly inside 'engine'       |
-| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                      | `7500`              |                                                                                                                    |
-| `max_size_rows`                    | Maximal size in lines for the logs. When the amount of non-flushed logs reaches the max_size, logs are dumped to the disk.                              | `1024`           |                                                                                                                    |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                        | `1024`              |                                                                                                                    |
 | `buffer_size_rows_flush_threshold` | Threshold for amount of lines. If the threshold is reached, flushing logs to the disk is launched in background.                                        | `max_size_rows / 2` |                                                                                                                    |
-| `flush_on_crash`                   | Sets whether logs should be dumped to the disk in case of a crash.                                                                                      | `false`             |                                                                                                                    |
+| `database` | Name of the database.                                                                                                                                   |                     |                                                                                                                    |
+| `engine` | [MergeTree Engine Definition](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) for a system table. |                     | Cannot be used if `partition_by` or `order_by` defined. If not specified `MergeTree` is selected by default        |
+| `flush_interval_milliseconds` | Interval for flushing data from the buffer in memory to the table.                                                                                      | `7500`              |                                                                                                                    |
+| `flush_on_crash` | Sets whether logs should be dumped to the disk in case of a crash.                                                                                      | `false`             |                                                                                                                    |
+| `max_size_rows` | Maximal size in lines for the logs. When the amount of non-flushed logs reaches the max_size, logs are dumped to the disk.                              | `1024`           |                                                                                                                    |
+| `order_by` | [Custom sorting key](/engines/table-engines/mergetree-family/mergetree#order_by) for a system table. Can't be used if `engine` defined.      |                     | If `engine` is specified for system table, `order_by` parameter should be specified directly inside 'engine'       |
+| `partition_by` | [Custom partitioning key](/engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table.                               |                     | If `engine` is specified for system table, `partition_by` parameter should be specified directly inside 'engine'   |
+| `reserved_size_rows` | Pre-allocated memory size in lines for the logs.                                                                                                        | `1024`              |                                                                                                                    |
+| `settings` | [Additional parameters](/engines/table-engines/mergetree-family/mergetree/#settings) that control the behavior of the MergeTree (optional).   |                     | If `engine` is specified for system table, `settings` parameter should be specified directly inside 'engine'       |
+| `storage_policy` | Name of the storage policy to use for the table (optional).                                                                                             |                     | If `engine` is specified for system table, `storage_policy` parameter should be specified directly inside 'engine' |
+| `table` | Name of the system table.                                                                                                                               |                     |                                                                                                                    |
+| `ttl` | Specifies the table [TTL](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).                                              |                     | If `engine` is specified for system table, `ttl` parameter should be specified directly inside 'engine'            |
 
 The default server configuration file `config.xml` contains the following settings section:
 
@@ -1831,8 +1655,8 @@ sensitive data leakage from SQL queries such as names, emails, personal identifi
 
 | Setting   | Description                                                                   |
 |-----------|-------------------------------------------------------------------------------|
-| `name`    | name for the rule (optional)                                                  |
-| `regexp`  | RE2 compatible regular expression (mandatory)                                 |
+| `name` | name for the rule (optional)                                                  |
+| `regexp` | RE2 compatible regular expression (mandatory)                                 |
 | `replace` | substitution string for sensitive data (optional, by default - six asterisks) |
 
 The masking rules are applied to the whole query (to prevent leaks of sensitive data from malformed / non-parseable queries).
@@ -1947,29 +1771,6 @@ Port for communicating with clients over PostgreSQL protocol.
 <postgresql_port>9005</postgresql_port>
 ```
 
-## mysql_require_secure_transport {#mysql_require_secure_transport}
-
-If set to true, secure communication is required with clients over [mysql_port](#mysql_port). Connection with option `--ssl-mode=none` will be refused. Use it with [OpenSSL](#openssl) settings.
-
-## postgresql_require_secure_transport {#postgresql_require_secure_transport}
-
-If set to true, secure communication is required with clients over [postgresql_port](#postgresql_port). Connection with option `sslmode=disable` will be refused. Use it with [OpenSSL](#openssl) settings.
-
-## tmp_path {#tmp_path}
-
-Path on the local filesystem to store temporary data for processing large queries.
-
-:::note
-- Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
-- The trailing slash is mandatory.
-:::
-
-**Example**
-
-```xml
-<tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
-```
-
 ## url_scheme_mappers {#url_scheme_mappers}
 
 Configuration for translating shortened or symbolic URL prefixes into full URLs.
@@ -1989,30 +1790,6 @@ Example:
     </oss>
 </url_scheme_mappers>
 ```
-
-## user_files_path {#user_files_path}
-
-The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md), [fileCluster()](../../sql-reference/table-functions/fileCluster.md).
-
-**Example**
-
-```xml
-<user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
-```
-
-## user_scripts_path {#user_scripts_path}
-
-The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](/sql-reference/functions/udf#executable-user-defined-functions).
-
-**Example**
-
-```xml
-<user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
-```
-
-Type:
-
-Default:
 
 ## user_defined_path {#user_defined_path}
 
@@ -2045,13 +1822,13 @@ Settings for optional improvements in the access control system.
 
 | Setting                                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Default |
 |-------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| `users_without_row_policies_can_read_rows`      | Sets whether users without permissive row policies can still read rows using a `SELECT` query. For example, if there are two users A and B and a row policy is defined only for A, then if this setting is true, user B will see all rows. If this setting is false, user B will see no rows.                                                                                                                                                                                                                    | `true`  |
-| `on_cluster_queries_require_cluster_grant`      | Sets whether `ON CLUSTER` queries require the `CLUSTER` grant.                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `true`  |
-| `select_from_system_db_requires_grant`          | Sets whether `SELECT * FROM system.<table>` requires any grants and can be executed by any user. If set to true then this query requires `GRANT SELECT ON system.<table>` just as for non-system tables. Exceptions: a few system tables (`tables`, `columns`, `databases`, and some constant tables like `one`, `contributors`) are still accessible for everyone; and if there is a `SHOW` privilege (e.g. `SHOW USERS`) granted then the corresponding system table (i.e. `system.users`) will be accessible. | `true`  |
+| `on_cluster_queries_require_cluster_grant` | Sets whether `ON CLUSTER` queries require the `CLUSTER` grant.                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `true`  |
+| `role_cache_expiration_time_seconds` | Sets the number of seconds since last access, that a role is stored in the Role Cache.                                                                                                                                                                                                                                                                                                                                                                                                                           | `600`   |
 | `select_from_information_schema_requires_grant` | Sets whether `SELECT * FROM information_schema.<table>` requires any grants and can be executed by any user. If set to true, then this query requires `GRANT SELECT ON information_schema.<table>`, just as for ordinary tables.                                                                                                                                                                                                                                                                                 | `true`  |
-| `settings_constraints_replace_previous`         | Sets whether a constraint in a settings profile for some setting will cancel actions of the previous constraint (defined in other profiles) for that setting, including fields which are not set by the new constraint. It also enables the `changeable_in_readonly` constraint type.                                                                                                                                                                                                                            | `true`  |
-| `table_engines_require_grant`                   | Sets whether creating a table with a specific table engine requires a grant.                                                                                                                                                                                                                                                                                                                                                                                                                                     | `false` |
-| `role_cache_expiration_time_seconds`            | Sets the number of seconds since last access, that a role is stored in the Role Cache.                                                                                                                                                                                                                                                                                                                                                                                                                           | `600`   |
+| `select_from_system_db_requires_grant` | Sets whether `SELECT * FROM system.<table>` requires any grants and can be executed by any user. If set to true then this query requires `GRANT SELECT ON system.<table>` just as for non-system tables. Exceptions: a few system tables (`tables`, `columns`, `databases`, and some constant tables like `one`, `contributors`) are still accessible for everyone; and if there is a `SHOW` privilege (e.g. `SHOW USERS`) granted then the corresponding system table (i.e. `system.users`) will be accessible. | `true`  |
+| `settings_constraints_replace_previous` | Sets whether a constraint in a settings profile for some setting will cancel actions of the previous constraint (defined in other profiles) for that setting, including fields which are not set by the new constraint. It also enables the `changeable_in_readonly` constraint type.                                                                                                                                                                                                                            | `true`  |
+| `table_engines_require_grant` | Sets whether creating a table with a specific table engine requires a grant.                                                                                                                                                                                                                                                                                                                                                                                                                                     | `false` |
+| `users_without_row_policies_can_read_rows` | Sets whether users without permissive row policies can still read rows using a `SELECT` query. For example, if there are two users A and B and a row policy is defined only for A, then if this setting is true, user B will see all rows. If this setting is false, user B will see no rows.                                                                                                                                                                                                                    | `true`  |
 
 Example:
 
@@ -2109,9 +1886,9 @@ The following settings can be configured by sub-tags:
 
 | Setting                                    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 |--------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `node`                                     | ZooKeeper endpoint. You can set multiple endpoints. Eg. `<node index="1"><host>example_host</host><port>2181</port></node>`. The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.                                                                                                                                                                                                                                                                                            |
-| `session_timeout_ms`                       | Maximum timeout for the client session in milliseconds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `operation_timeout_ms`                     | Maximum timeout for one operation in milliseconds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `node` | ZooKeeper endpoint. You can set multiple endpoints. Eg. `<node index="1"><host>example_host</host><port>2181</port></node>`. The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.                                                                                                                                                                                                                                                                                            |
+| `operation_timeout_ms` | Maximum timeout for one operation in milliseconds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `session_timeout_ms` | Maximum timeout for the client session in milliseconds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `root` (optional)                          | The znode that is used as the root for znodes used by the ClickHouse server.                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `fallback_session_lifetime.min` (optional) | Minimum limit for the lifetime of a zookeeper session to the fallback node when primary is unavailable (load-balancing). Set in seconds. Default: 3 hours.                                                                                                                                                                                                                                                                                                                                                              |
 | `fallback_session_lifetime.max` (optional) | Maximum limit for the lifetime of a zookeeper session to the fallback node when primary is unavailable (load-balancing). Set in seconds. Default: 6 hours.                                                                                                                                                                                                                                                                                                                                                              |
@@ -2192,12 +1969,12 @@ The configurable settings within `<distributed_ddl>` include:
 
 | Setting                | Description                                                                                                                       | Default Value                          |
 |------------------------|-----------------------------------------------------------------------------------------------------------------------------------|----------------------------------------|
-| `path`                 | the path in Keeper for the `task_queue` for DDL queries                                                                           |                                        |
-| `profile`              | the profile used to execute the DDL queries                                                                                       |                                        |
-| `pool_size`            | how many `ON CLUSTER` queries can be run simultaneously                                                                           |                                        |
-| `max_tasks_in_queue`   | the maximum number of tasks that can be in the queue.                                                                             | `1,000`                                |
-| `task_max_lifetime`    | delete node if its age is greater than this value.                                                                                | `7 * 24 * 60 * 60` (a week in seconds) |
 | `cleanup_delay_period` | cleaning starts after new node event is received if the last cleaning wasn't made sooner than `cleanup_delay_period` seconds ago. | `60` seconds                           |
+| `max_tasks_in_queue` | the maximum number of tasks that can be in the queue.                                                                             | `1,000`                                |
+| `path` | the path in Keeper for the `task_queue` for DDL queries                                                                           |                                        |
+| `pool_size` | how many `ON CLUSTER` queries can be run simultaneously                                                                           |                                        |
+| `profile` | the profile used to execute the DDL queries                                                                                       |                                        |
+| `task_max_lifetime` | delete node if its age is greater than this value.                                                                                | `7 * 24 * 60 * 60` (a week in seconds) |
 
 **Example**
 
@@ -2324,8 +2101,8 @@ To add an LDAP server as a remote user directory of users that are not defined l
 
 | Setting  | Description                                                                                                                                                                                                                                                                                                                                                                    |
 |----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `roles` | section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified, user will not be able to perform any actions after authentication. If any of the listed roles is not defined locally at the time of authentication, the authentication attempt will fail as if the provided password was incorrect. |
 | `server` | one of LDAP server names defined in `ldap_servers` config section. This parameter is mandatory and cannot be empty.                                                                                                                                                                                                                                                            |
-| `roles`  | section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified, user will not be able to perform any actions after authentication. If any of the listed roles is not defined locally at the time of authentication, the authentication attempt will fail as if the provided password was incorrect. |
 
 **Example**
 
@@ -2402,7 +2179,7 @@ Select a parent field in the tabs below to view their children:
 
 | Field     | Description                         |
 |-----------|-------------------------------------|
-| `<http>`  | A list of one or more HTTP proxies  |
+| `<http>` | A list of one or more HTTP proxies  |
 | `<https>` | A list of one or more HTTPS proxies |
 
   </TabItem>

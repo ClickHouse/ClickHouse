@@ -42,9 +42,6 @@ private:
     std::mutex m;
     std::condition_variable cond_var;
 
-    // Function to execute when a task's endTime is reached
-    bool removeQueryFromSet(QueryStatusPtr query);
-
     static void cancelTask(CancellationChecker::QueryToTrack task);
 
     const LoggerPtr log;

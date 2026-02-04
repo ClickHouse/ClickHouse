@@ -171,6 +171,7 @@ void symbolizeHeapProfile(const std::string & input_filename, const std::string 
         {
             std::string_view line_addresses(line.data() + 1, line.size() - 1);
 
+            bool first = true;
             while (!line_addresses.empty())
             {
                 trimLeft(line_addresses);
@@ -181,7 +182,10 @@ void symbolizeHeapProfile(const std::string & input_filename, const std::string 
                 if (!address.has_value())
                     break;
 
-                addresses.insert(address.value());
+                /// Need to subtract 1 for non first addresses to apply the same fix as in jeprof::FixCallerAddresses()
+                addresses.insert(first ? address.value() : address.value() - 1);
+
+                first = false;
             }
         }
     }
@@ -220,8 +224,7 @@ void symbolizeHeapProfile(const std::string & input_filename, const std::string 
         /// TODO: introduce cache (we have multiple caches for this, need some generic approach)
         StackTrace::forEachFrame(fp, 0, 1, symbolize_callback, /* fatal= */ true);
 
-        /// Need to subtract 1 to apply the same fix as in jeprof::FixCallerAddresses()
-        writePointerHex(reinterpret_cast<const void *>(address - 1), out);
+        writePointerHex(reinterpret_cast<const void *>(address), out);
 
         std::string_view separator(" ");
         /// Reverse, since forEachFrame() adds inline frames first

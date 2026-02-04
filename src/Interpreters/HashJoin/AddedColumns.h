@@ -259,7 +259,7 @@ public:
 
         if (need_replicate)
             /// Reserve 10% more space for columns, because some rows can be repeated
-            reserve_size = static_cast<size_t>(1.1 * reserve_size);
+            reserve_size = static_cast<size_t>(1.1 * static_cast<double>(reserve_size));
 
         for (auto & column : columns)
             column->reserve(reserve_size);

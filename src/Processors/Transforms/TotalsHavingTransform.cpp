@@ -283,7 +283,7 @@ void TotalsHavingTransform::prepareTotals()
         if (totals_mode == TotalsMode::BEFORE_HAVING
             || totals_mode == TotalsMode::AFTER_HAVING_INCLUSIVE
             || (totals_mode == TotalsMode::AFTER_HAVING_AUTO
-                && static_cast<double>(passed_keys) / total_keys >= auto_include_threshold))
+                && static_cast<double>(passed_keys) / static_cast<double>(total_keys) >= auto_include_threshold))
             addToTotals(overflow_aggregates, nullptr);
     }
 

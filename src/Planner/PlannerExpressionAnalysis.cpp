@@ -490,51 +490,52 @@ SortAnalysisResult analyzeSort(
             output_node = &before_sort_actions->dag.materializeNode(*output_node);
     }
 
+    auto actions_step_before_sort = std::make_unique<ActionsChainStep>(before_sort_actions);
+    actions_chain.addStep(std::move(actions_step_before_sort));
+
+    ActionsAndProjectInputsFlagPtr before_interpolate_actions;
+
     /// We add only INPUT columns necessary for INTERPOLATE expression in before ORDER BY actions DAG
     if (query_node.hasInterpolate())
     {
         auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
 
         PlannerActionsVisitor interpolate_actions_visitor(planner_context, correlated_columns_set);
-        ActionsDAG interpolate_actions_dag;
+
+        /// getLastStepAvailableOutputColumns should have been correct.
+        /// However, we materialize ORDER BY columns in case of WITH FILL, and it causes a name-collision.
+        /// If we take getLastStepAvailableOutputColumns list, it may return non-materialized constants,
+        /// so here we add materialized ORDER BY columns manually, and append everything else after.
+        ActionsDAG before_interpolate_actions_dag(before_sort_actions->dag.getResultColumns());
+        for (const auto & out : actions_chain.getLastStepAvailableOutputColumns())
+            if (!before_sort_actions_dag_output_node_names.contains(out.name))
+                before_interpolate_actions_dag.getOutputs().push_back(&before_interpolate_actions_dag.addInput(out));
 
         for (auto & interpolate_node : interpolate_list_node.getNodes())
         {
             auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
-            if (interpolate_node_typed.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT)
-               continue;
 
-            interpolate_actions_visitor.visit(interpolate_actions_dag, interpolate_node_typed.getInterpolateExpression());
+            auto [nodes, correlated_subtrees] = interpolate_actions_visitor.visit(before_interpolate_actions_dag, interpolate_node_typed.getExpression());
+            correlated_subtrees.assertEmpty("in expression to interpolate");
+            if (nodes.size() != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Interpolate expression must return single column");
+            const auto * node = nodes.front();
+            node = &before_interpolate_actions_dag.addAlias(*node, interpolate_node_typed.getExpressionName());
+
+            before_interpolate_actions_dag.getOutputs().push_back(node);
         }
 
-        std::unordered_map<std::string_view, const ActionsDAG::Node *> before_sort_actions_inputs_name_to_node;
-        for (const auto & node : before_sort_actions->dag.getInputs())
-            before_sort_actions_inputs_name_to_node.emplace(node->result_name, node);
-
-        for (const auto & node : interpolate_actions_dag.getNodes())
-        {
-            if (before_sort_actions_dag_output_node_names.contains(node.result_name) ||
-                node.type != ActionsDAG::ActionType::INPUT)
-                continue;
-
-            auto input_node_it = before_sort_actions_inputs_name_to_node.find(node.result_name);
-            if (input_node_it == before_sort_actions_inputs_name_to_node.end())
-            {
-                auto input_column = ColumnWithTypeAndName{node.column, node.result_type, node.result_name};
-                const auto * input_node = &before_sort_actions->dag.addInput(std::move(input_column));
-                auto [it, _] = before_sort_actions_inputs_name_to_node.emplace(node.result_name, input_node);
-                input_node_it = it;
-            }
-
-            before_sort_actions_outputs.push_back(input_node_it->second);
-            before_sort_actions_dag_output_node_names.insert(node.result_name);
-        }
+        before_interpolate_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+        before_interpolate_actions->dag = std::move(before_interpolate_actions_dag);
     }
 
-    auto actions_step_before_sort = std::make_unique<ActionsChainStep>(before_sort_actions);
-    actions_chain.addStep(std::move(actions_step_before_sort));
+    if (before_interpolate_actions)
+    {
+        auto actions_step_before_interpolate = std::make_unique<ActionsChainStep>(before_interpolate_actions);
+        actions_chain.addStep(std::move(actions_step_before_interpolate));
+    }
 
-    return SortAnalysisResult{std::move(before_sort_actions), has_with_fill};
+    return SortAnalysisResult{std::move(before_sort_actions), has_with_fill, std::move(before_interpolate_actions)};
 }
 
 /** Construct limit by analysis result.
@@ -761,7 +762,24 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     auto project_names_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     project_names_actions->dag = ActionsDAG(project_names_input);
-    project_names_actions->dag.project(projection_analysis_result.projection_column_names_with_display_aliases);
+
+    if (query_node.hasInterpolate())
+    {
+        auto project_names = projection_analysis_result.projection_column_names_with_display_aliases;
+        NameSet interpolate_names;
+        auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
+        for (auto & interpolate_node : interpolate_list_node.getNodes())
+            interpolate_names.insert(interpolate_node->as<InterpolateNode &>().getExpressionName());
+
+        for (auto & [name, alias] : project_names)
+            if (interpolate_names.contains(alias))
+                name = alias;
+
+        project_names_actions->dag.project(project_names);
+    }
+    else
+        project_names_actions->dag.project(projection_analysis_result.projection_column_names_with_display_aliases);
+
     project_names_actions->project_input = true;
     actions_chain.addStep(std::make_unique<ActionsChainStep>(project_names_actions));
 

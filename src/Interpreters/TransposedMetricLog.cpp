@@ -80,7 +80,7 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
 
     TransposedMetricLogElement elem;
     elem.event_time = std::chrono::system_clock::to_time_t(current_time);
-    elem.event_date = DateLUT::instance().toDayNum(elem.event_time);
+    elem.event_date = static_cast<UInt16>(DateLUT::instance().toDayNum(elem.event_time));
     elem.event_time_microseconds = timeInMicroseconds(current_time);
 
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)

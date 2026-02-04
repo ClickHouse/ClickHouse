@@ -28,6 +28,8 @@ def started_cluster():
 def test_memory_context_in_trace_log(started_cluster):
     if node.is_built_with_sanitizer():
         pytest.skip("sanitizers built without jemalloc")
+    if node.is_built_with_llvm_coverage():
+        pytest.skip("skip test for llvm coverage builds")
 
     # Clean start (note, event_time >= now()-uptime(), can be flaky)
     node.query("TRUNCATE TABLE IF EXISTS system.trace_log")

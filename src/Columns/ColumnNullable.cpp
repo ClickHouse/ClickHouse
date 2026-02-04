@@ -162,12 +162,12 @@ void ColumnNullable::insertData(const char * pos, size_t length)
     if (pos == nullptr)
     {
         getNestedColumn().insertDefault();
-        getNullMapData().push_back(1);
+        getNullMapData().push_back(true);
     }
     else
     {
         getNestedColumn().insertData(pos, length);
-        getNullMapData().push_back(0);
+        getNullMapData().push_back(false);
     }
 }
 
@@ -205,6 +205,9 @@ char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory, const I
 
 std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
+    if (isNullAt(n))
+        return 1; /// Just the null mask byte for NULL values.
+
     auto nested_size = getNestedColumn().getSerializedValueSize(n, settings);
     if (!nested_size)
         return std::nullopt;
@@ -249,12 +252,12 @@ void ColumnNullable::insert(const Field & x)
     if (x.isNull())
     {
         getNestedColumn().insertDefault();
-        getNullMapData().push_back(1);
+        getNullMapData().push_back(true);
     }
     else
     {
         getNestedColumn().insert(x);
-        getNullMapData().push_back(0);
+        getNullMapData().push_back(false);
     }
 }
 
@@ -263,14 +266,14 @@ bool ColumnNullable::tryInsert(const Field & x)
     if (x.isNull())
     {
         getNestedColumn().insertDefault();
-        getNullMapData().push_back(1);
+        getNullMapData().push_back(true);
         return true;
     }
 
     if (!getNestedColumn().tryInsert(x))
         return false;
 
-    getNullMapData().push_back(0);
+    getNullMapData().push_back(false);
     return true;
 }
 
@@ -300,7 +303,7 @@ void ColumnNullable::doInsertManyFrom(const IColumn & src, size_t position, size
 void ColumnNullable::insertFromNotNullable(const IColumn & src, size_t n)
 {
     getNestedColumn().insertFrom(src, n);
-    getNullMapData().push_back(0);
+    getNullMapData().push_back(false);
 }
 
 void ColumnNullable::insertRangeFromNotNullable(const IColumn & src, size_t start, size_t length)
@@ -1011,7 +1014,7 @@ ColumnPtr makeNullable(const ColumnPtr & column)
     if (isColumnConst(*column))
         return ColumnConst::create(makeNullable(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
 
-    return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
+    return ColumnNullable::create(column, ColumnUInt8::create(column->size(), static_cast<UInt8>(0)));
 }
 
 ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column)
@@ -1025,7 +1028,7 @@ ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column)
     if (column->lowCardinality())
         return assert_cast<const ColumnLowCardinality &>(*column).cloneNullable();
 
-    return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
+    return ColumnNullable::create(column, ColumnUInt8::create(column->size(), static_cast<UInt8>(0)));
 }
 
 ColumnPtr makeNullableSafe(const ColumnPtr & column)

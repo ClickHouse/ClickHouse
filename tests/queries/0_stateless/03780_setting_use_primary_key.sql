@@ -1,6 +1,7 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
+-- add_minmax_index_for_numeric_columns=0: Different plan
 
 -- { echo }
 
@@ -11,7 +12,7 @@ CREATE TABLE tab (
 )
 ENGINE = MergeTree()
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO tab
 SELECT number

@@ -1,5 +1,3 @@
-#include <cstdint>
-
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
 #include <Client/BuzzHouse/Utils/HugeInt.h>
@@ -1132,7 +1130,7 @@ String ArrayType::insertNumberEntry(
 {
     String ret = "[";
     std::uniform_int_distribution<uint64_t> rows_dist(gen.fc.min_nested_rows, max_nested_rows);
-    const uint32_t limit = rows_dist(rg.generator);
+    const uint32_t limit = static_cast<uint32_t>(rows_dist(rg.generator));
 
     for (uint64_t i = 0; i < limit; i++)
     {

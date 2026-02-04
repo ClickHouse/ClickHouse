@@ -35,16 +35,32 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
         cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {}, nullptr);
 
     if (allow_to_use_not_exact_filter_)
-        built_filter = std::make_unique<ApproximateRuntimeFilter>(
-            filters_to_merge_,
-            filter_column_target_type,
-            pass_ratio_threshold_for_disabling_,
-            blocks_to_skip_before_reenabling_,
-            bloom_filter_bytes_,
-            exact_values_limit_,
-            bloom_filter_hash_functions_,
-            max_ratio_of_set_bits_in_bloom_filter_);
+    {
+        if (ApproximateRuntimeFilter::isDataTypeSupported(filter_column_target_type))
+        {
+            built_filter = std::make_unique<ApproximateRuntimeFilter>(
+                filters_to_merge_,
+                filter_column_target_type,
+                pass_ratio_threshold_for_disabling_,
+                blocks_to_skip_before_reenabling_,
+                bloom_filter_bytes_,
+                exact_values_limit_,
+                bloom_filter_hash_functions_,
+                max_ratio_of_set_bits_in_bloom_filter_);
+        }
+        else
+        {
+            built_filter = std::make_unique<ExactContainsRuntimeFilter>(
+                filters_to_merge_,
+                filter_column_target_type,
+                pass_ratio_threshold_for_disabling_,
+                blocks_to_skip_before_reenabling_,
+                bloom_filter_bytes_,
+                exact_values_limit_);
+        }
+    }
     else
+    {
         built_filter = std::make_unique<ExactNotContainsRuntimeFilter>(
             filters_to_merge_,
             filter_column_target_type,
@@ -52,6 +68,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
             blocks_to_skip_before_reenabling_,
             bloom_filter_bytes_,
             exact_values_limit_);
+    }
 }
 
 

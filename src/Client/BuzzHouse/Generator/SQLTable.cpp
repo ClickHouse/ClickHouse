@@ -1,5 +1,3 @@
-#include <cstdint>
-
 #include <Common/checkStackSize.h>
 
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
@@ -230,7 +228,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
         rel.cols.emplace_back(SQLRelationCol(rel_name, names));
     }
     this->table_entries.clear();
-    if (allow_internal_cols && rg.nextSmallNumber() < (this->inside_projection ? 6 : 3))
+    if (allow_internal_cols && (rel.cols.empty() || (rg.nextSmallNumber() < (this->inside_projection ? 6 : 3))))
     {
         if (t.isMergeTreeFamily() && this->allow_not_deterministic)
         {
@@ -308,6 +306,11 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}));
         }
     }
+    if (rel.cols.empty())
+    {
+        /// Ensure at least one column
+        rel.cols.emplace_back(SQLRelationCol(rel_name, {"c0"}));
+    }
     return rel;
 }
 
@@ -351,6 +354,7 @@ void StatementGenerator::addDictionaryRelation(const String & rel_name, const SQ
 
     flatTableColumnPath(
         flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, d.cols, [](const SQLColumn &) { return true; });
+    chassert(!this->table_entries.empty());
     for (const auto & entry : this->table_entries)
     {
         DB::Strings names;
@@ -1426,14 +1430,14 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isGenerateRandomEngine())
     {
-        te->add_params()->set_num(rg.nextInFullRange());
+        te->add_params()->set_num(static_cast<uint32_t>(rg.nextInFullRange()));
         if (rg.nextBool())
         {
             std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
             std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
             te->add_params()->set_num(string_length_dist(rg.generator));
-            te->add_params()->set_num(nested_rows_dist(rg.generator));
+            te->add_params()->set_num(static_cast<uint32_t>(nested_rows_dist(rg.generator)));
         }
     }
     else if (te->has_engine() && b.isKeeperMapEngine())
@@ -1443,7 +1447,7 @@ void StatementGenerator::generateEngineDetails(
         {
             std::uniform_int_distribution<uint64_t> keys_limit_dist(0, 8192);
 
-            te->add_params()->set_num(keys_limit_dist(rg.generator));
+            te->add_params()->set_num(static_cast<uint32_t>(keys_limit_dist(rg.generator)));
         }
     }
     else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine() || b.isAnyS3Engine() || b.isAnyAzureEngine()))
@@ -1485,7 +1489,15 @@ void StatementGenerator::generateEngineDetails(
     if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine() || b.isKeeperMapEngine() || b.isMaterializedPostgreSQLEngine())
         && add_pkey && !entries.empty())
     {
-        colRefOrExpression(rg, rel, b, rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
+        if (b.isRocksEngine() && rg.nextBool())
+        {
+            /// RocksDB allows more than one pkey column
+            generateTableKey(rg, rel, b, false, te->mutable_primary_key());
+        }
+        else
+        {
+            colRefOrExpression(rg, rel, b, rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
+        }
     }
     if (te->has_engine() && b.has_order_by)
     {
@@ -2459,7 +2471,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                 rg,
                 true,
                 false,
-                static_cast<uint32_t>(next.numberOfInsertableColumns(rg.nextSmallNumber() < 4)),
+                static_cast<uint32_t>(std::max<size_t>(1, next.numberOfInsertableColumns(rg.nextSmallNumber() < 4))),
                 std::numeric_limits<uint32_t>::max(),
                 std::nullopt,
                 cts->mutable_select());

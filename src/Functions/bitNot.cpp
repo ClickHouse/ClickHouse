@@ -21,7 +21,7 @@ struct BitNotImpl
 
     static ResultType NO_SANITIZE_UNDEFINED apply(A a)
     {
-        return ~static_cast<ResultType>(a);
+        return static_cast<ResultType>(~static_cast<ResultType>(a));
     }
 
 #if USE_EMBEDDED_COMPILER

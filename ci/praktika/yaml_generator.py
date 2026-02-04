@@ -233,6 +233,10 @@ jobs:
     if: ${{ !cancelled() }}\
 """
 
+        TEMPLATE_IF_EXPRESSION_ALWAYS = """
+    if: ${{ always() }}\
+"""
+
     def __init__(self):
         self.py_workflows = []  # type: List[Workflow.Config]
 
@@ -316,6 +320,8 @@ class PullRequestPushYamlGen:
                 if_expression = (
                     YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION_NOT_CANCELLED
                 )
+            if job.name == Settings.FINISH_WORKFLOW_JOB_NAME:
+                if_expression = YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION_ALWAYS
 
             secrets_envs = []
             for secret in self.workflow_config.secret_names_gh:

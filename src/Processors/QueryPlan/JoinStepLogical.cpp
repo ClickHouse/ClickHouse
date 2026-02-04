@@ -58,6 +58,7 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <stack>
 #include <string_view>
@@ -905,12 +906,11 @@ static void addSortingForMergeJoin(
 static void constructPhysicalStep(
     QueryPlanNode & node,
     ActionsDAG left_pre_join_actions,
+    ActionsDAG right_after_join_actions,
     ActionsDAG post_join_actions,
     std::pair<String, bool> residual_filter_condition,
     JoinPtr join_ptr,
-    const QueryPlanOptimizationSettings & ,
     const JoinSettings & join_settings,
-    const SortingStep::Settings &,
     QueryPlan::Nodes & nodes)
 {
     if (!join_ptr->isFilled())
@@ -923,6 +923,9 @@ static void constructPhysicalStep(
 
     node.step = std::make_unique<FilledJoinStep>(join_left_node->step->getOutputHeader(), join_ptr, join_settings.max_block_size);
     node.step->setStepDescription("Filled JOIN");
+
+    if (!right_after_join_actions.getNodes().empty())
+        makeExpressionNodeOnTopOf(node, std::move(right_after_join_actions), nodes, makeDescription("Right Type Conversion Actions"));
 
     post_join_actions.appendInputsForUnusedColumns(*node.step->getOutputHeader());
     makeFilterNodeOnTopOf(
@@ -1297,9 +1300,24 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
     else
     {
+        ActionsDAG right_type_correction_actions;
+        if (logical_lookup && prepared_join_storage.storage_join)
+        {
+            right_type_correction_actions = JoinExpressionActions::getSubDAG(
+                actions_after_join
+                    | std::views::transform([&](const auto * action) { return JoinActionRef(action, expression_actions); })
+                    | std::views::filter([](const auto & action) { return action.fromRight() && action.getNode()->type != ActionsDAG::ActionType::INPUT; }));
+        }
+
         constructPhysicalStep(
-            node, std::move(left_dag), std::move(residual_dag), std::make_pair(residual_filter_condition_name, can_remove_residual_filter),
-            std::move(join_algorithm_ptr), optimization_settings, join_settings, sorting_settings, nodes);
+            node,
+            std::move(left_dag),
+            std::move(right_type_correction_actions),
+            std::move(residual_dag),
+            std::make_pair(residual_filter_condition_name, can_remove_residual_filter),
+            std::move(join_algorithm_ptr),
+            join_settings,
+            nodes);
     }
     return node;
 }

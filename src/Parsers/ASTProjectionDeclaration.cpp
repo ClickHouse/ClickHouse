@@ -9,7 +9,7 @@ namespace DB
 
 ASTPtr ASTProjectionDeclaration::clone() const
 {
-    auto res = std::make_shared<ASTProjectionDeclaration>();
+    auto res = make_intrusive<ASTProjectionDeclaration>();
     res->name = name;
     if (query)
         res->set(res->query, query->clone());

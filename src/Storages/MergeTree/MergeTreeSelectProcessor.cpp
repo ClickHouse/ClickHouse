@@ -302,9 +302,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                                 data_part->storage.getStorageID().uuid,
                                 part_name,
                                 output->getHash(),
-                                reader_settings.query_condition_cache_store_conditions_as_plaintext
-                                    ? prewhere_info->prewhere_actions.getNames()[0]
-                                    : "",
+                                prewhere_info->prewhere_actions.getNames()[0],
                                 task->getPrewhereUnmatchedMarks(),
                                 data_part->index_granularity->getMarksCount(),
                                 data_part->index_granularity->hasFinalMark());

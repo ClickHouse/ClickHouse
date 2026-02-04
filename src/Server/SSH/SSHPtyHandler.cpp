@@ -483,7 +483,7 @@ void SSHPtyHandler::run()
     SessionCallback sdata(session, server, peer_addr, options);
     session.handleKeyExchange();
     event.addSession(session);
-    int max_iterations = options.auth_timeout_seconds * 1000 / options.event_poll_interval_milliseconds;
+    int max_iterations = static_cast<int>(options.auth_timeout_seconds * 1000 / options.event_poll_interval_milliseconds);
     int n = 0;
     while (!sdata.authenticated || !sdata.channel_callback)
     {
@@ -495,7 +495,7 @@ void SSHPtyHandler::run()
         if (server.isCancelled())
             return;
 
-        event.poll(options.event_poll_interval_milliseconds);
+        event.poll(static_cast<int>(options.event_poll_interval_milliseconds));
         n++;
     }
     bool fds_set = false;
@@ -504,7 +504,7 @@ void SSHPtyHandler::run()
     {
         /* Poll the main event which takes care of the session, the channel and
          * even our client's stdout/stderr (once it's started). */
-        event.poll(options.event_poll_interval_milliseconds);
+        event.poll(static_cast<int>(options.event_poll_interval_milliseconds));
 
         /* If client's stdout/stderr has been registered with the event,
          * or the client hasn't started yet, continue. */
@@ -539,9 +539,9 @@ void SSHPtyHandler::run()
     sdata.channel_callback->channel.close();
 
     /* Wait up to finish_timeout_seconds seconds for the client to terminate the session. */
-    max_iterations = options.finish_timeout_seconds * 1000 / options.event_poll_interval_milliseconds;
+    max_iterations = static_cast<int>(options.finish_timeout_seconds * 1000 / options.event_poll_interval_milliseconds);
     for (n = 0; n < max_iterations && !session.hasFinished(); n++)
-        event.poll(options.event_poll_interval_milliseconds);
+        event.poll(static_cast<int>(options.event_poll_interval_milliseconds));
 
     LOG_DEBUG(log, "Connection closed");
 }

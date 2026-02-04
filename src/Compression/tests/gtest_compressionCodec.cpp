@@ -481,10 +481,10 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
 
     decoded.resize(decoded_size);
 
-    ASSERT_TRUE(EqualByteContainers(test_sequence.data_type->getSizeOfValueInMemory(), source_data, decoded));
+    ASSERT_TRUE(EqualByteContainers(static_cast<uint8_t>(test_sequence.data_type->getSizeOfValueInMemory()), source_data, decoded));
 
     const auto header_size = ICompressionCodec::getHeaderSize();
-    const auto compression_ratio = (encoded_size - header_size) / (source_data.size() * 1.0);
+    const auto compression_ratio = (encoded_size - header_size) / static_cast<double>(source_data.size());
 
     if (expected_compression_ratio)
     {
@@ -571,7 +571,7 @@ TEST_P(CodecTestCompatibility, Decoding)
         encoded_data.c_str(), static_cast<UInt32>(encoded_data.size()), decoded.data());
     decoded.resize(decoded_size);
 
-    ASSERT_TRUE(EqualByteContainers(expected.data_type->getSizeOfValueInMemory(), expected.serialized_data, decoded));
+    ASSERT_TRUE(EqualByteContainers(static_cast<UInt8>(expected.data_type->getSizeOfValueInMemory()), expected.serialized_data, decoded));
 }
 
 class CodecTestPerformance : public ::testing::TestWithParam<std::tuple<Codec, CodecTestSequence>>
@@ -614,17 +614,17 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
 
         for (const auto & v : tmp_v)
         {
-            mean += v;
+            mean += static_cast<double>(v);
         }
 
-        mean = mean / tmp_v.size();
+        mean = mean / static_cast<double>(tmp_v.size());
         double std_dev = 0.0;
         for (const auto & v : tmp_v)
         {
-            const auto d = (v - mean);
+            const auto d = (static_cast<double>(v) - mean);
             std_dev += (d * d);
         }
-        std_dev = std::sqrt(std_dev / tmp_v.size());
+        std_dev = std::sqrt(std_dev / static_cast<double>(tmp_v.size()));
 
         return std::make_tuple(mean, std_dev);
     };
@@ -1347,7 +1347,7 @@ TEST(DoubleDeltaTest, TranscodeRawInput)
             source_memory.resize(buffer_size);
 
             for (size_t i = 0; i < buffer_size; ++i)
-                source_memory.data()[i] = i;
+                source_memory.data()[i] = static_cast<char>(i);
 
             DB::Memory<> memory_for_compression;
             memory_for_compression.resize(ICompressionCodec::getHeaderSize() + buffer_size);
@@ -1388,12 +1388,12 @@ TEST(T64Test, TranscodeRawInput)
             source_memory.resize(buffer_size);
 
             for (size_t i = 0; i < buffer_size; ++i)
-                source_memory.data()[i] = i;
+                source_memory.data()[i] = static_cast<char>(i);
 
             DB::Memory<> memory_for_compression;
             auto codec = makeCodec("T64", type);
 
-            memory_for_compression.resize(codec->getCompressedReserveSize(buffer_size));
+            memory_for_compression.resize(codec->getCompressedReserveSize(static_cast<UInt32>(buffer_size)));
 
             auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
 

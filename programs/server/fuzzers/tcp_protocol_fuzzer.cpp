@@ -3,8 +3,6 @@
 #include <thread>
 #include <utility>
 #include <vector>
-#include <iostream>
-#include <chrono>
 
 #include <Poco/Net/PollSet.h>
 #include <Poco/Net/SocketAddress.h>
@@ -83,7 +81,7 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         if (size == 0)
             return -1;
 
-        Poco::Net::SocketAddress address(host, port);
+        Poco::Net::SocketAddress address(host, static_cast<uint16_t>(port));
         Poco::Net::StreamSocket socket;
 
         socket.connectNB(address);

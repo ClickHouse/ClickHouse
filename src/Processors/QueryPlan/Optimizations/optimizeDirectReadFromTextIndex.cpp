@@ -330,6 +330,14 @@ private:
             replacement.node = &actions_dag.addFunction(function_builder, children, "");
         }
 
+        /// If the original function returns Nullable type and replacement doesn't,
+        /// wrap the replacement with toNullable to match the expected type.
+        if (function_node.result_type->isNullable() && !replacement.node->result_type->isNullable())
+        {
+            auto to_nullable = FunctionFactory::instance().get("toNullable", context);
+            replacement.node = &actions_dag.addFunction(to_nullable, {replacement.node}, "");
+        }
+
         return replacement;
     }
 };

@@ -37,7 +37,7 @@ class CloudInfrastructure:
                     )
 
                 required_settings = {
-                    "EVENTS_S3_PATH": self._settings.EVENTS_S3_PATH,
+                    "EVENT_FEED_S3_PATH": self._settings.EVENT_FEED_S3_PATH,
                     "AWS_REGION": self._settings.AWS_REGION,
                 }
 
@@ -57,11 +57,11 @@ class CloudInfrastructure:
 
                 # Only set environment variables in full deployment mode
                 if all and self._settings:
-                    if self._settings.EVENTS_S3_PATH:
+                    if self._settings.EVENT_FEED_S3_PATH:
                         # Inject project-specific settings into Lambda environment
-                        # EVENTS_S3_PATH is required by Slack Lambdas for event feed storage
-                        lambda_config.environments["EVENTS_S3_PATH"] = (
-                            self._settings.EVENTS_S3_PATH
+                        # EVENT_FEED_S3_PATH is required by Slack Lambdas for event feed storage
+                        lambda_config.environments["EVENT_FEED_S3_PATH"] = (
+                            self._settings.EVENT_FEED_S3_PATH
                         )
 
                 print("\n" + "=" * 60)

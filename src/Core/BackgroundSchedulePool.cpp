@@ -114,11 +114,6 @@ bool BackgroundSchedulePoolTaskInfo::activateAndSchedule()
     return scheduleImpl(lock);
 }
 
-std::unique_lock<std::mutex> BackgroundSchedulePoolTaskInfo::getExecLock()
-{
-    return std::unique_lock{exec_mutex};
-}
-
 bool BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
 {
     CurrentMetrics::Increment metric_increment(pool.tasks_metric);
@@ -157,7 +152,7 @@ bool BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
     }
     catch (...)
     {
-        error_code = getCurrentExceptionCode();
+        error_code = static_cast<UInt16>(getCurrentExceptionCode());
         exception_message = getCurrentExceptionMessage(false);
         tryLogCurrentException(__PRETTY_FUNCTION__);
         chassert(false && "Tasks in BackgroundSchedulePool cannot throw");

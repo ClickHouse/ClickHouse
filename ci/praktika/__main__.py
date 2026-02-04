@@ -142,6 +142,11 @@ def create_parser():
         default="",
     )
     _infra_parser = subparsers.add_parser("deploy", help="Deploy cloud infrastructure")
+    _infra_parser.add_argument(
+        "--all",
+        action="store_true",
+        default="",
+    )
     return parser
 
 
@@ -156,7 +161,7 @@ def main():
     elif args.command == "deploy":
         from .mangle import _get_infra_config
 
-        _get_infra_config().deploy()
+        _get_infra_config().deploy(all=args.all)
     elif args.command == "html":
         Html.prepare(args.test)
     elif args.command == "run":

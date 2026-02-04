@@ -56,6 +56,7 @@ def should_skip_job(job_name):
     global _info_cache
     if _info_cache is None:
         _info_cache = Info()
+        print(f"INFO: PR labels: {_info_cache.pr_labels}")
 
     changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
@@ -180,11 +181,21 @@ def should_skip_job(job_name):
 
     # If only the functional tests script changed, run only the first batch of stateless tests
     if changed_files and all(
-        f.startswith("ci/jobs/") and f.endswith(".py") for f in changed_files
+        f.startswith("ci/") and f.endswith(".py") for f in changed_files
     ):
         if JobNames.STATELESS in job_name:
             match = re.search(r"(\d)/\d", job_name)
             if match and match.group(1) != "1" or "sequential" in job_name:
+                return True, "Skipped, only job script changed - run first batch only"
+
+        if JobNames.INTEGRATION in job_name:
+            match = re.search(r"(\d)/\d", job_name)
+            if (
+                match
+                and match.group(1) != "1"
+                or "sequential" in job_name
+                or "_asan" not in job_name
+            ):
                 return True, "Skipped, only job script changed - run first batch only"
 
     return False, ""

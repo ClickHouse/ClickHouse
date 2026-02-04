@@ -285,10 +285,11 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
         {
             ret += pick;
             /// A few times, generate a large string
-            if (this->nextMediumNumber() < 11)
+            if (this->nextMediumNumber() < 16)
             {
                 uint32_t i = 0;
                 uint32_t len = static_cast<uint32_t>(pick.size());
+                const bool use_space = this->nextBool();
                 const uint32_t max_iterations = this->nextBool() ? 10000 : this->nextMediumNumber();
 
                 while (i < max_iterations)
@@ -298,9 +299,10 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
                                      : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings
                                                                                    : (this->nextBool() ? common_english : common_chinese)));
 
-                    len += (npick.length() >> (use_bad_utf8 ? 1 : 0));
+                    len += ((use_space ? 1 : 0) + (npick.length() >> (use_bad_utf8 ? 1 : 0)));
                     if (len < limit)
                     {
+                        ret += use_space ? " " : "";
                         ret += npick;
                     }
                     else

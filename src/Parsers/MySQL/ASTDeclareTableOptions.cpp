@@ -25,7 +25,7 @@ protected:
         {
             if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
             {
-                node = std::make_shared<ASTIdentifier>("DEFAULT");
+                node = make_intrusive<ASTIdentifier>("DEFAULT");
                 return true;
             }
         }

@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-azure-blob-storage
 
 -- Tests that text indexes can be build on and used with Array columns.
 
