@@ -1117,17 +1117,17 @@ Part pruning allows to skip reading entire data parts when the query filter cond
 -- Create a table with MinMax statistics on the 'value' column
 CREATE TABLE test_stats
 (
-    d DateTime,
     id UInt64,
     value Int64 STATISTICS(MinMax)
 )
 ENGINE = MergeTree
-PARTITION BY toYYYYMMDD(d)
 ORDER BY id;
 
+SYSTEM STOP MERGES test_stats;
+
 -- Insert data in separate inserts to create multiple parts
-INSERT INTO test_stats SELECT '2025-01-11', number, number FROM numbers(1000);      -- Part 1: value range [0, 999]
-INSERT INTO test_stats SELECT '2025-01-12', number, number + 10000 FROM numbers(1000); -- Part 2: value range [10000, 10999]
+INSERT INTO test_stats SELECT number, number FROM numbers(1000); -- Part 1: value range [0, 999]
+INSERT INTO test_stats SELECT number, number + 10000 FROM numbers(1000); -- Part 2: value range [10000, 10999]
 
 SET use_statistics_for_part_pruning = 1;
 
