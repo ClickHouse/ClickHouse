@@ -1,8 +1,8 @@
+#include "Columns/ColumnFSST.h"
 #include <algorithm>
 #include <cassert>
 #include <memory>
 #include <optional>
-#include "Columns/ColumnFSST.h"
 
 #include "Core/Field.h"
 #include "base/types.h"
@@ -45,7 +45,7 @@ void ColumnFSST::get(size_t n, Field & res) const
     const auto & batch_dsc = decoders[batch_ind.value()];
     String uncompressed_string(origin_lengths[n], ' ');
     fsst_decompress(
-        reinterpret_cast<::fsst_decoder_t*>(batch_dsc.decoder.get()),
+        reinterpret_cast<::fsst_decoder_t *>(batch_dsc.decoder.get()),
         compressed_data.size(),
         reinterpret_cast<const unsigned char *>(compressed_data.data()),
         origin_lengths[n],
@@ -75,12 +75,12 @@ bool ColumnFSST::tryInsert(const Field & x)
     return true;
 }
 
-void ColumnFSST::insertData(const char *  /*pos*/, size_t  /*length*/)
+void ColumnFSST::insertData(const char * /*pos*/, size_t /*length*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO");
 }
 
-void ColumnFSST::popBack(size_t  /*n*/)
+void ColumnFSST::popBack(size_t /*n*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO");
 }
@@ -98,7 +98,7 @@ size_t ColumnFSST::byteSize() const
     return string_column->byteSize() + origin_lengths.size() * sizeof(UInt64) + decoders.size() * sizeof(BatchDsc);
 }
 
-size_t ColumnFSST::byteSizeAt(size_t  /*n*/) const
+size_t ColumnFSST::byteSizeAt(size_t /*n*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO");
 }

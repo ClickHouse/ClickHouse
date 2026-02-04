@@ -122,7 +122,7 @@ public:
     }
 
 private:
-    template<bool compressed>
+    template <bool compressed>
     void serializeState(SerializeBinaryBulkSettings & settings, SerializeFsstState<compressed> & state) const;
     size_t deserializeState(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state) const;
 

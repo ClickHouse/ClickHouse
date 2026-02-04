@@ -100,7 +100,8 @@ void saveSerializeState(
         size_t total_compressed_size = 0;
         std::vector<size_t> offsets_after_compression;
 
-        for(std::string_view string : state.compressed_data){
+        for (std::string_view string : state.compressed_data)
+        {
             offsets_after_compression.emplace_back(total_compressed_size);
             total_compressed_size += string.size();
         }
@@ -113,7 +114,8 @@ void saveSerializeState(
         offsets_stream->write(reinterpret_cast<const char *>(state.origin_lengths.data()), strings * sizeof(size_t));
 
         data_stream->write(reinterpret_cast<const char *>(&total_compressed_size), sizeof(total_compressed_size));
-        for(std::string_view string : state.compressed_data) {
+        for (std::string_view string : state.compressed_data)
+        {
             data_stream->write(reinterpret_cast<const char *>(string.data()), string.size());
         }
 
@@ -229,7 +231,7 @@ size_t SerializationStringFsst::deserializeState(DeserializeBinaryBulkSettings &
     /* read fsst */
     ::fsst_decoder_t decoder;
     size_t decoder_read_bytes = fsst_stream->readBig(reinterpret_cast<char *>(&decoder), sizeof(decoder));
-    
+
     LOG_DEBUG(getLogger("fsst logger"), "first symbold of dispatched decoder {}", decoder.symbol[0]);
     /* read offsets and lengths */
     size_t strings;

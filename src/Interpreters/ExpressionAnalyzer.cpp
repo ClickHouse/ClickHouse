@@ -19,21 +19,21 @@
 
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/ArrayJoinAction.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ConcurrentHashJoin.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/DirectJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
-#include <Interpreters/DirectJoin.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/replaceForPositionalArguments.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 

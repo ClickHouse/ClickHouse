@@ -5,7 +5,7 @@
 namespace DB
 {
 
-#define THREAD_NAME_VALUES(M)\
+#define THREAD_NAME_VALUES(M) \
     M(AGGREGATED_ZOOKEEPER_LOG, "AggrZooLog") \
     M(AGGREGATOR_DESTRUCTION, "AggregDestruct") \
     M(AGGREGATOR_POOL, "AggregatorPool") \

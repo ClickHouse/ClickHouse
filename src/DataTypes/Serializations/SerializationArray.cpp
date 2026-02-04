@@ -1,8 +1,4 @@
-#include <DataTypes/Serializations/SerializationArray.h>
-#include <DataTypes/Serializations/SerializationNullable.h>
-#include <DataTypes/Serializations/SerializationNumber.h>
-#include <DataTypes/Serializations/SerializationNamed.h>
-#include <DataTypes/Serializations/SerializationArrayOffsets.h>
+#include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
@@ -10,7 +6,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>

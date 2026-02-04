@@ -171,7 +171,6 @@ enum class KindStackBinarySerializationType : UInt8
 
     COMBINATION = 5, /// other stacks, serialized as number of kinds and all kinds one after another.
 };
-
 }
 
 void SerializationInfo::serialializeKindStackBinary(WriteBuffer & out) const
@@ -280,7 +279,7 @@ ISerialization::KindStack SerializationInfo::chooseKindStack(const Data & data, 
         kind_stack.push_back(ISerialization::Kind::SPARSE);
     if (data.is_string_column)
         kind_stack.push_back(ISerialization::Kind::FSST);
-    
+
     return kind_stack;
 }
 
