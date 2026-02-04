@@ -25,6 +25,7 @@
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 
+
 namespace DB
 {
 
@@ -54,6 +55,11 @@ namespace ErrorCodes
     extern const int UNKNOWN_ROLE;
 }
 
+
+String HostID::readableString() const
+{
+    return host_name + ":" + DB::toString(port);
+}
 
 HostID HostID::fromString(const String & host_port_str)
 {

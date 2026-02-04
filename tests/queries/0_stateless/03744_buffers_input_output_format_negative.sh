@@ -96,6 +96,15 @@ FROM file(
     'Buffers',
     'id UInt8, j JSON(a.b UInt32)'
 ); -- { serverError INCORRECT_DATA }
+
+-- Insert Int column data into Nullable(Int) column
+INSERT INTO TABLE FUNCTION file('03744_buffers_int_to_nullable_int_col.buffers', 'Buffers') SELECT 1;
+
+SELECT * FROM file(
+    '03744_buffers_int_to_nullable_int_col.buffers',
+    'Buffers',
+    'col Nullable(Int)'
+); -- { serverError INCORRECT_DATA }
 SQL
 
 rm -f 03744_buffers_neg_*.buffers

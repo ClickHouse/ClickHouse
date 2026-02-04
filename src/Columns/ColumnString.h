@@ -21,6 +21,11 @@ class SipHash;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 class Arena;
 
 /// Column for String values.
@@ -196,6 +201,9 @@ public:
 
     void popBack(size_t n) override
     {
+        if (n > size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
         size_t nested_n = offsets.back() - offsetAt(offsets.size() - n);
         chars.resize(chars.size() - nested_n);
         offsets.resize_assume_reserved(offsets.size() - n);
@@ -231,6 +239,8 @@ public:
 #endif
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+
+    void filter(const Filter & filt) override;
 
     void expand(const Filter & mask, bool inverted) override;
 

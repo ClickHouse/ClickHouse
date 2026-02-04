@@ -1,5 +1,3 @@
-SET allow_suspicious_variant_types = 1;
-
 DROP TABLE IF EXISTS geo_dst;
 DROP TABLE IF EXISTS geo;
 DROP TABLE IF EXISTS variant_table;
@@ -12,7 +10,7 @@ INSERT INTO geo VALUES ('POINT(0 0)', 2);
 INSERT INTO geo VALUES ('MULTIPOLYGON(((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))', 3);
 INSERT INTO geo VALUES ('LINESTRING(1 0,10 0,10 10,0 10,1 0)', 4);
 INSERT INTO geo VALUES ('MULTILINESTRING((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 5);
-INSERT INTO geo_dst SELECT id, readWkt(geom) FROM geo ORDER BY id;
+INSERT INTO geo_dst SELECT id, readWKT(geom) FROM geo ORDER BY id;
 INSERT INTO geo_dst VALUES (6, NULL);
 
 SELECT perimeterCartesian(geom) FROM geo_dst ORDER BY id;

@@ -44,7 +44,7 @@ REGISTER_FUNCTION(hasSubsequenceCaseInsensitive)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionHasSubsequenceCaseInsensitive>(documentation, FunctionFactory::Case::Insensitive);
 }

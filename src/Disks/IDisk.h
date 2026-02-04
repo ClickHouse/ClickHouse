@@ -20,6 +20,8 @@
 #include <filesystem>
 #include <optional>
 #include <sys/stat.h>
+#include <atomic>
+#include <mutex>
 
 #include "config.h"
 
@@ -75,6 +77,20 @@ using ObjectAttributes = std::map<std::string, std::string>;
 struct PartitionCommand;
 
 /**
+ * Constraints for disk space reservation to avoid filling up disks.
+ */
+struct ReservationConstraints
+{
+    /// Min free bytes that must remain on the disk after reservation
+    UInt64 min_bytes = 0;
+    /// Min free space ratio that must remain on the disk after reservation
+    Float32 min_ratio = 0.0;
+
+    ReservationConstraints(UInt64 min_bytes_, Float32 min_ratio_)
+        : min_bytes(min_bytes_), min_ratio(min_ratio_) {}
+};
+
+/**
  * Provide interface for reservation.
  */
 class Space : public std::enable_shared_from_this<Space>
@@ -86,6 +102,10 @@ public:
     /// Reserve the specified number of bytes.
     /// Returns valid reservation or nullptr when failure.
     virtual ReservationPtr reserve(UInt64 bytes) = 0;
+
+    /// Reserve the specified number of bytes with constraints.
+    /// Returns valid reservation or nullptr when failure (including when constraints are not met).
+    virtual ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) = 0;
 
     /// Whether this is a disk or a volume.
     virtual bool isDisk() const { return false; }
@@ -565,6 +585,7 @@ public:
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() const { return nullptr; }
 #endif
 
+    bool isCaseInsensitive();
 
 protected:
     const String name;
@@ -586,6 +607,12 @@ private:
     std::unique_ptr<ThreadPool> copying_thread_pool;
     // 0 means the disk is not custom, the disk is predefined in the config
     UInt128 custom_disk_settings_hash = 0;
+
+    /// True if underlying filesystem is case-insensitive,
+    /// e.g. file_name and FILE_NAME are the same files.
+    std::atomic_bool is_case_insensitive = false;
+    std::atomic_bool is_case_sensitivity_checked = false;
+    std::mutex case_sensitivity_check_mutex;
 
     /// Check access to the disk.
     void checkAccess();

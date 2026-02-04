@@ -26,19 +26,19 @@ namespace DeltaLake
 
 namespace
 {
-    DB::ASTPtr createPartitionKeyAST(const DB::Names & partition_columns)
+    boost::intrusive_ptr<DB::IAST> createPartitionKeyAST(const DB::Names & partition_columns)
     {
         /// DeltaLake supports only plain partition keys,
         /// e.g. by column names without any functions.
 
-        std::shared_ptr<DB::ASTFunction> partition_key_ast = std::make_shared<DB::ASTFunction>();
+        auto partition_key_ast = DB::make_intrusive<DB::ASTFunction>();
         partition_key_ast->name = "tuple";
-        partition_key_ast->arguments = std::make_shared<DB::ASTExpressionList>();
+        partition_key_ast->arguments = DB::make_intrusive<DB::ASTExpressionList>();
         partition_key_ast->children.push_back(partition_key_ast->arguments);
 
         for (const auto & column_name : partition_columns)
         {
-            auto partition_ast = std::make_shared<DB::ASTIdentifier>(column_name);
+            auto partition_ast = DB::make_intrusive<DB::ASTIdentifier>(column_name);
             partition_key_ast->arguments->children.emplace_back(std::move(partition_ast));
         }
         return partition_key_ast;
@@ -96,12 +96,12 @@ bool PartitionPruner::canBePruned(const DB::ObjectInfo & object_info) const
 
     if (!object_info.data_lake_metadata.has_value())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not set");
-    if (!object_info.data_lake_metadata->transform)
+    if (!object_info.data_lake_metadata->schema_transform)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data lake expression transform is not set");
 
     auto partition_values = DeltaLake::getConstValuesFromExpression(
         physical_partition_columns,
-        *object_info.data_lake_metadata->transform);
+        *object_info.data_lake_metadata->schema_transform);
 
     if (partition_values.empty())
         return false;

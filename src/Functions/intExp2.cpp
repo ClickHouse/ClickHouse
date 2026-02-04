@@ -88,7 +88,7 @@ Like [exp2](#exp2) but returns a `UInt64` number.
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT intExp2(3);", "8"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIntExp2>(documentation);
 }

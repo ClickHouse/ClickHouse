@@ -72,7 +72,7 @@ void Pattern::updateHash(SipHash & hash) const
     {
         hash.update(function->getName());
         for (const auto & p : function->getParameters())
-            hash.update(toString(p));
+            hash.update(fieldToString(p));
     }
     for (const auto & r : retentions)
     {

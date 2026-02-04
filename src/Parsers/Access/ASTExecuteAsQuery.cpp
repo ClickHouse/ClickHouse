@@ -15,7 +15,7 @@ String ASTExecuteAsQuery::getID(char) const
 
 ASTPtr ASTExecuteAsQuery::clone() const
 {
-    auto res = std::make_shared<ASTExecuteAsQuery>(*this);
+    auto res = make_intrusive<ASTExecuteAsQuery>(*this);
 
     if (target_user)
         res->set(res->target_user, target_user->clone());

@@ -1,6 +1,5 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
-#include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
@@ -8,10 +7,12 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Core/Names.h>
+#include <Core/Field.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
@@ -166,7 +167,7 @@ void buildLayoutConfiguration(
                 pair->second->formatForErrorMessage());
         }
 
-        const auto value_field = value_literal->value;
+        const Field & value_field = value_literal->value;
 
         if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::Float64 && value_field.getType() != Field::Types::String)
         {
@@ -188,7 +189,7 @@ void buildLayoutConfiguration(
         }
 
         AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
-        AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
+        AutoPtr<Text> value_to_append(doc->createTextNode(fieldToString(value_field)));
         layout_type_parameter_element->appendChild(value_to_append);
         layout_type_element->appendChild(layout_type_parameter_element);
     }
@@ -381,7 +382,7 @@ void buildPrimaryKeyConfiguration(
 
         auto identifier_name = key_names.front();
 
-        const auto * it = std::find_if(
+        const auto it = std::find_if(
             children.begin(),
             children.end(),
             [&](const ASTPtr & node)
@@ -712,7 +713,7 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
     UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
 
     String host = config->getString("dictionary.source.clickhouse.host", "localhost");
-    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", default_port);
+    UInt16 port = static_cast<UInt16>(config->getUInt("dictionary.source.clickhouse.port", default_port));
     String database = config->getString("dictionary.source.clickhouse.db", "");
     String table = config->getString("dictionary.source.clickhouse.table", "");
 

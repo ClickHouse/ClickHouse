@@ -465,7 +465,7 @@ Collect all the keys and sum corresponding values.
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapAdd = {20, 7};
     FunctionDocumentation::Category category_mapAdd = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapAdd = {description_mapAdd, syntax_mapAdd, arguments_mapAdd, returned_value_mapAdd, examples_mapAdd, introduced_in_mapAdd, category_mapAdd};
+    FunctionDocumentation documentation_mapAdd = {description_mapAdd, syntax_mapAdd, arguments_mapAdd, {}, returned_value_mapAdd, examples_mapAdd, introduced_in_mapAdd, category_mapAdd};
     factory.registerFunction<FunctionMapOp<OpTypes::ADD>>(documentation_mapAdd);
 
     /// mapSubtract function documentation
@@ -483,7 +483,7 @@ Collect all the keys and subtract corresponding values.
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapSubtract = {20, 7};
     FunctionDocumentation::Category category_mapSubtract = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapSubtract = {description_mapSubtract, syntax_mapSubtract, arguments_mapSubtract, returned_value_mapSubtract, examples_mapSubtract, introduced_in_mapSubtract, category_mapSubtract};
+    FunctionDocumentation documentation_mapSubtract = {description_mapSubtract, syntax_mapSubtract, arguments_mapSubtract, {}, returned_value_mapSubtract, examples_mapSubtract, introduced_in_mapSubtract, category_mapSubtract};
     factory.registerFunction<FunctionMapOp<OpTypes::SUBTRACT>>(documentation_mapSubtract);
 }
 

@@ -324,7 +324,8 @@ windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
   - `'strict_deduplication'` — If the same condition holds for the sequence of events, then such repeating event interrupts further processing. Note: it may work unexpectedly if several conditions hold for the same event.
   - `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
   - `'strict_increase'` — Apply conditions only to events with strictly increasing timestamps.
-  - `'strict_once'` — Count each event only once in the chain even if it meets the condition several times
+  - `'strict_once'` — Count each event only once in the chain even if it meets the condition several times.
+  - `'allow_reentry'` — Ignore events that violate the strict order. E.g. in the case of A->A->B->C, it finds A->B->C by ignoring the redundant A and the max event level is 3.
 
 **Returned value**
 
@@ -388,6 +389,37 @@ Result:
 ┌─level─┬─c─┐
 │     4 │ 1 │
 └───────┴───┘
+```
+
+**Example with allow_reentry mode**
+
+This example demonstrates how `allow_reentry` mode works with user reentry patterns:
+
+```sql
+-- Sample data: user visits checkout -> product detail -> checkout again -> payment
+-- Without allow_reentry: stops at level 2 (product detail page)
+-- With allow_reentry: reaches level 4 (payment completion)
+
+SELECT
+    level,
+    count() AS users
+FROM
+(
+    SELECT
+        user_id,
+        windowFunnel(3600, 'strict_order', 'allow_reentry')(
+            timestamp,
+            action = 'begin_checkout',      -- Step 1: Begin checkout
+            action = 'view_product_detail', -- Step 2: View product detail  
+            action = 'begin_checkout',      -- Step 3: Begin checkout again (reentry)
+            action = 'complete_payment'     -- Step 4: Complete payment
+        ) AS level
+    FROM user_events
+    WHERE event_date = today()
+    GROUP BY user_id
+)
+GROUP BY level
+ORDER BY level ASC;
 ```
 
 ## retention {#retention}

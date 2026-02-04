@@ -129,7 +129,7 @@ target_link_libraries(_gcloud INTERFACE ${GOOGLE_CLOUD_CPP_PRIVATE_LIBS} ${GOOGL
 # The library is large - avoid bloat.
 if(OMIT_HEAVY_DEBUG_SYMBOLS)
     foreach(lib ${GOOGLE_CLOUD_CPP_PRIVATE_LIBS})
-        target_compile_options(${lib} PRIVATE -g0)
+        target_compile_options(${lib} PRIVATE -g1)
     endforeach()
 endif()
 

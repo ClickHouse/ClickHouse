@@ -1,4 +1,4 @@
--- Tags: no-msan, long
+-- Tags: no-msan, long, no-azure-blob-storage
 -- msan: too slow
 
 SELECT '-- Single partition by function';

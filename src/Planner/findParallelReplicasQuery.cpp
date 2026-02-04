@@ -8,7 +8,6 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Parsers/ASTSubquery.h>
 #include <Planner/PlannerJoinTree.h>
 #include <Planner/Utils.h>
 #include <Planner/findQueryForParallelReplicas.h>
@@ -514,7 +513,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
     ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
-    auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+    auto [header, new_planner_context] = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
     const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get(), context);
@@ -528,6 +527,8 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         header,
         processed_stage,
         modified_query_ast,
+        std::move(modified_query_tree),
+        std::move(new_planner_context),
         context,
         storage_limits,
         nullptr);

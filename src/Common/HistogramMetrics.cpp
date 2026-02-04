@@ -118,6 +118,21 @@ namespace HistogramMetrics
     );
     Metric & KeeperServerSendDuration = KeeperServerSendDurationMetricFamily.withLabels({});
 
+    MetricFamily & KeeperBatchSizeElementsMetricFamily = Factory::instance().registerMetric(
+        "keeper_batch_size_elements",
+        "Size of batch sent to Raft in elements.",
+        {4, 8, 16, 32, 64, 128, 256, 299},
+        {}
+    );
+    Metric & KeeperCurrentBatchSizeElements = KeeperBatchSizeElementsMetricFamily.withLabels({});
+
+    MetricFamily & KeeperBatchSizeBytesMetricFamily = Factory::instance().registerMetric(
+        "keeper_batch_size_bytes",
+        "Size of batch sent to Raft in bytes.",
+        {1 << 12, 1 << 13, 1 << 14, 1 << 15, 1 << 16, 1 << 17, 1 << 18, 307199},
+        {}
+    );
+    Metric & KeeperCurrentBatchSizeBytes = KeeperBatchSizeBytesMetricFamily.withLabels({});
 
     Metric::Metric(const Buckets & buckets_)
         : buckets(buckets_)

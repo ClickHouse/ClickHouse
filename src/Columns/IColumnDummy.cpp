@@ -66,6 +66,11 @@ ColumnPtr IColumnDummy::filter(const Filter & filt, ssize_t /*result_size_hint*/
     return cloneDummy(bytes);
 }
 
+void IColumnDummy::filter(const Filter & filt)
+{
+    s = countBytesInFilter(filt);
+}
+
 void IColumnDummy::expand(const IColumn::Filter & mask, bool)
 {
     s = mask.size();

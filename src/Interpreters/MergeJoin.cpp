@@ -55,8 +55,8 @@ String deriveTempName(const String & name, JoinTableSide block_side)
 ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const String & src_column_name, JoinTableSide block_side)
 {
     size_t res_size = block.rows();
-    auto data_col = ColumnUInt8::create(res_size, 0);
-    auto null_map = ColumnUInt8::create(res_size, 0);
+    auto data_col = ColumnUInt8::create(res_size, static_cast<UInt8>(0));
+    auto null_map = ColumnUInt8::create(res_size, static_cast<UInt8>(0));
 
     if (!src_column_name.empty())
     {

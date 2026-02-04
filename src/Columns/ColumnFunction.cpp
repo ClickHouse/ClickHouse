@@ -190,6 +190,21 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) 
         recursively_convert_result_to_full_column_if_low_cardinality);
 }
 
+void ColumnFunction::filter(const Filter & filt)
+{
+    if (elements_size != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})",
+                        filt.size(), elements_size);
+
+    for (auto & column : captured_columns)
+        column.column->assumeMutable()->filter(filt);
+
+    if (captured_columns.empty())
+        elements_size = countBytesInFilter(filt);
+    else
+        elements_size = captured_columns.front().column->size();
+}
+
 void ColumnFunction::expand(const Filter & mask, bool inverted)
 {
     for (auto & column : captured_columns)
@@ -395,6 +410,41 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
 ColumnPtr ColumnFunction::recursivelyConvertResultToFullColumnIfLowCardinality() const
 {
     return ColumnFunction::create(elements_size, function, captured_columns, is_short_circuit_argument, is_function_compiled, true);
+}
+
+void ColumnFunction::forEachMutableSubcolumn(MutableColumnCallback callback)
+{
+    for (auto & column : captured_columns)
+    {
+        WrappedPtr wrapped = column.column;
+        callback(wrapped);
+        column.column = std::move(wrapped).detach();
+    }
+}
+
+void ColumnFunction::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+{
+    for (auto & column : captured_columns)
+    {
+        auto & mutable_column = column.column->assumeMutableRef();
+        callback(mutable_column);
+        mutable_column.forEachMutableSubcolumnRecursively(callback);
+    }
+}
+
+void ColumnFunction::forEachSubcolumn(ColumnCallback callback) const
+{
+    for (const auto & column : captured_columns)
+        callback(column.column);
+}
+
+void ColumnFunction::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+{
+    for (const auto & column : captured_columns)
+    {
+        callback(*column.column);
+        column.column->forEachSubcolumnRecursively(callback);
+    }
 }
 
 const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column)

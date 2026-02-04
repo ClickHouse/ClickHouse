@@ -9,7 +9,6 @@ import time
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-sys.path.append("..")
 from integration.helpers.cluster import is_port_free
 from utils.httpserver import DolorHTTPServer
 from catalogs.datalakes import SparkHandler

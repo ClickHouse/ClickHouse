@@ -221,7 +221,7 @@ Expression (Project names)
               Distinct (DISTINCT)
                 Distinct (Preliminary DISTINCT)
                   Expression ((Projection + Change column names to column identifiers))
-                    ReadFromStorage (SystemOne)
+                    ReadFromSystemOne
 -- execute
 ['Istanbul','Berlin','Bensheim']
 -- GROUP BY before DISTINCT with on the same columns => remove DISTINCT

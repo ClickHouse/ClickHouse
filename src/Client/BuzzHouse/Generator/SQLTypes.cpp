@@ -1,5 +1,3 @@
-#include <cstdint>
-
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
 #include <Client/BuzzHouse/Utils/HugeInt.h>
@@ -1132,7 +1130,7 @@ String ArrayType::insertNumberEntry(
 {
     String ret = "[";
     std::uniform_int_distribution<uint64_t> rows_dist(gen.fc.min_nested_rows, max_nested_rows);
-    const uint32_t limit = rows_dist(rg.generator);
+    const uint32_t limit = static_cast<uint32_t>(rows_dist(rg.generator));
 
     for (uint64_t i = 0; i < limit; i++)
     {
@@ -2181,8 +2179,8 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
 
 SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
 {
-    const uint32_t non_nullable_type = 60;
-    const uint32_t nullable_type = 25 * static_cast<uint32_t>((allowed_types & allow_nullable) != 0);
+    const uint32_t non_nullable_type = 70;
+    const uint32_t nullable_type = 35 * static_cast<uint32_t>((allowed_types & allow_nullable) != 0);
     const uint32_t array_type = 10 * static_cast<uint32_t>((allowed_types & allow_array) != 0 && this->depth < this->fc.max_depth);
     const uint32_t map_type = 10
         * static_cast<uint32_t>((allowed_types & allow_map) != 0 && this->depth < this->fc.max_depth && this->width < this->fc.max_width);

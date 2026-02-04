@@ -1,3 +1,7 @@
+native plain
+native secure
+http plain
+http secure
 1	0
 1	1
 2	0

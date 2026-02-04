@@ -23,7 +23,7 @@ Columns:
   - `LoginSuccess` — Successful login.
   - `Logout` — Logout from the system.
 - `auth_id` ([UUID](../../sql-reference/data-types/uuid.md)) — Authentication ID, which is a UUID that is automatically generated each time user logins.
-- `session_id` ([String](../../sql-reference/data-types/string.md)) — Session ID that is passed by client via [HTTP](../../interfaces/http.md) interface.
+- `session_id` ([String](../../sql-reference/data-types/string.md)) — Session ID that is passed by client via [HTTP](/interfaces/http) interface.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Login/logout date.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Login/logout time.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Login/logout starting time with microseconds precision.

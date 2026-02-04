@@ -45,24 +45,23 @@ namespace
 
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            if (arguments.size() != 2)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {}'s arguments number must be 2.", name);
-            WhichDataType which_type_first(arguments[0]);
-            WhichDataType which_type_second(arguments[1]);
-            if (!which_type_first.isDateTime() && !which_type_first.isDateTime64())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument type must be datetime.", name);
-            if (dynamic_cast<const TimezoneMixin *>(arguments[0].get())->hasExplicitTimeZone())
+            FunctionArgumentDescriptors mandatory_args{
+                {"datetime", &isDateTimeOrDateTime64, nullptr, "DateTime or DateTime64"},
+                {"timezone", &isString, nullptr, "String"}
+            };
+            validateFunctionArguments(name, arguments, mandatory_args);
+
+            if (dynamic_cast<const TimezoneMixin *>(arguments[0].type.get())->hasExplicitTimeZone())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument should not have explicit time zone.", name);
-            if (!which_type_second.isString())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 2nd argument type must be string.", name);
+
             DataTypePtr date_time_type;
-            if (which_type_first.isDateTime())
+            if (WhichDataType{arguments[0].type}.isDateTime())
                 date_time_type = std::make_shared<DataTypeDateTime>();
             else
             {
-                const DataTypeDateTime64 * date_time_64 = static_cast<const DataTypeDateTime64 *>(arguments[0].get());
+                const DataTypeDateTime64 * date_time_64 = static_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
                 date_time_type = std::make_shared<DataTypeDateTime64>(date_time_64->getScale());
             }
             return date_time_type;
@@ -197,7 +196,7 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUTCTimestamp = {23, 8};
     FunctionDocumentation::Category category_toUTCTimestamp = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toUTCTimestamp = {description_toUTCTimestamp, syntax_toUTCTimestamp, arguments_toUTCTimestamp, returned_value_toUTCTimestamp, examples_toUTCTimestamp, introduced_in_toUTCTimestamp, category_toUTCTimestamp};
+    FunctionDocumentation documentation_toUTCTimestamp = {description_toUTCTimestamp, syntax_toUTCTimestamp, arguments_toUTCTimestamp, {}, returned_value_toUTCTimestamp, examples_toUTCTimestamp, introduced_in_toUTCTimestamp, category_toUTCTimestamp};
 
     factory.registerFunction<ToUTCTimestampFunction>(documentation_toUTCTimestamp);
     factory.registerAlias("to_utc_timestamp", NameToUTCTimestamp::name, FunctionFactory::Case::Insensitive);
@@ -225,7 +224,7 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
     };
     FunctionDocumentation::IntroducedIn introduced_in_fromUTCTimestamp = {22, 1};
     FunctionDocumentation::Category category_fromUTCTimestamp = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_fromUTCTimestamp = {description_fromUTCTimestamp,syntax_fromUTCTimestamp,arguments_fromUTCTimestamp,returned_value_fromUTCTimestamp,examples_fromUTCTimestamp,introduced_in_fromUTCTimestamp,category_fromUTCTimestamp};
+    FunctionDocumentation documentation_fromUTCTimestamp = {description_fromUTCTimestamp, syntax_fromUTCTimestamp, arguments_fromUTCTimestamp, {}, returned_value_fromUTCTimestamp, examples_fromUTCTimestamp, introduced_in_fromUTCTimestamp, category_fromUTCTimestamp};
 
     factory.registerFunction<FromUTCTimestampFunction>(documentation_fromUTCTimestamp);
     factory.registerAlias("from_utc_timestamp", NameFromUTCTimestamp::name, FunctionFactory::Case::Insensitive);

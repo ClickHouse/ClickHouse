@@ -88,7 +88,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
     };
     FunctionDocumentation::IntroducedIn introduced_in_topLevelDomain = {1, 1};
     FunctionDocumentation::Category category_topLevelDomain = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_topLevelDomain = {description_topLevelDomain, syntax_topLevelDomain, arguments_topLevelDomain, returned_value_topLevelDomain, examples_topLevelDomain, introduced_in_topLevelDomain, category_topLevelDomain};
+    FunctionDocumentation documentation_topLevelDomain = {description_topLevelDomain, syntax_topLevelDomain, arguments_topLevelDomain, {}, returned_value_topLevelDomain, examples_topLevelDomain, introduced_in_topLevelDomain, category_topLevelDomain};
 
     factory.registerFunction<FunctionTopLevelDomain>(documentation_topLevelDomain);
 
@@ -117,7 +117,7 @@ SELECT topLevelDomain('http://foo:foo%41bar@foo.com'), topLevelDomainRFC('http:/
     };
     FunctionDocumentation::IntroducedIn introduced_in_topLevelDomainRFC = {22, 10};
     FunctionDocumentation::Category category_topLevelDomainRFC = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_topLevelDomainRFC = {description_topLevelDomainRFC, syntax_topLevelDomainRFC, arguments_topLevelDomainRFC, returned_value_topLevelDomainRFC, examples_topLevelDomainRFC, introduced_in_topLevelDomainRFC, category_topLevelDomainRFC};
+    FunctionDocumentation documentation_topLevelDomainRFC = {description_topLevelDomainRFC, syntax_topLevelDomainRFC, arguments_topLevelDomainRFC, {}, returned_value_topLevelDomainRFC, examples_topLevelDomainRFC, introduced_in_topLevelDomainRFC, category_topLevelDomainRFC};
 
     factory.registerFunction<FunctionTopLevelDomainRFC>(documentation_topLevelDomainRFC);
 }

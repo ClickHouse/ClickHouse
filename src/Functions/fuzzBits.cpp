@@ -28,7 +28,7 @@ namespace
         UInt8 res = 0;
         for (int i = 0; i < 8; ++i)
         {
-            UInt8 rand8 = rand;
+            UInt8 rand8 = static_cast<UInt8>(rand);
             rand >>= 8;
             res <<= 1;
             res |= (rand8 < prob * (1u << 8));
@@ -169,7 +169,7 @@ FROM numbers(3)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionFuzzBits>(documentation);
 }

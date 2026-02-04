@@ -151,7 +151,7 @@ If you input or output data via the [client](/interfaces/cli.md) in interactive 
 can contain an absolute path or a path relative to the current directory on the client.
 If you use the client in the [batch mode](/interfaces/cli.md/#batch-mode), the path to the schema must be relative due to security reasons.
 
-If you input or output data via the [HTTP interface](/interfaces/http.md) the file name specified in the format schema
+If you input or output data via the [HTTP interface](/interfaces/http) the file name specified in the format schema
 should be located in the directory specified in [format_schema_path](/operations/server-configuration-parameters/settings.md/#format_schema_path)
 in the server configuration.
 

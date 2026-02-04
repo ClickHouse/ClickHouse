@@ -76,7 +76,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn cutToFirstSignificantSubdomain_introduced_in = {1, 1};
     FunctionDocumentation::Category cutToFirstSignificantSubdomain_category = FunctionDocumentation::Category::URL;
-    FunctionDocumentation cutToFirstSignificantSubdomain_documentation = {cutToFirstSignificantSubdomain_description, cutToFirstSignificantSubdomain_syntax, cutToFirstSignificantSubdomain_arguments, cutToFirstSignificantSubdomain_returned_value, cutToFirstSignificantSubdomain_examples, cutToFirstSignificantSubdomain_introduced_in, cutToFirstSignificantSubdomain_category};
+    FunctionDocumentation cutToFirstSignificantSubdomain_documentation = {cutToFirstSignificantSubdomain_description, cutToFirstSignificantSubdomain_syntax, cutToFirstSignificantSubdomain_arguments, {}, cutToFirstSignificantSubdomain_returned_value, cutToFirstSignificantSubdomain_examples, cutToFirstSignificantSubdomain_introduced_in, cutToFirstSignificantSubdomain_category};
 
     factory.registerFunction<FunctionCutToFirstSignificantSubdomain>(cutToFirstSignificantSubdomain_documentation);
 
@@ -114,7 +114,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn cutToFirstSignificantSubdomainWithWWW_introduced_in = {20, 12};
     FunctionDocumentation::Category cutToFirstSignificantSubdomainWithWWW_category = FunctionDocumentation::Category::URL;
-    FunctionDocumentation cutToFirstSignificantSubdomainWithWWW_documentation = {cutToFirstSignificantSubdomainWithWWW_description, cutToFirstSignificantSubdomainWithWWW_syntax, cutToFirstSignificantSubdomainWithWWW_arguments, cutToFirstSignificantSubdomainWithWWW_returned_value, cutToFirstSignificantSubdomainWithWWW_examples, cutToFirstSignificantSubdomainWithWWW_introduced_in, cutToFirstSignificantSubdomainWithWWW_category};
+    FunctionDocumentation cutToFirstSignificantSubdomainWithWWW_documentation = {cutToFirstSignificantSubdomainWithWWW_description, cutToFirstSignificantSubdomainWithWWW_syntax, cutToFirstSignificantSubdomainWithWWW_arguments, {}, cutToFirstSignificantSubdomainWithWWW_returned_value, cutToFirstSignificantSubdomainWithWWW_examples, cutToFirstSignificantSubdomainWithWWW_introduced_in, cutToFirstSignificantSubdomainWithWWW_category};
 
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainWithWWW>(cutToFirstSignificantSubdomainWithWWW_documentation);
 
@@ -149,7 +149,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn cutToFirstSignificantSubdomainRFC_introduced_in = {22, 10};
     FunctionDocumentation::Category cutToFirstSignificantSubdomainRFC_category = FunctionDocumentation::Category::URL;
-    FunctionDocumentation cutToFirstSignificantSubdomainRFC_documentation = {cutToFirstSignificantSubdomainRFC_description, cutToFirstSignificantSubdomainRFC_syntax, cutToFirstSignificantSubdomainRFC_arguments, cutToFirstSignificantSubdomainRFC_returned_value, cutToFirstSignificantSubdomainRFC_examples, cutToFirstSignificantSubdomainRFC_introduced_in, cutToFirstSignificantSubdomainRFC_category};
+    FunctionDocumentation cutToFirstSignificantSubdomainRFC_documentation = {cutToFirstSignificantSubdomainRFC_description, cutToFirstSignificantSubdomainRFC_syntax, cutToFirstSignificantSubdomainRFC_arguments, {}, cutToFirstSignificantSubdomainRFC_returned_value, cutToFirstSignificantSubdomainRFC_examples, cutToFirstSignificantSubdomainRFC_introduced_in, cutToFirstSignificantSubdomainRFC_category};
 
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainRFC>(cutToFirstSignificantSubdomainRFC_documentation);
 
@@ -184,7 +184,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn cutToFirstSignificantSubdomainWithWWWRFC_introduced_in = {22, 10};
     FunctionDocumentation::Category cutToFirstSignificantSubdomainWithWWWRFC_category = FunctionDocumentation::Category::URL;
-    FunctionDocumentation cutToFirstSignificantSubdomainWithWWWRFC_documentation = {cutToFirstSignificantSubdomainWithWWWRFC_description, cutToFirstSignificantSubdomainWithWWWRFC_syntax, cutToFirstSignificantSubdomainWithWWWRFC_arguments, cutToFirstSignificantSubdomainWithWWWRFC_returned_value, cutToFirstSignificantSubdomainWithWWWRFC_examples, cutToFirstSignificantSubdomainWithWWWRFC_introduced_in, cutToFirstSignificantSubdomainWithWWWRFC_category};
+    FunctionDocumentation cutToFirstSignificantSubdomainWithWWWRFC_documentation = {cutToFirstSignificantSubdomainWithWWWRFC_description, cutToFirstSignificantSubdomainWithWWWRFC_syntax, cutToFirstSignificantSubdomainWithWWWRFC_arguments, {}, cutToFirstSignificantSubdomainWithWWWRFC_returned_value, cutToFirstSignificantSubdomainWithWWWRFC_examples, cutToFirstSignificantSubdomainWithWWWRFC_introduced_in, cutToFirstSignificantSubdomainWithWWWRFC_category};
 
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainWithWWWRFC>(cutToFirstSignificantSubdomainWithWWWRFC_documentation);
 }

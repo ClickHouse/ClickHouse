@@ -5,6 +5,7 @@
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <Common/MultiVersion.h>
 #include <azure/storage/blobs.hpp>
 #include <azure/core/http/curl_transport.hpp>
@@ -39,7 +40,9 @@ public:
     /// Sanitizer build may crash with max_keys=1; this looks like a false positive.
     ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys, bool with_tags) const override;
 
-    std::string getName() const override { return "AzureObjectStorage"; }
+    std::string getName() const override { return "Azure"; }
+
+    std::string getDiskName() const override { return name; }
 
     ObjectStorageType getType() const override { return ObjectStorageType::Azure; }
 
@@ -122,7 +125,8 @@ private:
     void removeObjectImpl(
         const StoredObject & object,
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-        bool if_exists);
+        bool if_exists,
+        BlobStorageLogWriterPtr blob_storage_log);
 
     const String name;
     AzureBlobStorage::AuthMethod auth_method;

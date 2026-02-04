@@ -13,7 +13,7 @@ workflow = Workflow.Config(
     jobs=[
         Job.Config(
             name="Collect flaky tests",
-            command="python3 ./ci/jobs/collect_gh_issues.py",
+            command="python3 ./ci/praktika/issue.py --collect-and-upload",
             runs_on=RunnerLabels.STYLE_CHECK_ARM,
             enable_gh_auth=True,
         ),

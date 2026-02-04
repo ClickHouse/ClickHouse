@@ -55,7 +55,7 @@ bool MergeProjectionPartsTask::executeStep()
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
         MergeTreeData::DataPartsVector const_selected_parts(
             std::make_move_iterator(selected_parts.begin()), std::make_move_iterator(selected_parts.end()));
-        projection_future_part->assign(std::move(const_selected_parts), /*patch_parts_=*/ {});
+        projection_future_part->assign(std::move(const_selected_parts), /*patch_parts_=*/ {}, &projection);
         projection_future_part->name = fmt::format("{}_{}", projection.name, ++block_num);
         projection_future_part->part_info = {"all", 0, 0, 0};
 
@@ -80,6 +80,7 @@ bool MergeProjectionPartsTask::executeStep()
             projection_merging_params,
             NO_TRANSACTION_PTR,
             /* need_prefix */ true,
+            &projection,
             new_data_part.get(),
             ".tmp_proj");
 

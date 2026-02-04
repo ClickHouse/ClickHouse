@@ -200,7 +200,16 @@ public:
 
         if (dict_structure.id)
         {
-            key_cols.emplace_back(dict_structure.id->name, dict_structure.id->type);
+            /// `dict_structure.id->type` is the declared key type, but for simple-key dictionaries the effective lookup key type
+            /// (and `dictionary()` table function schema) is always UInt64. Use `getKeyTypes().front()` to match that.
+            ///
+            /// This is important for distributed queries: we derive distributed set names from QueryTree hashes (see `PlannerContext::createSetKey()`),
+            /// and QueryTree hashing includes resolved types (e.g. `ColumnNode::updateTreeHashImpl()` hashes the column type).
+            /// For simple-key dictionaries, `dict_structure.id->type` is the declared type (can be Int64), but shards can re-resolve the key
+            /// as UInt64. If we use the declared type here, initiator/shards can hash
+            /// different trees -> different `__set_<hash>` names -> remote header mismatch ("Cannot find column ... __set_...").
+            chassert(dict_structure.getKeyTypes().size() == 1);
+            key_cols.emplace_back(dict_structure.id->name, dict_structure.getKeyTypes().front());
         }
         else if (dict_structure.key) /// composite key
         {
@@ -216,7 +225,9 @@ public:
         }
 
         const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
-        chassert(dict_structure.hasAttribute(attr_col_name) && "Attribute not found in dictionary structure of dictionary");
+
+        if (!dict_structure.hasAttribute(attr_col_name))
+            return;
 
         DataTypePtr dict_attr_col_type = dict_structure.getAttribute(attr_col_name).type;
 
@@ -249,6 +260,7 @@ public:
 
         /// SELECT key_col FROM dictionary(dict_name) WHERE attr_name = const_value
         auto subquery_node = std::make_shared<QueryNode>(Context::createCopy(getContext()));
+        subquery_node->setIsSubquery(true);
         subquery_node->getJoinTree() = dict_table_function;
         subquery_node->getWhere() = attr_comparison_function_node;
 
@@ -264,7 +276,16 @@ public:
         in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, querytree_subquery_node};
         resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
 
-        node = std::move(in_function_node);
+        /// Preserve the original result type of the comparison node.
+        /// For example, original "equals(...)" might have result type Nullable(UInt8),
+        /// while "IN" might return UInt8.
+        DataTypePtr original_result_type = node_function->getResultType();
+
+        QueryTreeNodePtr replacement_node = in_function_node;
+        if (original_result_type && !in_function_node->getResultType()->equals(*original_result_type))
+            replacement_node = createCastFunction(in_function_node, original_result_type, getContext());
+
+        node = std::move(replacement_node);
     }
 };
 

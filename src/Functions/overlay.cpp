@@ -1,6 +1,5 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
-#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -719,7 +718,7 @@ Replaces part of the string `input` with another string `replace`, starting at t
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
-    FunctionDocumentation overlay_documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation overlay_documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionOverlay<false>>(overlay_documentation, FunctionFactory::Case::Insensitive);
 
@@ -747,7 +746,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
         )"
     }
     };
-    FunctionDocumentation overlayutf8_documentation = {utf8_description, utf8_syntax, utf8_arguments, utf8_returned_value, utf8_examples, introduced_in, category};
+    FunctionDocumentation overlayutf8_documentation = {utf8_description, utf8_syntax, utf8_arguments, {}, utf8_returned_value, utf8_examples, introduced_in, category};
 
     factory.registerFunction<FunctionOverlay<true>>(overlayutf8_documentation, FunctionFactory::Case::Sensitive);
 }

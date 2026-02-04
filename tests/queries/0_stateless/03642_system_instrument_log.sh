@@ -15,7 +15,7 @@ trap cleanup EXIT
 
 $CLICKHOUSE_CLIENT -q "
     SYSTEM INSTRUMENT REMOVE ALL;
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'this is an instrumentation log';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'this is an instrumentation log';
 "
 
 query_id="${CLICKHOUSE_DATABASE}_log"

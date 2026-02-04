@@ -171,7 +171,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node)
     for (const auto & [name, sizes] : column_sizes)
         column_compressed_sizes[name] = sizes.data_compressed;
 
-    Names queried_columns = source_step_with_filter->requiredSourceColumns();
+    const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
 
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),

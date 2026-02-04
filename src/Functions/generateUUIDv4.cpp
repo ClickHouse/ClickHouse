@@ -128,7 +128,7 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
     };
     FunctionDocumentation::IntroducedIn introduced_in_generateUUIDv4 = {1, 1};
     FunctionDocumentation::Category category_generateUUIDv4 = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_generateUUIDv4 = {description_generateUUIDv4, syntax_generateUUIDv4, arguments_generateUUIDv4, returned_value_generateUUIDv4, examples_generateUUIDv4, introduced_in_generateUUIDv4, category_generateUUIDv4};
+    FunctionDocumentation documentation_generateUUIDv4 = {description_generateUUIDv4, syntax_generateUUIDv4, arguments_generateUUIDv4, {}, returned_value_generateUUIDv4, examples_generateUUIDv4, introduced_in_generateUUIDv4, category_generateUUIDv4};
 
     factory.registerFunction<FunctionGenerateUUIDv4>(documentation_generateUUIDv4);
 }

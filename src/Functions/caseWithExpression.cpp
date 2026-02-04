@@ -29,7 +29,6 @@ public:
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override { return name; }
@@ -62,14 +61,6 @@ public:
     /// Helper function to implement CASE WHEN equality semantics where NULL = NULL is true
     ColumnPtr caseWhenEquals(const ColumnWithTypeAndName & expr, const ColumnWithTypeAndName & when_value, size_t input_rows_count) const
     {
-        // handle Nothing type - it's an empty type that can't contain any values
-        // if either argument is Nothing, the result should be an empty column
-        if (expr.type->onlyNull() || when_value.type->onlyNull())
-        {
-            // return a constant false column
-            return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
-        }
-
         // for CASE WHEN semantics, NULL should match NULL
         // we need: if (isNull(expr)) then (isNull(when)) else if (isNull(when)) then 0 else (expr = when)
 

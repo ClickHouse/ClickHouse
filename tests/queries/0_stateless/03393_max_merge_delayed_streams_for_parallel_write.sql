@@ -22,6 +22,7 @@ settings
     max_merge_delayed_streams_for_parallel_write = 100,
     -- avoid superfluous merges
     merge_selector_base = 1000,
+    min_columns_to_activate_adaptive_write_buffer = 0,
     auto_statistics_types = '';
 
 insert into metric_log select * from generateRandom() limit 10;

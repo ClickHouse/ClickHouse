@@ -234,7 +234,7 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
         if (failed)
             break;
 
-        runner([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed]()
+        runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed]()
         {
             if (failed)
                 return;

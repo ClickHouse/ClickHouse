@@ -1,6 +1,10 @@
 /* config.h.  Generated from config.h.in by configure.  */
 /* config.h.in.  Generated from configure.ac by autoheader.  */
 
+/* Define to 1 if you have the declaration of `getentropy', and to 0 if you
+   don't. */
+#define HAVE_DECL_GETENTROPY 0
+
 /* Define to 1 if you have the declaration of `glob', and to 0 if you don't.
    */
 #define HAVE_DECL_GLOB 1
@@ -26,12 +30,6 @@
 
 /* Define if readline library is available */
 /* #undef HAVE_LIBREADLINE */
-
-/* Define to 1 if you have the <lzma.h> header file. */
-/* #undef HAVE_LZMA_H */
-
-/* Define to 1 if you have the <poll.h> header file. */
-/* #undef HAVE_POLL_H */
 
 /* Define to 1 if you have the <pthread.h> header file. */
 #define HAVE_PTHREAD_H 1
@@ -79,7 +77,7 @@
 #define PACKAGE_NAME "libxml2"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "libxml2 2.14.5"
+#define PACKAGE_STRING "libxml2 2.15.1"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "libxml2"
@@ -88,7 +86,7 @@
 #define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "2.14.5"
+#define PACKAGE_VERSION "2.15.1"
 
 /* Define to 1 if all of the C90 standard headers exist (not just the ones
    required in a freestanding environment). This macro is provided for
@@ -96,7 +94,7 @@
 #define STDC_HEADERS 1
 
 /* Version number of package */
-#define VERSION "2.14.5"
+#define VERSION "2.15.1"
 
 /* System configuration directory (/etc) */
 #define XML_SYSCONFDIR "/usr/local/etc"

@@ -387,7 +387,7 @@ std::string normalizeUuid(const std::string & uuid)
     {
         if (std::isalnum(c))
         {
-            result.push_back(std::tolower(c));
+            result.push_back(static_cast<char>(std::tolower(c)));
         }
     }
     return result;
@@ -721,9 +721,7 @@ std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i)
             column_name = args[1]->as<ASTIdentifier>()->name();
         }
         else
-        {
             column_name = args[0]->as<ASTIdentifier>()->name();
-        }
 
         if (!clickhouse_name_to_iceberg.contains(clickhouse_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported function {} for iceberg", clickhouse_name);
@@ -741,7 +739,14 @@ std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i)
         return parse_function(object);
     }
 
-    auto function_desc = object->children[0]->children[i]->children[0];
+    chassert(!object->children.empty());
+    chassert(object->children[0]->as<ASTExpressionList>());
+    auto function_desc = object->children[0]->children[i];
+    if (auto * identifier = function_desc->as<ASTIdentifier>(); identifier)
+        return {"identity", identifier->name()};
+
+    chassert(!function_desc->children.empty());
+    function_desc = function_desc->children[0];
     if (auto * identifier = function_desc->as<ASTIdentifier>(); identifier)
         return {"identity", identifier->name()};
 
@@ -1088,10 +1093,13 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::J
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object)
 {
+    /// we have two ways to get current schema id
+    /// 1. check field schema, which is required in V1 format, and there is schema-id in schema
+    /// 2. check "schemas" and "current-schema-id", which is required in V2 format, but can also exist in V1.
     if (!metadata_object->has(f_schema))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_schema);
     Poco::JSON::Object::Ptr schema = metadata_object->getObject(f_schema);
-    if (!metadata_object->has(f_schema_id))
+    if (!schema->has(f_schema_id))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in schema", f_schema_id);
     auto current_schema_id = schema->getValue<int>(f_schema_id);
     return {schema, current_schema_id};

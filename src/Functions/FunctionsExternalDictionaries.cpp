@@ -123,7 +123,7 @@ R"(
             }
         };
         FunctionDocumentation::IntroducedIn introduced_in = {18, 16};
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::get>>(documentation);
     }
@@ -144,7 +144,7 @@ If the key is not found, returns the `default_value` provided.
 )"};
         FunctionDocumentation::Examples examples = {{"Get value with default", "SELECT dictGetOrDefault('ext_dict_mult', 'c1', toUInt64(999), 0) AS val", "0"}};
         FunctionDocumentation::IntroducedIn introduced_in = {18, 16};
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::getOrDefault>>(documentation);
     }
@@ -175,7 +175,7 @@ FROM system.numbers LIMIT 5 FORMAT TabSeparated;
 (4,'2019-05-20')  \N
 )"}};
         FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetOrNull>(documentation);
     }
@@ -200,7 +200,7 @@ R"(
             }
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation_dictGetUInt8 = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation_dictGetUInt8 = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetUInt8>(documentation_dictGetUInt8);
     }
@@ -232,7 +232,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetUInt8OrDefault>(documentation);
     }
@@ -254,7 +254,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetUInt16>(documentation);
     }
@@ -286,7 +286,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetUInt16OrDefault>(documentation);
     }
@@ -308,7 +308,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetUInt32>(documentation);
     }
@@ -340,7 +340,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetUInt32OrDefault>(documentation);
     }
@@ -362,7 +362,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetUInt64>(documentation);
     }
@@ -394,7 +394,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetUInt64OrDefault>(documentation);
     }
@@ -416,7 +416,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetInt8>(documentation);
     }
@@ -448,7 +448,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetInt8OrDefault>(documentation);
     }
@@ -470,7 +470,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetInt16>(documentation);
     }
@@ -502,7 +502,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetInt16OrDefault>(documentation);
     }
@@ -523,7 +523,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetInt32>(documentation);
     }
@@ -555,7 +555,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetInt32OrDefault>(documentation);
     }
@@ -577,7 +577,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetInt64>(documentation);
     }
@@ -609,7 +609,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetInt64OrDefault>(documentation);
     }
@@ -630,7 +630,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetFloat32>(documentation);
     }
@@ -662,7 +662,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetFloat32OrDefault>(documentation);
     }
@@ -683,7 +683,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetFloat64>(documentation);
     }
@@ -715,7 +715,7 @@ R"(
  )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetFloat64OrDefault>(documentation);
     }
@@ -737,7 +737,7 @@ R"(
 )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
     factory.registerFunction<FunctionDictGetDate>(documentation);
 }
@@ -769,7 +769,7 @@ R"(
 )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
     factory.registerFunction<FunctionDictGetDateOrDefault>(documentation);
 }
@@ -791,7 +791,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetDateTime>(documentation);
     }
@@ -823,7 +823,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetDateTimeOrDefault>(documentation);
     }
@@ -845,7 +845,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetUUID>(documentation);
     }
@@ -877,7 +877,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetUUIDOrDefault>(documentation);
     }
@@ -899,7 +899,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetIPv4>(documentation);
     }
@@ -931,7 +931,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {23, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetIPv4OrDefault>(documentation);
     }
@@ -953,7 +953,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {23, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetIPv6>(documentation);
     }
@@ -985,7 +985,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {23, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetIPv6OrDefault>(documentation);
     }
@@ -1007,7 +1007,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetString>(documentation);
     }
@@ -1039,7 +1039,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetStringOrDefault>(documentation);
     }
@@ -1071,7 +1071,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {23, 5};
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::getAll>>(documentation);
     }
@@ -1100,7 +1100,7 @@ R"(
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-        FunctionDocumentation documentation{description, syntax, arguments, returned_value, examples, introduced_in, category_dictionary};
+        FunctionDocumentation documentation{description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetHierarchy>(documentation);
     }
@@ -1145,6 +1145,7 @@ R"(
             description_dictIsIn,
             syntax_dictIsIn,
             arguments_dictIsIn,
+            {},
             returned_value_dictIsIn,
             examples_dictIsIn,
             introduced_in_dictIsIn,
@@ -1186,6 +1187,7 @@ R"(
             description_dictGetChildren,
             syntax_dictGetChildren,
             arguments_dictGetChildren,
+            {},
             returned_value_dictGetChildren,
             examples_dictGetChildren,
             introduced_in_dictGetChildren,
@@ -1238,6 +1240,7 @@ R"(
             description_dictGetDescendants,
             syntax_dictGetDescendants,
             arguments_dictGetDescendants,
+            {},
             returned_value_dictGetDescendants,
             examples_dictGetDescendants,
             introduced_in_dictGetDescendants,
@@ -1291,6 +1294,7 @@ R"(
             description_dictHas,
             syntax_dictHas,
             arguments_dictHas,
+            {},
             returned_value_dictHas,
             examples_dictHas,
             introduced_in_dictHas,

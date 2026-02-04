@@ -181,6 +181,16 @@ private:
 
     std::pair<QueryTreeNodePtr, ProjectionNames> makeNullSafeHas(QueryTreeNodePtr array_arg, QueryTreeNodePtr element_arg, const ProjectionNames & args_proj, IdentifierResolveScope & scope);
 
+    ProjectionNames buildHasExpression(
+        QueryTreeNodePtr & node,
+        QueryTreeNodePtr array_arg,
+        QueryTreeNodePtr element_arg,
+        bool is_not_in,
+        bool transform_null_in,
+        const ProjectionNames & arguments_projection_names,
+        const ProjectionNames & parameters_projection_names,
+        IdentifierResolveScope & scope);
+
     ProjectionNames handleNullInTuple(const QueryTreeNodes & tuple_args, const std::string & function_name, const ProjectionNames & parameters_projection_names,
                                         const ProjectionNames & arguments_projection_names, IdentifierResolveScope & scope, QueryTreeNodePtr & node);
 

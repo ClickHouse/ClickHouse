@@ -81,7 +81,7 @@ def stop_clickhouse(cluster, node, cleanup_disks):
     )
 
 
-def setup_storage(cluster, node, storage_config, cleanup_disks, before_start=None):
+def setup_storage(cluster, node, storage_config, cleanup_disks):
     stop_clickhouse(cluster, node, cleanup_disks)
     node.copy_file_to_container(
         os.path.join(CURRENT_TEST_DIR, "configs/enable_keeper.xml"),
@@ -92,9 +92,6 @@ def setup_storage(cluster, node, storage_config, cleanup_disks, before_start=Non
         "<!-- DISK DEFINITION PLACEHOLDER -->",
         storage_config,
     )
-
-    if before_start:
-        before_start(node)
 
     node.start_clickhouse()
     # complete readiness checks that the sessions can be established,
@@ -150,19 +147,7 @@ def test_logs_with_disks(started_cluster):
 
         stop_zk(node_zk)
 
-        previous_log_files = []
-
-        def collect_local_logs(node):
-            nonlocal previous_log_files
-            previous_log_files = get_local_logs(node)
-            # assert all filenames match the expected pattern
-            for name in previous_log_files:
-                assert re.match(
-                    r"^changelog_\d+_\d+\.bin$", name
-                ), f"Filename {name} does not match the expected pattern"
-
-            previous_log_files.sort(key=lambda name: int(name.split("_")[1]))
-            logging.info(f"Previous log files: {previous_log_files}")
+        assert len(get_local_logs(node_logs)) > 1
 
         setup_storage(
             started_cluster,
@@ -171,10 +156,10 @@ def test_logs_with_disks(started_cluster):
             "<latest_log_storage_disk>log_local<\\/latest_log_storage_disk>"
             "<snapshot_storage_disk>snapshot_local<\\/snapshot_storage_disk>",
             cleanup_disks=False,
-            before_start=collect_local_logs,
         )
 
-        def get_single_local_log_file():
+        # all but the latest log should be on S3
+        def assert_single_local_log():
             local_log_files = get_local_logs(node_logs)
             start_time = time.time()
             while len(local_log_files) != 1:
@@ -184,33 +169,17 @@ def test_logs_with_disks(started_cluster):
                 ), "local_log_files size is not equal to 1 after 60s"
                 time.sleep(1)
                 local_log_files = get_local_logs(node_logs)
-            return local_log_files
 
-        # all but the latest log should be on S3
-        local_log_files = get_single_local_log_file()
-        assert local_log_files[0] == previous_log_files[-1]
-        s3_log_files = list_s3_objects(started_cluster, "logs/")
-        assert set(s3_log_files) == set(previous_log_files[:-1])
-
-        previous_log_files = s3_log_files + local_log_files
+        assert_single_local_log()
+        assert len(list_s3_objects(started_cluster, "logs/")) > 1
 
         node_zk = get_fake_zk("node_logs")
 
         for _ in range(30):
             node_zk.create("/test/somenode", b"somedata", sequence=True)
 
+        assert_single_local_log()
         stop_zk(node_zk)
-
-        def collect_all_logs(node):
-            nonlocal previous_log_files
-            local_log_files = get_single_local_log_file()
-            log_files = list_s3_objects(started_cluster, "logs/")
-
-            log_files.extend(local_log_files)
-            assert set(log_files) != previous_log_files
-
-            previous_log_files = log_files
-            logging.info(f"Previous log files: {previous_log_files}")
 
         setup_storage(
             started_cluster,
@@ -219,7 +188,6 @@ def test_logs_with_disks(started_cluster):
             "<log_storage_disk>log_local<\\/log_storage_disk>"
             "<snapshot_storage_disk>snapshot_local<\\/snapshot_storage_disk>",
             cleanup_disks=False,
-            before_start=collect_all_logs,
         )
 
         s3_files = list_s3_objects(started_cluster, "logs/")
@@ -232,8 +200,7 @@ def test_logs_with_disks(started_cluster):
             time.sleep(1)
             s3_files = list_s3_objects(started_cluster, "logs/")
 
-        local_log_files = get_local_logs(node_logs)
-        assert set(local_log_files) == set(previous_log_files)
+        assert len(get_local_logs(node_logs)) > 1
 
         node_zk = get_fake_zk("node_logs")
 

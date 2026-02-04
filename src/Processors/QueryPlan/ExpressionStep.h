@@ -41,6 +41,8 @@ public:
     bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
     void decorrelateActions() { actions_dag.decorrelate(); }
 
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
     bool canRemoveUnusedColumns() const override;
     RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;

@@ -78,7 +78,7 @@ public:
         {
             const UInt64 hindex = data[row];
 
-            UInt8 res = getBaseCellNumber(hindex);
+            auto res = static_cast<UInt8>(getBaseCellNumber(hindex));
 
             dst_data[row] = res;
         }
@@ -115,7 +115,7 @@ Returns the base cell number of the [H3](#h3-index) index.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetBaseCell>(documentation);
 }
 

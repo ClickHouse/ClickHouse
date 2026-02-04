@@ -149,7 +149,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                 }
             }
 
-            runner([remote_path, object_path = file->getPath(), metadata = file->metadata, &log, &settings, this, &remote_layout, &remote_layout_mutex]
+            runner.enqueueAndKeepTrack([remote_path, object_path = file->getPath(), metadata = file->metadata, &log, &settings, this, &remote_layout, &remote_layout_mutex]
             {
                 DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
@@ -266,7 +266,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::dropCache()
 
 void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
 {
-    if (!previous_refresh.compareAndRestart(0.001 * not_sooner_than_milliseconds))
+    if (!previous_refresh.compareAndRestart(0.001 * static_cast<double>(not_sooner_than_milliseconds)))
         return;
 
     std::unique_lock lock(load_mutex, std::defer_lock);

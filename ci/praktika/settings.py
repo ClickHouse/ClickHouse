@@ -101,17 +101,34 @@ class _Settings:
     SECRET_CI_DB_PASSWORD: str = ""
     CI_DB_DB_NAME = ""
     CI_DB_TABLE_NAME = ""
-    CI_DB_INSERT_TIMEOUT_SEC = 5
+    CI_DB_INSERT_TIMEOUT_SEC = 20
 
     # to post links for reading statistics in html report (with read-only user)
     CI_DB_READ_USER: str = ""
     CI_DB_READ_URL: str = ""
+
+    # Substrings to classify test failures. Used to generate helper queries for checking failure history.
+    # Not required to cover all failures, but recommended to maximize coverage.
+    # Choose values wisely to effectively differentiate between different failure types.
+    TEST_FAILURE_PATTERNS: Optional[List[str]] = None
+
+    ######################################
+    #        Infrastructure Settings     #
+    ######################################
+    CLOUD_INFRASTRUCTURE_CONFIG_PATH: str = ""
+    AWS_REGION: str = ""
+    # S3 path for Slack feed events storage (format: bucket/prefix)
+    # Used by EventFeed and FeedSubscription for PR notification subscriptions
+    EVENT_FEED_S3_PATH: str = ""
 
 
 _USER_DEFINED_SETTINGS = [
     "S3_ARTIFACT_PATH",
     "CACHE_S3_PATH",
     "HTML_S3_PATH",
+    "CLOUD_INFRASTRUCTURE_CONFIG_PATH",
+    "EVENT_FEED_S3_PATH",
+    "AWS_REGION",
     "S3_BUCKET_TO_HTTP_ENDPOINT",
     "TEXT_CONTENT_EXTENSIONS",
     "TEMP_DIR",
@@ -152,6 +169,7 @@ _USER_DEFINED_SETTINGS = [
     "COMPRESS_THRESHOLD_MB",
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
+    "TEST_FAILURE_PATTERNS",
 ]
 
 

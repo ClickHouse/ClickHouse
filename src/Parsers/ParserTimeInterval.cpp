@@ -52,7 +52,7 @@ bool ParserTimeInterval::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!options.allow_mixing_calendar_and_clock_units)
         interval.assertSingleUnit();
 
-    auto time_interval = std::make_shared<ASTTimeInterval>();
+    auto time_interval = make_intrusive<ASTTimeInterval>();
     time_interval->interval = interval;
 
     node = time_interval;

@@ -253,7 +253,8 @@ private:
         const size_t tuple_size = concrete_out_data->tupleSize();
         if (tuple_size == 0)
         {
-            out_data.insertManyDefaults(columns.size());
+            /// Tuple() has no subcolumns to fill. Create `columns.size()` elements per row to match array offsets
+            out_data.insertManyDefaults(columns.size() * input_rows_count);
         }
         else
         {
@@ -324,7 +325,7 @@ There is no supertype for types Int32, DateTime, Int8 ...
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArray>(documentation);
 }

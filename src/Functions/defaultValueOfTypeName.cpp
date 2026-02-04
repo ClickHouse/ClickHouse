@@ -100,7 +100,7 @@ SELECT defaultValueOfTypeName('Nullable(Int8)');
     };
     FunctionDocumentation::IntroducedIn introduced_in_defaultValueOfTypeName = {1, 1};
     FunctionDocumentation::Category category_defaultValueOfTypeName = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_defaultValueOfTypeName = {description_defaultValueOfTypeName, syntax_defaultValueOfTypeName, arguments_defaultValueOfTypeName, returned_value_defaultValueOfTypeName, examples_defaultValueOfTypeName, introduced_in_defaultValueOfTypeName, category_defaultValueOfTypeName};
+    FunctionDocumentation documentation_defaultValueOfTypeName = {description_defaultValueOfTypeName, syntax_defaultValueOfTypeName, arguments_defaultValueOfTypeName, {}, returned_value_defaultValueOfTypeName, examples_defaultValueOfTypeName, introduced_in_defaultValueOfTypeName, category_defaultValueOfTypeName};
 
     factory.registerFunction<FunctionDefaultValueOfTypeName>(documentation_defaultValueOfTypeName);
 }

@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 SerializationObject::SerializationObject(
@@ -577,6 +578,12 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             settings.prefixes_prefetch_callback(path);
         };
 
+        auto safe_release_stream_callback = [&](const SubstreamPath & path)
+        {
+            std::unique_lock lock(callbacks_mutex);
+            settings.release_stream_callback(path);
+        };
+
         size_t task_size = std::max(structure_state_concrete->sorted_dynamic_paths->size() / num_tasks, 1ul);
         for (size_t i = 0; i != num_tasks; ++i)
         {
@@ -589,6 +596,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
                 settings_copy.getter = safe_getter;
                 settings_copy.dynamic_subcolumns_callback = settings.dynamic_subcolumns_callback ? safe_dynamic_subcolumns_callback : StreamCallback{};
                 settings_copy.prefixes_prefetch_callback = settings.prefixes_prefetch_callback ? safe_prefixes_prefetch_callback : StreamCallback{};
+                settings_copy.release_stream_callback = settings.release_stream_callback ? safe_release_stream_callback : StreamCallback{};
                 for (size_t j = batch_start; j != batch_end; ++j)
                 {
                     settings_copy.path.push_back(Substream::ObjectDynamicPath);
@@ -598,7 +606,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
                 }
             };
 
-            auto task = std::make_shared<DeserializationTask>(deserialize);
+            auto task = std::make_shared<DeserializationTask>(std::move(deserialize));
             static_cast<void>(settings.prefixes_deserialization_thread_pool->trySchedule([task_ptr = task, thread_group = CurrentThread::getGroup()]()
             {
                 ThreadGroupSwitcher switcher(thread_group, ThreadName::PREFIX_READER);
@@ -749,6 +757,10 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
 
         state = std::move(structure_state);
         addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+
+        /// We won't read from this stream anymore so we can release it.
+        if (settings.release_stream_callback)
+            settings.release_stream_callback(settings.path);
     }
 
     settings.path.pop_back();
@@ -815,6 +827,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         return;
     }
 
+    column_object.validateDynamicPathsSizes();
     const auto & dynamic_paths = column_object.getDynamicPaths();
     const auto & shared_data = column_object.getSharedDataPtr();
 
@@ -1046,7 +1059,21 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
     settings.path.pop_back();
 
-    column_object.validateDynamicPathsAndSharedData(shared_data_previous_size);
+    /// Verify that all typed paths, dynamic paths and shared data has consistent sizes
+    size_t expected_size = shared_data->size();
+    for (const auto & [path, path_column] : typed_paths)
+    {
+        if (path_column->size() != expected_size)
+            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of typed path {}: {}. Expected size {}", path, path_column->size(), expected_size);
+    }
+
+    for (const auto & [path, path_column] : dynamic_paths)
+    {
+        if (path_column->size() != expected_size)
+            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {}. Expected size {}", path, path_column->size(), expected_size);
+    }
+
+    column_object.repairDuplicatesInDynamicPathsAndSharedData(shared_data_previous_size);
 }
 
 void SerializationObject::serializeBinary(const Field & field, WriteBuffer & ostr, const DB::FormatSettings & settings) const
@@ -1118,6 +1145,14 @@ void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, co
     Object object;
     size_t number_of_paths;
     readVarUInt(number_of_paths, istr);
+    if (settings.binary.max_object_size && number_of_paths > settings.binary.max_object_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too many paths in a single object: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_object_size",
+            number_of_paths,
+            settings.binary.max_object_size);
+
     /// Read pairs (path, value).
     for (size_t i = 0; i != number_of_paths; ++i)
     {
@@ -1206,6 +1241,8 @@ void SerializationObject::restoreColumnObject(ColumnObject & column_object, size
 
 void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    updateMaxDynamicPathsLimitIfNeeded(col, settings);
+
     if (settings.binary.read_json_as_string)
     {
         String data;
@@ -1324,6 +1361,16 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
 SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB::SerializationPtr & prev, const DataTypePtr &) const
 {
     return std::make_shared<SerializationObjectTypedPath>(prev, path);
+}
+
+void SerializationObject::updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const
+{
+    if (!format_settings.json.max_dynamic_subcolumns_in_json_type_parsing || !column.empty())
+        return;
+
+    auto & column_object = assert_cast<ColumnObject &>(column);
+    if (*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing < column_object.getMaxDynamicPaths())
+        column_object.setMaxDynamicPaths(*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing);
 }
 
 }

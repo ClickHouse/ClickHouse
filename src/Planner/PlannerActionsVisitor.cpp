@@ -186,7 +186,7 @@ public:
                     if (function_argument_nodes.size() == 2)
                     {
                         if (const auto * second_argument = function_argument_nodes.at(1)->as<ConstantNode>())
-                            result = toString(second_argument->getValue());
+                            result = fieldToString(second_argument->getValue());
                     }
 
                     /// Empty node name is not allowed and leads to logical errors

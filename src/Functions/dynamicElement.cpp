@@ -178,7 +178,7 @@ SELECT d, dynamicType(d), dynamicElement(d, 'String'), dynamicElement(d, 'Int64'
     };
     FunctionDocumentation::IntroducedIn dynamicElement_introduced_in = {24, 1};
     FunctionDocumentation::Category dynamicElement_category = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation dynamicElement_documentation = {dynamicElement_description, dynamicElement_syntax, dynamicElement_arguments, dynamicElement_returned_value, dynamicElement_examples, dynamicElement_introduced_in, dynamicElement_category};
+    FunctionDocumentation dynamicElement_documentation = {dynamicElement_description, dynamicElement_syntax, dynamicElement_arguments, {}, dynamicElement_returned_value, dynamicElement_examples, dynamicElement_introduced_in, dynamicElement_category};
 
     factory.registerFunction<FunctionDynamicElement>(dynamicElement_documentation);
 }

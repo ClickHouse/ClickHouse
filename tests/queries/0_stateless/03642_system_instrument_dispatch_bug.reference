@@ -1,0 +1,3 @@
+-- Each function handler should be called exactly once:
+startQuery count:	1
+finishQuery count:	1

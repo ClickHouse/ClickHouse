@@ -335,7 +335,7 @@ struct HashMethodKeysFixed
             {
                 for (size_t j = 0; j < key_sizes[i]; ++j)
                 {
-                    masks[i * sizeof(Key) + offset] = j;
+                    masks[i * sizeof(Key) + offset] = static_cast<uint8_t>(j);
                     ++offset;
                 }
             }

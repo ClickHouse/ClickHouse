@@ -12,6 +12,7 @@
 #include <Core/ServerUUID.h>
 
 #include <Common/thread_local_rng.h>
+#include <Common/FailPoint.h>
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
@@ -76,7 +77,7 @@ private:
     std::shared_ptr<IMetadataStorage> createMetadataStorage(const std::string & key_prefix)
     {
         fs::remove_all("./" + key_prefix);
-        LocalObjectStorageSettings settings("./" + key_prefix, /*read_only_=*/false);
+        LocalObjectStorageSettings settings("test", "./" + key_prefix, /*read_only_=*/false);
         auto object_storage = std::make_shared<LocalObjectStorage>(std::move(settings));
         auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
 
@@ -1929,4 +1930,34 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryFromVirtualNode)
             "./CreateDirectoryFromVirtualNode/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
             "./CreateDirectoryFromVirtualNode/ykwvvchguqasvfnkikaqtiebknfzafwv/file",
         }));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, UnlinkUndoInCaseOfNetworkError)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("UnlinkUndoInCaseOfNetworkError");
+    auto object_storage = getObjectStorage("UnlinkUndoInCaseOfNetworkError");
+
+    {
+        auto tx = metadata->createTransaction();
+
+        tx->createDirectory("/A");
+        auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/file").serialize(), "This is San Francisco, city of stile disco");
+        tx->createMetadataFile("/A/file", {StoredObject("/A/file", "file", size_bytes)});
+
+        tx->commit();
+    }
+
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/file").front().remote_path), "This is San Francisco, city of stile disco");
+
+    {
+        FailPointInjection::enableFailPoint("local_object_storage_network_error_during_remove");
+
+        auto tx = metadata->createTransaction();
+        tx->unlinkMetadata("/A/file");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/file").front().remote_path), "This is San Francisco, city of stile disco");
 }

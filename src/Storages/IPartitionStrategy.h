@@ -49,10 +49,14 @@ struct IPartitionStrategy
     NamesAndTypesList getPartitionColumns() const;
     const KeyDescription & getPartitionKeyDescription() const;
 
+    PartitionExpressionActionsAndColumnName getPartitionExpressionActions(ASTPtr & expression_ast);
+
 protected:
     const KeyDescription partition_key_description;
     const Block sample_block;
     ContextPtr context;
+
+    std::optional<PartitionExpressionActionsAndColumnName> cached_result;
 };
 
 /*
@@ -91,9 +95,6 @@ struct WildcardPartitionStrategy : IPartitionStrategy
     ColumnPtr computePartitionKey(const Chunk & chunk) override;
     std::string getPathForRead(const std::string & prefix) override;
     std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) override;
-
-private:
-    PartitionExpressionActionsAndColumnName actions_with_column_name;
 };
 
 /*
@@ -121,7 +122,6 @@ private:
     const std::string file_format;
     const bool partition_columns_in_data_file;
     std::unordered_set<std::string> partition_columns_name_set;
-    PartitionExpressionActionsAndColumnName actions_with_column_name;
     Block block_without_partition_columns;
 };
 

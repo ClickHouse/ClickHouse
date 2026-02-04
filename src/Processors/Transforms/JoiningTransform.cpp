@@ -62,6 +62,14 @@ OutputPort & JoiningTransform::getFinishedSignal()
 
 IProcessor::Status JoiningTransform::prepare()
 {
+    /// Check if we can fully skip reading left side when right side is empty
+    if (inputs.size() > 1)
+    {
+        auto & last_in = inputs.back();
+        if (last_in.isFinished() && join->alwaysReturnsEmptySet() && !on_totals)
+            stop_reading = true;
+    }
+
     auto & output = outputs.front();
     auto & on_finish_output = outputs.back();
 

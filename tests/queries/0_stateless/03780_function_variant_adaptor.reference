@@ -1,0 +1,77 @@
+toString with only NULLs
+ᴺᵁᴸᴸ
+ᴺᵁᴸᴸ
+String
+toString with single variant type
+1
+2
+3
+String
+toString with single variant type and NULLs
+ᴺᵁᴸᴸ
+10
+ᴺᵁᴸᴸ
+20
+String
+toString with multiple variant types
+1
+2
+ᴺᵁᴸᴸ
+3
+4
+String
+toString with empty result
+arrayElement with single variant type
+10
+20
+Variant(String, UInt64)
+arrayElement with single variant type and NULLs
+\N
+1
+\N
+4
+Variant(String, UInt64)
+arrayElement with multiple variant types
+1
+A
+\N
+C
+Variant(String, UInt64)
+equals with variant on left side
+42	1
+42	\N
+ᴺᵁᴸᴸ	\N
+equals with variant on right side
+42	1
+42	\N
+ᴺᵁᴸᴸ	\N
+Variant + Nullable
+43
+44.41999816894531
+\N
+\N
+\N
+\N
+Variant(Float64, UInt64)
+Two Variants with all NULLs
+\N
+\N
+Variant(Decimal(18, 3), Float64, UInt64)
+Two Variants with single variant type, no NULLs
+30
+40
+Variant(Decimal(18, 3), Float64, UInt64)
+Two Variants with single variant type, with NULLs
+\N
+\N
+35
+\N
+Variant(Decimal(18, 3), Float64, UInt64)
+Two Variants with multiple variant types
+30
+8.8
+\N
+\N
+52.2
+\N
+Variant(Decimal(18, 3), Float64, UInt64)

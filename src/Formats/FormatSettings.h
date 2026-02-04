@@ -91,6 +91,7 @@ struct FormatSettings
 
     UInt64 schema_inference_make_columns_nullable = 1;
     bool schema_inference_make_json_columns_nullable = false;
+    bool schema_inference_allow_nullable_tuple_type = false;
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
@@ -115,6 +116,7 @@ struct FormatSettings
 
     bool input_format_ipv4_default_on_conversion_error = false;
     bool input_format_ipv6_default_on_conversion_error = false;
+    bool check_conversion_from_numbers_to_enum = true;
 
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
@@ -126,6 +128,8 @@ struct FormatSettings
     size_t max_threads = 1;
 
     size_t max_block_size_bytes = 0;
+
+    bool pretty_format = false;
 
     enum class ArrowCompression : uint8_t
     {
@@ -143,6 +147,7 @@ struct FormatSettings
         bool read_json_as_string = false;
         bool write_json_as_string = false;
         bool read_bool_field_as_int = false;
+        UInt64 max_object_size = 100000;
     } binary{};
 
     struct
@@ -257,6 +262,9 @@ struct FormatSettings
         bool empty_as_default = false;
         bool type_json_skip_invalid_typed_paths = false;
         bool type_json_skip_duplicated_paths = false;
+        std::optional<size_t> max_dynamic_subcolumns_in_json_type_parsing = std::nullopt;
+        bool type_json_allow_duplicated_key_with_literal_and_nested_object = false;
+        bool type_json_use_partial_match_to_skip_paths_by_regexp = true;
         bool pretty_print = true;
         char pretty_print_indent = ' ';
         size_t pretty_print_indent_multiplier = 4;
@@ -366,6 +374,8 @@ struct FormatSettings
         UInt64 fallback_to_vertical_max_rows_per_chunk = 100;
         UInt64 fallback_to_vertical_min_columns = 5;
         UInt64 fallback_to_vertical_min_table_width = 250;
+
+        bool named_tuples_as_json = true;
 
         enum class Charset : uint8_t
         {

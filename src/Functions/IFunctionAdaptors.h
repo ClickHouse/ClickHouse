@@ -48,6 +48,11 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
+    ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & types) const override
+    {
+        return function->getArgumentsThatDontParticipateInCompilation(types);
+    }
+
     bool isCompilable() const override { return function->isCompilable(getArgumentTypes(), getResultType()); }
 
     llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuesWithType & compile_arguments) const override
@@ -138,6 +143,7 @@ public:
     bool canBeExecutedOnLowCardinalityDictionary() const override { return function->canBeExecutedOnLowCardinalityDictionary(); }
     bool useDefaultImplementationForDynamic() const override { return function->useDefaultImplementationForDynamic(); }
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return function->getReturnTypeForDefaultImplementationForDynamic(); }
+    bool useDefaultImplementationForVariant() const override { return function->useDefaultImplementationForVariant(); }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {

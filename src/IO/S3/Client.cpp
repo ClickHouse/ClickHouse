@@ -124,7 +124,7 @@ bool Client::RetryStrategy::useGCSRewrite(const Aws::Client::AWSError<Aws::Clien
 long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>&, long attemptedRetries) const
 {
     chassert(attemptedRetries >= 0);
-    uint64_t backoffLimitedPow = 1ul << std::clamp(attemptedRetries, 0l, 31l);
+    uint64_t backoff_limited_pow = 1ul << std::clamp(attemptedRetries, 0l, 31l);
 
     uint64_t res;
     if (config.jitter_factor > 0)
@@ -132,10 +132,10 @@ long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWS
         auto dist = std::uniform_real_distribution<double>(1.0, 1.0 + config.jitter_factor);
         double jitter = dist(thread_local_rng);
         res = static_cast<std::uint64_t>(
-            std::min(jitter * config.initial_delay_ms * backoffLimitedPow, static_cast<double>(config.max_delay_ms)));
+            std::min(jitter * static_cast<double>(config.initial_delay_ms) * static_cast<double>(backoff_limited_pow), static_cast<double>(config.max_delay_ms)));
     }
     else
-        res = std::min<uint64_t>(config.initial_delay_ms * backoffLimitedPow, config.max_delay_ms);
+        res = std::min<uint64_t>(config.initial_delay_ms * backoff_limited_pow, config.max_delay_ms);
 
     LOG_TEST(log, "Next retry in {} ms", res);
     return res;
@@ -910,7 +910,7 @@ void Client::slowDownAfterRetryableError() const
         /// This prevents synchronized retries, reducing the risk of overwhelming the S3 server.
         std::uniform_real_distribution<double> dist(1.0, 1.1);
         double jitter = dist(thread_local_rng);
-        sleep_ms = static_cast<UInt64>(jitter * sleep_ms);
+        sleep_ms = static_cast<UInt64>(jitter * static_cast<double>(sleep_ms));
 
         LOG_TRACE(log, "Request failed from a retryable error, now waiting {} ms before retrying", sleep_ms);
         sleepForMilliseconds(sleep_ms);
@@ -1213,21 +1213,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     credentials_configuration.use_environment_credentials =
         credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
 
-    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider = std::make_shared<S3CredentialsProviderChain>(
-            client_configuration,
-            std::move(credentials),
-            credentials_configuration);
-
-    if (!credentials_configuration.role_arn.empty())
-    {
-        credentials_provider = AwsAuthSTSAssumeRoleCredentialsProvider::create(
-            credentials_configuration.role_arn,
-            credentials_configuration.role_session_name,
-            credentials_configuration.expiration_window_seconds,
-            std::move(credentials_provider),
-            client_configuration,
-            credentials_configuration.sts_endpoint_override);
-    }
+    auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
 
     /// Disable per-thread retry loops if global retry coordination is in use.
     if (client_configuration.s3_slow_all_threads_after_retryable_error)

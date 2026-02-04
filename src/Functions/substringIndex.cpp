@@ -336,7 +336,7 @@ Returns the substring of `s` before `count` occurrences of the delimiter `delim`
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     FunctionDocumentation::Description description_utf8 = R"(
 Returns the substring of `s` before `count` occurrences of the delimiter `delim`, specifically for Unicode code points.
@@ -357,7 +357,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
         "www.straßen-in-europa"
     }
     };
-    FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, returned_value_utf8, examples_utf8, introduced_in, category};
+    FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, {}, returned_value_utf8, examples_utf8, introduced_in, category};
 
     factory.registerFunction<FunctionSubstringIndex<false>>(documentation); /// substringIndex
     factory.registerFunction<FunctionSubstringIndex<true>>(documentation_utf8); /// substringIndexUTF8

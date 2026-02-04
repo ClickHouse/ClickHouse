@@ -13,6 +13,16 @@ namespace DB
 {
 class BackupFactory;
 
+/// Constructs Azure connection parameters from individual components.
+AzureBlobStorage::ConnectionParams getAzureConnectionParams(
+    const String & connection_url,
+    const String & container_name,
+    const std::optional<String> & account_name,
+    const std::optional<String> & account_key,
+    const std::optional<String> & client_id,
+    const std::optional<String> & tenant_id,
+    ContextPtr context);
+
 struct AzureStorageParsedArguments : private StorageParsedArguments
 {
     using Path = StorageObjectStorageConfiguration::Path;

@@ -92,7 +92,7 @@ public:
                 if (faces[i] >= 0 && faces[i] <= 19)
                 {
                     ++current_offset;
-                    result_data.emplace_back(faces[i]);
+                    result_data.emplace_back(static_cast<UInt8>(faces[i]));
                 }
             }
 
@@ -132,7 +132,7 @@ Returns [icosahedron](https://en.wikipedia.org/wiki/Icosahedron) faces intersect
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetFaces>(documentation);
 }
 

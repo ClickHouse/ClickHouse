@@ -66,8 +66,8 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
 
         /// Many async blocks are transformed into one ordinary block
         Float32 async_blocks_per_block = static_cast<Float32>((*storage_settings)[MergeTreeSetting::replicated_deduplication_window]) /
-            ((*storage_settings)[MergeTreeSetting::replicated_deduplication_window_for_async_inserts] + 1);
-        cleaned_blocks = (normal_blocks + async_blocks * async_blocks_per_block) / 2;
+            static_cast<Float32>((*storage_settings)[MergeTreeSetting::replicated_deduplication_window_for_async_inserts] + 1);
+        cleaned_blocks = (static_cast<Float32>(normal_blocks) + static_cast<Float32>(async_blocks) * async_blocks_per_block) / 2;
 
         cleaned_other += clearOldMutations();
         cleaned_part_like += storage.clearEmptyParts();
@@ -87,8 +87,8 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
     /// many Outdated parts, and WALs usually contain many parts too). We count then as one part for simplicity.
 
     constexpr Float32 parts_number_amplification = 1.3f;     /// Assuming we merge 4-5 parts each time
-    Float32 cleaned_inserted_parts = (cleaned_blocks + (cleaned_logs + cleaned_parts) / parts_number_amplification) / 3;
-    return cleaned_inserted_parts + cleaned_part_like + cleaned_other;
+    Float32 cleaned_inserted_parts = (cleaned_blocks + static_cast<Float32>(cleaned_logs + cleaned_parts) / parts_number_amplification) / 3;
+    return cleaned_inserted_parts + static_cast<Float32>(cleaned_part_like + cleaned_other);
 }
 
 
@@ -108,9 +108,9 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldLogs()
     /// Numbers are arbitrary.
     std::uniform_real_distribution<double> distr(1.05, 1.15);
     double ratio = distr(rng);
-    size_t min_replicated_logs_to_keep = static_cast<size_t>((*storage_settings)[MergeTreeSetting::min_replicated_logs_to_keep] * ratio);
+    size_t min_replicated_logs_to_keep = static_cast<size_t>(static_cast<double>((*storage_settings)[MergeTreeSetting::min_replicated_logs_to_keep]) * ratio);
 
-    if (static_cast<double>(children_count) < min_replicated_logs_to_keep)
+    if (static_cast<size_t>(children_count) < min_replicated_logs_to_keep)
         return 0;
 
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &stat);

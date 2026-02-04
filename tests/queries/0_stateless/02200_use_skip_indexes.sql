@@ -8,7 +8,6 @@ ORDER BY key
 PARTITION BY key;
 
 set use_query_condition_cache = false;
-set use_skip_indexes_on_data_read = false;
 
 INSERT INTO data_02200 SELECT number, number FROM numbers(10);
 

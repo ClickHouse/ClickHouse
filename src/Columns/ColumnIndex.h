@@ -56,6 +56,8 @@ public:
     /// Returns filtered indexed data where all rows are referenced in the indexes.
     ColumnPtr removeUnusedRowsInIndexedData(const ColumnPtr & indexed_data);
 
+    void removeUnusedRowsInIndexedData(MutableColumnPtr & indexed_data);
+
     /// Collect rows where mask[index] is 1.
     void getIndexesByMask(IColumn::Offsets & result_indexes, const PaddedPODArray<UInt8> & mask, size_t start, size_t end) const;
 

@@ -23,13 +23,17 @@
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/Context.h>
 
+#include <IO/WriteHelpers.h>
+
 #include <Poco/Exception.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -54,6 +58,34 @@ fs::path getShardsListPath(const String & zk_root)
     return fs::path(zk_root + "/shards");
 }
 
+}
+
+ClusterDiscovery::ClusterInfo::ClusterInfo(const String & name_,
+    const String & zk_name_,
+    const String & zk_root_,
+    const String & host_name,
+    const String & username_,
+    const String & password_,
+    const String & cluster_secret_,
+    UInt16 port,
+    bool secure,
+    size_t shard_id,
+    bool observer_mode,
+    bool invisible,
+    size_t zk_root_index_
+    )
+    : name(name_)
+    , zk_name(zk_name_)
+    , zk_root(zk_root_)
+    , current_node(host_name + ":" + toString(port), secure, shard_id)
+    , current_node_is_observer(observer_mode)
+    , current_cluster_is_invisible(invisible)
+    , is_secure_connection(secure)
+    , username(username_)
+    , password(password_)
+    , cluster_secret(cluster_secret_)
+    , zk_root_index(zk_root_index_)
+{
 }
 
 /*

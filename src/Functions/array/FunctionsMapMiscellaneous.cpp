@@ -490,7 +490,7 @@ If elements with the same key exist in more than one input map, all elements are
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapConcat = {23, 4};
     FunctionDocumentation::Category category_mapConcat = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapConcat = {description_mapConcat, syntax_mapConcat, arguments_mapConcat, returned_value_mapConcat, examples_mapConcat, introduced_in_mapConcat, category_mapConcat};
+    FunctionDocumentation documentation_mapConcat = {description_mapConcat, syntax_mapConcat, arguments_mapConcat, {}, returned_value_mapConcat, examples_mapConcat, introduced_in_mapConcat, category_mapConcat};
     factory.registerFunction<FunctionMapConcat>(documentation_mapConcat);
 
     /// mapKeys documentation
@@ -514,7 +514,7 @@ The query `SELECT mapKeys(m) FROM table` is transformed to `SELECT m.keys FROM t
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapKeys = {21, 2};
     FunctionDocumentation::Category category_mapKeys = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapKeys = {description_mapKeys, syntax_mapKeys, arguments_mapKeys, returned_value_mapKeys, examples_mapKeys, introduced_in_mapKeys, category_mapKeys};
+    FunctionDocumentation documentation_mapKeys = {description_mapKeys, syntax_mapKeys, arguments_mapKeys, {}, returned_value_mapKeys, examples_mapKeys, introduced_in_mapKeys, category_mapKeys};
     factory.registerFunction<FunctionMapKeys>(documentation_mapKeys);
 
     /// mapValues documentation
@@ -538,7 +538,7 @@ The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FR
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapValues = {21, 2};
     FunctionDocumentation::Category category_mapValues = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapValues = {description_mapValues, syntax_mapValues, arguments_mapValues, returned_value_mapValues, examples_mapValues, introduced_in_mapValues, category_mapValues};
+    FunctionDocumentation documentation_mapValues = {description_mapValues, syntax_mapValues, arguments_mapValues, {}, returned_value_mapValues, examples_mapValues, introduced_in_mapValues, category_mapValues};
     factory.registerFunction<FunctionMapValues>(documentation_mapValues);
 
     /// mapContainsKey documentation
@@ -560,7 +560,7 @@ Determines if a key is contained in a map.
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapContainsKey = {21, 2};
     FunctionDocumentation::Category category_mapContainsKey = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapContainsKey = {description_mapContainsKey, syntax_mapContainsKey, arguments_mapContainsKey, returned_value_mapContainsKey, examples_mapContainsKey, introduced_in_mapContainsKey, category_mapContainsKey};
+    FunctionDocumentation documentation_mapContainsKey = {description_mapContainsKey, syntax_mapContainsKey, arguments_mapContainsKey, {}, returned_value_mapContainsKey, examples_mapContainsKey, introduced_in_mapContainsKey, category_mapContainsKey};
     factory.registerFunction<FunctionMapContainsKey>(documentation_mapContainsKey);
 
     factory.registerAlias("mapContains", "mapContainsKey", FunctionFactory::Case::Sensitive);
@@ -584,7 +584,7 @@ Determines if a value is contained in a map.
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapContainsValue = {25, 6};
     FunctionDocumentation::Category category_mapContainsValue = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapContainsValue = {description_mapContainsValue, syntax_mapContainsValue, arguments_mapContainsValue, returned_value_mapContainsValue, examples_mapContainsValue, introduced_in_mapContainsValue, category_mapContainsValue};
+    FunctionDocumentation documentation_mapContainsValue = {description_mapContainsValue, syntax_mapContainsValue, arguments_mapContainsValue, {}, returned_value_mapContainsValue, examples_mapContainsValue, introduced_in_mapContainsValue, category_mapContainsValue};
     factory.registerFunction<FunctionMapContainsValue>(documentation_mapContainsValue);
 
     /// mapFilter documentation
@@ -606,7 +606,7 @@ Filters a map by applying a function to each map element.
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapFilter = {22, 3};
     FunctionDocumentation::Category category_mapFilter = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapFilter = {description_mapFilter, syntax_mapFilter, arguments_mapFilter, returned_value_mapFilter, examples_mapFilter, introduced_in_mapFilter, category_mapFilter};
+    FunctionDocumentation documentation_mapFilter = {description_mapFilter, syntax_mapFilter, arguments_mapFilter, {}, returned_value_mapFilter, examples_mapFilter, introduced_in_mapFilter, category_mapFilter};
     factory.registerFunction<FunctionMapFilter>(documentation_mapFilter);
 
     /// mapApply documentation
@@ -628,7 +628,7 @@ Applies a function to each element of a map.
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapApply = {22, 3};
     FunctionDocumentation::Category category_mapApply = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapApply = {description_mapApply, syntax_mapApply, arguments_mapApply, returned_value_mapApply, examples_mapApply, introduced_in_mapApply, category_mapApply};
+    FunctionDocumentation documentation_mapApply = {description_mapApply, syntax_mapApply, arguments_mapApply, {}, returned_value_mapApply, examples_mapApply, introduced_in_mapApply, category_mapApply};
     factory.registerFunction<FunctionMapApply>(documentation_mapApply);
 
     /// mapExists documentation
@@ -652,7 +652,7 @@ You can pass a lambda function to it as the first argument.
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapExists = {23, 4};
     FunctionDocumentation::Category category_mapExists = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapExists = {description_mapExists, syntax_mapExists, arguments_mapExists, returned_value_mapExists, examples_mapExists, introduced_in_mapExists, category_mapExists};
+    FunctionDocumentation documentation_mapExists = {description_mapExists, syntax_mapExists, arguments_mapExists, {}, returned_value_mapExists, examples_mapExists, introduced_in_mapExists, category_mapExists};
     factory.registerFunction<FunctionMapExists>(documentation_mapExists);
 
     /// mapAll documentation
@@ -676,7 +676,7 @@ You can pass a lambda function to it as the first argument.
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapAll = {23, 4};
     FunctionDocumentation::Category category_mapAll = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapAll = {description_mapAll, syntax_mapAll, arguments_mapAll, returned_value_mapAll, examples_mapAll, introduced_in_mapAll, category_mapAll};
+    FunctionDocumentation documentation_mapAll = {description_mapAll, syntax_mapAll, arguments_mapAll, {}, returned_value_mapAll, examples_mapAll, introduced_in_mapAll, category_mapAll};
     factory.registerFunction<FunctionMapAll>(documentation_mapAll);
 
     /// mapSort documentation
@@ -699,7 +699,7 @@ If the func function is specified, the sorting order is determined by the result
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapSort = {23, 4};
     FunctionDocumentation::Category category_mapSort = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapSort = {description_mapSort, syntax_mapSort, arguments_mapSort, returned_value_mapSort, examples_mapSort, introduced_in_mapSort, category_mapSort};
+    FunctionDocumentation documentation_mapSort = {description_mapSort, syntax_mapSort, arguments_mapSort, {}, returned_value_mapSort, examples_mapSort, introduced_in_mapSort, category_mapSort};
     factory.registerFunction<FunctionMapSort>(documentation_mapSort);
 
     /// mapReverseSort documentation
@@ -722,7 +722,7 @@ If the func function is specified, the sorting order is determined by the result
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapReverseSort = {23, 4};
     FunctionDocumentation::Category category_mapReverseSort = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapReverseSort = {description_mapReverseSort, syntax_mapReverseSort, arguments_mapReverseSort, returned_value_mapReverseSort, examples_mapReverseSort, introduced_in_mapReverseSort, category_mapReverseSort};
+    FunctionDocumentation documentation_mapReverseSort = {description_mapReverseSort, syntax_mapReverseSort, arguments_mapReverseSort, {}, returned_value_mapReverseSort, examples_mapReverseSort, introduced_in_mapReverseSort, category_mapReverseSort};
     factory.registerFunction<FunctionMapReverseSort>(documentation_mapReverseSort);
 
     /// mapPartialSort documentation
@@ -746,7 +746,7 @@ If the func function is specified, the sorting order is determined by the result
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapPartialSort = {23, 4};
     FunctionDocumentation::Category category_mapPartialSort = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapPartialSort = {description_mapPartialSort, syntax_mapPartialSort, arguments_mapPartialSort, returned_value_mapPartialSort, examples_mapPartialSort, introduced_in_mapPartialSort, category_mapPartialSort};
+    FunctionDocumentation documentation_mapPartialSort = {description_mapPartialSort, syntax_mapPartialSort, arguments_mapPartialSort, {}, returned_value_mapPartialSort, examples_mapPartialSort, introduced_in_mapPartialSort, category_mapPartialSort};
     factory.registerFunction<FunctionMapPartialSort>(documentation_mapPartialSort);
 
     /// mapPartialReverseSort documentation
@@ -770,7 +770,7 @@ If the func function is specified, the sorting order is determined by the result
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapPartialReverseSort = {23, 4};
     FunctionDocumentation::Category category_mapPartialReverseSort = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapPartialReverseSort = {description_mapPartialReverseSort, syntax_mapPartialReverseSort, arguments_mapPartialReverseSort, returned_value_mapPartialReverseSort, examples_mapPartialReverseSort, introduced_in_mapPartialReverseSort, category_mapPartialReverseSort};
+    FunctionDocumentation documentation_mapPartialReverseSort = {description_mapPartialReverseSort, syntax_mapPartialReverseSort, arguments_mapPartialReverseSort, {}, returned_value_mapPartialReverseSort, examples_mapPartialReverseSort, introduced_in_mapPartialReverseSort, category_mapPartialReverseSort};
     factory.registerFunction<FunctionMapPartialReverseSort>(documentation_mapPartialReverseSort);
 
     /// mapContainsKeyLike documentation
@@ -805,7 +805,7 @@ SELECT mapContainsKeyLike(a, 'a%') FROM tab;
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapContainsKeyLike = {23, 4};
     FunctionDocumentation::Category category_mapContainsKeyLike = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapContainsKeyLike = {description_mapContainsKeyLike, syntax_mapContainsKeyLike, arguments_mapContainsKeyLike, returned_value_mapContainsKeyLike, examples_mapContainsKeyLike, introduced_in_mapContainsKeyLike, category_mapContainsKeyLike};
+    FunctionDocumentation documentation_mapContainsKeyLike = {description_mapContainsKeyLike, syntax_mapContainsKeyLike, arguments_mapContainsKeyLike, {}, returned_value_mapContainsKeyLike, examples_mapContainsKeyLike, introduced_in_mapContainsKeyLike, category_mapContainsKeyLike};
     factory.registerFunction<FunctionMapContainsKeyLike>(documentation_mapContainsKeyLike);
 
     /// mapContainsValueLike documentation
@@ -839,7 +839,7 @@ SELECT mapContainsValueLike(a, 'a%') FROM tab;
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapContainsValueLike = {25, 5};
     FunctionDocumentation::Category category_mapContainsValueLike = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapContainsValueLike = {description_mapContainsValueLike, syntax_mapContainsValueLike, arguments_mapContainsValueLike, returned_value_mapContainsValueLike, examples_mapContainsValueLike, introduced_in_mapContainsValueLike, category_mapContainsValueLike};
+    FunctionDocumentation documentation_mapContainsValueLike = {description_mapContainsValueLike, syntax_mapContainsValueLike, arguments_mapContainsValueLike, {}, returned_value_mapContainsValueLike, examples_mapContainsValueLike, introduced_in_mapContainsValueLike, category_mapContainsValueLike};
     factory.registerFunction<FunctionMapContainsValueLike>(documentation_mapContainsValueLike);
 
     /// mapExtractKeyLike documentation
@@ -874,7 +874,7 @@ SELECT mapExtractKeyLike(a, 'a%') FROM tab;
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapExtractKeyLike = {23, 4};
     FunctionDocumentation::Category category_mapExtractKeyLike = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapExtractKeyLike = {description_mapExtractKeyLike, syntax_mapExtractKeyLike, arguments_mapExtractKeyLike, returned_value_mapExtractKeyLike, examples_mapExtractKeyLike, introduced_in_mapExtractKeyLike, category_mapExtractKeyLike};
+    FunctionDocumentation documentation_mapExtractKeyLike = {description_mapExtractKeyLike, syntax_mapExtractKeyLike, arguments_mapExtractKeyLike, {}, returned_value_mapExtractKeyLike, examples_mapExtractKeyLike, introduced_in_mapExtractKeyLike, category_mapExtractKeyLike};
     factory.registerFunction<FunctionMapExtractKeyLike>(documentation_mapExtractKeyLike);
 
     /// mapExtractValueLike documentation
@@ -909,7 +909,7 @@ SELECT mapExtractValueLike(a, 'a%') FROM tab;
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapExtractValueLike = {25, 5};
     FunctionDocumentation::Category category_mapExtractValueLike = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapExtractValueLike = {description_mapExtractValueLike, syntax_mapExtractValueLike, arguments_mapExtractValueLike, returned_value_mapExtractValueLike, examples_mapExtractValueLike, introduced_in_mapExtractValueLike, category_mapExtractValueLike};
+    FunctionDocumentation documentation_mapExtractValueLike = {description_mapExtractValueLike, syntax_mapExtractValueLike, arguments_mapExtractValueLike, {}, returned_value_mapExtractValueLike, examples_mapExtractValueLike, introduced_in_mapExtractValueLike, category_mapExtractValueLike};
     factory.registerFunction<FunctionMapExtractValueLike>(documentation_mapExtractValueLike);
 }
 

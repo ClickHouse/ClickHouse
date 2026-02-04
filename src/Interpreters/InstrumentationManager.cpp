@@ -39,6 +39,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int CANNOT_READ_ALL_DATA;
+extern const int INSTRUMENTATION_ERROR;
 extern const int LOGICAL_ERROR;
 }
 
@@ -69,6 +70,7 @@ String entryTypeToString(EntryType entry_type)
         case EntryType::EXIT: return "Exit";
         case EntryType::ENTRY_AND_EXIT: return "EntryAndExit";
     }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong entry_type to convert to String: {}", entry_type);
 }
 
 }
@@ -91,9 +93,8 @@ String InstrumentationManager::InstrumentedPointInfo::toString() const
 
         if (i < parameters.size() - 1)
             parameters_str += ", ";
-        else
-            parameters_str += "]";
     }
+    parameters_str += "]";
 
     return fmt::format("id {}, function_id {}, function_name '{}', handler_name {}, entry_type {}, symbol {}{}",
         id, function_id, function_name, handler_name, entry_type_str, symbol, parameters_str);
@@ -121,16 +122,35 @@ void InstrumentationManager::ensureInitialization()
 {
     callOnce(initialized, [this]()
     {
+        __xray_init();
         parseInstrumentationMap();
-        __xray_set_handler(&InstrumentationManager::dispatchHandler);
+        if (__xray_set_handler(&InstrumentationManager::dispatchHandler) == 0)
+            throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error setting handler");
     });
+}
+
+static void handleXRayPatchingStatus(XRayPatchingStatus status, Int32 function_id, const String & method)
+{
+    switch (status)
+    {
+        case XRayPatchingStatus::FAILED:
+            throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error {} the function {}: XRay failed", method, function_id);
+        case XRayPatchingStatus::NOT_INITIALIZED:
+            throw Exception(ErrorCodes::INSTRUMENTATION_ERROR, "Error {} the function {}: XRay not initialized", method, function_id);
+
+        /// In case of SUCCESS or ONGOING, there's nothing else to warn about. Everything's sound.
+        case XRayPatchingStatus::SUCCESS: [[fallthrough]];
+        case XRayPatchingStatus::ONGOING:
+            return;
+    }
 }
 
 void InstrumentationManager::patchFunctionIfNeeded(Int32 function_id)
 {
     if (instrumented_points.get<FunctionId>().contains(function_id))
         return;
-    __xray_patch_function(function_id);
+    const auto status = __xray_patch_function(function_id);
+    handleXRayPatchingStatus(status, function_id, "patching");
 }
 
 void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
@@ -140,7 +160,33 @@ void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Function id {} to unpatch not previously patched", function_id);
 
     if (count <= 1)
-        __xray_unpatch_function(function_id);
+    {
+        const auto status = __xray_unpatch_function(function_id);
+        handleXRayPatchingStatus(status, function_id, "unpatching");
+    }
+}
+
+bool InstrumentationManager::shouldPatchFunction(String function_to_patch, String full_qualified_function)
+{
+    size_t found_pos = full_qualified_function.find(function_to_patch);
+    if (found_pos != std::string::npos)
+    {
+        /// Once we find a possible match, we need to ensure the match is not within a template argument
+        std::stack<bool> brackets;
+        for (size_t pos = 0; pos < found_pos; ++pos)
+        {
+            if (full_qualified_function[pos] == '<')
+                brackets.push(true);
+            else if (full_qualified_function[pos] == '>')
+                brackets.pop();
+        }
+
+        if (brackets.empty())
+            return true;
+
+        LOG_INFO(logger, "Not instrumenting function '{}' because the match is within a template argument: '{}'", function_to_patch, full_qualified_function);
+    }
+    return false;
 }
 
 void InstrumentationManager::patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedParameter> & parameters)
@@ -153,51 +199,55 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
     /// Lazy load the XRay instrumentation map only once we need to set up a handler
     ensureInitialization();
 
-    Int32 function_id = -1;
-    String symbol;
+    struct Function
+    {
+        Int32 function_id;
+        String symbol;
+    };
+
+    std::vector<Function> functions_to_patch;
     auto fn_it = functions_container.get<FunctionName>().find(function_name);
 
     /// First, assume the name provided is the full qualified name.
     if (fn_it != functions_container.get<FunctionName>().end())
     {
-        function_id = fn_it->function_id;
-        symbol = fn_it->function_name;
+        functions_to_patch.emplace_back(fn_it->function_id, fn_it->function_name);
     }
     else
     {
         /// Otherwise, search if the provided function_name can be found as a substr of every member.
         for (const auto & [id, function] : functions_container)
         {
-            if (function.find(function_name) != std::string::npos)
-            {
-                function_id = id;
-                symbol = function;
-                break;
-            }
+            if (shouldPatchFunction(function_name, function))
+                functions_to_patch.emplace_back(id, function);
         }
     }
 
-    if (function_id < 0 || symbol.empty())
+    if (functions_to_patch.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function to instrument: '{}'. XRay instruments by default only functions of at least 200 instructions. "
             "You can change that threshold with '-fxray-instruction-threshold=1'. You can also force the instrumentation of specific functions decorating them with '[[clang::xray_always_instrument]]' "
             "and making sure they are not decorated with '[[clang::xray_never_instrument]]'", function_name);
 
     std::lock_guard lock(shared_mutex);
-    patchFunctionIfNeeded(function_id);
 
-    InstrumentedPointInfo info{context, instrumented_point_ids, function_id, function_name, handler_name_lower, entry_type, symbol, parameters};
-    LOG_INFO(logger, "Adding instrumentation point for {}", info.toString());
-    instrumented_points.emplace(std::move(info));
-    instrumented_point_ids++;
+    for (const auto & [function_id, symbol] : functions_to_patch)
+    {
+        patchFunctionIfNeeded(function_id);
+
+        InstrumentedPointInfo info{context, instrumented_point_ids, function_id, function_name, handler_name_lower, entry_type, symbol, parameters};
+        LOG_INFO(logger, "Adding instrumentation point for {}", info.toString());
+        instrumented_points.emplace(std::move(info));
+        instrumented_point_ids++;
+    }
 }
 
-void InstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
+void InstrumentationManager::unpatchFunction(std::variant<UInt64, Instrumentation::All, String> id)
 {
     std::lock_guard lock(shared_mutex);
 
-    if (std::holds_alternative<bool>(id))
+    if (std::holds_alternative<Instrumentation::All>(id))
     {
-        LOG_INFO(logger, "Removing all instrumented functions");
+        LOG_INFO(logger, "Removing all instrumentation points");
         for (const auto & info : instrumented_points)
         {
             LOG_INFO(logger, "Removing instrumented function {}", info.toString());
@@ -207,13 +257,40 @@ void InstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
     }
     else
     {
-        const auto it = instrumented_points.get<Id>().find(std::get<UInt64>(id));
-        if (it == instrumented_points.get<Id>().end())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown instrumentation point id to remove: ({})", std::get<UInt64>(id));
+        std::vector<InstrumentedPointInfo> functions_to_unpatch;
+        if (std::holds_alternative<String>(id))
+        {
+            const String name = std::get<String>(id);
+            LOG_INFO(logger, "Removing all instrumented functions that match the function_name '{}'", name);
 
-        LOG_INFO(logger, "Removing instrumented function {}", it->toString());
-        unpatchFunctionIfNeeded(it->function_id);
-        instrumented_points.erase(it);
+            for (const auto & info : instrumented_points)
+            {
+                if (info.function_name == name)
+                    functions_to_unpatch.push_back(info);
+            }
+
+        }
+        else
+        {
+            const auto it = instrumented_points.get<Id>().find(std::get<UInt64>(id));
+            if (it == instrumented_points.get<Id>().end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown instrumentation point id to remove: ({})", std::get<UInt64>(id));
+
+            functions_to_unpatch.push_back(*it);
+        }
+
+        if (functions_to_unpatch.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found any instrumentation point that matches");
+
+        for (const auto & info : functions_to_unpatch)
+        {
+            const auto it = instrumented_points.get<Id>().find(info.id);
+            if (it == instrumented_points.get<Id>().end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Instrumentation point {} does not exist", info.toString());
+            LOG_INFO(logger, "Removing instrumented function {}", it->toString());
+            unpatchFunctionIfNeeded(it->function_id);
+            instrumented_points.erase(it);
+        }
     }
 }
 
@@ -260,8 +337,11 @@ void InstrumentationManager::dispatchHandlerImpl(Int32 func_id, XRayEntryType en
 
     std::vector<InstrumentedPointInfo> func_ips;
     SharedLockGuard lock(shared_mutex);
-    for (auto it = instrumented_points.get<FunctionId>().find(func_id); it != instrumented_points.get<FunctionId>().end(); ++it)
+    auto range = instrumented_points.get<FunctionId>().equal_range(func_id);
+    for (auto it = range.first; it != range.second; ++it)
+    {
         func_ips.emplace_back(*it);
+    }
     lock.unlock();
 
     for (const auto & info : func_ips)
@@ -296,7 +376,6 @@ void InstrumentationManager::parseInstrumentationMap()
     auto & instr_map = *instr_map_or_error;
 
     const auto function_addresses = instr_map.getFunctionAddresses();
-    const auto & context = CurrentThread::getQueryContext();
 
     LOG_DEBUG(logger, "Starting to parse the XRay instrumentation map. This takes a few seconds...");
 
@@ -445,7 +524,7 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
         high_resolution_clock::time_point time;
     };
 
-    /// This is the easiest way to do store the elements, because otherwise we'd need to have a mutex to protect a
+    /// This is the easiest way to store the elements, because otherwise we'd need to have a mutex to protect a
     /// shared std::unordered_map. However, there might be a race condition in which this handler is already triggered
     /// on entry and the function is unpatched immediately afterwards. That's fine, since we're using the instrumented
     /// point ID to know for sure whether this execution is tight to the stored element or not.
@@ -473,6 +552,12 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
         auto it = profile_elements.find(instrumented_point.function_id);
         if (it != profile_elements.end())
         {
+            if (it->second.empty())
+            {
+                profile_elements.erase(it);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Profile element for instrumented point {} not found", instrumented_point.toString());
+            }
+
             auto & top_entry = it->second.top();
             auto & element = top_entry.element;
             auto previous_time = top_entry.time;
