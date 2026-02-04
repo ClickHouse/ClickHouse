@@ -104,6 +104,7 @@ namespace Setting
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsUInt64 poll_interval;
     extern const SettingsSeconds receive_timeout;
+    extern const SettingsSeconds max_execution_time;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsBool send_profile_events;
     extern const SettingsString send_logs_source_regexp;
@@ -130,6 +131,7 @@ namespace ServerSetting
 namespace FailPoints
 {
 extern const char parallel_replicas_reading_response_timeout[];
+extern const char sleep_on_receive_external_table_data[];
 }
 }
 
@@ -148,6 +150,7 @@ namespace ProfileEvents
     extern const Event MergeTreeAllRangesAnnouncementsSent;
     extern const Event ReadTaskRequestsSentElapsedMicroseconds;
     extern const Event MergeTreeReadTaskRequestsSentElapsedMicroseconds;
+    extern const Event InitializeExternalTablesMicroseconds;
     extern const Event MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds;
 }
 
@@ -1037,9 +1040,11 @@ void TCPHandler::extractConnectionSettingsFromContext(const ContextPtr & context
 {
     const auto & settings = context->getSettingsRef();
     send_exception_with_stack_trace = settings[Setting::calculate_text_stack_trace];
-    send_timeout = settings[Setting::send_timeout];
-    receive_timeout = settings[Setting::receive_timeout];
-    poll_interval = settings[Setting::poll_interval];
+    max_execution_time = settings[Setting::max_execution_time];
+    auto saturate_timeout = [&](const Poco::Timespan & t) { return max_execution_time.totalSeconds() > 0 && t > max_execution_time ? max_execution_time : t; };
+    send_timeout = saturate_timeout(settings[Setting::send_timeout]);
+    receive_timeout = saturate_timeout(settings[Setting::receive_timeout]);
+    poll_interval = max_execution_time.totalSeconds() > 0 ? std::min<UInt64>(settings[Setting::poll_interval], max_execution_time.totalSeconds()) : settings[Setting::poll_interval];
     idle_connection_timeout = settings[Setting::idle_connection_timeout];
     interactive_delay = settings[Setting::interactive_delay];
     sleep_in_send_tables_status = settings[Setting::sleep_in_send_tables_status_ms];
@@ -1179,11 +1184,19 @@ void TCPHandler::readTemporaryTables(QueryState & state)
 {
     sendLogs(state);
 
+    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::InitializeExternalTablesMicroseconds, watch.elapsedMicroseconds());
+    });
+
     /// no sense in partial_result_on_first_cancel setting when temporary data is read.
     auto off_setting_guard = TurnOffBoolSettingTemporary(state.allow_partial_result_on_first_cancel);
 
     while (receivePacketsExpectData(state))
     {
+        if (max_execution_time.totalSeconds() > 0 && watch.elapsedSeconds() > max_execution_time.totalSeconds())
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while reading external table data. Spent {} seconds, timeout is {} seconds.", watch.elapsedSeconds(), max_execution_time.totalSeconds());
+
         sendLogs(state);
         sendInsertProfileEvents(state);
     }
@@ -2451,7 +2464,10 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
     Block block = state.block_in->read();
 
     if (block.empty())
+    {
+        state.resetExternalTablePipelines(/*cancel=*/false);
         return false;
+    }
 
     if (scalar)
     {
@@ -2461,28 +2477,41 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
     else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
     {
         /// Data for external tables
+        /// Check if we already have an executor for this external table
+        auto it = state.external_table_pipelines.find(temporary_id.table_name);
+        if (it == state.external_table_pipelines.end())
+        {
+            /// First block for this table - create storage if needed and set up executor
+            auto resolved = state.query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
+            StoragePtr storage;
+            if (resolved)
+            {
+                storage = DatabaseCatalog::instance().getTable(resolved, state.query_context);
+            }
+            else
+            {
+                NamesAndTypesList columns = block.getNamesAndTypesList();
+                auto temporary_table = TemporaryTableHolder(state.query_context, ColumnsDescription(columns, /*with_subcolumns=*/false), {});
+                storage = temporary_table.getTable();
+                state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
+            }
+            auto metadata_snapshot = storage->getInMemoryMetadataPtr();
 
-        auto resolved = state.query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
-        StoragePtr storage;
-        /// If such a table does not exist, create it.
-        if (resolved)
-        {
-            storage = DatabaseCatalog::instance().getTable(resolved, state.query_context);
+            /// Create and cache the pipeline and executor
+            auto & pipeline_holder = state.external_table_pipelines[temporary_id.table_name];
+            pipeline_holder.pipeline = QueryPipeline(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
+            pipeline_holder.executor = std::make_unique<PushingPipelineExecutor>(pipeline_holder.pipeline);
+            pipeline_holder.executor->start();
+
+            it = state.external_table_pipelines.find(temporary_id.table_name);
         }
-        else
-        {
-            NamesAndTypesList columns = block.getNamesAndTypesList();
-            auto temporary_table = TemporaryTableHolder(state.query_context, ColumnsDescription(columns, /*with_subcolumns=*/false), {});
-            storage = temporary_table.getTable();
-            state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
-        }
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-        /// The data will be written directly to the table.
-        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
-        PushingPipelineExecutor executor(temporary_table_out);
-        executor.start();
-        executor.push(block);
-        executor.finish();
+
+        /// Push block to the cached executor
+        it->second.executor->push(block);
+
+        fiu_do_on(FailPoints::sleep_on_receive_external_table_data, {
+            sleepForSeconds(1);
+        });
     }
     else if (state.need_receive_data_for_input)
     {
