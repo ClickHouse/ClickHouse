@@ -59,8 +59,8 @@ void SerializationDynamicElement::enumerateStreams(
 
     settings.path.push_back(Substream::DynamicData);
     auto variant_data = SubstreamData(deserialize_state->variant_serialization)
-                            .withType(data.type)
-                            .withColumn(data.column)
+                            .withType(deserialize_state->read_from_shared_variant ? ColumnDynamic::getSharedVariantDataType() : data.type)
+                            .withColumn(deserialize_state->read_from_shared_variant ? ColumnDynamic::getSharedVariantDataType()->createColumn() : data.column)
                             .withSerializationInfo(data.serialization_info)
                             .withDeserializeState(deserialize_state->variant_element_state);
     settings.path.back().data = variant_data;
