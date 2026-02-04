@@ -339,6 +339,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
         /// User has been dropped.
         user_was_dropped = true;
         subscription_for_user_change = {};
+        subscription_for_initial_user_change = {};
         subscription_for_roles_changes = {};
         access = nullptr;
         access_with_implicit = nullptr;
@@ -387,10 +388,20 @@ void ContextAccess::setUser(const UserPtr & user_) const
 
     setRolesInfo(enabled_roles->getRolesInfo());
 
-    std::optional<UUID> initial_user_id;
-    if (!params.initial_user.empty())
-        initial_user_id = access_control->find<User>(params.initial_user);
-    row_policies_of_initial_user = initial_user_id ? access_control->tryGetDefaultRowPolicies(*initial_user_id) : nullptr;
+    if (params.initial_user_id)
+    {
+        subscription_for_initial_user_change = access_control->subscribeForChanges(
+            *params.initial_user_id,
+            [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr &)
+            {
+                if (auto ptr = weak_ptr.lock())
+                {
+                    std::lock_guard lock2{ptr->mutex};
+                    ptr->findRowPoliciesOfInitialUser();
+                }
+            });
+        findRowPoliciesOfInitialUser();
+    }
 }
 
 
@@ -425,6 +436,12 @@ void ContextAccess::calculateAccessRights() const
         LOG_TRACE(trace_log, "List of all grants: {}", access->toString());
         LOG_TRACE(trace_log, "List of all grants including implicit: {}", access_with_implicit->toString());
     }
+}
+
+
+void ContextAccess::findRowPoliciesOfInitialUser() const
+{
+    row_policies_of_initial_user = params.initial_user_id ? access_control->tryGetDefaultRowPolicies(*params.initial_user_id) : nullptr;
 }
 
 

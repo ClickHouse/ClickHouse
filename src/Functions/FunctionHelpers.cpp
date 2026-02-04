@@ -138,6 +138,27 @@ void validateArgumentsImpl(
     }
 }
 
+void validateVariadicArgumentsImpl(
+    const String & function_name,
+    const ColumnsWithTypeAndName & arguments,
+    size_t argument_offset,
+    const FunctionArgumentDescriptor & variadic_descriptor)
+{
+    for (size_t i = argument_offset; i < arguments.size(); ++i)
+    {
+        const auto & arg = arguments[i];
+        if (int error_code = variadic_descriptor.isValid(arg.type, arg.column); error_code != 0)
+            throw Exception(
+                error_code,
+                "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
+                withOrdinalEnding(argument_offset + i),
+                variadic_descriptor.name,
+                function_name,
+                variadic_descriptor.type_name,
+                arg.type ? arg.type->getName() : "<?>");
+    }
+}
+
 }
 
 int FunctionArgumentDescriptor::isValid(const DataTypePtr & data_type, const ColumnPtr & column) const
@@ -163,6 +184,11 @@ void validateFunctionArguments(
     validateFunctionArguments(func.getName(), arguments, mandatory_args, optional_args);
 }
 
+std::string_view getArgumentSingularOrPlural(const auto & args)
+{
+    return args.size() == 1 ? "argument" : "arguments";
+}
+
 void validateFunctionArguments(
     const String & function_name,
     const ColumnsWithTypeAndName & arguments,
@@ -171,22 +197,19 @@ void validateFunctionArguments(
 {
     if (arguments.size() < mandatory_args.size() || arguments.size() > mandatory_args.size() + optional_args.size())
     {
-        auto argument_singular_or_plural
-            = [](const auto & args) -> std::string_view { return args.size() == 1 ? "argument" : "arguments"; };
-
         String expected_args_string;
         if (!mandatory_args.empty() && !optional_args.empty())
             expected_args_string = fmt::format(
                 "{} mandatory {} and {} optional {}",
                 mandatory_args.size(),
-                argument_singular_or_plural(mandatory_args),
+                getArgumentSingularOrPlural(mandatory_args),
                 optional_args.size(),
-                argument_singular_or_plural(optional_args));
+                getArgumentSingularOrPlural(optional_args));
         else if (!mandatory_args.empty() && optional_args.empty())
             expected_args_string = fmt::format(
-                "{} {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args)); /// intentionally not "_mandatory_ arguments"
+                "{} {}", mandatory_args.size(), getArgumentSingularOrPlural(mandatory_args)); /// intentionally not "_mandatory_ arguments"
         else if (mandatory_args.empty() && !optional_args.empty())
-            expected_args_string = fmt::format("{} optional {}", optional_args.size(), argument_singular_or_plural(optional_args));
+            expected_args_string = fmt::format("{} optional {}", optional_args.size(), getArgumentSingularOrPlural(optional_args));
         else
             expected_args_string = "0 arguments";
 
@@ -195,12 +218,62 @@ void validateFunctionArguments(
             "An incorrect number of arguments was specified for function '{}'. Expected {}, got {}",
             function_name,
             expected_args_string,
-            fmt::format("{} {}", arguments.size(), argument_singular_or_plural(arguments)));
+            fmt::format("{} {}", arguments.size(), getArgumentSingularOrPlural(arguments)));
     }
 
     validateArgumentsImpl(function_name, arguments, 0, mandatory_args);
     if (!optional_args.empty())
         validateArgumentsImpl(function_name, arguments, mandatory_args.size(), optional_args);
+}
+
+void validateFunctionArgumentsWithVariadics(
+    const IFunction & func,
+    const ColumnsWithTypeAndName & arguments,
+    const FunctionArgumentDescriptors & mandatory_args,
+    const FunctionArgumentDescriptor & variadic_args)
+{
+    if (arguments.size() < mandatory_args.size())
+    {
+        String expected_args_string;
+        if (!mandatory_args.empty())
+            expected_args_string = fmt::format(
+                "{} {}",
+                mandatory_args.size(),
+                getArgumentSingularOrPlural(mandatory_args));
+        else if (!mandatory_args.empty())
+            expected_args_string = fmt::format(
+                "{} {}", mandatory_args.size(), getArgumentSingularOrPlural(mandatory_args));
+        else
+            expected_args_string = "0 arguments";
+
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "An incorrect number of arguments was specified for function '{}'. Expected at least {}, got {}",
+            func.getName(),
+            expected_args_string,
+            fmt::format("{} {}", arguments.size(), getArgumentSingularOrPlural(arguments)));
+    }
+
+    validateArgumentsImpl(func.getName(), arguments, 0, mandatory_args);
+    validateVariadicArgumentsImpl(func.getName(), arguments, mandatory_args.size(), variadic_args);
+}
+
+void validateNumberOfFunctionArguments(
+    const IFunction & func,
+    const ColumnsWithTypeAndName & arguments,
+    size_t expected_min_args,
+    size_t expected_max_args)
+{
+    if (arguments.size() < expected_min_args || arguments.size() > expected_max_args)
+    {
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Incorrect number of arguments for function {}. Expected {} or {}, got {}",
+            func.getName(),
+            expected_min_args,
+            expected_max_args,
+            arguments.size());
+        }
 }
 
 std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>

@@ -137,8 +137,10 @@ private:
         DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata) const;
 
     /// Returns element.name or a corresponding name from ColumnMapper.
-    /// For tuple elements, that's just the element name like `x`, not the whole path like `t.x`.
-    std::string_view useColumnMapperIfNeeded(const parq::SchemaElement & element) const;
+    /// For nested tuple elements, returns just the element name like `x`, not the whole path like `t.x`.
+    /// For top-level columns (when current_path is empty), returns the full mapped name to support
+    /// column names with dots (e.g. `integer.col` in Iceberg).
+    std::string_view useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const;
 };
 
 }

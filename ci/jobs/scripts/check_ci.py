@@ -525,22 +525,35 @@ def main():
         )
         my_prs_number_and_title = json.loads(my_prs_number_and_title)
         pr_menu = []
-        pr_menu.append((f"Process commit sha on master", 0))
-        pr_menu.append((f"Enter PR number manually", 1))
         for pr_dict in my_prs_number_and_title:
             pr_number = pr_dict["number"]
             pr_title = pr_dict["title"]
             pr_menu.append((f"#{pr_number}: {pr_title}", pr_number))
 
-        selected_pr = UserPrompt.select_from_menu(pr_menu, "Select a PR to merge")
-        if selected_pr[1] == 1:
-            pr_number = UserPrompt.get_number("Enter PR number", lambda x: x > 70000)
-        elif selected_pr[1] == 0:
-            is_master_commit = True
-            commit_sha = UserPrompt.get_string(
-                "Enter commit sha", validator=lambda x: len(x) == 40
-            )
-            pr_number = None
+        def is_pr_number(s):
+            try:
+                num = int(s.lstrip("#"))
+                return 10000 < num < 150_000
+            except ValueError:
+                return False
+
+        def is_commit_sha(s):
+            return len(s) == 40 and all(c in "0123456789abcdef" for c in s.lower())
+
+        selected_pr = UserPrompt.select_from_menu(
+            pr_menu,
+            "Select a PR from the list, or manually enter a commit sha or PR number",
+            validator=lambda x: is_pr_number(x) or is_commit_sha(x),
+        )
+        if isinstance(selected_pr, str):
+            if is_commit_sha(selected_pr):
+                is_master_commit = True
+                commit_sha = selected_pr
+                pr_number = None
+            elif is_pr_number(selected_pr):
+                pr_number = int(selected_pr.lstrip("#"))
+            else:
+                raise Exception(f"Unrecognized input: {selected_pr}")
         else:
             pr_number = selected_pr[1]
 

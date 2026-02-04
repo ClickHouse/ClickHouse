@@ -79,7 +79,7 @@ namespace
             }
             else if (const auto * function = ast->as<ASTFunction>())
             {
-                if (function->kind == ASTFunction::Kind::TABLE_ENGINE)
+                if (function->getKind() == ASTFunction::Kind::TABLE_ENGINE)
                     visitTableEngine(*function);
                 else
                     visitFunction(*function);

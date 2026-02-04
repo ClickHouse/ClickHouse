@@ -39,7 +39,7 @@ select
     )
   ) queries_with_subqueries,
   anyIf(ProfileEvents['DistributedIndexAnalysisScheduledReplicas'] > 0, is_initial_query) distributed_index_analysis_replicas,
-  anyIf(ProfileEvents['ParallelReplicasReadRequestMicroseconds'] > 0, is_initial_query) read_with_parallel_replicas
+  anyIf(ProfileEvents['ParallelReplicasUsedCount'] > 0, is_initial_query) read_with_parallel_replicas
 from system.query_log
 where
   event_date >= yesterday()

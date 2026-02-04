@@ -84,6 +84,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
+    extern const int LOGICAL_ERROR;
 }
 
 Connection::~Connection()
@@ -1326,6 +1327,11 @@ Packet Connection::receivePacket()
 {
     try
     {
+        /// We are trying to send something to already disconnected connection,
+        /// this means that we continue using Connection after exception.
+        if (!in)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection to {} is terminated", getDescription());
+
         Packet res;
 
         /// Have we already read packet type?
