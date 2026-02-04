@@ -192,6 +192,17 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE |
     xargs grep -P 'std::[io]?stringstream' | grep -v "STYLE_CHECK_ALLOW_STD_STRING_STREAM" && echo "Use WriteBufferFromOwnString or ReadBufferFromString instead of std::stringstream"
 
+directories_to_lint_std_containers_usages=(
+    src/AggregateFunctions
+)
+
+for dir in "${directories_to_lint_std_containers_usages[@]}"; do
+    find "$ROOT_PATH/$dir" -name '*.h' -or -name '*.cpp' |
+        grep -vP "$EXCLUDE" |
+        xargs grep -Hn -P 'std::(deque|list|map|multimap|multiset|queue|set|unordered_map|unordered_multimap|unordered_multiset|unordered_set|vector)<' |
+        grep -v "STYLE_CHECK_ALLOW_STD_CONTAINERS" && echo "Use an -WithMemoryTracking alternative or mark these usages with STYLE_CHECK_ALLOW_STD_CONTAINERS"
+done
+
 # Forbid std::cerr/std::cout in src (fine in programs/utils)
 std_cerr_cout_excludes=(
     /examples/

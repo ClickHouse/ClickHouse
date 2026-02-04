@@ -98,7 +98,7 @@ ASTPtr DatabaseMemory::getCreateDatabaseQueryImpl() const
     create_query->setDatabase(database_name);
     create_query->set(create_query->storage, make_intrusive<ASTStorage>());
     auto engine = makeASTFunction(getEngineName());
-    engine->no_empty_args = true;
+    engine->setNoEmptyArgs(true);
     create_query->storage->set(create_query->storage->engine, engine);
 
     if (!comment.empty())

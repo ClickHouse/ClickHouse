@@ -527,8 +527,8 @@ static boost::intrusive_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&.
 
     if (op.type == OperatorType::Lambda)
     {
-        ast_function->is_lambda_function = true;
-        ast_function->kind = ASTFunction::Kind::LAMBDA_FUNCTION;
+        ast_function->setIsLambdaFunction(true);
+        ast_function->setKind(ASTFunction::Kind::LAMBDA_FUNCTION);
     }
     return ast_function;
 }
@@ -1198,8 +1198,8 @@ public:
                 function_name += "Distinct";
 
             auto function_node = makeASTFunction(function_name, std::move(elements));
-            function_node->is_compound_name = is_compound_name;
-            function_node->is_operator = is_operator;
+            function_node->setIsCompoundName(is_compound_name);
+            function_node->setIsOperator(is_operator);
 
             if (parameters)
             {
@@ -1227,14 +1227,14 @@ public:
             }
 
             if (respect_nulls.ignore(pos, expected))
-                function_node->nulls_action = NullsAction::RESPECT_NULLS;
+                function_node->setNullsAction(NullsAction::RESPECT_NULLS);
             else if (ignore_nulls.ignore(pos, expected))
-                function_node->nulls_action = NullsAction::IGNORE_NULLS;
+                function_node->setNullsAction(NullsAction::IGNORE_NULLS);
 
             if (over.ignore(pos, expected))
             {
-                function_node->is_window_function = true;
-                function_node->kind = ASTFunction::Kind::WINDOW_FUNCTION;
+                function_node->setIsWindowFunction(true);
+                function_node->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
 
                 ASTPtr function_node_as_iast = function_node;
 
@@ -2477,7 +2477,7 @@ bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, 
     if (ParserIdentifier().parse(pos, node, expected))
     {
         node = makeASTFunction(node->as<ASTIdentifier>()->name());
-        node->as<ASTFunction &>().no_empty_args = true;
+        node->as<ASTFunction &>().setNoEmptyArgs(true);
         return true;
     }
 
