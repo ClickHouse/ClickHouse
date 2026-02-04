@@ -1,0 +1,20 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <test_disk>
+                <path>/test_disk/</path>
+            </test_disk>
+        </disks>
+
+        <policies>
+            <invalid_policy>
+                <volumes>
+                    <vol1>
+                        <disk>test_disk</disk>
+                        <move_on_shutdown_to>vol1</move_on_shutdown_to>
+                    </vol1>
+                </volumes>
+            </invalid_policy>
+        </policies>
+    </storage_configuration>
+</clickhouse>

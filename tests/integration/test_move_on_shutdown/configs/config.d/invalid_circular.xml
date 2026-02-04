@@ -1,0 +1,27 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk1>
+                <path>/test_disk1/</path>
+            </disk1>
+            <disk2>
+                <path>/test_disk2/</path>
+            </disk2>
+        </disks>
+
+        <policies>
+            <circular_policy>
+                <volumes>
+                    <vol1>
+                        <disk>disk1</disk>
+                        <move_on_shutdown_to>vol2</move_on_shutdown_to>
+                    </vol1>
+                    <vol2>
+                        <disk>disk2</disk>
+                        <move_on_shutdown_to>vol1</move_on_shutdown_to>
+                    </vol2>
+                </volumes>
+            </circular_policy>
+        </policies>
+    </storage_configuration>
+</clickhouse>
