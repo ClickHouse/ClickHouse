@@ -1391,6 +1391,24 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context);
     }
 
+    /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
+    if (!resolve_result.resolved_identifier
+        && identifier_lookup.isExpressionLookup()
+        && identifier_resolve_settings.scope_to_resolve_alias_expression == nullptr)
+    {
+        const auto & function_factory = FunctionFactory::instance();
+        auto identifier_name = identifier_lookup.identifier.getFullName();
+
+        auto function_resolver = function_factory.tryGet(identifier_name, scope.context);
+        if (function_resolver && function_resolver->allowsOmittingParentheses())
+        {
+            auto function_node = std::make_shared<FunctionNode>(identifier_name);
+            function_node->resolveAsFunction(function_resolver->build({}));
+            resolve_result.resolved_identifier = std::move(function_node);
+            resolve_result.resolve_place = IdentifierResolvePlace::ALIASES;
+        }
+    }
+
     it->second.count--;
     if (it->second.count == 0)
     {
