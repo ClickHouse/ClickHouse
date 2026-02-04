@@ -9,6 +9,8 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <IO/Progress.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/TimeoutSetter.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>
@@ -116,6 +118,37 @@ struct QueryState
     bool skipping_data = false;
     bool query_duration_already_logged = false;
 
+    /// Cached pipelines and executors for external tables to avoid O(n^2) complexity
+    /// when inserting many blocks into temporary Memory tables.
+    struct ExternalTablePipeline
+    {
+        QueryPipeline pipeline;
+        std::unique_ptr<PushingPipelineExecutor> executor;
+    };
+    std::unordered_map<String, ExternalTablePipeline> external_table_pipelines;
+
+    void resetExternalTablePipelines(bool cancel)
+    {
+        for (auto & [name, pipeline_holder] : external_table_pipelines)
+        {
+            if (pipeline_holder.executor)
+            {
+                if (cancel)
+                    pipeline_holder.executor->cancel();
+                else
+                    pipeline_holder.executor->finish();
+            }
+        }
+        external_table_pipelines.clear();
+    }
+
+    ~QueryState()
+    {
+        /// Cancel any pending external table executors before destruction
+        /// PushingPipelineExecutor destructor asserts that it is finished
+        resetExternalTablePipelines(/*cancel=*/true);
+    }
+
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
     /// To output progress, the difference after the previous sending of progress.
@@ -208,6 +241,7 @@ private:
 
     /// Connection settings, which are extracted from a context.
     bool send_exception_with_stack_trace = true;
+    Poco::Timespan max_execution_time;
     Poco::Timespan send_timeout = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0);
     Poco::Timespan receive_timeout = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0);
     UInt64 poll_interval = DBMS_DEFAULT_POLL_INTERVAL;
