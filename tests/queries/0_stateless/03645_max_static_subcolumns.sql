@@ -1,3 +1,5 @@
+SET max_static_subcolumns = 0;
+
 CREATE TABLE WorksBeforeSubcolumnLimit
 (
     `ID` UInt32,

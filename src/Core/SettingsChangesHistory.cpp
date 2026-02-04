@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
             {"default_dictionary_database", "", "", "New setting"},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
+            {"max_static_subcolumns", 0, 10000, "Limit on the number of static subcolumns for persistent tables. Excludes dynamic columns in `JSON`, `Dynamic`, etc. types. Zero value disables check."},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
@@ -83,7 +84,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", true, false, "It becomes obsolete."},
             {"database_datalake_require_metadata_access", true, true, "New setting."},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 1_MiB, "Better default value derived from testing results"},
-            {"max_static_subcolumns", 0, 10000, "Limit on the number of static subcolumns for persistent tables. Excludes dynamic columns in `JSON`, `Dynamic`, etc. types. Zero value disables check."},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
