@@ -452,7 +452,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
 
     auto create_table_query = make_intrusive<ASTCreateQuery>();
     auto table_storage_define = database_engine_define->clone();
-    table_storage_define->as<ASTStorage>()->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
+    table_storage_define->as<ASTStorage>()->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
     create_table_query->set(create_table_query->storage, table_storage_define);
 
     auto columns_declare_list = make_intrusive<ASTColumns>();

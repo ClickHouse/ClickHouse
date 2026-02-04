@@ -89,6 +89,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.use_top_k_dynamic_filtering,
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
+        optimization_settings.parallel_replicas_filter_pushdown,
     };
 
     while (!stack.empty())
@@ -516,6 +517,7 @@ void optimizeTreeSecondPass(
         optimization_settings.use_top_k_dynamic_filtering,
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
+        optimization_settings.parallel_replicas_filter_pushdown,
     };
 
     Stack stack;
@@ -541,10 +543,6 @@ void optimizeTreeSecondPass(
             stack.push_back(next_frame);
             continue;
         }
-
-        /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
-        if (optimization_settings.optimize_prewhere)
-            optimizePrewhere(*frame.node);
 
         stack.pop_back();
     }
@@ -579,7 +577,7 @@ void optimizeTreeSecondPass(
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
-    /// If join runtime filters were added re-run optimizePrewhere and filter push down optimizations
+    /// If join runtime filters were added re-run push down optimizations
     /// to move newly added runtime filter as deep in the tree as possible
     if (join_runtime_filters_were_added)
     {
@@ -597,11 +595,16 @@ void optimizeTreeSecondPass(
                     if (!changed_nodes)
                         break;
                 }
-            },
+            });
+    }
+
+    /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
+    if (optimization_settings.optimize_prewhere)
+    {
+        traverseQueryPlan(stack, root,
             [&](auto & frame_node)
             {
-                if (optimization_settings.optimize_prewhere)
-                    optimizePrewhere(frame_node);
+                optimizePrewhere(frame_node);
             });
     }
 

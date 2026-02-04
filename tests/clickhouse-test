@@ -514,7 +514,8 @@ def clickhouse_execute_http(
             if i == max_http_retries - 1:
                 raise ex
             client.close()
-            sleep(i + 1)
+            # Cap sleep time to prevent unbounded delays (max 3 seconds per retry)
+            sleep(min(i + 1, 3))
 
     if res.status != 200:
         raise HTTPError(data.decode(), res.status)
@@ -2033,7 +2034,8 @@ class TestCase:
         if tags and ("no-encrypted-storage" in tags) and args.encrypted_storage:
             return FailureReason.ENCRYPTED_STORAGE
 
-        if tags:
+        # Ingore no-{build} tags in stress-tests job
+        if tags and not args.stress_tests:
             for build_flag in args.build_flags:
                 # We ignore no-buildflag for flaky check (args.flaky_check and args.test_runs > 1)
                 # and do not ignore for targeted check (args.flaky_check and args.test_runs == 1)
@@ -3850,8 +3852,8 @@ def do_run_tests(
 
             if server_died.is_set():
                 print("Server died, terminating all processes...")
-                # Wait for test results
-                sleep(args.timeout)
+                # Wait briefly for test results to be written
+                sleep(5)
                 for p in processes:
                     if p.is_alive():
                         p.terminate()
@@ -4225,6 +4227,7 @@ def main(args):
 
     def create_common_database(args, db_name):
         create_database_retries = 0
+        last_err = None
         while create_database_retries < MAX_RETRIES:
             start_time = datetime.now()
             try:
@@ -4234,21 +4237,25 @@ def main(args):
                     f"{get_db_engine(args, db_name)}",
                     settings=get_create_database_settings(args, None),
                 )
-                break
+                return
             except HTTPError as e:
+                last_err = e
                 total_time = (datetime.now() - start_time).total_seconds()
                 if not need_retry(args, e.message, e.message, total_time):
                     break
             create_database_retries += 1
 
+        if last_err:
+            raise RuntimeError(f"Failed to create database {db_name} after {MAX_RETRIES} attempts") from last_err
     try:
         if args.database and args.database != "test":
             create_common_database(args, args.database)
-
-        create_common_database(args, "test")
+        else:
+            create_common_database(args, "test")
     except Exception as e:
         print(f"Failed to create databases for tests: {e}")
         server_died.set()
+        raise
 
     if (
         args.collect_per_test_coverage
@@ -4866,6 +4873,11 @@ def parse_args():
         "--flaky-check",
         action="store_true",
         help="Enables CI flakiness detection by running new tests multiple times. This mode adds specific checks for the flaky-check job and requires the --test-runs argument.",
+    )
+    parser.add_argument(
+        "--stress-tests",
+        action="store_true",
+        help="A CI test configuration that runs all possible test combinations without validating results. This is used to bypass specific test restrictions.",
     )
     parser.add_argument(
         "--secure",
