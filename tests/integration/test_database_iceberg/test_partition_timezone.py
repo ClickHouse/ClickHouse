@@ -136,7 +136,8 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
 
 def test_partition_timezone(started_cluster):
     catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace("timezone_ns")
+    namespace = f"timezone_ns_{uuid.uuid4()}"
+    catalog.create_namespace(namespace)
     table = create_table(
         catalog,
         "timezone_ns",
@@ -156,7 +157,7 @@ def test_partition_timezone(started_cluster):
     # server timezone is Asia/Istanbul (UTC+3)
     assert node.query(f"""
                       SELECT datetime, value
-                      FROM {CATALOG_NAME}.`timezone_ns.tz_table`
+                      FROM {CATALOG_NAME}.`{namespace}}.tz_table`
                       ORDER BY datetime
                       """, timeout=10) == TSV(
         [
@@ -168,7 +169,7 @@ def test_partition_timezone(started_cluster):
     # partitioning works correctly
     assert node.query(f"""
                       SELECT datetime, value
-                      FROM {CATALOG_NAME}.`timezone_ns.tz_table`
+                      FROM {CATALOG_NAME}.`{namespace}}.tz_table`
                       WHERE datetime >= '2024-01-02 00:00:00'
                       ORDER BY datetime
                       """, timeout=10) == TSV(
