@@ -1,18 +1,19 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
-#include <base/types.h>
-#include <Parsers/IASTHash.h>
-#include <Parsers/IdentifierQuotingStyle.h>
-#include <Parsers/LiteralEscapingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
 
+#include <Parsers/IASTFormatState.h>
+#include <Parsers/IASTHash.h>
+#include <Parsers/IAST_fwd.h>
+#include <Parsers/IdentifierQuotingStyle.h>
+#include <Parsers/LiteralEscapingStyle.h>
+#include <base/types.h>
+
+#include <atomic>
 #include <set>
 
 class SipHash;
-
-#include <boost/container/vector.hpp>
 
 namespace DB
 {
@@ -25,19 +26,78 @@ namespace ErrorCodes
 using IdentifierNameSet = std::set<String>;
 
 class WriteBuffer;
-using Strings = std::vector<String>;
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
-class IAST : public TypePromotion<IAST>, public boost::intrusive_ref_counter<IAST>
+class IAST : public TypePromotion<IAST>
 {
 public:
     ASTs children;
+private:
+    /// We implement intrusive reference counting (based on boost::intrusive_ref_counter) to avoid the padding added by the ref_counter
+    /// And we use the extra bytes to store flags_storage which can be used in derived classes.
+    mutable std::atomic<UInt32> ref_counter{0};
+    UInt32 flags_storage = 0;
+
+    /// Helper to detect if a type has _parent_reserved member
+    template <typename T>
+    static consteval bool hasParentReserved()
+    {
+        if constexpr (requires { T::_parent_reserved; })
+            return true;
+        else
+            return false;
+    }
+
+public:
 
     virtual ~IAST();
     IAST() = default;
-    IAST(const IAST &) = default;
-    IAST & operator=(const IAST &) = default;
+    IAST(const IAST & other);
+    IAST & operator=(const IAST & other);
+
+    /// Accessors for flags_storage.
+    /// BitfieldStruct must declare:
+    ///   - using ParentFlags = <parent's flags struct or void for root>;
+    ///   - static constexpr UInt32 RESERVED_BITS = <total bits used including parent>;
+    ///   - UInt32 _parent_reserved : ParentFlags::RESERVED_BITS; (if ParentFlags is not void)
+    template <typename BitfieldStruct>
+    BitfieldStruct & flags()
+    {
+        static_assert(std::is_standard_layout_v<BitfieldStruct>);
+        static_assert(sizeof(BitfieldStruct) == sizeof(flags_storage), "Bitfield struct must be the same size as flags_storage");
+        static_assert(BitfieldStruct::RESERVED_BITS <= 32, "RESERVED_BITS exceeds 32");
+
+        if constexpr (!std::is_void_v<typename BitfieldStruct::ParentFlags>)
+        {
+            static_assert(hasParentReserved<BitfieldStruct>(), "Derived flags struct must have _parent_reserved field");
+            static_assert(
+                BitfieldStruct::ParentFlags::RESERVED_BITS < BitfieldStruct::RESERVED_BITS,
+                "Derived RESERVED_BITS must be greater than parent's");
+        }
+
+        return *reinterpret_cast<BitfieldStruct *>(&flags_storage);
+    }
+
+    template <typename BitfieldStruct>
+    const BitfieldStruct & flags() const
+    {
+        static_assert(std::is_standard_layout_v<BitfieldStruct>);
+        static_assert(sizeof(BitfieldStruct) == sizeof(flags_storage), "Bitfield struct must be the same size as flags_storage");
+        static_assert(BitfieldStruct::RESERVED_BITS <= 32, "RESERVED_BITS exceeds 32");
+
+        if constexpr (!std::is_void_v<typename BitfieldStruct::ParentFlags>)
+        {
+            static_assert(hasParentReserved<BitfieldStruct>(), "Derived flags struct must have _parent_reserved field");
+            static_assert(
+                BitfieldStruct::ParentFlags::RESERVED_BITS < BitfieldStruct::RESERVED_BITS,
+                "Derived RESERVED_BITS must be greater than parent's");
+        }
+
+        return *reinterpret_cast<const BitfieldStruct *>(&flags_storage);
+    }
+
+    UInt32 use_count() const noexcept { return ref_counter.load(std::memory_order_relaxed); }
 
     /** Get the canonical name of the column if the element is a column */
     String getColumnName() const;
@@ -233,18 +293,7 @@ public:
         void checkIdentifier(const String & name) const;
     };
 
-    /// State. For example, a set of nodes can be remembered, which we already walk through.
-    struct FormatState
-    {
-        /** The SELECT query in which the alias was found; identifier of a node with such an alias.
-          * It is necessary that when the node has met again, output only the alias.
-          * This is only needed for the old analyzer. Remove it after removing the old analyzer.
-          */
-        std::set<std::tuple<
-            const IAST * /* SELECT query node */,
-            std::string /* alias */,
-            IASTHash /* printed content */>> printed_asts_with_alias;
-    };
+    using FormatState = IASTFormatState;
 
     /// The state that is copied when each node is formatted. For example, nesting level.
     struct FormatStateStacked
@@ -370,6 +419,9 @@ protected:
 
 private:
     size_t checkDepthImpl(size_t max_depth) const;
+
+    friend void intrusive_ptr_add_ref(const IAST * p) noexcept;
+    friend void intrusive_ptr_release(const IAST * p) noexcept;
 };
 
 }

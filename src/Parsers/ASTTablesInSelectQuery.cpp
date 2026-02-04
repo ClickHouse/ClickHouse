@@ -118,7 +118,7 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
         ostr << " ";
         database_and_table_name->format(ostr, settings, state, frame);
     }
-    else if (table_function && !(table_function->as<ASTFunction>()->prefer_subquery_to_function_formatting && subquery))
+    else if (table_function && !(table_function->as<ASTFunction>()->preferSubqueryToFunctionFormatting() && subquery))
     {
         ostr << " ";
         table_function->format(ostr, settings, state, frame);

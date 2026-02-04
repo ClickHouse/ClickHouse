@@ -85,18 +85,6 @@
 [submodule "contrib/grpc"]
 	path = contrib/grpc
 	url = https://github.com/ClickHouse/grpc
-[submodule "contrib/aws"]
-	path = contrib/aws
-	url = https://github.com/ClickHouse/aws-sdk-cpp
-[submodule "contrib/aws-c-event-stream"]
-	path = contrib/aws-c-event-stream
-	url = https://github.com/awslabs/aws-c-event-stream
-[submodule "contrib/aws-c-common"]
-	path = contrib/aws-c-common
-	url = https://github.com/awslabs/aws-c-common.git
-[submodule "contrib/aws-checksums"]
-	path = contrib/aws-checksums
-	url = https://github.com/awslabs/aws-checksums
 [submodule "contrib/curl"]
 	path = contrib/curl
 	url = https://github.com/curl/curl
@@ -257,6 +245,18 @@
 [submodule "contrib/ulid-c"]
 	path = contrib/ulid-c
 	url = https://github.com/ClickHouse/ulid-c.git
+[submodule "contrib/aws"]
+	path = contrib/aws
+	url = https://github.com/ClickHouse/aws-sdk-cpp
+[submodule "contrib/aws-c-event-stream"]
+	path = contrib/aws-c-event-stream
+	url = https://github.com/awslabs/aws-c-event-stream
+[submodule "contrib/aws-c-common"]
+	path = contrib/aws-c-common
+	url = https://github.com/awslabs/aws-c-common.git
+[submodule "contrib/aws-checksums"]
+	path = contrib/aws-checksums
+	url = https://github.com/awslabs/aws-checksums
 [submodule "contrib/aws-crt-cpp"]
 	path = contrib/aws-crt-cpp
 	url = https://github.com/ClickHouse/aws-crt-cpp
