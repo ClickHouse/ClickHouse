@@ -108,6 +108,9 @@ public:
     /// - ROUND_ROBIN
     /// - LEAST_USED
     const VolumeLoadBalancing load_balancing;
+
+    /// Target volume name to move parts to on shutdown (empty = disabled)
+    String move_on_shutdown_to;
 };
 
 }
