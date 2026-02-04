@@ -82,6 +82,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Storages/MaterializedView/RefreshSet.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -325,6 +326,7 @@ namespace ServerSetting
     extern const ServerSettingsBool shutdown_wait_backups_and_restores;
     extern const ServerSettingsUInt64 shutdown_wait_unfinished;
     extern const ServerSettingsBool shutdown_wait_unfinished_queries;
+    extern const ServerSettingsUInt64 shutdown_move_parts_timeout;
     extern const ServerSettingsUInt64 storage_connections_soft_limit;
     extern const ServerSettingsUInt64 storage_connections_store_limit;
     extern const ServerSettingsUInt64 storage_connections_hard_limit;
@@ -3045,10 +3047,47 @@ try
                 global_context->getProcessList().killAllQueries();
 
             size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
+            size_t move_timeout_seconds = server_settings[ServerSetting::shutdown_move_parts_timeout];
             auto wait_start = std::chrono::steady_clock::now();
+
+            /// Move parts from volatile volumes to persistent volumes in parallel with query wait
+            std::atomic<size_t> moved_parts_count{0};
+            std::thread move_thread;
+
+            if (move_timeout_seconds > 0)
+            {
+                auto shutdown_log = getLogger("ShutdownPartsMover");
+                auto context_for_move = global_context;
+                move_thread = std::thread([&moved_parts_count, context_for_move, move_timeout_seconds, shutdown_log] {
+                    try
+                    {
+                        for (const auto & db : DatabaseCatalog::instance().getDatabases({}))
+                        {
+                            for (auto it = db.second->getTablesIterator(context_for_move); it->isValid(); it->next())
+                            {
+                                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
+                                {
+                                    moved_parts_count += merge_tree->movePartsOnShutdown(
+                                        std::chrono::seconds(move_timeout_seconds), shutdown_log);
+                                }
+                            }
+                        }
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(shutdown_log, "Shutdown: parts move failed");
+                    }
+                });
+            }
 
             if (current_connections)
                 current_connections = waitServersToFinish(servers, servers_lock, wait_limit_seconds);
+
+            if (move_thread.joinable())
+                move_thread.join();
+
+            if (moved_parts_count > 0)
+                LOG_INFO(log, "Shutdown: moved {} parts to persistent storage", moved_parts_count.load());
 
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."

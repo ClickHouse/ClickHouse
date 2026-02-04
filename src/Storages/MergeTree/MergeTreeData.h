@@ -1424,6 +1424,10 @@ public:
     void decrefColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
     size_t getColumnsDescriptionsCacheSize() const;
 
+    /// Move parts from volatile volumes to target volumes on shutdown
+    /// Returns number of successfully moved parts
+    size_t movePartsOnShutdown(std::chrono::seconds timeout, LoggerPtr shutdown_log);
+
 protected:
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
