@@ -59,8 +59,10 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
             return std::make_shared<AggregateFunctionUniq<DataTypeDate32::FieldType, Data>>(argument_types);
         if (which.isDateTime())
             return std::make_shared<AggregateFunctionUniq<DataTypeDateTime::FieldType, Data>>(argument_types);
-        if (which.isStringOrFixedString())
+        if (which.isString())
             return std::make_shared<AggregateFunctionUniq<String, Data>>(argument_types);
+        if (which.isFixedString())
+            return std::make_shared<AggregateFunctionUniq<FixedStringTypeHelper, Data>>(argument_types);
         if (which.isUUID())
             return std::make_shared<AggregateFunctionUniq<DataTypeUUID::FieldType, Data>>(argument_types);
         if (which.isIPv4())
@@ -116,8 +118,13 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
             return std::make_shared<
                 AggregateFunctionUniq<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType, is_able_to_parallelize_merge>>>(
                 argument_types);
-        if (which.isStringOrFixedString())
+        if (which.isString())
             return std::make_shared<AggregateFunctionUniq<String, Data<String, is_able_to_parallelize_merge>>>(argument_types);
+        /// We differentiate FixedString here to know the input column will be a FixedString (no need to devirtualize) but still use
+        /// String as the data type in the hash set.
+        if (which.isFixedString())
+            return std::make_shared<AggregateFunctionUniq<FixedStringTypeHelper, Data<String, is_able_to_parallelize_merge>>>(
+                argument_types);
         if (which.isUUID())
             return std::make_shared<
                 AggregateFunctionUniq<DataTypeUUID::FieldType, Data<DataTypeUUID::FieldType, is_able_to_parallelize_merge>>>(

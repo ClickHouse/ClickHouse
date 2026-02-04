@@ -7,6 +7,7 @@
 #include <city.h>
 
 #include <base/bit_cast.h>
+#include <base/strong_typedef.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -14,6 +15,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 
 #include <Common/HashTable/Hash.h>
@@ -37,7 +39,9 @@ namespace DB
 {
 struct Settings;
 
-/// uniq
+/// We want to differentiate FixedString from String in template specialization so we can devirtualize certain functions calls
+/// As Uniq has always used String internally for FixedString, we can just alias FixedString to String here.
+using FixedStringTypeHelper = StrongTypedef<String, struct FixedStringTypeHelperTag>;
 
 struct AggregateFunctionUniqUniquesHashSetData
 {
@@ -276,9 +280,12 @@ template <typename T> struct AggregateFunctionUniqTraits
 /** The structure for the delegation work to add elements to the `uniq` aggregate functions.
   * Used for partial specialization to add strings.
   */
-template <typename T, typename Data>
+template <typename OriginalType, typename Data>
 struct Adder
 {
+    /// For FixedString, we use String as the data type in the hash set.
+    using DataFirstType = std::conditional_t<std::is_same_v<OriginalType, FixedStringTypeHelper>, String, OriginalType>;
+
     /// We have to introduce this template parameter (and a bunch of ugly code dealing with it), because we cannot
     /// add runtime branches in whatever_hash_set::insert - it will immediately pop up in the perf top.
     template <SetLevelHint hint = Data::is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel>
@@ -287,36 +294,41 @@ struct Adder
         if constexpr (Data::is_variadic)
         {
             if constexpr (IsUniqExactSet<typename Data::Set>::value)
-                data.set.template insert<T, hint>(
+                data.set.template insert<DataFirstType, hint>(
                     UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num));
             else
-                data.set.insert(T{UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num)});
+                data.set.insert(OriginalType{UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num)});
         }
         else if constexpr (
-            std::is_same_v<
-                Data,
-                AggregateFunctionUniqUniquesHashSetData> || std::is_same_v<Data, AggregateFunctionUniqHLL12Data<T, Data::is_able_to_parallelize_merge>>)
+            std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData>
+            || std::is_same_v<Data, AggregateFunctionUniqHLL12Data<DataFirstType, Data::is_able_to_parallelize_merge>>)
         {
             const auto & column = *columns[0];
-            if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
+            if constexpr (std::is_same_v<DataFirstType, String> || std::is_same_v<DataFirstType, IPv6>)
             {
-                using ColumnType = std::conditional_t<std::is_same_v<T, String>, ColumnString, ColumnIPv6>;
+                using ColumnType = std::conditional_t<
+                    std::is_same_v<OriginalType, String>,
+                    ColumnString,
+                    std::conditional_t<std::is_same_v<OriginalType, FixedStringTypeHelper>, ColumnFixedString, ColumnIPv6>>;
                 auto value = assert_cast<const ColumnType &>(column).getDataAt(row_num);
                 data.set.insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()));
             }
             else
             {
                 using ValueType = typename decltype(data.set)::value_type;
-                const auto & value = assert_cast<const ColumnVector<T> &>(column).getElement(row_num);
-                data.set.insert(static_cast<ValueType>(AggregateFunctionUniqTraits<T>::hash(value)));
+                const auto & value = assert_cast<const ColumnVector<DataFirstType> &>(column).getElement(row_num);
+                data.set.insert(static_cast<ValueType>(AggregateFunctionUniqTraits<DataFirstType>::hash(value)));
             }
         }
-        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqExactData<T, Data::is_able_to_parallelize_merge>>)
+        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqExactData<DataFirstType, Data::is_able_to_parallelize_merge>>)
         {
             const auto & column = *columns[0];
-            if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
+            if constexpr (std::is_same_v<DataFirstType, String> || std::is_same_v<DataFirstType, IPv6>)
             {
-                using ColumnType = std::conditional_t<std::is_same_v<T, String>, ColumnString, ColumnIPv6>;
+                using ColumnType = std::conditional_t<
+                    std::is_same_v<OriginalType, String>,
+                    ColumnString,
+                    std::conditional_t<std::is_same_v<OriginalType, FixedStringTypeHelper>, ColumnFixedString, ColumnIPv6>>;
                 auto value = assert_cast<const ColumnType &>(column).getDataAt(row_num);
 
                 SipHash hash;
@@ -327,7 +339,8 @@ struct Adder
             }
             else
             {
-                data.set.template insert<const T &, hint>(assert_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+                data.set.template insert<const DataFirstType &, hint>(
+                    assert_cast<const ColumnVector<DataFirstType> &>(column).getData()[row_num]);
             }
         }
 #if USE_DATASKETCHES
