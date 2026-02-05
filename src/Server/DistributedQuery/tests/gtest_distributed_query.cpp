@@ -448,6 +448,8 @@ void registerShuffleReceiveStep(QueryPlanStepRegistry & registry);
 void registerGatherSendStep(QueryPlanStepRegistry & registry);
 void registerGatherReceiveStep(QueryPlanStepRegistry & registry);
 void registerJoinStep(QueryPlanStepRegistry & registry);
+void registerFilterStep(QueryPlanStepRegistry & registry);
+void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 
 }
 
@@ -462,6 +464,8 @@ void registerPlanSteps()
     registerGatherSendStep(registry);
     registerGatherReceiveStep(registry);
     registerPrintTSVStep(registry);
+    registerFilterStep(registry);
+    registerBuildRuntimeFilterStep(registry);
 }
 
 
