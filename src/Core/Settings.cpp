@@ -5339,6 +5339,9 @@ Supported only with the analyzer (`enable_analyzer = 1`).
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, false, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
+    DECLARE(Bool, optimize_rewrite_has_to_in, true, R"(
+Rewrite has() functions to in() when the first argument is a constant array. For example, has([1, 2, 3], x) can be rewritten to in(x, [1, 2, 3]) for better performance with constant arrays
+)", 0) \
     DECLARE(Bool, optimize_rewrite_like_perfect_affix, true, R"(
 Rewrite LIKE expressions with perfect prefix or suffix (e.g. `col LIKE 'ClickHouse%'`) to startsWith or endsWith functions (e.g. `startsWith(col, 'ClickHouse')`).
 )", 0) \
