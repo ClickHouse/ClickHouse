@@ -1400,7 +1400,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         auto identifier_name = identifier_lookup.identifier.getFullName();
 
         auto function_resolver = function_factory.tryGet(identifier_name, scope.context);
-        
+
         static const std::unordered_set<std::string> excluded_names = {
             "database", "user", "schema"
         };
