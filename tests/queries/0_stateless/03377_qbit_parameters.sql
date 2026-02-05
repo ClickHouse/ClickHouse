@@ -1,6 +1,8 @@
 -- Tests for QBit query parameters
 -- https://github.com/ClickHouse/ClickHouse/issues/91103
 
+SET allow_experimental_qbit_type = 1;
+
 SELECT 'Test QBit query parameters';
 SET param_q1 = [1, 2, 3, 4];
 SELECT {q1:QBit(Float32, 4)};

@@ -9,7 +9,7 @@ namespace DB
 
 ASTPtr ASTShowSettingQuery::clone() const
 {
-    auto res = make_intrusive<ASTShowSettingQuery>(*this);
+    auto res = std::make_shared<ASTShowSettingQuery>(*this);
     res->children.clear();
     cloneOutputOptions(*res);
     res->setting_name = setting_name;

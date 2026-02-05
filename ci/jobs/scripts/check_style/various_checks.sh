@@ -11,10 +11,6 @@ tests_with_query_log=( $(
 for test_case in "${tests_with_query_log[@]}"; do
     grep -qE current_database.*currentDatabase "$test_case" || {
         grep -qE 'current_database.*\$CLICKHOUSE_DATABASE' "$test_case"
-    } || {
-        grep -qE 'has\(databases\,\ currentDatabase\(\)\)' "$test_case"
-    } || {
-        grep -qE 'has\(databases\,\ current_database\(\)\)' "$test_case"
     } || echo "Query to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
 done
 

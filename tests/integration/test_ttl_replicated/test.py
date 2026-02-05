@@ -540,19 +540,17 @@ def test_ttl_empty_parts(started_cluster):
 def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     # The test times out for sanitizer builds, so we increase the timeout.
     timeout = 20
-    if node_left.is_built_with_sanitizer() or node_right.is_built_with_sanitizer() or \
-    node_left.is_built_with_llvm_coverage() or node_right.is_built_with_llvm_coverage():
-        timeout = 300
+    if node_left.is_built_with_sanitizer() or node_right.is_built_with_sanitizer():
+        timeout = 40
 
     table = f"test_ttl_compatibility_{node_left.name}_{node_right.name}_{num_run}"
     for node in [node_left, node_right]:
         node.query(
             """
-                DROP TABLE IF EXISTS {table}_delete SYNC;
                 CREATE TABLE {table}_delete(date DateTime, id UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}_delete', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
-                TTL date + INTERVAL 3 SECOND;
+                TTL date + INTERVAL 3 SECOND
             """.format(
                 table=table, replica=node.name
             )
@@ -560,11 +558,10 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
 
         node.query(
             """
-                DROP TABLE IF EXISTS {table}_group_by SYNC;
                 CREATE TABLE {table}_group_by(date DateTime, id UInt32, val UInt64)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}_group_by', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
-                TTL date + INTERVAL 3 SECOND GROUP BY id SET val = sum(val);
+                TTL date + INTERVAL 3 SECOND GROUP BY id SET val = sum(val)
             """.format(
                 table=table, replica=node.name
             )
@@ -572,11 +569,10 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
 
         node.query(
             """
-                DROP TABLE IF EXISTS {table}_where SYNC;
                 CREATE TABLE {table}_where(date DateTime, id UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}_where', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
-                TTL date + INTERVAL 3 SECOND DELETE WHERE id % 2 = 1;
+                TTL date + INTERVAL 3 SECOND DELETE WHERE id % 2 = 1
             """.format(
                 table=table, replica=node.name
             )
@@ -636,52 +632,14 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     node_left.query(f"SYSTEM SYNC REPLICA {table}_group_by", timeout=timeout)
     node_left.query(f"SYSTEM SYNC REPLICA {table}_where", timeout=timeout)
 
-    # Use assert_eq_with_retry because merges with TTL may still be pending
-    # after OPTIMIZE TABLE FINAL due to concurrent merge limits.
-    assert_eq_with_retry(
-        node_left,
-        f"SELECT id FROM {table}_delete ORDER BY id",
-        "2\n4\n",
-        retry_count=timeout * 2,
-        sleep_time=0.5,
-    )
-    assert_eq_with_retry(
-        node_right,
-        f"SELECT id FROM {table}_delete ORDER BY id",
-        "2\n4\n",
-        retry_count=timeout * 2,
-        sleep_time=0.5,
-    )
+    assert node_left.query(f"SELECT id FROM {table}_delete ORDER BY id") == "2\n4\n"
+    assert node_right.query(f"SELECT id FROM {table}_delete ORDER BY id") == "2\n4\n"
 
-    assert_eq_with_retry(
-        node_left,
-        f"SELECT val FROM {table}_group_by ORDER BY id",
-        "10\n",
-        retry_count=timeout * 2,
-        sleep_time=0.5,
-    )
-    assert_eq_with_retry(
-        node_right,
-        f"SELECT val FROM {table}_group_by ORDER BY id",
-        "10\n",
-        retry_count=timeout * 2,
-        sleep_time=0.5,
-    )
+    assert node_left.query(f"SELECT val FROM {table}_group_by ORDER BY id") == "10\n"
+    assert node_right.query(f"SELECT val FROM {table}_group_by ORDER BY id") == "10\n"
 
-    assert_eq_with_retry(
-        node_left,
-        f"SELECT id FROM {table}_where ORDER BY id",
-        "2\n4\n",
-        retry_count=timeout * 2,
-        sleep_time=0.5,
-    )
-    assert_eq_with_retry(
-        node_right,
-        f"SELECT id FROM {table}_where ORDER BY id",
-        "2\n4\n",
-        retry_count=timeout * 2,
-        sleep_time=0.5,
-    )
+    assert node_left.query(f"SELECT id FROM {table}_where ORDER BY id") == "2\n4\n"
+    assert node_right.query(f"SELECT id FROM {table}_where ORDER BY id") == "2\n4\n"
 
     # Cleanup
     for node in [node_left, node_right]:

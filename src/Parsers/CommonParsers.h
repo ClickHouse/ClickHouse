@@ -6,12 +6,6 @@
 #include <string_view>
 #include <unordered_set>
 
-// On illumos, <sys/regset.h> defines SS as a macro (x86 segment register).
-// Undef it to allow use of SS as a parser keyword name below.
-#ifdef SS
-#  undef SS
-#endif
-
 namespace DB
 {
 
@@ -386,7 +380,6 @@ namespace DB
     MR_MACROS(PARTITION, "PARTITION") \
     MR_MACROS(PARTITIONS, "PARTITIONS") \
     MR_MACROS(PASTE, "PASTE") \
-    MR_MACROS(PAUSE, "PAUSE") \
     MR_MACROS(PERIODIC_REFRESH, "PERIODIC REFRESH") \
     MR_MACROS(PERMANENTLY, "PERMANENTLY") \
     MR_MACROS(PERMISSIVE, "PERMISSIVE") \

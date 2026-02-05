@@ -77,7 +77,7 @@ namespace
         else
             str = fmt::format("table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
         if (first_upper)
-            str[0] = static_cast<char>(std::toupper(str[0]));
+            str[0] = std::toupper(str[0]);
         return str;
     }
 
@@ -783,7 +783,7 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         if (restore_settings.create_database == RestoreDatabaseCreationMode::kMustExist)
             return;
 
-        boost::intrusive_ptr<ASTCreateQuery> create_database_query;
+        std::shared_ptr<ASTCreateQuery> create_database_query;
         {
             std::lock_guard lock{mutex};
             const auto & database_info = database_infos.at(database_name);
@@ -792,7 +792,7 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
             if (database_info.is_predefined_database)
                 return;
 
-            create_database_query = boost::static_pointer_cast<ASTCreateQuery>(database_info.create_database_query->clone());
+            create_database_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(database_info.create_database_query->clone());
         }
 
         /// Generate a new UUID for a database.
@@ -809,7 +809,7 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
 
         if (shared_catalog && engine_name == "Replicated")
         {
-            auto engine = make_intrusive<ASTFunction>();
+            auto engine = std::make_shared<ASTFunction>();
 
             engine->name = "Shared";
             engine->no_empty_args = true;
@@ -820,9 +820,9 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         {
             // Change engine to Replicated
             auto engine = makeASTFunction("Replicated",
-                    make_intrusive<ASTLiteral>("/clickhouse/databases/{uuid}"),
-                    make_intrusive<ASTLiteral>("{shard}"),
-                    make_intrusive<ASTLiteral>("{replica}")
+                    std::make_shared<ASTLiteral>("/clickhouse/databases/{uuid}"),
+                    std::make_shared<ASTLiteral>("{shard}"),
+                    std::make_shared<ASTLiteral>("{replica}")
                 );
 
             create.storage->set(create.storage->engine, engine);
@@ -1021,7 +1021,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         if (restore_settings.create_table == RestoreTableCreationMode::kMustExist)
             return;
 
-        boost::intrusive_ptr<ASTCreateQuery> create_table_query;
+        std::shared_ptr<ASTCreateQuery> create_table_query;
         DatabasePtr database;
 
         {
@@ -1032,7 +1032,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
             if (table_info.is_predefined_table)
                 return;
 
-            create_table_query = boost::static_pointer_cast<ASTCreateQuery>(table_info.create_table_query->clone());
+            create_table_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(table_info.create_table_query->clone());
             database = table_info.database;
         }
 
@@ -1051,7 +1051,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
                 boost::replace_first(storage->engine->name, "Replicated", "Shared");
             else if (create_table_query->is_materialized_view_with_inner_table())
             {
-                storage = create_table_query->targets->getInnerEngine(ViewTarget::To);
+                storage = create_table_query->targets->getInnerEngine(ViewTarget::To).get();
                 if (storage != nullptr && storage->engine != nullptr)
                     boost::replace_first(storage->engine->name, "Replicated", "Shared");
             }
