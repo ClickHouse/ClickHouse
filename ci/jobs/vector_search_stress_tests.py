@@ -2,16 +2,18 @@
 # Documentation : https://clickhouse.com/docs/engines/table-engines/mergetree-family/annindexes
 
 import os
-import sys
-import traceback
-import clickhouse_connect
 import random
-import time
+import sys
 import threading
+import time
+import traceback
+
+import clickhouse_connect
 import numpy as np
-from ci.praktika.result import Result
+
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.praktika.info import Info
+from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
@@ -177,6 +179,7 @@ test_params_hackernews_10m = {
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
 }
+
 
 def get_new_connection():
     chclient = clickhouse_connect.get_client(send_receive_timeout=1800)
@@ -598,7 +601,7 @@ TESTS_TO_RUN = [
         "Test using the hackernews dataset",
         dataset_hackernews_openai,
         test_params_hackernews_10m,
-    )
+    ),
 ]
 
 

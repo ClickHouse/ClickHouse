@@ -130,8 +130,17 @@ public:
 
     static bool isQueryWithFinal(const SelectQueryInfo & info);
 
+    struct LimitInfo
+    {
+        UInt64 limit_length{0};
+        UInt64 limit_offset{0};
+        Float64 fractional_limit{0};
+        Float64 fractional_offset{0};
+        bool is_limit_length_negative{false};
+        bool is_limit_offset_negative{false};
+    };
 
-    static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
+    static LimitInfo getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
 
     /// Adjust the parallel replicas settings (enabled, disabled) based on the query analysis
     bool adjustParallelReplicasAfterAnalysis();

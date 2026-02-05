@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 #include <Poco/Exception.h>
-#include <base/StringRef.h>
+#include <base/StringViewHash.h>
 #include <base/types.h>
 #include <Dictionaries/Embedded/GeodataProviders/INamesProvider.h>
 
@@ -67,8 +67,7 @@ private:
 
     using Chars = std::vector<char>;
     using CharsForLanguageID = std::vector<Chars>;
-    using StringRefs = std::vector<StringRef>; /// Lookup table RegionID -> StringRef
-    using StringRefsForLanguageID = std::vector<StringRefs>;
+    using StringViewsForLanguageID = std::vector<StringViews>;
 
 
     NamesSources names_sources = NamesSources(total_languages);
@@ -77,23 +76,23 @@ private:
     CharsForLanguageID chars = CharsForLanguageID(total_languages);
 
     /// Mapping for each language from the region id into a pointer to the byte range of the name
-    StringRefsForLanguageID names_refs = StringRefsForLanguageID(total_languages);
+    StringViewsForLanguageID names_refs = StringViewsForLanguageID(total_languages);
 
     static std::string dumpSupportedLanguagesNames();
 public:
     explicit RegionsNames(IRegionsNamesDataProviderPtr data_provider);
 
-    StringRef getRegionName(RegionID region_id, Language language) const
+    std::string_view getRegionName(RegionID region_id, Language language) const
     {
         size_t language_id = static_cast<size_t>(language);
 
         if (region_id >= names_refs[language_id].size())
-            return StringRef("", 0);
+            return std::string_view{};
 
-        StringRef ref = names_refs[language_id][region_id];
+        std::string_view ref = names_refs[language_id][region_id];
 
         static constexpr size_t root_language = static_cast<size_t>(Language::ru);
-        while (ref.size == 0 && language_id != root_language)
+        while (ref.empty() && language_id != root_language)
         {
             language_id = static_cast<size_t>(fallbacks[language_id]);
             ref = names_refs[language_id][region_id];

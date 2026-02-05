@@ -1,5 +1,4 @@
 import logging
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -20,6 +19,11 @@ node2 = cluster.add_instance(
     macros={"replica": "b", "shard": "shard1"},
 )
 
+node3 = cluster.add_instance(
+    "node3",
+    user_configs=["config/config.xml"],
+    with_zookeeper=True,
+)
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -191,6 +195,9 @@ def test_replicated_table_ddl(started_cluster):
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_3", "a", True)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_3", "b", True)
 
+    node1.query("DROP TABLE IF EXISTS test_stat SYNC")
+    node2.query("DROP TABLE IF EXISTS test_stat SYNC")
+
 
 def test_replicated_db(started_cluster):
     node1.query("DROP DATABASE IF EXISTS test SYNC")
@@ -206,3 +213,20 @@ def test_replicated_db(started_cluster):
     )
     node2.query("ALTER TABLE test.test_stats MODIFY COLUMN b Float64")
     node2.query("ALTER TABLE test.test_stats MODIFY STATISTICS b TYPE tdigest")
+
+
+def test_setting_materialize_statistics_on_merge(started_cluster):
+    node3.query("DROP TABLE IF EXISTS test_stats SYNC")
+    node3.query("CREATE TABLE test_stats (a Int64 STATISTICS(tdigest), b Int64 STATISTICS(tdigest)) ENGINE = MergeTree() ORDER BY() settings materialize_statistics_on_merge = 0")
+    node3.query("SYSTEM STOP MERGES")
+    node3.query("insert into test_stats values(1,2)")
+    node3.query("insert into test_stats values(2,3)")
+    check_stat_file_on_disk(node3, "test_stats", "all_1_1_0", "a", True)
+    check_stat_file_on_disk(node3, "test_stats", "all_1_1_0", "b", True)
+    check_stat_file_on_disk(node3, "test_stats", "all_2_2_0", "a", True)
+    check_stat_file_on_disk(node3, "test_stats", "all_2_2_0", "b", True)
+    node3.query("SYSTEM START MERGES")
+    node3.query("OPTIMIZE TABLE test_stats FINAL");
+    check_stat_file_on_disk(node3, "test_stats", "all_1_2_1", "a", False)
+    check_stat_file_on_disk(node3, "test_stats", "all_1_2_1", "b", False)
+    node3.query("DROP TABLE IF EXISTS test_stats SYNC")

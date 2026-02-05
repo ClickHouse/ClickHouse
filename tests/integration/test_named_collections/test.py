@@ -134,6 +134,36 @@ def test_default_access(cluster):
         ).strip()
         == "value1"
     )
+
+    assert (
+        node.query(
+            "select collection['key1'] from system.named_collections where name = 'collection1'",
+            settings={"format_display_secrets_in_show_and_select": 0}
+        ).strip()
+        == "[HIDDEN]"
+    )
+
+    replace_in_server_config(
+        node, "display_secrets_in_show_and_select>1", "display_secrets_in_show_and_select>0"
+    )
+    assert "display_secrets_in_show_and_select>0" in node.exec_in_container(
+        ["bash", "-c", f"cat /etc/clickhouse-server/config.d/named_collections.xml"]
+    )
+    node.restart_clickhouse()
+    assert (
+        node.query(
+            "select collection['key1'] from system.named_collections where name = 'collection1'"
+        ).strip()
+        == "[HIDDEN]"
+    )
+
+    replace_in_server_config(
+        node, "display_secrets_in_show_and_select>0", "display_secrets_in_show_and_select>1"
+    )
+    assert "display_secrets_in_show_and_select>1" in node.exec_in_container(
+        ["bash", "-c", f"cat /etc/clickhouse-server/config.d/named_collections.xml"]
+    )
+
     replace_in_users_config(
         node, "show_named_collections_secrets>1", "show_named_collections_secrets>0"
     )

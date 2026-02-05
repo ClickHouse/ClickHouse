@@ -1,0 +1,20 @@
+-- { echo }
+select sum(key) from test_10m;
+499999500000
+select sum(key) from test_10m where key = 1;
+1
+Row 1:
+──────
+q:                  select sum(key) from test_10m;
+not_blazingly_fast: 1
+missing_parts:      1
+replicas:           11
+failed_replicas:    1
+
+Row 2:
+──────
+q:                  select sum(key) from test_10m where key = ?;
+not_blazingly_fast: 1
+missing_parts:      0
+replicas:           1
+failed_replicas:    0

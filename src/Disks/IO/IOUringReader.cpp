@@ -208,7 +208,7 @@ void IOUringReader::finalizeRequest(const EnqueuedIterator & requestIt)
 
 void IOUringReader::monitorRing()
 {
-    setThreadName("IOUringMonitor");
+    DB::setThreadName(ThreadName::IO_URING_MONITOR);
 
     while (!cancelled.load(std::memory_order_relaxed))
     {

@@ -60,7 +60,7 @@ bool ParserKQLMakeSeries ::parseAggregationColumns(AggregationColumns & aggregat
         else
             aggregation_fun = std::move(first_token);
 
-        if (allowed_aggregation.find(aggregation_fun) == allowed_aggregation.end())
+        if (!allowed_aggregation.contains(aggregation_fun))
             return false;
 
         if (open_bracket.ignore(pos, expected))

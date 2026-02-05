@@ -58,9 +58,9 @@ struct StringHashSetCell<StringKey24> : public HashTableCell<StringKey24, String
 };
 
 template <>
-struct StringHashSetCell<StringRef> : public HashSetCellWithSavedHash<StringRef, StringHashTableHash, HashTableNoState>
+struct StringHashSetCell<std::string_view> : public HashSetCellWithSavedHash<std::string_view, StringHashTableHash, HashTableNoState>
 {
-    using Base = HashSetCellWithSavedHash<StringRef, StringHashTableHash, HashTableNoState>;
+    using Base = HashSetCellWithSavedHash<std::string_view, StringHashTableHash, HashTableNoState>;
     using Base::Base;
 
     VoidMapped void_map;
@@ -73,18 +73,18 @@ struct StringHashSetCell<StringRef> : public HashSetCellWithSavedHash<StringRef,
 template <typename Allocator>
 struct StringHashSetSubMaps
 {
-    using T0 = StringHashTableEmpty<StringHashSetCell<StringRef>>;
+    using T0 = StringHashTableEmpty<StringHashSetCell<std::string_view>>;
     using T1 = HashSetTable<StringKey8, StringHashSetCell<StringKey8>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
     using T2 = HashSetTable<StringKey16, StringHashSetCell<StringKey16>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
     using T3 = HashSetTable<StringKey24, StringHashSetCell<StringKey24>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
-    using Ts = HashSetTable<StringRef, StringHashSetCell<StringRef>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
+    using Ts = HashSetTable<std::string_view, StringHashSetCell<std::string_view>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
 };
 
 template <typename Allocator = HashTableAllocator>
 class StringHashSet : public StringHashTable<StringHashSetSubMaps<Allocator>>
 {
 public:
-    using Key = StringRef;
+    using Key = std::string_view;
     using Base = StringHashTable<StringHashSetSubMaps<Allocator>>;
     using Self = StringHashSet;
     using LookupResult = typename Base::LookupResult;

@@ -5,6 +5,7 @@
 #include <base/sort.h>
 
 #include <Common/iota.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -154,14 +155,14 @@ ColumnPtr IPolygonDictionary::getColumn(
                         default_value_provider.value());
                 }
             }
-            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 if (is_short_circuit)
                 {
                     getItemsShortCircuitImpl<ValueType>(
                         requested_key_points,
                         [&](size_t row) { return attribute_values_column->getDataAt(row); },
-                        [&](StringRef value) { result_column_typed.insertData(value.data, value.size); },
+                        [&](std::string_view value) { result_column_typed.insertData(value.data(), value.size()); },
                         default_mask.value());
                 }
                 else
@@ -169,7 +170,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                     getItemsImpl<ValueType>(
                         requested_key_points,
                         [&](size_t row) { return attribute_values_column->getDataAt(row); },
-                        [&](StringRef value) { result_column_typed.insertData(value.data, value.size); },
+                        [&](std::string_view value) { result_column_typed.insertData(value.data(), value.size()); },
                         default_value_provider.value());
                 }
             }
@@ -288,13 +289,17 @@ void IPolygonDictionary::blockToAttributes(const DB::Block & block)
 
 void IPolygonDictionary::loadData()
 {
-    QueryPipeline pipeline(source_ptr->loadAll());
+    BlockIO io = source_ptr->loadAll();
 
-    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-    pipeline.setConcurrencyControl(false);
-    Block block;
-    while (executor.pull(block))
-        blockToAttributes(block);
+    io.executeWithCallbacks([&]()
+    {
+        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+        io.pipeline.setConcurrencyControl(false);
+
+        Block block;
+        while (executor.pull(block))
+            blockToAttributes(block);
+    });
 
     /// Correct and sort polygons by area and update polygon_index_to_attribute_value_index after sort
     PaddedPODArray<double> areas;
@@ -435,7 +440,7 @@ void IPolygonDictionary::getItemsImpl(
             {
                 set_value(default_value.safeGet<Array>());
             }
-            else if constexpr (std::is_same_v<AttributeType, StringRef>)
+            else if constexpr (std::is_same_v<AttributeType, std::string_view>)
             {
                 auto default_value_string = default_value.safeGet<String>();
                 set_value(default_value_string);

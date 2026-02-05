@@ -10,6 +10,7 @@ namespace DB
 
 class SerializationObjectDynamicPath;
 class SerializationSubObject;
+class SerializationObjectDistinctPaths;
 
 /// Class for binary serialization/deserialization of an Object type (currently only JSON).
 class SerializationObject : public ISerialization
@@ -63,7 +64,7 @@ public:
     };
 
     SerializationObject(
-        std::unordered_map<String, SerializationPtr> typed_path_serializations_,
+        const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & dynamic_type_);
@@ -107,6 +108,8 @@ public:
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
+    void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+
     virtual void deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const = 0;
 
     static void restoreColumnObject(ColumnObject & column_object, size_t prev_size);
@@ -114,6 +117,7 @@ public:
 private:
     friend SerializationObjectDynamicPath;
     friend SerializationSubObject;
+    friend SerializationObjectDistinctPaths;
 
     /// State of an Object structure. Can be also used during deserializing of Object subcolumns.
     struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
@@ -159,7 +163,10 @@ private:
 protected:
     bool shouldSkipPath(const String & path) const;
 
-    std::unordered_map<String, SerializationPtr> typed_path_serializations;
+    void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const;
+
+    std::unordered_map<String, DataTypePtr> typed_paths_types;
+    std::unordered_map<std::string_view, SerializationPtr> typed_paths_serializations;
     std::unordered_set<String> paths_to_skip;
     std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;

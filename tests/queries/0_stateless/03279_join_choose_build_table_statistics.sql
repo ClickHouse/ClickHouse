@@ -11,7 +11,7 @@ CREATE TABLE sales (
     amount Decimal(10, 2),
     product_id Int32
 ) ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statistics_types = '';
 
 INSERT INTO sales SELECT number, '2024-05-05' + INTERVAL intDiv(number, 1000) DAY , (number + 1) % 100, number % 100_000 FROM numbers(1_000_000);
 
@@ -20,8 +20,9 @@ INSERT INTO products SELECT number, 'product ' || toString(number) FROM numbers(
 
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_limit = 2;
-SET allow_statistics_optimize=1;
+SET use_statistics=1;
 SET allow_experimental_statistics=1;
+SET enable_join_runtime_filters=0;
 
 SELECT * FROM products, sales
 WHERE sales.product_id = products.id AND date = '2024-05-07'

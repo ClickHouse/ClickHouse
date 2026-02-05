@@ -1,0 +1,181 @@
+-- Test LIKE perfect prefix on String column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(__table1.col_string, \'app\')
+3
+3
+-- Test LIKE perfect suffix on String column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE endsWith(__table1.col_string, \'Test\')
+2
+2
+-- Test LIKE perfect prefix on FixedString column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(__table1.col_fixedstring, \'fruit\')
+2
+2
+-- Test LIKE perfect suffix on FixedString column - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_fixedstring LIKE \'%ther\\0\'
+2
+2
+-- Test NOT LIKE with perfect prefix on String column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE not(startsWith(__table1.col_string, \'app\'))
+4
+4
+-- Test NOT LIKE with perfect suffix on String column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE not(endsWith(__table1.col_string, \'Test\'))
+5
+5
+-- Test ILIKE with perfect prefix on String column - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string ILIKE \'APP%\'
+3
+3
+-- Test ILIKE with perfect suffix on String column - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string ILIKE \'%TeST\'
+2
+2
+-- Test NOT ILIKE with perfect prefix on String column - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string NOT ILIKE \'APP%\'
+4
+4
+-- Test NOT ILIKE with perfect suffix on String column - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string NOT ILIKE \'%TeST\'
+5
+5
+-- Test multiple LIKE conditions - all eligible ones should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(__table1.col_string, \'app\') AND startsWith(__table1.col_fixedstring, \'fruit\')
+1
+1
+-- Test without perfect affix - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'app_ication%\'
+1
+1
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'%app_ication\'
+1
+1
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'%app%\'
+3
+3
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'_est%\'
+1
+1
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'Test\'
+1
+1
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'%\'
+7
+7
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string NOT LIKE \'app_ication%\'
+6
+6
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string NOT LIKE \'app_ication%\'
+1
+1
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string NOT LIKE \'app_ication%\'
+6
+6
+-- Test low cardinality string column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(__table1.col_lowcardinality_string, \'a\')
+3
+3
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE endsWith(__table1.col_lowcardinality_string, \'a\')
+3
+3
+-- Test nullable string column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(__table1.col_nullable_string, \'a\')
+3
+3
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE endsWith(__table1.col_nullable_string, \'a\')
+3
+3
+-- Test low cardinality nullable string column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(__table1.col_lowcardinality_nullable_string, \'a\')
+3
+3
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE endsWith(__table1.col_lowcardinality_nullable_string, \'a\')
+3
+3
+-- Test low cardinality fixedstring with prefix - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(__table1.col_lowcardinality_fixedstring, \'a\')
+3
+3
+-- Test low cardinality fixedstring with suffix - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_lowcardinality_fixedstring LIKE \'%a\\0\'
+3
+3
+-- Test nullable fixedstring with prefix - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(__table1.col_nullable_fixedstring, \'a\')
+3
+3
+-- Test nullable fixedstring with suffix - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_nullable_fixedstring LIKE \'%a\\0\'
+3
+3
+-- Test low cardinality nullable fixedstring with prefix - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE startsWith(__table1.col_lowcardinality_nullable_fixedstring, \'a\')
+3
+3
+-- Test low cardinality nullable fixedstring with suffix - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_lowcardinality_nullable_fixedstring LIKE \'%a\\0\'
+3
+3

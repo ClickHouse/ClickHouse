@@ -1,0 +1,34 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_03755_0>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>plain</metadata_type>
+                <endpoint>http://localhost:11111/test/data0</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+            </disk_03755_0>
+            <disk_03755_1>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>local</metadata_type>
+                <endpoint>http://localhost:11111/test/data1</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+            </disk_03755_1>
+        </disks>
+        <policies>
+            <policy_03755>
+                <volumes>
+                    <volume0>
+                        <disk>disk_03755_0</disk>
+                    </volume0>
+                    <volume1>
+                        <disk>disk_03755_1</disk>
+                    </volume1>
+                </volumes>
+            </policy_03755>
+        </policies>
+    </storage_configuration>
+</clickhouse>

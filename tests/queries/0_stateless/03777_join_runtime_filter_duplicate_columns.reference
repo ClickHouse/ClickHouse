@@ -1,0 +1,41 @@
+Expression (Project names)
+Header: number UInt64
+        e UInt64
+        e UInt64
+        k UInt64
+        k UInt64
+  Sorting (Sorting for ORDER BY)
+  Header: __table1.number UInt64
+          __table1.e UInt64
+          __table3.k UInt64
+    Expression ((Before ORDER BY + Projection))
+    Header: __table1.number UInt64
+            __table1.e UInt64
+            __table3.k UInt64
+      JoinLogical
+      Header: __table1.number UInt64
+              __table1.number UInt64
+              __table1.e UInt64
+              __table1.e UInt64
+              __table3.k UInt64
+              __table3.k UInt64
+        Filter
+        Header: __table1.number UInt64
+                __table1.number UInt64
+                __table1.e UInt64
+                __table1.e UInt64
+          ReadFromSystemNumbers
+          Header: number UInt64
+        BuildRuntimeFilter (Build runtime join filter on __table3.number)
+        Header: __table3.number UInt64
+                __table3.k UInt64
+                __table3.k UInt64
+          Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+          Header: __table3.number UInt64
+                  __table3.k UInt64
+                  __table3.k UInt64
+            ReadFromSystemNumbers
+            Header: number UInt64
+2	3	3	3	3
+3	4	4	4	4
+4	5	5	5	5

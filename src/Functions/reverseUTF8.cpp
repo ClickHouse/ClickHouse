@@ -46,7 +46,7 @@ struct ReverseUTF8Impl
             ColumnString::Offset j = prev_offset;
             while (j < offsets[i])
             {
-                if (data[j] < 0xBF)
+                if (data[j] < 0xC0)
                 {
                     res_data[offsets[i] + prev_offset - 1 - j] = data[j];
                     j += 1;
@@ -63,8 +63,8 @@ struct ReverseUTF8Impl
                 }
                 else
                 {
-                    res_data[offsets[i] + prev_offset - 1 - j] = data[j];
-                    j += 1;
+                    memcpy(&res_data[offsets[i] + prev_offset - 1 - j - 3], &data[j], 4);
+                    j += 4;
                 }
             }
 
@@ -107,7 +107,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionReverseUTF8>(documentation);
 }

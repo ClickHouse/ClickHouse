@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+    extern const int DECIMAL_OVERFLOW;
 }
 
 
@@ -194,16 +195,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     if (which_type.isDateTime() && which_from_type.isDate())
     {
-        return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(src.safeGet<UInt64>()));
+        return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(static_cast<UInt16>(src.safeGet<UInt64>())));
     }
     if (which_type.isDateTime() && which_from_type.isDate32())
     {
-        return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(src.safeGet<Int32>()));
+        return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(static_cast<UInt16>(src.safeGet<Int32>())));
     }
     if (which_type.isDateTime64() && which_from_type.isDate())
     {
         const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
-        const auto value = date_time64_type.getTimeZone().fromDayNum(DayNum(src.safeGet<UInt16>()));
+        const auto value = date_time64_type.getTimeZone().fromDayNum(DayNum(static_cast<UInt16>(src.safeGet<UInt16>())));
         return DecimalField<DateTime64>(
             DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
             date_time64_type.getScale());
@@ -227,16 +228,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     if (which_type.isTime() && which_from_type.isDate())
     {
-        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(DayNum(src.safeGet<UInt64>()));
+        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(DayNum(static_cast<DayNum::UnderlyingType>(src.safeGet<UInt64>())));
     }
     if (which_type.isTime() && which_from_type.isDate32())
     {
-        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(DayNum(src.safeGet<Int32>()));
+        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(DayNum(static_cast<DayNum::UnderlyingType>(src.safeGet<Int32>())));
     }
     if (which_type.isTime64() && which_from_type.isDate())
     {
         const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
-        const auto value = time64_type.getTimeZone().fromDayNum(DayNum(src.safeGet<UInt16>()));
+        const auto value = time64_type.getTimeZone().fromDayNum(DayNum(static_cast<DayNum::UnderlyingType>(src.safeGet<UInt16>())));
         return DecimalField<Time64>(
             DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier()),
             time64_type.getScale());
@@ -338,8 +339,21 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 return src;
 
             /// in case if we need to make DateTime64(a) from DateTime64(b), a != b, we need to convert datetime value to the right scale
-            const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff
-                                                       : from_type.getValue().value * scale_multiplier_diff;
+            Int64 value = from_type.getValue().value;
+
+            if (scale_from > scale_to)
+            {
+                value /= scale_multiplier_diff;
+            }
+            else if (scale_from < scale_to)
+            {
+                Int64 result;
+                if (common::mulOverflow(value, scale_multiplier_diff.value, result))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Cannot convert {} to {} as it overflows: {} * {} does not fit in Int64",
+                        src.getTypeName(), type.getName(), value, scale_multiplier_diff.value);
+                value = result;
+            }
+
             return DecimalField<DateTime64>(DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1), scale_to);
         }
 
@@ -568,20 +582,28 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
             auto transpose_bits = [&]<typename Word, typename FloatType>()
             {
-                /// Read field values into contiguous memory. Use padded_dimension as we want all memory used for transposition to be initialised
-                std::vector<FloatType> value_floats(padded_dimension);
-                for (size_t i = 0; i < dst_dimension; ++i)
-                    value_floats[i] = static_cast<const FloatType>(src_container[i].template safeGet<FloatType>());
-
-                /// Transpose the data
-                std::vector<char> transposed_bytes(bytes_per_fixedstring * dst_element_size);
-
-                SerializationQBit::transposeBits<Word>(
-                    reinterpret_cast<const Word *>(value_floats.data()), reinterpret_cast<Word *>(transposed_bytes.data()), padded_dimension);
-
-                /// Extract the transposed data into result tuple
+                /// Prepare output tuple buffers
+                std::vector<std::string> out(dst_element_size, std::string(bytes_per_fixedstring, '\0'));
+                std::vector<char *> plane(dst_element_size);
                 for (size_t i = 0; i < dst_element_size; ++i)
-                    res[i] = Field(String(transposed_bytes.data() + i * bytes_per_fixedstring, bytes_per_fixedstring));
+                    plane[i] = reinterpret_cast<char *>(out[i].data());
+
+                /// Transpose
+                for (size_t i = 0; i < padded_dimension; ++i)
+                {
+                    Word w = 0;
+                    if (i < dst_dimension)
+                    {
+                        FloatType v = static_cast<const FloatType>(src_container[i].template safeGet<FloatType>());
+                        std::memcpy(&w, &v, sizeof(Word));
+                    }
+
+                    SerializationQBit::transposeBits<Word>(w, i, padded_dimension, plane.data());
+                }
+
+                /// Move into Fields
+                for (size_t i = 0; i < dst_element_size; ++i)
+                    res[i] = Field(std::move(out[i]));
             };
 
             if (dst_element_size == 16)
@@ -653,50 +675,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert {} to {}", name, agg_func_type->getName());
 
         return src;
-    }
-    else if (isObjectDeprecated(type))
-    {
-        if (src.getType() == Field::Types::Object)
-            return src; /// Already in needed type.
-
-        const auto * from_type_tuple = typeid_cast<const DataTypeTuple *>(from_type_hint);
-        if (src.getType() == Field::Types::Tuple && from_type_tuple && from_type_tuple->hasExplicitNames())
-        {
-            const auto & names = from_type_tuple->getElementNames();
-            const auto & tuple = src.safeGet<Tuple>();
-
-            if (names.size() != tuple.size())
-                throw Exception(
-                    ErrorCodes::TYPE_MISMATCH,
-                    "Bad size of tuple in IN or VALUES section (while converting to Object). Expected size: {}, actual size: {}",
-                    names.size(),
-                    tuple.size());
-
-            Object object;
-            for (size_t i = 0; i < names.size(); ++i)
-                object[names[i]] = tuple[i];
-
-            return object;
-        }
-
-        if (src.getType() == Field::Types::Map)
-        {
-            Object object;
-            const auto & map = src.safeGet<Map>();
-            for (const auto & element : map)
-            {
-                const auto & map_entry = element.safeGet<Tuple>();
-                const auto & key = map_entry[0];
-                const auto & value = map_entry[1];
-
-                if (key.getType() != Field::Types::String)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert from Map with key of type {} to Object", key.getTypeName());
-
-                object[key.safeGet<String>()] = value;
-            }
-
-            return object;
-        }
     }
     else if (const DataTypeVariant * type_variant = typeid_cast<const DataTypeVariant *>(&type))
     {
@@ -824,7 +802,7 @@ Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_t
     if (!is_null && converted.isNull())
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "Cannot convert value '{}'{}: it cannot be represented as {}",
-            toString(from_value),
+            fieldToString(from_value),
             from_type_hint ? " from " + from_type_hint->getName() : "",
             to_type.getName());
 

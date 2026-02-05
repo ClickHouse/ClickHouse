@@ -91,7 +91,7 @@ SELECT nullIf(1, 1), nullIf(1, 2);
     };
     FunctionDocumentation::IntroducedIn introduced_in{1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNullIf>(documentation, FunctionFactory::Case::Insensitive);
 }

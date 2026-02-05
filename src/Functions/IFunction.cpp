@@ -1,13 +1,13 @@
 #include <Functions/FunctionDynamicAdaptor.h>
+#include <Functions/FunctionVariantAdaptor.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
-#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/MaskOperations.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
@@ -18,7 +18,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
-#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -44,6 +43,7 @@ namespace Setting
 {
 extern const SettingsBool short_circuit_function_evaluation_for_nulls;
 extern const SettingsDouble short_circuit_function_evaluation_for_nulls_threshold;
+extern const SettingsBool use_variant_default_implementation_for_comparisons;
 }
 
 namespace ErrorCodes
@@ -245,19 +245,31 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return wrapInNullable(res, args, result_type, input_rows_count);
         }
 
-        auto result_null_map = ColumnUInt8::create(input_rows_count, 0);
-        auto & result_null_map_data = result_null_map->getData();
+        ColumnPtr result_null_map = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
         for (const auto & arg : args)
         {
             if (arg.type->isNullable() && !isColumnConst(*arg.column))
             {
-                const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    result_null_map_data[i] |= null_map[i];
+                if (result_null_map)
+                {
+                    MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                    auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                    const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                        result_null_map_data[i] |= null_map[i];
+                    result_null_map = std::move(mut);
+                }
+                else
+                {
+                    /// If only one arg is nullable, share its null map between the arg and the result.
+                    result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                }
             }
         }
 
-        size_t rows_with_nulls = countBytesInFilter(result_null_map_data.data(), 0, input_rows_count);
+        size_t rows_with_nulls = result_null_map ?
+            countBytesInFilter(assert_cast<const ColumnUInt8 &>(*result_null_map).getData().data(),
+                               0, input_rows_count) : 0;
         size_t rows_without_nulls = input_rows_count - rows_with_nulls;
         ProfileEvents::increment(ProfileEvents::DefaultImplementationForNullsRows, input_rows_count);
         ProfileEvents::increment(ProfileEvents::DefaultImplementationForNullsRowsWithNulls, rows_with_nulls);
@@ -268,7 +280,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
         }
 
-        double null_ratio = rows_with_nulls / static_cast<double>(result_null_map_data.size());
+        double null_ratio = static_cast<double>(rows_with_nulls) / static_cast<double>(input_rows_count);
         bool should_short_circuit
             = short_circuit_function_evaluation_for_nulls && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
 
@@ -288,6 +300,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
             /// Generate Filter
             IColumn::Filter filter_mask(input_rows_count);
+            const auto & result_null_map_data = assert_cast<const ColumnUInt8 &>(*result_null_map).getData();
             for (size_t i = 0; i < input_rows_count; ++i)
                 filter_mask[i] = !result_null_map_data[i];
 
@@ -363,6 +376,12 @@ static void convertSparseColumnsToFull(ColumnsWithTypeAndName & args)
         column.column = recursiveRemoveSparse(column.column);
 }
 
+static void convertReplicatedColumnsToFull(ColumnsWithTypeAndName & args)
+{
+    for (auto & column : args)
+        column.column = column.column->convertToFullColumnIfReplicated();
+}
+
 IExecutableFunction::IExecutableFunction()
 {
     if (CurrentThread::isInitialized())
@@ -406,9 +425,9 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             ColumnUniquePtr res_dictionary = std::move(res_mut_dictionary);
 
             if (indexes && !res_is_constant)
-                result = ColumnLowCardinality::create(res_dictionary, res_indexes->index(*indexes, 0));
+                result = ColumnLowCardinality::create(res_dictionary, res_indexes->index(*indexes, 0), /*is_shared=*/false);
             else
-                result = ColumnLowCardinality::create(res_dictionary, res_indexes);
+                result = ColumnLowCardinality::create(res_dictionary, res_indexes, /*is_shared=*/false);
 
             if (res_is_constant)
                 result = ColumnConst::create(std::move(result), input_rows_count);
@@ -430,6 +449,67 @@ ColumnPtr IExecutableFunction::execute(
 {
     checkFunctionArgumentSizes(arguments, input_rows_count);
 
+    if (useDefaultImplementationForReplicatedColumns())
+    {
+        /// If we have only constants and replicated columns with the same indexes
+        /// we can execute function on nested columns and create replicated column
+        /// from the result using common indexes.
+        ColumnPtr common_replicated_indexes;
+        bool has_full_columns = false;
+        size_t nested_column_size = 0;
+        for (const auto & argument : arguments)
+        {
+            if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(argument.column.get()))
+            {
+                if (!common_replicated_indexes)
+                {
+                    common_replicated_indexes = column_replicated->getIndexesColumn();
+                    nested_column_size = column_replicated->getNestedColumn()->size();
+                }
+                else if (common_replicated_indexes != column_replicated->getIndexesColumn())
+                {
+                    common_replicated_indexes.reset();
+                    break;
+                }
+            }
+            else if (!isColumnConst(*argument.column))
+            {
+                has_full_columns = true;
+                break;
+            }
+        }
+
+        auto arguments_without_replicated = arguments;
+        if (has_full_columns || !common_replicated_indexes)
+        {
+            convertReplicatedColumnsToFull(arguments_without_replicated);
+            return executeWithoutReplicatedColumns(arguments_without_replicated, result_type, input_rows_count, dry_run);
+        }
+
+        for (auto & argument : arguments_without_replicated)
+        {
+            /// Replace replicated columns to their nested columns.
+            if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(argument.column.get()))
+                argument.column = column_replicated->getNestedColumn();
+            /// Change size for constants.
+            else if (const auto * column_const = checkAndGetColumn<ColumnConst>(argument.column.get()))
+                argument.column = ColumnConst::create(column_const->getDataColumnPtr(), nested_column_size);
+        }
+
+        auto result = executeWithoutReplicatedColumns(arguments_without_replicated, result_type, nested_column_size, dry_run);
+
+        if (isLazyReplicationUseful(result))
+            return ColumnReplicated::create(result, common_replicated_indexes);
+
+        return result->index(*common_replicated_indexes, 0);
+    }
+
+    return executeWithoutReplicatedColumns(arguments, result_type, input_rows_count, dry_run);
+}
+
+ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+{
     bool use_default_implementation_for_sparse_columns = useDefaultImplementationForSparseColumns();
     /// DataTypeFunction does not support obtaining default (isDefaultAt())
     /// ColumnFunction does not support getting specific values.
@@ -602,6 +682,23 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
         }
     }
 
+    /// Use FunctionBaseVariantAdaptor if default implementation for Variant is enabled and we have Variant type in arguments.
+    if (useDefaultImplementationForVariant())
+    {
+        checkNumberOfArguments(arguments.size());
+
+        for (const auto & arg : arguments)
+        {
+            if (isVariant(arg.type))
+            {
+                DataTypes data_types(arguments.size());
+                for (size_t i = 0; i < arguments.size(); ++i)
+                    data_types[i] = arguments[i].type;
+                return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(data_types));
+            }
+        }
+    }
+
     auto return_type = getReturnType(arguments);
     return buildImpl(arguments, return_type);
 }
@@ -740,32 +837,58 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
 
         std::vector<llvm::Value *> is_null_values;
 
+        auto skip_arguments = getArgumentsThatDontParticipateInCompilation(arguments_types);
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             const auto & argument = arguments[i];
             llvm::Value * unwrapped_value = argument.value;
 
+            bool skip_compile = (std::find(skip_arguments.begin(), skip_arguments.end(), i) != skip_arguments.end());
             if (argument.type->isNullable())
             {
-                unwrapped_value = b.CreateExtractValue(argument.value, {0});
-                is_null_values.emplace_back(b.CreateExtractValue(argument.value, {1}));
+                unwrapped_value = skip_compile ? nullptr : b.CreateExtractValue(argument.value, {0});
+                is_null_values.emplace_back(skip_compile ? nullptr : b.CreateExtractValue(argument.value, {1}));
             }
 
             unwrapped_arguments.emplace_back(unwrapped_value, (*denulled_arguments_types)[i]);
         }
 
-        auto * result = compileImpl(builder, unwrapped_arguments, removeNullable(result_type));
-
-        auto * nullable_structure_type = toNativeType(b, makeNullable(getReturnTypeImpl(*denulled_arguments_types)));
+        auto unwrapped_return_type = getReturnTypeImpl(*denulled_arguments_types);
+        auto * result = compileImpl(builder, unwrapped_arguments, unwrapped_return_type);
+        auto * nullable_structure_type = toNativeType(b, makeNullable(unwrapped_return_type));
         auto * nullable_structure_value = llvm::Constant::getNullValue(nullable_structure_type);
 
-        auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result, {0});
-        auto * nullable_structure_result_null = b.CreateExtractValue(nullable_structure_with_result_value, {1});
+        if (!unwrapped_return_type->isNullable())
+        {
+            auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result, {0});
+            auto * nullable_structure_result_null = b.CreateExtractValue(nullable_structure_with_result_value, {1});
 
-        for (auto * is_null_value : is_null_values)
-            nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
+            for (auto * is_null_value : is_null_values)
+            {
+                if (is_null_value)
+                    nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
+            }
 
-        return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
+            return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
+        }
+        else
+        {
+            /// In case defaultImplementationForNulls returns a nullable structure, we need to merge the null values.
+            auto * result_value = b.CreateExtractValue(result, {0});
+            auto * result_is_null = b.CreateExtractValue(result, {1});
+
+            auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result_value, {0});
+            auto * nullable_structure_result_null = b.CreateExtractValue(nullable_structure_with_result_value, {1});
+
+            nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, result_is_null);
+            for (auto * is_null_value : is_null_values)
+            {
+                if (is_null_value)
+                    nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
+            }
+
+            return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
+        }
     }
 
     return compileImpl(builder, arguments, result_type);

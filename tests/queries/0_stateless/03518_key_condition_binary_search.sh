@@ -9,6 +9,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 readonly query_prefix=$CLICKHOUSE_DATABASE
 
+# Does additional index analysis round and affects profile events
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --automatic_parallel_replicas_mode 0"
+
 $CLICKHOUSE_CLIENT -n -q "
 DROP TABLE IF EXISTS t;
 CREATE TABLE t

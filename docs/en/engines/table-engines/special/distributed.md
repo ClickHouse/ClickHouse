@@ -6,7 +6,7 @@ description: 'Tables with Distributed engine do not store any data of their own,
 sidebar_label: 'Distributed'
 sidebar_position: 10
 slug: /engines/table-engines/special/distributed
-title: 'Distributed Table Engine'
+title: 'Distributed table engine'
 doc_type: 'reference'
 ---
 
@@ -235,4 +235,4 @@ Since [`remote`](../../../sql-reference/table-functions/remote.md) and [`cluster
 
 - [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns) description
 - [`background_distributed_schedule_pool_size`](/operations/server-configuration-parameters/settings#background_distributed_schedule_pool_size) setting
-- [`shardNum()`](../../../sql-reference/functions/other-functions.md#shardnum) and [`shardCount()`](../../../sql-reference/functions/other-functions.md#shardcount) functions
+- [`shardNum()`](../../../sql-reference/functions/other-functions.md#shardNum) and [`shardCount()`](../../../sql-reference/functions/other-functions.md#shardCount) functions

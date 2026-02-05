@@ -232,11 +232,11 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
             {
                 if (byte)
                 {
-                    nested_filter.push_back(0);
+                    nested_filter.push_back(static_cast<UInt8>(0));
                 }
                 else
                 {
-                    nested_filter.push_back(1);
+                    nested_filter.push_back(static_cast<UInt8>(1));
                     ++size_hint;
                 }
             }
@@ -318,7 +318,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         {
             /// Deserialize type and value from shared variant row.
             auto value = shared_variant.getDataAt(offsets[i]);
-            ReadBufferFromMemory buf(value.data, value.size);
+            ReadBufferFromMemory buf(value);
             auto type = decodeDataType(buf);
             auto type_name = type->getName();
 

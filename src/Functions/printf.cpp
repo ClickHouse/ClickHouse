@@ -30,7 +30,6 @@ namespace
 class FunctionPrintf : public IFunction
 {
 private:
-    ContextPtr context;
     FunctionOverloadResolverPtr function_concat;
 
     struct Instruction
@@ -104,7 +103,7 @@ private:
             size_t curr_offset = 0;
             for (size_t i = 0; i < concrete_column->size(); ++i)
             {
-                auto a = concrete_column->getDataAt(i).toView();
+                auto a = concrete_column->getDataAt(i);
                 s = fmt::sprintf(format, a);
 
                 res_chars.resize(curr_offset + s.size());
@@ -157,8 +156,9 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionPrintf>(context); }
 
-    explicit FunctionPrintf(ContextPtr context_)
-        : context(context_), function_concat(FunctionFactory::instance().get("concat", context)) { }
+    explicit FunctionPrintf(ContextPtr context)
+        : function_concat(FunctionFactory::instance().get("concat", context))
+    {}
 
     String getName() const override { return name; }
 
@@ -171,33 +171,18 @@ public:
     bool useDefaultImplementationForConstants() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be at least 1",
-                getName(),
-                arguments.size());
-
-        /// First pattern argument must have string type
-        if (!isString(arguments[0]))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The first argument type of function {} is {}, but String type is expected",
-                getName(),
-                arguments[0]->getName());
-
-        for (size_t i = 1; i < arguments.size(); ++i)
+        auto is_native_number_or_string = [](const IDataType & type)
         {
-            if (!isNativeNumber(arguments[i]) && !isStringOrFixedString(arguments[i]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The {}-th argument type of function {} is {}, but native numeric or string type is expected",
-                    i + 1,
-                    getName(),
-                    arguments[i]->getName());
-        }
+            return isNativeNumber(type) || isStringOrFixedString(type);
+        };
+
+        FunctionArgumentDescriptors mandatory_args{{"format", &isString, nullptr, "String"}};
+        FunctionArgumentDescriptor variadic_args{"sub", is_native_number_or_string, nullptr, "Native number or String"};
+
+        validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
+
         return std::make_shared<DataTypeString>();
     }
 
@@ -219,7 +204,7 @@ public:
             {
                 concat_args[i] = instruction.execute();
             }
-            catch (const fmt::v11::format_error & e)
+            catch (const fmt::v12::format_error & e)
             {
                 if (instruction.is_literal)
                     throw Exception(
@@ -366,7 +351,7 @@ Literal `%` character can be escaped by `%%`.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionPrintf>(documentation);
 }

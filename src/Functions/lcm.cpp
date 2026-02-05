@@ -5,7 +5,7 @@
 #include <boost/integer/common_factor.hpp>
 
 
-namespace
+namespace abs_impl
 {
 
 template <typename T>
@@ -15,7 +15,7 @@ constexpr T abs(T value) noexcept
     {
         if (value >= 0 || value == std::numeric_limits<T>::min())
             return value;
-        return -value;
+        return static_cast<T>(-value);
     }
     else
         return value;
@@ -49,8 +49,8 @@ struct LCMImpl : public GCDLCMImpl<A, B, LCMImpl<A, B>, NameLCM>
           * (example: throw an exception or overflow in implementation specific way).
           */
 
-        Unsigned val1 = abs<Int>(a) / boost::integer::gcd(Int(a), Int(b)); // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
-        Unsigned val2 = abs<Int>(b);
+        Unsigned val1 = abs_impl::abs<Int>(a) / boost::integer::gcd(Int(a), Int(b)); // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+        Unsigned val2 = abs_impl::abs<Int>(b);
 
         /// Overflow in implementation specific way.
         return ResultType(val1 * val2);
@@ -78,7 +78,7 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
     FunctionDocumentation::Examples example = {{"Usage example", "SELECT lcm(6, 8)", "24"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, categories};
 
     factory.registerFunction<FunctionLCM>(documentation);
 }

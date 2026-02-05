@@ -90,7 +90,7 @@ One use case of this function is reversing IPv4s:
     FunctionDocumentation::Examples examples = {example1, example2, example3, example4, example5};
     FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
     factory.registerFunction<FunctionByteSwap>(documentation,FunctionFactory::Case::Insensitive);
 }
 

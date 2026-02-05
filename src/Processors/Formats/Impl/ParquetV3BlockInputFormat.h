@@ -6,6 +6,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/ReadManager.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB
 {
@@ -32,6 +33,8 @@ public:
         return previous_approx_bytes_read_for_chunk;
     }
 
+    void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
+
 private:
     Chunk read() override;
 
@@ -42,6 +45,11 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
 
+    /// (This mutex is not important. It protects `reader.emplace` in a weird case where onCancel()
+    ///  may be called in parallel with first read(). ReadManager itself is thread safe for that,
+    ///  but initializing vs checking the std::optional would race without this mutex.)
+    std::mutex reader_mutex;
+
     std::optional<Parquet::ReadManager> reader;
     bool reported_count = false; // if need_only_count
 
@@ -49,6 +57,7 @@ private:
     size_t previous_approx_bytes_read_for_chunk = 0;
 
     void initializeIfNeeded();
+    std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
 };
 
 class NativeParquetSchemaReader : public ISchemaReader

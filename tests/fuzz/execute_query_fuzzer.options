@@ -1,3 +1,3 @@
 [libfuzzer]
+timeout = 20
 dict = all.dict
-jobs = 8

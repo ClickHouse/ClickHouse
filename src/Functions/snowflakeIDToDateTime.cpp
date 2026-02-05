@@ -3,12 +3,9 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -203,7 +200,7 @@ SELECT snowflakeIDToDateTime(7204436857747984384) AS res
     };
     FunctionDocumentation::IntroducedIn introduced_in_snowflakeIDToDateTime = {24, 6};
     FunctionDocumentation::Category category_snowflakeIDToDateTime = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_snowflakeIDToDateTime = {description_snowflakeIDToDateTime, syntax_snowflakeIDToDateTime, arguments_snowflakeIDToDateTime, returned_value_snowflakeIDToDateTime, examples_snowflakeIDToDateTime, introduced_in_snowflakeIDToDateTime, category_snowflakeIDToDateTime};
+    FunctionDocumentation documentation_snowflakeIDToDateTime = {description_snowflakeIDToDateTime, syntax_snowflakeIDToDateTime, arguments_snowflakeIDToDateTime, {}, returned_value_snowflakeIDToDateTime, examples_snowflakeIDToDateTime, introduced_in_snowflakeIDToDateTime, category_snowflakeIDToDateTime};
 
     factory.registerFunction<FunctionSnowflakeIDToDateTime>(documentation_snowflakeIDToDateTime);
 
@@ -233,7 +230,7 @@ SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
     };
     FunctionDocumentation::IntroducedIn introduced_in_snowflakeIDToDateTime64 = {24, 6};
     FunctionDocumentation::Category category_snowflakeIDToDateTime64 = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_snowflakeIDToDateTime64 = {description_snowflakeIDToDateTime64, syntax_snowflakeIDToDateTime64, arguments_snowflakeIDToDateTime64, returned_value_snowflakeIDToDateTime64, examples_snowflakeIDToDateTime64, introduced_in_snowflakeIDToDateTime64, category_snowflakeIDToDateTime64};
+    FunctionDocumentation documentation_snowflakeIDToDateTime64 = {description_snowflakeIDToDateTime64, syntax_snowflakeIDToDateTime64, arguments_snowflakeIDToDateTime64, {}, returned_value_snowflakeIDToDateTime64, examples_snowflakeIDToDateTime64, introduced_in_snowflakeIDToDateTime64, category_snowflakeIDToDateTime64};
 
     factory.registerFunction<FunctionSnowflakeIDToDateTime64>(documentation_snowflakeIDToDateTime64);
 }

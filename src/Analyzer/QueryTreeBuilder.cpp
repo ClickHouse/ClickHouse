@@ -305,6 +305,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsGroupByWithRollup(select_query_typed.group_by_with_rollup);
     current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
+    current_query_tree->setIsLimitByAll(select_query_typed.limit_by_all);
     /// order_by_all flag in AST is set w/o consideration of `enable_order_by_all` setting
     /// since SETTINGS section has not been parsed yet, - so, check the setting here
     if (enable_order_by_all)
@@ -627,7 +628,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
     else if (const auto * function = expression->as<ASTFunction>())
     {
-        if (function->is_lambda_function || isASTLambdaFunction(*function))
+        if (function->isLambdaFunction() || isASTLambdaFunction(*function))
         {
             const auto & lambda_arguments_and_expression = function->arguments->as<ASTExpressionList &>().children;
             auto & lambda_arguments_tuple = lambda_arguments_and_expression.at(0)->as<ASTFunction &>();
@@ -669,7 +670,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             const auto & lambda_expression = lambda_arguments_and_expression.at(1);
             auto lambda_expression_node = buildExpression(lambda_expression, context);
 
-            result = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node));
+            result = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node), function->isOperator());
         }
         else
         {
@@ -684,7 +685,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             else
             {
                 auto function_node = std::make_shared<FunctionNode>(function->name);
-                function_node->setNullsAction(function->nulls_action);
+                function_node->setNullsAction(function->getNullsAction());
+                function_node->markAsOperator(function->isOperator());
 
                 if (function->parameters)
                 {
@@ -700,7 +702,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                         function_node->getArguments().getNodes().push_back(buildExpression(argument, context));
                 }
 
-                if (function->is_window_function)
+                if (function->isWindowFunction())
                 {
                     if (function->window_definition)
                         function_node->getWindowNode() = buildWindow(function->window_definition, context);
@@ -1185,12 +1187,12 @@ QueryTreeNodePtr QueryTreeBuilder::setSecondArgumentAsParameter(const ASTFunctio
     ASTPtr first_arg = function->arguments->children[0]->clone();
 
     auto function_node = std::make_shared<FunctionNode>(function->name);
-    function_node->setNullsAction(function->nulls_action);
+    function_node->setNullsAction(function->getNullsAction());
 
     function_node->getParameters().getNodes().push_back(buildExpression(function->arguments->children[1], context)); // Separator
     function_node->getArguments().getNodes().push_back(buildExpression(first_arg, context)); // Column to concatenate
 
-    if (function->is_window_function)
+    if (function->isWindowFunction())
     {
         if (function->window_definition)
             function_node->getWindowNode() = buildWindow(function->window_definition, context);

@@ -8,16 +8,15 @@
 #include <IO/Archives/IArchiveWriter.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/createArchiveWriter.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/TemporaryFile.h>
 #include <Common/Exception.h>
+#include <Common/getRandomASCIIString.h>
+#include <Common/thread_local_rng.h>
 
 
 namespace DB::ErrorCodes
@@ -556,6 +555,163 @@ TEST(TarArchiveReaderTest, CheckFileInfo)
     EXPECT_EQ(info.uncompressed_size, contents.size());
     EXPECT_GT(info.compressed_size, 0);
     fs::remove(archive_path);
+}
+
+TEST(TarArchiveReaderAndWriterTest, BufferSizeLimitExceededUnknownContentsSize)
+{
+    thread_local_rng.seed(42);
+
+    String archive_path = "archive.tar";
+    String file_path = "a.txt";
+    std::string contents = getRandomASCIIString(1025);
+    {
+        auto writer = createArchiveWriter(
+            archive_path,
+            /*archive_write_buffer_*/ nullptr,
+            /*buf_size_*/ 1024,
+            /*adaptive_buffer_max_size_*/ 1024);
+        {
+            auto out = writer->writeFile(file_path);
+            EXPECT_THROW(writeString(contents, *out), DB::Exception);
+        }
+        writer->finalize();
+    }
+}
+
+TEST(TarArchiveReaderAndWriterTest, SmallBufferContentsSizeSet)
+{
+    thread_local_rng.seed(42);
+
+    String archive_path = "archive.tar";
+    String file_path = "a.txt";
+    std::string contents = getRandomASCIIString(1025);
+    {
+        auto writer = createArchiveWriter(
+            archive_path,
+            /*archive_write_buffer_*/ nullptr,
+            /*buf_size_*/ 1024,
+            /*adaptive_buffer_max_size_*/ 1024);
+        {
+            auto out = writer->writeFile(file_path, contents.size());
+            writeString(contents, *out);
+            out->finalize();
+        }
+        writer->finalize();
+    }
+    auto reader = createArchiveReader(archive_path);
+
+    ASSERT_TRUE(reader->fileExists(file_path));
+
+    auto file_info = reader->getFileInfo(file_path);
+    EXPECT_EQ(file_info.uncompressed_size, contents.size());
+    {
+        auto in = reader->readFile(file_path, /*throw_on_not_found=*/true);
+        String str;
+        readStringUntilEOF(str, *in);
+        EXPECT_EQ(str, contents);
+    }
+}
+
+TEST(TarArchiveReaderAndWriterTest, AdaptiveBuffer)
+{
+    thread_local_rng.seed(42);
+
+    String archive_path = "archive.tar";
+    String file_path = "a.txt";
+    std::string contents = getRandomASCIIString(2049);
+    {
+        auto writer = createArchiveWriter(
+            archive_path,
+            /*archive_write_buffer_*/ nullptr,
+            /*buf_size_*/ 1024,
+            /*adaptive_buffer_max_size_*/ 4096);
+        {
+            auto out = writer->writeFile(file_path);
+            writeString(contents, *out);
+            out->finalize();
+        }
+        writer->finalize();
+    }
+    auto reader = createArchiveReader(archive_path);
+
+    ASSERT_TRUE(reader->fileExists(file_path));
+
+    auto file_info = reader->getFileInfo(file_path);
+    EXPECT_EQ(file_info.uncompressed_size, contents.size());
+    {
+        auto in = reader->readFile(file_path, /*throw_on_not_found=*/true);
+        String str;
+        readStringUntilEOF(str, *in);
+        EXPECT_EQ(str, contents);
+    }
+}
+
+TEST(TarArchiveReaderAndWriterTest, AdaptiveBufferPowerOfTwoSize)
+{
+    thread_local_rng.seed(42);
+
+    String archive_path = "archive.tar";
+    String file_path = "a.txt";
+    std::string contents = getRandomASCIIString(2048);
+    {
+        auto writer = createArchiveWriter(
+            archive_path,
+            /*archive_write_buffer_*/ nullptr,
+            /*buf_size_*/ 1024,
+            /*adaptive_buffer_max_size_*/ 4096);
+        {
+            auto out = writer->writeFile(file_path);
+            writeString(contents, *out);
+            out->finalize();
+        }
+        writer->finalize();
+    }
+    auto reader = createArchiveReader(archive_path);
+
+    ASSERT_TRUE(reader->fileExists(file_path));
+
+    auto file_info = reader->getFileInfo(file_path);
+    EXPECT_EQ(file_info.uncompressed_size, contents.size());
+    {
+        auto in = reader->readFile(file_path, /*throw_on_not_found=*/true);
+        String str;
+        readStringUntilEOF(str, *in);
+        EXPECT_EQ(str, contents);
+    }
+}
+
+TEST(TarArchiveReaderAndWriterTest, AdaptiveBufferMaxCapacity)
+{
+    thread_local_rng.seed(42);
+
+    String archive_path = "archive.tar";
+    String file_path = "a.txt";
+    std::string contents = getRandomASCIIString(4096);
+    {
+        auto writer = createArchiveWriter(
+            archive_path,
+            /*archive_write_buffer_*/ nullptr,
+            /*buf_size_*/ 1024,
+            /*adaptive_buffer_max_size_*/ 4096);
+        {
+            auto out = writer->writeFile(file_path);
+            writeString(contents, *out);
+            out->finalize();
+        }
+        writer->finalize();
+    }
+    auto reader = createArchiveReader(archive_path);
+
+    ASSERT_TRUE(reader->fileExists(file_path));
+
+    auto file_info = reader->getFileInfo(file_path);
+    EXPECT_EQ(file_info.uncompressed_size, contents.size());
+    {
+        auto in = reader->readFile(file_path, /*throw_on_not_found=*/true);
+        String str;
+        readStringUntilEOF(str, *in);
+        EXPECT_EQ(str, contents);
+    }
 }
 
 TEST(SevenZipArchiveReaderTest, FileExists)

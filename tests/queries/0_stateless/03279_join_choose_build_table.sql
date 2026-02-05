@@ -1,10 +1,8 @@
-
+SET use_statistics = 0;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;
 
 SET enable_analyzer = 1;
--- Force using skip indexes in planning to make test deterministic with `query_plan_join_swap_table` setting.
-SET use_skip_indexes_on_data_read = 0;
 
 CREATE TABLE sales (
     id Int32,
@@ -21,6 +19,7 @@ INSERT INTO products SELECT number, 'product ' || toString(number) FROM numbers(
 
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_limit = 2;
+SET enable_join_runtime_filters = 0;
 
 SELECT * FROM products, sales
 WHERE sales.product_id = products.id AND date = '2024-05-07'

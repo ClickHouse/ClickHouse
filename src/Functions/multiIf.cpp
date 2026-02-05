@@ -361,7 +361,7 @@ private:
     template <typename S>
     static NO_INLINE void calculateInserts(const std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
     {
-        for (S i = instructions.size() - 1; i != static_cast<S>(-1); --i)
+        for (S i = static_cast<S>(instructions.size() - 1); i != static_cast<S>(-1); --i)
         {
             const auto & instruction = instructions[i];
             if (instruction.condition_always_true)
@@ -584,7 +584,7 @@ FROM LEFT_RIGHT;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiIf>(documentation);
 

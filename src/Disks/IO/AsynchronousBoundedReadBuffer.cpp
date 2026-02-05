@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
@@ -416,6 +417,14 @@ void AsynchronousBoundedReadBuffer::resetPrefetch(FilesystemPrefetchState state)
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of prefetch: {}", magic_enum::enum_name(state));
     }
+}
+
+size_t AsynchronousBoundedReadBuffer::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const
+{
+    if (impl->supportsReadAt())
+        return impl->readBigAt(to, n, range_begin, progress_callback);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() is not implemented for a given implementation");
 }
 
 }

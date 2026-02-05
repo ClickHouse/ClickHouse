@@ -37,9 +37,9 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreePartCheckThread)")
     , log(getLogger(log_name))
+    , pausable_task(storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this] { run(); }))
 {
-    task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
-    task->schedule();
+    getTask()->deactivate();
 }
 
 ReplicatedMergeTreePartCheckThread::~ReplicatedMergeTreePartCheckThread()
@@ -51,7 +51,7 @@ void ReplicatedMergeTreePartCheckThread::start()
 {
     std::lock_guard lock(start_stop_mutex);
     need_stop = false;
-    task->activateAndSchedule();
+    getTask()->activateAndSchedule();
 }
 
 void ReplicatedMergeTreePartCheckThread::stop()
@@ -61,7 +61,7 @@ void ReplicatedMergeTreePartCheckThread::stop()
 
     std::lock_guard lock(start_stop_mutex);
     need_stop = true;
-    task->deactivate();
+    getTask()->deactivate();
 }
 
 void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds)
@@ -74,13 +74,17 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     LOG_TRACE(log, "Enqueueing {} for check after {}s", name, delay_to_check_seconds);
     parts_queue.emplace_back(name, std::chrono::steady_clock::now() + std::chrono::seconds(delay_to_check_seconds));
     parts_set.insert(name);
-    task->schedule();
+    getTask()->schedule();
 }
 
-std::unique_lock<std::mutex> ReplicatedMergeTreePartCheckThread::pausePartsCheck()
+BackgroundSchedulePoolTaskHolder & ReplicatedMergeTreePartCheckThread::getTask()
 {
-    /// Wait for running tasks to finish and temporarily stop checking
-    return task->getExecLock();
+    return pausable_task.getTask();
+}
+
+BackgroundSchedulePoolPausableTask::PauseHolderPtr ReplicatedMergeTreePartCheckThread::temporaryPause()
+{
+    return pausable_task.pause();
 }
 
 void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info)
@@ -566,7 +570,8 @@ void ReplicatedMergeTreePartCheckThread::run()
         const auto current_time = std::chrono::steady_clock::now();
 
         /// Take part from the queue for verification.
-        PartsToCheckQueue::iterator selected = parts_queue.end();    /// end from std::list is not get invalidated
+        PartToCheck selected;
+        PartsToCheckQueue::iterator selected_it = parts_queue.end();  /// end from std::list is not getting invalidated
 
         {
             std::lock_guard lock(parts_mutex);
@@ -577,31 +582,33 @@ void ReplicatedMergeTreePartCheckThread::run()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty parts_set with empty parts_queue. This is a bug.");
             }
 
-            selected = std::find_if(parts_queue.begin(), parts_queue.end(), [current_time](const auto & elem)
+            selected_it = std::ranges::find_if(parts_queue, [current_time](const auto & elem)
             {
                 return elem.time <= current_time;
             });
-            if (selected == parts_queue.end())
+
+            if (selected_it == parts_queue.end())
             {
                 // Find next part to check in the queue and schedule the check
                 // Otherwise, scheduled for later checks won't be executed until
                 // a new check is enqueued (i.e. task is scheduled again)
                 auto next_it = std::min_element(
-                    begin(parts_queue), end(parts_queue), [](const auto & l, const auto & r) { return l.time < r.time; });
+                    parts_queue.begin(), parts_queue.end(), [](const auto & l, const auto & r) { return l.time < r.time; });
                 if (next_it != parts_queue.end())
                 {
                     auto delay = next_it->time - current_time;
-                    task->scheduleAfter(duration_cast<std::chrono::milliseconds>(delay).count());
+                    getTask()->scheduleAfter(duration_cast<std::chrono::milliseconds>(delay).count());
                 }
                 return;
             }
 
             /// Move selected part to the end of the queue
-            parts_queue.splice(parts_queue.end(), parts_queue, selected);
+            parts_queue.splice(parts_queue.end(), parts_queue, selected_it);
+            selected = *selected_it;
         }
 
         std::optional<time_t> recheck_after;
-        checkPartAndFix(selected->name, &recheck_after, /* throw_on_broken_projection */false);
+        checkPartAndFix(selected.name, &recheck_after, /* throw_on_broken_projection */false);
 
         if (need_stop)
             return;
@@ -616,19 +623,22 @@ void ReplicatedMergeTreePartCheckThread::run()
             }
             if (recheck_after.has_value())
             {
-                LOG_TRACE(log, "Will recheck part {} after after {}s", selected->name, *recheck_after);
-                selected->time = std::chrono::steady_clock::now() + std::chrono::seconds(*recheck_after);
+                LOG_TRACE(log, "Will recheck part {} after after {}s", selected.name, *recheck_after);
+                chassert(parts_set.contains(selected.name));
+                selected_it->time = std::chrono::steady_clock::now() + std::chrono::seconds(*recheck_after);
             }
             else
             {
-                parts_set.erase(selected->name);
-                parts_queue.erase(selected);
+                /// we rely on the fact that parts_set and parts_queue are in sync
+                if (!parts_set.erase(selected.name))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Someone erased part to check {} from parts_set. This is a bug.", selected.name);
+                parts_queue.erase(selected_it);
             }
         }
 
         storage.checkBrokenDisks();
 
-        task->schedule();
+        getTask()->schedule();
     }
     catch (const Coordination::Exception & e)
     {
@@ -637,12 +647,12 @@ void ReplicatedMergeTreePartCheckThread::run()
         if (Coordination::isHardwareError(e.code))
             return;
 
-        task->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
+        getTask()->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
     }
     catch (...)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
-        task->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
+        getTask()->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
     }
 }
 

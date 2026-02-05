@@ -32,9 +32,9 @@ StoragePtr TableFunctionArrowFlight::executeImpl(
         context);
 }
 
-ColumnsDescription TableFunctionArrowFlight::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionArrowFlight::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    return StorageArrowFlight::getTableStructureFromData(connection, config.dataset_name);
+    return StorageArrowFlight::getTableStructureFromData(connection, config.dataset_name, context);
 }
 
 void TableFunctionArrowFlight::parseArguments(const ASTPtr & ast_function, ContextPtr context)

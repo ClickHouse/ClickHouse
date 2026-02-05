@@ -33,7 +33,6 @@
 #include <memory>
 #include <variant>
 #include <optional>
-#include <numeric>
 
 
 /** This dictionary stores all content in a hash table in memory
@@ -76,7 +75,7 @@ class HashedDictionary final : public IDictionary
     friend class HashedDictionaryParallelLoader<dictionary_key_type, HashedDictionary<dictionary_key_type, sparse, sharded>>;
 
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
 
     HashedDictionary(
         const StorageID & dict_id_,
@@ -107,14 +106,14 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
     }
 
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
+    double getLoadFactor() const override { return static_cast<double>(element_count) / static_cast<double>(bucket_count); }
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
@@ -204,7 +203,7 @@ private:
             CollectionsHolder<UUID>,
             CollectionsHolder<IPv4>,
             CollectionsHolder<IPv6>,
-            CollectionsHolder<StringRef>,
+            CollectionsHolder<std::string_view>,
             CollectionsHolder<Array>>
             containers;
     };
@@ -230,11 +229,11 @@ private:
         return intHashCRC32(key) % configuration.shards;
     }
 
-    UInt64 getShard(StringRef key) const
+    UInt64 getShard(std::string_view key) const
     {
         if constexpr (!sharded)
             return 0;
-        return StringRefHash()(key) % configuration.shards;
+        return StringViewHash()(key) % configuration.shards;
     }
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
@@ -335,7 +334,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
 
         if (!pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
             {
-                ThreadGroupSwitcher switcher(thread_group, "HashedDictDtor");
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_DTOR);
 
                 /// Do not account memory that was occupied by the dictionaries for the query/user context.
                 MemoryTrackerBlockerInThread memory_blocker;
@@ -436,7 +435,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                     [&](size_t) { out->insertDefault(); },
                     default_mask);
             }
-            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 auto * out = column.get();
 
@@ -445,10 +444,10 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                     getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         extractor,
-                        [&](size_t row, StringRef value)
+                        [&](size_t row, std::string_view value)
                         {
                             (*vec_null_map_to)[row] = false;
-                            out->insertData(value.data, value.size);
+                            out->insertData(value.data(), value.size());
                         },
                         [&](size_t row)
                         {
@@ -461,7 +460,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                     getItemsShortCircuitImpl<ValueType, false>(
                         attribute,
                         extractor,
-                        [&](size_t, StringRef value) { out->insertData(value.data, value.size); },
+                        [&](size_t, std::string_view value) { out->insertData(value.data(), value.size()); },
                         [&](size_t) { out->insertDefault(); },
                         default_mask);
             }
@@ -502,7 +501,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                     [&](const size_t, const Array & value, bool) { out->insert(value); },
                     default_value_extractor);
             }
-            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 auto * out = column.get();
 
@@ -510,17 +509,17 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                     getItemsImpl<ValueType, true>(
                         attribute,
                         extractor,
-                        [&](size_t row, StringRef value, bool is_null)
+                        [&](size_t row, std::string_view value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insertData(value.data, value.size);
+                            out->insertData(value.data(), value.size());
                         },
                         default_value_extractor);
                 else
                     getItemsImpl<ValueType, false>(
                         attribute,
                         extractor,
-                        [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
+                        [&](size_t, std::string_view value, bool) { out->insertData(value.data(), value.size()); },
                         default_value_extractor);
             }
             else
@@ -875,41 +874,44 @@ template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
 {
     /// NOTE: updateData() does not preallocation since it may increase memory usage.
+    BlockIO io = source_ptr->loadUpdatedAll();
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
-        Block block;
 
-        while (executor.pull(block))
+        io.executeWithCallbacks([&]()
         {
-            if (!block.rows())
-                continue;
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
 
-            convertToFullIfSparse(block);
-
-            /// We are using this to keep saved data if input stream consists of multiple blocks
-            if (!update_field_loaded_block)
-                update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
-
-            for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
+            Block block;
+            while (executor.pull(block))
             {
-                const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
-                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
-                saved_column->insertRangeFrom(update_column, 0, update_column.size());
+                if (!block.rows())
+                    continue;
+
+                removeSpecialColumnRepresentations(block);
+
+                /// We are using this to keep saved data if input stream consists of multiple blocks
+                if (!update_field_loaded_block)
+                    update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
+
+                for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
+                {
+                    const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
+                    MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
+                    saved_column->insertRangeFrom(update_column, 0, update_column.size());
+                }
             }
-        }
+        });
     }
     else
     {
-        auto pipe = source_ptr->loadUpdatedAll();
         update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<dictionary_key_type>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(pipe)));
+            std::move(io)));
     }
 
     if (update_field_loaded_block)
@@ -946,7 +948,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(c
         {
             auto key = keys_extractor.extractCurrentKey();
 
-            if constexpr (std::is_same_v<KeyType, StringRef>)
+            if constexpr (std::is_same_v<KeyType, std::string_view>)
                 key = copyStringInArena(*string_arenas[shard], key);
 
             no_attributes_containers[shard].insert(key);
@@ -986,7 +988,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(c
                     continue;
                 }
 
-                if constexpr (std::is_same_v<KeyType, StringRef>)
+                if constexpr (std::is_same_v<KeyType, std::string_view>)
                     key = copyStringInArena(*string_arenas[shard], key);
 
                 attribute_column.get(key_index, column_value_to_insert);
@@ -999,10 +1001,10 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(c
                     continue;
                 }
 
-                if constexpr (std::is_same_v<AttributeValueType, StringRef>)
+                if constexpr (std::is_same_v<AttributeValueType, std::string_view>)
                 {
                     String & value_to_insert = column_value_to_insert.safeGet<String>();
-                    StringRef arena_value = copyStringInArena(*string_arenas[shard], value_to_insert);
+                    std::string_view arena_value = copyStringInArena(*string_arenas[shard], value_to_insert);
                     container.insert({key, arena_value});
                 }
                 else
@@ -1157,21 +1159,24 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
         if constexpr (sharded)
             parallel_loader.emplace(*this);
 
-        QueryPipeline pipeline(source_ptr->loadAll());
+        BlockIO io = source_ptr->loadAll();
 
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
-        Block block;
         DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-
-        while (executor.pull(block))
+        io.executeWithCallbacks([&]()
         {
-            resize(block.rows());
-            if (parallel_loader)
-                parallel_loader->addBlock(block);
-            else
-                blockToAttributes(block, arena_holder, /* shard= */ 0);
-        }
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
+            Block block;
+            while (executor.pull(block))
+            {
+                resize(block.rows());
+                if (parallel_loader)
+                    parallel_loader->addBlock(block);
+                else
+                    blockToAttributes(block, arena_holder, /* shard= */ 0);
+            }
+        });
 
         if (parallel_loader)
             parallel_loader->finish();

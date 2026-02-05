@@ -98,6 +98,8 @@ public:
 
     virtual void reportBroken() = 0;
 
+    virtual size_t getRowCount() const = 0;
+
     virtual void setReadHints(const RangesInDataPartReadHints & /*read_hints_*/, const NamesAndTypesList & /*read_columns*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setReadHints not implemented for this reader");

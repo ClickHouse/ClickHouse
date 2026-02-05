@@ -18,6 +18,7 @@ namespace DB
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
 }
@@ -97,7 +98,8 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     ttl_table = formattedASTNormalized(metadata_snapshot->getTableTTLs().definition_ast);
 
-    skip_indices = metadata_snapshot->getSecondaryIndices().toString();
+    /// We only store skip indices that are explicitly defined by user
+    skip_indices = metadata_snapshot->getSecondaryIndices().explicitToString();
 
     projections = metadata_snapshot->getProjections().toString();
 
@@ -369,11 +371,18 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
         is_equal = false;
     }
 
-    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, context).toString();
+    constexpr bool escape_index_filenames = true; /// It doesn't matter here, as we compare parsed strings
+    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context).explicitToString();
     if (skip_indices != parsed_zk_skip_indices)
     {
-        handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, strict_check, logger);
-        is_equal = false;
+        String all_parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context).allToString();
+        // Backward compatibility: older replicas included implicit indices in metadata,
+        // while newer ones exclude them. This check allows comparison between both formats.
+        if (skip_indices != all_parsed_zk_skip_indices)
+        {
+            handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, strict_check, logger);
+            is_equal = false;
+        }
     }
 
     String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, context).toString();
@@ -467,7 +476,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
                 order_by_ast = new_sorting_key_expr_list->children[0];
             else
             {
-                auto tuple = makeASTFunction("tuple");
+                auto tuple = makeASTOperator("tuple");
                 tuple->arguments->children = new_sorting_key_expr_list->children;
                 order_by_ast = tuple;
             }
@@ -504,7 +513,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         }
 
         if (skip_indices_changed)
-            new_metadata.secondary_indices = IndicesDescription::parse(new_skip_indices, new_columns, context);
+            new_metadata.secondary_indices = IndicesDescription::parse(new_skip_indices, new_columns, new_metadata.escape_index_filenames, context);
 
         if (constraints_changed)
             new_metadata.constraints = ConstraintsDescription::parse(new_constraints);

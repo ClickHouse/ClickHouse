@@ -26,7 +26,7 @@ Block getIndexBlockAndPermute(const Block & block, const Names & names, const IC
     for (size_t i = 0, size = names.size(); i < size; ++i)
     {
         auto src_column = block.getColumnOrSubcolumnByName(names[i]);
-        src_column.column = recursiveRemoveSparse(src_column.column);
+        src_column.column = removeSpecialRepresentations(src_column.column);
         src_column.column = src_column.column->convertToFullColumnIfConst();
         result.insert(i, src_column);
 

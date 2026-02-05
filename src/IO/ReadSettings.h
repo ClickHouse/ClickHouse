@@ -5,7 +5,7 @@
 #include <IO/DistributedCacheSettings.h>
 #include <IO/ReadMethod.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
-#include <Interpreters/Cache/UserInfo.h>
+#include <Interpreters/Cache/FileCacheOriginInfo.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/IThrottler.h>
@@ -42,8 +42,6 @@ struct ReadSettings
 
     /// For 'pread_threadpool'/'io_uring' method. Lower value is higher priority.
     Priority priority;
-
-    bool load_marks_asynchronously = true;
 
     size_t remote_fs_read_max_backoff_ms = 10000;
     size_t remote_fs_read_backoff_max_tries = 4;
@@ -91,11 +89,11 @@ struct ReadSettings
 
     bool read_through_distributed_cache = false;
     DistributedCacheSettings distributed_cache_settings;
-    std::optional<FileCacheUserInfo> filecache_user_info;
+    std::optional<FileCacheOriginInfo> filecache_origin_info;
     bool enable_hdfs_pread = true;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
-    ReadSettings withNestedBuffer() const;
+    ReadSettings withNestedBuffer(bool seekable = false) const;
 };
 
 ReadSettings getReadSettings();

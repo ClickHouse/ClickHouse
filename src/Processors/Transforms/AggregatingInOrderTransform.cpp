@@ -82,8 +82,6 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         is_consume_started = true;
     }
 
-    if (rows_before_aggregation)
-        rows_before_aggregation->add(rows);
     src_rows += rows;
     src_bytes += chunk.bytes();
 
@@ -190,6 +188,8 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
                         = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
                 cur_block_bytes += current_memory_usage;
                 finalizeCurrentChunk(std::move(chunk), key_end);
+                if (rows_before_aggregation)
+                    rows_before_aggregation->add(key_end);
                 return;
             }
 
@@ -200,6 +200,9 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
         key_begin = key_end;
     }
+
+    if (rows_before_aggregation)
+        rows_before_aggregation->add(rows);
 
     cur_block_bytes += current_memory_usage;
     block_end_reached = false;
@@ -285,7 +288,7 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
 
     chassert(!is_consume_finished);
     current_chunk = input.pull(true /* set_not_needed */);
-    convertToFullIfSparse(current_chunk);
+    removeSpecialColumnRepresentations(current_chunk);
     return Status::Ready;
 }
 

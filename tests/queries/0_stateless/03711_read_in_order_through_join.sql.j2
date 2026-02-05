@@ -1,0 +1,171 @@
+-- Tags: no-parallel-replicas
+-- Assetions on reading do not hold with parallel replicas
+
+DROP TABLE IF EXISTS events;
+CREATE TABLE events ( Time DateTime, Id String ) ENGINE = MergeTree ORDER BY Time
+SETTINGS index_granularity = 8192;
+INSERT INTO events SELECT toDateTime('2024-01-01 00:00:00') + INTERVAL number SECONDS AS Time, toString(number) AS Id FROM numbers(500_000);
+INSERT INTO events SELECT toDateTime('2024-02-02 00:00:00') + INTERVAL number SECONDS AS Time, toString(number) AS Id FROM numbers(30);
+
+DROP TABLE IF EXISTS payloads;
+CREATE TABLE payloads ( Payload String, Id String ) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO payloads SELECT concat('Payload for event ', toString(number)) AS Payload, toString(number) AS Id FROM numbers(30)
+WHERE number % 4 = 0
+;
+
+DROP TABLE IF EXISTS payloads2;
+CREATE TABLE payloads2 ( Payload2 String, Id String ) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO payloads2 SELECT concat('Second payload for event ', toString(number)) AS Payload2, toString(number) AS Id FROM numbers(30)
+WHERE number % 6 = 0
+;
+
+SET enable_analyzer = 1;
+SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1;
+SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
+SET read_in_order_use_virtual_row = 1;
+SET query_plan_optimize_join_order_limit = 1;
+SET optimize_aggregation_in_order = 1;
+SET query_plan_join_swap_table = 0;
+
+SET read_in_order_two_level_merge_threshold = DEFAULT;
+
+CREATE TEMPORARY TABLE start_ts AS ( SELECT now() AS ts );
+
+SET join_use_nulls = 1;
+
+{% for join_algorithm in ["'hash'", "'parallel_hash'", "DEFAULT"] -%}
+{% for join_kind in ["LEFT", "INNER"] -%}
+
+SET join_algorithm = {{ join_algorithm }};
+
+SELECT groupArray(trim(explain)) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT events.Time, events.Id, payloads.Payload
+    FROM events
+    {{ join_kind }} JOIN payloads
+    ON events.Id = payloads.Id
+    ORDER BY events.Time
+    LIMIT 3
+) WHERE explain like '%ReadType%'
+;
+
+SELECT events.Time, events.Id, payloads.Payload
+FROM events
+{{ join_kind }} JOIN payloads
+ON events.Id = payloads.Id
+ORDER BY events.Time
+LIMIT 3
+SETTINGS log_comment = '03711_read_in_order_through_join',
+    max_block_size = DEFAULT -- make assertion on read rows stable
+;
+
+-- Two joins and reverse order
+
+SELECT groupArray(trim(explain)) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT events.Time, events.Id, payloads.Payload, payloads2.Payload2
+    FROM events
+    {{ join_kind }} JOIN payloads
+    ON events.Id = payloads.Id
+    {{ join_kind }} JOIN payloads2
+    ON events.Id = payloads2.Id
+    ORDER BY toUnixTimestamp(events.Time) DESC
+    LIMIT 3
+) WHERE explain like '%ReadType%'
+;
+
+SELECT events.Time, events.Id, payloads.Payload, payloads2.Payload2
+FROM events
+{{ join_kind }} JOIN payloads
+ON events.Id = payloads.Id
+{{ join_kind }} JOIN payloads2
+ON events.Id = payloads2.Id
+ORDER BY toUnixTimestamp(events.Time) DESC
+LIMIT 3
+SETTINGS
+{% if join_kind == 'LEFT' %}
+-- TODO (vdimir@): for some reason INNER join in reverse order reads all rows in this tests
+log_comment = '03711_read_in_order_through_join',
+{% endif %}
+    max_block_size = DEFAULT -- make assertion on read rows stable
+;
+
+-- Aggregation:
+
+SELECT groupArray(trim(explain)) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT toStartOfHour(events.Time) t, sum(length(payloads2.Payload2)), sum(length(payloads.Payload)), count(), countIf(payloads2.Payload2 IS NOT NULL)
+    FROM events
+    {{ join_kind }} JOIN payloads
+    ON events.Id = payloads.Id
+    {{ join_kind }} JOIN payloads2
+    ON events.Id = payloads2.Id
+    GROUP BY t
+    ORDER BY t DESC
+    LIMIT 3
+) WHERE explain like '%ReadType%'
+;
+
+SELECT toStartOfHour(events.Time) t, sum(length(payloads2.Payload2)), sum(length(payloads.Payload)), count(), countIf(payloads2.Payload2 IS NOT NULL)
+FROM events
+{{ join_kind }} JOIN payloads
+ON events.Id = payloads.Id
+{{ join_kind }} JOIN payloads2
+ON events.Id = payloads2.Id
+GROUP BY t
+ORDER BY t
+LIMIT 3
+;
+
+
+{% endfor -%}
+{% endfor -%}
+
+SELECT events.Time, events.Id, payloads.Payload
+FROM events
+RIGHT JOIN payloads
+ON events.Id = payloads.Id
+ORDER BY events.Time
+LIMIT 3
+SETTINGS log_comment = '03711_read_in_order_through_join_no_optimize'
+;
+
+SELECT events.Time, events.Id, payloads.Payload
+FROM events
+JOIN payloads
+ON events.Id = payloads.Id
+ORDER BY events.Time
+LIMIT 3
+SETTINGS read_in_order_use_virtual_row = 0,
+    log_comment = '03711_read_in_order_through_join_no_optimize'
+;
+
+SYSTEM FLUSH LOGS system.query_log;
+
+SELECT '--';
+
+SELECT
+    if(read_rows < 100_000, 'OK', format('Fail: {} rows read, query_id="{}"', read_rows, query_id)) as status
+FROM system.query_log
+WHERE type = 'QueryFinish'
+    AND log_comment == '03711_read_in_order_through_join'
+    AND current_database = currentDatabase()
+    AND event_time >= (SELECT ts FROM start_ts)
+    AND event_time >= yesterday()
+    AND current_database = currentDatabase()
+    AND query_kind = 'Select'
+;
+
+SELECT '--';
+
+SELECT
+    if(read_rows >= 500_000, 'OK', format('Fail: {} rows read, query_id="{}"', read_rows, query_id)) as status
+FROM system.query_log
+WHERE type = 'QueryFinish'
+    AND log_comment == '03711_read_in_order_through_join_no_optimize'
+    AND current_database = currentDatabase()
+    AND event_time >= (SELECT ts FROM start_ts)
+    AND event_time >= yesterday()
+    AND current_database = currentDatabase()
+    AND query_kind = 'Select'
+;

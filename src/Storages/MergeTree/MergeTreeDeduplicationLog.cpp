@@ -1,14 +1,16 @@
-#include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
 #include <filesystem>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/join.hpp>
-#include <boost/algorithm/string/trim.hpp>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/WriteBufferFromFileBase.h>
-#include <Disks/WriteMode.h>
 #include <Disks/IDisk.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/WriteMode.h>
+#include <Disks/supportWritingWithAppend.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/WriteHelpers.h>
+#include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
+#include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 #include <Common/Exception.h>
 
@@ -82,16 +84,14 @@ size_t getLogNumber(const std::string & path_str)
 }
 
 MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
-    const std::string & logs_dir_,
-    size_t deduplication_window_,
-    const MergeTreeDataFormatVersion & format_version_,
-    DiskPtr disk_)
+    const std::string & logs_dir_, size_t deduplication_window_, const MergeTreeDataFormatVersion & format_version_, DiskPtr disk_)
     : logs_dir(logs_dir_)
     , deduplication_window(deduplication_window_)
     , rotate_interval(deduplication_window_ * 2) /// actually it doesn't matter
     , format_version(format_version_)
     , deduplication_map(deduplication_window)
     , disk(disk_)
+    , disk_supports_writing_with_append(supportWritingWithAppend(disk))
 {
     if (deduplication_window != 0 && !disk->existsDirectory(logs_dir))
         disk->createDirectories(logs_dir);
@@ -100,7 +100,14 @@ MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
 void MergeTreeDeduplicationLog::load()
 {
     if (!disk->existsDirectory(logs_dir))
-        return;
+    {
+        if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
+        {
+            // MetadataStorageType::Plain does not have directory concept. When checking `logs_dir` existence, it might return false.
+            if (object_storage->getMetadataStorage()->getType() != MetadataStorageType::Plain)
+                return;
+        }
+    }
 
     for (auto it = disk->iterateDirectory(logs_dir); it->isValid(); it->next())
     {
@@ -162,18 +169,27 @@ void MergeTreeDeduplicationLog::rotate()
     if (deduplication_window == 0)
         return;
 
+    try
+    {
+        if (current_writer)
+        {
+            current_writer->finalize();
+            current_writer->sync();
+        }
+    } catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, "Error while writing MergeTree deduplication log on path " + existing_logs[current_log_number].path + ", lost recods: " + DB::toString(existing_logs[current_log_number].entries_count));
+        if (current_writer)
+            current_writer->cancel();
+        current_writer = nullptr;
+    }
+
     current_log_number++;
     auto new_path = getLogPath(logs_dir, current_log_number);
     MergeTreeDeduplicationLogNameDescription log_description{new_path, 0};
     existing_logs.emplace(current_log_number, log_description);
 
-    if (current_writer)
-    {
-        current_writer->finalize();
-        current_writer->sync();
-    }
-
-    current_writer = disk->writeFile(log_description.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+    current_writer = disk->writeFile(log_description.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
 }
 
 void MergeTreeDeduplicationLog::dropOutdatedLogs()
@@ -213,14 +229,15 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
 void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
 {
     /// If we don't have logs at all or already have enough records in current
-    if (existing_logs.empty() || existing_logs[current_log_number].entries_count >= rotate_interval)
+    /// For the disk that doesn't support writing with append, we can't append logs to the last file.
+    if (existing_logs.empty() || existing_logs[current_log_number].entries_count >= rotate_interval || !disk_supports_writing_with_append)
     {
         rotate();
         dropOutdatedLogs();
     }
 }
 
-std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std::string & block_id, const MergeTreePartInfo & part_info)
+std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
 {
     std::lock_guard lock(state_mutex);
 
@@ -229,14 +246,22 @@ std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std:
     /// here then destroy whole object, check for null pointer from different
     /// threads and so on.
     if (deduplication_window == 0)
-        return std::make_pair(part_info, true);
+        return {};
+
+    std::vector<MergeTreeDeduplicationLog::AddPartResult> result;
 
     /// If we already have this block let's deduplicate it
-    if (deduplication_map.contains(block_id))
+    for (const auto & block_id : block_ids)
     {
-        auto info = deduplication_map.get(block_id);
-        return std::make_pair(info, false);
+        if (deduplication_map.contains(block_id))
+        {
+            auto info = deduplication_map.get(block_id);
+            result.emplace_back(info, block_id);
+        }
     }
+
+    if (!result.empty())
+        return result;
 
     if (stopped)
     {
@@ -245,21 +270,24 @@ std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std:
 
     chassert(current_writer != nullptr);
 
-    /// Create new record
-    MergeTreeDeduplicationLogRecord record;
-    record.operation = MergeTreeDeduplicationOp::ADD;
-    record.part_name = part_info.getPartNameAndCheckFormat(format_version);
-    record.block_id = block_id;
-    /// Write it to disk
-    writeRecord(record, *current_writer);
-    /// We have one more record in current log
-    existing_logs[current_log_number].entries_count++;
-    /// Add to deduplication map
-    deduplication_map.insert(record.block_id, part_info);
+    for (const auto & block_id : block_ids)
+    {
+        /// Create new record
+        MergeTreeDeduplicationLogRecord record;
+        record.operation = MergeTreeDeduplicationOp::ADD;
+        record.part_name = part_info.getPartNameAndCheckFormat(format_version);
+        record.block_id = block_id;
+        /// Write it to disk
+        writeRecord(record, *current_writer);
+        /// We have one more record in current log
+        existing_logs[current_log_number].entries_count++;
+        /// Add to deduplication map
+        deduplication_map.insert(record.block_id, part_info);
+    }
     /// Rotate and drop old logs if needed
     rotateAndDropIfNeeded();
 
-    return std::make_pair(part_info, true);
+    return {};
 }
 
 void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info)
@@ -352,6 +380,7 @@ void MergeTreeDeduplicationLog::shutdown()
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            current_writer->cancel();
             current_writer.reset();
         }
     }

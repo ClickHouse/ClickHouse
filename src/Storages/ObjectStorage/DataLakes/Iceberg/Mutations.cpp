@@ -1,31 +1,33 @@
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DataLake/Common.h>
 #include <Formats/FormatFactory.h>
+#include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Processors/Chunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/MutationCommands.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
-#include <Disks/ObjectStorages/StoredObject.h>
-#include <IO/CompressionMethod.h>
-#include <Processors/Chunk.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Storages/MutationCommands.h>
-#include <Storages/AlterCommands.h>
-#include <Storages/VirtualColumnUtils.h>
 
 namespace DB::ErrorCodes
 {
@@ -113,17 +115,18 @@ getPartitionedChunks(const Chunk & chunk, std::optional<ChunkPartitioner> & chun
 }
 
 
-std::optional<WriteDataFilesResult> writeDataFiles(
+static std::optional<WriteDataFilesResult> writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
     StorageMetadataPtr metadata,
     StorageID storage_id,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
+    String write_format,
     FileNamesGenerator & generator,
     const std::optional<FormatSettings> & format_settings,
     std::optional<ChunkPartitioner> & chunk_partitioner,
-    Poco::JSON::Object::Ptr data_schema)
+    Poco::JSON::Object::Ptr data_schema,
+    const String& blob_storage_namespace_name)
 {
     chassert(commands.size() == 1);
 
@@ -192,7 +195,7 @@ std::optional<WriteDataFilesResult> writeDataFiles(
                     column_mapper->setStorageColumnEncoding(std::move(field_ids));
                     FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
                     auto output_format = FormatFactory::instance().getOutputFormat(
-                        configuration->format, *write_buffer, delete_file_sample_block, context, format_settings, format_filter_info);
+                        write_format, *write_buffer, delete_file_sample_block, context, format_settings, format_filter_info);
 
                     delete_data_write_buffers[partition_key] = std::move(write_buffer);
                     delete_data_writers[partition_key] = std::move(output_format);
@@ -216,8 +219,8 @@ std::optional<WriteDataFilesResult> writeDataFiles(
                     col_data_filename.column->get(i, cur_value);
 
                     String path_without_namespace;
-                    if (cur_value.safeGet<String>().starts_with(configuration->getNamespace()))
-                        path_without_namespace = cur_value.safeGet<String>().substr(configuration->getNamespace().size());
+                    if (cur_value.safeGet<String>().starts_with(blob_storage_namespace_name))
+                        path_without_namespace = cur_value.safeGet<String>().substr(blob_storage_namespace_name.size());
 
                     if (!path_without_namespace.starts_with('/'))
                         path_without_namespace = "/" + path_without_namespace;
@@ -285,7 +288,7 @@ std::optional<WriteDataFilesResult> writeDataFiles(
                         context->getWriteSettings());
 
                     auto data_output_format = FormatFactory::instance().getOutputFormat(
-                        configuration->format, *data_write_buffer, data_block, context, format_settings, nullptr);
+                        write_format, *data_write_buffer, data_block, context, format_settings, nullptr);
 
                     update_data_write_buffers[partition_key] = std::move(data_write_buffer);
                     it = update_data_writers.emplace(partition_key, std::move(data_output_format)).first;
@@ -314,18 +317,13 @@ std::optional<WriteDataFilesResult> writeDataFiles(
         return {};
 }
 
-struct WriteMetadataResult
-{
-    bool success;
-    std::function<void()> cleanup;
-};
-
-WriteMetadataResult writeMetadataFiles(
+static bool writeMetadataFiles(
     DataFileWriteResultWithStats & delete_filenames,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
     ContextPtr context,
     FileNamesGenerator & filename_generator,
+    const DataLakeStorageSettings & data_lake_settings,
+    String write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
     StorageID table_id,
     Poco::JSON::Object::Ptr metadata,
@@ -333,7 +331,11 @@ WriteMetadataResult writeMetadataFiles(
     Int32 partition_spec_id,
     std::optional<ChunkPartitioner> & chunk_partitioner,
     Iceberg::FileContentType content_type,
-    SharedHeader sample_block)
+    SharedHeader sample_block,
+    CompressionMethod compression_method,
+    bool write_metadata_json_file,
+    const String& blob_storage_type_name,
+    const String& blob_storage_namespace_name)
 {
     auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
     Int64 parent_snapshot = -1;
@@ -342,10 +344,12 @@ WriteMetadataResult writeMetadataFiles(
 
     Int32 total_rows = 0;
     Int32 total_bytes = 0;
+    Int32 total_files = 0;
     for (const auto & [_, delete_filename] : delete_filenames.delete_file)
     {
         total_rows += delete_filename.total_rows;
         total_bytes += delete_filename.total_bytes;
+        ++total_files;
     }
 
     Poco::JSON::Object::Ptr new_snapshot;
@@ -361,8 +365,8 @@ WriteMetadataResult writeMetadataFiles(
                 /* added_files */0,
                 /* added_records */0,
                 total_bytes,
-                /* num_partitions */1,
-                /* added_delete_files */1,
+                /* num_partitions */total_files,
+                /* added_delete_files */total_files,
                 total_rows);
         new_snapshot = result_generation_metadata.snapshot;
         manifest_list_name = result_generation_metadata.metadata_path;
@@ -375,10 +379,10 @@ WriteMetadataResult writeMetadataFiles(
                 filename_generator,
                 metadata_name,
                 parent_snapshot,
-                /* added_files */1,
+                /* added_files */total_files,
                 /* added_records */total_rows,
                 total_bytes,
-                /* num_partitions */1,
+                /* num_partitions */total_files,
                 /* added_delete_files */0,
                 /*num_deleted_rows*/0);
         new_snapshot = result_generation_metadata.snapshot;
@@ -401,7 +405,6 @@ WriteMetadataResult writeMetadataFiles(
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
-            object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
         }
         catch (...)
         {
@@ -434,7 +437,7 @@ WriteMetadataResult writeMetadataFiles(
                     delete_filenames.delete_statistic.at(partition_key),
                     sample_block,
                     new_snapshot,
-                    configuration->format,
+                    write_format,
                     partititon_spec,
                     partition_spec_id,
                     *buffer_manifest_entry,
@@ -478,6 +481,7 @@ WriteMetadataResult writeMetadataFiles(
             }
         }
 
+        if (write_metadata_json_file)
         {
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             Poco::JSON::Stringifier::stringify(metadata, oss, 4);
@@ -488,30 +492,32 @@ WriteMetadataResult writeMetadataFiles(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");
             });
 
-            if (object_storage->exists(StoredObject(storage_metadata_name)))
+            auto hint = filename_generator.generateVersionHint();
+            if (!writeMetadataFileAndVersionHint(
+                    storage_metadata_name,
+                    json_representation,
+                    hint.path_in_storage,
+                    storage_metadata_name,
+                    object_storage,
+                    context,
+                    compression_method,
+                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
             {
                 cleanup();
-                return {false, cleanup};
+                return false;
             }
 
-            Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup);
-            if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
-            {
-                auto filename_version_hint = filename_generator.generateVersionHint();
-                Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, cleanup);
-            }
             if (catalog)
             {
                 String catalog_filename = metadata_name;
-                if (!catalog_filename.starts_with(configuration->getTypeName()))
-                    catalog_filename = configuration->getTypeName() + "://" + configuration->getNamespace() + "/" + metadata_name;
+                if (!catalog_filename.starts_with(blob_storage_type_name))
+                    catalog_filename = blob_storage_type_name + "://" + blob_storage_namespace_name + "/" + metadata_name;
 
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
                 if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
                 {
                     cleanup();
-                    object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
-                    return {false, cleanup};
+                    return false;
                 }
             }
         }
@@ -521,7 +527,7 @@ WriteMetadataResult writeMetadataFiles(
         cleanup();
         throw;
     }
-    return {true, cleanup};
+    return true;
 }
 
 void mutate(
@@ -530,129 +536,209 @@ void mutate(
     StorageMetadataPtr storage_metadata,
     StorageID storage_id,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
+    const DataLakeStorageSettings & data_lake_settings,
+    PersistentTableComponents & persistent_table_components,
+    const String & write_format,
     const std::optional<FormatSettings> & format_settings,
-    std::shared_ptr<DataLake::ICatalog> catalog)
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const String & blob_storage_type_name,
+    const String & blob_storage_namespace_name)
 {
-    auto common_path = configuration->getRawPath().path;
+    auto common_path = persistent_table_components.table_path;
     if (!common_path.starts_with('/'))
         common_path = "/" + common_path;
-    FileNamesGenerator filename_generator(common_path, common_path, false, CompressionMethod::None, configuration->format);
 
-    auto log = getLogger("IcebergMutations");
-    auto [last_version, metadata_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
-
-    filename_generator.setVersion(last_version + 1);
-    filename_generator.setCompressionMethod(compression_method);
-
-    auto metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
-    auto partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
-    auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
-    Poco::JSON::Object::Ptr partititon_spec;
-    for (size_t i = 0; i < partitions_specs->size(); ++i)
+    int max_retries = MAX_TRANSACTION_RETRIES;
+    while (--max_retries > 0)
     {
-        auto current_partition_spec = partitions_specs->getObject(static_cast<UInt32>(i));
-        if (current_partition_spec->getValue<Int64>(Iceberg::f_spec_id) == partition_spec_id)
+        FileNamesGenerator filename_generator(common_path, common_path, false, CompressionMethod::None, write_format);
+        auto log = getLogger("IcebergMutations");
+        auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+            object_storage,
+            persistent_table_components.table_path,
+            data_lake_settings,
+            persistent_table_components.metadata_cache,
+            context,
+            log.get(),
+            persistent_table_components.table_uuid);
+
+        filename_generator.setVersion(last_version + 1);
+        filename_generator.setCompressionMethod(compression_method);
+
+        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        if (metadata->getValue<Int32>(f_format_version) < 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations are supported only for the second version of iceberg format");
+        auto partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
+        auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
+        Poco::JSON::Object::Ptr partititon_spec;
+        for (size_t i = 0; i < partitions_specs->size(); ++i)
         {
-            partititon_spec = current_partition_spec;
-            break;
+            auto current_partition_spec = partitions_specs->getObject(static_cast<UInt32>(i));
+            if (current_partition_spec->getValue<Int64>(Iceberg::f_spec_id) == partition_spec_id)
+            {
+                partititon_spec = current_partition_spec;
+                break;
+            }
         }
-    }
 
-    auto current_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
-    Poco::JSON::Object::Ptr current_schema;
-    auto schemas = metadata->getArray(Iceberg::f_schemas);
-    for (size_t i = 0; i < schemas->size(); ++i)
-    {
-        if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+        auto current_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
+        Poco::JSON::Object::Ptr current_schema;
+        auto schemas = metadata->getArray(Iceberg::f_schemas);
+        for (size_t i = 0; i < schemas->size(); ++i)
         {
-            current_schema = schemas->getObject(static_cast<UInt32>(i));
+            if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+            {
+                current_schema = schemas->getObject(static_cast<UInt32>(i));
+            }
         }
-    }
 
-    const auto sample_block = std::make_shared<const Block>(storage_metadata->getSampleBlock());
-    std::optional<ChunkPartitioner> chunk_partitioner;
-    if (partititon_spec->has(Iceberg::f_fields) && partititon_spec->getArray(Iceberg::f_fields)->size() > 0)
-        chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
-    auto mutation_files = writeDataFiles(commands, context, storage_metadata, storage_id, object_storage, configuration, filename_generator, format_settings, chunk_partitioner, current_schema);
+        const auto sample_block = std::make_shared<const Block>(storage_metadata->getSampleBlock());
+        std::optional<ChunkPartitioner> chunk_partitioner;
+        if (partititon_spec->has(Iceberg::f_fields) && partititon_spec->getArray(Iceberg::f_fields)->size() > 0)
+            chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
 
-    if (mutation_files)
-    {
-        int max_retries = MAX_TRANSACTION_RETRIES;
-        while (--max_retries > 0)
+        auto mutation_files = writeDataFiles(
+            commands,
+            context,
+            storage_metadata,
+            storage_id,
+            object_storage,
+            write_format,
+            filename_generator,
+            format_settings,
+            chunk_partitioner,
+            current_schema,
+            blob_storage_namespace_name);
+
+        if (mutation_files)
         {
-            auto result_delete_files_metadata = writeMetadataFiles(mutation_files->delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::POSITION_DELETE, std::make_shared<const Block>(getPositionDeleteFileSampleBlock()));
-            if (!result_delete_files_metadata.success)
+            auto result_delete_files_metadata = writeMetadataFiles(
+                mutation_files->delete_file,
+                object_storage,
+                context,
+                filename_generator,
+                data_lake_settings,
+                write_format,
+                catalog,
+                storage_id,
+                metadata,
+                partititon_spec,
+                static_cast<Int32>(partition_spec_id),
+                chunk_partitioner,
+                Iceberg::FileContentType::POSITION_DELETE,
+                std::make_shared<const Block>(getPositionDeleteFileSampleBlock()),
+                compression_method,
+                !mutation_files->data_file,
+                blob_storage_type_name,
+                blob_storage_namespace_name);
+            if (!result_delete_files_metadata)
                 continue;
+
             if (mutation_files->data_file)
             {
-                auto result_data_files_metadata = writeMetadataFiles(*mutation_files->data_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::DATA, sample_block);
-                if (!result_data_files_metadata.success)
+                auto result_data_files_metadata = writeMetadataFiles(
+                    *mutation_files->data_file,
+                    object_storage,
+                    context,
+                    filename_generator,
+                    data_lake_settings,
+                    write_format,
+                    catalog,
+                    storage_id,
+                    metadata,
+                    partititon_spec,
+                    static_cast<Int32>(partition_spec_id),
+                    chunk_partitioner,
+                    Iceberg::FileContentType::DATA,
+                    sample_block,
+                    compression_method,
+                    true,
+                    blob_storage_type_name,
+                    blob_storage_namespace_name);
+                if (!result_data_files_metadata)
                 {
-                    result_delete_files_metadata.cleanup();
                     continue;
                 }
             }
-            break;
         }
-
-        if (max_retries == 0)
-            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to create iceberg snapshot");
+        break;
     }
+
+    if (max_retries == 0)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to create iceberg snapshot");
 }
 
 void alter(
     const AlterCommands & params,
     ContextPtr context,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration)
+    const DataLakeStorageSettings & data_lake_settings,
+    PersistentTableComponents & persistent_table_components,
+    const String & write_format)
 {
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
 
-    FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None, configuration->format);
-    auto log = getLogger("IcebergMutations");
-    auto [last_version, metadata_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
-
-    filename_generator.setVersion(last_version + 1);
-    filename_generator.setCompressionMethod(compression_method);
-
-    auto metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
-
-    auto metadata_json_generator = MetadataGenerator(metadata);
-
-    switch (params[0].type)
+    size_t i = 0;
+    while (i++ < MAX_TRANSACTION_RETRIES)
     {
-        case AlterCommand::Type::ADD_COLUMN:
-            metadata_json_generator.generateAddColumnMetadata(params[0].column_name, params[0].data_type);
+        FileNamesGenerator filename_generator(
+            persistent_table_components.table_path, persistent_table_components.table_path, false, CompressionMethod::None, write_format);
+        auto log = getLogger("IcebergMutations");
+        auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+            object_storage,
+            persistent_table_components.table_path,
+            data_lake_settings,
+            persistent_table_components.metadata_cache,
+            context,
+            log.get(),
+            persistent_table_components.table_uuid);
+
+        filename_generator.setVersion(last_version + 1);
+        filename_generator.setCompressionMethod(compression_method);
+
+        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+
+        auto metadata_json_generator = MetadataGenerator(metadata);
+
+        switch (params[0].type)
+        {
+            case AlterCommand::Type::ADD_COLUMN:
+                metadata_json_generator.generateAddColumnMetadata(params[0].column_name, params[0].data_type);
+                break;
+            case AlterCommand::Type::DROP_COLUMN:
+                if (params[0].clear)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Clear column is not supported for iceberg. Please use UPDATE instead");
+                metadata_json_generator.generateDropColumnMetadata(params[0].column_name);
+                break;
+            case AlterCommand::Type::MODIFY_COLUMN:
+                metadata_json_generator.generateModifyColumnMetadata(params[0].column_name, params[0].data_type);
+                break;
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of alter {}", params[0].type);
+        }
+
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::JSON::Stringifier::stringify(metadata, oss, 4);
+        std::string json_representation = removeEscapedSlashes(oss.str());
+
+        auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
+
+        auto hint = filename_generator.generateVersionHint();
+        if (writeMetadataFileAndVersionHint(
+                storage_metadata_name,
+                json_representation,
+                hint.path_in_storage,
+                storage_metadata_name,
+                object_storage,
+                context,
+                compression_method,
+                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
             break;
-        case AlterCommand::Type::DROP_COLUMN:
-            if (params[0].clear)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Clear column is not supported for iceberg. Please use UPDATE instead");
-            metadata_json_generator.generateDropColumnMetadata(params[0].column_name);
-            break;
-        case AlterCommand::Type::MODIFY_COLUMN:
-            metadata_json_generator.generateModifyColumnMetadata(params[0].column_name, params[0].data_type);
-            break;
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of alter {}", params[0].type);
     }
 
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(metadata, oss, 4);
-    std::string json_representation = removeEscapedSlashes(oss.str());
-
-    auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
-    auto cleanup = [] {};
-    Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup);
-
-    if (configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
-    {
-        auto filename_version_hint = filename_generator.generateVersionHint();
-        Iceberg::writeMessageToFile(storage_metadata_name, filename_version_hint.path_in_storage, object_storage, context, cleanup);
-    }
+    if (i == MAX_TRANSACTION_RETRIES)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to alter iceberg table");
 }
 
 #endif

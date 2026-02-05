@@ -52,6 +52,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const QueryPlanSerializationSettingsBool optimize_group_by_constant_keys;
     extern const QueryPlanSerializationSettingsBool enable_producing_buckets_out_of_order_in_aggregation;
+    extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
 }
 
 namespace ErrorCodes
@@ -344,7 +345,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 }
                 else
                 {
-                    auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set);
+                    auto aggregation_for_set
+                        = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set, dataflow_cache_updater);
                     connect(*ports[i], aggregation_for_set->getInputs().front());
                     ports[i] = &aggregation_for_set->getOutputs().front();
                     processors.push_back(aggregation_for_set);
@@ -512,7 +514,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     new_merge_threads,
                     new_temporary_data_merge_threads,
                     should_produce_results_in_order_of_bucket_number,
-                    skip_merging);
+                    skip_merging,
+                    dataflow_cache_updater);
             });
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, false, settings.min_outstreams_per_resize_after_split);
@@ -521,7 +524,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
     else
     {
-        pipeline.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<AggregatingTransform>(header, transform_params); });
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater); });
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads);
 
@@ -576,7 +580,27 @@ void AggregatingStep::requestOnlyMergeForAggregateProjection(const SharedHeader 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot aggregate from projection");
 
     auto output_header = getOutputHeader();
-    input_headers.front() = input_header;
+
+    /// The projection header may have different types for key columns due to metadata-only ALTERs
+    /// (e.g., extending an Enum). We need to adapt the input header to match the expected output types.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/56334
+    auto adapted_header = std::make_shared<Block>();
+    for (const auto & column : *input_header)
+    {
+        if (output_header->has(column.name))
+        {
+            /// Use the type from expected output header for columns that exist in output
+            const auto & expected_column = output_header->getByName(column.name);
+            adapted_header->insert({expected_column.type->createColumn(), expected_column.type, column.name});
+        }
+        else
+        {
+            /// Keep original for columns not in output (e.g., intermediate aggregate states)
+            adapted_header->insert(column.cloneEmpty());
+        }
+    }
+
+    input_headers.front() = adapted_header;
     params.only_merge = true;
     updateOutputHeader();
     assertBlocksHaveEqualStructure(*output_header, *getOutputHeader(), "AggregatingStep");
@@ -751,7 +775,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
     /// Overall, the rule is not strict.
 
     UInt8 flags = 0;
-    if (final)
+    if (final && !ctx.skip_final_flag)
         flags |= 1;
     if (params.overflow_row)
         flags |= 2;
@@ -787,7 +811,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     serializeAggregateDescriptions(params.aggregates, ctx.out);
 
-    if (params.stats_collecting_params.isCollectionAndUseEnabled())
+    if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.skip_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
 }
 
@@ -870,7 +894,8 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
         ctx.settings[QueryPlanSerializationSetting::optimize_group_by_constant_keys],
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
-        ctx.settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation]};
+        ctx.settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation],
+        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte]};
 
     SortDescription sort_description_for_merging;
 

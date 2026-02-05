@@ -10,8 +10,10 @@
 #include <Common/ThreadPool.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <base/range.h>
 #include <base/sleep.h>
+
 
 namespace
 {
@@ -50,7 +52,8 @@ ZooKeeperReplicator::ZooKeeperReplicator(
     const String & zookeeper_path_,
     zkutil::GetZooKeeper get_zookeeper_,
     AccessChangesNotifier & changes_notifier_,
-    MemoryAccessStorage & memory_storage_)
+    MemoryAccessStorage & memory_storage_,
+    bool throw_on_invalid_entities_)
     : storage_name(storage_name_)
     , zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
@@ -61,6 +64,7 @@ ZooKeeperReplicator::ZooKeeperReplicator(
       }))
     , memory_storage(memory_storage_)
     , changes_notifier(changes_notifier_)
+    , throw_on_invalid_entities(throw_on_invalid_entities_)
 {
     if (zookeeper_path.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must be non-empty");
@@ -413,7 +417,7 @@ bool ZooKeeperReplicator::updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper
 void ZooKeeperReplicator::runWatchingThread()
 {
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Started watching thread");
-    setThreadName("ZooACLWatch");
+    DB::setThreadName(ThreadName::ZOOKEEPER_ACL_WATCHER);
 
     while (watching)
     {
@@ -644,6 +648,9 @@ AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::Zo
     }
     catch (...)
     {
+        if (throw_on_invalid_entities)
+            throw;
+
         tryLogCurrentException(&Poco::Logger::get(storage_name), "Error while reading the definition of " + toString(id));
         return nullptr;
     }

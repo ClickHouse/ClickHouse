@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Scheduler/ResourceLink.h>
+#include <Common/Scheduler/WorkloadSettings.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -37,6 +38,8 @@ public:
     /// Returns ResourceLink that should be used to access resource.
     /// Returned link is valid until classifier destruction.
     virtual ResourceLink get(const String & resource_name) = 0;
+    /// Returns settings that should be used to limit workload on given resource.
+    virtual WorkloadSettings getWorkloadSettings(const String & resource_name) const = 0;
 };
 
 using ClassifierPtr = std::shared_ptr<IClassifier>;

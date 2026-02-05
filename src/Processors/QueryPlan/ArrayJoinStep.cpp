@@ -13,6 +13,7 @@ namespace DB
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsBool enable_lazy_columns_replication;
 }
 
 static ITransformingStep::Traits getTraits()
@@ -30,7 +31,7 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-ArrayJoinStep::ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_)
+ArrayJoinStep::ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_)
     : ITransformingStep(
         input_header_,
         std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_header_, array_join_.columns)),
@@ -38,6 +39,7 @@ ArrayJoinStep::ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array
     , array_join(std::move(array_join_))
     , is_unaligned(is_unaligned_)
     , max_block_size(max_block_size_)
+    , enable_lazy_columns_replication(enable_lazy_columns_replication_)
 {
 }
 
@@ -48,7 +50,7 @@ void ArrayJoinStep::updateOutputHeader()
 
 void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto array_join_actions = std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size);
+    auto array_join_actions = std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size, enable_lazy_columns_replication);
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
@@ -123,7 +125,12 @@ std::unique_ptr<IQueryPlanStep> ArrayJoinStep::deserialize(Deserialization & ctx
     for (auto & column : array_join.columns)
         readStringBinary(column, ctx.in);
 
-    return std::make_unique<ArrayJoinStep>(ctx.input_headers.front(), std::move(array_join), is_unaligned, ctx.settings[QueryPlanSerializationSetting::max_block_size]);
+    return std::make_unique<ArrayJoinStep>(
+        ctx.input_headers.front(),
+        std::move(array_join),
+        is_unaligned,
+        ctx.settings[QueryPlanSerializationSetting::max_block_size],
+        ctx.settings[QueryPlanSerializationSetting::enable_lazy_columns_replication]);
 }
 
 void registerArrayJoinStep(QueryPlanStepRegistry & registry)

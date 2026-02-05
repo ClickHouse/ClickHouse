@@ -40,6 +40,7 @@ set(ICUUC_SOURCES
 "${ICU_SOURCE_DIR}/common/errorcode.cpp"
 "${ICU_SOURCE_DIR}/common/filteredbrk.cpp"
 "${ICU_SOURCE_DIR}/common/filterednormalizer2.cpp"
+"${ICU_SOURCE_DIR}/common/fixedstring.cpp"
 "${ICU_SOURCE_DIR}/common/icudataver.cpp"
 "${ICU_SOURCE_DIR}/common/icuplug.cpp"
 "${ICU_SOURCE_DIR}/common/loadednormalizer2impl.cpp"
@@ -478,11 +479,11 @@ enable_language(ASM)
 
 if (OS_DARWIN)
     # Fine for both x86 and ARM
-    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/darwin_x86_64/icudt75l_dat.S")
+    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/darwin/icudt78l_dat.S")
 elseif (ARCH_S390X)
-    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt75b_dat.S")
+    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt78b_dat.S")
 else ()
-    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt75l_dat.S")
+    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt78l_dat.S")
 endif ()
 # ^^ you might be confused how for different little endian platforms (x86, ARM) the same assembly files can be used.
 # These files are indeed assembly but they only contain data ('.long' directive), which makes them portable accross CPUs.

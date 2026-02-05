@@ -525,25 +525,37 @@ void registerStorageJoin(StorageFactory & factory)
         });
 }
 
+namespace
+{
+
 template <typename T>
-static const char * rawData(T & t)
+const char * rawData(T & t)
 {
     return reinterpret_cast<const char *>(&t);
 }
+
 template <typename T>
-static size_t rawSize(T &)
+size_t rawSize(T &)
 {
     return sizeof(T);
 }
+
 template <>
-const char * rawData(const StringRef & t)
+const char * rawData(const std::string_view & t)
 {
-    return t.data;
+    /// We must return a non-null pointer for empty strings because ColumnNullable::insertData
+    /// treats nullptr as NULL. Empty string_views used as "zero keys" in hash tables have
+    /// data() == nullptr, but they represent empty strings, not NULLs.
+    static constexpr char empty_string[] = "";
+    return t.data() ? t.data() : empty_string;
 }
+
 template <>
-size_t rawSize(const StringRef & t)
+size_t rawSize(const std::string_view & t)
 {
-    return t.size;
+    return t.size();
+}
+
 }
 
 class JoinSource : public ISource
@@ -727,7 +739,7 @@ private:
             if (j == key_pos)
                 columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
             else
-                columns[j]->insertFrom(*(*it->getMapped().columns)[column_indices[j]], it->getMapped().row_num);
+                columns[j]->insertFrom(*it->getMapped().columns_info->columns[column_indices[j]], it->getMapped().row_num);
         ++rows_added;
     }
 
@@ -741,7 +753,7 @@ private:
                 if (j == key_pos)
                     columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
                 else
-                    columns[j]->insertFrom(*(*ref_it->columns)[column_indices[j]], ref_it->row_num);
+                    columns[j]->insertFrom(*ref_it->columns_info->columns[column_indices[j]], ref_it->row_num);
             ++rows_added;
         }
     }

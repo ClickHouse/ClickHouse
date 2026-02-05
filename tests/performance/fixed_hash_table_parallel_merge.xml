@@ -1,0 +1,5 @@
+<test>
+    <query>SELECT number % 10000 AS k, uniq(number) AS u FROM numbers_mt(1e7) GROUP BY k ORDER BY u DESC LIMIT 10</query>
+    <query>SELECT number % 10000 AS k, count(number) AS u FROM numbers_mt(3*1e9) GROUP BY k ORDER BY u DESC LIMIT 10</query>
+    <query>SELECT number % 10000 AS k, sum(number) AS u FROM numbers_mt(1e9) GROUP BY k ORDER BY u DESC LIMIT 10</query>
+</test>

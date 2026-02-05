@@ -9,7 +9,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/UserInfo.h>
+#include <Interpreters/Cache/FileCacheOriginInfo.h>
 
 
 namespace CurrentMetrics
@@ -29,7 +29,7 @@ public:
         const String & source_file_path_,
         const FileCacheKey & cache_key_,
         FileCachePtr cache_,
-        const FileCacheUserInfo & user_,
+        const FileCacheOriginInfo & origin_,
         ImplementationBufferCreator implementation_buffer_creator_,
         const ReadSettings & settings_,
         const String & query_id_,
@@ -69,6 +69,10 @@ public:
     bool isSeekCheap() override;
 
     bool isContentCached(size_t offset, size_t size) override;
+
+    std::optional<size_t> tryGetFileSize() override;
+
+    size_t getFileSize();
 
 private:
     using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
@@ -139,7 +143,7 @@ private:
 
     String query_id;
     String current_buffer_id;
-    FileCacheUserInfo user;
+    FileCacheOriginInfo origin;
 
     bool allow_seeks_after_first_read;
     [[maybe_unused]]bool use_external_buffer;

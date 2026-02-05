@@ -29,10 +29,10 @@ PtyClientDescriptorSet::PtyClientDescriptorSet(const String & term_name_, int wi
     : term_name(term_name_)
 {
     winsize winsize{};
-    winsize.ws_col = width;
-    winsize.ws_row = height;
-    winsize.ws_xpixel = width_pixels;
-    winsize.ws_ypixel = height_pixels;
+    winsize.ws_col = static_cast<uint16_t>(width);
+    winsize.ws_row = static_cast<uint16_t>(height);
+    winsize.ws_xpixel = static_cast<uint16_t>(width_pixels);
+    winsize.ws_ypixel = static_cast<uint16_t>(height_pixels);
     int pty_master_raw = -1;
     int pty_slave_raw = -1;
     if (openpty(&pty_master_raw, &pty_slave_raw, nullptr, nullptr, &winsize) != 0)
@@ -64,10 +64,10 @@ PtyClientDescriptorSet::PtyClientDescriptorSet(const String & term_name_, int wi
 void PtyClientDescriptorSet::changeWindowSize(int width, int height, int width_pixels, int height_pixels) const
 {
     winsize winsize{};
-    winsize.ws_col = width;
-    winsize.ws_row = height;
-    winsize.ws_xpixel = width_pixels;
-    winsize.ws_ypixel = height_pixels;
+    winsize.ws_col = static_cast<uint16_t>(width);
+    winsize.ws_row = static_cast<uint16_t>(height);
+    winsize.ws_xpixel = static_cast<uint16_t>(width_pixels);
+    winsize.ws_ypixel = static_cast<uint16_t>(height_pixels);
 
     if (ioctl(pty_master.get(), TIOCSWINSZ, &winsize) == -1)
     {

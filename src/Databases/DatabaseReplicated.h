@@ -37,7 +37,12 @@ struct ReplicaInfo
     std::optional<UInt32> replication_lag;
     UInt64 recovery_time;
 };
-using ReplicasInfo = std::vector<ReplicaInfo>;
+
+struct ReplicasInfo
+{
+    std::vector<ReplicaInfo> replicas;
+    bool replicas_belong_to_shared_catalog;
+};
 
 class DatabaseReplicated : public DatabaseAtomic
 {
@@ -82,7 +87,7 @@ public:
 
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
-    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags) override;
+    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags, DDLGuardPtr && database_guard) override;
 
     bool canExecuteReplicatedMetadataAlter() const override;
 
@@ -207,13 +212,14 @@ private:
     void reinitializeDDLWorker();
 
     static BlockIO
-    getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait);
+    getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait, DDLGuardPtr && database_guard);
 
-    String zookeeper_path;
-    String shard_name;
-    String replica_name;
+    const String zookeeper_path;
+    const String shard_name;
+    const String replica_name;
+    const String replica_path;
+
     String replica_group_name;
-    String replica_path;
     DatabaseReplicatedSettings db_settings;
 
     ZooKeeperPtr getZooKeeper() const;

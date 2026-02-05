@@ -8,6 +8,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
+#include <cmath>
+
 #if USE_MULTITARGET_CODE
 #include <immintrin.h>
 #endif
@@ -189,7 +191,7 @@ struct LpDistance
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams & params)
     {
-        state.sum += static_cast<ResultType>(pow(fabs(x - y), params.power));
+        state.sum += static_cast<ResultType>(std::pow(fabs(x - y), params.power));
     }
 
     template <typename ResultType>
@@ -201,7 +203,7 @@ struct LpDistance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams & params)
     {
-        return static_cast<ResultType>(pow(state.sum, params.inverted_power));
+        return static_cast<ResultType>(std::pow(state.sum, params.inverted_power));
     }
 };
 
@@ -630,7 +632,7 @@ private:
             if (!processed_with_simd)
             {
                 /// Process chunks in a vectorized manner.
-                static constexpr size_t VEC_SIZE = 16; /// the choice of the constant has no huge performance impact. 16 seems the best.
+                static constexpr size_t VEC_SIZE = 8; /// the choice of the constant has no huge performance impact. 16 breaks interleaving with clang-21. 8 is ok.
                 typename Kernel::template State<ResultType> states[VEC_SIZE];
                 for (; prev + VEC_SIZE < off; i += VEC_SIZE, prev += VEC_SIZE)
                 {

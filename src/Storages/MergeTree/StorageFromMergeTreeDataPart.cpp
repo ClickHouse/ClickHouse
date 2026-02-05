@@ -1,4 +1,3 @@
-#include <DataTypes/ObjectUtils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
@@ -34,7 +33,7 @@ void StorageFromMergeTreeDataPart::read(
     size_t num_streams)
 {
     query_plan.addStep(MergeTreeDataSelectExecutor(storage).readFromParts(
-        parts,
+        std::make_shared<RangesInDataParts>(parts),
         mutations_snapshot,
         column_names,
         storage_snapshot,
@@ -49,16 +48,7 @@ void StorageFromMergeTreeDataPart::read(
 StorageSnapshotPtr
 StorageFromMergeTreeDataPart::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
 {
-    const auto & storage_columns = metadata_snapshot->getColumns();
-    if (!hasDynamicSubcolumnsDeprecated(storage_columns))
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
-
-    auto data_parts = storage.getDataPartsVectorForInternalUsage();
-
-    auto object_columns = getConcreteObjectColumns(
-        data_parts.begin(), data_parts.end(), storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
-
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns));
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 }
 
 }

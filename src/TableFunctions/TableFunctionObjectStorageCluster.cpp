@@ -56,6 +56,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             /* is_datalake_query*/ false,
             /* distributed_processing */ can_use_distributed_iterator,
             /* partition_by_ */Base::partition_by,
+            /* order_by_ */nullptr,
             /* is_table_function */true,
             /* lazy_init */ true);
     }
@@ -69,7 +70,8 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             columns,
             ConstraintsDescription{},
             Base::partition_by,
-            context);
+            context,
+            /* is_table_function */true);
     }
 
     storage->startup();
@@ -130,6 +132,13 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
 {
     UNUSED(factory);
 
+    factory.registerFunction<TableFunctionIcebergLocalCluster>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Iceberg table stored on shared storage in parallel for many nodes in a specified cluster.)",
+            .examples{{IcebergLocalClusterDefinition::name, "SELECT * FROM icebergLocalCluster(cluster, filename, format, [,compression])", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         .allow_readonly = false});
+
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionIcebergCluster>(
         {.documentation
@@ -160,6 +169,45 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem in parallel for many nodes in a specified cluster.)",
             .examples{{IcebergHDFSClusterDefinition::name, "SELECT * FROM icebergHDFSCluster(cluster, uri, [format], [structure], [compression_method])", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         .allow_readonly = false});
+#endif
+}
+
+void registerTableFunctionPaimonCluster(TableFunctionFactory & factory)
+{
+    UNUSED(factory);
+
+#if USE_AWS_S3
+    factory.registerFunction<TableFunctionPaimonCluster>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Paimon table stored on store from disk in parallel for many nodes in a specified cluster.)",
+            .examples{{PaimonClusterDefinition::name, "SELECT * FROM paimonCluster(cluster) SETTINGS datalake_disk_name = 'disk'", ""},{PaimonClusterDefinition::name, "SELECT * FROM paimonCluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         .allow_readonly = false});
+
+    factory.registerFunction<TableFunctionPaimonS3Cluster>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Paimon table stored on S3 object store in parallel for many nodes in a specified cluster.)",
+            .examples{{PaimonS3ClusterDefinition::name, "SELECT * FROM paimonS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         .allow_readonly = false});
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+    factory.registerFunction<TableFunctionPaimonAzureCluster>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Paimon table stored on Azure object store in parallel for many nodes in a specified cluster.)",
+            .examples{{PaimonAzureClusterDefinition::name, "SELECT * FROM paimonAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         .allow_readonly = false});
+#endif
+
+#if USE_HDFS
+    factory.registerFunction<TableFunctionPaimonHDFSCluster>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Paimon table stored on HDFS virtual filesystem in parallel for many nodes in a specified cluster.)",
+            .examples{{PaimonHDFSClusterDefinition::name, "SELECT * FROM paimonHDFSCluster(cluster, uri, [format], [structure], [compression_method])", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
 #endif
@@ -214,6 +262,7 @@ void registerDataLakeClusterTableFunctions(TableFunctionFactory & factory)
     UNUSED(factory);
 #if USE_AVRO
     registerTableFunctionIcebergCluster(factory);
+    registerTableFunctionPaimonCluster(factory);
 #endif
 #if USE_PARQUET
     registerTableFunctionDeltaLakeCluster(factory);

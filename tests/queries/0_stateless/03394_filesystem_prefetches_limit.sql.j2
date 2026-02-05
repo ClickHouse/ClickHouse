@@ -28,7 +28,7 @@ ORDER BY ()
 SETTINGS
     disk='s3_cache',
     min_bytes_for_wide_part = {{ min_bytes_for_wide_part }},
-    serialization_info_version = 'default',
+    serialization_info_version = 'basic',
     min_bytes_for_full_part_storage=0;
 
 INSERT INTO {{ table }} SELECT * FROM generateRandom() LIMIT 400;

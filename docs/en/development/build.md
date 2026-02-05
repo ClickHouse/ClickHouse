@@ -38,7 +38,7 @@ You can optionally install ccache to let the build reuse already compiled object
 
 ```bash
 sudo apt-get update
-sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
+sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
 ```
 
 ## Install the Clang compiler {#install-the-clang-compiler}
@@ -51,7 +51,7 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 
 For other Linux distributions, check if you can install any of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
 
-As of March 2025, Clang 19 or higher is required.
+As of February 2026, Clang 21 or higher is required.
 GCC or other compilers are not supported.
 
 ## Install the Rust compiler (optional) {#install-the-rust-compiler-optional}
@@ -86,8 +86,8 @@ You can have several different directories (e.g. `build_release`, `build_debug`,
 Optional: If you have multiple compiler versions installed, you can optionally specify the exact compiler to use.
 
 ```sh
-export CC=clang-19
-export CXX=clang++-19
+export CC=clang-21
+export CXX=clang++-21
 ```
 
 For development purposes, debug builds are recommended.
@@ -211,7 +211,7 @@ cmake --build build
 You can run any build locally in an environment similar to CI using:
 
 ```bash
-python -m ci.praktika "BUILD_JOB_NAME"
+python -m ci.praktika run "BUILD_JOB_NAME"
 ```
 where BUILD_JOB_NAME is the job name as shown in the CI report, e.g., "Build (arm_release)", "Build (amd_debug)"
 
@@ -220,4 +220,4 @@ and runs the build script inside it: `./ci/jobs/build_clickhouse.py`
 
 The build output will be placed in `./ci/tmp/`.
 
-It works on both AMD and ARM architectures and requires no additional dependencies other than Docker.
+It works on both AMD and ARM architectures and requires no additional dependencies other than Python with `requests` module available and Docker.

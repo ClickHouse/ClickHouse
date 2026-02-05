@@ -1,9 +1,11 @@
 -- Tags: no-parallel-replicas
--- no-parallel-replicas: use_skip_indexes_on_data_read is not supported with parallel replicas.
+-- no-parallel-replicas: use_skip_indexes_on_data_read is not supported with parallel replicas
+-- add_minmax_index_for_numeric_columns=0: Changes the plan and rows read
 
 -- { echo ON }
 
 SET use_skip_indexes_on_data_read = 1;
+SET max_rows_to_read = 0;
 
 set use_query_condition_cache=0;
 set merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0;
@@ -26,7 +28,8 @@ SETTINGS
     index_granularity = 1,
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
-    max_bytes_to_merge_at_max_space_in_pool = 1;
+    max_bytes_to_merge_at_max_space_in_pool = 1,
+    add_minmax_index_for_numeric_columns=0;
 
 -- create 3 parts to test concurrent processing.
 INSERT INTO test VALUES (1, '2023-01-01', 101, 'https://example.com/page1', 'europe'), (2, '2023-01-01', 102, 'https://example.com/page2', 'us_west'), (3, '2023-01-02', 106, 'https://example.com/page3', 'us_west'), (4, '2023-01-02', 107, 'https://example.com/page4', 'us_west'), (5, '2023-01-03', 104, 'https://example.com/page5', 'asia');
@@ -47,7 +50,7 @@ SELECT * FROM test WHERE region = 'unknown' AND user_id = 101 ORDER BY ALL SETTI
 -- narrowing filter via user_id_idx
 SELECT * FROM test WHERE region = 'us_west' AND user_id = 106 ORDER BY ALL SETTINGS log_comment = 'test_3';
 
--- it's not possible to use different indexes with or filter yet
+-- test with an OR filter - 3 rows/granules for user_id=101 union 3 rows/granules for 'asia'
 SELECT * FROM test WHERE region = 'asia' OR user_id = 101 ORDER BY ALL SETTINGS log_comment = 'test_4';
 
 SYSTEM FLUSH LOGS query_log;
@@ -80,7 +83,8 @@ SETTINGS
     index_granularity = 1,
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
-    max_bytes_to_merge_at_max_space_in_pool = 1;
+    max_bytes_to_merge_at_max_space_in_pool = 1,
+    add_minmax_index_for_numeric_columns=0;
 
 -- insert a part with no index
 INSERT INTO test_partial_index VALUES (1, '2023-01-01', 101, 'https://example.com/page1', 'europe'), (2, '2023-01-01', 102, 'https://example.com/page2', 'us_west'), (3, '2023-01-02', 106, 'https://example.com/page3', 'us_west'), (4, '2023-01-02', 107, 'https://example.com/page4', 'us_west'), (5, '2023-01-03', 104, 'https://example.com/page5', 'asia');
@@ -104,7 +108,11 @@ SELECT * FROM test_partial_index WHERE region = 'unknown' AND user_id = 101 ORDE
 -- narrowing filter via user_id_idx
 SELECT * FROM test_partial_index WHERE region = 'us_west' AND user_id = 106 ORDER BY ALL SETTINGS log_comment = 'test_partial_3';
 
--- it's not possible to use different indexes with or filter yet
+-- Skip indexes on OR supported.
+-- All 5 rows from part1 (no skip indexes) +
+-- All 5 rows from part2 (because no index on user_id) +
+-- 2 rows from part3 -> 1 row each for region='asia' and user_id=101.
+-- Total 12
 SELECT * FROM test_partial_index WHERE region = 'asia' OR user_id = 101 ORDER BY ALL SETTINGS log_comment = 'test_partial_4';
 
 SYSTEM FLUSH LOGS query_log;

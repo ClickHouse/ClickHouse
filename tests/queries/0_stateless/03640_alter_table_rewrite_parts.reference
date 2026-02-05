@@ -16,3 +16,4 @@ select partition_id, rows, index_granularity_bytes_in_memory_allocated from syst
 1	5000	25
 select count() from test_materialize;
 10000
+select * from system.mutations where database = currentDatabase() and not is_done format Vertical;

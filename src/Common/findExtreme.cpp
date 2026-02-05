@@ -213,7 +213,7 @@ std::optional<size_t> findExtremeMinIndex(const T * __restrict ptr, size_t start
     if constexpr (is_floating_point<T>)
     {
         /// We search for the exact byte representation, not the default floating point equal, otherwise we might not find the value (NaN)
-        static_assert(std::is_pod_v<T>);
+        static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
         if (std::memcmp(&ptr[start], &value, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
             return {start};
         for (size_t i = end - 1; i > start; i--)
@@ -244,7 +244,7 @@ std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start
     if constexpr (is_floating_point<T>)
     {
         /// We search for the exact byte representation, not the default floating point equal, otherwise we might not find the value (NaN)
-        static_assert(std::is_pod_v<T>);
+        static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
         if (std::memcmp(&ptr[start], &value, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
             return {start};
         for (size_t i = end - 1; i > start; i--)

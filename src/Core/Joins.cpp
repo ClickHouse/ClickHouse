@@ -76,6 +76,15 @@ const char * toString(JoinAlgorithm join_algorithm)
     }
 }
 
+const char * toString(JoinOrderAlgorithm join_order_algorithm)
+{
+    switch (join_order_algorithm)
+    {
+        case JoinOrderAlgorithm::GREEDY: return "GREEDY";
+        case JoinOrderAlgorithm::DPSIZE: return "DPSIZE";
+    }
+}
+
 const char * toString(JoinTableSide join_table_side)
 {
     switch (join_table_side)

@@ -1,10 +1,10 @@
 #include <cstring>
 #include <memory>
 
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Common/StringUtils.h>
 #include <Columns/IColumn.h>
+#include <Common/StringUtils.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -19,6 +19,7 @@
 #include <Storages/ColumnsDescription.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -27,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace Nested
@@ -48,11 +50,8 @@ std::string concatenateName(const std::string & nested_table_name, const std::st
   */
 std::pair<std::string, std::string> splitName(const std::string & name, bool reverse)
 {
-    auto idx = (reverse ? name.find_last_of('.') : name.find_first_of('.'));
-    if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())
-        return {name, {}};
-
-    return {name.substr(0, idx), name.substr(idx + 1)};
+    auto res = splitName(std::string_view(name), reverse);
+    return {std::string(res.first), std::string(res.second)};
 }
 
 std::pair<std::string_view, std::string_view> splitName(std::string_view name, bool reverse)
@@ -64,6 +63,56 @@ std::pair<std::string_view, std::string_view> splitName(std::string_view name, b
     return {name.substr(0, idx), name.substr(idx + 1)};
 }
 
+std::vector<std::pair<std::string_view, std::string_view>> getAllColumnAndSubcolumnPairs(std::string_view name)
+{
+    std::vector<std::pair<std::string_view, std::string_view>> pairs;
+    auto idx = name.find_first_of('.');
+    while (idx != std::string::npos)
+    {
+        std::string_view column_name = name.substr(0, idx);
+        std::string_view subcolumn_name = name.substr(idx + 1);
+        if (!column_name.empty() && !subcolumn_name.empty())
+            pairs.emplace_back(column_name, subcolumn_name);
+        idx = name.find_first_of('.', idx + 1);
+    }
+
+    return pairs;
+}
+
+std::pair<std::string_view, std::string_view> getColumnAndSubcolumnPair(std::string_view name, const NameSet & storage_columns)
+{
+    for (auto [storage_column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        if (storage_columns.contains(String(storage_column_name)))
+            return {storage_column_name, subcolumn_name};
+    }
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Column or subcolumn '{}' is not found, there are only columns: {}",
+        name,
+        boost::join(storage_columns, ", "));
+}
+
+std::string_view getColumnFromSubcolumn(std::string_view name, const NameSet & storage_columns)
+{
+    return getColumnAndSubcolumnPair(name, storage_columns).first;
+}
+
+std::optional<String> tryGetColumnNameInStorage(const String & name, const NameSet & storage_columns)
+{
+    if (storage_columns.contains(name))
+        return name;
+
+    auto subcolumn_pairs = Nested::getAllColumnAndSubcolumnPairs(name);
+    for (const auto & [column_name, _] : subcolumn_pairs)
+    {
+        if (storage_columns.contains(String(column_name)))
+            return String(column_name);
+    }
+
+    return std::nullopt;
+}
 
 std::string extractTableName(const std::string & nested_name)
 {
@@ -107,7 +156,7 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
 
                     res.insert(ColumnWithTypeAndName(
                         is_const
-                            ? ColumnConst::create(std::move(column_array_of_element), block.rows())
+                            ? ColumnConst::create(column_array_of_element, block.rows())
                             : column_array_of_element,
                         std::make_shared<DataTypeArray>(element_types[i]),
                         nested_name));
@@ -366,4 +415,71 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(
     nested_tables[new_column_name_prefix] = std::make_shared<Block>(Nested::flatten(sub_block));
     return extractColumn(original_column_name, new_column_name_prefix, nested_names.second);
 }
+
+DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements)
+{
+    auto it = tuple_elements.begin();
+
+    /// Get underlying type for array, but w/o processing tuple elements that are not part of the nested, so it is done in 3 steps:
+    /// 1. Find Nested type (since it can be part of Tuple/Array)
+    /// 2. Process all Nested types (this is Array(Tuple()), it is responsibility of the caller to re-create proper Array nesting)
+    /// 3. Strip all nested arrays (it is responsibility of the caller to re-create proper Array nesting)
+
+    /// 1. Find Nested type (since it can be part of Tuple/Array)
+    while (true)
+    {
+        if (type->hasCustomName())
+            break;
+        else if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+            type = type_array->getNestedType();
+        else if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        {
+            if (it == tuple_elements.end())
+                break;
+
+            auto pos = type_tuple->tryGetPositionByName(*it);
+            if (!pos)
+                break;
+            ++it;
+
+            type = type_tuple->getElement(*pos);
+        }
+        else
+            break;
+    }
+
+    /// 2. Process all Nested types (this is Array(Tuple()), it is responsibility of the caller to re-create proper Array nesting)
+    while (type->hasCustomName())
+    {
+        if (const auto * type_nested = typeid_cast<const DataTypeNestedCustomName *>(type->getCustomName()))
+        {
+            if (it == tuple_elements.end())
+                break;
+
+            const auto & names = type_nested->getNames();
+            auto pos = std::find(names.begin(), names.end(), *it);
+            if (pos == names.end())
+                break;
+            ++it;
+
+            type = type_nested->getElements().at(std::distance(names.begin(), pos));
+        }
+        else
+            break;
+    }
+
+    /// 3. Strip all nested arrays (it is responsibility of the caller to re-create proper Array nesting)
+    while (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+        type = type_array->getNestedType();
+
+    return type;
+}
+
+DataTypePtr createArrayOfType(DataTypePtr type, size_t num_dimensions)
+{
+    for (size_t i = 0; i < num_dimensions; ++i)
+        type = std::make_shared<DataTypeArray>(std::move(type));
+    return type;
+}
+
 }

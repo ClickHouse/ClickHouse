@@ -13,6 +13,7 @@ namespace Setting
 {
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsBool optimize_injective_functions_in_group_by;
+    extern const SettingsBool allow_suspicious_types_in_group_by;
 }
 
 namespace
@@ -88,7 +89,8 @@ private:
 
                 // Aggregate functions are not allowed in GROUP BY clause
                 auto function = function_node->getFunctionOrThrow();
-                bool can_be_eliminated = function->isInjective(function_node->getArgumentColumns());
+                auto arguments = function_node->getArgumentColumns();
+                bool can_be_eliminated = function->isInjective(arguments) && isValidGroupByKeyTypes(arguments);
 
                 if (can_be_eliminated)
                 {
@@ -105,6 +107,29 @@ private:
         }
 
         grouping_set = std::move(new_group_by_keys);
+    }
+
+    bool isValidGroupByKeyTypes(const ColumnsWithTypeAndName & columns) const
+    {
+        if (getContext()->getSettingsRef()[Setting::allow_suspicious_types_in_group_by])
+            return true;
+
+        bool is_valid = true;
+        auto check = [&](const IDataType & type)
+        {
+            /// Dynamic and Variant types are not allowed in GROUP BY by default.
+            is_valid &= !isDynamic(type) && !isVariant(type);
+        };
+
+        for (const auto & column : columns)
+        {
+            check(*column.type);
+            column.type->forEachChild(check);
+            if (!is_valid)
+                break;
+        }
+
+        return is_valid;
     }
 };
 

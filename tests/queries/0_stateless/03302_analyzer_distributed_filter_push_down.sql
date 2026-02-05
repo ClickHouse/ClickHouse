@@ -1,4 +1,5 @@
 -- Tags: no-random-merge-tree-settings
+-- add_minmax_index_for_numeric_columns=0: Different plan
 
 set enable_analyzer=1;
 set serialize_query_plan = 0;
@@ -8,7 +9,7 @@ set optimize_aggregation_in_order=0, optimize_read_in_order=0;
 
 select '============ #66878';
 
-CREATE TABLE tab0 (x UInt32, y UInt32) engine = MergeTree order by x;
+CREATE TABLE tab0 (x UInt32, y UInt32) engine = MergeTree order by x SETTINGS add_minmax_index_for_numeric_columns=0;
 insert into tab0 select number, number from numbers(8192 * 123);
 
 
@@ -81,7 +82,7 @@ CREATE TABLE tab1
     `colAlias` String ALIAS responseBody || 'something else',
     INDEX ngrams colAlias TYPE ngrambf_v1(3, 2097152, 3, 0) GRANULARITY 10,
 )
-ENGINE = MergeTree ORDER BY recordTimestamp;
+ENGINE = MergeTree ORDER BY recordTimestamp SETTINGS add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO tab1 SELECT * FROM generateRandom('tenant String, recordTimestamp Int64, responseBody String') LIMIT 10;
 
@@ -93,7 +94,7 @@ select * from (explain indexes=1, distributed=1
 
 select '============ #68030';
 
-CREATE TABLE tab2 ENGINE=ReplacingMergeTree ORDER BY n AS SELECT intDiv(number,2) as n from numbers(8192 * 123);
+CREATE TABLE tab2 ENGINE=ReplacingMergeTree ORDER BY n SETTINGS add_minmax_index_for_numeric_columns=0 AS SELECT intDiv(number,2) as n from numbers(8192 * 123);
 CREATE VIEW test_view AS SELECT * FROM remote('127.0.0.{1,2}', currentDatabase(), tab2);
 
 select * from (explain indexes=1, actions=1, distributed=1

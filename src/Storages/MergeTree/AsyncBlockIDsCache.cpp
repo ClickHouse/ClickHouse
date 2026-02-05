@@ -71,7 +71,7 @@ AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
     , log(getLogger(log_name))
 {
-    task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ update(); });
+    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this]{ update(); });
 }
 
 template <typename TStorage>
@@ -95,6 +95,14 @@ void AsyncBlockIDsCache<TStorage>::triggerCacheUpdate()
     /// in case of duplicates
     if (!task->schedule())
         LOG_TRACE(log, "Task is already scheduled, will wait for update for {}ms", update_wait.count());
+}
+
+template <typename TStorage>
+void AsyncBlockIDsCache<TStorage>::truncate()
+{
+    std::lock_guard lock(mu);
+    cache_ptr.reset();
+    version = 0;
 }
 
 /// Caller will keep the version of last call. When the caller calls again, it will wait util gets a newer version.

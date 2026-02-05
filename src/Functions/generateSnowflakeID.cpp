@@ -280,9 +280,10 @@ SELECT generateSnowflakeID('expr', 1);
     };
     FunctionDocumentation::IntroducedIn introduced_in_generateSnowflakeID = {24, 6};
     FunctionDocumentation::Category category_generateSnowflakeID = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_generateSnowflakeID = {description_generateSnowflakeID, syntax_generateSnowflakeID, arguments_generateSnowflakeID, returned_value_generateSnowflakeID, examples_generateSnowflakeID, introduced_in_generateSnowflakeID, category_generateSnowflakeID};
+    FunctionDocumentation documentation_generateSnowflakeID = {description_generateSnowflakeID, syntax_generateSnowflakeID, arguments_generateSnowflakeID, {}, returned_value_generateSnowflakeID, examples_generateSnowflakeID, introduced_in_generateSnowflakeID, category_generateSnowflakeID};
 
     factory.registerFunction<FunctionGenerateSnowflakeID>(documentation_generateSnowflakeID);
+
 }
 
 }

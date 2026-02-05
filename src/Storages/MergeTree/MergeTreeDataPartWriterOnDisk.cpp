@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Compression/CompressionFactory.h>
 
@@ -16,6 +17,7 @@ extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
 
 namespace DB
 {
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
@@ -125,12 +127,14 @@ void MergeTreeDataPartWriterOnDisk::initStatistics()
 {
     for (const auto & stat_ptr : stats)
     {
-        String stats_name = stat_ptr->getFileName();
+        auto stats_filename = replaceFileNameToHashIfNeeded(escapeForFileName(stat_ptr->getStatisticName()), *storage_settings, data_part_storage.get());
         stats_streams.emplace_back(std::make_unique<MergeTreeWriterStream<true>>(
-                                       stats_name,
+                                       stats_filename,
                                        data_part_storage,
-                                       stats_name, STATS_FILE_SUFFIX,
-                                       default_codec, settings.max_compress_block_size,
+                                       stats_filename,
+                                       STATS_FILE_SUFFIX,
+                                       default_codec,
+                                       settings.max_compress_block_size,
                                        settings.query_write_settings));
     }
 }
@@ -171,7 +175,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
             skip_indices_streams_holders.push_back(std::move(stream));
         }
 
-        skip_indices_aggregators.push_back(skip_index->createIndexAggregator(settings));
+        skip_indices_aggregators.push_back(skip_index->createIndexAggregator());
         skip_index_accumulated_marks.push_back(0);
     }
 }
@@ -229,7 +233,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block 
     {
         const auto & stat_ptr = stats[i];
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        stat_ptr->build(block.getByName(stat_ptr->columnName()).column);
+        stat_ptr->build(block.getByName(stat_ptr->getColumnName()).column);
         execution_stats.statistics_build_us[i] += watch.elapsed();
     }
 }
@@ -253,7 +257,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
             if (skip_indices_aggregators[i]->empty() && granule.mark_on_start)
             {
-                skip_indices_aggregators[i] = index_helper->createIndexAggregator(settings);
+                skip_indices_aggregators[i] = index_helper->createIndexAggregator();
 
                 for (const auto & [type, stream] : index_streams)
                 {
@@ -354,10 +358,13 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         }
     }
 
-    for (auto & stream : skip_indices_streams_holders)
+    for (const auto & streams : skip_indices_streams)
     {
-        stream->preFinalize();
-        stream->addToChecksums(checksums);
+        for (const auto & [type, stream] : streams)
+        {
+            stream->preFinalize();
+            stream->addToChecksums(checksums, MergeTreeIndexSubstream::isCompressed(type));
+        }
     }
 }
 
@@ -371,7 +378,7 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(bool sync)
     }
 
     for (size_t i = 0; i < stats.size(); ++i)
-        LOG_DEBUG(log, "Spent {} ms calculating statistics {} for the part {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->columnName(), data_part_name);
+        LOG_DEBUG(log, "Spent {} ms calculating statistics {} for the part {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->getColumnName(), data_part_name);
 }
 
 void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums)
@@ -381,7 +388,7 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
         auto & stream = *stats_streams[i];
         stats[i]->serialize(stream.compressed_hashing);
         stream.preFinalize();
-        stream.addToChecksums(checksums);
+        stream.addToChecksums(checksums, true);
     }
 }
 

@@ -12,4 +12,4 @@ Expression ((Projection + Before ORDER BY))
         Expression
           ReadFromMergeTree (default.mt2)
         Expression
-          ReadFromStorage (TinyLog)
+          ReadFromStorageLog

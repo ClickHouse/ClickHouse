@@ -183,7 +183,7 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
     };
     FunctionDocumentation::IntroducedIn introduced_in_shardNum = {21, 9};
     FunctionDocumentation::Category category_shardNum = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_shardNum = {description_shardNum, syntax_shardNum, arguments_shardNum, returned_value_shardNum, examples_shardNum, introduced_in_shardNum, category_shardNum};
+    FunctionDocumentation documentation_shardNum = {description_shardNum, syntax_shardNum, arguments_shardNum, {}, returned_value_shardNum, examples_shardNum, introduced_in_shardNum, category_shardNum};
 
     factory.registerFunction<FunctionGetSpecialScalar<GetShardNum>>(documentation_shardNum);
 
@@ -213,7 +213,7 @@ SELECT shardCount() FROM shard_count_example;
     };
     FunctionDocumentation::IntroducedIn introduced_in_shardCount = {21, 9};
     FunctionDocumentation::Category category_shardCount = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_shardCount = {description_shardCount, syntax_shardCount, arguments_shardCount, returned_value_shardCount, examples_shardCount, introduced_in_shardCount, category_shardCount};
+    FunctionDocumentation documentation_shardCount = {description_shardCount, syntax_shardCount, arguments_shardCount, {}, returned_value_shardCount, examples_shardCount, introduced_in_shardCount, category_shardCount};
 
     factory.registerFunction<FunctionGetSpecialScalar<GetShardCount>>(documentation_shardCount);
 }

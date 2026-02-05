@@ -18,7 +18,7 @@ namespace DB
 namespace
 {
 
-class FunctionAddressToLine : public FunctionAddressToLineBase<StringRef, Dwarf::LocationInfoMode::FAST>
+class FunctionAddressToLine : public FunctionAddressToLineBase<std::string_view, Dwarf::LocationInfoMode::FAST>
 {
 public:
     static constexpr auto name = "addressToLine";
@@ -38,13 +38,13 @@ protected:
         auto result_column = ColumnString::create();
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            StringRef res_str = implCached(data[i]);
-            result_column->insertData(res_str.data, res_str.size);
+            std::string_view res_str = implCached(data[i]);
+            result_column->insertData(res_str.data(), res_str.size());
         }
         return result_column;
     }
 
-    void setResult(StringRef & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &) const override
+    void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &) const override
     {
         const char * arena_begin = nullptr;
         WriteBufferFromArena out(cache.arena, arena_begin);
@@ -139,7 +139,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionAddressToLine>(documentation);
 }

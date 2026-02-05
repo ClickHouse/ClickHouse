@@ -23,6 +23,8 @@ public:
 
     bool supportsNesting() const override { return true; }
 
+    bool transformsArgumentTypes() const override { return true; }
+
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())

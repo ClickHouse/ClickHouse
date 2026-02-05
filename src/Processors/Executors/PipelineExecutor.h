@@ -3,6 +3,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
+#include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ISlotControl.h>
 #include <Common/AllocatorWithMemoryTracking.h>
@@ -31,10 +32,13 @@ class PipelineExecutor
 public:
     /// Get pipeline as a set of processors.
     /// Processors should represent full graph. All ports must be connected, all connected nodes are mentioned in set.
-    /// Executor doesn't own processors, just stores reference.
     /// During pipeline execution new processors can appear. They will be added to existing set.
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
+    ///
+    /// PipelineExecutor must be destroyed before the corresponding QueryPipeline, because
+    /// QueryPlanResourceHolder may hold some resources referenced by processors and used in
+    /// processor destructors.
     explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem);
     ~PipelineExecutor();
 

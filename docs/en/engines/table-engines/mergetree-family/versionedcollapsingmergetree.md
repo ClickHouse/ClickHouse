@@ -4,11 +4,11 @@ description: 'Allows for quick writing of object states that are continually cha
 sidebar_label: 'VersionedCollapsingMergeTree'
 sidebar_position: 80
 slug: /engines/table-engines/mergetree-family/versionedcollapsingmergetree
-title: 'VersionedCollapsingMergeTree'
+title: 'VersionedCollapsingMergeTree table engine'
 doc_type: 'reference'
 ---
 
-# VersionedCollapsingMergeTree
+# VersionedCollapsingMergeTree table engine
 
 This engine:
 

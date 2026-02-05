@@ -140,8 +140,8 @@ struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UIn
     void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
         /// Keep in mind that calculations are approximate.
-        StringRef value = column.getDataAt(row_num);
-        insert(CityHash_v1_0_2::CityHash64(value.data, value.size), threshold);
+        auto value = column.getDataAt(row_num);
+        insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()), threshold);
     }
 };
 
@@ -306,7 +306,7 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large parameter for aggregate function {}. Maximum: {}",
                 name, toString(uniq_upto_max_threshold));
 
-        threshold = threshold_param;
+        threshold = static_cast<UInt8>(threshold_param);
     }
 
     if (argument_types.empty())
