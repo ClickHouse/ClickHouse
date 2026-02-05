@@ -105,19 +105,8 @@ ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<pa
 **Syntax**
 
 ```sql
--- With connection string
 CREATE TABLE table_name
-ENGINE = DeltaLake(connection_string, container_name, blobpath [, format] [, compression])
-
--- With storage account URL and credentials
-CREATE TABLE table_name
-ENGINE = DeltaLake(storage_account_url, container_name, blobpath, account_name, account_key [,
-format] [, compression])
-
--- With named collection (from tests)
-CREATE TABLE table_name
-ENGINE = DeltaLake(named_collection, container = 'container_name', storage_account_url = 'url',
-blob_path = '/path/')
+ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
 ```
 
 **Arguments**
