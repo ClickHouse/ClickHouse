@@ -25,6 +25,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/Session.h>
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
@@ -482,14 +483,20 @@ try
     const char * env_val = std::getenv("DISTRIBUTED_PLAN_SINGLE_STAGE"); // NOLINT(concurrency-mt-unsafe)
     bool distributed_plan_singe_stage = env_val && std::string(env_val) != "0";
 
-    getContext().context->setSetting("distributed_plan_force_exchange_kind", exchangeKind);
+    ThreadStatus thread_status;
+    auto session = std::make_unique<Session>(getContext().context, ClientInfo::Interface::TCP_INTERSERVER);
+    auto query_context = session->makeQueryContext();
+    auto thread_group = ThreadGroup::createForQuery(query_context);
+    CurrentThread::attachToGroup(thread_group);
+
+    query_context->setSetting("distributed_plan_force_exchange_kind", exchangeKind);
 
     {
         /// Create JOIN query plan
         auto query_plan = createHashJoinQueryPlan(data_a, data_b);
 
         /// Optimize query plan for distributed execution
-        QueryPlanOptimizationSettings optimization_settings(getContext().context);
+        QueryPlanOptimizationSettings optimization_settings(query_context);
         optimization_settings.make_distributed_plan = true;
         optimization_settings.distributed_plan_default_shuffle_join_bucket_count = 4;
         optimization_settings.distributed_plan_singe_stage = distributed_plan_singe_stage;  /// For debugging
@@ -515,13 +522,13 @@ try
     }
 
     const UUID query_uuid = UUIDHelpers::generateV4();
-    auto [object_storage, path] = getObjectStorageForTemporaryFiles(toString(query_uuid), getContext().context);
+    auto [object_storage, path] = getObjectStorageForTemporaryFiles(toString(query_uuid), query_context);
     auto cleanup = makeTemporaryFilesCleaner(object_storage, path, all_temporary_files_for_cleanup);
 
-    getContext().context->setSetting("distributed_plan_execute_locally", 1);
+    query_context->setSetting("distributed_plan_execute_locally", 1);
     auto cancellation_flag = std::make_shared<std::atomic<bool>>(false);
     /// Just execute the distributed query plan without checking the result
-    executeDistributedQuery(query_uuid, distributed_query_plan, getContext().context, cancellation_flag);
+    executeDistributedQuery(query_uuid, distributed_query_plan, query_context, cancellation_flag);
 }
 catch (Exception & e)
 {

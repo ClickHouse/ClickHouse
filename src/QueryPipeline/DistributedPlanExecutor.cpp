@@ -658,8 +658,11 @@ protected:
         std::promise<void> task_promise;
         std::future<void> future = task_promise.get_future();
 
-        std::thread([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, is_cancelled = this->is_cancelled]() mutable
+        std::thread([promise = std::move(task_promise), thread_group = CurrentThread::getGroup(), query_id = unique_query_id, task_description, ctx = context, is_cancelled = this->is_cancelled]() mutable
         {
+            ThreadStatus thread_status;
+            CurrentThread::attachToGroup(thread_group);
+
             try
             {
                 executeTask(query_id, task_description, ctx, is_cancelled);
