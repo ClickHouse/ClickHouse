@@ -16,10 +16,10 @@ using ObjectStorageQueueMetadataPtr = std::unique_ptr<ObjectStorageQueueMetadata
  * before shutting down all other tables,
  * to avoid "Table is shutting down" exceptions during processing.
  */
-class ObjectStorageQueueFactory final : private boost::noncopyable
+class StreamingStorageRegistry final : private boost::noncopyable
 {
 public:
-    static ObjectStorageQueueFactory & instance();
+    static StreamingStorageRegistry & instance();
 
     void registerTable(const StorageID & storage);
 
@@ -30,7 +30,7 @@ public:
     void shutdown();
 
 private:
-    const LoggerPtr log = getLogger("ObjectStorageQueueFactory");
+    const LoggerPtr log = getLogger("StreamingStorageRegistry");
     bool shutdown_called = false;
     std::mutex mutex;
     std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> storages;

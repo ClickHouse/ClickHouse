@@ -22,7 +22,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
+#include <Storages/StreamingStorageRegistry.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
@@ -434,10 +434,10 @@ void StorageObjectStorageQueue::startup()
     /// Register table as a Queue table on this server.
     /// This will allow to execute shutdown of Queue tables
     /// before shutting down all other tables on server shutdown.
-    ObjectStorageQueueFactory::instance().registerTable(getStorageID());
+    StreamingStorageRegistry::instance().registerTable(getStorageID());
     SCOPE_EXIT_SAFE({
         if (!startup_finished)
-            ObjectStorageQueueFactory::instance().unregisterTable(getStorageID(), /* if_exists */true);
+            StreamingStorageRegistry::instance().unregisterTable(getStorageID(), /* if_exists */ true);
     });
 
     fiu_do_on(FailPoints::object_storage_queue_fail_startup, {
@@ -460,7 +460,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     /// Unregister table from local Queue storages factory.
     /// (which allows to  to execute shutdown of Queue tables
     /// before shutting down all other tables on server shutdown).
-    ObjectStorageQueueFactory::instance().unregisterTable(getStorageID(), /* if_exists */true);
+    StreamingStorageRegistry::instance().unregisterTable(getStorageID(), /* if_exists */ true);
 
     table_is_being_dropped = is_drop;
     shutdown_called = true;
@@ -508,7 +508,7 @@ void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
-    ObjectStorageQueueFactory::instance().renameTable(prev_storage_id, getStorageID());
+    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
