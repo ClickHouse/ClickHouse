@@ -41,7 +41,7 @@ void DistinctTransform::buildFilter(
     SetVariants & variants,
     const IColumn::Filter * mask) const
 {
-    typename Method::State state(columns, key_sizes, nullptr);
+    typename Method::State state(columns, key_sizes, nullptr, false);
 
     if (mask)
     {

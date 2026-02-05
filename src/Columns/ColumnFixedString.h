@@ -1,16 +1,16 @@
 #pragma once
 
-#include <DataTypes/DataTypeString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <Common/PODArray.h>
-#include <base/memcmpSmall.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
+#include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Columns/ColumnFixedSizeHelper.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <base/memcmpSmall.h>
+#include <Common/PODArray.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -49,9 +49,18 @@ private:
     using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
 
     /** Create an empty column of strings of fixed-length `n` */
-    explicit ColumnFixedString(size_t n_) : n(n_) {}
+    explicit ColumnFixedString(size_t n_)
+        : n(n_)
+    {
+        ColumnFixedSizeHelper::setFixedSize(n);
+    }
 
-    ColumnFixedString(const ColumnFixedString & src) : chars(src.chars.begin(), src.chars.end()), n(src.n) {} /// NOLINT
+    ColumnFixedString(const ColumnFixedString & src)
+        : chars(src.chars.begin(), src.chars.end())
+        , n(src.n)
+    {
+        ColumnFixedSizeHelper::setFixedSize(n);
+    }
 
 public:
     std::string getName() const override { return "FixedString(" + std::to_string(n) + ")"; }

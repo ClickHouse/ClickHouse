@@ -22,3 +22,8 @@ clickhouse_add_executable(wrap_in_nullable wrap_in_nullable.cpp)
 target_link_libraries (wrap_in_nullable PRIVATE
     ch_contrib::gbenchmark_all
     dbms)
+
+clickhouse_add_executable(serialized_perf serialized_method_performance.cpp)
+target_link_libraries (serialized_perf PRIVATE
+    ch_contrib::gbenchmark_all
+    dbms)
