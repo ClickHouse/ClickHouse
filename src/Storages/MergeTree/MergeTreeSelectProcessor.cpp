@@ -271,7 +271,7 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
     if (reader_settings.use_query_condition_cache && prewhere_info)
         current_task.addPrewhereUnmatchedMarks(res.read_mark_ranges);
 
-    return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
+    return {Chunk(), res.num_read_rows, res.num_read_bytes, true};
 }
 
 ChunkAndProgress MergeTreeSelectProcessor::read()
