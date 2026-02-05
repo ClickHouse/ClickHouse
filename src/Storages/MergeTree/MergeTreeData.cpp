@@ -9562,10 +9562,13 @@ size_t MergeTreeData::movePartsOnShutdown(std::chrono::seconds timeout, LoggerPt
     if (total_count == 0)
         return 0;
 
-    /// Sort by modification_time descending (newest first)
+    /// Sort by level ascending (level 0 = freshly inserted, likely not yet replicated),
+    /// then by size ascending (smaller parts first to maximize count of preserved parts)
     std::sort(parts_to_move.begin(), parts_to_move.end(),
         [](const auto & a, const auto & b) {
-            return a.first->modification_time > b.first->modification_time;
+            if (a.first->info.level != b.first->info.level)
+                return a.first->info.level < b.first->info.level;
+            return a.first->getBytesOnDisk() < b.first->getBytesOnDisk();
         });
 
     LOG_INFO(shutdown_log, "Shutdown: starting parts move for table {}, parts_count={}, total_size={}",
