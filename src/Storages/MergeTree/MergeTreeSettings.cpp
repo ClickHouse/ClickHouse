@@ -2065,7 +2065,7 @@ namespace ErrorCodes
     - local - scope is limited by local disks .
     - none - empty scope, do not search
     )", 0) \
-    DECLARE(Seconds, refresh_statistics_interval, 300, R"(
+    DECLARE(Seconds, refresh_statistics_interval, 0, R"(
     The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
     )", 0) \
     DECLARE(UInt64, distributed_index_analysis_min_parts_to_activate, 10, R"(

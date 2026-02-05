@@ -1043,7 +1043,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"add_minmax_index_for_temporal_columns", false, false, "New setting"},
             {"distributed_index_analysis_min_parts_to_activate", 10, 10, "New setting"},
             {"distributed_index_analysis_min_indexes_size_to_activate", 1_GiB, 1_GiB, "New setting"},
-            {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {

@@ -5608,7 +5608,6 @@ void StorageReplicatedMergeTree::startup()
 {
     LOG_TRACE(log, "Starting up table");
     startOutdatedAndUnexpectedDataPartsLoadingTask();
-    startStatisticsCache();
     if (attach_thread)
     {
         attach_thread->start();

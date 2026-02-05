@@ -230,7 +230,6 @@ void StorageMergeTree::startup()
         background_operations_assignee.start();
         startBackgroundMovesIfNeeded();
         startOutdatedAndUnexpectedDataPartsLoadingTask();
-        startStatisticsCache();
     }
     catch (...)
     {
