@@ -11,6 +11,7 @@ namespace Setting
     extern const SettingsSeconds connect_timeout;
     extern const SettingsSeconds send_timeout;
     extern const SettingsSeconds receive_timeout;
+    extern const SettingsSeconds sync_request_timeout;
     extern const SettingsSeconds tcp_keep_alive_timeout;
     extern const SettingsMilliseconds handshake_timeout_ms;
     extern const SettingsMilliseconds hedged_connection_timeout_ms;
@@ -47,7 +48,8 @@ ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithoutFailover(const Setti
         .withTCPKeepAliveTimeout(settings[Setting::tcp_keep_alive_timeout])
         .withHandshakeTimeout(settings[Setting::handshake_timeout_ms])
         .withHedgedConnectionTimeout(settings[Setting::hedged_connection_timeout_ms])
-        .withReceiveDataTimeout(settings[Setting::receive_data_timeout_ms]);
+        .withReceiveDataTimeout(settings[Setting::receive_data_timeout_ms])
+        .withSyncRequestTimeout(settings[Setting::sync_request_timeout]);
 }
 
 /// Timeouts for the case when we will try many addresses in a loop.
