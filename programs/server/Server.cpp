@@ -3056,9 +3056,10 @@ try
 
             if (move_timeout_seconds > 0)
             {
-                auto shutdown_log = getLogger("ShutdownPartsMover");
                 auto context_for_move = global_context;
-                move_thread = std::thread([&moved_parts_count, context_for_move, move_timeout_seconds, shutdown_log] {
+                move_thread = std::thread([&moved_parts_count, context_for_move, move_timeout_seconds] {
+                    /// Create logger inside thread to ensure it outlives all usages
+                    auto shutdown_log = getLogger("ShutdownPartsMover");
                     try
                     {
                         for (const auto & db : DatabaseCatalog::instance().getDatabases({}))

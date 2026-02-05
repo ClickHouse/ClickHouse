@@ -87,11 +87,11 @@ def test_move_on_shutdown(started_cluster):
         node.query("DROP TABLE IF EXISTS test_move")
 
 
-def test_move_on_shutdown_timeout(started_cluster):
-    """Test that parts move respects timeout."""
+def test_move_on_shutdown_single_part(started_cluster):
+    """Test that a single part is moved from volatile to persistent volume on shutdown."""
     node.query(
         """
-        CREATE TABLE test_timeout (
+        CREATE TABLE test_single (
             id UInt64,
             data String
         ) ENGINE = MergeTree()
@@ -101,19 +101,22 @@ def test_move_on_shutdown_timeout(started_cluster):
     )
 
     try:
-        # Insert data
-        node.query("INSERT INTO test_timeout VALUES (1, 'data1')")
+        # Insert data to create a single part
+        node.query("INSERT INTO test_single VALUES (1, 'data1')")
 
         # Verify part is on volatile disk
-        volatile_parts = get_parts_on_disk(node, "test_timeout", "volatile")
+        volatile_parts = get_parts_on_disk(node, "test_single", "volatile")
         assert len(volatile_parts) == 1
 
-        # Restart and check move happened
+        # Restart node (triggers shutdown move)
         node.restart_clickhouse()
 
-        # Part should be moved
-        persistent_parts = get_parts_on_disk(node, "test_timeout", "persistent")
-        assert len(persistent_parts) == 1
+        # Part should be moved to persistent disk
+        persistent_parts = get_parts_on_disk(node, "test_single", "persistent")
+        volatile_parts_after = get_parts_on_disk(node, "test_single", "volatile")
+
+        assert len(persistent_parts) == 1, f"Expected 1 part on persistent after restart, got {persistent_parts}"
+        assert len(volatile_parts_after) == 0, f"Expected 0 parts on volatile after restart, got {volatile_parts_after}"
 
     finally:
-        node.query("DROP TABLE IF EXISTS test_timeout")
+        node.query("DROP TABLE IF EXISTS test_single")

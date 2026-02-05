@@ -5877,7 +5877,11 @@ void StorageReplicatedMergeTree::filterPartsCoveredByFutureMerge(
     auto lock_start_time = std::chrono::steady_clock::now();
     constexpr auto max_wait_time = std::chrono::milliseconds(100);
 
-    /// Try to acquire lock with timeout to avoid blocking shutdown
+    /// Try to acquire lock with timeout to avoid blocking shutdown.
+    /// NOTE: We access queue.state_mutex directly because this is a shutdown-time
+    /// optimization that needs minimal latency. The ReplicatedMergeTreeQueue is
+    /// a member of this class and the mutex access pattern is consistent with
+    /// ReplicatedMergeTreeMergePredicate which also accesses it directly.
     std::unique_lock lock(queue.state_mutex, std::defer_lock);
     while (!lock.try_lock())
     {
@@ -5906,7 +5910,6 @@ void StorageReplicatedMergeTree::filterPartsCoveredByFutureMerge(
         });
     parts_to_move.erase(to_remove, parts_to_move.end());
 }
-
 
 PartitionIdToMaxBlock StorageReplicatedMergeTree::getMaxAddedBlocks() const
 {
