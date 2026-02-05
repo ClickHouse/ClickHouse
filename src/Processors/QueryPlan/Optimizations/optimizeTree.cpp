@@ -544,10 +544,6 @@ void optimizeTreeSecondPass(
             continue;
         }
 
-        /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
-        if (optimization_settings.optimize_prewhere)
-            optimizePrewhere(*frame.node);
-
         stack.pop_back();
     }
 
@@ -581,7 +577,7 @@ void optimizeTreeSecondPass(
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
-    /// If join runtime filters were added re-run optimizePrewhere and filter push down optimizations
+    /// If join runtime filters were added re-run push down optimizations
     /// to move newly added runtime filter as deep in the tree as possible
     if (join_runtime_filters_were_added)
     {
@@ -599,11 +595,16 @@ void optimizeTreeSecondPass(
                     if (!changed_nodes)
                         break;
                 }
-            },
+            });
+    }
+
+    /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
+    if (optimization_settings.optimize_prewhere)
+    {
+        traverseQueryPlan(stack, root,
             [&](auto & frame_node)
             {
-                if (optimization_settings.optimize_prewhere)
-                    optimizePrewhere(frame_node);
+                optimizePrewhere(frame_node);
             });
     }
 

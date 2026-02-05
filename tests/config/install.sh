@@ -241,12 +241,14 @@ ln -sf $SRC_PATH/dhparam.pem $DEST_SERVER_PATH/
 ln -sf --backup=simple --suffix=_original.xml \
    $SRC_PATH/config.d/query_masking_rules.xml $DEST_SERVER_PATH/config.d/
 
+# Always install zookeeper.xml as the base config
+ln -sf $SRC_PATH/config.d/zookeeper.xml $DEST_SERVER_PATH/config.d/
+
+# Additionally install fault injection settings as an override when enabled
 if [[ -n "$ZOOKEEPER_FAULT_INJECTION" ]] && [[ "$ZOOKEEPER_FAULT_INJECTION" -eq 1 ]]; then
-    rm -f $DEST_SERVER_PATH/config.d/zookeeper.xml ||:
     ln -sf $SRC_PATH/config.d/zookeeper_fault_injection.xml $DEST_SERVER_PATH/config.d/
 else
     rm -f $DEST_SERVER_PATH/config.d/zookeeper_fault_injection.xml ||:
-    ln -sf $SRC_PATH/config.d/zookeeper.xml $DEST_SERVER_PATH/config.d/
 fi
 
 if [[ -n "$THREAD_POOL_FAULT_INJECTION" ]] && [[ "$THREAD_POOL_FAULT_INJECTION" -eq 1 ]]; then

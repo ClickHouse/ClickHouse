@@ -89,12 +89,14 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
-    const UserInfo &,
     const CachePriorityGuard::WriteLock & lock,
     const CacheStateGuard::Lock * state_lock,
     bool)
 {
-    return std::make_shared<LRUIterator>(add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock, state_lock));
+    return std::make_shared<LRUIterator>(add(
+        std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata),
+        lock,
+        state_lock));
 }
 
 LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
@@ -322,6 +324,7 @@ bool LRUFileCachePriority::canFit( /// NOLINT
     size_t elements,
     const CacheStateGuard::Lock & lock,
     IteratorPtr,
+    const OriginInfo &,
     bool) const
 {
     return canFit(size, elements, 0, 0, lock);
@@ -350,10 +353,10 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     IFileCachePriority::Iterator *,
     bool is_total_space_cleanup,
     bool is_dynamic_resize,
-    const IFileCachePriority::UserInfo & user_info,
+    const IFileCachePriority::OriginInfo & origin_info,
     const CacheStateGuard::Lock & lock)
 {
-    auto info = std::make_unique<QueueEvictionInfo>(description, user_info.user_id);
+    auto info = std::make_unique<QueueEvictionInfo>(description, origin_info.user_id);
     if (!size && !elements)
         return std::make_unique<EvictionInfo>(queue_id, std::move(info));
 
@@ -406,7 +409,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     bool continue_from_last_eviction_pos,
     size_t max_candidates_size,
     bool /* is_total_space_cleanup */,
-    const UserInfo &,
+    const OriginInfo &,
     CachePriorityGuard & cache_guard,
     CacheStateGuard &)
 {
@@ -538,7 +541,7 @@ IFileCachePriority::PriorityDumpPtr LRUFileCachePriority::dump(const CachePriori
         res.emplace_back(FileSegment::getInfo(segment_metadata->file_segment));
         return IterationResult::CONTINUE;
     }, stat, lock);
-    return std::make_shared<LRUPriorityDump>(res);
+    return std::make_shared<IPriorityDump>(res);
 }
 
 bool LRUFileCachePriority::modifySizeLimits(

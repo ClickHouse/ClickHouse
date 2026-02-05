@@ -124,7 +124,8 @@ std::span<const ManifestFileEntryPtr> defineDeletesSpan(
         assert(*previous_it);
         LOG_DEBUG(
             logger,
-            "Got {} {} delete elements for data file {}, taken data file object info: {}, first taken delete object info is {}, last taken "
+            "Preliminary check got {} {} delete elements for data file {}, taken data file object info: {}, first taken delete object info is "
+            "{}, last taken "
             "delete object info is {}",
             std::distance(beg_it, end_it),
             is_equality_delete ? "equality" : "position",
@@ -406,10 +407,29 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 object_info->addPositionDeleteObject(position_delete);
             }
         }
+
+        if (!object_info->info.position_deletes_objects.empty())
+        {
+            LOG_DEBUG(
+                logger,
+                "Finally got {} position delete elements for data file {}",
+                object_info->info.position_deletes_objects.size(),
+                object_info->info.data_object_file_path_key);
+        }
+
         for (const auto & equality_delete :
              defineDeletesSpan(manifest_file_entry, equality_deletes_files, /* is_equality_delete */ true, logger))
         {
             object_info->addEqualityDeleteObject(equality_delete);
+        }
+
+        if (!object_info->info.equality_deletes_objects.empty())
+        {
+            LOG_DEBUG(
+                logger,
+                "Finally got {} equality delete elements for data file {}",
+                object_info->info.equality_deletes_objects.size(),
+                object_info->info.data_object_file_path_key);
         }
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);

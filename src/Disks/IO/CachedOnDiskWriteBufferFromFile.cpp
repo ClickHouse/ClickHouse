@@ -27,7 +27,7 @@ namespace ErrorCodes
 FileSegmentRangeWriter::FileSegmentRangeWriter(
     FileCache * cache_,
     const FileSegment::Key & key_,
-    const FileCacheUserInfo & user_,
+    const FileCacheOriginInfo & origin_,
     size_t reserve_space_lock_wait_timeout_milliseconds_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
     const String & query_id_,
@@ -35,7 +35,7 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
     bool is_distributed_cache_)
     : cache(cache_)
     , key(key_)
-    , user(user_)
+    , origin(origin_)
     , reserve_space_lock_wait_timeout_milliseconds(reserve_space_lock_wait_timeout_milliseconds_)
     , log(getLogger("FileSegmentRangeWriter"))
     , cache_log(cache_log_)
@@ -207,7 +207,7 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
     {
         file_segments = cache->getOrSet(
             key, offset, /* size */cache->getMaxFileSegmentSize(),
-            /* file_size */0, create_settings, /* file_segments_limit */1, user);
+            /* file_size */0, create_settings, /* file_segments_limit */1, origin);
 
         const auto & file_segment = file_segments->front();
         if (file_segment.getDownloadedSize() != 0)
@@ -239,7 +239,7 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
     }
     else
     {
-        file_segments = cache->set(key, offset, cache->getMaxFileSegmentSize(), create_settings, user);
+        file_segments = cache->set(key, offset, cache->getMaxFileSegmentSize(), create_settings, origin);
     }
 
     chassert(file_segments->size() == 1);
@@ -323,7 +323,7 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     const FileCache::Key & key_,
     const String & query_id_,
     const WriteSettings & settings_,
-    const FileCacheUserInfo & user_,
+    const FileCacheOriginInfo & origin_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
     bool is_distributed_cache_,
     FileSegmentKind file_segment_kind_)
@@ -333,7 +333,7 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     , source_path(source_path_)
     , key(key_)
     , query_id(query_id_)
-    , user(user_)
+    , origin(origin_)
     , reserve_space_lock_wait_timeout_milliseconds(settings_.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds)
     , throw_on_error_from_cache(settings_.throw_on_error_from_cache)
     , is_distributed_cache(is_distributed_cache_)
@@ -366,7 +366,7 @@ void CachedOnDiskWriteBufferFromFile::nextImpl()
 
         /// If something was already written to cache, remove it.
         cache_writer.reset();
-        cache->removeKeyIfExists(key, user.user_id);
+        cache->removeKeyIfExists(key, origin.user_id);
 
         throw;
     }
@@ -380,7 +380,7 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
     if (!cache_writer)
     {
         cache_writer = std::make_unique<FileSegmentRangeWriter>(
-            cache.get(), key, user, reserve_space_lock_wait_timeout_milliseconds,
+            cache.get(), key, origin, reserve_space_lock_wait_timeout_milliseconds,
             cache_log, query_id, source_path, is_distributed_cache);
 
         if (cache_writer_start_position)

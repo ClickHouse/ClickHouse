@@ -17,6 +17,7 @@
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
 #include <Common/logger_useful.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Interpreters/Context.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
@@ -2064,7 +2065,7 @@ namespace ErrorCodes
     - local - scope is limited by local disks .
     - none - empty scope, do not search
     )", 0) \
-    DECLARE(Seconds, refresh_statistics_interval, 0, R"(
+    DECLARE(Seconds, refresh_statistics_interval, 300, R"(
     The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
     )", 0) \
     DECLARE(UInt64, distributed_index_analysis_min_parts_to_activate, 10, R"(
@@ -2104,6 +2105,10 @@ namespace ErrorCodes
     Compression codec for __row column data.
     Default is ZSTD(3) which provides good compression ratio and speed.
     )", EXPERIMENTAL) \
+    \
+    DECLARE(NonZeroUInt64, clone_replica_zookeeper_create_get_part_batch_size, zkutil::MULTI_BATCH_SIZE, R"(
+    Batch size for ZooKeeper multi-create get-part requests when cloning replica.
+    )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)

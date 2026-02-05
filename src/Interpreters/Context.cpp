@@ -323,7 +323,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
-    extern const SettingsString default_dictionary_database;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
 }
 
@@ -1979,8 +1978,12 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         /// If setUserID() was never called then this must be the global context with the full access.
         bool full_access = !user_id;
 
+        std::optional<UUID> initial_user_id;
+        if (client_info.initial_user != client_info.current_user)
+            initial_user_id = getAccessControl().find<User>(client_info.initial_user);
+
         return ContextAccessParams{
-            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, *settings, current_database, client_info};
+            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, *settings, current_database, client_info, initial_user_id};
     };
 
     /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.
@@ -2559,7 +2562,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     String database_name = getCurrentDatabase();
     String table_name = function->name;
 
-    if (function->is_compound_name)
+    if (function->isCompoundName())
     {
         std::vector<std::string> parts;
         splitInto<'.'>(parts, function->name);
@@ -2589,7 +2592,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                                                      /* comment */ "",
                                                      /* is_parameterized_view */ true);
             res->startup();
-            function->prefer_subquery_to_function_formatting = true;
+            function->setPreferSubqueryToFunctionFormatting(true);
             return res;
         }
     }

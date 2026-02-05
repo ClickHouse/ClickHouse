@@ -117,7 +117,9 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         )
 
     if random.random() < 0.2:
-        client_options.append(f"compatibility='{random.randint(20, 26)}.{random.randint(1, 12)}'")
+        client_options.append(
+            f"compatibility='{random.randint(20, 26)}.{random.randint(1, 12)}'"
+        )
 
     # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
     # That is why we use it with fallback to 'greedy'.
@@ -161,7 +163,10 @@ def run_func_test(
             f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
         )
         commands.append(full_command)
-        check_command = full_command + "--jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
+        check_command = (
+            full_command
+            + "--jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
+        )
         logging.info(check_command)
         try:
             execute_bash(check_command, timeout=180)
@@ -169,9 +174,15 @@ def run_func_test(
             logging.info(e.stdout)
 
             # Ignore fault injects, but most of the time tests should complete successfully
-            ignored_errors = ["CANNOT_SCHEDULE_TASK", "Fault injection", "Query memory tracker: fault injected"]
+            ignored_errors = [
+                "CANNOT_SCHEDULE_TASK",
+                "Fault injection",
+                "Query memory tracker: fault injected",
+            ]
             if any(err in e.stdout or err in e.stderr for err in ignored_errors):
-                logging.warning(f"Detected known transient error, ignoring: {ignored_errors}")
+                logging.warning(
+                    f"Detected known transient error, ignoring: {ignored_errors}"
+                )
                 continue
             raise
 
@@ -206,7 +217,9 @@ def compress_stress_logs(output_path: Path, files_prefix: str) -> None:
     check_output(cmd, shell=True)
 
 
-def call_with_retry(query: str, timeout: int|float = 30, retry_count: int = 5) -> None:
+def call_with_retry(
+    query: str, timeout: int | float = 30, retry_count: int = 5
+) -> None:
     logging.info("Running command: %s", str(query))
     for i in range(retry_count):
         code = call(query, shell=True, stderr=STDOUT, timeout=timeout)
@@ -225,7 +238,7 @@ def execute_bash(full_command, timeout=120):
             capture_output=True,
             text=True,
             timeout=timeout,
-            check=True
+            check=True,
         )
         logging.info(result.stdout)
         return result.stdout
@@ -238,6 +251,7 @@ def execute_bash(full_command, timeout=120):
     except subprocess.TimeoutExpired as e:
         logging.info(f"Test timed out. Partial output:\n{e.stdout}")
         raise
+
 
 def make_query_command(query: str) -> str:
     return (

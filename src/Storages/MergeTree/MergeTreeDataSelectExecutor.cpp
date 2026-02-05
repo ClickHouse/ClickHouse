@@ -821,6 +821,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (!ranges.ranges.empty())
                 sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
 
+            if (is_final_query && use_skip_indexes_if_final_exact_mode_)
+            {
+                ranges.ranges_snapshot_after_pk_analysis = ranges.ranges;
+            }
+
             if (!skip_indexes.empty())
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);

@@ -21,8 +21,8 @@ def started_cluster():
 def test_sql_impersonate():
 
     node.query(
-        "CREATE  USER user1 IDENTIFIED WITH plaintext_password BY 'password1';"
-        "CREATE  USER user2 IDENTIFIED WITH plaintext_password BY 'password2';"
+        "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'password1';"
+        "CREATE USER user2 IDENTIFIED WITH plaintext_password BY 'password2';"
     )
 
     queries = [
