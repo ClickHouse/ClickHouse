@@ -271,7 +271,7 @@ ProcessList::EntryPtr ProcessList::insert(
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
-            thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
+            thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
             {
@@ -286,8 +286,9 @@ ProcessList::EntryPtr ProcessList::insert(
                 if (temporary_data_on_disk_settings.buffer_size > 1_GiB)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
 
-                query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
-                    user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
+                if (user_process_list.user_temp_data_on_disk)
+                    query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
+                        user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
             }
 
             /// Set query-level memory trackers
@@ -396,6 +397,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
 ProcessListEntry::~ProcessListEntry()
 {
+    CancellationChecker::getInstance().appendDoneTasks(*it);
     LockAndOverCommitTrackerBlocker<std::unique_lock, ProcessList::Mutex> lock(parent.getMutex());
 
     const String user = (*it)->getClientInfo().current_user;
@@ -434,8 +436,6 @@ ProcessListEntry::~ProcessListEntry()
 
     if (auto query_user = parent.queries_to_user.find(query_id); query_user != parent.queries_to_user.end())
         parent.queries_to_user.erase(query_user);
-
-    CancellationChecker::getInstance().appendDoneTasks(*it);
 
     /// This removes the memory_tracker of one request.
     parent.processes.erase(it);
@@ -873,8 +873,9 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
             .metrics = {}, /// Metrics are set by child scopes
         };
 
-        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),
-            std::move(temporary_data_on_disk_settings));
+        if (auto shared_temp_data = global_context->getSharedTempDataOnDisk())
+            user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(shared_temp_data),
+                std::move(temporary_data_on_disk_settings));
     }
 }
 

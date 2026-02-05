@@ -1,12 +1,13 @@
 #pragma once
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <boost/math/distributions/students_t.hpp>
-#include <boost/math/distributions/normal.hpp>
-#include <boost/math/distributions/fisher_f.hpp>
 #include <cfloat>
 #include <numeric>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <boost/math/distributions/fisher_f.hpp>
+#include <boost/math/distributions/normal.hpp>
+#include <boost/math/distributions/students_t.hpp>
+#include <Common/ContainersWithMemoryTracking.h>
 
 
 namespace DB
@@ -534,11 +535,11 @@ struct AnalysisOfVarianceMoments
     constexpr static size_t MAX_GROUPS_NUMBER = 1024 * 1024;
 
     /// Sums of values within a group
-    std::vector<T> xs1{};
+    VectorWithMemoryTracking<T> xs1{};
     /// Sums of squared values within a group
-    std::vector<T> xs2{};
+    VectorWithMemoryTracking<T> xs2{};
     /// Sizes of each group. Total number of observations is just a sum of all these values
-    std::vector<size_t> ns{};
+    VectorWithMemoryTracking<size_t> ns{};
 
     void resizeIfNeeded(size_t possible_size)
     {

@@ -463,7 +463,7 @@ struct ZooKeeperSimpleListRequest final : ZooKeeperListRequest
     ZooKeeperResponsePtr makeResponse() const override;
 };
 
-struct ZooKeeperFilteredListRequest final : ZooKeeperListRequest
+struct ZooKeeperFilteredListRequest : ZooKeeperListRequest
 {
     ListRequestType list_request_type{ListRequestType::ALL};
 
@@ -476,6 +476,23 @@ struct ZooKeeperFilteredListRequest final : ZooKeeperListRequest
     size_t bytesSize() const override { return ZooKeeperListRequest::bytesSize() + sizeof(list_request_type); }
 };
 
+/// Extension of FilteredListRequest with optional stats and data fields
+struct ZooKeeperFilteredListWithStatsAndDataRequest final : ZooKeeperFilteredListRequest
+{
+    /// Feature LIST_WITH_STAT_AND_DATA: optionally populate stats and data in response
+    bool with_stat = false;
+    bool with_data = false;
+
+    OpNum getOpNum() const override { return OpNum::FilteredListWithStatsAndData; }
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl(bool short_format) const override;
+    ZooKeeperResponsePtr makeResponse() const override;
+
+    size_t bytesSize() const override { return ZooKeeperFilteredListRequest::bytesSize() + sizeof(with_stat) + sizeof(with_data); }
+};
+
 struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer & in) override;
@@ -486,6 +503,15 @@ struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
     size_t bytesSize() const override { return ListResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 
     void fillLogElements(LogElements & elems, size_t idx) const override;
+};
+
+/// Extension of ListResponse with optional stats and data fields
+struct ZooKeeperFilteredListWithStatsAndDataResponse final : ZooKeeperListResponse
+{
+    OpNum getOpNum() const override { return OpNum::FilteredListWithStatsAndData; }
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
 };
 
 struct ZooKeeperSimpleListResponse final : ZooKeeperListResponse

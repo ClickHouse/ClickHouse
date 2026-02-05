@@ -530,11 +530,18 @@ struct ListResponse : virtual Response
     std::vector<String> names;
     Stat stat;
 
+    /// Optional fields for LIST_WITH_STAT_AND_DATA feature
+    std::vector<Stat> stats;  /// Per-child stats (if requested via with_stat)
+    std::vector<String> data; /// Per-child data (if requested via with_data)
+
     size_t bytesSize() const override
     {
         size_t size = sizeof(stat);
         for (const auto & name : names)
             size += name.size();
+        size += stats.size() * sizeof(Stat);
+        for (const auto & child_data : data)
+            size += child_data.size();
         return size;
     }
 };
@@ -779,7 +786,9 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallbackPtrOrEventPtr watch) = 0;
+        WatchCallbackPtrOrEventPtr watch,
+        bool with_stat,
+        bool with_data) = 0;
 
     virtual void check(
         const String & path,

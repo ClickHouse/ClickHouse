@@ -2,6 +2,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/CreateQueryUUIDs.h>
 #include <Common/quoteString.h>
@@ -80,22 +81,34 @@ void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     if (partition_by)
     {
         ostr << s.nl_or_ws << "PARTITION BY ";
-        partition_by->format(ostr, s, state, modified_frame);
+        auto nested_frame = modified_frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(partition_by); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        partition_by->format(ostr, s, state, nested_frame);
     }
     if (primary_key)
     {
         ostr << s.nl_or_ws << "PRIMARY KEY ";
-        primary_key->format(ostr, s, state, modified_frame);
+        auto nested_frame = modified_frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(primary_key); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        primary_key->format(ostr, s, state, nested_frame);
     }
     if (order_by)
     {
         ostr << s.nl_or_ws << "ORDER BY ";
-        order_by->format(ostr, s, state, modified_frame);
+        auto nested_frame = modified_frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(order_by); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        order_by->format(ostr, s, state, nested_frame);
     }
     if (sample_by)
     {
         ostr << s.nl_or_ws << "SAMPLE BY ";
-        sample_by->format(ostr, s, state, modified_frame);
+        auto nested_frame = modified_frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(sample_by); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        sample_by->format(ostr, s, state, nested_frame);
     }
     if (ttl_table)
     {
@@ -345,7 +358,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
         ostr << action;
         ostr << " ";
-        ostr << (temporary ? "TEMPORARY " : "")
+        ostr << (isTemporary() ? "TEMPORARY " : "")
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
            ;
@@ -362,9 +375,9 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         if (uuid != UUIDHelpers::Nil)
             ostr << " UUID " << quoteString(toString(uuid));
 
-        assert(attach || !attach_from_path);
-        if (attach_from_path)
-            ostr << " FROM " << quoteString(*attach_from_path);
+        assert(attach || !has_attach_from_path);
+        if (has_attach_from_path)
+            ostr << " FROM " << quoteString(attach_from_path);
 
         if (attach_as_replicated.has_value())
         {

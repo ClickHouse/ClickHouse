@@ -68,8 +68,9 @@ class ThreadGroup
 {
 public:
     using FatalErrorCallback = std::function<void()>;
-    explicit ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
+    ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
     explicit ThreadGroup(ThreadGroupPtr parent);
+    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -124,6 +125,7 @@ public:
     static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
+    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;

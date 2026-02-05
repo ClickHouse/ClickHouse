@@ -128,23 +128,26 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
 
 BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
 {
+    if (query.kind == ASTDropQuery::Kind::Detach && query.isTemporary())
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACH of TEMPORARY tables are not supported");
+
     /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
-    if (query.temporary || table_id.database_name.empty())
+    if (query.isTemporary() || table_id.database_name.empty())
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
             return executeToTemporaryTable(table_id.getTableName(), query.kind);
         query.setDatabase(table_id.database_name = context_->getCurrentDatabase());
     }
 
-    if (query.temporary)
+    if (query.isTemporary())
     {
         if (query.if_exists)
             return {};
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Temporary table {} doesn't exist", backQuoteIfNeed(table_id.table_name));
     }
 
-    auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
+    auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr) : nullptr);
 
     /// If table was already dropped by anyone, an exception will be thrown
     auto [database, table] = query.if_exists ? DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context_)
@@ -228,7 +231,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             query_to_send.if_empty = false;
 
-            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {});
+            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)
@@ -328,9 +331,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
 BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind)
 {
-    if (kind == ASTDropQuery::Kind::Detach)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unable to detach temporary table.");
-
     auto context_handle = getContext()->hasSessionContext() ? getContext()->getSessionContext() : getContext();
     auto resolved_id = context_handle->tryResolveStorageID(StorageID("", table_name), Context::ResolveExternal);
     if (resolved_id)
@@ -413,7 +413,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         return {};
 
     const auto & database_name = query.getDatabase();
-    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
+    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
 
     database = tryGetDatabase(database_name, query.if_exists);
     if (!database)
@@ -678,7 +678,7 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
         else if (drop.kind == ASTDropQuery::Kind::Drop)
             required_access.emplace_back(AccessType::DROP_DICTIONARY, drop.getDatabase(), drop.getTable());
     }
-    else if (!drop.temporary)
+    else if (!drop.isTemporary())
     {
         /// It can be view or table.
         if (drop.kind == ASTDropQuery::Kind::Drop)
@@ -695,7 +695,7 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context,
                                             const StorageID & target_table_id, bool sync, bool ignore_sync_setting, bool need_ddl_guard)
 {
-    auto ddl_guard = (need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(target_table_id.database_name, target_table_id.table_name) : nullptr);
+    auto ddl_guard = (need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(target_table_id.database_name, target_table_id.table_name, nullptr) : nullptr);
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
     {
         /// We create and execute `drop` query for internal table.
@@ -738,7 +738,7 @@ bool InterpreterDropQuery::supportsTransactions() const
     auto & drop = query_ptr->as<ASTDropQuery &>();
 
     return drop.cluster.empty()
-            && !drop.temporary
+            && !drop.isTemporary()
             && drop.kind == ASTDropQuery::Kind::Truncate
             && drop.table;
 }

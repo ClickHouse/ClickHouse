@@ -15,6 +15,7 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Common/ArenaAllocator.h>
+#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -466,7 +467,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function '{}' requires 'String' parameters", name);
 
     String param_dir = parameters.at(0).safeGet<String>();
-    std::unordered_map<std::string, SequenceDirection> seq_dir_mapping{
+    UnorderedMapWithMemoryTracking<std::string, SequenceDirection> seq_dir_mapping{
         {"forward", SequenceDirection::Forward},
         {"backward", SequenceDirection::Backward},
     };
@@ -475,7 +476,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
     SequenceDirection direction = seq_dir_mapping[param_dir];
 
     String param_base = parameters.at(1).safeGet<String>();
-    std::unordered_map<std::string, SequenceBase> seq_base_mapping{
+    UnorderedMapWithMemoryTracking<std::string, SequenceBase> seq_base_mapping{
         {"head", SequenceBase::Head},
         {"tail", SequenceBase::Tail},
         {"first_match", SequenceBase::FirstMatch},

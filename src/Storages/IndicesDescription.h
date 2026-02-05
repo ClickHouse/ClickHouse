@@ -50,7 +50,8 @@ struct IndexDescription
     /// Index granularity, make sense for skip indices
     size_t granularity;
 
-    /// True if index is created implicitly using settings add_minmax_index_for_numeric_columns or add_minmax_index_for_string_columns
+    /// True if index is created implicitly using settings:
+    /// add_minmax_index_for_numeric_columns, add_minmax_index_for_string_columns, or add_minmax_index_for_temporal_columns
     bool is_implicitly_created;
 
     /// This is here for compatibility reasons. Prior to 26.1 index filenames weren't escaped, which could lead to issues with some

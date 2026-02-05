@@ -863,18 +863,19 @@ When moving conditions from WHERE to PREWHERE, allow reordering them to optimize
 )", 0) \
     \
     DECLARE_WITH_ALIAS(UInt64, alter_sync, 1, R"(
-Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+Allows you to specify the wait behavior for actions that are to be executed on replicas by [`ALTER`](../../sql-reference/statements/alter/index.md), [`OPTIMIZE`](../../sql-reference/statements/optimize.md) or [`TRUNCATE`](../../sql-reference/statements/truncate.md) queries.
 
 Possible values:
 
 - `0` — Do not wait.
 - `1` — Wait for own execution.
 - `2` — Wait for everyone.
+- `3` - Only wait for active replicas.
 
 Cloud default value: `1`.
 
 :::note
-`alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
+`alter_sync` is applicable to `Replicated` and `SharedMergeTree` tables only, it does nothing to alter non `Replicated` or `Shared` tables.
 :::
 )", 0, replication_alter_partitions_sync) \
     DECLARE(Int64, replication_wait_for_inactive_replica_timeout, 120, R"(
@@ -1960,10 +1961,19 @@ Possible values:
 ```
 )", 0) \
 \
+    DECLARE(DeduplicateInsertMode, deduplicate_insert, DeduplicateInsertMode::BACKWARD_COMPATIBLE_CHOICE, R"(
+Enables or disables block deduplication of  `INSERT INTO` (for Replicated\* tables).
+The setting overrides `insert_deduplicate` and `async_insert_deduplicate` settings.
+That setting has three possible values:
+- disable — Deduplication is disabled for `INSERT INTO` query.
+- enable — Deduplication is enabled for `INSERT INTO` query.
+- backward_compatible_choice — Deduplication is enabled if `insert_deduplicate` or `async_insert_deduplicate` are enabled for specific insert type.
+    )", 0) \
+\
     DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE, R"(
 Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
-The setting overrids `insert_deduplicate` for `INSERT SELECT` queries.
-That setting has three possible values:
+The setting overrids `insert_deduplicate` and `deduplicate_insert` for `INSERT SELECT` queries.
+That setting has four possible values:
 - disable — Deduplication is disabled for `INSERT SELECT` query.
 - force_enable — Deduplication is enabled for `INSERT SELECT` query. If select result is not stable, exception is thrown.
 - enable_when_possible — Deduplication is enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
@@ -4851,18 +4861,18 @@ Query:
 ```sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
 SET optimize_syntax_fuse_functions = 1;
-EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
 ```
 
 Result:
 
 ```text
 SELECT
-    sum(a),
-    sumCount(b).1,
-    sumCount(b).2,
-    (sumCount(b).1) / (sumCount(b).2)
-FROM fuse_tbl
+    sum(__table1.a) AS `sum(a)`,
+    tupleElement(sumCount(__table1.b), 1) AS `sum(b)`,
+    tupleElement(sumCount(__table1.b), 2) AS `count(b)`,
+    divide(tupleElement(sumCount(__table1.b), 1), toFloat64(tupleElement(sumCount(__table1.b), 2))) AS `avg(b)`
+FROM default.fuse_tbl AS __table1
 ```
 )", 0) \
     DECLARE(Bool, flatten_nested, true, R"(
@@ -5266,16 +5276,6 @@ Allow sharing set objects build for IN subqueries between different tasks of the
     DECLARE(Bool, use_query_condition_cache, true, R"(
 Enable the [query condition cache](/operations/query-condition-cache). The cache stores ranges of granules in data parts which do not satisfy the condition in the `WHERE` clause,
 and reuse this information as an ephemeral index for subsequent queries.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(Bool, query_condition_cache_store_conditions_as_plaintext, false, R"(
-Stores the filter condition for the [query condition cache](/operations/query-condition-cache) in plaintext.
-If enabled, system.query_condition_cache shows the verbatim filter condition which makes it easier to debug issues with the cache.
-Disabled by default because plaintext filter conditions may expose sensitive information.
 
 Possible values:
 
@@ -6981,10 +6981,19 @@ Replace table function engines with their -Cluster alternatives
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
 Allow usage of materialized views with parallel replicas
 )", 0) \
+    DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
+Allow pushing down filters to part of query which parallel replicas choose to execute
+)", BETA) \
     DECLARE(Bool, distributed_index_analysis, false, R"(
 Index analysis will be distributed across replicas.
 Beneficial for shared storage and huge amount of data in cluster.
 Uses replicas from cluster_for_parallel_replicas.
+
+**See also**
+
+- [distributed_index_analysis_for_non_shared_merge_tree](#distributed_index_analysis_for_non_shared_merge_tree)
+- [distributed_index_analysis_min_parts_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_parts_to_activate)
+- [distributed_index_analysis_min_indexes_size_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_indexes_size_to_activate)
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_index_analysis_for_non_shared_merge_tree, false, R"(
 Enable distributed index analysis even for non SharedMergeTree (cloud only engine).
@@ -7297,6 +7306,11 @@ Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are n
 If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
 Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
     )", 0) \
+    DECLARE(String, default_dictionary_database, "", R"(
+Database to search for external dictionaries when database name is not specified.
+An empty string means the current database. If dictionary is not found in the specified default database, ClickHouse falls back to the current database.
+
+Can be useful for migrating from XML-defined global dictionaries to SQL-defined dictionaries.)", 0) \
     DECLARE(Int64, optimize_const_name_size, 256, R"(
 Replace with scalar and use hash as a name for large constants (size is estimated by the name length).
 
@@ -7316,9 +7330,6 @@ instead of glob listing. 0 means disabled.
     DECLARE(Bool, ignore_on_cluster_for_replicated_database, false, R"(
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, enable_qbit_type, true, R"(
-Allows creation of [QBit](../../sql-reference/data-types/qbit.md) data type.
-)", BETA, allow_experimental_qbit_type) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     \
@@ -7571,6 +7582,7 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_r
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
+    MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false) \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0) \
     MAKE_OBSOLETE(M, UInt64, max_memory_usage_for_all_queries, 0) \
     MAKE_OBSOLETE(M, UInt64, multiple_joins_rewriter_version, 0) \
@@ -7588,6 +7600,8 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_r
     MAKE_OBSOLETE(M, Bool, allow_experimental_inverted_index, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_vector_similarity_index, true) \
     MAKE_OBSOLETE(M, Bool, enable_vector_similarity_index, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_qbit_type, true) \
+    MAKE_OBSOLETE(M, Bool, enable_qbit_type, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \

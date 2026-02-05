@@ -386,34 +386,35 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
     remote_source_path = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
     remote_tmp_path = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
 
+    copy_started = true;
     object_storage->copyObject(StoredObject(remote_source_path), StoredObject(remote_tmp_path), getReadSettings(), getWriteSettings());
-    copy_created = true;
 
+    remove_started = true;
     object_storage->removeObjectIfExists(StoredObject(remote_source_path));
-    source_removed = true;
 
+    remove_finished = true;
     fs_tree->removeFile(path);
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
 {
-    if (!copy_created)
+    if (!copy_started)
         return;
 
     chassert(file_remote_info.has_value());
 
-    if (source_removed)
-    {
+    if (remove_started)
         object_storage->copyObject(StoredObject(remote_tmp_path), StoredObject(remote_source_path), getReadSettings(), getWriteSettings());
-    }
 
     object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
-    fs_tree->recordFile(path, std::move(file_remote_info.value()));
+
+    if (remove_finished)
+        fs_tree->recordFile(path, std::move(file_remote_info.value()));
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize()
 {
-    if (copy_created)
+    if (copy_started)
         object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
 }
 

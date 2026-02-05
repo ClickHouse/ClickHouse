@@ -474,7 +474,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::CLEAR_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
-            const auto user_id = FileCache::getCommonUser().user_id;
+            const auto user_id = FileCache::getCommonOrigin().user_id;
 
             if (query.filesystem_cache_name.empty())
             {
@@ -529,8 +529,7 @@ BlockIO InterpreterSystemQuery::execute()
                 {
                     size_t i = 0;
                     const auto path = cache->getFileSegmentPath(
-                        file_segment.key, file_segment.offset, file_segment.kind,
-                        FileCache::UserInfo(file_segment.user_id, file_segment.user_weight));
+                        file_segment.key, file_segment.offset, file_segment.kind, file_segment.origin);
                     res_columns[i++]->insert(cache_name);
                     res_columns[i++]->insert(path);
                     res_columns[i++]->insert(file_segment.downloaded_size);
@@ -869,7 +868,10 @@ BlockIO InterpreterSystemQuery::execute()
 
             std::vector<StorageID> tables;
             for (const auto & [database, table]: query.tables)
+            {
                 tables.push_back(getContext()->resolveStorageID({database, table}, Context::ResolveOrdinary));
+                getContext()->getQueryContext()->addQueryAccessInfo(tables.back(), {});
+            }
 
             queue->flush(tables);
             break;
@@ -1062,7 +1064,7 @@ void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
 StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
 {
     LOG_TRACE(log, "Restarting replica {}", replica);
-    auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName());
+    auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName(), nullptr);
 
     auto restart_replica_lock = DatabaseCatalog::instance().tryGetLockForRestartReplica(replica.getDatabaseName());
     if (!restart_replica_lock)
@@ -1857,7 +1859,7 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
-    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
+    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
     if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))

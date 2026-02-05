@@ -139,7 +139,7 @@ StorageMaterializedView::StorageMaterializedView(
                         "either ENGINE or an existing table in a TO clause");
 
     if (to_table_engine && to_table_engine->primary_key)
-        storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->getChild(*to_table_engine->primary_key),
+        storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->primary_key->ptr(),
                                                                      storage_metadata.columns,
                                                                      local_context->getGlobalContext());
 
@@ -290,18 +290,18 @@ StorageMaterializedView::StorageMaterializedView(
         if (storage_features.supports_skipping_indices)
         {
             if (query.columns_list->indices)
-                new_columns_list->set(new_columns_list->indices, query.columns_list->getChild(*query.columns_list->indices));
+                new_columns_list->set(new_columns_list->indices, query.columns_list->indices->ptr());
             if (query.columns_list->constraints)
-                new_columns_list->set(new_columns_list->constraints, query.columns_list->getChild(*query.columns_list->constraints));
+                new_columns_list->set(new_columns_list->constraints, query.columns_list->constraints->ptr());
             if (query.columns_list->primary_key)
-                new_columns_list->set(new_columns_list->primary_key, query.columns_list->getChild(*query.columns_list->primary_key));
+                new_columns_list->set(new_columns_list->primary_key, query.columns_list->primary_key->ptr());
             if (query.columns_list->primary_key_from_columns)
-                new_columns_list->set(new_columns_list->primary_key_from_columns, query.columns_list->getChild(*query.columns_list->primary_key_from_columns));
+                new_columns_list->set(new_columns_list->primary_key_from_columns, query.columns_list->primary_key_from_columns->ptr());
         }
         if (storage_features.supports_projections)
         {
             if (query.columns_list->projections)
-                new_columns_list->set(new_columns_list->projections, query.columns_list->getChild(*query.columns_list->projections));
+                new_columns_list->set(new_columns_list->projections, query.columns_list->projections->ptr());
         }
 
         manual_create_query->set(manual_create_query->columns_list, new_columns_list);
@@ -539,7 +539,7 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     return refresh_context;
 }
 
-std::tuple<boost::intrusive_ptr<ASTInsertQuery>, std::unique_ptr<CurrentThread::QueryScope>>
+std::tuple<boost::intrusive_ptr<ASTInsertQuery>, CurrentThread::QueryScope>
 StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const
 {
     auto inner_table_id = getTargetTableId();
@@ -550,7 +550,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
 
     if (!append)
     {
-        CurrentThread::QueryScope query_scope(refresh_context);
+       auto query_scope = CurrentThread::QueryScope::create(refresh_context);
 
         auto db = DatabaseCatalog::instance().getDatabase(inner_table_id.database_name);
         String db_name = db->getDatabaseName();
@@ -580,7 +580,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     }
 
     // Create a thread group for the query.
-    auto query_scope = std::make_unique<CurrentThread::QueryScope>(refresh_context);
+    auto query_scope = CurrentThread::QueryScope::create(refresh_context);
 
     auto insert_query = make_intrusive<ASTInsertQuery>();
     insert_query->select = select_query;
@@ -614,7 +614,7 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
     auto target_db = DatabaseCatalog::instance().getDatabase(fresh_table.database_name);
     bool exchange = DatabaseCatalog::instance().isTableExist(stale_table_id, refresh_context);
 
-    CurrentThread::QueryScope query_scope(refresh_context);
+    auto query_scope = CurrentThread::QueryScope::create(refresh_context);
 
     auto rename_query = make_intrusive<ASTRenameQuery>();
     rename_query->exchange = exchange;
@@ -627,7 +627,7 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
 
 void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePtr refresh_context, String & out_exception)
 {
-    CurrentThread::QueryScope query_scope(refresh_context);
+    auto query_scope = CurrentThread::QueryScope::create(refresh_context);
 
     auto drop_query = make_intrusive<ASTDropQuery>();
     drop_query->setDatabase(table_id.database_name);

@@ -1,6 +1,8 @@
 #include <string_view>
 #include <unordered_map>
 
+#include <base/scope_guard.h>
+
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
 
@@ -525,8 +527,8 @@ static boost::intrusive_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&.
 
     if (op.type == OperatorType::Lambda)
     {
-        ast_function->is_lambda_function = true;
-        ast_function->kind = ASTFunction::Kind::LAMBDA_FUNCTION;
+        ast_function->setIsLambdaFunction(true);
+        ast_function->setKind(ASTFunction::Kind::LAMBDA_FUNCTION);
     }
     return ast_function;
 }
@@ -879,10 +881,18 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     if (!literal || literal->value.getType() != Field::Types::String)
         return;
 
+    /// Look up token position from the map stored in Expected
+    if (!expected.literal_token_map)
+        return;
+
+    auto it = expected.literal_token_map->find(literal);
+    if (it == expected.literal_token_map->end())
+        return;
+
     chassert(is_like || is_regexp);
     expected.highlight({
-       .begin = literal->begin.value()->begin,
-       .end = literal->begin.value()->end,
+       .begin = it->second.begin,
+       .end = it->second.end,
        .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
 }
 
@@ -1188,8 +1198,8 @@ public:
                 function_name += "Distinct";
 
             auto function_node = makeASTFunction(function_name, std::move(elements));
-            function_node->is_compound_name = is_compound_name;
-            function_node->is_operator = is_operator;
+            function_node->setIsCompoundName(is_compound_name);
+            function_node->setIsOperator(is_operator);
 
             if (parameters)
             {
@@ -1217,14 +1227,14 @@ public:
             }
 
             if (respect_nulls.ignore(pos, expected))
-                function_node->nulls_action = NullsAction::RESPECT_NULLS;
+                function_node->setNullsAction(NullsAction::RESPECT_NULLS);
             else if (ignore_nulls.ignore(pos, expected))
-                function_node->nulls_action = NullsAction::IGNORE_NULLS;
+                function_node->setNullsAction(NullsAction::IGNORE_NULLS);
 
             if (over.ignore(pos, expected))
             {
-                function_node->is_window_function = true;
-                function_node->kind = ASTFunction::Kind::WINDOW_FUNCTION;
+                function_node->setIsWindowFunction(true);
+                function_node->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
 
                 ASTPtr function_node_as_iast = function_node;
 
@@ -2411,6 +2421,13 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
 
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// Set up map to capture literal token positions for regex highlighting.
+    /// Only needed when highlighting is enabled and no map is already set.
+    LiteralTokenMap local_token_map;
+    SCOPE_EXIT({ expected.literal_token_map = nullptr; });
+    if (expected.enable_highlighting && !expected.literal_token_map)
+        expected.literal_token_map = &local_token_map;
+
     auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
     if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
     {
@@ -2460,7 +2477,7 @@ bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, 
     if (ParserIdentifier().parse(pos, node, expected))
     {
         node = makeASTFunction(node->as<ASTIdentifier>()->name());
-        node->as<ASTFunction &>().no_empty_args = true;
+        node->as<ASTFunction &>().setNoEmptyArgs(true);
         return true;
     }
 

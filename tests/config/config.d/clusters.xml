@@ -162,6 +162,56 @@
                 </replica>
             </shard>
         </parallel_replicas>
+        <parallel_replicas_unavailable_first>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <!-- Unavailable replica -->
+                <replica>
+                    <host>127.0.0.11</host>
+                    <port>1234</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.3</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.4</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.5</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.6</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.7</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.8</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.9</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.10</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </parallel_replicas_unavailable_first>
         <test_cluster_1_shard_3_replicas_1_unavailable>
             <shard>
                 <internal_replication>false</internal_replication>
