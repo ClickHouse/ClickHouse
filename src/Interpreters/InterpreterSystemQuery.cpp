@@ -305,7 +305,7 @@ BlockIO InterpreterSystemQuery::execute()
     system_context->setCurrentProfile(getContext()->getSystemProfileName(), check_constraints);
 
     /// Make canonical query for simpler processing
-    if (query.type == Type::RELOAD_DICTIONARY)
+    if (query.type == Type::RELOAD_DICTIONARY || query.type == Type::UNLOAD_DICTIONARY)
     {
         if (query.database)
             query.setTable(query.getDatabase() + "." + query.getTable());
@@ -648,6 +648,20 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { system_context->getEmbeddedDictionaries().reload(); }
             });
             ExternalDictionariesLoader::resetAll();
+            break;
+        }
+        case Type::UNLOAD_DICTIONARY:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
+
+            auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
+            external_dictionaries_loader.unloadDictionary(query.getTable(), getContext());
+            break;
+        }
+        case Type::UNLOAD_DICTIONARIES:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
+            system_context->getExternalDictionariesLoader().unloadAllDictionaries();
             break;
         }
         case Type::RELOAD_MODEL:
@@ -2014,6 +2028,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_DICTIONARY:
         case Type::RELOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
+        case Type::UNLOAD_DICTIONARY:
+        case Type::UNLOAD_DICTIONARIES:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
             break;

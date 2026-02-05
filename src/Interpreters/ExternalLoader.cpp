@@ -640,6 +640,63 @@ public:
         return infos.contains(name);
     }
 
+    /// Unloads a specified object, releasing its memory.
+    /// The object will be reloaded lazily on next access.
+    /// Returns true if the object was unloaded, false if it wasn't loaded or doesn't exist.
+    bool unload(const String & name)
+    {
+        std::lock_guard lock{mutex};
+        Info * info = getInfo(name);
+        if (!info)
+            return false;
+
+        if (!info->loaded())
+        {
+            LOG_TRACE(log, "{} '{}' is not loaded, nothing to unload", type_name, name);
+            return false;
+        }
+
+        if (info->isLoading())
+        {
+            LOG_TRACE(log, "{} '{}' is currently loading, cannot unload", type_name, name);
+            return false;
+        }
+
+        LOG_TRACE(log, "Unloading {} '{}'", type_name, name);
+
+        /// Reset the object to release memory, keeping the config for lazy reload.
+        /// Reset state_id and loading_id so that loadImpl will trigger startLoading
+        /// on the next access (getMinIDToFinishLoading returns 1 for non-forced loads,
+        /// so state_id must be < 1 for the load to be triggered).
+        info->object = nullptr;
+        info->exception = nullptr;
+        info->state_id = 0;
+        info->loading_id = 0;
+        info->error_count = 0;
+        info->next_update_time = TimePoint::max();
+
+        return true;
+    }
+
+    /// Unloads all loaded objects, releasing their memory.
+    void unloadAll()
+    {
+        std::lock_guard lock{mutex};
+        for (auto & [name, info] : infos)
+        {
+            if (info.loaded() && !info.isLoading())
+            {
+                LOG_TRACE(log, "Unloading {} '{}'", type_name, name);
+                info.object = nullptr;
+                info.exception = nullptr;
+                info.state_id = 0;
+                info.loading_id = 0;
+                info.error_count = 0;
+                info.next_update_time = TimePoint::max();
+            }
+        }
+    }
+
     /// Starts reloading all the object which update time is earlier than now.
     /// The function doesn't touch the objects which were never tried to load.
     void reloadOutdated()
@@ -1454,6 +1511,16 @@ ReturnType ExternalLoader::reloadAllTriedToLoad() const
 bool ExternalLoader::has(const String & name) const
 {
     return loading_dispatcher->has(name);
+}
+
+bool ExternalLoader::unload(const String & name) const
+{
+    return loading_dispatcher->unload(name);
+}
+
+void ExternalLoader::unloadAll() const
+{
+    loading_dispatcher->unloadAll();
 }
 
 Strings ExternalLoader::getAllTriedToLoadNames() const

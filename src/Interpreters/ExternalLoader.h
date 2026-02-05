@@ -204,6 +204,15 @@ public:
     /// Check if object with name exists in configuration
     bool has(const String & name) const;
 
+    /// Unloads a specified object, releasing its memory.
+    /// The object will be reloaded lazily on next access.
+    /// Returns true if the object was unloaded, false if it wasn't loaded or doesn't exist.
+    bool unload(const String & name) const;
+
+    /// Unloads all loaded objects, releasing their memory.
+    /// Objects will be reloaded lazily on next access.
+    void unloadAll() const;
+
     /// Reloads all config repositories.
     void reloadConfig() const;
 
