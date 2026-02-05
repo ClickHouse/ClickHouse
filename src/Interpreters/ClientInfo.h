@@ -65,9 +65,6 @@ public:
     String current_query_id;
     std::shared_ptr<Poco::Net::SocketAddress> current_address;
 
-    /// For IMPERSONATEd session, stores the original authenticated user
-    String authenticated_user;
-
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;
     String initial_query_id;
@@ -131,12 +128,21 @@ public:
     UInt64 distributed_depth = 0;
 
     bool is_replicated_database_internal = false;
-    bool is_shared_catalog_internal = false;
 
     /// For parallel processing on replicas
     bool collaborate_with_initiator{false};
     UInt64 obsolete_count_participating_replicas{0};
     UInt64 number_of_current_replica{0};
+
+    enum class BackgroundOperationType : uint8_t
+    {
+        NOT_A_BACKGROUND_OPERATION = 0,
+        MERGE = 1,
+        MUTATION = 2,
+    };
+
+    /// It's ClientInfo and context created for background operation (not real query)
+    BackgroundOperationType background_operation_type{BackgroundOperationType::NOT_A_BACKGROUND_OPERATION};
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 

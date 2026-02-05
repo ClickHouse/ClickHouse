@@ -1,22 +1,20 @@
 #pragma once
 
-#include <Core/Names.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/DDLTask.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <Poco/Event.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
-#include <Common/SharedMutex.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Interpreters/Context_fwd.h>
+#include <Poco/Event.h>
 
 #include <atomic>
 #include <list>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_set>
 
 
@@ -96,10 +94,6 @@ public:
     /// Should be called in `initializeMainThread` only, so if it is expired, `runMainThread` will reinitialized the state.
     ZooKeeperPtr getAndSetZooKeeper();
 
-    void requestToResetState();
-    void notifyHostIDsUpdated();
-    void updateHostIDs(const std::vector<HostID> & hosts);
-
 protected:
 
     class ConcurrentSet
@@ -125,7 +119,7 @@ protected:
 
     private:
         std::unordered_set<String> set;
-        mutable SharedMutex mtx;
+        mutable std::shared_mutex mtx;
     };
 
     /// Pushes query into DDL queue, returns path to created node
@@ -179,8 +173,6 @@ protected:
     void runMainThread();
     void runCleanupThread();
 
-    NameSet getAllHostIDsFromClusters() const;
-
     ContextMutablePtr context;
     LoggerPtr log;
 
@@ -217,8 +209,6 @@ protected:
 
     /// Cleaning starts after new node event is received if the last cleaning wasn't made sooner than N seconds ago
     Int64 cleanup_delay_period = 60; // minute (in seconds)
-    std::atomic_bool reset_state_requested{false};
-    std::atomic_bool host_ids_updated{false};
     /// Delete node if its age is greater than that
     Int64 task_max_lifetime = 7 * 24 * 60 * 60; // week (in seconds)
     /// How many tasks could be in the queue
@@ -230,10 +220,6 @@ protected:
 
     std::atomic_uint64_t subsequent_errors_count = 0;
     String last_unexpected_error;
-
-    mutable std::mutex checked_host_id_set_mutex;
-    NameSet checked_host_id_set TSA_GUARDED_BY(checked_host_id_set_mutex);
-
 
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;

@@ -1,4 +1,4 @@
-Using disk: s3_disk
+Using storage policy: s3_cache
 0
 2
 0
@@ -7,7 +7,7 @@ Using disk: s3_disk
 1
 1
 0
-Using disk: local_disk
+Using storage policy: local_cache
 0
 2
 0
@@ -16,7 +16,7 @@ Using disk: local_disk
 1
 1
 0
-Using disk: azure
+Using storage policy: azure_cache
 0
 2
 0

@@ -1,6 +1,5 @@
 import dataclasses
 import json
-import mimetypes
 import os
 from pathlib import Path
 from typing import Any, Dict
@@ -9,34 +8,83 @@ from urllib.parse import quote
 from ._environment import _Environment
 from .settings import Settings
 from .usage import StorageUsage
-from .utils import Shell, Utils
+from .utils import MetaClasses, Shell, Utils
 
-try:
-    import boto3
-    from botocore.exceptions import ClientError, NoCredentialsError
 
-    BOTO3_AVAILABLE = True
-except ImportError:
-    BOTO3_AVAILABLE = False
-    ClientError = None
-    NoCredentialsError = None
+@dataclasses.dataclass
+class StorageUsage(MetaClasses.SerializableSingleton):
+    downloaded: int = 0
+    uploaded: int = 0
+    downloaded_details: Dict[str, int] = dataclasses.field(default_factory=dict)
+    uploaded_details: Dict[str, int] = dataclasses.field(default_factory=dict)
+    ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
+
+    def merge_with(self, storage_usage: "StorageUsage"):
+        self.downloaded += storage_usage.downloaded
+        self.uploaded += storage_usage.uploaded
+        for k, v in storage_usage.downloaded_details.items():
+            if k in self.downloaded_details:
+                self.downloaded_details[k] += v
+            else:
+                self.downloaded_details[k] = v
+        for k, v in storage_usage.uploaded_details.items():
+            if k in self.uploaded_details:
+                self.uploaded_details[k] += v
+            else:
+                self.uploaded_details[k] = v
+        return self
+
+    @classmethod
+    def file_name_static(cls):
+        return f"{Settings.TEMP_DIR}/storage_usage.json"
+
+    @classmethod
+    def _init(cls):
+        if not StorageUsage.exist():
+            print("NOTE: UsageStorage data will be initialized")
+            StorageUsage(
+                downloaded=0, uploaded=0, downloaded_details={}, uploaded_details={}
+            ).dump()
+
+    @classmethod
+    def add_downloaded(cls, file_path):
+        cls._init()
+        if not Path(file_path).exists():
+            return
+        file_name = str(file_path).split("/")[-1]
+        usage = cls.from_fs()
+        file_zize = cls.get_size_bytes(file_path)
+        usage.downloaded += file_zize
+        if file_name in usage.downloaded_details:
+            print(f"WARNING: Duplicated download for filename [{file_name}]")
+            usage.downloaded_details[file_name] += file_zize
+        else:
+            usage.downloaded_details[file_name] = file_zize
+        usage.dump()
+
+    @classmethod
+    def add_uploaded(cls, file_path):
+        cls._init()
+        if not Path(file_path).exists():
+            return
+        file_name = str(file_path).split("/")[-1]
+        usage = cls.from_fs()
+        file_zize = cls.get_size_bytes(file_path)
+        usage.uploaded += file_zize
+        if file_name in usage.uploaded_details:
+            if not file_name.startswith("result_"):
+                print(f"WARNING: Duplicated upload for filename [{file_name}]")
+            usage.uploaded_details[file_name] += file_zize
+        else:
+            usage.uploaded_details[file_name] = file_zize
+        usage.dump()
+
+    @classmethod
+    def get_size_bytes(cls, file_path):
+        return os.path.getsize(file_path)
 
 
 class S3:
-    _boto3_client = None
-
-    @classmethod
-    def _get_boto3_client(cls):
-        if not BOTO3_AVAILABLE:
-            return None
-        if cls._boto3_client is None:
-            try:
-                cls._boto3_client = boto3.client("s3")
-            except Exception as e:
-                print(f"WARNING: Failed to initialize boto3 client: {e}")
-                return None
-        return cls._boto3_client
-
     @dataclasses.dataclass
     class Object:
         AcceptRanges: str
@@ -93,10 +141,7 @@ class S3:
         if content_encoding:
             cmd += f" --content-encoding {content_encoding}"
         _ = cls.run_command_with_retries(cmd, no_strict=no_strict)
-        try:
-            StorageUsage.add_uploaded(local_path)
-        except Exception as e:
-            pass
+        StorageUsage.add_uploaded(local_path)
         bucket = s3_path.split("/")[0]
         endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
         assert endpoint
@@ -202,47 +247,6 @@ class S3:
         no_strict=False,
     ):
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
-
-        if BOTO3_AVAILABLE and not recursive and not include_pattern:
-            client = cls._get_boto3_client()
-            if client:
-                try:
-                    s3_path_clean = str(s3_path).removeprefix("s3://")
-                    bucket, key = s3_path_clean.split("/", maxsplit=1)
-
-                    if Path(local_path).is_dir():
-                        local_file = Path(local_path) / Path(key).name
-                    else:
-                        local_file = Path(local_path)
-                        if not local_file.parent.is_dir():
-                            assert (
-                                False
-                            ), f"Parent path for [{local_path}] does not exist"
-
-                    local_file.parent.mkdir(parents=True, exist_ok=True)
-
-                    client.download_file(bucket, key, str(local_file))
-
-                    if not _skip_download_counter:
-                        StorageUsage.add_downloaded(local_file)
-
-                    return True
-
-                except ClientError as e:
-                    error_code = e.response.get("Error", {}).get("Code", "")
-                    if error_code in ["404", "NoSuchKey"]:
-                        if not no_strict:
-                            print(f"ERROR: S3 object not found: {s3_path}")
-                        return False
-                    if not no_strict:
-                        raise
-                    return False
-                except Exception as e:
-                    print(f"ERROR: Failed to download S3 object [{s3_path}]: {e}")
-                    if not no_strict:
-                        raise
-                    return False
-
         if Path(local_path).is_dir():
             pass
         else:
@@ -313,7 +317,7 @@ class S3:
             env = _Environment.get()
             s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
             if s3_subprefix:
-                s3_subprefix = s3_subprefix.removeprefix("/").removesuffix("/")
+                s3_subprefix.removeprefix("/").removesuffix("/")
                 s3_path += f"/{s3_subprefix}"
             if text and Settings.COMPRESS_THRESHOLD_MB > 0:
                 file_size_mb = os.path.getsize(local_file_path) / (1024 * 1024)
@@ -344,23 +348,3 @@ class S3:
                 },
                 f,
             )
-
-    @classmethod
-    def upload_asset_streaming(cls, local_path: Path, s3_path: str):
-        """
-        Uploads assets using streaming gzip to AWS S3. Detects mimetypes automatically.
-        """
-        assert isinstance(local_path, Path)
-        content_type, _ = mimetypes.guess_type(local_path)
-        content_type = content_type or "application/octet-stream"
-
-        compressible = [".html", ".css", ".js", ".json", ".svg", ".txt"]
-        use_gzip = local_path.suffix.lower() in compressible
-
-        if use_gzip:
-            cmd = f"gzip -8c {local_path} | aws s3 cp - s3://{s3_path} --content-type {content_type} --content-encoding gzip --cache-control \"max-age=604800, public\""
-        else:
-            cmd = f"aws s3 cp {local_path} s3://{s3_path} --content-type {content_type} --cache-control \"max-age=604800, public\""
-
-        print("Execute:", cmd)
-        cls.run_command_with_retries(cmd, retries=3)

@@ -63,7 +63,7 @@ for _ in {0..50}; do
     if [[ $no_active_repilica_messages -gt 0 ]]; then
         break
     fi
-    # too frequent "system flush logs text_log" causes troubles
+    # too frequent "system flush logs" causes troubles
     sleep 1
 done
 
