@@ -12,4 +12,6 @@ if ! hash qemu-x86_64-static 2>/dev/null; then
 fi
 
 command=$(command -v ${CLICKHOUSE_LOCAL})
-qemu-x86_64-static -cpu qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt "$command" --allow_simdjson=1 "select JSONExtractRaw('{\"foo\": 1}', 'foo')"
+# Limit memory to 1 GB to fail fast if a sanitized binary is run under QEMU
+# (sanitized binaries try to allocate ~20 TiB of virtual memory for shadow memory)
+prlimit -m1000000 qemu-x86_64-static -cpu qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt "$command" --allow_simdjson=1 "select JSONExtractRaw('{\"foo\": 1}', 'foo')"

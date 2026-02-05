@@ -1,7 +1,15 @@
 from praktika import Job
 from praktika.utils import Utils
 
-from ci.defs.defs import LLVM_ARTIFACTS_LIST, LLVM_FT_NUM_BATCHES, LLVM_IT_NUM_BATCHES, ArtifactConfigs, ArtifactNames, BuildTypes, JobNames, RunnerLabels
+from ci.defs.defs import (
+    LLVM_ARTIFACTS_LIST,
+    LLVM_FT_NUM_BATCHES,
+    LLVM_IT_NUM_BATCHES,
+    ArtifactNames,
+    BuildTypes,
+    JobNames,
+    RunnerLabels,
+)
 
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 
@@ -79,7 +87,7 @@ common_unit_test_job_config = Job.Config(
     run_in_docker="clickhouse/fasttest+--privileged",
     digest_config=Job.CacheDigestConfig(
         include_paths=["./ci/jobs/unit_tests_job.py"],
-    )
+    ),
 )
 
 common_stress_job_config = Job.Config(
@@ -614,7 +622,7 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
-    functional_tests_jobs_azure_master_only = (
+    functional_tests_jobs_azure = (
         common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
             Job.ParamSet(
                 parameter="arm_asan, azure, parallel",
@@ -655,7 +663,7 @@ class JobConfigs:
             parameter="ubsan",
             runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.UNITTEST_AMD_UBSAN],
-        )
+        ),
     )
     stress_test_jobs = common_stress_job_config.parametrize(
         Job.ParamSet(
@@ -719,24 +727,9 @@ class JobConfigs:
         timeout=3600 * 2,
     ).parametrize(
         Job.ParamSet(
-            parameter="amd_asan",
+            parameter="amd_release",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_ASAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_tsan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_TSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_msan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_MSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_debug",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_DEBUG],
+            requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
     )
     # why it's master only?
@@ -809,7 +802,10 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.LLVM_COVERAGE_BUILD,
-            provides=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD, ArtifactNames.UNITTEST_LLVM_COVERAGE],
+            provides=[
+                ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+                ArtifactNames.UNITTEST_LLVM_COVERAGE,
+            ],
             runs_on=RunnerLabels.AMD_LARGE,
         ),
     )
@@ -838,16 +834,16 @@ class JobConfigs:
 
     integration_test_llvm_coverage_jobs = (
         common_integration_test_job_config.parametrize(
-        *[
-            Job.ParamSet(
-                parameter=f"amd_llvm_coverage, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_MEDIUM,
-                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-                provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"],
-            )
-            for total_batches in (LLVM_IT_NUM_BATCHES,)
-            for batch in range(1, total_batches + 1)
-        ],
+            *[
+                Job.ParamSet(
+                    parameter=f"amd_llvm_coverage, {batch}/{total_batches}",
+                    runs_on=RunnerLabels.AMD_MEDIUM,
+                    requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                    provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"],
+                )
+                for total_batches in (LLVM_IT_NUM_BATCHES,)
+                for batch in range(1, total_batches + 1)
+            ],
         )
     )
 
@@ -1150,7 +1146,11 @@ class JobConfigs:
         name=JobNames.LLVM_COVERAGE_MERGE,
         runs_on=RunnerLabels.AMD_MEDIUM,
         run_in_docker="clickhouse/test-base",
-        requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD, ArtifactNames.UNITTEST_LLVM_COVERAGE, *LLVM_ARTIFACTS_LIST],
+        requires=[
+            ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+            ArtifactNames.UNITTEST_LLVM_COVERAGE,
+            *LLVM_ARTIFACTS_LIST,
+        ],
         provides=[ArtifactNames.LLVM_COVERAGE_HTML_REPORT],
         command="python3 ./ci/jobs/merge_llvm_coverage_job.py",
         digest_config=Job.CacheDigestConfig(

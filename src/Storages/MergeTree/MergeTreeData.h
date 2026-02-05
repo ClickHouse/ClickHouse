@@ -190,7 +190,7 @@ public:
 /// - MergeTreeDataWriter
 /// - MergeTreeDataMergerMutator
 
-class MergeTreeData : public IStorage, public WithMutableContext
+class MergeTreeData : public WithMutableContext, public IStorage, public IBackgroundOperation
 {
 public:
     /// Function to call if the part is suspected to contain corrupt data.
@@ -1289,10 +1289,8 @@ public:
 
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
-    /// Schedules background job to like merge/mutate/fetch an executor
-    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
     /// Schedules job to move parts between disks/volumes and so on.
-    bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee);
+    bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
     bool areBackgroundMovesNeeded() const;
 
 
@@ -1685,7 +1683,8 @@ protected:
         const DataPartPtr & result_part,
         const DataPartsVector & source_parts,
         const MergeListEntry * merge_entry,
-        std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters);
+        std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters,
+        const Strings & mutation_ids = {});
 
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
@@ -1833,7 +1832,7 @@ protected:
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;
 
-    void startStatisticsCache(UInt64 refresh_statistics_seconds);
+    void startStatisticsCache();
     void refreshStatistics(UInt64 interval_seconds);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);

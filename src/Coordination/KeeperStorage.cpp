@@ -626,6 +626,37 @@ struct KeeperStorageBase::Delta
     Operation operation;
 };
 
+std::string_view deltaTypeToString(const Operation & operation)
+{
+    /// Using std::visit ensures compile-time exhaustiveness checking -
+    /// adding a new type to Operation will cause a compilation error until handled here
+    return std::visit([]<typename T>(const T &) -> std::string_view
+    {
+        if constexpr (std::is_same_v<T, CreateNodeDelta>)
+            return "CreateNodeDelta";
+        else if constexpr (std::is_same_v<T, RemoveNodeDelta>)
+            return "RemoveNodeDelta";
+        else if constexpr (std::is_same_v<T, UpdateNodeStatDelta>)
+            return "UpdateNodeStatDelta";
+        else if constexpr (std::is_same_v<T, UpdateNodeDataDelta>)
+            return "UpdateNodeDataDelta";
+        else if constexpr (std::is_same_v<T, SetACLDelta>)
+            return "SetACLDelta";
+        else if constexpr (std::is_same_v<T, AddAuthDelta>)
+            return "AddAuthDelta";
+        else if constexpr (std::is_same_v<T, ErrorDelta>)
+            return "ErrorDelta";
+        else if constexpr (std::is_same_v<T, SubDeltaEnd>)
+            return "SubDeltaEnd";
+        else if constexpr (std::is_same_v<T, FailedMultiDelta>)
+            return "FailedMultiDelta";
+        else if constexpr (std::is_same_v<T, CloseSessionDelta>)
+            return "CloseSessionDelta";
+        else
+            static_assert(sizeof(T) == 0, "Unhandled Operation type in deltaTypeToString");
+    }, operation);
+}
+
 KeeperStorageBase::DeltaIterator KeeperStorageBase::DeltaRange::begin() const
 {
     return begin_it;
@@ -758,7 +789,7 @@ void KeeperStorage<Container>::UncommittedState::UncommittedNode::materializeACL
 template<typename Container>
 void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta, uint64_t * digest)
 {
-    chassert(!delta.path.empty());
+    chassert(!delta.path.empty(), fmt::format("Path is empty for delta of type '{}'", deltaTypeToString(delta.operation)));
     UncommittedNode * uncommitted_node = nullptr;
 
     auto node_it = nodes.end();
@@ -878,7 +909,7 @@ bool KeeperStorage<Container>::UncommittedState::hasACL(int64_t session_id, bool
 template<typename Container>
 void KeeperStorage<Container>::UncommittedState::rollbackDelta(const Delta & delta)
 {
-    chassert(!delta.path.empty());
+    chassert(!delta.path.empty(), fmt::format("Path is empty for delta of type '{}'", deltaTypeToString(delta.operation)));
 
     std::visit(
         [&]<typename DeltaType>(const DeltaType & operation)
@@ -1242,16 +1273,17 @@ void KeeperStorage<Container>::applyUncommittedState(KeeperStorage & other, int6
         zxids_to_apply.insert(transaction.zxid);
     }
 
-    auto it = uncommitted_state.deltas.begin();
-
-    for (; it != uncommitted_state.deltas.end(); ++it)
+    std::list<Delta> uncommitted_deltas_to_apply;
+    for (const auto & uncommitted_delta : uncommitted_state.deltas)
     {
-        if (!zxids_to_apply.contains(it->zxid))
+        if (!zxids_to_apply.contains(uncommitted_delta.zxid))
             continue;
 
-        other.uncommitted_state.applyDelta(*it, /*digest=*/nullptr);
-        other.uncommitted_state.deltas.push_back(*it);
+        uncommitted_deltas_to_apply.push_back(uncommitted_delta);
     }
+
+    other.uncommitted_state.applyDeltas(uncommitted_deltas_to_apply, /*digest=*/nullptr);
+    other.uncommitted_state.addDeltas(std::move(uncommitted_deltas_to_apply));
 }
 
 template<typename Container>

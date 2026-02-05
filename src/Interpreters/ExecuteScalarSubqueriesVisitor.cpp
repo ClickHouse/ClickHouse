@@ -127,7 +127,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     /// subquery and ast can be the same object and ast will be moved.
     /// Save these fields to avoid use after move.
     String subquery_alias = subquery.alias;
-    bool prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
+    bool prefer_alias_to_column_name = subquery.preferAliasToColumnName();
 
     auto hash = subquery.getTreeHash(/*ignore_aliases=*/ true);
     const auto scalar_query_hash_str = toString(hash);
@@ -295,7 +295,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     {
         auto lit = make_intrusive<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
         lit->alias = subquery_alias;
-        lit->prefer_alias_to_column_name = prefer_alias_to_column_name;
+        lit->setPreferAliasToColumnName(prefer_alias_to_column_name);
         ast = addTypeConversionToAST(std::move(lit), scalar.safeGetByPosition(0).type->getName());
 
         /// If only analyze was requested the expression is not suitable for constant folding, disable it.
@@ -304,7 +304,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             ast->as<ASTFunction>()->alias.clear();
             auto func = makeASTFunction("__scalarSubqueryResult", std::move(ast));
             func->alias = subquery_alias;
-            func->prefer_alias_to_column_name = prefer_alias_to_column_name;
+            func->setPreferAliasToColumnName(prefer_alias_to_column_name);
             ast = std::move(func);
         }
     }
@@ -312,7 +312,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     {
         auto func = makeASTFunction("__getScalar", make_intrusive<ASTLiteral>(scalar_query_hash_str));
         func->alias = subquery_alias;
-        func->prefer_alias_to_column_name = prefer_alias_to_column_name;
+        func->setPreferAliasToColumnName(prefer_alias_to_column_name);
         ast = std::move(func);
     }
 

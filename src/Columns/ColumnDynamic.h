@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Columns/IColumn.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
+#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/WeakHash.h>
 
 
@@ -464,7 +465,7 @@ public:
 
     String getTypeNameAt(size_t row_num) const;
     DataTypePtr getTypeAt(size_t row_num) const;
-    void getAllTypeNamesInto(std::unordered_set<String> & names) const;
+    void getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> & names) const;
 
 private:
     void createVariantInfo(const DataTypePtr & variant_type);

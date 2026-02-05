@@ -358,9 +358,9 @@ class S3:
         use_gzip = local_path.suffix.lower() in compressible
 
         if use_gzip:
-            cmd = f"gzip -8c {local_path} | aws s3 cp - s3://{s3_path} --content-type {content_type} --content-encoding gzip --cache-control \"max-age=604800, public\""
+            cmd = f'gzip -8c {local_path} | aws s3 cp - s3://{s3_path} --content-type {content_type} --content-encoding gzip --cache-control "max-age=604800, public"'
         else:
-            cmd = f"aws s3 cp {local_path} s3://{s3_path} --content-type {content_type} --cache-control \"max-age=604800, public\""
+            cmd = f'aws s3 cp {local_path} s3://{s3_path} --content-type {content_type} --cache-control "max-age=604800, public"'
 
         print("Execute:", cmd)
         cls.run_command_with_retries(cmd, retries=3)

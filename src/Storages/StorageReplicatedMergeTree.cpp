@@ -229,6 +229,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
     extern const MergeTreeSettingsString auto_statistics_types;
+    extern const MergeTreeSettingsNonZeroUInt64 clone_replica_zookeeper_create_get_part_batch_size;
 }
 
 namespace FailPoints
@@ -3564,6 +3565,29 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         return false;
     };
 
+    /// Batch ZooKeeper create requests for better performance with many parts.
+    const auto batch_size = (*getSettings())[MergeTreeSetting::clone_replica_zookeeper_create_get_part_batch_size];
+    Coordination::Requests create_requests;
+    std::vector<String> create_request_part_names;
+    const String queue_path = fs::path(replica_path) / "queue/queue-";
+    AtomicStopwatch queue_creation_watch;
+    constexpr size_t print_message_each_n_seconds = 10;
+
+    auto flush_create_requests = [&]()
+    {
+        if (create_requests.empty())
+            return;
+
+        zookeeper->multi(create_requests);
+        for (const auto & part_name : create_request_part_names)
+            created_get_parts.insert(part_name);
+        create_requests.clear();
+        create_request_part_names.clear();
+
+        if (queue_creation_watch.compareAndRestart(print_message_each_n_seconds))
+            LOG_INFO(log, "Queued {}/{} parts", created_get_parts.size(), active_parts.size());
+    };
+
     for (const String & name : active_parts)
     {
         if (should_ignore_log_entry(created_get_parts, name, "Not fetching"))
@@ -3605,9 +3629,12 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         log_entry.create_time = tryGetPartCreateTime(zookeeper, source_path, name);
 
         LOG_TEST(log, "Enqueueing {} for fetch", name);
-        zookeeper->create(fs::path(replica_path) / "queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential);
-        created_get_parts.insert(name);
+        create_requests.push_back(zkutil::makeCreateRequest(queue_path, log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+        create_request_part_names.push_back(name);
+        if (create_requests.size() >= batch_size)
+            flush_create_requests();
     }
+    flush_create_requests();
 
     size_t total_parts_to_fetch = created_get_parts.size();
     LOG_DEBUG(log, "Queued {} parts to be fetched, {} parts ignored", total_parts_to_fetch, active_parts.size() - total_parts_to_fetch);
@@ -5581,6 +5608,7 @@ void StorageReplicatedMergeTree::startup()
 {
     LOG_TRACE(log, "Starting up table");
     startOutdatedAndUnexpectedDataPartsLoadingTask();
+    startStatisticsCache();
     if (attach_thread)
     {
         attach_thread->start();
