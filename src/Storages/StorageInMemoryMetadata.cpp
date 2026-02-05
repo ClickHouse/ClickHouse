@@ -7,15 +7,18 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 
@@ -35,10 +38,6 @@ namespace ErrorCodes
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
     : columns(other.columns)
-    , add_minmax_index_for_numeric_columns(other.add_minmax_index_for_numeric_columns)
-    , add_minmax_index_for_string_columns(other.add_minmax_index_for_string_columns)
-    , add_minmax_index_for_temporal_columns(other.add_minmax_index_for_temporal_columns)
-    , escape_index_filenames(other.escape_index_filenames)
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
     , projections(other.projections.clone())
@@ -67,10 +66,6 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         return *this;
 
     columns = other.columns;
-    add_minmax_index_for_numeric_columns = other.add_minmax_index_for_numeric_columns;
-    add_minmax_index_for_string_columns = other.add_minmax_index_for_string_columns;
-    add_minmax_index_for_temporal_columns = other.add_minmax_index_for_temporal_columns;
-    escape_index_filenames = other.escape_index_filenames;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
     projections = other.projections.clone();
@@ -169,14 +164,6 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
     new_context->setSetting("allow_ddl", 1);
-
-    // parallel replicas related
-    if (context->canUseTaskBasedParallelReplicas() && context->hasMergeTreeAllRangesCallback())
-    {
-        new_context->setMergeTreeAllRangesCallback(context->getMergeTreeAllRangesCallback());
-        new_context->setMergeTreeReadTaskCallback(context->getMergeTreeReadTaskCallback());
-        new_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
-    }
 
     return new_context;
 }
@@ -638,8 +625,8 @@ bool StorageInMemoryMetadata::hasSelectQuery() const
 
 namespace
 {
-    using NamesAndTypesMap = HashMapWithSavedHash<std::string_view, const IDataType *, StringViewHash>;
-    using UniqueStrings = HashSetWithSavedHash<std::string_view, StringViewHash>;
+    using NamesAndTypesMap = HashMapWithSavedHash<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = HashSetWithSavedHash<StringRef, StringRefHash>;
 
     NamesAndTypesMap getColumnsMap(const NamesAndTypesList & columns)
     {
@@ -828,55 +815,4 @@ NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions(const Names
     return names;
 }
 
-void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context)
-{
-    // Ephemeral columns are excluded from implicit indices because they are not persisted;
-    // this is a key behavioral change (see PR description) to avoid creating indices for columns
-    // that do not exist in storage and cannot be indexed.
-    if (column.default_desc.kind == ColumnDefaultKind::Ephemeral)
-        return;
-
-    if ((isNumber(column.type) && add_minmax_index_for_numeric_columns) || (isString(column.type) && add_minmax_index_for_string_columns)
-        || (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(column.type) && add_minmax_index_for_temporal_columns))
-    {
-        bool minmax_index_exists = false;
-
-        for (const auto & index : secondary_indices)
-        {
-            if (index.column_names.front() == column.name && index.type == "minmax")
-            {
-                minmax_index_exists = true;
-                break;
-            }
-        }
-
-        if (!minmax_index_exists)
-        {
-            auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
-            bool valid_index = true;
-            try
-            {
-                MergeTreeIndexFactory::implicitValidation(index);
-            }
-            catch (...)
-            {
-                valid_index = false;
-            }
-            if (valid_index)
-                secondary_indices.push_back(std::move(index));
-        }
-
-    }
-}
-
-void StorageInMemoryMetadata::dropImplicitIndicesForColumn(const String & column_name)
-{
-    for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
-    {
-        if (index_it->isImplicitlyCreated() && index_it->column_names.front() == column_name)
-            index_it = secondary_indices.erase(index_it);
-        else
-            ++index_it;
-    }
-}
 }

@@ -23,11 +23,9 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
-#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-
 
 namespace zkutil
 {
@@ -71,8 +69,6 @@ enum class DataPartRemovalState : uint8_t
 };
 
 /// Description of the data part.
-/// Warning: `IStorage` must outlive all its `IMergeTreeDataPart`s. Whenever you hold a
-///          MergeTreeDataPartPtr you must also hold the corresponding StoragePtr.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>, public DataPartStorageHolder
 {
 public:
@@ -92,7 +88,6 @@ public:
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
-        const MergeTreeSettings & storage_settings,
         const String & name_,
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
@@ -106,7 +101,7 @@ public:
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name) const;
-    const ColumnSizeByName & getColumnSizes() const;
+    ColumnSizeByName getColumnSizes() const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -115,7 +110,7 @@ public:
     IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
 
     /// Returns true if there is materialized index with specified name in part.
-    bool hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const;
+    bool hasSecondaryIndex(const String & index_name) const;
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const;
@@ -222,7 +217,7 @@ public:
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
     UInt128 getPartBlockIDHash() const;
-    String getNewPartBlockID() const;
+    String getNewPartBlockID(std::string_view token) const;
 
     /// Returns true if it's a zero level part.
     bool isZeroLevel() const { return info.min_block == info.max_block; }
@@ -364,9 +359,9 @@ public:
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
-        static void appendFiles(const MergeTreeData & data, Strings & files, const IDataPartStorage & data_part_storage);
+        static void appendFiles(const MergeTreeData & data, Strings & files);
         /// For Store
-        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
+        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_);
         /// For Load
         static String getFileColumnName(const String & column_name, const Checksums & checksums_);
     };
@@ -396,8 +391,6 @@ public:
     void moveIndexToCache(PrimaryIndexCache & index_cache);
     void removeIndexFromCache(PrimaryIndexCache * index_cache) const;
 
-    void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
-
     void setIndex(Columns index_columns);
     void unloadIndex();
     bool isIndexLoaded() const;
@@ -408,7 +401,7 @@ public:
     UInt64 getIndexGranularityBytes() const;
     UInt64 getIndexGranularityAllocatedBytes() const;
     UInt64 getMarksCount() const;
-    IndexSize getIndexSizeFromFile() const;
+    UInt64 getIndexSizeFromFile() const;
 
     UInt64 getBytesOnDisk() const { return bytes_on_disk; }
     UInt64 getBytesUncompressedOnDisk() const { return bytes_uncompressed_on_disk; }
@@ -474,8 +467,7 @@ public:
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
-    MergeTreeDataPartBuilder
-    getProjectionPartBuilder(const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection = false);
+    MergeTreeDataPartBuilder getProjectionPartBuilder(const String & projection_name, bool is_temp_projection = false);
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 
@@ -708,7 +700,7 @@ protected:
     /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
 
-    void initializeIndexGranularityInfo(const MergeTreeSettings & storage_settings);
+    void initializeIndexGranularityInfo();
 
     virtual void doCheckConsistency(bool require_part_metadata) const;
 

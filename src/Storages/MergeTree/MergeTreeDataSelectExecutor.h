@@ -7,26 +7,21 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
-#include <boost/dynamic_bitset.hpp>
 
 namespace DB
 {
 
 class KeyCondition;
+struct QueryIdHolder;
 class VectorSimilarityIndexCache;
-struct ProjectionDescription;
-using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
 /** Executes SELECT queries on data from the merge tree.
   */
 class MergeTreeDataSelectExecutor
 {
 public:
-    using PartialDisjunctionResult = boost::dynamic_bitset<>;
-
-    explicit MergeTreeDataSelectExecutor(const MergeTreeData & data_, ProjectionDescriptionRawPtr projection_ = nullptr);
+    explicit MergeTreeDataSelectExecutor(const MergeTreeData & data_);
 
     /** When reading, selects a set of parts that covers the desired range of the index.
       * max_blocks_number_to_read - if not nullptr, do not read all the parts whose right border is greater than max_block in partition.
@@ -83,7 +78,6 @@ public:
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
-        const std::optional<KeyCondition> & key_condition_rpn_template,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const RangesInDataPartReadHints & in_read_hints,
@@ -91,8 +85,6 @@ public:
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
-        bool use_skip_indexes_for_disjunctions,
-        PartialDisjunctionResult & partial_disjunction_result,
         LoggerPtr log);
 
     static MarkRanges filterMarksUsingMergedIndex(
@@ -106,28 +98,8 @@ public:
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
 
-    static MergeTreeIndexBulkGranulesMinMaxPtr getMinMaxIndexGranules(
-        MergeTreeData::DataPartPtr part,
-        MergeTreeIndexPtr skip_index_minmax,
-        const MarkRanges & ranges,
-        int direction,
-        bool access_by_mark,
-        const MergeTreeReaderSettings & reader_settings,
-        MarkCache * mark_cache,
-        UncompressedCache * uncompressed_cache,
-        VectorSimilarityIndexCache * vector_similarity_index_cache);
-
-    /// Maximum number of elements in the RPN condition when evaluation of OR-connected filter conditions using skip indexes (setting
-    /// 'use_skip_indexes_for_disjunctions') is enabled.
-    /// One bit per RPN element is consumed to store the partial evaluation results.
-    /// Example:
-    /// - (A = 5 OR B = 5) requires 3 bits - for A, for B and for OR(A, B).
-    /// - Likewise, (A = 5 OR B = 5) AND (C > 5 OR D > 5) requires 7 bits.
-    static constexpr size_t MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT = 32;
-
 private:
     const MergeTreeData & data;
-    MergeTreeSettingsPtr data_settings;
     LoggerPtr log;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
@@ -217,26 +189,26 @@ public:
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 
-    struct IndexAnalysisContext
-    {
-        StorageMetadataPtr metadata_snapshot;
-        MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
-        const SelectQueryInfo & query_info;
-        const ContextPtr & context;
-        const ReadFromMergeTree::Indexes & indexes;
-        const std::optional<TopKFilterInfo> & top_k_filter_info;
-        const MergeTreeReaderSettings & reader_settings;
-        LoggerPtr log;
-        size_t num_streams;
-        bool find_exact_ranges;
-        bool is_parallel_reading_from_replicas;
-        bool has_projections;
-        ReadFromMergeTree::AnalysisResult & result;
-    };
-
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
-    static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats);
+    /// If 'check_limits = true' it will throw exception if the amount of data exceed the limits from settings.
+    static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
+        RangesInDataParts parts_with_ranges,
+        StorageMetadataPtr metadata_snapshot,
+        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
+        const ContextPtr & context,
+        const KeyCondition & key_condition,
+        const std::optional<KeyCondition> & part_offset_condition,
+        const std::optional<KeyCondition> & total_offset_condition,
+        const UsefulSkipIndexes & skip_indexes,
+        const MergeTreeReaderSettings & reader_settings,
+        LoggerPtr log,
+        size_t num_streams,
+        ReadFromMergeTree::IndexStats & index_stats,
+        bool use_skip_indexes,
+        bool find_exact_ranges,
+        bool is_final_query,
+        bool is_parallel_reading_from_replicas);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(
@@ -260,24 +232,12 @@ public:
         ContextPtr context,
         LoggerPtr log);
 
-    struct RowLimits
-    {
-        SizeLimits limits;
-        SizeLimits leaf_limits;
-    };
-
-    /// Calculate row limits for reading based on settings and query info.
-    /// Returns limits and leaf_limits that should be applied during part processing.
-    static RowLimits getRowLimits(const Settings & settings, const SelectQueryInfo & query_info);
-
-    static MarkRanges mergePartialResultsForDisjunctions(
-        MergeTreeData::DataPartPtr part,
-        const MarkRanges & ranges,
-        const KeyCondition & rpn_template_for_eval_result,
-        const PartialDisjunctionResult & partial_eval_results,
-        MergeTreeReaderSettings reader_settings,
-        LoggerPtr log);
-
+    /// Check query limits: max_partitions_to_read, max_concurrent_queries.
+    /// Also, return QueryIdHolder. If not null, we should keep it until query finishes.
+    static std::shared_ptr<QueryIdHolder> checkLimits(
+        const MergeTreeData & data,
+        const ReadFromMergeTree::AnalysisResult & result,
+        const ContextPtr & context);
 };
 
 }

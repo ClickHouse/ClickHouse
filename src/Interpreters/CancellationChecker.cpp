@@ -10,10 +10,6 @@
 namespace DB
 {
 
-/// Align all timeouts to a grid to allow batching of timeout processing.
-/// Tasks may be cancelled slightly later than their exact timeout, but never before.
-static constexpr UInt64 CANCELLATION_GRID_MS = 100;
-
 struct CancellationChecker::QueryToTrack
 {
     QueryToTrack(QueryStatusPtr query_, UInt64 timeout_, UInt64 endtime_, OverflowMode overflow_mode_)
@@ -67,6 +63,18 @@ void CancellationChecker::terminateThread()
     cond_var.notify_all();
 }
 
+bool CancellationChecker::removeQueryFromSet(QueryStatusPtr query)
+{
+    auto it = std::ranges::find(query_set, query, &QueryToTrack::query);
+
+    if (it == query_set.end())
+        return false;
+
+    LOG_TEST(log, "Removing query {} from done tasks", query->getClientInfo().current_query_id);
+    query_set.erase(it);
+    return true;
+}
+
 void CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 timeout, OverflowMode overflow_mode)
 {
     if (timeout <= 0) // Avoid cases when the timeout is less or equal zero
@@ -77,29 +85,16 @@ void CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 t
     std::unique_lock<std::mutex> lock(m);
     LOG_TEST(log, "Added to set. query: {}, timeout: {} milliseconds", query->getInfo().query, timeout);
     const auto now = std::chrono::steady_clock::now();
-    const UInt64 now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-    /// Round up to the next grid boundary to enable batching of timeout checks.
-    /// This ensures tasks are never cancelled before their timeout, only slightly after.
-    const UInt64 end_time = ((now_ms + timeout + CANCELLATION_GRID_MS - 1) / CANCELLATION_GRID_MS) * CANCELLATION_GRID_MS;
-    auto iter = query_set.emplace(query, timeout, end_time, overflow_mode);
-    if (iter == query_set.begin()) // Only notify if the new task is the earliest one
-        cond_var.notify_all();
+    const UInt64 end_time = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() + timeout;
+    query_set.emplace(query, timeout, end_time, overflow_mode);
+    cond_var.notify_all();
 }
 
 void CancellationChecker::appendDoneTasks(const QueryStatusPtr & query)
 {
-    std::unique_lock lock(m);
-
-    auto it = std::ranges::find(query_set, query, &QueryToTrack::query);
-    if (it == query_set.end())
-        return;
-
-    LOG_TEST(log, "Removing query {} from done tasks", query->getClientInfo().current_query_id);
-    query_set.erase(it);
-
-    // Note that there is no need to notify the worker thread here. Even if we have just removed the earliest task,
-    // it will wake up before the next task anyway and fix its timeout to a proper value on wake-up.
-    // This optimization avoids unnecessary contention on the mutex.
+    std::unique_lock<std::mutex> lock(m);
+    removeQueryFromSet(query);
+    cond_var.notify_all();
 }
 
 void CancellationChecker::workerFunction()
@@ -112,19 +107,20 @@ void CancellationChecker::workerFunction()
     while (!stop_thread)
     {
         UInt64 now_ms = 0;
+        std::chrono::steady_clock::duration duration_milliseconds = std::chrono::milliseconds(0);
+
         if (!query_set.empty())
         {
+            const auto next_task_it = query_set.begin();
+
+            // Convert UInt64 timeout to std::chrono::steady_clock::time_point
+            duration_milliseconds = std::chrono::milliseconds(next_task_it->timeout);
+
+            auto end_time_ms = next_task_it->endtime;
             auto now = std::chrono::steady_clock::now();
             now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-
-            /// Batch all tasks that have reached their deadline.
-            /// Since deadlines are aligned to a grid, multiple tasks often expire together.
-            while (!query_set.empty())
+            if ((end_time_ms <= now_ms && duration_milliseconds.count() != 0))
             {
-                auto next_task_it = query_set.begin();
-                if (next_task_it->endtime > now_ms || next_task_it->timeout == 0)
-                    break;
-
                 LOG_DEBUG(
                     log,
                     "Cancelling the task because of the timeout: {} ms, query_id: {}",
@@ -133,6 +129,7 @@ void CancellationChecker::workerFunction()
 
                 tasks_to_cancel.push_back(*next_task_it);
                 query_set.erase(next_task_it);
+                continue;
             }
         }
 
@@ -145,19 +142,19 @@ void CancellationChecker::workerFunction()
             continue;
         }
 
-        /// if there are no queries,
+        /// if last time we checked there were no queries,
         /// wakeup on first query that was added so we can setup
         /// proper timeout for waking up the thread
-        if (query_set.empty())
+        if (!now_ms)
         {
             cond_var.wait(lock, [&] { return stop_thread || !query_set.empty(); });
         }
         else
         {
-            chassert(!query_set.empty());
+            chassert(duration_milliseconds.count());
             cond_var.wait_for(
                 lock,
-                std::chrono::milliseconds(query_set.begin()->endtime - now_ms),
+                duration_milliseconds,
                 [&, now_ms] { return stop_thread || (!query_set.empty() && query_set.begin()->endtime < now_ms); });
         }
     }

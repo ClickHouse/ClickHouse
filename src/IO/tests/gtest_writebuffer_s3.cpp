@@ -24,6 +24,7 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/S3Common.h>
 #include <IO/FileEncryptionCommon.h>
+#include <IO/WriteBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/AsyncReadCounters.h>
 #include <IO/ReadBufferFromS3.h>

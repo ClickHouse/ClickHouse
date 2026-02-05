@@ -267,9 +267,7 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     new_info.prewhere_info = prewhere_info;
 
     /// Removes columns that are only used as prewhere input.
-    /// Adds prewhere outputs (the actual prewhere filter column is only added if
-    /// !remove_prewhere_column; but there may also be subexpressions computed by prewhere
-    /// expression and preserved for use further down the query pipeline).
+    /// Adds prewhere result column if !remove_prewhere_column.
     new_info.format_header = SourceStepWithFilter::applyPrewhereActions(info.format_header, row_level_filter, prewhere_info);
 
     /// We assume that any format that supports prewhere also supports subset of subcolumns, so we
@@ -285,12 +283,12 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
         new_info.requested_columns.emplace_back(col.name, col.type);
         if (info.format_header.has(col.name))
         {
-            /// Column read from file.
             new_info.columns_description.add(info.columns_description.get(col.name));
         }
         else
         {
-            /// Column produced by prewhere expression.
+            chassert(col.name == prewhere_info->prewhere_column_name);
+            chassert(!prewhere_info->remove_prewhere_column);
             new_info.columns_description.add(ColumnDescription(col.name, col.type));
         }
     }

@@ -2,6 +2,9 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DistributedQueryStatusSource.h>
 #include <Common/Exception.h>
@@ -99,8 +102,7 @@ NameSet DistributedQueryStatusSource::getOfflineHosts(const NameSet & hosts_to_w
     if (offline.size() == hosts_to_wait.size())
     {
         /// Avoid reporting that all hosts are offline
-        LOG_WARNING(
-            log, "Did not find active hosts, will wait for all hosts: {}. This should not happen often", fmt::join(hosts_to_wait, ", "));
+        LOG_WARNING(log, "Did not find active hosts, will wait for all {} hosts. This should not happen often", offline.size());
         return {};
     }
 
@@ -199,7 +201,7 @@ Chunk DistributedQueryStatusSource::generate()
             return stopWaitingOfflineHosts();
         }
 
-        if ((timeout_seconds >= 0 && watch.elapsedSeconds() > static_cast<double>(timeout_seconds)))
+        if ((timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds))
         {
             return handleTimeoutExceeded();
         }

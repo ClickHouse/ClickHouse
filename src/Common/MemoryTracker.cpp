@@ -1,6 +1,5 @@
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
-#include <Common/StackTrace.h>
 
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
@@ -95,7 +94,7 @@ bool shouldTrackAllocation(Float64 probability, void * ptr)
 {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-    return static_cast<double>(intHash64(uintptr_t(ptr))) < static_cast<double>(std::numeric_limits<uint64_t>::max()) * probability;
+    return intHash64(uintptr_t(ptr)) < std::numeric_limits<uint64_t>::max() * probability;
 #pragma clang diagnostic pop
 }
 
@@ -383,7 +382,10 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             if (level == VariableContext::Global && (page_cache_ptr = page_cache.load(std::memory_order_relaxed)))
             {
                 ProfileEvents::increment(ProfileEvents::PageCacheOvercommitResize);
-                if (page_cache_ptr->autoResize(std::max(will_be, will_be_rss), current_hard_limit))
+                page_cache_ptr->autoResize(std::max(will_be, will_be_rss), current_hard_limit);
+                will_be = amount.load(std::memory_order_relaxed);
+                will_be_rss = rss.load(std::memory_order_relaxed);
+                if (will_be <= current_hard_limit && will_be_rss <= current_hard_limit)
                     overcommit_result = OvercommitResult::MEMORY_FREED;
             }
 

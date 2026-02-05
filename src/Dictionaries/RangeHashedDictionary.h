@@ -64,7 +64,7 @@ template <DictionaryKeyType dictionary_key_type>
 class RangeHashedDictionary final : public IDictionary
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     RangeHashedDictionary(
         const StorageID & dict_id_,
@@ -91,14 +91,14 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
+        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
     }
 
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count) / static_cast<double>(bucket_count); }
+    double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
@@ -148,7 +148,7 @@ private:
     using KeyAttributeContainerType = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
         HashMap<UInt64, IntervalMap<RangeStorageType>, DefaultHash<UInt64>>,
-        HashMapWithSavedHash<std::string_view, IntervalMap<RangeStorageType>, DefaultHash<std::string_view>>>;
+        HashMapWithSavedHash<StringRef, IntervalMap<RangeStorageType>, DefaultHash<StringRef>>>;
 
     template <typename Value>
     using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
@@ -181,7 +181,7 @@ private:
             AttributeContainerType<UUID>,
             AttributeContainerType<IPv4>,
             AttributeContainerType<IPv6>,
-            AttributeContainerType<std::string_view>,
+            AttributeContainerType<StringRef>,
             AttributeContainerType<Array>>
             container;
 
@@ -390,7 +390,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
                     out->insert(value);
                 });
         }
-        else if constexpr (std::is_same_v<ValueType, std::string_view>)
+        else if constexpr (std::is_same_v<ValueType, StringRef>)
         {
             auto * out = column.get();
 
@@ -398,18 +398,18 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
                 getItemsInternalImpl<ValueType, true>(
                     attribute,
                     key_to_index,
-                    [&](size_t row, std::string_view value, bool is_null)
+                    [&](size_t row, StringRef value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
-                        out->insertData(value.data(), value.size());
+                        out->insertData(value.data, value.size);
                     });
             else
                 getItemsInternalImpl<ValueType, false>(
                     attribute,
                     key_to_index,
-                    [&](size_t, std::string_view value, bool)
+                    [&](size_t, StringRef value, bool)
                     {
-                        out->insertData(value.data(), value.size());
+                        out->insertData(value.data, value.size);
                     });
         }
         else
@@ -855,7 +855,7 @@ void RangeHashedDictionary<dictionary_key_type>::blockToAttributes(const Block &
                 continue;
             }
 
-            if constexpr (std::is_same_v<KeyType, std::string_view>)
+            if constexpr (std::is_same_v<KeyType, StringRef>)
                 key = copyStringInArena(string_arena, key);
 
             for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
@@ -922,7 +922,7 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
         if constexpr (std::is_same_v<AttributeType, String>)
         {
             const auto & string = value.safeGet<String>();
-            std::string_view string_ref = copyStringInArena(string_arena, string);
+            StringRef string_ref = copyStringInArena(string_arena, string);
             value_to_insert = string_ref;
         }
         else

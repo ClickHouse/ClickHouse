@@ -11,6 +11,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+
 namespace DB
 {
 
@@ -133,11 +134,6 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
     return ReturnType(true);
 }
 
-void SerializationTuple::readElementsSafe(DB::IColumn & column, std::function<void()> && read_func)
-{
-    addElementSafe<void>(assert_cast<ColumnTuple &>(column).getColumns().size(), column, [&](){ read_func(); return true; });
-}
-
 void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     addElementSafe<void>(elems.size(), column, [&]
@@ -150,21 +146,14 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 
 void SerializationTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.pretty_format && settings.pretty.named_tuples_as_json && has_explicit_names)
+    writeChar('(', ostr);
+    for (size_t i = 0; i < elems.size(); ++i)
     {
-        serializeTextJSONPretty(column, row_num, ostr, settings, 1);
+        if (i != 0)
+            writeChar(',', ostr);
+        elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
     }
-    else
-    {
-        writeChar('(', ostr);
-        for (size_t i = 0; i < elems.size(); ++i)
-        {
-            if (i != 0)
-                writeChar(',', ostr);
-            elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
-        }
-        writeChar(')', ostr);
-    }
+    writeChar(')', ostr);
 }
 
 template <typename ReturnType>
@@ -314,9 +303,7 @@ void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t 
         }
 
         writeChar('\n', ostr);
-        const auto final_indent = indent * settings.json.pretty_print_indent_multiplier;
-        if (final_indent > 1)
-            writeChar(settings.json.pretty_print_indent, final_indent, ostr);
+        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
         writeChar('}', ostr);
     }
     else

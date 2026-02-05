@@ -68,7 +68,7 @@ public:
         arguments[1].column->get(0, ngram_argument_value);
         auto ngram_value = ngram_argument_value.safeGet<UInt64>();
 
-        NgramsTokenExtractor extractor(ngram_value);
+        NgramTokenExtractor extractor(ngram_value);
 
         auto result_column_string = ColumnString::create();
 
@@ -105,9 +105,9 @@ private:
             size_t token_start = 0;
             size_t token_length = 0;
 
-            while (cur < data.size() && extractor.nextInString(data.data(), data.size(), cur, token_start, token_length))
+            while (cur < data.size && extractor.nextInString(data.data, data.size, &cur, &token_start, &token_length))
             {
-                result_data_column.insertData(data.data() + token_start, token_length);
+                result_data_column.insertData(data.data + token_start, token_length);
                 ++current_tokens_size;
             }
 
@@ -119,12 +119,12 @@ private:
 REGISTER_FUNCTION(Ngrams)
 {
     FunctionDocumentation::Description description = R"(
-Splits a UTF-8 string into n-grams of length `N`.
+Splits a UTF-8 string into n-grams of `ngramsize` symbols.
 )";
-    FunctionDocumentation::Syntax syntax = "ngrams(s, N)";
+    FunctionDocumentation::Syntax syntax = "ngrams(s, ngram_size)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "Input string.", {"String", "FixedString"}},
-        {"N", "The n-gram length.", {"const UInt8/16/32/64"}}
+        {"ngram_size", "The size of an n-gram.", {"const UInt8/16/32/64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with n-grams.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
@@ -138,7 +138,7 @@ Splits a UTF-8 string into n-grams of length `N`.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNgrams>(documentation);
 }

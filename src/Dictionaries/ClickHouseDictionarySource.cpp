@@ -184,14 +184,18 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 
     if (configuration.is_local)
     {
+        std::unique_ptr<CurrentThread::QueryScope> query_scope;
         if (!CurrentThread::getGroup())
-            io.query_scope = CurrentThread::QueryScope::create(context_copy);
+        {
+            query_scope = std::make_unique<CurrentThread::QueryScope>(context_copy);
+        }
 
         context_copy->setCurrentQueryId({});
 
         io = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second;
 
         io.pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName(), context_copy);
+        io.query_scope_holder = std::move(query_scope);
     }
     else
     {
@@ -213,9 +217,11 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 
     if (configuration.is_local)
     {
-        CurrentThread::QueryScope query_scope;
+        std::unique_ptr<CurrentThread::QueryScope> query_scope;
         if (!CurrentThread::getGroup())
-            query_scope = CurrentThread::QueryScope::create(context_copy);
+        {
+            query_scope = std::make_unique<CurrentThread::QueryScope>(context_copy);
+        }
 
         BlockIO io = executeQuery(request, context_copy, QueryFlags{ .internal = true }).second;
         std::string result;

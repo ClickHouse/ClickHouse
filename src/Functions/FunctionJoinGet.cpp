@@ -9,8 +9,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/TableLockHolder.h>
-#include <Access/Common/AccessType.h>
-#include <Access/Common/AccessFlags.h>
+
 
 namespace DB
 {
@@ -32,14 +31,14 @@ namespace
 {
 
 template <bool or_null>
-class ExecutableFunctionJoinGet final : public IExecutableFunction
+class ExecutableFunctionJoinGet final : public IExecutableFunction, WithContext
 {
 public:
     ExecutableFunctionJoinGet(ContextPtr context_,
                               TableLockHolder table_lock_,
                               StorageJoinPtr storage_join_,
                               const DB::Block & result_columns_)
-        : context(context_)
+        : WithContext(context_)
         , table_lock(std::move(table_lock_))
         , storage_join(std::move(storage_join_))
         , result_columns(result_columns_)
@@ -56,14 +55,13 @@ public:
     String getName() const override { return name; }
 
 private:
-    ContextPtr context;
     TableLockHolder table_lock;
     StorageJoinPtr storage_join;
     DB::Block result_columns;
 };
 
 template <bool or_null>
-class FunctionJoinGet final : public IFunctionBase
+class FunctionJoinGet final : public IFunctionBase, WithContext
 {
 public:
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
@@ -72,7 +70,7 @@ public:
                     TableLockHolder table_lock_,
                     StorageJoinPtr storage_join_, String attr_name_,
                     DataTypes argument_types_, DataTypePtr return_type_)
-        : context(context_)
+        : WithContext(context_)
         , table_lock(std::move(table_lock_))
         , storage_join(storage_join_)
         , attr_name(std::move(attr_name_))
@@ -91,7 +89,6 @@ public:
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override;
 
 private:
-    ContextPtr context;
     TableLockHolder table_lock;
     StorageJoinPtr storage_join;
     const String attr_name;
@@ -132,19 +129,14 @@ ColumnPtr ExecutableFunctionJoinGet<or_null>::executeImpl(const ColumnsWithTypeA
         auto key = arguments[i];
         keys.emplace_back(std::move(key));
     }
-    return storage_join->joinGet(keys, result_columns, context).column;
+    return storage_join->joinGet(keys, result_columns, getContext()).column;
 }
 
 template <bool or_null>
 ExecutableFunctionPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAndName &) const
 {
     Block result_columns {{return_type->createColumn(), return_type, attr_name}};
-
-    Names column_names = storage_join->getKeyNames();
-    column_names.push_back(attr_name);
-    context->checkAccess(AccessType::SELECT, storage_join->getStorageID(), column_names);
-
-    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(context, table_lock, storage_join, result_columns);
+    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(getContext(), table_lock, storage_join, result_columns);
 }
 
 std::pair<std::shared_ptr<StorageJoin>, String>
@@ -160,10 +152,11 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
                         "Illegal type {} of first argument of function joinGet, expected a const string.",
                         arguments[0].type->getName());
 
-    const auto qualified_name = QualifiedTableName::parseFromString(join_name);
-    const auto storage_id = context->resolveStorageID({qualified_name.database, qualified_name.table});
+    auto qualified_name = QualifiedTableName::parseFromString(join_name);
+    if (qualified_name.database.empty())
+        qualified_name.database = context->getCurrentDatabase();
 
-    auto table = DatabaseCatalog::instance().getTable(storage_id, std::const_pointer_cast<Context>(context));
+    auto table = DatabaseCatalog::instance().getTable({qualified_name.database, qualified_name.table}, std::const_pointer_cast<Context>(context));
     auto storage_join = std::dynamic_pointer_cast<StorageJoin>(table);
     if (!storage_join)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Table {} should have engine StorageJoin", join_name);
@@ -270,7 +263,7 @@ SELECT joinGet(some_table, 'name', 1, 11);
     };
     FunctionDocumentation::IntroducedIn introduced_in_joinGet = {18, 16};
     FunctionDocumentation::Category category_joinGet = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_joinGet = {description_joinGet, syntax_joinGet, arguments_joinGet, {}, returned_value_joinGet, examples_joinGet, introduced_in_joinGet, category_joinGet};
+    FunctionDocumentation documentation_joinGet = {description_joinGet, syntax_joinGet, arguments_joinGet, returned_value_joinGet, examples_joinGet, introduced_in_joinGet, category_joinGet};
 
     FunctionDocumentation::Description description_joinGetOrNull = R"(
 Allows you to extract data from a table the same way as from a dictionary.
@@ -306,7 +299,7 @@ SELECT joinGetOrNull(db_test.id_val, 'val', toUInt32(1)), joinGetOrNull(db_test.
     };
     FunctionDocumentation::IntroducedIn introduced_in_joinGetOrNull = {20, 4};
     FunctionDocumentation::Category category_joinGetOrNull = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_joinGetOrNull = {description_joinGetOrNull, syntax_joinGetOrNull, arguments_joinGetOrNull, {}, returned_value_joinGetOrNull, examples_joinGetOrNull, introduced_in_joinGetOrNull, category_joinGetOrNull};
+    FunctionDocumentation documentation_joinGetOrNull = {description_joinGetOrNull, syntax_joinGetOrNull, arguments_joinGetOrNull, returned_value_joinGetOrNull, examples_joinGetOrNull, introduced_in_joinGetOrNull, category_joinGetOrNull};
 
     // joinGet
     factory.registerFunction<JoinGetOverloadResolver<false>>(documentation_joinGet);

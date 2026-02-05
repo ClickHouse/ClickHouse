@@ -6,8 +6,6 @@
 #include <Common/RemoteHostFilter.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <IO/WriteHelpers.h>
-
 
 namespace DB
 {
@@ -50,6 +48,7 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
+#include <IO/WriteHelpers.h>
 #include <Dictionaries/CassandraSource.h>
 
 namespace DB
@@ -64,7 +63,7 @@ CassandraDictionarySource::Configuration::Configuration(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
     : host(config.getString(config_prefix + ".host"))
-    , port(static_cast<UInt16>(config.getUInt(config_prefix + ".port", 0)))
+    , port(config.getUInt(config_prefix + ".port", 0))
     , user(config.getString(config_prefix + ".user", ""))
     , password(config.getString(config_prefix + ".password", ""))
     , db(config.getString(config_prefix + ".keyspace"))

@@ -11,11 +11,7 @@
 #include <Common/logger_useful.h>
 
 #include <boost/algorithm/string/predicate.hpp>
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-int-conversion"
 #include <cctz/time_zone.h>
-#pragma clang diagnostic pop
 
 #include <cmath>
 
@@ -136,7 +132,7 @@ namespace
 
         auto type_string = std::make_shared<DataTypeString>();
         DataTypeMap type_map(type_string, type_string);
-        auto serialization = type_map.getDefaultSerialization();
+        auto serialization = type_map.getSerialization({ISerialization::Kind::DEFAULT});
         auto column = type_map.createColumn();
 
         ReadBufferFromString buf(str);
@@ -433,7 +429,7 @@ String SettingFieldMap::toString() const
 {
     auto type_string = std::make_shared<DataTypeString>();
     DataTypeMap type_map(type_string, type_string);
-    auto serialization = type_map.getDefaultSerialization();
+    auto serialization = type_map.getSerialization({ISerialization::Kind::DEFAULT});
     auto column = type_map.createColumn();
     column->insert(value);
 
