@@ -131,6 +131,11 @@ INSERT INTO deltalake(id, firstname, lastname, gender, age)
 VALUES (1, 'John', 'Smith', 'M', 32);
 ```
 
+:::note
+Writing using the table engine is supported only through delta kernel.
+Writes to Azure are not yet supported.
+:::
+
 ### Data cache {#data-cache}
 
 The `DeltaLake` table engine and table function support data caching, the same as `S3`, `AzureBlobStorage`, `HDFS` storages. See ["S3 table engine"](../../../engines/table-engines/integrations/s3.md#data-cache) for more details.
