@@ -42,6 +42,10 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 
+#if USE_AWS_S3
+#include <Storages/Kafka/AWSMSKIAMAuth.h>
+#endif
+
 namespace CurrentMetrics
 {
     extern const Metric KafkaBackgroundReads;
@@ -230,6 +234,12 @@ StorageKafka::~StorageKafka()
 {
     if (!shutdown_called)
         shutdown(false);
+
+#if USE_AWS_S3
+    // Cleanup OAuth context if it was created
+    if (oauth_context)
+        AWSMSKIAMAuth::cleanupContext(oauth_context);
+#endif
 }
 
 void StorageKafka::read(

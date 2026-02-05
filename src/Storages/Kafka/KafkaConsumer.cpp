@@ -78,6 +78,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
             setRDKafkaStat(stat_json);
         });
     }
+
     consumer = std::make_shared<cppkafka::Consumer>(std::move(consumer_config));
     consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
 

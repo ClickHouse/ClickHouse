@@ -96,48 +96,38 @@ namespace
         }
     }
 
-    void oauthBearerTokenRefreshCallback(
-        rd_kafka_t * rk,
-        const char * oauthbearer_config,
-        void * /* opaque */)
+    // Global map to store contexts by context pointer (not handle pointer)
+    // This allows the callback to retrieve the context, and cleanup is tied to Storage lifecycle
+    std::mutex g_contexts_mutex;
+    std::unordered_map<OAuthBearerTokenRefreshContext*, std::shared_ptr<OAuthBearerTokenRefreshContext>> g_contexts;
+
+    void oauthBearerTokenRefreshCallback(cppkafka::KafkaHandleBase & handle, const std::string & oauthbearer_config)
     {
-        std::shared_ptr<S3::S3CredentialsProviderChain> provider;
-        String region;
-
-        // NOTE: We cannot use the global 'opaque' pointer because it is used by cppkafka
-        // to store the Consumer/Producer instance. Overwriting it would break cppkafka callbacks.
-        // Instead, we pass the context pointer address in the configuration string.
-
-        OAuthBearerTokenRefreshContext * ctx = nullptr;
-
-        if (oauthbearer_config && oauthbearer_config[0] != '\0')
+        std::shared_ptr<OAuthBearerTokenRefreshContext> ctx;
+        
+        // Extract context pointer from config string
+        if (!oauthbearer_config.empty())
         {
             try
             {
-                Poco::URI uri;
-                uri.setQuery(oauthbearer_config);
-                auto params = uri.getQueryParameters();
-
-                for (const auto & [key, value] : params)
-                {
-                    if (key == "context_ptr")
-                    {
-                        uintptr_t ptr_val = 0;
-                        ReadBufferFromString rb(value);
-                        if (tryReadIntText(ptr_val, rb))
-                            ctx = reinterpret_cast<OAuthBearerTokenRefreshContext *>(ptr_val);
-                    }
-                }
+                uintptr_t ptr_val = std::stoull(oauthbearer_config);
+                auto* ctx_ptr = reinterpret_cast<OAuthBearerTokenRefreshContext*>(ptr_val);
+                
+                std::lock_guard<std::mutex> lock(g_contexts_mutex);
+                auto it = g_contexts.find(ctx_ptr);
+                if (it != g_contexts.end())
+                    ctx = it->second;
             }
             catch (...)
             {
-                // Ignore parsing errors, will fall back to default behavior (error)
-                if (ctx && ctx->log)
-                    tryLogCurrentException(ctx->log, "Failed to parse OAuth bearer config");
+                // Invalid config, context will be null
             }
         }
 
         LoggerPtr log;
+        std::shared_ptr<S3::S3CredentialsProviderChain> provider;
+        String region;
+
         if (ctx)
         {
             log = ctx->log;
@@ -150,7 +140,7 @@ namespace
             if (!provider)
             {
                 LOG_ERROR(log, "Token refresh callback called without credentials provider context");
-                rd_kafka_oauthbearer_set_token_failure(rk, "Internal error: missing credentials provider context");
+                rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), "Internal error: missing credentials provider context");
                 return;
             }
 
@@ -159,7 +149,7 @@ namespace
             if (credentials.IsEmpty())
             {
                 LOG_ERROR(log, "AWS credentials are empty");
-                rd_kafka_oauthbearer_set_token_failure(rk, "No AWS credentials available");
+                rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), "No AWS credentials available");
                 return;
             }
 
@@ -171,24 +161,24 @@ namespace
 
             char errstr[512];
             rd_kafka_resp_err_t err = rd_kafka_oauthbearer_set_token(
-                rk, token.c_str(), expiry_ms, credentials.GetAWSAccessKeyId().c_str(),
+                handle.get_handle(), token.c_str(), expiry_ms, credentials.GetAWSAccessKeyId().c_str(),
                 nullptr, 0, errstr, sizeof(errstr));
 
             if (err != RD_KAFKA_RESP_ERR_NO_ERROR)
             {
                 LOG_ERROR(log, "Failed to set OAuth token: {}", errstr);
-                rd_kafka_oauthbearer_set_token_failure(rk, errstr);
+                rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), errstr);
             }
         }
         catch (const std::exception & e)
         {
             LOG_ERROR(log, "Token refresh failed: {}", e.what());
-            rd_kafka_oauthbearer_set_token_failure(rk, e.what());
+            rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), e.what());
         }
         catch (...)
         {
             tryLogCurrentException(log, "Token refresh failed");
-            rd_kafka_oauthbearer_set_token_failure(rk, "Unexpected exception");
+            rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), "Unexpected exception");
         }
     }
 }
@@ -276,19 +266,28 @@ void setupAuthentication(
         context_holder->region = effective_region;
     }
 
-    // Pass context pointer in the configuration string to avoid using 'opaque' which is used by cppkafka.
-    WriteBufferFromOwnString wb;
-    writeText(reinterpret_cast<uintptr_t>(context_holder.get()), wb);
-    
-    Poco::URI::QueryParameters params;
-    params.emplace_back("context_ptr", wb.str());
-    
-    Poco::URI uri;
-    uri.setQueryParameters(params);
-    kafka_config.set("sasl.oauthbearer.config", uri.getRawQuery());
+    // Store context in global map so callback can retrieve it
+    // Cleanup is tied to Storage lifecycle via cleanupContext()
+    {
+        std::lock_guard<std::mutex> lock(g_contexts_mutex);
+        g_contexts[context_holder.get()] = context_holder;
+    }
 
-    rd_kafka_conf_set_oauthbearer_token_refresh_cb(
-        kafka_config.get_handle(), oauthBearerTokenRefreshCallback);
+    // Pass context pointer in OAuth config string
+    // This allows callback to retrieve the context without relying on handle mapping
+    std::string context_ptr_str = std::to_string(reinterpret_cast<uintptr_t>(context_holder.get()));
+    kafka_config.set("sasl.oauthbearer.config", context_ptr_str);
+
+    kafka_config.set_oauthbearer_token_refresh_callback(oauthBearerTokenRefreshCallback);
+}
+
+void cleanupContext(std::shared_ptr<OAuthBearerTokenRefreshContext> & context_holder)
+{
+    if (!context_holder)
+        return;
+
+    std::lock_guard<std::mutex> lock(g_contexts_mutex);
+    g_contexts.erase(context_holder.get());
 }
 
 }
