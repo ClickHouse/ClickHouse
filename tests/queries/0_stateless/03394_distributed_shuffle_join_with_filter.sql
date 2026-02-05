@@ -7,6 +7,7 @@ INSERT INTO test SELECT number%30, (number+10)%30, number%50 FROM numbers(100, 1
 -- t1.src_ip!=0 condition is not moved to prewhere because src_ip is in primary key
 
 SET query_plan_join_swap_table = 0;
+SET enable_join_runtime_filters = 1;
 
 SELECT '-------------------------';
 

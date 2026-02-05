@@ -4,20 +4,22 @@ Expression (Project names)
     Sorting (Sorting for ORDER BY)
       Expression ((Before ORDER BY + Projection))
         JoinLogical
-          ShuffleExchange (by hash([__table1.path]))
-            Expression ((Change column names to column identifiers + (Project names + Projection)))
-              Aggregating
-                ShuffleExchange (by hash([__table2.path]))
-                  Expression (Before GROUP BY)
-                    Expression ((WHERE + Change column names to column identifiers))
+          ScatterExchange (by hash([__table1.path]))
+            Expression
+              MergingAggregated (merge)
+                GatherExchange
+                  Aggregating (partial)
+                    Expression
                       ReadFromMergeTree (default.test)
-          ShuffleExchange (by hash([__table3.path]))
-            Expression ((Change column names to column identifiers + (Project names + Projection)))
-              Aggregating
-                ShuffleExchange (by hash([__table4.path]))
-                  Expression (Before GROUP BY)
-                    Expression ((WHERE + Change column names to column identifiers))
-                      ReadFromMergeTree (default.test)
+          ScatterExchange (by hash([__table3.path]))
+            BuildRuntimeFilter (Build runtime join filter on __table3.path)
+              Expression ((Change column names to column identifiers + (Project names + Projection)))
+                MergingAggregated (merge)
+                  GatherExchange
+                    Aggregating (partial)
+                      Expression (Before GROUP BY)
+                        Expression ((WHERE + Change column names to column identifiers))
+                          ReadFromMergeTree (default.test)
 ----------
 path_0	12	path_0	12
 path_1	10	path_1	8

@@ -18,6 +18,12 @@ SET
     distributed_plan_default_reader_bucket_count=3,
     distributed_plan_force_exchange_kind='Streaming';
 
+SET enable_join_runtime_filters=1;
+
 SELECT count() FROM test AS en, test AS de WHERE (en.path = de.path) AND (en.lang = 'en') AND (de.lang = 'de');
 
-EXPLAIN actions = 1 SELECT count() FROM test AS en, test AS de WHERE (en.path = de.path) AND (en.lang = 'en') AND (de.lang = 'de');
+SELECT REGEXP_REPLACE(explain, '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID') AS explain FROM (
+    EXPLAIN actions = 1 SELECT count() FROM test AS en, test AS de WHERE (en.path = de.path) AND (en.lang = 'en') AND (de.lang = 'de')
+) WHERE
+    explain LIKE '%Join%' OR explain LIKE '%ReadFrom%' OR explain LIKE '%Aggregating%' OR explain LIKE '%Merging%' OR explain LIKE '%filter column%'
+    OR explain LIKE '%Shuffle%' OR explain LIKE '%Broadcast%' OR explain LIKE '%Scatter%' OR explain LIKE '%Gather%';
