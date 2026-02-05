@@ -101,7 +101,6 @@ namespace
         const char * oauthbearer_config,
         void * /* opaque */)
     {
-        LoggerPtr log = getLogger("AWSMSKIAMAuth");
         std::shared_ptr<S3::S3CredentialsProviderChain> provider;
         String region;
 
@@ -133,16 +132,15 @@ namespace
             catch (...)
             {
                 // Ignore parsing errors, will fall back to default behavior (error)
-                tryLogCurrentException(log, "Failed to parse OAuth bearer config");
+                if (ctx && ctx->log)
+                    tryLogCurrentException(ctx->log, "Failed to parse OAuth bearer config");
             }
         }
 
+        LoggerPtr log;
         if (ctx)
         {
-            if (ctx->log)
-            {
-                log = ctx->log;
-            }
+            log = ctx->log;
             provider = ctx->provider;
             region = ctx->region;
         }
@@ -255,14 +253,6 @@ void setupAuthentication(
 
     bool use_environment_credentials = config.getBool("kafka.use_environment_credentials", false);
 
-    Poco::URI::QueryParameters params;
-    params.emplace_back("region", effective_region);
-    params.emplace_back("use_environment_credentials", use_environment_credentials ? "1" : "0");
-
-    Poco::URI uri;
-    uri.setQueryParameters(params);
-
-    kafka_config.set("sasl.oauthbearer.config", uri.getRawQuery());
     kafka_config.set("sasl.mechanism", "OAUTHBEARER");
     kafka_config.set("security.protocol", "SASL_SSL");
 
@@ -289,9 +279,11 @@ void setupAuthentication(
     // Pass context pointer in the configuration string to avoid using 'opaque' which is used by cppkafka.
     WriteBufferFromOwnString wb;
     writeText(reinterpret_cast<uintptr_t>(context_holder.get()), wb);
+    
+    Poco::URI::QueryParameters params;
     params.emplace_back("context_ptr", wb.str());
-
-    // Update query parameters with the new context_ptr
+    
+    Poco::URI uri;
     uri.setQueryParameters(params);
     kafka_config.set("sasl.oauthbearer.config", uri.getRawQuery());
 

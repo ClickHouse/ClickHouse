@@ -113,7 +113,8 @@ public:
 
     const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
 
-    std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> & getOAuthContext() { return oauth_context; }
+    AWSMSKIAMAuth::OAuthBearerTokenRefreshContext * getOAuthContextPtr() { return oauth_context.get(); }
+    void setOAuthContext(std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> context) { oauth_context = std::move(context); }
 
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(consumers_mutex), consumers}; }
 

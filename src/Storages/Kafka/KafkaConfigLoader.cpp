@@ -394,8 +394,15 @@ void updateConfigurationFromConfig(
                 ? kafka_config.get("metadata.broker.list")
                 : "";
 
-            AWSMSKIAMAuth::setupAuthentication(
-                kafka_config, params.config, aws_region, broker_list, params.log, storage.getOAuthContext());
+            // Check if OAuth context already exists to avoid recreating it
+            if (!storage.getOAuthContextPtr())
+            {
+                // First time: create and store the context
+                std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> new_context;
+                AWSMSKIAMAuth::setupAuthentication(
+                    kafka_config, params.config, aws_region, broker_list, params.log, new_context);
+                storage.setOAuthContext(std::move(new_context));
+            }
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "AWS MSK IAM authentication is not supported in this build. "
