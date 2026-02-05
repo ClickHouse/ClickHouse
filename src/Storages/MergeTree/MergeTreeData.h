@@ -1428,11 +1428,13 @@ public:
     /// Returns number of successfully moved parts
     size_t movePartsOnShutdown(std::chrono::seconds timeout, LoggerPtr shutdown_log);
 
-    /// Check if part is covered by a future merge/mutation in the replication queue.
-    /// Returns true if this part will be replaced by a merged part, meaning it doesn't
-    /// need to be preserved (the merged result can be fetched from other replicas).
-    /// Base implementation returns false; overridden in StorageReplicatedMergeTree.
-    virtual bool isPartCoveredByFutureMerge(const String & part_name) const;
+    /// Filter out parts that are covered by future merges in the replication queue.
+    /// These parts will be replaced by merged results that can be fetched from other replicas.
+    /// Modifies parts_to_move in place, removing covered parts and incrementing skipped_count.
+    /// Base implementation does nothing (non-replicated tables have no replication queue).
+    virtual void filterPartsCoveredByFutureMerge(
+        std::vector<std::pair<DataPartPtr, VolumePtr>> & parts_to_move,
+        size_t & skipped_count) const;
 
 protected:
     /// Engine-specific methods

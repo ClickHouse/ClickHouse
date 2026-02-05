@@ -9547,24 +9547,27 @@ size_t MergeTreeData::movePartsOnShutdown(std::chrono::seconds timeout, LoggerPt
 
     std::vector<std::pair<DataPartPtr, VolumePtr>> parts_to_move;
     auto all_parts = getDataPartsVectorForInternalUsage();
-    size_t skipped_future_parts = 0;
 
     for (const auto & part : all_parts)
     {
         auto it = disk_to_target_volume.find(part->getDataPartStorage().getDiskName());
         if (it != disk_to_target_volume.end())
         {
-            /// Skip parts that are covered by future merges in the replication queue.
-            /// These parts will be replaced by merged results that can be fetched from other replicas.
-            if (isPartCoveredByFutureMerge(part->name))
-            {
-                ++skipped_future_parts;
-                continue;
-            }
-
             parts_to_move.emplace_back(part, it->second);
             total_bytes += part->getBytesOnDisk();
         }
+    }
+
+    /// Filter out parts covered by future merges (batch operation with single lock acquisition)
+    size_t skipped_future_parts = 0;
+    filterPartsCoveredByFutureMerge(parts_to_move, skipped_future_parts);
+
+    /// Recalculate total_bytes after filtering
+    if (skipped_future_parts > 0)
+    {
+        total_bytes = 0;
+        for (const auto & [part, _] : parts_to_move)
+            total_bytes += part->getBytesOnDisk();
     }
 
     total_count = parts_to_move.size();
@@ -9635,10 +9638,11 @@ size_t MergeTreeData::movePartsOnShutdown(std::chrono::seconds timeout, LoggerPt
     return moved_count;
 }
 
-bool MergeTreeData::isPartCoveredByFutureMerge(const String & /* part_name */) const
+void MergeTreeData::filterPartsCoveredByFutureMerge(
+    std::vector<std::pair<DataPartPtr, VolumePtr>> & /* parts_to_move */,
+    size_t & /* skipped_count */) const
 {
-    /// Base implementation: non-replicated tables don't have replication queue
-    return false;
+    /// Base implementation: non-replicated tables don't have replication queue, nothing to filter
 }
 
 bool MergeTreeData::canUsePolymorphicParts() const
