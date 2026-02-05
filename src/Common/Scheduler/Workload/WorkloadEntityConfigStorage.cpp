@@ -17,14 +17,36 @@ void WorkloadEntityConfigStorage::loadEntities(const Poco::Util::AbstractConfigu
 
     std::vector<std::pair<String, ASTPtr>> new_entities;
 
-    // Load entities from the combined resources_and_workloads section
-    String sql = config.getString("resources_and_workloads", "");
-    if (!sql.empty())
+    const String config_prefix = "resources_and_workloads";
+
+    if (config.has(config_prefix))
     {
-        auto parsed_entities = parseEntitiesFromString(sql, log);
-        for (const auto & [entity_name, ast] : parsed_entities)
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(config_prefix, keys);
+
+        if (!keys.empty())
         {
-            new_entities.emplace_back(entity_name, ast);
+            // iterate over all child elements
+            for (const auto & key : keys)
+            {
+                String sql = config.getString(config_prefix + "." + key, "");
+                if (!sql.empty())
+                {
+                    auto parsed_entities = parseEntitiesFromString(sql, log);
+                    for (const auto & [entity_name, ast] : parsed_entities)
+                        new_entities.emplace_back(entity_name, ast);
+                }
+            }
+        }
+        else
+        {
+            String sql = config.getString(config_prefix, "");
+            if (!sql.empty())
+            {
+                auto parsed_entities = parseEntitiesFromString(sql, log);
+                for (const auto & [entity_name, ast] : parsed_entities)
+                    new_entities.emplace_back(entity_name, ast);
+            }
         }
     }
 
@@ -33,24 +55,15 @@ void WorkloadEntityConfigStorage::loadEntities(const Poco::Util::AbstractConfigu
     LOG_DEBUG(log, "Loaded {} workload entities from configuration", new_entities.size());
 }
 
-WorkloadEntityConfigStorage::OperationResult WorkloadEntityConfigStorage::storeEntityImpl(
-    const ContextPtr &,
-    WorkloadEntityType,
-    const String &,
-    ASTPtr,
-    bool,
-    bool,
-    const Settings &)
+WorkloadEntityConfigStorage::OperationResult
+WorkloadEntityConfigStorage::storeEntityImpl(const ContextPtr &, WorkloadEntityType, const String &, ASTPtr, bool, bool, const Settings &)
 {
     // Config storage is read-only - entities come from config, not SQL. This function should not be called
     return OperationResult::Failed;
 }
 
-WorkloadEntityConfigStorage::OperationResult WorkloadEntityConfigStorage::removeEntityImpl(
-    const ContextPtr &,
-    WorkloadEntityType,
-    const String &,
-    bool)
+WorkloadEntityConfigStorage::OperationResult
+WorkloadEntityConfigStorage::removeEntityImpl(const ContextPtr &, WorkloadEntityType, const String &, bool)
 {
     // Config storage is read-only - entities come from config, not SQL. This function should not be called
     return OperationResult::Failed;
