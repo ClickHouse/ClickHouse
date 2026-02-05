@@ -27,12 +27,8 @@ public:
 
     void reloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
-    /// Unloads a dictionary, releasing its memory.
-    /// The dictionary will be reloaded lazily on next access.
-    /// Returns true if the dictionary was unloaded, false if it wasn't loaded or doesn't exist.
     bool unloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
-    /// Unloads all loaded dictionaries, releasing their memory.
     void unloadAllDictionaries() const;
 
     QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr context) const;

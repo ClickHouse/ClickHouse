@@ -640,9 +640,6 @@ public:
         return infos.contains(name);
     }
 
-    /// Unloads a specified object, releasing its memory.
-    /// The object will be reloaded lazily on next access.
-    /// Returns true if the object was unloaded, false if it wasn't loaded or doesn't exist.
     bool unload(const String & name)
     {
         std::lock_guard lock{mutex};
@@ -664,10 +661,7 @@ public:
 
         LOG_TRACE(log, "Unloading {} '{}'", type_name, name);
 
-        /// Reset the object to release memory, keeping the config for lazy reload.
-        /// Reset state_id and loading_id so that loadImpl will trigger startLoading
-        /// on the next access (getMinIDToFinishLoading returns 1 for non-forced loads,
-        /// so state_id must be < 1 for the load to be triggered).
+        /// Reset state so that the next access triggers lazy reload.
         info->object = nullptr;
         info->exception = nullptr;
         info->state_id = 0;
@@ -678,7 +672,6 @@ public:
         return true;
     }
 
-    /// Unloads all loaded objects, releasing their memory.
     void unloadAll()
     {
         std::lock_guard lock{mutex};
