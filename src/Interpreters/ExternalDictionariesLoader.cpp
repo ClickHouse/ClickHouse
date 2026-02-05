@@ -112,7 +112,7 @@ void ExternalDictionariesLoader::reloadDictionary(const std::string & dictionary
 
 bool ExternalDictionariesLoader::unloadDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
     return unload(resolved_dictionary_name);
 }
 
