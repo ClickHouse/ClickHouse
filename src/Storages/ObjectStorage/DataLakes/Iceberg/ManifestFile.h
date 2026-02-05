@@ -119,7 +119,7 @@ struct ManifestFileEntry : public boost::noncopyable
     }
 };
 
-using ManifestFileEntryPtr = std::shared_ptr<ManifestFileEntry>;
+using ManifestFileEntryPtr = std::shared_ptr<const ManifestFileEntry>;
 
 /**
  * Manifest file has the following format: '/iceberg_data/db/table_name/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro'

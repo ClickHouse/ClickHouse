@@ -84,11 +84,9 @@ std::pair<ObjectStoragePtr, std::string> getOrCreateStorageAndKey(
     const ContextPtr & context,
     std::function<void(Poco::Util::MapConfiguration &, const std::string &)> configure_fn)
 {
-    {
-        std::lock_guard lock(secondary_storages.mutex);
-        if (auto it = secondary_storages.storages.find(cache_key); it != secondary_storages.storages.end())
-            return {it->second, key_to_use};
-    }
+    std::lock_guard lock(secondary_storages.mutex);
+    if (auto it = secondary_storages.storages.find(cache_key); it != secondary_storages.storages.end())
+        return {it->second, key_to_use};
 
     Poco::AutoPtr<Poco::Util::MapConfiguration> cfg(new Poco::Util::MapConfiguration);
     const std::string config_prefix = "object_storages." + cache_key;
@@ -97,15 +95,10 @@ std::pair<ObjectStoragePtr, std::string> getOrCreateStorageAndKey(
 
     configure_fn(*cfg, config_prefix);
 
+    /// Create under lock to avoid duplicate creation and wasted work
     ObjectStoragePtr storage = ObjectStorageFactory::instance().create(cache_key, *cfg, config_prefix, context, /*skip_access_check*/ true);
 
-    {
-        std::lock_guard lock(secondary_storages.mutex);
-        auto [it, inserted] = secondary_storages.storages.emplace(cache_key, storage);
-        if (!inserted)
-            return {it->second, key_to_use};
-    }
-
+    secondary_storages.storages.emplace(cache_key, storage);
     return {storage, key_to_use};
 }
 #endif
@@ -132,7 +125,7 @@ std::string normalizePathString(const std::string & path)
     return normalized_result;
 }
 
-/// Convert a path (relative to table location ot absolute path) to a key that will be looked up in the object storage.
+/// Convert a path (relative to table location or absolute path) to a key that will be looked up in the object storage.
 ///
 /// - If `table_location` is empty, the path is treated as already relative to storage root.
 /// - If `path` is an absolute path, its key component (without scheme/authority) is returned.
