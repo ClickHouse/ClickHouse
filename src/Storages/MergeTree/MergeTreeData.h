@@ -1428,6 +1428,12 @@ public:
     /// Returns number of successfully moved parts
     size_t movePartsOnShutdown(std::chrono::seconds timeout, LoggerPtr shutdown_log);
 
+    /// Check if part is covered by a future merge/mutation in the replication queue.
+    /// Returns true if this part will be replaced by a merged part, meaning it doesn't
+    /// need to be preserved (the merged result can be fetched from other replicas).
+    /// Base implementation returns false; overridden in StorageReplicatedMergeTree.
+    virtual bool isPartCoveredByFutureMerge(const String & part_name) const;
+
 protected:
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;

@@ -9547,12 +9547,21 @@ size_t MergeTreeData::movePartsOnShutdown(std::chrono::seconds timeout, LoggerPt
 
     std::vector<std::pair<DataPartPtr, VolumePtr>> parts_to_move;
     auto all_parts = getDataPartsVectorForInternalUsage();
+    size_t skipped_future_parts = 0;
 
     for (const auto & part : all_parts)
     {
         auto it = disk_to_target_volume.find(part->getDataPartStorage().getDiskName());
         if (it != disk_to_target_volume.end())
         {
+            /// Skip parts that are covered by future merges in the replication queue.
+            /// These parts will be replaced by merged results that can be fetched from other replicas.
+            if (isPartCoveredByFutureMerge(part->name))
+            {
+                ++skipped_future_parts;
+                continue;
+            }
+
             parts_to_move.emplace_back(part, it->second);
             total_bytes += part->getBytesOnDisk();
         }
@@ -9560,7 +9569,12 @@ size_t MergeTreeData::movePartsOnShutdown(std::chrono::seconds timeout, LoggerPt
 
     total_count = parts_to_move.size();
     if (total_count == 0)
+    {
+        if (skipped_future_parts > 0)
+            LOG_DEBUG(shutdown_log, "Shutdown: all {} parts on volatile volumes are covered by future merges, skipping move",
+                skipped_future_parts);
         return 0;
+    }
 
     /// Sort by level ascending (level 0 = freshly inserted, likely not yet replicated),
     /// then by size ascending (smaller parts first to maximize count of preserved parts)
@@ -9619,6 +9633,12 @@ size_t MergeTreeData::movePartsOnShutdown(std::chrono::seconds timeout, LoggerPt
         getStorageID().getFullTableName(), moved_count, total_count, elapsed_ms);
 
     return moved_count;
+}
+
+bool MergeTreeData::isPartCoveredByFutureMerge(const String & /* part_name */) const
+{
+    /// Base implementation: non-replicated tables don't have replication queue
+    return false;
 }
 
 bool MergeTreeData::canUsePolymorphicParts() const

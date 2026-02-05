@@ -147,6 +147,9 @@ public:
     /// wait until other replicas will download some parts from our replica.
     void shutdown(bool is_drop) override;
 
+    /// Check if part is covered by a future merge in the replication queue
+    bool isPartCoveredByFutureMerge(const String & part_name) const override;
+
     ~StorageReplicatedMergeTree() override;
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
