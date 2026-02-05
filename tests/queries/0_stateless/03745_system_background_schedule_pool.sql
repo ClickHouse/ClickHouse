@@ -22,7 +22,8 @@ DROP TABLE test_merge_tree_03745;
 DROP TABLE IF EXISTS test_local_03745;
 DROP TABLE IF EXISTS test_distributed_03745;
 CREATE TABLE test_local_03745 (x UInt64) ENGINE = Memory;
-CREATE TABLE test_distributed_03745 (x UInt64) ENGINE = Distributed(test_shard_localhost, currentDatabase(), test_local_03745);
+-- Use a longer sleep time to keep the task in delayed_tasks longer, avoiding race with getTasks()
+CREATE TABLE test_distributed_03745 (x UInt64) ENGINE = Distributed(test_shard_localhost, currentDatabase(), test_local_03745) SETTINGS background_insert_sleep_time_ms = 10000;
 SYSTEM STOP DISTRIBUTED SENDS test_distributed_03745;
 -- Pool is created only for async INSERTs
 INSERT INTO test_distributed_03745 SETTINGS prefer_localhost_replica=0, distributed_foreground_insert=0 VALUES (1), (2), (3);
