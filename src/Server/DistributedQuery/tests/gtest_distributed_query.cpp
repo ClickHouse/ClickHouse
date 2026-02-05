@@ -429,6 +429,8 @@ public:
         registerS3ObjectStorage(factory);
         registerLocalObjectStorage(factory);
         registerPlanSteps();
+
+        GlobalThreadPool::instance();
     }
 
     void TearDown() override
