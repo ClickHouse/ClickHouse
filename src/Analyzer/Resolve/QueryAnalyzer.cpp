@@ -1400,7 +1400,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         auto identifier_name = identifier_lookup.identifier.getFullName();
 
         auto function_resolver = function_factory.tryGet(identifier_name, scope.context);
-        if (function_resolver && function_resolver->allowsOmittingParentheses())
+        
+        static const std::unordered_set<std::string> excluded_names = {
+            "database", "user", "schema"
+        };
+        auto lower_name = Poco::toLower(identifier_name);
+        if (function_resolver && function_resolver->allowsOmittingParentheses() && !excluded_names.contains(lower_name))
         {
             auto function_node = std::make_shared<FunctionNode>(identifier_name);
             function_node->resolveAsFunction(function_resolver->build({}));
