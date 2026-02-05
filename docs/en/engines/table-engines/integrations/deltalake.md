@@ -65,26 +65,38 @@ ENGINE = DeltaLake(deltalake_conf, filename = 'test_table')
 
 <TabItem value="GCP" label="GCP" default>
 
-GCS is accessed through the S3-compatible API using HMAC credentials.
-
 **Syntax**
 
 ```sql
 -- Using HTTPS URL (recommended)
 CREATE TABLE table_name
-ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<hmac_key>', '<hmac_secret>')
-
--- Using gs:// scheme (auto-converted to HTTPS)
-CREATE TABLE table_name
-ENGINE = DeltaLake('gs://<bucket>/<path>/', '<hmac_key>', '<hmac_secret>')
+ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
 ```
+
+:::note[Unsupported gsutil URI]
+gsutil URI such as `gs://clickhouse-docs-example-bucket` is not supported, please use a URL starting `https://storage.googleapis.com`
+:::
 
 **Arguments**
 
 - `url` — GCS bucket URL to the Delta Lake table. Must use `https://storage.googleapis.com/<bucket>/<path>/`
    format (the GCS XML API endpoint), or `gs://<bucket>/<path>/` which is auto-converted.
-- `hmac_key` — GCS HMAC access key ID. Create via Google Cloud Console → Cloud Storage → Settings → Interoperability.
-- `hmac_secret` — GCS HMAC secret key.
+- `access_key_id` — GCS Access Key. Create via Google Cloud Console → Cloud Storage → Settings → Interoperability.
+- `secret_access_key` — GCS Secrety.
+
+**Named collections**
+
+You can also use named collections.
+For example:
+
+```sql
+CREATE NAMED COLLECTION gcs_creds AS
+access_key_id = '<access_key>',
+secret_access_key = '<secret>';
+
+CREATE TABLE gcpDeltaLake
+ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<path>')
+```
    
 </TabItem>
 
@@ -133,7 +145,7 @@ VALUES (1, 'John', 'Smith', 'M', 32);
 
 :::note
 Writing using the table engine is supported only through delta kernel.
-Writes to Azure are not yet supported.
+Writes to Azure are not yet supported but work for S3 and GCS.
 :::
 
 ### Data cache {#data-cache}
