@@ -8005,6 +8005,17 @@ std::vector<std::string_view> Settings::getAllRegisteredNames() const
     return setting_names;
 }
 
+std::vector<std::string_view> Settings::getAllAliasNames() const
+{
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+    {
+        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
+    }
+    return alias_names;
+}
+
 std::vector<std::string_view> Settings::getChangedAndObsoleteNames() const
 {
     std::vector<std::string_view> setting_names;

@@ -529,7 +529,7 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
     auto res = this->create(0, scale);
-    if (0 == size)
+    if (size == 0 || offsets.back() == 0)
         return res;
 
     typename Self::Container & res_data = res->getData();
