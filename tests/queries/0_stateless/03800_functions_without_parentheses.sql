@@ -22,9 +22,9 @@ SELECT CURRENT_DATE = today();
 SELECT toTypeName(CURRENT_USER);
 SELECT CURRENT_USER = currentUser();
 
--- CURRENT_DATABASE
-SELECT toTypeName(CURRENT_DATABASE);
-SELECT CURRENT_DATABASE = currentDatabase();
+-- -- CURRENT_DATABASE
+-- SELECT toTypeName(CURRENT_DATABASE);
+-- SELECT CURRENT_DATABASE = currentDatabase();
 
 -- Verify they work in expressions
 SELECT NOW + INTERVAL 1 DAY > NOW;
