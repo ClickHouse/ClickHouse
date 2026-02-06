@@ -135,7 +135,7 @@ NamesAndTypesList SchemaConverter::inferSchema()
     return res;
 }
 
-std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const
+std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElement & element) const
 {
     if (!column_mapper)
         return element.name;
@@ -150,19 +150,8 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
     auto it = map.find(element.field_id);
     if (it == map.end())
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);
-
-    /// At top level (empty path), return the full mapped name. For nested
-    /// elements, strip the parent path prefix to get the child name.
-    if (current_path.empty())
-        return it->second;
-
-    /// Strip "current_path." prefix to get the child name (preserves dots in child names)
-    std::string_view mapped = it->second;
-    if (mapped.starts_with(current_path) && mapped.size() > current_path.size()
-        && mapped[current_path.size()] == '.')
-        return mapped.substr(current_path.size() + 1);
-
-    return it->second;
+    auto split = Nested::splitName(std::string_view(it->second), /*reverse=*/ true);
+    return split.second.empty() ? split.first : split.second;
 }
 
 void SchemaConverter::processSubtree(TraversalNode & node)
@@ -180,7 +169,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     if (node.schema_context == SchemaContext::None)
     {
-        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name));
+        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element));
 
         if (sample_block)
         {
@@ -628,7 +617,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     std::vector<String> element_names_in_file;
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
-        const String & element_name = element_names_in_file.emplace_back(useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name));
+        const String & element_name = element_names_in_file.emplace_back(useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx)));
         std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
         if (lookup_by_name)
         {

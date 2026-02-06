@@ -2849,22 +2849,17 @@ namespace
             first_call_of_write_row = true;
         }
 
-        void startReading() override
+        void readRow(size_t row_num) override
         {
             if (first_call_of_read_row)
             {
                 reader->startMessage(/*with_length_delimiter = */ true);
                 first_call_of_read_row = false;
             }
-        }
-
-        void readRow(size_t row_num) override
-        {
-            startReading();
 
             int field_tag;
-            if (!reader->readFieldNumber(field_tag))
-                throw Exception(ErrorCodes::PROTOBUF_BAD_CAST, "Unexpected end of ProtobufList message");
+            [[maybe_unused]] bool ret = reader->readFieldNumber(field_tag);
+            assert(ret);
 
             serializer->readRow(row_num);
         }

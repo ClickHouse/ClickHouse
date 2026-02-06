@@ -215,8 +215,6 @@ void preparePostgreSQLArrayInfo(
         parser = [](std::string & field) -> Field { return field; };
     else if (which.isDate())
         parser = [](std::string & field) -> Field { return UInt16{LocalDate{field}.getDayNum()}; };
-    else if (which.isDate32())
-        parser = [](std::string & field) -> Field { return Int32{LocalDate{field}.getExtenedDayNum()}; };
     else if (which.isDateTime())
         parser = [nested](std::string & field) -> Field
         {

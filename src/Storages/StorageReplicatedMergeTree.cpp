@@ -49,7 +49,6 @@
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
-#include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
@@ -162,11 +161,13 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool async_insert_deduplicate;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsUInt64 alter_sync;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
+    extern const SettingsBool insert_deduplicate;
     extern const SettingsUInt64Auto insert_quorum;
     extern const SettingsBool insert_quorum_parallel;
     extern const SettingsMilliseconds insert_quorum_timeout;
@@ -229,7 +230,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
     extern const MergeTreeSettingsString auto_statistics_types;
-    extern const MergeTreeSettingsNonZeroUInt64 clone_replica_zookeeper_create_get_part_batch_size;
 }
 
 namespace FailPoints
@@ -243,8 +243,6 @@ namespace FailPoints
     extern const char zero_copy_unlock_zk_fail_after_op[];
     extern const char rmt_lightweight_update_sleep_after_block_allocation[];
     extern const char rmt_merge_selecting_task_pause_when_scheduled[];
-    extern const char rmt_merge_selecting_task_no_free_threads[];
-    extern const char rmt_merge_selecting_task_max_part_size[];
     extern const char rmt_delay_execute_drop_range[];
 }
 
@@ -3565,29 +3563,6 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         return false;
     };
 
-    /// Batch ZooKeeper create requests for better performance with many parts.
-    const auto batch_size = (*getSettings())[MergeTreeSetting::clone_replica_zookeeper_create_get_part_batch_size];
-    Coordination::Requests create_requests;
-    std::vector<String> create_request_part_names;
-    const String queue_path = fs::path(replica_path) / "queue/queue-";
-    AtomicStopwatch queue_creation_watch;
-    constexpr size_t print_message_each_n_seconds = 10;
-
-    auto flush_create_requests = [&]()
-    {
-        if (create_requests.empty())
-            return;
-
-        zookeeper->multi(create_requests);
-        for (const auto & part_name : create_request_part_names)
-            created_get_parts.insert(part_name);
-        create_requests.clear();
-        create_request_part_names.clear();
-
-        if (queue_creation_watch.compareAndRestart(print_message_each_n_seconds))
-            LOG_INFO(log, "Queued {}/{} parts", created_get_parts.size(), active_parts.size());
-    };
-
     for (const String & name : active_parts)
     {
         if (should_ignore_log_entry(created_get_parts, name, "Not fetching"))
@@ -3629,12 +3604,9 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         log_entry.create_time = tryGetPartCreateTime(zookeeper, source_path, name);
 
         LOG_TEST(log, "Enqueueing {} for fetch", name);
-        create_requests.push_back(zkutil::makeCreateRequest(queue_path, log_entry.toString(), zkutil::CreateMode::PersistentSequential));
-        create_request_part_names.push_back(name);
-        if (create_requests.size() >= batch_size)
-            flush_create_requests();
+        zookeeper->create(fs::path(replica_path) / "queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential);
+        created_get_parts.insert(name);
     }
-    flush_create_requests();
 
     size_t total_parts_to_fetch = created_get_parts.size();
     LOG_DEBUG(log, "Queued {} parts to be fetched, {} parts ignored", total_parts_to_fetch, active_parts.size() - total_parts_to_fetch);
@@ -4132,8 +4104,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         CannotSelect,
     };
 
-    queue.clearPartsPostponeReasons();
-
     auto try_assign_merge = [&]() -> AttemptStatus
     {
         /// We must select parts for merge under merge_selecting_mutex because other threads
@@ -4165,7 +4135,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 "Current background tasks memory usage: {}.",
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()),
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.get()));
-            queue.addPartsPostponeReasons(PostponeReasons::ALL_PARTS_KEY, PostponeReasons::REACH_MEMORY_LIMIT);
             return AttemptStatus::Limited;
         }
 
@@ -4176,7 +4145,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 merges_and_mutations_queued.merges,
                 merges_and_mutations_queued.mutations,
                 (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_in_queue].value);
-            queue.addPartsPostponeReasons(PostponeReasons::ALL_PARTS_KEY, PostponeReasons::EXCEED_MAX_QUEUED_MERGES);
             return AttemptStatus::Limited;
         }
 
@@ -4272,7 +4240,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             }
         }
 
-        fiu_do_on(FailPoints::rmt_merge_selecting_task_no_free_threads, { max_source_part_bytes_for_mutation = 0; });
         /// If there are many mutations in queue, it may happen, that we cannot enqueue enough merges to merge all new parts
         if (max_source_part_bytes_for_mutation == 0 || merges_and_mutations_queued.mutations >= (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue])
         {
@@ -4284,7 +4251,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 merges_and_mutations_queued.mutations,
                 (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue].value,
                 max_source_part_bytes_for_mutation_log_comment);
-            queue.addPartsPostponeReasons(PostponeReasons::ALL_PARTS_KEY, PostponeReasons::NO_FREE_THREADS);
             return AttemptStatus::Limited;
         }
 
@@ -4298,12 +4264,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
             for (const auto & part : data_parts)
             {
-                fiu_do_on(FailPoints::rmt_merge_selecting_task_max_part_size, { max_source_part_bytes_for_mutation = 1; });
                 if (part->getBytesOnDisk() > max_source_part_bytes_for_mutation)
-                {
-                    queue.addPartsPostponeReasons(part->name, PostponeReasons::EXCEED_MAX_PART_SIZE);
                     continue;
-                }
 
                 auto expected = merge_predicate->getExpectedMutationVersion(part);
                 if (!expected)
@@ -5608,7 +5570,6 @@ void StorageReplicatedMergeTree::startup()
 {
     LOG_TRACE(log, "Starting up table");
     startOutdatedAndUnexpectedDataPartsLoadingTask();
-    startStatisticsCache();
     if (attach_thread)
     {
         attach_thread->start();

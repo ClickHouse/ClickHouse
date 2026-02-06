@@ -433,16 +433,15 @@ ColumnRawPtrs Aggregator::Params::makeRawKeyColumns(const Block & block) const
 
     for (size_t i = 0; i < keys_size; ++i)
     {
-        const auto & column = block.safeGetByPosition(i);
 #ifdef DEBUG_OR_SANITIZER_BUILD
-        if (column.name != keys[i])
+        if (block.getPositionByName(keys[i]) != i)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Wrong key in block [{}] at position {}, expected keys: [{}]",
                 block.dumpStructure(), i, fmt::join(keys, ", "));
         }
 #endif
-        key_columns[i] = column.column.get();
+        key_columns[i] = block.safeGetByPosition(i).column.get();
     }
 
     return key_columns;

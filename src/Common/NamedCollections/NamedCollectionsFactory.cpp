@@ -412,7 +412,7 @@ void NamedCollectionFactory::updateFunc()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
             chassert(false);
             continue;
         }

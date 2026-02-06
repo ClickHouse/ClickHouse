@@ -17,7 +17,6 @@
 #include <Poco/Environment.h>
 
 #include <thread>
-#include <unistd.h>
 
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
@@ -382,10 +381,9 @@ try
     /// in case of double fault.
 
     LOG_FATAL(log, "########## Short fault info ############");
-    LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {} ({})",
+    LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {}",
               VERSION_STRING, VERSION_OFFICIAL, build_id(), GIT_HASH, Poco::Environment::osArchitecture(),
-              thread_num, sig,
-              info.si_pid == getpid() ? "internal" : fmt::format("signal sent by pid {} from user {}", info.si_pid, info.si_uid));
+              thread_num, sig);
 
     std::string signal_description = "Unknown signal";
 
@@ -397,7 +395,8 @@ try
 
     LOG_FATAL(log, "Signal description: {}", signal_description);
 
-    String error_message = signalToErrorMessage(sig, info, *context);
+    String error_message;
+    error_message = signalToErrorMessage(sig, info, *context);
     LOG_FATAL(log, fmt::runtime(error_message));
 
     String bare_stacktrace_str;

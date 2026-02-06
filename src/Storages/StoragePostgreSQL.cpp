@@ -306,18 +306,7 @@ public:
                 }
             }
 
-            try
-            {
-                inserter->insert(row);
-            }
-            catch (const pqxx::argument_error & e)
-            {
-                /// libpqxx throws pqxx::argument_error when the string contains invalid UTF-8.
-                /// Since pqxx::argument_error is a std::invalid_argument, which is a std::logic_error,
-                /// and unhandled std::logic_error is treated as a "Logical error" with code 1001,
-                /// we need to wrap it into a DB::Exception.
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot insert data into PostgreSQL: {}", e.what());
-            }
+            inserter->insert(row);
         }
     }
 
@@ -412,7 +401,6 @@ public:
         else if (which.isFloat32())                      nested_column = ColumnFloat32::create();
         else if (which.isFloat64())                      nested_column = ColumnFloat64::create();
         else if (which.isDate())                         nested_column = ColumnUInt16::create();
-        else if (which.isDate32())                       nested_column = ColumnInt32::create();
         else if (which.isDateTime())                     nested_column = ColumnUInt32::create();
         else if (which.isUUID())                         nested_column = ColumnUUID::create();
         else if (which.isDateTime64())

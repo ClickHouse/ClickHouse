@@ -610,6 +610,8 @@ void StorageKafka::threadFunc(size_t idx)
     }
     catch (...)
     {
+        /// do bare minimum in catch block
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
         exception_str = getCurrentExceptionMessage(true /* with_stacktrace */);
     }
 
