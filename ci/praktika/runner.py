@@ -563,7 +563,9 @@ class Runner:
                             ), f"Artifact {artifact_path} not found"
                             for file_path in glob.glob(artifact_path):
                                 link = S3.copy_file_to_s3(
-                                    s3_path=s3_path, local_path=file_path
+                                    s3_path=s3_path,
+                                    local_path=file_path,
+                                    tags=artifact.ext.get("tags"),
                                 )
                                 result.set_link(link)
                                 artifact_links.append(link)

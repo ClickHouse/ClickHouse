@@ -216,9 +216,9 @@ public:
                     const auto & argument = arguments.front();
                     chassert(argument != nullptr);
 
-                    auto * argument_node = argument->as<ConstantNode>();
-                    chassert(argument_node != nullptr);
-                    chassert(isString(argument_node->getResultType()));
+                    const auto * argument_node = argument->as<ConstantNode>();
+                    if (!argument_node || !isString(argument_node->getResultType()))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __getScalar is internal and should not be used directly");
 
                     result = fmt::format("__getScalar('{}'_String)", argument_node->getValue().safeGet<String>());
                     break;

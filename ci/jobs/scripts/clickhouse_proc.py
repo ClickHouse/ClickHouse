@@ -147,13 +147,13 @@ class ClickHouseProc:
 
     def start_azurite(self):
         command = (
-            f"cd {temp_dir} && azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence",
+            f"cd {temp_dir} && azurite-rs --host 0.0.0.0 --blob-port 10000 --silent --in-memory",
         )
         with open(self.AZURITE_LOG, "w") as log_file:
             self.azurite_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT, shell=True
             )
-        print(f"Started azurite asynchronously with PID {self.azurite_proc.pid}")
+        print(f"Started azurite-rs asynchronously with PID {self.azurite_proc.pid}")
         return True
 
     @staticmethod

@@ -235,15 +235,27 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 stderr_log=stderr_log if stderr_log.exists() else "",
                 fuzzer_log="",
             )
-            name, description, files = log_parser.parse_failure()
-            failed_results.append(
-                Result.create_from(
-                    name=name,
-                    info=description,
-                    status=Result.StatusExtended.FAIL,
-                    files=files,
+            try:
+                name, description, files = log_parser.parse_failure()
+                failed_results.append(
+                    Result.create_from(
+                        name=name,
+                        info=description,
+                        status=Result.StatusExtended.FAIL,
+                        files=files,
+                    )
                 )
-            )
+            except Exception as e:
+                print(
+                    f"ERROR: Failed to parse failure logs: {e}\nServer logs should still be collected."
+                )
+                failed_results.append(
+                    Result.create_from(
+                        name="Parse failure error",
+                        info=f"Error parsing failure logs: {e}",
+                        status=Result.Status.FAILED,
+                    )
+                )
 
     if exit_code != 0:
         failed_results.append(

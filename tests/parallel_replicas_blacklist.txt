@@ -6,7 +6,6 @@
 
     Can't select from temporary table
     ReadFromParallelRemoteReplicasStep: There is no table `_temporary_and_external_tables`.`_tmp_fad23aad-ce65-4447-81fe-114409a5f0f9` on server: 127.0.0.2:9000
-00600_create_temporary_table_if_not_exists
 00542_access_to_temporary_table_in_readonly_mode
 03156_nullable_number_tips
 03143_cte_scope
@@ -20,13 +19,8 @@
 
     https://github.com/ClickHouse/ClickHouse/issues/74324
     MULTIPLE_EXPRESSIONS_FOR_ALIAS
-03171_function_to_subcolumns_fuzzer
 00597_push_down_predicate_long
 02559_multiple_read_steps_in_prewhere
-
-    https://github.com/ClickHouse/ClickHouse/issues/74329
-    Column with Array type is not represented by ColumnArray column
-02834_array_exists_segfault
 
     https://github.com/ClickHouse/ClickHouse/issues/74335
     Bad get: has Decimal32, requested Decimal128
@@ -43,33 +37,15 @@
     https://github.com/ClickHouse/ClickHouse/issues/74343
     Cannot find column `tuple(col_a, type)` in source stream, there are only columns: [__table1.id, tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type), tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type)]. (THERE_IS_NO_COLUMN) (in query: SELECT id, tuple(replaceAll(data, 'a', 'e') AS col_a, type) AS a, tuple(replaceAll(data, 'a', 'e') AS col_b, type) AS b FROM src;)
 03240_insert_select_named_tuple
-00500_point_in_polygon_non_const_poly
-01017_tuplehamming_distance
-01300_svg
-01849_geoToS2
-02504_regexp_dictionary_table_source
-02833_tuple_concat
-02378_analyzer_projection_names
 
     https://github.com/ClickHouse/ClickHouse/issues/74367
     Cannot find column in source stream
-02457_morton_coding_with_mask
 01358_mutation_delete_null_rows
-
-    https://github.com/ClickHouse/ClickHouse/issues/74447
-    Sizes of columns doesn't match
-02861_filter_pushdown_const_bug
-
-    https://github.com/ClickHouse/ClickHouse/issues/74711
-03080_incorrect_join_with_merge
 
     Storage Join/Set
     https://github.com/ClickHouse/ClickHouse/issues/74362
     Unsupported JOIN keys of type keys128 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT id FROM t ANY LEFT JOIN joint ON t.id = joint.id;)
 01594_storage_join_uuid
-    Unsupported JOIN keys of type keys256 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3) ORDER BY key1;)
-02498_storage_join_key_positions.gen
-03447_storage_join_unsupported_keys
 
     https://github.com/ClickHouse/ClickHouse/issues/74360
     LOGICAL ERROR https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=84536&sha=516c114f38828a2853efa3f0935f19d11b7c0d23&name_0=PR&name_1=Stateless+tests+%28amd_binary%2C+ParallelReplicas%2C+s3+storage%2C+parallel%29
@@ -133,7 +109,6 @@
 
     https://github.com/ClickHouse/clickhouse-private/issues/11670
     Actual WithMergeableState
-01483_merge_table_join_and_group_by
 01147_partial_merge_full_join
 01010_partial_merge_join
 02789_filesystem_cache_alignment
@@ -142,37 +117,12 @@
     https://github.com/ClickHouse/clickhouse-private/issues/17173
 03174_exact_rows_before_aggregation
 
-    https://github.com/ClickHouse/clickhouse-private/issues/19792
-01622_constraints_simple_optimization
-
-    https://github.com/ClickHouse/clickhouse-private/issues/14832
-02319_quantile_interpolated_weighted
-00753_quantile_format
-
     https://github.com/ClickHouse/clickhouse-private/issues/11666
 02941_any_RESPECT_NULL_sparse_column
 02662_first_last_value
 
     https://github.com/ClickHouse/ClickHouse/issues/74411
 02884_create_view_with_sql_security_option
-
-    https://github.com/ClickHouse/ClickHouse/issues/80426
-    Duplicates with all right join and join engine
-01051_all_join_engine
-02497_storage_join_right_assert
-02495_analyzer_storage_join
-
-    https://github.com/ClickHouse/clickhouse-private/issues/27882
-    duplicates cross_to_inner_join_rewrite=1
-02564_analyzer_cross_to_inner
-
-    https://github.com/ClickHouse/ClickHouse/issues/80439
-    Predicate pushdown CTE incorrect result
-02901_predicate_pushdown_cte_stateful
-
-    https://github.com/ClickHouse/ClickHouse/issues/80440
-    MULTIPLE_EXPRESSIONS_FOR_ALIAS
-03121_analyzer_filed_redefenition_in_subquery
 
     Transactions
 02421_truncate_isolation_no_merges

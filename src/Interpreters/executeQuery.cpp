@@ -273,26 +273,6 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
     }
 }
 
-/// Call this inside catch block.
-static void setExceptionStackTrace(QueryLogElement & elem)
-{
-    /// Disable memory tracker for stack trace.
-    /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-
-    LockMemoryExceptionInThread lock(VariableContext::Global);
-
-    try
-    {
-        throw;
-    }
-    catch (const std::exception & e)
-    {
-        elem.stack_trace = getExceptionStackTraceString(e);
-    }
-    catch (...) {} // NOLINT(bugprone-empty-catch)
-}
-
-
 /// Log exception (with query info) into text log (not into system table).
 static void logException(ContextPtr context, QueryLogElement & elem, bool log_error = true)
 {
@@ -823,7 +803,7 @@ void logQueryException(
     elem.is_internal = internal;
 
     if (settings[Setting::calculate_text_stack_trace] && log_error)
-        setExceptionStackTrace(elem);
+        elem.stack_trace = getExceptionStackTraceString(std::current_exception());
     logException(context, elem, log_error);
 
     /// In case of exception we log internal queries also
@@ -908,7 +888,7 @@ void logExceptionBeforeStart(
         elem.query_settings = std::make_shared<Settings>(settings);
 
     if (settings[Setting::calculate_text_stack_trace])
-        setExceptionStackTrace(elem);
+        elem.stack_trace = getExceptionStackTraceString(std::current_exception());
 
     elem.is_internal = internal;
 

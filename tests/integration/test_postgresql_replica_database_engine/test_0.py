@@ -139,7 +139,7 @@ def test_different_data_types(started_cluster):
         """CREATE TABLE test_array_data_type
            (
                 key Integer NOT NULL PRIMARY KEY,
-                a Date[] NOT NULL,                          -- Date
+                a Date[] NOT NULL,                          -- Date32
                 b Timestamp[] NOT NULL,                     -- DateTime64(6)
                 c real[][] NOT NULL,                        -- Float32
                 d double precision[][] NOT NULL,            -- Float64

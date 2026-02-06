@@ -1,9 +1,22 @@
 from praktika import Workflow
 
-from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs
+from ci.defs.defs import (
+    BASE_BRANCH,
+    BINARIES_WITH_LONG_RETENTION,
+    DOCKERS,
+    SECRETS,
+    ArtifactConfigs,
+)
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.workflows.pull_request import REGULAR_BUILD_NAMES
+
+# Add long retention tags to subset of artifacts
+clickhouse_binaries_with_tags = []
+for artifact in ArtifactConfigs.clickhouse_binaries:
+    if artifact.name in BINARIES_WITH_LONG_RETENTION:
+        artifact = artifact.add_tags({"retention": "long"})
+    clickhouse_binaries_with_tags.append(artifact)
 
 workflow = Workflow.Config(
     name="MasterCI",
@@ -28,7 +41,7 @@ workflow = Workflow.Config(
         *JobConfigs.compatibility_test_jobs,
         *JobConfigs.functional_tests_jobs,
         *JobConfigs.functional_test_llvm_coverage_jobs,
-        *JobConfigs.functional_tests_jobs_azure_master_only,
+        *JobConfigs.functional_tests_jobs_azure,
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
         *JobConfigs.integration_test_llvm_coverage_jobs,
@@ -47,12 +60,13 @@ workflow = Workflow.Config(
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
-        *ArtifactConfigs.clickhouse_binaries,
+        *clickhouse_binaries_with_tags,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
+        ArtifactConfigs.parser_memory_profiler,
         *ArtifactConfigs.llvm_profdata_file,
         ArtifactConfigs.llvm_coverage_html_report,
     ],

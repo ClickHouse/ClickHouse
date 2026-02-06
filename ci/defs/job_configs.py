@@ -243,7 +243,10 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_BINARY,
-            provides=[ArtifactNames.CH_ARM_BINARY],
+            provides=[
+                ArtifactNames.CH_ARM_BINARY,
+                ArtifactNames.PARSER_MEMORY_PROFILER,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
@@ -622,19 +625,19 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
-    functional_tests_jobs_azure_master_only = (
-        common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
-            Job.ParamSet(
-                parameter="arm_asan, azure, parallel",
-                runs_on=RunnerLabels.ARM_MEDIUM,
-                requires=[ArtifactNames.CH_ARM_ASAN],
-            ),
-            Job.ParamSet(
-                parameter="arm_asan, azure, sequential",
-                runs_on=RunnerLabels.ARM_SMALL_MEM,
-                requires=[ArtifactNames.CH_ARM_ASAN],
-            ),
-        )
+    functional_tests_jobs_azure = common_ft_job_config.set_allow_merge_on_failure(
+        True
+    ).parametrize(
+        Job.ParamSet(
+            parameter="arm_asan, azure, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_ASAN],
+        ),
+        Job.ParamSet(
+            parameter="arm_asan, azure, sequential",
+            runs_on=RunnerLabels.ARM_SMALL_MEM,
+            requires=[ArtifactNames.CH_ARM_ASAN],
+        ),
     )
     bugfix_validation_it_job = (
         common_integration_test_job_config.set_name(JobNames.BUGFIX_VALIDATE_IT)

@@ -1494,6 +1494,9 @@ bool isReplicated(const ASTStorage & storage)
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
     /// Temporary tables are created out of databases.
+    if (create.isTemporary() && create.attach)
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "ATTACH of TEMPORARY tables are not supported");
+
     if (create.isTemporary() && create.database)
         throw Exception(ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE,
                         "Temporary objects (tables/views) cannot be inside a database. "

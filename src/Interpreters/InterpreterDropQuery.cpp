@@ -128,6 +128,9 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
 
 BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
 {
+    if (query.kind == ASTDropQuery::Kind::Detach && query.isTemporary())
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACH of TEMPORARY tables are not supported");
+
     /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
     if (query.isTemporary() || table_id.database_name.empty())
@@ -328,9 +331,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
 BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind)
 {
-    if (kind == ASTDropQuery::Kind::Detach)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unable to detach temporary table.");
-
     auto context_handle = getContext()->hasSessionContext() ? getContext()->getSessionContext() : getContext();
     auto resolved_id = context_handle->tryResolveStorageID(StorageID("", table_name), Context::ResolveExternal);
     if (resolved_id)

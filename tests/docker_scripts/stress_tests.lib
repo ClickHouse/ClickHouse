@@ -69,7 +69,7 @@ function configure()
     #
     #  DB::Exception: Incorrect file extension: V.sql.move_from.X in metadata directory store/346/346b09d6-907d-4b6b-a1e3-361ecfdab8a4/. (INCORRECT_FILE_NAME)
     #
-    /repo/tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --no-keeper-inject-auth --no-remote-database-disk
+    /repo/tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --no-keeper-inject-auth --no-remote-database-disk "$@"
 
     # avoid too slow startup
     sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \

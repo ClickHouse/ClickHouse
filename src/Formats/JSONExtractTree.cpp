@@ -2003,7 +2003,7 @@ private:
         if (!sorted_paths_to_skip.empty())
         {
             auto it = std::lower_bound(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end(), path);
-            if (it != sorted_paths_to_skip.begin() && path.starts_with(*std::prev(it)))
+            if (it != sorted_paths_to_skip.begin() && path.starts_with(*std::prev(it) + "."))
                 return true;
         }
 

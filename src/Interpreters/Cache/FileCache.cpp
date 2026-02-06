@@ -2323,7 +2323,9 @@ bool FileCache::doDynamicResizeImpl(
 
         result_limits = desired_limits;
 
-        LOG_INFO(log, "Nothing needs to be evicted for new size limits");
+        LOG_INFO(
+            log, "Nothing needs to be evicted for new size limits ({})",
+            main_priority->getStateInfoForLog(state_lock));
         return true;
     }
 

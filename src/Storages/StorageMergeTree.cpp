@@ -230,6 +230,7 @@ void StorageMergeTree::startup()
         background_operations_assignee.start();
         startBackgroundMovesIfNeeded();
         startOutdatedAndUnexpectedDataPartsLoadingTask();
+        startStatisticsCache();
     }
     catch (...)
     {
@@ -418,7 +419,7 @@ void StorageMergeTree::alter(
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
     if (!query_settings[Setting::allow_suspicious_primary_key])
-        MergeTreeData::verifySortingKey(new_metadata.sorting_key, merging_params);
+        MergeTreeData::verifySortingKey(new_metadata.sorting_key);
 
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())

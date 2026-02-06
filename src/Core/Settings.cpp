@@ -863,18 +863,19 @@ When moving conditions from WHERE to PREWHERE, allow reordering them to optimize
 )", 0) \
     \
     DECLARE_WITH_ALIAS(UInt64, alter_sync, 1, R"(
-Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+Allows you to specify the wait behavior for actions that are to be executed on replicas by [`ALTER`](../../sql-reference/statements/alter/index.md), [`OPTIMIZE`](../../sql-reference/statements/optimize.md) or [`TRUNCATE`](../../sql-reference/statements/truncate.md) queries.
 
 Possible values:
 
 - `0` — Do not wait.
 - `1` — Wait for own execution.
 - `2` — Wait for everyone.
+- `3` - Only wait for active replicas.
 
 Cloud default value: `1`.
 
 :::note
-`alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
+`alter_sync` is applicable to `Replicated` and `SharedMergeTree` tables only, it does nothing to alter non `Replicated` or `Shared` tables.
 :::
 )", 0, replication_alter_partitions_sync) \
     DECLARE(Int64, replication_wait_for_inactive_replica_timeout, 120, R"(
@@ -7305,11 +7306,6 @@ Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are n
 If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
 Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
     )", 0) \
-    DECLARE(String, default_dictionary_database, "", R"(
-Database to search for external dictionaries when database name is not specified.
-An empty string means the current database. If dictionary is not found in the specified default database, ClickHouse falls back to the current database.
-
-Can be useful for migrating from XML-defined global dictionaries to SQL-defined dictionaries.)", 0) \
     DECLARE(Int64, optimize_const_name_size, 256, R"(
 Replace with scalar and use hash as a name for large constants (size is estimated by the name length).
 
@@ -7394,7 +7390,7 @@ Allows using statistics to optimize queries
     DECLARE_WITH_ALIAS(Bool, allow_experimental_statistics, false, R"(
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md/#column-statistics).
 )", EXPERIMENTAL, allow_experimental_statistic) \
-    DECLARE(Bool, use_statistics_cache, false, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", EXPERIMENTAL) \
+    DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", BETA) \
     \
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, false, R"(
 If set to true, allow using the text index.
@@ -8010,6 +8006,17 @@ std::vector<std::string_view> Settings::getAllRegisteredNames() const
         setting_names.emplace_back(setting.getName());
     }
     return setting_names;
+}
+
+std::vector<std::string_view> Settings::getAllAliasNames() const
+{
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+    {
+        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
+    }
+    return alias_names;
 }
 
 std::vector<std::string_view> Settings::getChangedAndObsoleteNames() const

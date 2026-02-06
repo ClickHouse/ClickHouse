@@ -1872,7 +1872,7 @@ void TCPHandler::receiveHello()
             {
                 session->authenticate(
                     SSLCertificateCredentials{user, X509Certificate(secure_socket.peerCertificate()).extractAllSubjects()},
-                    getClientAddress(client_info));
+                    getClientAddress(client_info), socket().peerAddress());
                 return;
             }
             catch (const Exception & e)
@@ -1940,12 +1940,12 @@ void TCPHandler::receiveHello()
         };
 
         auto cred = SshCredentials(user, signature, prepare_string_for_ssh_validation(user, challenge));
-        session->authenticate(cred, getClientAddress(client_info));
+        session->authenticate(cred, getClientAddress(client_info), socket().peerAddress());
         return;
     }
 #endif
 
-    session->authenticate(user, password, getClientAddress(client_info));
+    session->authenticate(user, password, getClientAddress(client_info), socket().peerAddress());
 }
 
 
@@ -2267,7 +2267,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             /// the query was come, since the real address is the address of
             /// the initiator server, while we are interested in client's
             /// address.
-            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, *client_info.initial_address, external_roles);
+            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, *client_info.initial_address, *client_info.current_address, external_roles);
         }
 
         is_interserver_authenticated = true;

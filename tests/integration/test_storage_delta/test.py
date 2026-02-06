@@ -278,6 +278,29 @@ def get_storage_options(cluster):
     }
 
 
+def write_deltalake_with_retry(
+    table_uri, data, storage_options, retries=3, delay=5, **kwargs
+):
+    """
+    Wrapper around write_deltalake with test-level retries.
+    The deltalake library has internal retries, but they're too fast (~2s total)
+    when minio is temporarily overloaded. This adds longer delays between attempts.
+    """
+    last_exception = None
+    for attempt in range(retries):
+        try:
+            write_deltalake(table_uri, data, storage_options=storage_options, **kwargs)
+            return
+        except OSError as e:
+            last_exception = e
+            if attempt < retries - 1:
+                logging.warning(
+                    f"write_deltalake failed (attempt {attempt + 1}/{retries}): {e}. Retrying in {delay}s..."
+                )
+                time.sleep(delay)
+    raise last_exception
+
+
 def get_delta_metadata(delta_metadata_file):
     jsons = [json.loads(x) for x in delta_metadata_file.splitlines()]
     combined_json = {}
@@ -910,7 +933,7 @@ def test_partition_columns(started_cluster, use_delta_kernel, cluster):
             "g": [Decimal(f"{i * 1.11:.2f}")],
             "h": [False if i % 2 == 0 else True],
         }
-        write_deltalake(
+        write_deltalake_with_retry(
             f"s3://{bucket}/{result_file}",
             pa.Table.from_pydict(data, schema=schema),
             storage_options=get_storage_options(started_cluster),
@@ -1058,7 +1081,7 @@ test9	2000-01-09	9"""
             "g": [Decimal(f"{i * 1.1:.2f}")],
             "h": [False if i % 2 == 0 else True],
         }
-        write_deltalake(
+        write_deltalake_with_retry(
             f"s3://{bucket}/{result_file}",
             pa.Table.from_pydict(data, schema=schema),
             storage_options=get_storage_options(started_cluster),
@@ -1185,7 +1208,7 @@ def test_complex_types(started_cluster, use_delta_kernel):
     path = f"s3://root/{table_name}"
     table = pa.Table.from_arrays(data, schema=schema)
 
-    write_deltalake(path, table, storage_options=storage_options)
+    write_deltalake_with_retry(path, table, storage_options=storage_options)
 
     assert "1\n2\n3\n" in node.query(
         f"SELECT id FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', '{minio_secret_key}')"
@@ -1319,7 +1342,7 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
     path = f"s3://root/{TABLE_NAME}"
     table = pa.Table.from_arrays(data, schema=schema)
 
-    write_deltalake(path, table, storage_options=storage_options)
+    write_deltalake_with_retry(path, table, storage_options=storage_options)
 
     with PartitionManager() as pm:
         pm_rule_reject = {
@@ -1457,7 +1480,7 @@ def test_partition_columns_2(started_cluster, cluster):
     path = f"s3://root/{table_name}"
     table = pa.Table.from_arrays(data, schema=schema)
 
-    write_deltalake(
+    write_deltalake_with_retry(
         path, table, storage_options=storage_options, partition_by=["c", "d"]
     )
 
@@ -1495,7 +1518,7 @@ def test_partition_columns_2(started_cluster, cluster):
     ]
     new_table_data = pa.Table.from_arrays(new_data, schema=schema)
 
-    write_deltalake(
+    write_deltalake_with_retry(
         path, new_table_data, storage_options=storage_options, mode="append"
     )
 
@@ -2058,7 +2081,7 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
         }
         path = f"s3://root/{table_name}"
         table = pa.Table.from_arrays(data, schema=schema)
-        write_deltalake(
+        write_deltalake_with_retry(
             path, table, storage_options=storage_options, partition_by=["b"]
         )
 
@@ -2102,7 +2125,7 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
         }
         path = f"abfss://{cluster.azure_container_name}@devstoreaccount1.dfs.core.windows.net/{table_name}"
         table = pa.Table.from_arrays(data, schema=schema)
-        write_deltalake(
+        write_deltalake_with_retry(
             path, table, storage_options=storage_options, partition_by=["b"]
         )
 
@@ -2154,11 +2177,11 @@ def test_partition_columns_3(started_cluster):
         "year": ["2025"] * num_rows,
     }
 
-    write_deltalake(
+    write_deltalake_with_retry(
         f"s3://root/{TABLE_NAME}",
         pa.Table.from_pydict(data, schema=schema),
-        mode="append",
         storage_options=get_storage_options(started_cluster),
+        mode="append",
         partition_by=partition_columns,
     )
 
@@ -2210,11 +2233,11 @@ def test_filtering_by_virtual_columns(started_cluster, use_delta_kernel):
         "country": ["US"] * num_rows,
         "year": [f"202{i}" for i in range(num_rows)],
     }
-    write_deltalake(
+    write_deltalake_with_retry(
         f"s3://root/{TABLE_NAME}",
         pa.Table.from_pydict(data, schema=schema),
-        mode="append",
         storage_options=get_storage_options(started_cluster),
+        mode="append",
         partition_by=partition_columns,
     )
 
@@ -2379,7 +2402,7 @@ def test_concurrent_reads(started_cluster):
         "country": ["a" * 100] * num_rows,
         "year": ["2025"] * num_rows,
     }
-    write_deltalake(
+    write_deltalake_with_retry(
         f"s3://{bucket}/{result_file}",
         pa.Table.from_pydict(data, schema=schema),
         storage_options=get_storage_options(started_cluster),
@@ -3055,7 +3078,7 @@ def test_writes(started_cluster):
 
     schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
-    write_deltalake(
+    write_deltalake_with_retry(
         f"s3://root/{result_file}",
         pa.Table.from_arrays(empty_arrays, schema=schema),
         storage_options=get_storage_options(started_cluster),
@@ -3147,7 +3170,7 @@ def test_partitioned_writes(started_cluster):
         pa.array([], type=pa.string()),
         pa.array([], type=pa.string()),
     ]
-    write_deltalake(
+    write_deltalake_with_retry(
         f"s3://root/{result_file}",
         pa.Table.from_arrays(empty_arrays, schema=schema),
         storage_options=get_storage_options(started_cluster),
@@ -3263,7 +3286,7 @@ def test_concurrent_queries(started_cluster, partitioned):
 
     schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
-    write_deltalake(
+    write_deltalake_with_retry(
         f"s3://root/{result_file}",
         pa.Table.from_arrays(empty_arrays, schema=schema),
         storage_options=get_storage_options(started_cluster),
@@ -3859,7 +3882,7 @@ def test_truncate(started_cluster):
 
     schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
-    write_deltalake(
+    write_deltalake_with_retry(
         f"s3://root/{result_file}",
         pa.Table.from_arrays(empty_arrays, schema=schema),
         storage_options=get_storage_options(started_cluster),
@@ -3987,7 +4010,7 @@ def test_partition_columns_3(started_cluster, cluster):
     path = f"s3://root/{table_name}"
     table = pa.Table.from_arrays(data, schema=schema)
 
-    write_deltalake(
+    write_deltalake_with_retry(
         path, table, storage_options=storage_options, partition_by=["region", "state"]
     )
 
@@ -4009,32 +4032,75 @@ def test_partition_columns_3(started_cluster, cluster):
         """
 
     dst_table = f"{table_name}_dst"
-    node.query(f"""
+    node.query(
+        f"""
         CREATE TABLE {dst_table} (
             id Int32,
             region String,
             state String
         ) ENGINE = MergeTree()
         ORDER BY id
-    """)
+    """
+    )
 
-    node.query(f"""
+    node.query(
+        f"""
         INSERT INTO {dst_table}
         SELECT * FROM {delta_function}
-    """)
+    """
+    )
 
     result_from_delta = node.query(
         f"SELECT * FROM {delta_function} ORDER BY id",
         settings={"allow_experimental_delta_kernel_rs": 1, "use_hive_partitioning": 0},
     ).strip()
 
-    result_from_table = node.query(
-        f"SELECT * FROM {dst_table} ORDER BY id"
-    ).strip()
+    result_from_table = node.query(f"SELECT * FROM {dst_table} ORDER BY id").strip()
 
-    assert result_from_delta == result_from_table, \
-        f"Partition columns jumbled!\nFrom DeltaLake:\n{result_from_delta}\n\nFrom table:\n{result_from_table}"
+    assert (
+        result_from_delta == result_from_table
+    ), f"Partition columns jumbled!\nFrom DeltaLake:\n{result_from_delta}\n\nFrom table:\n{result_from_table}"
 
     expected = "1\twest\tCA\n2\teast\tNY"
-    assert result_from_table == expected, \
-        f"Data doesn't match!\nExpected:\n{expected}\n\nGot:\n{result_from_table}"
+    assert (
+        result_from_table == expected
+    ), f"Data doesn't match!\nExpected:\n{expected}\n\nGot:\n{result_from_table}"
+
+
+def test_network_activity_with_system_tables(started_cluster):
+    instance = started_cluster.instances["node1"]
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_network_activity_with_system_tables")
+    result_file = f"{table_name}_data"
+
+    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
+    write_deltalake(
+        f"s3://root/{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        storage_options=get_storage_options(started_cluster),
+        mode="overwrite",
+    )
+
+    instance.query(
+        f"""
+        CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')
+    """
+    )
+
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number as name, toString(number) as id from numbers(10)"
+    )
+
+    query_id = f"{table_name}_query"
+    instance.query(
+        f"SELECT * FROM system.tables WHERE name = '{table_name}'", query_id=query_id
+    )
+
+    instance.query("SYSTEM FLUSH LOGS text_log")
+
+    assert 0 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message LIKE '%Initialized scan state%'"
+        )
+    )

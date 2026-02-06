@@ -29,8 +29,19 @@ from pyiceberg.types import (
 )
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
+from helpers.mock_servers import start_mock_servers
 
 import boto3
+
+
+def run_s3_mocks(started_cluster, args=[]):
+    script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
+    start_mock_servers(
+        started_cluster,
+        script_dir,
+        [("mock_sts.py", "sts.us-east-1.amazonaws.com", "80", args)],
+    )
+
 
 CATALOG_NAME = "test"
 
@@ -182,7 +193,7 @@ def generate_arrow_data(num_rows=5):
     return table
 
 def create_clickhouse_glue_database(
-    started_cluster, node, name, additional_settings={}
+    started_cluster, node, name, additional_settings={}, with_credentials=True
 ):
     settings = {
         "catalog_type": "glue",
@@ -193,12 +204,14 @@ def create_clickhouse_glue_database(
 
     settings.update(additional_settings)
 
+    credential_args = f",'{minio_access_key}', '{minio_secret_key}'" if with_credentials else ""
+
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
 SET allow_database_glue_catalog=true;
 SET write_full_path_in_iceberg_metadata=true;
-CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', '{minio_access_key}', '{minio_secret_key}')
+CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}'{credential_args})
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
@@ -251,8 +264,20 @@ def started_cluster():
             with_glue_catalog=True,
         )
 
+        sts = cluster.add_instance(
+            name="sts.us-east-1.amazonaws.com",
+            hostname="sts.us-east-1.amazonaws.com",
+            image="clickhouse/python-bottle",
+            tag="latest",
+            stay_alive=True,
+        )
+        sts.stop_clickhouse(kill=True)
+
         logging.info("Starting cluster...")
         cluster.start()
+        logging.info("Cluster started")
+
+        run_s3_mocks(cluster)
 
         yield cluster
 
@@ -715,3 +740,75 @@ def test_table_without_metadata_location(started_cluster):
     assert "Iceberg" in create_table_result, f"Expected Iceberg engine in: {create_table_result}"
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_sts_smoke(started_cluster):
+    """Test that STS authentication works with Glue catalog using role_arn and role_session_name"""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_sts_smoke_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+
+    data = [
+        {"id": "row1", "value": 10.0},
+        {"id": "row2", "value": 20.0},
+        {"id": "row3", "value": 30.0},
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    # Test with wrong role_session_name - should fail
+    db_name_fail = f"db_fail_{test_ref.replace('-', '_')}"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name_fail,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "wrongsession",
+        },
+        with_credentials=False,
+    )
+
+    # Query should fail with wrong session name
+    try:
+        result = node.query(
+            f"SELECT sum(value) FROM {db_name_fail}.`{root_namespace}.{table_name}` "
+            f"SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000"
+        )
+        assert False, f"Expected query to fail with wrong session name but got result: {result}"
+    except Exception as e:
+        error_str = str(e)
+        assert "403" in error_str or "Failed to get object info" in error_str or "HTTP response code: 403" in error_str, \
+            f"Expected 403 error but got: {error_str}"
+
+    # Test with correct role_session_name - should succeed
+    db_name_success = f"db_success_{test_ref.replace('-', '_')}"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name_success,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "miniorole",
+        },
+        with_credentials=False,
+    )
+
+    # Query should succeed with correct session name
+    result = node.query(f"SELECT sum(value) FROM {db_name_success}.`{root_namespace}.{table_name}`")
+    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
+
+    # Cleanup
+    node.query(f"DROP DATABASE IF EXISTS {db_name_fail} SYNC")
+    node.query(f"DROP DATABASE IF EXISTS {db_name_success} SYNC")

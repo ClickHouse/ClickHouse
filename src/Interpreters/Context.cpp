@@ -323,7 +323,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
-    extern const SettingsString default_dictionary_database;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
 }
 

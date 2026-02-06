@@ -419,6 +419,7 @@ class ArtifactNames:
 
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
+    PARSER_MEMORY_PROFILER = "PARSER_MEMORY_PROFILER"
 
 
 LLVM_FT_NUM_BATCHES = 3
@@ -439,6 +440,19 @@ LLVM_IT_ARTIFACTS_LIST = [
 LLVM_ARTIFACTS_LIST = (
     LLVM_FT_ARTIFACTS_LIST + LLVM_IT_ARTIFACTS_LIST + [ArtifactNames.LLVM_COVERAGE_FILE]
 )
+
+BINARIES_WITH_LONG_RETENTION = [
+    ArtifactNames.CH_AMD_DEBUG,
+    ArtifactNames.CH_AMD_RELEASE,
+    ArtifactNames.CH_AMD_ASAN,
+    ArtifactNames.CH_AMD_TSAN,
+    ArtifactNames.CH_AMD_MSAN,
+    ArtifactNames.CH_AMD_UBSAN,
+    ArtifactNames.CH_AMD_BINARY,
+    ArtifactNames.CH_ARM_RELEASE,
+    ArtifactNames.CH_ARM_ASAN,
+    ArtifactNames.CH_ARM_TSAN,
+]
 
 
 class ArtifactConfigs:
@@ -550,4 +564,9 @@ class ArtifactConfigs:
         name=ArtifactNames.FUZZERS_CORPUS,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
+    )
+    parser_memory_profiler = Artifact.Config(
+        name=ArtifactNames.PARSER_MEMORY_PROFILER,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/src/Parsers/examples/parser_memory_profiler",
     )

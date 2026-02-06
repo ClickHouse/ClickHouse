@@ -433,8 +433,13 @@ class FuzzerLogParser:
         if not failure_output:
             return None
         if "Inconsistent AST formatting: the query:" in failure_output:
-            query_command = failure_output.splitlines()[1]
-            return query_command
+            lines = failure_output.splitlines()
+            if len(lines) > 1:
+                query_command = lines[1]
+                return query_command
+            else:
+                print("ERROR: Expected query on second line but not found")
+                return None
 
         assert failure_output, "No failure found in server log"
         failure_first_line = failure_output.splitlines()[0]

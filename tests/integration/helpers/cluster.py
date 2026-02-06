@@ -3450,6 +3450,10 @@ class ClickHouseCluster:
                                     "check_not_exists",
                                     "create_if_not_exists",
                                     "remove_recursive",
+                                    "multi_watches",
+                                    "check_stat",
+                                    "try_remove",
+                                    "list_with_stat_and_data",
                                 ]:
                                     ff_config.write(
                                         f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
