@@ -399,6 +399,17 @@ Some functions might throw an exception if the data is invalid.
 In this case, the query is canceled and an error text is returned to the client.
 For distributed processing, when an exception occurs on one of the servers, the other servers also attempt to abort the query.
 
+### Stderr Handling
+
+When a UDF script writes to stderr, ClickHouse captures the output and throws an exception. The complete stderr content (up to 1MB) is included in the exception message and recorded in `system.query_log.exception`. This enables effective debugging of UDF failures, as complete error messages such as Python tracebacks are preserved.
+
+```sql title="Query error details"
+SELECT exception FROM system.query_log
+WHERE query LIKE '%my_udf%' AND exception != ''
+ORDER BY event_time DESC
+LIMIT 1;
+```
+
 ## Evaluation of Argument Expressions {#evaluation-of-argument-expressions}
 
 In almost all programming languages, one of the arguments might not be evaluated for certain operators.
