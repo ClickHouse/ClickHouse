@@ -8,7 +8,7 @@ builds_for_release_branch = [
     job.unset_provides("unittest")
     for job in JobConfigs.build_jobs
     if "coverage" not in job.name and "binary" not in job.name
-] + JobConfigs.release_build_jobs
+]
 
 workflow = Workflow.Config(
     name="ReleaseBranchCI",
@@ -21,7 +21,7 @@ workflow = Workflow.Config(
             for job in JobConfigs.special_build_jobs
             if any(t in job.name for t in ("darwin",))
         ],
-        JobConfigs.docker_server,
+        JobConfigs.docker_sever,
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_master_jobs,
         *[job for job in JobConfigs.functional_tests_jobs if "asan" in job.name],
@@ -55,11 +55,9 @@ workflow = Workflow.Config(
     enable_report=True,
     enable_cidb=True,
     enable_commit_status_on_failure=True,
-    enable_slack_feed=True,
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
-        "python3 ./ci/jobs/scripts/workflow_hooks/set_parent_pr_number.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[],

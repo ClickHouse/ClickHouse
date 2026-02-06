@@ -72,7 +72,7 @@ bool isVariadic(const ASTPtr & arg)
 
 ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process, ContextPtr context_)
 {
-    if (udf_in_replace_process.contains(function.name))
+    if (udf_in_replace_process.find(function.name) != udf_in_replace_process.end())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Recursive function call detected during function call {}",
             function.name);
@@ -143,7 +143,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         QueryNormalizer(normalizer_data).visit(function_body_to_update);
     }
 
-    auto expression_list = make_intrusive<ASTExpressionList>();
+    auto expression_list = std::make_shared<ASTExpressionList>();
     expression_list->children.emplace_back(std::move(function_body_to_update));
 
     std::stack<ASTPtr> ast_nodes_to_update;

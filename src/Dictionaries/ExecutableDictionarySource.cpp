@@ -103,7 +103,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 {
 }
 
-BlockIO ExecutableDictionarySource::loadAll()
+QueryPipeline ExecutableDictionarySource::loadAll()
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadAll method");
@@ -114,12 +114,10 @@ BlockIO ExecutableDictionarySource::loadAll()
     auto command = configuration.command;
     updateCommandIfNeeded(command, coordinator_configuration.execute_direct, context);
 
-    BlockIO io;
-    io.pipeline = QueryPipeline(coordinator->createPipe(command, configuration.command_arguments, {}, sample_block, context));
-    return io;
+    return QueryPipeline(coordinator->createPipe(command, configuration.command_arguments, {}, sample_block, context));
 }
 
-BlockIO ExecutableDictionarySource::loadUpdatedAll()
+QueryPipeline ExecutableDictionarySource::loadUpdatedAll()
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadUpdatedAll method");
@@ -151,29 +149,23 @@ BlockIO ExecutableDictionarySource::loadUpdatedAll()
 
     LOG_TRACE(log, "loadUpdatedAll {}", command);
 
-    BlockIO io;
-    io.pipeline = QueryPipeline(coordinator->createPipe(command, command_arguments, {}, sample_block, context));
-    return io;
+    return QueryPipeline(coordinator->createPipe(command, command_arguments, {}, sample_block, context));
 }
 
-BlockIO ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
     auto block = blockForIds(dict_struct, ids);
-    BlockIO io;
-    io.pipeline = getStreamForBlock(block);
-    return io;
+    return getStreamForBlock(block);
 }
 
-BlockIO ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-    BlockIO io;
-    io.pipeline = getStreamForBlock(block);
-    return io;
+    return getStreamForBlock(block);
 }
 
 QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)

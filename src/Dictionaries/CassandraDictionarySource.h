@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Dictionaries/CassandraHelpers.h>
-#include <QueryPipeline/BlockIO.h>
 
 #if USE_CASSANDRA
 
@@ -51,7 +50,7 @@ public:
             const String & config_prefix,
             Block & sample_block);
 
-    BlockIO loadAll() override;
+    QueryPipeline loadAll() override;
 
     bool supportsSelectiveLoad() const override { return true; }
 
@@ -64,11 +63,11 @@ public:
         return std::make_shared<CassandraDictionarySource>(dict_struct, configuration, *sample_block);
     }
 
-    BlockIO loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
-    BlockIO loadUpdatedAll() override;
+    QueryPipeline loadUpdatedAll() override;
 
     String toString() const override;
 

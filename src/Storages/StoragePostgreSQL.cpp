@@ -137,32 +137,17 @@ public:
         size_t max_block_size_,
         String remote_table_schema_,
         String remote_table_name_,
-        postgres::PoolWithFailoverPtr pool_
-    )
+        postgres::ConnectionHolderPtr connection_)
         : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , logger(getLogger("ReadFromPostgreSQL"))
         , max_block_size(max_block_size_)
         , remote_table_schema(remote_table_schema_)
         , remote_table_name(remote_table_name_)
-        , pool(std::move(pool_))
+        , connection(std::move(connection_))
     {
     }
 
     std::string getName() const override { return "ReadFromPostgreSQL"; }
-
-    QueryPlanStepPtr clone() const override
-    {
-        return std::make_unique<ReadFromPostgreSQL>(
-            requiredSourceColumns(),
-            query_info,
-            storage_snapshot,
-            context,
-            getOutputHeader(),
-            max_block_size,
-            remote_table_schema,
-            remote_table_name,
-            pool);
-    }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
@@ -184,14 +169,14 @@ public:
             transform_query_limit);
         LOG_TRACE(logger, "Query: {}", query);
 
-        pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(pool->get(), query, getOutputHeader(), max_block_size)));
+        pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(std::move(connection), query, getOutputHeader(), max_block_size)));
     }
 
     LoggerPtr logger;
     size_t max_block_size;
     String remote_table_schema;
     String remote_table_name;
-    postgres::PoolWithFailoverPtr pool;
+    postgres::ConnectionHolderPtr connection;
 };
 
 }
@@ -227,7 +212,7 @@ void StoragePostgreSQL::read(
         max_block_size,
         remote_table_schema,
         remote_table_name,
-        pool);
+        pool->get());
     query_plan.addStep(std::move(reading));
 }
 
@@ -306,18 +291,7 @@ public:
                 }
             }
 
-            try
-            {
-                inserter->insert(row);
-            }
-            catch (const pqxx::argument_error & e)
-            {
-                /// libpqxx throws pqxx::argument_error when the string contains invalid UTF-8.
-                /// Since pqxx::argument_error is a std::invalid_argument, which is a std::logic_error,
-                /// and unhandled std::logic_error is treated as a "Logical error" with code 1001,
-                /// we need to wrap it into a DB::Exception.
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot insert data into PostgreSQL: {}", e.what());
-            }
+            inserter->insert(row);
         }
     }
 
@@ -412,7 +386,6 @@ public:
         else if (which.isFloat32())                      nested_column = ColumnFloat32::create();
         else if (which.isFloat64())                      nested_column = ColumnFloat64::create();
         else if (which.isDate())                         nested_column = ColumnUInt16::create();
-        else if (which.isDate32())                       nested_column = ColumnInt32::create();
         else if (which.isDateTime())                     nested_column = ColumnUInt32::create();
         else if (which.isUUID())                         nested_column = ColumnUUID::create();
         else if (which.isDateTime64())
@@ -443,7 +416,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type conversion not supported");
 
         if (is_nullable)
-            return ColumnNullable::create(std::move(nested_column), ColumnUInt8::create(nested_column->size(), static_cast<UInt8>(0)));
+            return ColumnNullable::create(std::move(nested_column), ColumnUInt8::create(nested_column->size(), 0));
 
         return nested_column;
     }

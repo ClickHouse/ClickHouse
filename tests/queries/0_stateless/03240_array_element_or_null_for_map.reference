@@ -21,6 +21,6 @@ foo	foo
 bar	bar
 \N
 ...tuple values...
-(1,'foo')	\N
+(1,'foo')	(0,'')
 ...map values...
 {1:'foo'}	{}
