@@ -642,6 +642,7 @@ LONGLONG
 LOONGARCH
 Lemire
 Levenshtein
+LeaNN
 Liao
 LibFuzzer
 LightHouse
