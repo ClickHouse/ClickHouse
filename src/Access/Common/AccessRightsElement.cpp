@@ -336,7 +336,7 @@ void AccessRightsElement::replaceDeprecated()
         case AccessType::NATS:
         case AccessType::RABBITMQ:
         case AccessType::YTSAURUS:
-        case AccessType::ARROW_FLIGHT:
+        case AccessType::ARROWFLIGHT:
             if (!anyDatabase())
                 /// This will leave statements like `REVOKE S3 ON system.*` untouched
                 /// These statements will be deleted afterwards with `eraseNotGrantable()`
@@ -373,7 +373,7 @@ void AccessRightsElement::makeBackwardCompatible()
         {"NATS", AccessType::NATS},
         {"RABBITMQ", AccessType::RABBITMQ},
         {"YTSAURUS", AccessType::YTSAURUS},
-        {"ARROWFLIGHT", AccessType::ARROW_FLIGHT},
+        {"ARROWFLIGHT", AccessType::ARROWFLIGHT},
     };
 
     auto is_enabled_read_write_grants = false;
