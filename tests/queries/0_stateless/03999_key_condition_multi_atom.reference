@@ -1,0 +1,201 @@
+-- { echo }
+
+SET session_timezone = 'UTC';
+DROP TABLE IF EXISTS test;
+CREATE TABLE test
+(
+    ts DateTime,
+    x UInt32
+)
+ENGINE = MergeTree
+ORDER BY (toYYYYMM(ts), toDate(ts), ts)
+SETTINGS index_granularity=1, add_minmax_index_for_numeric_columns=0;
+INSERT INTO test
+SELECT
+    toDateTime('2026-01-01 00:00:00') + number * 3600,
+    toUInt32(number)
+FROM numbers(24 * 40);
+SELECT count()
+FROM test
+WHERE ts >= toDateTime('2026-01-10 00:00:00')
+  AND ts < toDateTime('2026-01-11 00:00:00');
+24
+EXPLAIN indexes = 1
+SELECT count()
+FROM test
+WHERE ts >= toDateTime('2026-01-10 00:00:00')
+  AND ts < toDateTime('2026-01-11 00:00:00');
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test)
+        Indexes:
+          PrimaryKey
+            Keys:
+              toYYYYMM(ts)
+              toDate(ts)
+              ts
+            Condition: and(and((toDate(ts) in (-Inf, 20464]), and((toYYYYMM(ts) in (-Inf, 202601]), (ts in (-Inf, 1768089599]))), and((toDate(ts) in [20463, +Inf)), and((toYYYYMM(ts) in [202601, +Inf)), (ts in [1768003200, +Inf)))))
+            Parts: 1/1
+            Granules: 25/960
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+SELECT count()
+FROM test
+WHERE ts IN (
+    toDateTime('2026-01-10 00:00:00'),
+    toDateTime('2026-01-10 01:00:00'),
+    toDateTime('2026-02-05 00:00:00')
+);
+3
+EXPLAIN indexes = 1
+SELECT count()
+FROM test
+WHERE ts IN (
+    toDateTime('2026-01-10 00:00:00'),
+    toDateTime('2026-01-10 01:00:00'),
+    toDateTime('2026-02-05 00:00:00')
+);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test)
+        Indexes:
+          PrimaryKey
+            Keys:
+              toYYYYMM(ts)
+              toDate(ts)
+              ts
+            Condition: and((toDate(ts) in 3-element set), and((toYYYYMM(ts) in 3-element set), (ts in 3-element set)))
+            Parts: 1/1
+            Granules: 7/960
+            Search Algorithm: generic exclusion search
+          Ranges: 4
+SELECT count()
+FROM test
+WHERE has([
+    toDateTime('2026-01-10 00:00:00'),
+    toDateTime('2026-02-05 00:00:00')
+], ts);
+2
+EXPLAIN indexes = 1
+SELECT count()
+FROM test
+WHERE has([
+    toDateTime('2026-01-10 00:00:00'),
+    toDateTime('2026-02-05 00:00:00')
+], ts);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test)
+        Indexes:
+          PrimaryKey
+            Keys:
+              toYYYYMM(ts)
+              toDate(ts)
+              ts
+            Condition: and((toDate(ts) in 2-element set), and((toYYYYMM(ts) in 2-element set), (ts in 2-element set)))
+            Parts: 1/1
+            Granules: 6/960
+            Search Algorithm: generic exclusion search
+          Ranges: 4
+SELECT count()
+FROM test
+WHERE toDate(ts) IN (
+    toDate('2026-01-10'),
+    toDate('2026-02-05')
+);
+48
+EXPLAIN indexes = 1
+SELECT count()
+FROM test
+WHERE toDate(ts) IN (
+    toDate('2026-01-10'),
+    toDate('2026-02-05')
+);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test)
+        Indexes:
+          PrimaryKey
+            Keys:
+              toDate(ts)
+            Condition: (toDate(ts) in 2-element set)
+            Parts: 1/1
+            Granules: 51/960
+            Search Algorithm: generic exclusion search
+          Ranges: 3
+SELECT count()
+FROM test
+WHERE ts IN (
+    toDate('2026-01-10'),
+    toDate('2026-02-05')
+);
+2
+EXPLAIN indexes = 1
+SELECT count()
+FROM test
+WHERE ts IN (
+    toDate('2026-01-10'),
+    toDate('2026-02-05')
+);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test)
+        Indexes:
+          PrimaryKey
+            Keys:
+              toYYYYMM(ts)
+              toDate(ts)
+              ts
+            Condition: and((toDate(ts) in 2-element set), and((toYYYYMM(ts) in 2-element set), (ts in 2-element set)))
+            Parts: 1/1
+            Granules: 6/960
+            Search Algorithm: generic exclusion search
+          Ranges: 4
+SELECT count()
+FROM test
+WHERE ts IN (
+    toDate('2026-01-10'),
+    toDate('2026-02-05')
+) OR ts <= toDateTime('2026-01-10 00:00:00')
+OR  has([
+    toDateTime('2026-01-10 00:00:00'),
+    toDateTime('2026-02-05 00:00:00')
+], ts) OR ts = toDateTime('2026-01-10 00:00:00');
+218
+EXPLAIN indexes = 1
+SELECT count()
+FROM test
+WHERE ts IN (
+    toDate('2026-01-10'),
+    toDate('2026-02-05')
+) OR ts <= toDateTime('2026-01-10 00:00:00')
+OR  has([
+    toDateTime('2026-01-10 00:00:00'),
+    toDateTime('2026-02-05 00:00:00')
+], ts) OR ts = toDateTime('2026-01-10 00:00:00');
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test)
+        Indexes:
+          PrimaryKey
+            Keys:
+              toYYYYMM(ts)
+              toDate(ts)
+              ts
+            Condition: or(and((toDate(ts) in [20463, 20463]), and((toYYYYMM(ts) in [202601, 202601]), (ts in [1768003200, 1768003200]))), or(and((toDate(ts) in 2-element set), and((toYYYYMM(ts) in 2-element set), (ts in 2-element set))), or(and((toDate(ts) in (-Inf, 20463]), and((toYYYYMM(ts) in (-Inf, 202601]), (ts in (-Inf, 1768003200]))), and((toDate(ts) in 2-element set), and((toYYYYMM(ts) in 2-element set), (ts in 2-element set))))))
+            Parts: 1/1
+            Granules: 221/960
+            Search Algorithm: generic exclusion search
+          Ranges: 4
