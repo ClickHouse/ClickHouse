@@ -1,4 +1,5 @@
 import pytest
+import pyspark
 import os
 import shutil
 import tempfile
@@ -17,10 +18,27 @@ from helpers.s3_tools import (
 )
 from helpers.iceberg_utils import (
     get_uuid_str,
-    get_spark,
     default_upload_directory,
     default_download_directory,
 )
+
+def get_spark():
+    builder = (
+        pyspark.sql.SparkSession.builder.appName("test_storage_iceberg_multistorage")
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.iceberg.spark.SparkSessionCatalog",
+        )
+        .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
+        .config("spark.sql.catalog.spark_catalog.type", "hadoop")
+        .config("spark.sql.catalog.spark_catalog.warehouse", "/var/lib/clickhouse/user_files/iceberg_data")
+        .config(
+            "spark.sql.extensions",
+            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+        )
+        .master("local")
+    )
+    return builder.getOrCreate()
 
 
 @pytest.fixture(scope="package")
@@ -71,7 +89,7 @@ def started_cluster():
 def modify_avro_file(avro_path: str, field_path: list, modifier_func) -> None:
     """
     Modify a field in an AVRO file, preserving the rest of it as is.
-    
+
     field_path: list of keys to navigate to the field
     modifier_func: function that takes old value and returns new value
     """
@@ -106,7 +124,7 @@ def modify_avro_file(avro_path: str, field_path: list, modifier_func) -> None:
 def get_absolute_path(storage_type: str, cluster, relative_path: str) -> str:
     """Convert relative path to absolute path for given storage type."""
     relative_path = relative_path.lstrip("/")
-    
+
     if storage_type == "s3":
         return f"s3a://{cluster.minio_bucket}/{relative_path}"
     elif storage_type.startswith("s3:"):  # s3:bucket_name format
@@ -195,7 +213,7 @@ def path_modifier(old_path: str, new_storage: str, cluster, base_path: str):
             relative = parts[-1]
     else:
         relative = old_path.lstrip("/")
-    
+
     return get_absolute_path(new_storage, cluster, relative)
 
 
@@ -256,7 +274,7 @@ def test_multi_storage_combinations(started_cluster, metadata_storage, manifest_
     temp_dir = tempfile.mkdtemp()
     host_path = os.path.join(temp_dir, TABLE_NAME)
     os.makedirs(host_path, exist_ok=True)
-    
+
     default_download_directory(started_cluster, "s3", f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/", host_path)
 
     base_path = f"var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
@@ -266,7 +284,7 @@ def test_multi_storage_combinations(started_cluster, metadata_storage, manifest_
     # Step 1: Modify manifest files to point to data_storage
     manifest_files = [f for f in find_files(metadata_dir, ".avro") if not os.path.basename(f).startswith("snap-")]
     for mf in manifest_files:
-        modify_avro_file(mf, ["data_file", "file_path"], 
+        modify_avro_file(mf, ["data_file", "file_path"],
                         lambda p: path_modifier(p, data_storage, started_cluster, base_path))
 
     # Step 2: Modify manifest-list files to point to manifest_storage
@@ -279,15 +297,15 @@ def test_multi_storage_combinations(started_cluster, metadata_storage, manifest_
     for mj in find_files(metadata_dir, ".metadata.json"):
         with open(mj, 'r') as f:
             data = json.load(f)
-        
+
         data["location"] = get_absolute_path(metadata_storage, started_cluster, base_path)
-        
+
         # Update snapshot manifest-list paths
         if "snapshots" in data:
             for snap in data["snapshots"]:
                 if "manifest-list" in snap:
                     snap["manifest-list"] = path_modifier(snap["manifest-list"], manifest_list_storage, started_cluster, base_path)
-        
+
         with open(mj, 'w') as f:
             json.dump(data, f, indent=2)
 
@@ -297,7 +315,7 @@ def test_multi_storage_combinations(started_cluster, metadata_storage, manifest_
     for f in find_files(metadata_dir, ".metadata.json") + find_files(metadata_dir, "version-hint.text"):
         rel = os.path.relpath(f, host_path)
         meta_uploader.upload_file(f, f"{base_path}/{rel}")
-    
+
     # Manifest-list files
     ml_uploader = get_uploader(manifest_list_storage, started_cluster)
     for f in manifest_list_files:
