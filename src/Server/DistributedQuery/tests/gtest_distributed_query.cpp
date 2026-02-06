@@ -2,6 +2,7 @@
 #include <memory>
 #include <boost/core/noncopyable.hpp>
 #include <gtest/gtest.h>
+#include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_register.h>
 
 #include <Poco/ConsoleChannel.h>
@@ -400,7 +401,16 @@ void registerPlanSteps();
 class DistributedQueryTest : public ::testing::Test
 {
 public:
-    DistributedQueryTest() = default;
+    DistributedQueryTest()
+    {
+        previous_thread_status = current_thread;
+        current_thread = nullptr;
+    }
+
+    ~DistributedQueryTest() override
+    {
+        current_thread = previous_thread_status;
+    }
 
     void SetUp() override
     {
@@ -440,6 +450,7 @@ public:
 private:
     const ContextHolder & context_holder = getContext();
     DB::ConfigProcessor::LoadedConfig config;
+    ThreadStatus* previous_thread_status = nullptr;
 };
 
 namespace DB
