@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/LocalDateTime.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Dictionaries/DictionarySourceFactory.h>
@@ -18,6 +19,7 @@
 #include <Core/ServerSettings.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Formats/IInputFormat.h>
+#include "config.h"
 
 
 namespace DB

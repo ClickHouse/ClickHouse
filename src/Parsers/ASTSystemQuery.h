@@ -18,38 +18,39 @@ namespace DB
 class ASTSystemQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
+
     enum class Type : UInt64
     {
         UNKNOWN,
         SHUTDOWN,
         KILL,
         SUSPEND,
-        CLEAR_DNS_CACHE,
-        CLEAR_CONNECTIONS_CACHE,
+        DROP_DNS_CACHE,
+        DROP_CONNECTIONS_CACHE,
         PREWARM_MARK_CACHE,
         PREWARM_PRIMARY_INDEX_CACHE,
-        CLEAR_MARK_CACHE,
-        CLEAR_PRIMARY_INDEX_CACHE,
-        CLEAR_UNCOMPRESSED_CACHE,
-        CLEAR_INDEX_MARK_CACHE,
-        CLEAR_INDEX_UNCOMPRESSED_CACHE,
-        CLEAR_VECTOR_SIMILARITY_INDEX_CACHE,
-        CLEAR_TEXT_INDEX_DICTIONARY_CACHE,
-        CLEAR_TEXT_INDEX_HEADER_CACHE,
-        CLEAR_TEXT_INDEX_POSTINGS_CACHE,
-        CLEAR_TEXT_INDEX_CACHES,
-        CLEAR_MMAP_CACHE,
-        CLEAR_QUERY_CONDITION_CACHE,
-        CLEAR_QUERY_CACHE,
-        CLEAR_COMPILED_EXPRESSION_CACHE,
-        CLEAR_ICEBERG_METADATA_CACHE,
-        CLEAR_FILESYSTEM_CACHE,
-        CLEAR_DISTRIBUTED_CACHE,
-        CLEAR_DISK_METADATA_CACHE,
-        CLEAR_PAGE_CACHE,
-        CLEAR_SCHEMA_CACHE,
-        CLEAR_FORMAT_SCHEMA_CACHE,
-        CLEAR_S3_CLIENT_CACHE,
+        DROP_MARK_CACHE,
+        DROP_PRIMARY_INDEX_CACHE,
+        DROP_UNCOMPRESSED_CACHE,
+        DROP_INDEX_MARK_CACHE,
+        DROP_INDEX_UNCOMPRESSED_CACHE,
+        DROP_VECTOR_SIMILARITY_INDEX_CACHE,
+        DROP_TEXT_INDEX_DICTIONARY_CACHE,
+        DROP_TEXT_INDEX_HEADER_CACHE,
+        DROP_TEXT_INDEX_POSTINGS_CACHE,
+        DROP_TEXT_INDEX_CACHES,
+        DROP_MMAP_CACHE,
+        DROP_QUERY_CONDITION_CACHE,
+        DROP_QUERY_CACHE,
+        DROP_COMPILED_EXPRESSION_CACHE,
+        DROP_ICEBERG_METADATA_CACHE,
+        DROP_FILESYSTEM_CACHE,
+        DROP_DISTRIBUTED_CACHE,
+        DROP_DISK_METADATA_CACHE,
+        DROP_PAGE_CACHE,
+        DROP_SCHEMA_CACHE,
+        DROP_FORMAT_SCHEMA_CACHE,
+        DROP_S3_CLIENT_CACHE,
         STOP_LISTEN,
         START_LISTEN,
         RESTART_REPLICAS,
@@ -106,7 +107,6 @@ public:
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
         WAIT_FAILPOINT,
-        NOTIFY_FAILPOINT,
         SYNC_FILESYSTEM_CACHE,
         STOP_PULLING_REPLICATION_LOG,
         START_PULLING_REPLICATION_LOG,
@@ -133,7 +133,6 @@ public:
         RECONNECT_ZOOKEEPER,
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
-        RESET_DDL_WORKER,
         END
     };
 
@@ -182,14 +181,6 @@ public:
 
     String fail_point_name;
 
-    enum class FailPointAction
-    {
-        UNSPECIFIED,
-        PAUSE,
-        RESUME
-    };
-    FailPointAction fail_point_action = FailPointAction::UNSPECIFIED;
-
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
     std::vector<String> src_replicas;
@@ -217,7 +208,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = make_intrusive<ASTSystemQuery>(*this);
+        auto res = std::make_shared<ASTSystemQuery>(*this);
         res->children.clear();
 
         if (database) { res->database = database->clone(); res->children.push_back(res->database); }

@@ -179,8 +179,6 @@ void MergeTreeDeduplicationLog::rotate()
     } catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__, "Error while writing MergeTree deduplication log on path " + existing_logs[current_log_number].path + ", lost recods: " + DB::toString(existing_logs[current_log_number].entries_count));
-        if (current_writer)
-            current_writer->cancel();
         current_writer = nullptr;
     }
 
@@ -237,7 +235,7 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
     }
 }
 
-std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
+std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std::string & block_id, const MergeTreePartInfo & part_info)
 {
     std::lock_guard lock(state_mutex);
 
@@ -246,22 +244,14 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     /// here then destroy whole object, check for null pointer from different
     /// threads and so on.
     if (deduplication_window == 0)
-        return {};
-
-    std::vector<MergeTreeDeduplicationLog::AddPartResult> result;
+        return std::make_pair(part_info, true);
 
     /// If we already have this block let's deduplicate it
-    for (const auto & block_id : block_ids)
+    if (deduplication_map.contains(block_id))
     {
-        if (deduplication_map.contains(block_id))
-        {
-            auto info = deduplication_map.get(block_id);
-            result.emplace_back(info, block_id);
-        }
+        auto info = deduplication_map.get(block_id);
+        return std::make_pair(info, false);
     }
-
-    if (!result.empty())
-        return result;
 
     if (stopped)
     {
@@ -270,24 +260,21 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
 
     chassert(current_writer != nullptr);
 
-    for (const auto & block_id : block_ids)
-    {
-        /// Create new record
-        MergeTreeDeduplicationLogRecord record;
-        record.operation = MergeTreeDeduplicationOp::ADD;
-        record.part_name = part_info.getPartNameAndCheckFormat(format_version);
-        record.block_id = block_id;
-        /// Write it to disk
-        writeRecord(record, *current_writer);
-        /// We have one more record in current log
-        existing_logs[current_log_number].entries_count++;
-        /// Add to deduplication map
-        deduplication_map.insert(record.block_id, part_info);
-    }
+    /// Create new record
+    MergeTreeDeduplicationLogRecord record;
+    record.operation = MergeTreeDeduplicationOp::ADD;
+    record.part_name = part_info.getPartNameAndCheckFormat(format_version);
+    record.block_id = block_id;
+    /// Write it to disk
+    writeRecord(record, *current_writer);
+    /// We have one more record in current log
+    existing_logs[current_log_number].entries_count++;
+    /// Add to deduplication map
+    deduplication_map.insert(record.block_id, part_info);
     /// Rotate and drop old logs if needed
     rotateAndDropIfNeeded();
 
-    return {};
+    return std::make_pair(part_info, true);
 }
 
 void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info)
@@ -380,7 +367,6 @@ void MergeTreeDeduplicationLog::shutdown()
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
-            current_writer->cancel();
             current_writer.reset();
         }
     }

@@ -78,8 +78,7 @@ public:
         const StorageID & table_id,
         const Settings & settings,
         const ObjectStorageQueueSettings & queue_settings,
-        UUID database_uuid = UUIDHelpers::Nil,
-        String * result_zookeeper_name = nullptr);
+        UUID database_uuid = UUIDHelpers::Nil);
 
     static constexpr auto engine_names = {"S3Queue", "AzureQueue"};
 
@@ -91,15 +90,11 @@ private:
     using CommitSettings = ObjectStorageQueueSource::CommitSettings;
     using ProcessingProgress = ObjectStorageQueueSource::ProcessingProgress;
     using ProcessingProgressPtr = ObjectStorageQueueSource::ProcessingProgressPtr;
-    using LastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMap;
-    using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
     using AfterProcessingSettings = ObjectStorageQueuePostProcessor::AfterProcessingSettings;
-    using PartitionLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::PartitionLastProcessedFileInfoMap;
 
     ObjectStorageType type;
     const std::string engine_name;
-    std::string zookeeper_name;
-    fs::path zk_path;
+    const fs::path zk_path;
     const bool enable_logging_to_queue_log;
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
@@ -178,11 +173,6 @@ private:
 
     const bool can_be_moved_between_databases;
     const bool keep_data_in_keeper;
-
-    const bool use_hive_partitioning;
-
-    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-    NamesAndTypesList file_columns;
 };
 
 }

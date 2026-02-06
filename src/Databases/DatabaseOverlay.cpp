@@ -186,7 +186,7 @@ ASTPtr DatabaseOverlay::getCreateTableQueryImpl(const String & name, ContextPtr 
  */
 ASTPtr DatabaseOverlay::getCreateDatabaseQueryImpl() const
 {
-    auto query = make_intrusive<ASTCreateQuery>();
+    auto query = std::make_shared<ASTCreateQuery>();
     query->setDatabase(database_name);
     return query;
 }

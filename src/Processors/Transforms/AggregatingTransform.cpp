@@ -732,18 +732,16 @@ private:
     }
 };
 
-AggregatingTransform::AggregatingTransform(
-    SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+AggregatingTransform::AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_)
     : AggregatingTransform(
-          std::move(header),
-          std::move(params_),
-          std::make_unique<ManyAggregatedData>(1),
-          0,
-          1,
-          1,
-          true /* should_produce_results_in_order_of_bucket_number */,
-          false /* skip_merging */,
-          updater_)
+        std::move(header),
+        std::move(params_),
+        std::make_unique<ManyAggregatedData>(1),
+        0,
+        1,
+        1,
+        true /* should_produce_results_in_order_of_bucket_number */,
+        false /* skip_merging */)
 {
 }
 
@@ -928,8 +926,8 @@ void AggregatingTransform::initGenerate()
 
     LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({:.3f} rows/sec., {}/sec.)",
         src_rows, rows, ReadableSize(src_bytes),
-        elapsed_seconds, static_cast<double>(src_rows) / elapsed_seconds,
-        ReadableSize(static_cast<double>(src_bytes) / elapsed_seconds));
+        elapsed_seconds, src_rows / elapsed_seconds,
+        ReadableSize(src_bytes / elapsed_seconds));
 
     if (params->aggregator.hasTemporaryData())
     {
@@ -970,9 +968,6 @@ void AggregatingTransform::initGenerate()
         }
         else
         {
-            if (updater)
-                updater->markUnsupportedCase();
-
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             Pipes pipes;
             for (auto & variant : prepared_data)
@@ -1015,9 +1010,6 @@ void AggregatingTransform::initGenerate()
     }
     else
     {
-        if (updater)
-            updater->markUnsupportedCase();
-
         /// If there are temporary files with partially-aggregated data on the disk,
         /// then read and merge them, spending the minimum amount of memory.
 

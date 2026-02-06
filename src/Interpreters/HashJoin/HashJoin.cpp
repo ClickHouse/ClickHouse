@@ -447,7 +447,7 @@ bool HashJoin::empty() const
 
 bool HashJoin::alwaysReturnsEmptySet() const
 {
-    return (isInnerOrRight(getKind()) || isCrossOrComma(getKind())) && data->rows_to_join == 0;
+    return isInnerOrRight(getKind()) && data->empty;
 }
 
 size_t HashJoin::getTotalRowCount() const
@@ -728,6 +728,9 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         data->allocated_size += data_allocated_bytes;
         doDebugAsserts();
 
+        if (rows)
+            data->empty = false;
+
         bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
         const auto & onexprs = table_join->getClauses();
         for (size_t onexpr_idx = 0; onexpr_idx < onexprs.size(); ++onexpr_idx)
@@ -757,7 +760,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             {
                 ///  - build mask in the source block row space
                 ///  - set bits only for rows that belong to THIS slot (by selector)
-                not_joined_map = ColumnUInt8::create(block.rows(), static_cast<UInt8>(0));
+                not_joined_map = ColumnUInt8::create(block.rows(), 0);
                 const auto & sel = stored_columns->selector;
 
                 auto mark_if_needed = [&](size_t row)

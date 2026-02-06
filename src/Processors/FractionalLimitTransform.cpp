@@ -30,12 +30,6 @@ FractionalLimitTransform::FractionalLimitTransform(
     , with_ties(with_ties_)
     , limit_with_ties_sort_description(std::move(limit_with_ties_sort_description_))
 {
-    if (limit_fraction <= 0.0 || limit_fraction >= 1.0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Fractional LIMIT values must be in the range (0, 1)");
-
-    if (offset_fraction < 0.0 || offset_fraction >= 1.0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Fractional OFFSET values must be in the range (0, 1)");
-
     if (num_streams != 1 && with_ties)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot use FractionalLimitTransform with multiple ports and ties");
 
@@ -75,10 +69,9 @@ Chunk FractionalLimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, UI
 
 IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers & updated_output_ports)
 {
-    /// Check can we still pull data from input?
-    if (num_finished_ports != ports_data.size())
+    // Check can we still pull input?
+    if (num_finished_input_ports != ports_data.size())
     {
-        bool has_full_port = false;
         auto process = [&](size_t pos)
         {
             auto status = pullData(ports_data[pos]);
@@ -87,17 +80,14 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
             {
                 case IProcessor::Status::Finished:
                 {
-                    if (!ports_data[pos].is_finished)
+                    if (!ports_data[pos].is_input_port_finished)
                     {
-                        ports_data[pos].is_finished = true;
-                        ++num_finished_ports;
+                        ports_data[pos].is_input_port_finished = true;
+                        ++num_finished_input_ports;
                     }
                     return;
                 }
                 case IProcessor::Status::NeedData:
-                    return;
-                case IProcessor::Status::PortFull:
-                    has_full_port = true;
                     return;
                 default:
                     throw Exception(
@@ -113,22 +103,17 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
         for (auto pos : updated_output_ports)
             process(pos);
 
-        if (has_full_port)
-            return Status::PortFull;
-
-        if (num_finished_ports != ports_data.size())
-            /// Some input ports still available => we can read more data
+        if (num_finished_input_ports != ports_data.size())
+            // There is still more data
             return Status::NeedData;
 
-        /// Calculate integral limit and offset values.
-        limit = static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * limit_fraction));
-        offset += static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * offset_fraction));
-        if (with_ties && rows_read_from_cache < limit + offset)
-            previous_row_chunk = {};
+        // Calculate new limit and offset
+        limit = static_cast<UInt64>(std::ceil(rows_cnt * limit_fraction));
+        offset += static_cast<UInt64>(std::ceil(rows_cnt * offset_fraction));
     }
 
-    /// If we reached here all input ports are finished.
-    /// we start pushing cached chunks to output ports.
+    // If we reached here all input ports are finished.
+    // we start pushing cached chunks to output ports.
     auto status = pushData();
     if (status != Status::Finished)
         return status;
@@ -153,7 +138,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::prepare()
 FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & data)
 {
     auto & input = *data.input_port;
-    /// Check can input?
+    /// Check can input.
     if (input.isFinished())
         return Status::Finished;
 
@@ -169,15 +154,12 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
         rows_before_limit_at_least->add(rows);
 
     /// Process block.
-
     rows_cnt += rows;
 
-    /// Ignore chunk if it should be offsetted
-    if (rows_cnt <= offset)
+    // Ignore entire chunks that are not part of LIMIT
+    if (rows <= offset)
     {
-        /// As if it was put in cache then evicted due to offset.
-        rows_read_from_cache += rows;
-
+        offset -= rows;
         data.current_chunk.clear();
 
         if (input.isFinished())
@@ -190,66 +172,6 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
 
     chunks_cache.push_back({data.output_port, std::move(data.current_chunk)});
 
-    /// This optimizes if offset_fraction is set but the above block optimizes if integral offset is set and both can't be non-zero.
-    ///
-    /// Detect blocks that will 100% get removed by the fractional offset and remove them as early as possible.
-    /// example: if we have 10 blocks with same num of rows and offset 0.1 we can freely drop the first block even before reading all data.
-    while (!chunks_cache.empty() && static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * offset_fraction)) >= chunks_cache.front().chunk.getNumRows() + rows_read_from_cache)
-    {
-        rows_read_from_cache += chunks_cache.front().chunk.getNumRows();
-        chunks_cache.pop_front();
-    }
-
-    /// If offset_fraction is zero we can detect blocks that
-    /// will 100% get pushed and push them as early as possible.
-    if (offset_fraction == 0 && !chunks_cache.empty())
-    {
-        auto & output = *chunks_cache.front().output_port;
-        /// Check can output?
-        if (output.isFinished())
-        {
-            chunks_cache.pop_front();
-            return Status::Finished;
-        }
-        if (!output.canPush())
-            return Status::PortFull;
-
-        auto & cache_chunk = chunks_cache.front().chunk;
-        auto num_rows = cache_chunk.getNumRows();
-
-        UInt64 remaining_offset = 0;
-        if (rows_read_from_cache < offset)
-            remaining_offset = offset - rows_read_from_cache;
-
-        UInt64 curr_limit = static_cast<UInt64>(std::ceil(static_cast<double>(rows_cnt) * limit_fraction));
-        if (curr_limit + remaining_offset >= num_rows + outputed_rows_cnt)
-        {
-            /// If we still have an integral offset that didn't cause the chunk
-            /// to be dropped entirely above then its offset in part of the chunk => split it
-            if (remaining_offset)
-            {
-                auto num_columns = cache_chunk.getNumColumns();
-                auto columns = cache_chunk.detachColumns();
-
-                for (UInt64 i = 0; i < num_columns; ++i)
-                    columns[i] = columns[i]->cut(remaining_offset, num_rows - remaining_offset);
-                chunks_cache.front().chunk.setColumns(std::move(columns), num_rows - remaining_offset);
-
-                num_rows -= remaining_offset;
-                rows_read_from_cache += remaining_offset;
-            }
-
-            rows_read_from_cache += num_rows;
-            outputed_rows_cnt += num_rows;
-            if (with_ties && rows_read_from_cache == curr_limit + offset)
-                previous_row_chunk = makeChunkWithPreviousRow(chunks_cache.front().chunk, num_rows - 1);
-
-            output.push(std::move(chunks_cache.front().chunk));
-            chunks_cache.pop_front();
-            return Status::PortFull;
-        }
-    }
-
     if (input.isFinished())
         return Status::Finished;
 
@@ -259,7 +181,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
 
 FractionalLimitTransform::Status FractionalLimitTransform::pushData()
 {
-    /// If a specific output port is finished, drop all its chunks.
+    // If a specific output port is finished, drop all its chunks.
     while (!chunks_cache.empty() && chunks_cache.front().output_port->isFinished())
         chunks_cache.pop_front();
 
@@ -269,29 +191,39 @@ FractionalLimitTransform::Status FractionalLimitTransform::pushData()
     auto & output = *chunks_cache.front().output_port;
 
     if (!output.canPush())
+    {
         return Status::PortFull;
+    }
 
     /// Check if we reached limit.
-    bool is_limit_reached = rows_read_from_cache >= offset + limit && !previous_row_chunk;
+    bool is_limit_reached = rows_read >= offset + limit && !previous_row_chunk;
     if (is_limit_reached)
     {
         output.finish();
         return Status::Finished;
     }
 
-    /// The early removal of blocks by offset and fractional_offset at pullData() should have detected
-    /// all chunks that will be dropped entirely, but we may still need to offset inside the first block
-    /// and drop a portion of it.
+    UInt64 rows = 0;
+    do
+    {
+        rows = chunks_cache.front().chunk.getNumRows();
+        rows_read += rows;
+        if (rows_read <= offset)
+            chunks_cache.pop_front();
+    } while (rows_read <= offset && !chunks_cache.empty());
 
-    UInt64 rows = chunks_cache.front().chunk.getNumRows();
-    rows_read_from_cache += rows;
+    if (chunks_cache.empty())
+    {
+        output.finish();
+        return Status::Finished;
+    }
 
-    if (rows <= std::numeric_limits<UInt64>::max() - offset && rows_read_from_cache >= offset + rows && rows_read_from_cache <= offset + limit)
+    if (rows <= std::numeric_limits<UInt64>::max() - offset && rows_read >= offset + rows && rows_read <= offset + limit)
     {
         /// Return the whole chunk.
 
         /// Save the last row of current chunk to check if next block begins with the same row (for WITH TIES).
-        if (with_ties && rows_read_from_cache == offset + limit)
+        if (with_ties && rows_read == offset + limit)
             previous_row_chunk = makeChunkWithPreviousRow(chunks_cache.front().chunk, rows - 1);
     }
     else
@@ -311,7 +243,7 @@ void FractionalLimitTransform::splitChunk(Chunk & current_chunk)
     UInt64 num_rows = current_chunk.getNumRows();
     UInt64 num_columns = current_chunk.getNumColumns();
 
-    if (previous_row_chunk && rows_read_from_cache >= offset + limit)
+    if (previous_row_chunk && rows_read >= offset + limit)
     {
         /// Scan until the first row, which is not equal to previous_row_chunk (for WITH TIES)
         UInt64 current_row_num = 0;
@@ -338,18 +270,18 @@ void FractionalLimitTransform::splitChunk(Chunk & current_chunk)
     UInt64 start = 0;
 
     /// ------------[....(...).]
-    /// <----------------------> rows_read_from_cache
+    /// <----------------------> rows_read
     ///             <----------> num_rows
     /// <---------------> offset
     ///             <---> start
 
-    assert(offset < rows_read_from_cache);
+    assert(offset < rows_read);
 
-    if (offset + num_rows > rows_read_from_cache)
-        start = offset + num_rows - rows_read_from_cache;
+    if (offset + num_rows > rows_read)
+        start = offset + num_rows - rows_read;
 
     /// ------------[....(...).]
-    /// <----------------------> rows_read_from_cache
+    /// <----------------------> rows_read
     ///             <----------> num_rows
     /// <---------------> offset
     ///                  <---> limit
@@ -359,7 +291,7 @@ void FractionalLimitTransform::splitChunk(Chunk & current_chunk)
     /// Or:
 
     /// -----------------(------[....)....]
-    /// <---------------------------------> rows_read_from_cache
+    /// <---------------------------------> rows_read
     ///                         <---------> num_rows
     /// <---------------> offset
     ///                  <-----------> limit
@@ -368,17 +300,17 @@ void FractionalLimitTransform::splitChunk(Chunk & current_chunk)
 
     UInt64 length = num_rows - start;
 
-    if (offset + limit < rows_read_from_cache)
+    if (offset + limit < rows_read)
     {
-        if (offset + limit < rows_read_from_cache - num_rows)
+        if (offset + limit < rows_read - num_rows)
             length = 0;
         else
-            length = offset + limit - (rows_read_from_cache - num_rows) - start;
+            length = offset + limit - (rows_read - num_rows) - start;
     }
 
     /// Check if other rows in current block equals to last one in limit
-    /// when rows_read_from_cache >= offset + limit.
-    if (with_ties && offset + limit <= rows_read_from_cache && length)
+    /// when rows read >= offset + limit.
+    if (with_ties && offset + limit <= rows_read && length)
     {
         UInt64 current_row_num = start + length;
         previous_row_chunk = makeChunkWithPreviousRow(current_chunk, current_row_num - 1);

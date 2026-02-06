@@ -67,7 +67,6 @@ concept is_native_int_or_decimal_v
 
 // This macro performs a branch-free conditional assignment for floating point types.
 // It uses bitwise operations to avoid branching, which can be beneficial for performance.
-#pragma clang diagnostic ignored "-Wundefined-reinterpret-cast"
 #define BRANCHFREE_IF_FLOAT(TYPE, vc, va, vb, vr) \
     using UIntType = typename NumberTraits::Construct<false, false, sizeof(TYPE)>::Type; \
     using IntType = typename NumberTraits::Construct<true, false, sizeof(TYPE)>::Type; \
@@ -934,7 +933,7 @@ private:
         if (isColumnNullable(*materialized))
             return materialized;
 
-        return ColumnNullable::create(materialized, ColumnUInt8::create(column->size(), static_cast<UInt8>(0)));
+        return ColumnNullable::create(materialized, ColumnUInt8::create(column->size(), 0));
     }
 
     /// Return nested column recursively removing Nullable, examples:

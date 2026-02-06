@@ -731,9 +731,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
 
         for (size_t i = 0; i < block.columns(); ++i)
             column_name_to_column_index[block.getNames()[i]] = i;
-        auto new_chunk = Chunk(block.getColumns(), block.rows());
-        new_chunk.setChunkInfos(chunk.getChunkInfos());
-        chunk = std::move(new_chunk);
+        chunk = Chunk(block.getColumns(), block.rows());
     }
 
     std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> partition_result;
@@ -807,9 +805,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
     }
     auto columns = chunk.getColumns();
     columns.resize(start_columns_size);
-    auto new_chunk = Chunk(columns, chunk.getNumRows());
-    new_chunk.setChunkInfos(chunk.getChunkInfos());
-    chunk = std::move(new_chunk);
+    chunk = Chunk(columns, chunk.getNumRows());
 }
 
 void IcebergStorageSink::onFinish()

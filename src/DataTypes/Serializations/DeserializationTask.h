@@ -34,7 +34,6 @@ public:
 
         finished = true;
         finished.notify_all();
-        deserialize = {};
     }
 
     /// Wait until task is executed and return an exception if any.

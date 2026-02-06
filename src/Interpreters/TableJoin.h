@@ -21,6 +21,11 @@
 #include <unordered_map>
 #include <utility>
 
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForJoin;
+}
+
 namespace DB
 {
 
@@ -273,7 +278,7 @@ public:
 
     bool enableAnalyzer() const { return enable_analyzer; }
     void assertEnableAnalyzer() const;
-    TemporaryDataOnDiskScopePtr getTempDataOnDisk();
+    TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data ? tmp_data->childScope(CurrentMetrics::TemporaryFilesForJoin, temporary_files_buffer_size) : nullptr; }
 
     ActionsDAG createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const;
 

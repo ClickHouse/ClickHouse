@@ -30,7 +30,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -881,34 +880,19 @@ KeyCondition::KeyCondition(
     ContextPtr context,
     const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
-    bool single_point_,
-    bool skip_analysis_)
+    bool single_point_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
 {
+    auto info = BuildInfo {.key_expr = key_expr_, .key_subexpr_names = getAllSubexpressionNames(*key_expr_)};
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
     {
         key_columns.try_emplace(name, key_index);
         ++key_index;
     }
-
-    /// Skip any analysis. Toggled by the `use_primary_key` setting. This is useful for catching bugs
-    /// in the index condition analysis logic. It is better to skip analysis in the constructor rather than in
-    /// `checkInHyperrectangle` or elsewhere, because bugs during `extractAtomFromTree` calls can lead to
-    /// unexpected exceptions.
-    /// This will lead to reading all granules with no primary key skipping.
-    if (skip_analysis_)
-    {
-        has_filter = (filter_dag.predicate != nullptr);
-        relaxed = true;
-        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
-        return;
-    }
-
-    auto info = BuildInfo {.key_expr = key_expr_, .key_subexpr_names = getAllSubexpressionNames(*key_expr_)};
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves(info);
@@ -1515,27 +1499,6 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     auto set_columns = prepared_set->getSetElements();
 
     auto set_types = future_set->getTypes();
-
-    chassert(set_types.size() == set_columns.size());
-
-    /// Special case: ORDER BY key_tuple (a single Tuple-typed key column) with predicate
-    /// `key_tuple IN ((a, b), (c, d), ...)`.
-    ///
-    /// The prepared set for `IN` can come as "unpacked" columns (one column per tuple element),
-    /// but for a packed tuple key we must keep it as a single ColumnTuple so it can be cast to
-    /// the key column type when preparing index conditions
-    if (left_args_count == 1 && data_types.size() == 1 && set_columns.size() > 1)
-    {
-        DataTypePtr key_type = removeNullable(data_types[0]);
-        if (const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get()))
-        {
-            if (key_tuple_type->getElements().size() == set_types.size())
-            {
-                set_columns = {ColumnTuple::create(set_columns)};
-                set_types = {std::make_shared<DataTypeTuple>(set_types)};
-            }
-        }
-    }
 
     bool is_constant_transformed = false;
     if (!tryPrepareSetColumnsForIndex(
@@ -2484,11 +2447,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
     {
         /// For cases where it says, for example, `WHERE 0 AND something`
 
-        if (const_value.isNull())
-        {
-            out.function = RPNElement::ALWAYS_FALSE;
-            return true;
-        }
         if (const_value.getType() == Field::Types::UInt64)
         {
             out.function = const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
