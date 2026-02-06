@@ -221,6 +221,8 @@ namespace CurrentMetrics
     extern const Metric BackgroundFetchesPoolSize;
     extern const Metric BackgroundCommonPoolTask;
     extern const Metric BackgroundCommonPoolSize;
+    extern const Metric IcebergSchedulePoolTask;
+    extern const Metric IcebergSchedulePoolSize;
     extern const Metric MarksLoaderThreads;
     extern const Metric MarksLoaderThreadsActive;
     extern const Metric MarksLoaderThreadsScheduled;
@@ -351,6 +353,7 @@ namespace ServerSetting
     extern const ServerSettingsFloat background_merges_mutations_concurrency_ratio;
     extern const ServerSettingsString background_merges_mutations_scheduling_policy;
     extern const ServerSettingsUInt64 background_message_broker_schedule_pool_size;
+    extern const ServerSettingsUInt64 iceberg_background_schedule_pool_size;
     extern const ServerSettingsUInt64 background_move_pool_size;
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
@@ -572,6 +575,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable BackgroundSchedulePoolPtr distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     OnceFlag message_broker_schedule_pool_initialized;
     mutable BackgroundSchedulePoolPtr message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
+    OnceFlag iceberg_schedule_pool_initialized;
+    mutable BackgroundSchedulePoolPtr iceberg_schedule_pool; /// A thread pool that runs background metadata refresh for all active Iceberg tables
 
     mutable OnceFlag readers_initialized;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
@@ -928,6 +933,7 @@ struct ContextSharedPart : boost::noncopyable
         BackgroundSchedulePoolPtr delete_schedule_pool;
         BackgroundSchedulePoolPtr delete_distributed_schedule_pool;
         BackgroundSchedulePoolPtr delete_message_broker_schedule_pool;
+        BackgroundSchedulePoolPtr delete_iceberg_schedule_pool;
 
         std::unique_ptr<AccessControl> delete_access_control;
 
@@ -1006,6 +1012,7 @@ struct ContextSharedPart : boost::noncopyable
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
             delete_message_broker_schedule_pool = std::move(message_broker_schedule_pool);
+            delete_iceberg_schedule_pool = std::move(iceberg_schedule_pool);
 
             delete_access_control = std::move(access_control);
 
@@ -1062,6 +1069,7 @@ struct ContextSharedPart : boost::noncopyable
         join_background_pool(std::move(delete_schedule_pool));
         join_background_pool(std::move(delete_distributed_schedule_pool));
         join_background_pool(std::move(delete_message_broker_schedule_pool));
+        join_background_pool(std::move(delete_iceberg_schedule_pool));
 
         delete_access_control.reset();
 
@@ -4276,6 +4284,8 @@ std::shared_ptr<IcebergMetadataFilesCache> Context::getIcebergMetadataFilesCache
 
 void Context::clearIcebergMetadataFilesCache() const
 {
+    LOG_INFO(getLogger("DDDBG"), "Context::clearIcebergMetadataFilesCache");
+
     auto cache = getIcebergMetadataFilesCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
@@ -4549,6 +4559,20 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     });
 
     return *shared->message_broker_schedule_pool;
+}
+
+BackgroundSchedulePool & Context::getIcebergSchedulePool() const
+{
+    callOnce(shared->iceberg_schedule_pool_initialized, [&] {
+        shared->iceberg_schedule_pool = BackgroundSchedulePool::create(
+            shared->server_settings[ServerSetting::iceberg_background_schedule_pool_size],
+            /*max_parallel_tasks_per_type*/ 0,
+            CurrentMetrics::IcebergSchedulePoolTask,
+            CurrentMetrics::IcebergSchedulePoolSize,
+            DB::ThreadName::ICEBERG_SCHEDULE_POOL);
+    });
+
+    return *shared->iceberg_schedule_pool;
 }
 
 void Context::configureServerWideThrottling()

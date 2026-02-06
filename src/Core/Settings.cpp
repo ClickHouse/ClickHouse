@@ -5203,6 +5203,10 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(UInt64, iceberg_metadata_staleness_seconds, 0, R"(     /// TODO: should it be added to SettingsChangesHistory??
+If non-zero, skip fetching iceberg metadata from remote catalog if the cached metadata was refreshed within the given period.
+Zero means to always fetch the latest metadata. Setting this a non-zero trades metadata freshness to much lower latency.
+)", 0) \
     \
     DECLARE(Bool, use_query_cache, false, R"(
 If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
