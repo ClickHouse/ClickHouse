@@ -10,6 +10,8 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -259,16 +261,6 @@ private:
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
 };
 
-/** Replaces large constant values with `__getScalar` function calls to avoid
-  * serializing them directly in the query text sent to remote shards.
-  *
-  * When a query contains large constants (e.g., large arrays or strings),
-  * sending them as literals in the query text is inefficient. Instead, we store
-  * the constant in a scalar context and replace it with a `__getScalar('hash')`
-  * function call. The remote shard will retrieve the actual value from the scalar context.
-  *
-  * The `optimize_const_name_size` setting controls the threshold for this optimization.
-  */
 class ReplaceLongConstWithScalarVisitor : public InDepthQueryTreeVisitorWithContext<ReplaceLongConstWithScalarVisitor>
 {
 public:
@@ -284,31 +276,14 @@ public:
     {
         if (auto * function_node = parent->as<FunctionNode>())
         {
-            /// Do not traverse into `__getScalar` - it's already been processed.
+            // Do not traverse "getScalar"
             if (function_node->getFunctionName() == "__getScalar")
                 return false;
 
-            /// Do not visit parameters node.
+            // Do not visit parameters node
             if (function_node->getParametersNode() == child)
                 return false;
         }
-
-        if (auto * query_node = parent->as<QueryNode>())
-        {
-            /// Do not replace constants in LIMIT, OFFSET, LIMIT BY LIMIT, and LIMIT BY OFFSET clauses.
-            /// These must remain as `ConstantNode` because the query planner accesses their values
-            /// directly via `as<ConstantNode &>()`. Replacing them with `__getScalar` function nodes
-            /// would cause a bad cast exception during query planning.
-            if (query_node->hasLimit() && query_node->getLimit() == child)
-                return false;
-            if (query_node->hasOffset() && query_node->getOffset() == child)
-                return false;
-            if (query_node->hasLimitByLimit() && query_node->getLimitByLimit() == child)
-                return false;
-            if (query_node->hasLimitByOffset() && query_node->getLimitByOffset() == child)
-                return false;
-        }
-
         return true;
     }
 
@@ -356,6 +331,7 @@ public:
         context->getQueryContext()->addScalar(str_hash, scalar_block);
 
         auto scalar_query_hash_string = DB::toString(node_with_hash.hash);
+
 
         auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
 

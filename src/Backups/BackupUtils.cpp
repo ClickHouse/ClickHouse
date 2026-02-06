@@ -5,6 +5,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
 

@@ -8,9 +8,13 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
 
+#include <bitset>
 #include <cstring>
+#include <algorithm>
+#include <type_traits>
 
 
 namespace DB
@@ -189,8 +193,8 @@ BinaryValueInfo getBinaryValueInfo(const T & value)
 {
     constexpr UInt8 bit_size = sizeof(T) * 8;
 
-    const UInt8 lz = static_cast<UInt8>(getLeadingZeroBits(value));
-    const UInt8 tz = static_cast<UInt8>(getTrailingZeroBits(value));
+    const UInt8 lz = getLeadingZeroBits(value);
+    const UInt8 tz = getTrailingZeroBits(value);
     const UInt8 data_size = value == 0 ? 0 : static_cast<UInt8>(bit_size - lz - tz);
 
     return {lz, data_size, tz};
@@ -314,8 +318,8 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
             if (reader.readBit() == 1)
             {
                 // 0b11 prefix
-                curr_xored_info.leading_zero_bits = static_cast<UInt8>(reader.readBits(LEADING_ZEROES_BIT_LENGTH));
-                curr_xored_info.data_bits = static_cast<UInt8>(reader.readBits(DATA_BIT_LENGTH));
+                curr_xored_info.leading_zero_bits = reader.readBits(LEADING_ZEROES_BIT_LENGTH);
+                curr_xored_info.data_bits = reader.readBits(DATA_BIT_LENGTH);
                 curr_xored_info.trailing_zero_bits = sizeof(T) * 8 - curr_xored_info.leading_zero_bits - curr_xored_info.data_bits;
             }
             // else: 0b10 prefix - use prev_xored_info
@@ -340,7 +344,7 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
         prev_value = curr_value;
     }
 
-    return static_cast<UInt32>(dest - original_dest);
+    return dest - original_dest;
 }
 
 UInt8 getDataBytesSize(const IDataType * column_type)
@@ -364,7 +368,7 @@ UInt8 getDataBytesSize(const IDataType * column_type)
 CompressionCodecGorilla::CompressionCodecGorilla(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
-    setCodecDescription("Gorilla", {make_intrusive<ASTLiteral>(static_cast<UInt64>(data_bytes_size))});
+    setCodecDescription("Gorilla", {std::make_shared<ASTLiteral>(static_cast<UInt64>(data_bytes_size))});
 }
 
 uint8_t CompressionCodecGorilla::getMethodByte() const

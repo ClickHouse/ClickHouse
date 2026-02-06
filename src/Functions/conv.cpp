@@ -80,7 +80,7 @@ public:
         {
             std::string number_str;
             if (number_col)
-                number_str = std::string{number_col->getDataAt(i)};
+                number_str = number_col->getDataAt(i).toString();
             else
                 number_str = number_const_col->getValue<String>();
             const Int64 from_base = from_base_column->getInt(i);
@@ -205,9 +205,9 @@ private:
     static char digitToChar(int digit)
     {
         if (digit >= 0 && digit <= 9)
-            return static_cast<char>('0' + digit);
+            return '0' + digit;
         if (digit >= 10 && digit <= 35)
-            return static_cast<char>('A' + digit - 10);
+            return 'A' + digit - 10;
         return '0'; // Should never happen
     }
 };

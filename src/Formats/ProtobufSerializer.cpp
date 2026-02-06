@@ -102,7 +102,7 @@ namespace
 
         static char convertChar(char c)
         {
-            c = static_cast<char>(tolower(c));
+            c = tolower(c);
             if (c == '.')
                 c = '_';
             return c;
@@ -2020,8 +2020,6 @@ namespace
         {
             if (presence_column)
             {
-                if (row_num < presence_column->size())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid protobuf data: OneOf has more than one value to track via column `{}`", oneof_column_name);
                 presence_column->insert(field_tag);
             }
             nested_serializer->readRow(row_num);
@@ -2129,7 +2127,7 @@ namespace
             if (row_num < column_nullable.size())
                 return;
             column_nullable.getNestedColumn().insertDefault();
-            column_nullable.getNullMapData().push_back(false);
+            column_nullable.getNullMapData().push_back(0);
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
@@ -2849,22 +2847,17 @@ namespace
             first_call_of_write_row = true;
         }
 
-        void startReading() override
+        void readRow(size_t row_num) override
         {
             if (first_call_of_read_row)
             {
                 reader->startMessage(/*with_length_delimiter = */ true);
                 first_call_of_read_row = false;
             }
-        }
-
-        void readRow(size_t row_num) override
-        {
-            startReading();
 
             int field_tag;
-            if (!reader->readFieldNumber(field_tag))
-                throw Exception(ErrorCodes::PROTOBUF_BAD_CAST, "Unexpected end of ProtobufList message");
+            [[maybe_unused]] bool ret = reader->readFieldNumber(field_tag);
+            assert(ret);
 
             serializer->readRow(row_num);
         }
@@ -3395,8 +3388,8 @@ namespace
                     throw Exception(
                         ErrorCodes::MULTIPLE_COLUMNS_SERIALIZED_TO_SAME_PROTOBUF_FIELD,
                         "Multiple columns ({}, {}) cannot be serialized to a single protobuf field {}",
-                        backQuote(std::string_view{it->second}),
-                        backQuote(std::string_view{column_name_}),
+                        backQuote(StringRef{it->second}),
+                        backQuote(StringRef{column_name_}),
                         quoteString(field_descriptor_.full_name()));
                 }
 
@@ -4022,13 +4015,13 @@ namespace
             if (!field_descriptor.is_repeated())
                 throw Exception(ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED,
                                 "The field {} must be repeated in the protobuf schema to match the column {}",
-                                quoteString(field_descriptor.full_name()), backQuote(column_name));
+                                quoteString(field_descriptor.full_name()), backQuote(StringRef{column_name}));
 
             throw Exception(ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED,
                             "The field {} is repeated but the level of repeatedness is not enough "
                             "to serialize a multidimensional array from the column {}. "
                             "It's recommended to make the parent field repeated as well.",
-                            quoteString(field_descriptor.full_name()), backQuote(column_name));
+                            quoteString(field_descriptor.full_name()), backQuote(StringRef{column_name}));
         }
 
         const ProtobufReaderOrWriter reader_or_writer;

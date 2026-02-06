@@ -1,4 +1,4 @@
--- Tags: long, no-azure-blob-storage
+-- Tags: long
 
 set output_format_json_quote_64bit_integers=0;
 

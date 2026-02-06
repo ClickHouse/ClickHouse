@@ -55,7 +55,6 @@ public:
     using State = FileSegmentState;
     using Info = FileSegmentInfo;
     using QueueEntryType = FileCacheQueueEntryType;
-    using KeyType = FileSegmentKeyType;
 
     FileSegment(
         const Key & key_,
@@ -231,8 +230,6 @@ public:
 
     void setDownloadFailed();
 
-    bool isBackgroundDownloadEnabled() const { return background_download_enabled; }
-
 private:
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
@@ -286,7 +283,6 @@ private:
     mutable Priority::IteratorPtr queue_iterator; /// Iterator is put here on first reservation attempt, if successful.
     FileCache * cache;
     std::condition_variable cv;
-    std::mutex increase_priority_mutex;
 
     LoggerPtr log;
 

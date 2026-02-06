@@ -602,7 +602,7 @@ private:
 
         CodePoint sample(UInt64 random, double end_multiplier) const
         {
-            UInt64 range = total + static_cast<UInt64>(static_cast<double>(count_end) * end_multiplier);
+            UInt64 range = total + static_cast<UInt64>(count_end * end_multiplier);
             if (range == 0)
                 return END;
 
@@ -668,7 +668,7 @@ private:
 
     static NGramHash hashContext(const CodePoint * begin, const CodePoint * end)
     {
-        return static_cast<NGramHash>(CRC32Hash()(std::string_view(reinterpret_cast<const char *>(begin), (end - begin) * sizeof(CodePoint))));
+        return CRC32Hash()(StringRef(reinterpret_cast<const char *>(begin), (end - begin) * sizeof(CodePoint)));
     }
 
     /// By the way, we don't have to use actual Unicode numbers. We use just arbitrary bijective mapping.
@@ -843,12 +843,12 @@ public:
                 if (!histogram.total)
                     continue;
 
-                double average = static_cast<double>(histogram.total) / static_cast<double>(histogram.buckets.size());
+                double average = static_cast<double>(histogram.total) / histogram.buckets.size();
 
                 UInt64 new_total = 0;
                 for (auto & bucket : histogram.buckets)
                 {
-                    bucket.second = static_cast<UInt64>(static_cast<double>(bucket.second) * (1.0 - params.frequency_desaturate) + average * params.frequency_desaturate);
+                    bucket.second = static_cast<UInt64>(bucket.second * (1.0 - params.frequency_desaturate) + average * params.frequency_desaturate);
                     new_total += bucket.second;
                 }
 
@@ -915,7 +915,7 @@ public:
             {
                 /// Heuristic: break at ASCII non-alnum code point.
                 /// This allows to be close to desired_size but not break natural looking words.
-                if (code < 128 && !isAlphaNumericASCII(static_cast<char>(code)))
+                if (code < 128 && !isAlphaNumericASCII(code))
                     break;
             }
 
@@ -952,8 +952,8 @@ public:
 
         for (size_t i = 0; i < size; ++i)
         {
-            auto string = column_string.getDataAt(i);
-            markov_model.consume(string.data(), string.size());
+            StringRef string = column_string.getDataAt(i);
+            markov_model.consume(string.data, string.size);
         }
     }
 
@@ -973,13 +973,13 @@ public:
         std::string new_string;
         for (size_t i = 0; i < size; ++i)
         {
-            auto src_string = column_string.getDataAt(i);
-            size_t desired_string_size = transform(src_string.size(), seed);
+            StringRef src_string = column_string.getDataAt(i);
+            size_t desired_string_size = transform(src_string.size, seed);
             new_string.resize(desired_string_size * 2);
 
             size_t actual_size = 0;
             if (desired_string_size != 0)
-                actual_size = markov_model.generate(new_string.data(), desired_string_size, new_string.size(), seed, src_string.data(), src_string.size());
+                actual_size = markov_model.generate(new_string.data(), desired_string_size, new_string.size(), seed, src_string.data, src_string.size);
 
             res_column->insertData(new_string.data(), actual_size);
         }

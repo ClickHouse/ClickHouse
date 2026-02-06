@@ -456,6 +456,6 @@ protected:
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using ConstDatabasePtr = std::shared_ptr<const IDatabase>;
-using Databases = std::map<String, DatabasePtr, std::less<>>;
+using Databases = std::map<String, DatabasePtr>;
 
 }

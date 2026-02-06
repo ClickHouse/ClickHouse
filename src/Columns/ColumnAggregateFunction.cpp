@@ -354,37 +354,6 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
     return res;
 }
 
-void ColumnAggregateFunction::filter(const Filter & filt)
-{
-    size_t size = data.size();
-    if (size != filt.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
-                        "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
-
-    if (size == 0)
-        return;
-
-    const auto need_destroy = !src && !func->hasTrivialDestructor();
-    size_t write_pos = 0;
-
-    /// Filter in place by moving elements
-    for (size_t read_pos = 0; read_pos < size; ++read_pos)
-    {
-        if (filt[read_pos])
-        {
-            data[write_pos] = data[read_pos];
-            ++write_pos;
-        }
-        else if (need_destroy)
-        {
-            func->destroy(data[read_pos]);
-        }
-    }
-
-    /// Resize to the new size
-    data.resize_assume_reserved(write_pos);
-}
-
 void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
 {
     ensureOwnership();
@@ -541,9 +510,9 @@ DataTypePtr ColumnAggregateFunction::getValueNameAndTypeImpl(WriteBufferFromOwnS
     return DataTypeFactory::instance().get(type_string);
 }
 
-std::string_view ColumnAggregateFunction::getDataAt(size_t n) const
+StringRef ColumnAggregateFunction::getDataAt(size_t n) const
 {
-    return {reinterpret_cast<const char *>(&data[n]), sizeof(data[n])};
+    return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
 }
 
 void ColumnAggregateFunction::insertData(const char * pos, size_t /*length*/)
@@ -654,7 +623,7 @@ void ColumnAggregateFunction::insertDefault()
     pushBackAndCreateState(data, arena, func.get());
 }
 
-std::string_view ColumnAggregateFunction::serializeValueIntoArena(
+StringRef ColumnAggregateFunction::serializeValueIntoArena(
     size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings *) const
 {
     WriteBufferFromArena out(arena, begin);
@@ -682,9 +651,6 @@ void ColumnAggregateFunction::skipSerializedInArena(ReadBuffer &) const
 
 void ColumnAggregateFunction::popBack(size_t n)
 {
-    if (n > size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
-
     size_t size = data.size();
     size_t new_size = size - n;
 
@@ -701,7 +667,7 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
     if (size != offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
-    if (size == 0 || offsets.back() == 0)
+    if (size == 0)
         return cloneEmpty();
 
     auto res = createView();
@@ -731,7 +697,7 @@ MutableColumns ColumnAggregateFunction::scatter(size_t num_columns, const IColum
     size_t num_rows = size();
 
     {
-        size_t reserve_size = static_cast<size_t>(static_cast<double>(num_rows) / static_cast<double>(num_columns) * 1.1); /// 1.1 is just a guess. Better to use n-sigma rule.
+        size_t reserve_size = static_cast<size_t>(static_cast<double>(num_rows) / num_columns * 1.1); /// 1.1 is just a guess. Better to use n-sigma rule.
 
         if (reserve_size > 1)
             for (auto & column : columns)

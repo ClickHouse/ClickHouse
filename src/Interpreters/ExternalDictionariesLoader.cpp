@@ -1,7 +1,6 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteHelpers.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Databases/IDatabase.h>
@@ -14,7 +13,6 @@
 #if USE_MYSQL
 #   include <mysqlxx/PoolFactory.h>
 #endif
-
 
 namespace DB
 {

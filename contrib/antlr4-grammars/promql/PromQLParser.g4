@@ -90,36 +90,22 @@ subqueryOp
     ;
 
 offsetOp
-    : AT timestamp (OFFSET offsetValue)?
-    | OFFSET offsetValue (AT timestamp)?
+    : AT NUMBER (OFFSET (ADD|SUB)? NUMBER)?
+    | OFFSET (ADD|SUB)? NUMBER (AT NUMBER)?
     ;
 
 vector
     : function_
     | aggregation
     | instantSelector
-    | rangeSelector
-    | selectorWithOffset
+    | matrixSelector
+    | offset
     | literal
     | parens
     ;
 
 parens
     : LEFT_PAREN vectorOperation RIGHT_PAREN
-    ;
-
-// Timestamps and durations
-
-timestamp
-    : NUMBER
-    ;
-
-duration
-    : NUMBER
-    ;
-
-offsetValue
-    : (ADD | SUB)? NUMBER
     ;
 
 // Selectors
@@ -144,13 +130,13 @@ labelMatcherList
     : labelMatcher (COMMA labelMatcher)* COMMA?
     ;
 
-rangeSelector
-    : instantSelector SELECTOR_RANGE
+matrixSelector
+    : instantSelector TIME_RANGE
     ;
 
-selectorWithOffset
+offset
     : instantSelector offsetOp
-    | rangeSelector offsetOp
+    | matrixSelector offsetOp
     ;
 
 // Functions

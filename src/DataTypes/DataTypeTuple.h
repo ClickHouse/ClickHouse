@@ -35,7 +35,7 @@ public:
     std::string doGetPrettyName(size_t indent) const override;
     const char * getFamilyName() const override { return "Tuple"; }
 
-    bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideNullable() const override { return false; }
     bool supportsSparseSerialization() const override { return true; }
     bool canBeInsideSparseColumns() const override { return false; }
 
@@ -65,8 +65,8 @@ public:
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }
 
-    size_t getPositionByName(std::string_view name, bool case_insensitive = false) const;
-    std::optional<size_t> tryGetPositionByName(std::string_view name, bool case_insensitive = false) const;
+    size_t getPositionByName(const String & name, bool case_insensitive = false) const;
+    std::optional<size_t> tryGetPositionByName(const String & name, bool case_insensitive = false) const;
     String getNameByPosition(size_t i) const;
 
     bool hasExplicitNames() const { return has_explicit_names; }

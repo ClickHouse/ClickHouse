@@ -43,20 +43,15 @@ void ProtobufListInputFormat::setReadBuffer(ReadBuffer & in_)
 
 bool ProtobufListInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
 {
-    size_t row_num = columns.empty() ? 0 : columns[0]->size();
-    if (!row_num)
-    {
-        serializer->setColumns(columns.data(), columns.size());
-        /// Start the outer message before checking eof.
-        /// This is needed because the eof check relies on knowing the message bounds.
-        serializer->startReading();
-    }
-
     if (reader->eof())
     {
         reader->endMessage(/*ignore_errors =*/ false);
         return false;
     }
+
+    size_t row_num = columns.empty() ? 0 : columns[0]->size();
+    if (!row_num)
+        serializer->setColumns(columns.data(), columns.size());
 
     serializer->readRow(row_num);
 
