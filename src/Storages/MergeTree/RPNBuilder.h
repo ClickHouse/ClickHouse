@@ -190,26 +190,36 @@ public:
   * RPNBuilder take care of building stack of RPNElements with `NOT`, `AND`, `OR` types.
   * In addition client must provide ExtractAtomFromTreeFunction that returns true and RPNElement as output parameter,
   * if it can convert RPNBuilderTree node to RPNElement, false otherwise.
-  */
+  *
+  * Alternatively, client may provide ExtractAtomsFromTreeFunction that returns a list of one or more RPNElements
+  * corresponding to a leaf node (atoms). If the list has more than one element, RPNBuilder will AND them together
+  * (i.e. emit `atom0 atom1 AND atom2 AND ...` in RPN).
+ */
 template <typename RPNElement>
 class RPNBuilder
 {
 public:
     using RPNElements = std::vector<RPNElement>;
     using ExtractAtomFromTreeFunction = std::function<bool (const RPNBuilderTreeNode & node, RPNElement & out)>;
+    using ExtractAtomsFromTreeFunction = std::function<bool (const RPNBuilderTreeNode & node, RPNElements & out)>;
 
     explicit RPNBuilder(
         const ActionsDAG::Node * filter_actions_dag_node,
         ContextPtr query_context_,
         const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_);
 
+    explicit RPNBuilder(
+        const ActionsDAG::Node * filter_actions_dag_node,
+        ContextPtr query_context_,
+        const ExtractAtomsFromTreeFunction & extract_atoms_from_tree_function_);
+
     explicit RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_);
+    explicit RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomsFromTreeFunction & extract_atoms_from_tree_function_);
     RPNElements && extractRPN() &&;
 
 private:
-    void traverseTree(const RPNBuilderTreeNode & node);
+    void traverseTree(const RPNBuilderTreeNode & node, const ExtractAtomsFromTreeFunction & extract_atoms_from_tree_function);
     bool extractLogicalOperatorFromTree(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out);
-    const ExtractAtomFromTreeFunction & extract_atom_from_tree_function;
     RPNElements rpn_elements;
 };
 
