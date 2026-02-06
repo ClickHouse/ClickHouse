@@ -92,7 +92,12 @@ def clear_workloads_and_resources(set_default_configs):
 def update_workloads_config(*nodes, **settings):
     xml = ""
     for name in settings:
-        xml += f"<{name}>{settings[name]}</{name}>"
+        value = settings[name]
+        if isinstance(value, list):
+            content = "\n        ".join(value)
+        else:
+            content = value
+        xml += f"<{name}>{content}</{name}>"
     print(xml)
     if nodes == ():
         nodes = (node,)
@@ -1097,6 +1102,112 @@ def test_config_based_workloads_and_resources():
         CREATE WORKLOAD all SETTINGS max_bytes_inflight = 1000000 FOR config_io_read;
     """
     )
+
+    # Verify entities are updated
+    assert (
+        node.query(
+            "SELECT count() FROM system.resources"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM system.workloads"
+        )
+        == "2\n"
+    )
+
+    # Make sure it's possible to clean the config without "Logical error: 'Removing workload 'all' with children"
+    node.query("DROP WORKLOAD development")
+
+
+def test_config_based_workloads_and_resources_with_sql_elements():
+    # Create a test configuration with resources and workloads in new configuration style (per-SQL-statement elements - list of statements with unique tags)
+    # It is important to update config on cluster, because otherwise node2 expectedly crashes with
+    # Logical error: 'Parent node 'all' for creating workload 'development' does not exist in resource 'sql_io_read''.
+    update_workloads_config_on_cluster(resources_and_workloads=[
+        "<io_read>CREATE RESOURCE config_io_read (READ DISK s3_no_resource);</io_read>",
+        "<io_write>CREATE RESOURCE config_io_write (WRITE DISK s3_no_resource);</io_write>",
+        "<inflight>CREATE WORKLOAD all SETTINGS max_bytes_inflight = 1000000, max_bytes_inflight = 2000000 FOR config_io_write;</inflight>",
+        "<prod>CREATE WORKLOAD production IN all SETTINGS priority = 1, weight = 3;</prod>",
+    ])
+
+    # Verify config-based entities are loaded
+    assert (
+        node.query(
+            "SELECT count() FROM system.resources"
+        )
+        == "2\n"
+    )
+
+    assert (
+        node.query(
+            "SELECT count() FROM system.workloads"
+        )
+        == "2\n"
+    )
+
+    # Verify scheduler nodes exist for config entities
+    assert (
+        node.query(
+            "SELECT count() == 2 FROM system.scheduler WHERE resource IN ('config_io_read', 'config_io_write') AND path = '/all'"
+        )
+        == "1\n"
+    )
+
+    # Try to create SQL entities with same names - should fail
+    try:
+        node.query("CREATE RESOURCE config_io_read (READ DISK non_existent_disk)")
+        assert False, "Should not be able to create resource with same name as config entity"
+    except Exception as ex:
+        assert "already exists" in str(ex)
+
+    try:
+        node.query("CREATE WORKLOAD all")
+        assert False, "Should not be able to create workload with same name as config entity"
+    except Exception as ex:
+        assert "already exists" in str(ex)
+
+    # Create SQL entities with different names
+    node.query("CREATE RESOURCE sql_io_read (READ DISK non_existent_disk)")
+    node.query("CREATE WORKLOAD development IN all SETTINGS max_bytes_inflight = 500000 FOR sql_io_read")
+
+    # Verify both config and SQL entities exist
+    assert (
+        node.query(
+            "SELECT count() FROM system.resources WHERE name IN ('config_io_read', 'config_io_write', 'sql_io_read')"
+        )
+        == "3\n"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM system.workloads WHERE name IN ('all', 'production', 'development')"
+        )
+        == "3\n"
+    )
+
+    # Test that config entities cannot be dropped
+    try:
+        node.query("DROP RESOURCE config_io_read")
+        assert False, "Should not be able to drop config-defined resource"
+    except Exception as ex:
+        assert "It is not allowed to remove workload entity 'config_io_read' that is stored in read-only configuration storage" in str(ex)
+
+    try:
+        node.query("DROP WORKLOAD production")
+        assert False, "Should not be able to drop config-defined workload"
+    except Exception as ex:
+        assert "It is not allowed to remove workload entity 'production' that is stored in read-only configuration storage" in str(ex)
+
+    # But SQL entities can be dropped
+    node.query("CREATE OR REPLACE WORKLOAD development IN all SETTINGS max_bytes_inflight = 500000")
+    node.query("DROP RESOURCE sql_io_read")
+
+    # Update config to remove some entities (test with mixed list of <sql> elements)
+    update_workloads_config_on_cluster(resources_and_workloads=[
+        "<sql>CREATE RESOURCE config_io_read (READ DISK s3_no_resource);</sql>",
+        "<sql>CREATE WORKLOAD all SETTINGS max_bytes_inflight = 1000000 FOR config_io_read;</sql>",
+    ])
 
     # Verify entities are updated
     assert (
