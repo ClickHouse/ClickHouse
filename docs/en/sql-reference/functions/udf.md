@@ -401,7 +401,7 @@ For distributed processing, when an exception occurs on one of the servers, the 
 
 ### Stderr Handling
 
-When a UDF script writes to stderr, ClickHouse captures the output and throws an exception. The complete stderr content (up to 1MB) is included in the exception message and recorded in `system.query_log.exception`. This enables effective debugging of UDF failures, as complete error messages such as Python tracebacks are preserved.
+By default, when a UDF script writes to stderr, ClickHouse throws an exception and the query fails. The complete stderr content (up to 1MB) is included in the exception message and recorded in `system.query_log.exception`. This enables effective debugging of UDF failures, as complete error messages such as Python tracebacks are preserved.
 
 ```sql title="Query error details"
 SELECT exception FROM system.query_log
