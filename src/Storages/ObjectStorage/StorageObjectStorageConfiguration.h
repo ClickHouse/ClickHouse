@@ -139,9 +139,7 @@ public:
 
     virtual bool isDataLakeConfiguration() const { return false; }
 
-    virtual bool supportsTotalRows() const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
-    virtual bool supportsTotalBytes() const { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
     /// NOTE: In this function we are going to check is data which we are going to read sorted by sorting key specified in StorageMetadataPtr.
     /// It may look confusing that this function checks only StorageMetadataPtr, and not StorageSnapshot.
@@ -165,7 +163,6 @@ public:
         ObjectInfoPtr object_info,
         QueryPipelineBuilder & builder,
         const std::optional<FormatSettings> & format_settings,
-        FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr local_context) const;
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(
@@ -258,11 +255,6 @@ public:
     virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
         return false;
-    }
-
-    virtual bool supportsPrewhere() const
-    {
-        return true;
     }
 
     virtual void drop(ContextPtr) {}

@@ -2,13 +2,15 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/EnabledQuota.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryNode.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
-#include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
-#include <Core/DeduplicateInsert.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <IO/ReadBuffer.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -21,6 +23,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -31,9 +35,11 @@
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -43,6 +49,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
+#include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
 #include <Core/Field.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -61,6 +68,7 @@ namespace Setting
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
+    extern const SettingsBool insert_deduplicate;
     extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
@@ -95,6 +103,7 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int DEDUPLICATION_IS_NOT_POSSIBLE;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
@@ -371,6 +380,8 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         context = mutable_context;
     }
 
+    const Settings & settings = context->getSettingsRef();
+
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
 
@@ -431,30 +442,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     if (select_streams != 1)
         pipeline.resize(1);
 
-    auto deduplicate_insert_select = isDeduplicationEnabledForInsertSelect(select_query_sorted, context->getSettingsRef(), logger);
-
-    if (deduplicate_insert_select != isDeduplicationEnabledForInsert(false, context->getSettingsRef()))
-    {
-        auto tmp_context = Context::createCopy(context);
-        overrideDeduplicationSetting(deduplicate_insert_select, tmp_context);
-        context = tmp_context;
-    }
-
-    auto insert_dependencies = InsertDependenciesBuilder::create(
-        table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
-        async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
-        context);
-
-    pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
-    {
-        return std::make_shared<AddDeduplicationInfoTransform>(
-            insert_dependencies,
-            insert_dependencies->getRootViewID(),
-            context->getSettingsRef()[Setting::insert_deduplication_token].value,
-            in_header);
-    });
-
-    bool should_squash = shouldAddSquashingForStorage(table, getContext()) && !no_squash;
+    bool should_squash = shouldAddSquashingForStorage(table, context) && !no_squash && !async_insert;
     if (should_squash)
     {
         pipeline.addSimpleTransform(
@@ -462,10 +450,74 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
             {
                 return std::make_shared<PlanSquashingTransform>(
                     in_header,
-                    table->prefersLargeBlocks() ? context->getSettingsRef()[Setting::min_insert_block_size_rows] : context->getSettingsRef()[Setting::max_block_size],
-                    table->prefersLargeBlocks() ? context->getSettingsRef()[Setting::min_insert_block_size_bytes] : 0ULL);
+                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
+                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_bytes] : 0ULL);
             });
     }
+
+    pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+    {
+        return std::make_shared<DeduplicationToken::AddTokenInfoTransform>(in_header);
+    });
+
+    if (!settings[Setting::insert_deduplication_token].value.empty())
+    {
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
+        {
+            return std::make_shared<DeduplicationToken::SetUserTokenTransform>(settings[Setting::insert_deduplication_token].value, in_header);
+        });
+
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
+        {
+            return std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(in_header);
+        });
+    }
+
+    auto deduplicate_insert_select = [&] () -> bool
+    {
+        switch (context->getSettingsRef()[Setting::deduplicate_insert_select].value)
+        {
+            case DeduplicateInsertSelectMode::FORCE_ENABLE:
+                return true;
+            case DeduplicateInsertSelectMode::DISABLE:
+                return false;
+            case DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES:
+                return context->getSettingsRef()[Setting::insert_deduplicate];
+            case DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE:
+            {
+                if (!select_query_sorted && context->getSettingsRef()[Setting::insert_deduplicate])
+                    LOG_INFO(logger, "INSERT SELECT deduplication is disabled because SELECT is not stable");
+
+                return select_query_sorted && context->getSettingsRef()[Setting::insert_deduplicate];
+            }
+        }
+    }();
+
+    if (!select_query_sorted && deduplicate_insert_select)
+    {
+        if (context->getSettingsRef()[Setting::deduplicate_insert_select] == DeduplicateInsertSelectMode::FORCE_ENABLE)
+            throw Exception(ErrorCodes::DEDUPLICATION_IS_NOT_POSSIBLE,
+                "Deduplication for INSERT SELECT with non-stable SELECT is not possible"
+                " (the SELECT part can return different results on each execution)."
+                " You can disable it by setting 'insert_deduplicate' or `async_insert_deduplicate` to 0."
+                " Or make SELECT query stable (for example, by adding ORDER BY all to the query).");
+
+        chassert(context->getSettingsRef()[Setting::deduplicate_insert_select] == DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES);
+        LOG_INFO(logger, "INSERT SELECT deduplication is enabled in compatibility mode, but SELECT is not stable. "
+            "The deduplication may not work as expected because the SELECT part can return different results on each execution.");
+    }
+
+    if (deduplicate_insert_select != bool(context->getSettingsRef()[Setting::insert_deduplicate]))
+    {
+        auto tmp_context = Context::createCopy(context);
+        tmp_context->setSetting("insert_deduplicate", Field{deduplicate_insert_select});
+        context = tmp_context;
+    }
+
+    auto insert_dependencies = InsertDependenciesBuilder::create(
+        table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
+        async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
+        context);
 
     std::vector<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
 
@@ -720,28 +772,28 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     chassert(chains.size() == 1);
     auto chain = std::move(chains.front());
 
-    if (shouldAddSquashingForStorage(table, context) && !no_squash)
+    if (!settings[Setting::insert_deduplication_token].value.empty())
     {
-        auto applying = std::make_shared<ApplySquashingTransform>(chain.getInputSharedHeader());
-        chain.addSource(std::move(applying));
+        chain.addSource(std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(chain.getInputSharedHeader()));
+        chain.addSource(std::make_shared<DeduplicationToken::SetUserTokenTransform>(
+            settings[Setting::insert_deduplication_token].value, chain.getInputSharedHeader()));
     }
 
-    if (shouldAddSquashingForStorage(table, context) && !no_squash)
+    chain.addSource(std::make_shared<DeduplicationToken::AddTokenInfoTransform>(chain.getInputSharedHeader()));
+
+    if (shouldAddSquashingForStorage(table, context) && !no_squash && !async_insert)
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
+
+        auto applying = std::make_shared<ApplySquashingTransform>(chain.getInputSharedHeader());
+        chain.addSource(std::move(applying));
+
         auto planing = std::make_shared<PlanSquashingTransform>(
             chain.getInputSharedHeader(),
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL);
         chain.addSource(std::move(planing));
     }
-
-    chain.addSource(
-        std::make_shared<AddDeduplicationInfoTransform>(
-            insert_dependencies,
-            insert_dependencies->getRootViewID(),
-            settings[Setting::insert_deduplication_token].value,
-            chain.getInputSharedHeader()));
 
     auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context->getQuota());
     counting->setProcessListElement(context->getProcessListElement());

@@ -4,11 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 BoundedReadBuffer::BoundedReadBuffer(std::unique_ptr<SeekableReadBuffer> impl_)
     : ReadBufferFromFileDecorator(std::move(impl_))
 {
@@ -66,14 +61,6 @@ off_t BoundedReadBuffer::seek(off_t off, int whence)
 
     file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
     return result;
-}
-
-size_t BoundedReadBuffer::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const
-{
-    if (impl->supportsReadAt())
-        return impl->readBigAt(to, n, range_begin, progress_callback);
-    else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() is not implemented for a given implementation");
 }
 
 }

@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTColumnDeclaration.h>
 
 #include <base/types.h>
 

@@ -67,7 +67,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
             auto global_context = Context::getGlobalContextInstance();
             auto modified_read_settings = read_settings.withNestedBuffer();
 
-            auto read_buffer_creator = [this, object, read_settings, read_hint]()
+            auto read_buffer_creator = [=, this]()
             {
                 return object_storage->readObject(object, patchSettings(read_settings), read_hint);
             };
@@ -76,7 +76,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
                 object.remote_path,
                 cache_key,
                 cache,
-                cache->getCommonOriginWithSegmentKeyType(object.local_path),
+                FileCache::getCommonUser(),
                 read_buffer_creator,
                 modified_read_settings,
                 std::string(CurrentThread::getQueryId()),
@@ -123,7 +123,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
             key,
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
             modified_write_settings,
-            cache->getCommonOriginWithSegmentKeyType(object.local_path),
+            FileCache::getCommonUser(),
             Context::getGlobalContextInstance()->getFilesystemCacheLog(),
             /* is_distributed_cache */false);
     }
@@ -138,7 +138,7 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
 
     /// Add try catch?
     if (cache->isInitialized())
-        cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonOrigin().user_id);
+        cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
 }
 
 void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)

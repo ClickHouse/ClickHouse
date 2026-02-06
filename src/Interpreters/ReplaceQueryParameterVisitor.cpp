@@ -79,13 +79,14 @@ void ReplaceQueryParameterVisitor::visitChildren(ASTPtr & ast)
 {
     for (auto & child : ast->children)
     {
-        IAST * old_ptr = child.get();
+        void * old_ptr = child.get();
         visit(child);
+        void * new_ptr = child.get();
 
         /// Some AST classes have naked pointers to children elements as members.
         /// We have to replace them if the child was replaced.
-        if (child.get() != old_ptr)
-            ast->updatePointerToChild(old_ptr, child);
+        if (new_ptr != old_ptr)
+            ast->updatePointerToChild(old_ptr, new_ptr);
     }
 }
 
@@ -173,9 +174,9 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     /// to enable substitutions in simple queries that don't support expressions
     /// (such as CREATE USER).
     if (typeid_cast<const DataTypeString *>(data_type.get()))
-        ast = make_intrusive<ASTLiteral>(literal);
+        ast = std::make_shared<ASTLiteral>(literal);
     else
-        ast = addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), type_name);
+        ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(literal), type_name);
 
     /// Keep the original alias.
     ast->setAlias(alias);
@@ -213,11 +214,11 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
 
 void ReplaceQueryParameterVisitor::resolveParameterizedAlias(ASTPtr & ast)
 {
-    auto ast_with_alias = boost::dynamic_pointer_cast<ASTWithAlias>(ast);
+    auto ast_with_alias = std::dynamic_pointer_cast<ASTWithAlias>(ast);
     if (!ast_with_alias)
         return;
 
     if (ast_with_alias->parametrised_alias)
-        setAlias(ast, getParamValue(ast_with_alias->parametrised_alias->name));
+        setAlias(ast, getParamValue((*ast_with_alias->parametrised_alias)->name));
 }
 }

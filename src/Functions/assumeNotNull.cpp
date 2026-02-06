@@ -4,11 +4,6 @@
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnNullable.h>
 
-#if USE_EMBEDDED_COMPILER
-#    include <DataTypes/Native.h>
-#    include <llvm/IR/IRBuilder.h>
-#endif
-
 
 namespace DB
 {
@@ -47,24 +42,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    bool hasInformationAboutMonotonicity() const override { return true; }
-
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & /*left*/, const Field & right) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// assumeNotNull() is identity for non-Nullable values, so it preserves ordering and thus monotonic.
-        /// For Nullable, treat it as monotonic only when the analyzed range is guaranteed to not contain
-        /// NULLs. NULLs always represented as POSITIVE_INFINITY and they will always be at the end of ordering.
-        /// So, we do not need to check left.isNull().
-        bool is_nullable_or_lc_nullable = type.isNullable() || type.isLowCardinalityNullable();
-        if (is_nullable_or_lc_nullable && right.isNull())
-            return {};
-
-        return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !is_nullable_or_lc_nullable };
-    }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        return removeNullable(arguments[0].type);
+        return removeNullable(arguments[0]);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
@@ -78,22 +58,6 @@ public:
             return nullable_col->getNestedColumnPtr();
         return col;
     }
-
-#if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
-
-    llvm::Value *
-    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
-    {
-        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        if (arguments[0].type->isNullable())
-            return b.CreateExtractValue(arguments[0].value, {0});
-        else
-            return arguments[0].value;
-    }
-#endif
-
-
 };
 
 }

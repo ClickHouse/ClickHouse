@@ -30,10 +30,7 @@ Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and pe
 | INTEGER       | [Int32](../../sql-reference/data-types/int-uint.md)     |
 | REAL          | [Float32](../../sql-reference/data-types/float.md)      |
 | TEXT          | [String](../../sql-reference/data-types/string.md)      |
-| TEXT          | [UUID](../../sql-reference/data-types/uuid.md)          |
 | BLOB          | [String](../../sql-reference/data-types/string.md)      |
-
-SQLite has dynamic typing, and its type access functions perform automatic type coercion. For example, reading a TEXT column as an integer will return 0 if the text cannot be parsed as a number. This means that if a ClickHouse table is defined with a different type than the underlying SQLite column, values may be silently coerced rather than causing an error.
 
 ## Specifics and recommendations {#specifics-and-recommendations}
 
