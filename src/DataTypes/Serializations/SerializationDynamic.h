@@ -170,7 +170,7 @@ private:
     };
 
     size_t max_dynamic_types;
-    const SerializationInfoSettings & serialization_info_settings;
+    const SerializationInfoSettings serialization_info_settings;
 };
 
 }
