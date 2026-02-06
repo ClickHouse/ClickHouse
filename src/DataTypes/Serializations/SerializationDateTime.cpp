@@ -64,7 +64,14 @@ inline bool tryReadText(
             break;
     }
 
-    x = std::max<time_t>(0, x);
+    /// DateTime cannot store negative timestamps, so we need to clamp to valid range
+    /// we also need to consider that timezone can affect the final value, so we set it explicitly to 0 for a current tz
+    /// - west of UTC: min_value = local epoch (positive), saturates to '1970-01-01 00:00:00' local
+    /// - east of UTC: min_value = 0 (local epoch is negative), saturates to Unix timestamp 0
+    time_t min_value = settings.date_time_overflow_behavior_use_local_timezone
+        ? std::max<time_t>(0, time_zone.makeDateTime(1970, 1, 1, 0, 0, 0))
+        : 0;
+    x = std::max(min_value, x);
     return res;
 }
 

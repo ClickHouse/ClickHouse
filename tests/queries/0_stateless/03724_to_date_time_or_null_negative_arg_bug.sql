@@ -56,3 +56,43 @@ select 'accurateCastOrNull to DateTime64 (best_effort_us):';
 select '1960-01-01' as input, accurateCastOrNull('1960-01-01', 'DateTime64') as result settings cast_string_to_date_time_mode='best_effort_us';
 select '1800-01-01' as input, accurateCastOrNull('1800-01-01', 'DateTime64') as result settings cast_string_to_date_time_mode='best_effort_us';
 select '3000-01-01' as input, accurateCastOrNull('3000-01-01', 'DateTime64') as result settings cast_string_to_date_time_mode='best_effort_us';
+
+-- Test with CSV format input - West-of-UTC timezone (America/New_York, UTC-5)
+select 'CSV input with America/New_York (default behavior):';
+select * from format(CSV, 'dt DateTime', '1960-01-01 00:00:00') settings session_timezone='America/New_York';
+
+select 'CSV input with America/New_York (timezone-aware saturation):';
+select * from format(CSV, 'dt DateTime', '1960-01-01 00:00:00') settings session_timezone='America/New_York', date_time_overflow_behavior_use_local_timezone=1;
+
+-- Test with CSV format input - East-of-UTC timezone (Europe/Kyiv, UTC+2/+3)
+select 'CSV input with Europe/Kyiv (default behavior):';
+select * from format(CSV, 'dt DateTime', '1960-01-01 00:00:00') settings session_timezone='Europe/Kyiv';
+
+select 'CSV input with Europe/Kyiv (timezone-aware saturation):';
+select * from format(CSV, 'dt DateTime', '1960-01-01 00:00:00') settings session_timezone='Europe/Kyiv', date_time_overflow_behavior_use_local_timezone=1;
+
+-- Test with BestEffort mode
+select 'CSV input with BestEffort mode - America/New_York (default behavior):';
+select * from format(CSV, 'dt DateTime', '1960-01-01 00:00:00') settings session_timezone='America/New_York', date_time_input_format='best_effort';
+
+select 'CSV input with BestEffort mode - America/New_York (timezone-aware saturation):';
+select * from format(CSV, 'dt DateTime', '1960-01-01 00:00:00') settings session_timezone='America/New_York', date_time_input_format='best_effort', date_time_overflow_behavior_use_local_timezone=1;
+
+select 'CSV input with BestEffort mode - Europe/Kyiv (default behavior):';
+select * from format(CSV, 'dt DateTime', '1960-01-01 00:00:00') settings session_timezone='Europe/Kyiv', date_time_input_format='best_effort';
+
+select 'CSV input with BestEffort mode - Europe/Kyiv (timezone-aware saturation):';
+select * from format(CSV, 'dt DateTime', '1960-01-01 00:00:00') settings session_timezone='Europe/Kyiv', date_time_input_format='best_effort', date_time_overflow_behavior_use_local_timezone=1;
+
+-- Test with BestEffortUS mode
+select 'CSV input with BestEffortUS mode - America/New_York (default behavior):';
+select * from format(CSV, 'dt DateTime', '01/01/1960 00:00:00') settings session_timezone='America/New_York', date_time_input_format='best_effort_us';
+
+select 'CSV input with BestEffortUS mode - America/New_York (timezone-aware saturation):';
+select * from format(CSV, 'dt DateTime', '01/01/1960 00:00:00') settings session_timezone='America/New_York', date_time_input_format='best_effort_us', date_time_overflow_behavior_use_local_timezone=1;
+
+select 'CSV input with BestEffortUS mode - Europe/Kyiv (default behavior):';
+select * from format(CSV, 'dt DateTime', '01/01/1960 00:00:00') settings session_timezone='Europe/Kyiv', date_time_input_format='best_effort_us';
+
+select 'CSV input with BestEffortUS mode - Europe/Kyiv (timezone-aware saturation):';
+select * from format(CSV, 'dt DateTime', '01/01/1960 00:00:00') settings session_timezone='Europe/Kyiv', date_time_input_format='best_effort_us', date_time_overflow_behavior_use_local_timezone=1;

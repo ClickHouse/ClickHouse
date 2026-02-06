@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
+            {"date_time_overflow_behavior_use_local_timezone", false, false, "New setting to control timezone-aware saturation for DateTime overflow during format parsing."},
             {"use_statistics_cache", false, true, "Enable statistics cache"},
 
         });

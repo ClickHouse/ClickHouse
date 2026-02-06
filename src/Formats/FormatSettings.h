@@ -95,6 +95,8 @@ struct FormatSettings
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
+    bool date_time_overflow_behavior_use_local_timezone = false;
+
     enum class IntervalOutputFormat : uint8_t
     {
         Kusto,

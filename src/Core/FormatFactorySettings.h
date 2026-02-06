@@ -706,6 +706,13 @@ See also:
 - [DateTime data type.](../../sql-reference/data-types/datetime.md)
 - [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
 )", 0) \
+    DECLARE(Bool, date_time_overflow_behavior_use_local_timezone, false, R"(
+When parsing dates/times that overflow the supported range (e.g., dates before 1970 for DateTime),
+saturate to the minimum representable time in the local timezone instead of UTC epoch.
+
+- For timezones west of UTC (e.g., America/New_York at UTC-5): pre-1970 dates saturate to '1970-01-01 00:00:00' local time (Unix timestamp = timezone offset in seconds).
+- For timezones east of UTC: pre-1970 dates saturate to Unix timestamp 0, which displays as '1970-01-01' plus the timezone offset (since DateTime cannot store negative timestamps).
+)", 0) \
     DECLARE(DateTimeOutputFormat, date_time_output_format, FormatSettings::DateTimeOutputFormat::Simple, R"(
 Allows choosing different output formats of the text representation of date and time.
 
