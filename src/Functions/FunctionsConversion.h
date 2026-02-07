@@ -2138,8 +2138,8 @@ struct ConvertImpl
                 && !(std::is_same_v<DataTypeTime64, FromDataType> || std::is_same_v<DataTypeTime64, ToDataType>)
                 && (!IsDataTypeDecimalOrNumber<FromDataType> || !IsDataTypeDecimalOrNumber<ToDataType>))
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}/{} of first argument of function {}",
-                    named_from.column->getName(), typeid(FromDataType).name(), Name::name);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    named_from.column->getName(), Name::name);
             }
 
             const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
@@ -2840,6 +2840,12 @@ public:
 
         if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
         {
+            if (isDecimal(arguments[0].type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of function {}",
+                    arguments[0].type->getName(), getName());
+
             return std::make_shared<DataTypeInterval>(Name::kind);
         }
         else if constexpr (to_decimal)

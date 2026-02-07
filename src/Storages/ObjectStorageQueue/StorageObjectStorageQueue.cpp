@@ -118,6 +118,8 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString after_processing_tag_key;
     extern const ObjectStorageQueueSettingsString after_processing_tag_value;
     extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
+    extern const ObjectStorageQueueSettingsUInt64 metadata_cache_size_bytes;
+    extern const ObjectStorageQueueSettingsUInt64 metadata_cache_size_elements;
 }
 
 namespace ErrorCodes
@@ -380,7 +382,9 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
-        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
+        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
+        (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
+        (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
 
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -1122,6 +1126,8 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing_tag_key",
     "after_processing_tag_value",
     "commit_on_select",
+    "metadata_cache_size_bytes",
+    "metadata_cache_size_elements",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode{
@@ -1152,6 +1158,8 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "after_processing_tag_key",
     "after_processing_tag_value",
     "commit_on_select",
+    "metadata_cache_size_bytes",
+    "metadata_cache_size_elements",
 };
 
 static std::string normalizeSetting(const std::string & name)
@@ -1550,6 +1558,9 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
     settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(files_metadata->getPersistentProcessingNodeTTLSeconds());
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = files_metadata->usePersistentProcessingNode();
+    const auto & file_statuses_cache = files_metadata->getFileStatusesCache();
+    settings[ObjectStorageQueueSetting::metadata_cache_size_bytes] = file_statuses_cache.maxSizeInBytes();
+    settings[ObjectStorageQueueSetting::metadata_cache_size_elements] = file_statuses_cache.maxCount();
 
     {
         std::lock_guard lock(mutex);

@@ -701,7 +701,7 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
     if (size != offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
-    if (size == 0)
+    if (size == 0 || offsets.back() == 0)
         return cloneEmpty();
 
     auto res = createView();

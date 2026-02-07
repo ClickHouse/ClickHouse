@@ -40,7 +40,7 @@ private:
     int first_errcode = 0;
     uint64_t nrows = 0;
     std::uniform_int_distribution<uint64_t> rows_dist;
-    bool other_steps_sucess = true, can_test_oracle_result, measure_performance, compare_explain;
+    bool other_steps_success = true, can_test_oracle_result, measure_performance, compare_explain;
 
     std::unordered_set<uint32_t> found_tables;
     DB::Strings nsettings;

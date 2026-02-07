@@ -2708,19 +2708,60 @@ static void paranoidCheckForCoveredPartsInZooKeeper(
     if (!paranoid_check_for_covered_parts)
         return;
 
-    auto drop_range_info = MergeTreePartInfo::fromPartName(covering_part_name, format_version);
+    auto dominated_info = MergeTreePartInfo::fromPartName(covering_part_name, format_version);
+
     Strings parts_remain = zookeeper->getChildren(replica_path + "/parts");
+    Strings orphaned_parts;
     for (const auto & part_name : parts_remain)
     {
-        auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-        if (drop_range_info.contains(part_info))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Part {} from table {} remains in ZooKeeper after DROP_RANGE {}",
-                part_name,
-                storage.getStorageID().getNameForLogs(),
-                covering_part_name);
+        auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
+        if (part_info && dominated_info.contains(*part_info))
+            orphaned_parts.push_back(part_name);
     }
+
+    if (orphaned_parts.empty())
+        return;
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Part(s) [{}] in ZooKeeper of table {} are covered by DROP_RANGE {}",
+        fmt::join(orphaned_parts, ", "),
+        storage.getStorageID().getNameForLogs(),
+        covering_part_name);
+}
+
+void StorageReplicatedMergeTree::waitForPreActivePartsInRange(const MergeTreePartInfo & drop_range) const
+{
+    /// An INSERT on the originating replica commits a part to ZooKeeper (via the ZK multi-op
+    /// in `commitPart`) before making it Active locally (via `transaction.commit`). Between these
+    /// two points the part is in PreActive state locally but already has a ZooKeeper node.
+    /// `removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper` only queries
+    /// Active/Outdated/Deleting parts, so it would miss the PreActive part and leave its
+    /// ZooKeeper node behind.
+    ///
+    /// We wait here for any such parts to finish committing. Since `clearLockedBlockNumbersInPartition`
+    /// was called before the DROP_RANGE log entry was created, no new INSERTs can commit parts
+    /// in this range, so the wait is guaranteed to terminate.
+
+    auto has_preactive_in_range = [&]()
+    {
+        DataPartStateAndPartitionID state_with_partition{MergeTreeDataPartState::PreActive, drop_range.getPartitionId()};
+        auto begin = data_parts_by_state_and_info.lower_bound(state_with_partition);
+        auto end = data_parts_by_state_and_info.upper_bound(state_with_partition);
+
+        for (auto it = begin; it != end; ++it)
+        {
+            if (drop_range.contains((*it)->info))
+            {
+                LOG_TRACE(log, "Waiting for PreActive part {} to finish committing before DROP_RANGE",
+                          (*it)->name);
+                return true;
+            }
+        }
+        return false;
+    };
+
+    std::unique_lock lock(data_parts_mutex);
+    preactive_parts_cv.wait(lock, [&] { return !has_preactive_in_range(); });
 }
 
 void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
@@ -2741,6 +2782,8 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
         queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
         part_check_thread.cancelRemovedPartsCheck(drop_range_info);
     }
+
+    waitForPreActivePartsInRange(drop_range_info);
 
     /// Delete the parts contained in the range to be deleted.
     /// It's important that no old parts remain (after the merge), because otherwise,
@@ -2880,6 +2923,9 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             entry_replace.part_names_checksums.at(i),
             format_version));
     }
+
+    if (replace)
+        waitForPreActivePartsInRange(drop_range);
 
     /// What parts we should add? Or we have already added all required parts (we an replica-initializer)
     {
@@ -3199,6 +3245,9 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
         if (!ops.empty())
             zookeeper->multi(ops);
+
+        if (replace)
+            waitForPreActivePartsInRange(drop_range);
 
         {
             auto data_parts_lock = lockParts();
@@ -6547,7 +6596,7 @@ void StorageReplicatedMergeTree::alter(
 
     if (!query_settings[Setting::allow_suspicious_primary_key])
     {
-        MergeTreeData::verifySortingKey(future_metadata.sorting_key, merging_params);
+        MergeTreeData::verifySortingKey(future_metadata.sorting_key);
     }
 
     {

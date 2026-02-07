@@ -1181,7 +1181,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
     if (size() != replicate_offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets {} doesn't match size of column {}", replicate_offsets.size(), size());
 
-    if (empty())
+    if (empty() || replicate_offsets.back() == 0)
         return cloneEmpty();
 
     /// If we have only NULLs, just resize column to the new size.

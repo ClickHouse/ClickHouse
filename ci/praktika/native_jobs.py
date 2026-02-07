@@ -230,9 +230,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     def _check_yaml_up_to_date():
         print("Check workflows are up to date")
         commands = [
-            f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
             f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
-            f'test -z "$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX})"',
+            f"sh -c 'changed=$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}); if [ -n \"$changed\" ]; then echo \"ERROR: workflows are outdated. Changed files:\"; printf \"%s\\n\" \"$changed\"; exit 1; fi'",
         ]
 
         return Result.from_commands_run(
@@ -776,6 +775,13 @@ def _finish_workflow(workflow, job_name):
                 result.status = Result.Status.DROPPED
                 workflow_result.dump()
                 workflow_result.ext["is_cancelled"] = True
+                update_final_report = True
+            elif gh_job_result == "success":
+                print(
+                    f"NOTE: not finished job [{result.name}] in the workflow but GitHub status is [{gh_job_result}] - set status to success"
+                )
+                result.status = Result.Status.SUCCESS
+                workflow_result.dump()
                 update_final_report = True
             else:
                 print(

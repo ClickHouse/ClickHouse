@@ -1704,4 +1704,23 @@ std::string_view getBaseNodeName(std::string_view path)
     return path.substr(basename_start + 1, path.size() - basename_start - 1);
 }
 
+/// Thread-local storage for current component name
+static thread_local StaticString current_component;
+
+ComponentGuard::ComponentGuard(StaticString component)
+    : previous_component(current_component)
+{
+    current_component = component;
+}
+
+ComponentGuard::~ComponentGuard()
+{
+    current_component = previous_component;
+}
+
+StaticString getCurrentComponent()
+{
+    return current_component;
+}
+
 }
