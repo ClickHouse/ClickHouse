@@ -2162,7 +2162,7 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
     for (const auto & [db_name, db] : all_databases)
     {
         /// this case should be covered already by getHintForTable
-        if (db_name == database->getDatabaseName())
+        if (database && db_name == database->getDatabaseName())
             continue;
 
         TableNameHints hints(db, context);
