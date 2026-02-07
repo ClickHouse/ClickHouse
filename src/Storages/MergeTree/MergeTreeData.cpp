@@ -675,7 +675,7 @@ MergeTreeData::MergeTreeData(
         {
             checkPartitionKeyAndInitMinMax(metadata_.partition_key);
             setProperties(metadata_, metadata_, !sanity_checks);
-            if (minmax_idx_date_column_pos == -1)
+            if (minmax_idx_date_column_pos.load(std::memory_order_acquire) == -1)
                 throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Could not find Date column");
         }
         catch (Exception & e)
@@ -1250,13 +1250,13 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
         {
             if (!has_date_column)
             {
-                minmax_idx_date_column_pos = i;
+                minmax_idx_date_column_pos.store(static_cast<Int64>(i), std::memory_order_release);
                 has_date_column = true;
             }
             else
             {
                 /// There is more than one Date column in partition key and we don't know which one to choose.
-                minmax_idx_date_column_pos = -1;
+                minmax_idx_date_column_pos.store(-1, std::memory_order_release);
             }
         }
     }
@@ -1272,13 +1272,13 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
             {
                 if (!has_datetime_column)
                 {
-                    minmax_idx_time_column_pos = i;
+                    minmax_idx_time_column_pos.store(static_cast<Int64>(i), std::memory_order_release);
                     has_datetime_column = true;
                 }
                 else
                 {
                     /// There is more than one DateTime column in partition key and we don't know which one to choose.
-                    minmax_idx_time_column_pos = -1;
+                    minmax_idx_time_column_pos.store(-1, std::memory_order_release);
                 }
             }
         }

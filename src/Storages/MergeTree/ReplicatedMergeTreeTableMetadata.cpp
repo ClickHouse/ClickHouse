@@ -49,7 +49,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         auto minmax_idx_column_names = MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
-        date_column = minmax_idx_column_names[data.minmax_idx_date_column_pos];
+        date_column = minmax_idx_column_names[data.minmax_idx_date_column_pos.load(std::memory_order_acquire)];
     }
 
     const auto data_settings = data.getSettings();

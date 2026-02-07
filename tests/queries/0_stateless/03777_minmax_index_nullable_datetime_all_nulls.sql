@@ -1,7 +1,6 @@
 -- Test for issue #92834: Logical error when querying system.parts 
 -- with Nullable DateTime/DateTime64 partition key where all values are NULL
 -- Also tests that min_time/max_time are correct after ALTER TABLE changes column order
--- Tags: no-parallel
 
 -- =====================================================
 -- Case 1: Exact reproduction from the original issue

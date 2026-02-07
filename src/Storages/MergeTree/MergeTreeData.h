@@ -1220,9 +1220,11 @@ public:
 
     bool is_custom_partitioned = false;
 
-    /// Used only for old syntax tables. Never changes after init.
-    Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
-    Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
+    /// Position of Date/DateTime column in minmax index for partition key.
+    /// Can be recalculated during ALTER TABLE when nullable types are involved.
+    /// Using std::atomic to avoid data races between ALTER and concurrent SELECT queries.
+    std::atomic<Int64> minmax_idx_date_column_pos{-1}; /// In a common case minmax index includes a date column.
+    std::atomic<Int64> minmax_idx_time_column_pos{-1}; /// In other cases, minmax index often includes a dateTime column.
 
     /// Get partition key expression on required columns
     static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key, const ExpressionActionsSettings & settings);
