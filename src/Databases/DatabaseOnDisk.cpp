@@ -453,19 +453,14 @@ void DatabaseOnDisk::renameTable(
     TableExclusiveLockHolder table_lock;
     String table_metadata_path;
     ASTPtr attach_query;
-    /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
-    StoragePtr table = tryGetTable(table_name, local_context);
-    if (dictionary && table && !table->isDictionary())
+    /// NOTE: the table can be concurrently dropped, and getTable will throw UNKNOWN_TABLE.
+    StoragePtr table = getTable(table_name, local_context);
+    if (dictionary && !table->isDictionary())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
 
-    /// We have to lock the table before detaching, because otherwise lockExclusively will throw. But the table may not exist.
-    bool need_lock = table != nullptr;
-    if (need_lock)
-        table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     detachTable(local_context, table_name);
-    if (!need_lock)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table was detached without locking, it's a bug");
 
     UUID prev_uuid = UUIDHelpers::Nil;
     auto db_disk = getDisk();

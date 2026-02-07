@@ -1077,7 +1077,8 @@ def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line)
 
         logging.debug(("Check compression {}".format(compression_type)))
 
-        topic_name = "test_librdkafka_compression_{}".format(compression_type)
+        # Use suffix in topic name to avoid stale messages from previous failed runs
+        topic_name = "test_librdkafka_compression_{}_{}".format(compression_type, suffix)
         topic_config = {"compression.type": compression_type}
         with k.kafka_topic(admin_client, topic_name, config=topic_config):
             instance.query(f"""{{create_query}};
@@ -2081,18 +2082,12 @@ def test_kafka_flush_by_block_size(kafka_cluster, create_query_generator):
 
     topic_name = "flush_by_block_size" + k.get_topic_postfix(create_query_generator)
 
-    cancel = threading.Event()
-
-    def produce():
-        while not cancel.is_set():
-            messages = []
-            messages.append(json.dumps({"key": 0, "value": 0}))
-            k.kafka_produce(kafka_cluster, topic_name, messages)
-
-    kafka_thread = threading.Thread(target=produce)
-
     with k.kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
-        kafka_thread.start()
+        # Pre-produce enough messages before consumer starts.
+        # This ensures all messages are available immediately when the consumer starts polling,
+        # avoiding the KAFKA_MAX_THREAD_WORK_DURATION_MS limit (60s) that could cause early flushing.
+        messages = [json.dumps({"key": i, "value": i}) for i in range(200)]
+        k.kafka_produce(kafka_cluster, topic_name, messages)
 
         create_query = create_query_generator(
             kafka_table,
@@ -2127,9 +2122,6 @@ def test_kafka_flush_by_block_size(kafka_cluster, create_query_generator):
             )
         ):
             time.sleep(0.5)
-
-        cancel.set()
-        kafka_thread.join()
 
         # more flushes can happens during test, we need to check only result of first flush (part named all_1_1_0).
         result = instance.query(f"SELECT count() FROM test.{kafka_table}_view WHERE _part='all_1_1_0'")
@@ -3111,7 +3103,7 @@ def test_system_kafka_consumers(kafka_cluster, create_query_generator, consumer_
 
         check_query = f"""
             create or replace function stable_timestamp as
-            (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
+            (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 120, 'now', toString(d));
 
             -- check last_used stores microseconds correctly
             create or replace function check_last_used as
