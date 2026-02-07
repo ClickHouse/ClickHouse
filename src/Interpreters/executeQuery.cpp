@@ -1146,6 +1146,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     /// Keep old settings, because they may be changed
     /// during execution of ATTACH/DETACH queries.
     auto old_settings = context->getSettingsCopy();
+    SCOPE_EXIT({ context->setSettings(old_settings); });
 
     for (const auto & table_id : data.tables)
     {
@@ -1190,8 +1191,6 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             executeTrivialBlockIO(attach, context);
         }
     }
-
-    context->setSettings(old_settings);
 }
 
 static BlockIO executeQueryImpl(
