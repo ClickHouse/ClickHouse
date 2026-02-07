@@ -4,6 +4,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTWithAlias.h>
 
 
 namespace DB
@@ -67,22 +68,26 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
 {
     if (auto expr = getExpression())
     {
+        auto nested_frame = frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(expr.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+
         if (part_of_create_index_query)
         {
             if (expr->as<ASTExpressionList>())
             {
                 ostr << "(";
-                expr->format(ostr, s, state, frame);
+                expr->format(ostr, s, state, nested_frame);
                 ostr << ")";
             }
             else
-                expr->format(ostr, s, state, frame);
+                expr->format(ostr, s, state, nested_frame);
         }
         else
         {
             s.writeIdentifier(ostr, name, /*ambiguous=*/false);
             ostr << " ";
-            expr->format(ostr, s, state, frame);
+            expr->format(ostr, s, state, nested_frame);
         }
     }
 

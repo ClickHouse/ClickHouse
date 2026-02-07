@@ -84,6 +84,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
+    extern const int LOGICAL_ERROR;
 }
 
 Connection::~Connection()
@@ -1148,19 +1149,19 @@ void Connection::sendScalarsData(Scalars & data)
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
-            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()),
-            static_cast<double>(maybe_compressed_out_bytes) / out_bytes,
+            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()),
+            static_cast<double>(maybe_compressed_out_bytes) / static_cast<double>(out_bytes),
             ReadableSize(out_bytes),
-            ReadableSize(out_bytes / watch.elapsedSeconds()));
+            ReadableSize(static_cast<double>(out_bytes) / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
-            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()));
+            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()));
 }
 
 namespace
@@ -1259,19 +1260,19 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
-            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()),
-            static_cast<double>(maybe_compressed_out_bytes) / out_bytes,
+            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()),
+            static_cast<double>(maybe_compressed_out_bytes) / static_cast<double>(out_bytes),
             ReadableSize(out_bytes),
-            ReadableSize(out_bytes / watch.elapsedSeconds()));
+            ReadableSize(static_cast<double>(out_bytes) / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
-            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()));
+            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()));
 }
 
 std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
@@ -1326,6 +1327,11 @@ Packet Connection::receivePacket()
 {
     try
     {
+        /// We are trying to send something to already disconnected connection,
+        /// this means that we continue using Connection after exception.
+        if (!in)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection to {} is terminated", getDescription());
+
         Packet res;
 
         /// Have we already read packet type?

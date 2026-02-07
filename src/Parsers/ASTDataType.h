@@ -11,11 +11,13 @@ class ASTDataType : public IAST
 {
 public:
     String name;
-    ASTPtr arguments;
 
     String getID(char delim) const override;
     ASTPtr clone() const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
+    ASTPtr getArguments() const;
+    void resetArguments();
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
@@ -29,9 +31,9 @@ boost::intrusive_ptr<ASTDataType> makeASTDataType(const String & name, Args &&..
 
     if constexpr (sizeof...(args))
     {
-        data_type->arguments = make_intrusive<ASTExpressionList>();
-        data_type->children.push_back(data_type->arguments);
-        data_type->arguments->children = { std::forward<Args>(args)... };
+        auto arguments = make_intrusive<ASTExpressionList>();
+        data_type->children.push_back(arguments);
+        arguments->children = {std::forward<Args>(args)...};
     }
 
     return data_type;

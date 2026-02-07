@@ -284,6 +284,13 @@ def test_simple_alter_table(started_cluster, engine):
         "SETTINGS index_granularity = 8192".format(name, full_engine)
     )
 
+    # Ensure all replicas are synchronized before asserting schema equality
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+    competing_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+    if "Replicated" in engine:
+        dummy_node.query(f"SYSTEM SYNC REPLICA {name}")
+        competing_node.query(f"SYSTEM SYNC REPLICA {name}")
+
     assert_create_query([main_node, dummy_node, competing_node], name, expected)
     main_node.query(f"DROP DATABASE {database} SYNC")
     dummy_node.query(f"DROP DATABASE {database} SYNC")
@@ -1499,17 +1506,28 @@ def test_table_metadata_corruption(started_cluster):
     )
     expected = main_node.query(query)
 
-    # We expect clickhouse server to shutdown without LOGICAL_ERRORs or deadlocks
-    dummy_node.start_clickhouse(expected_to_fail=True)
+    # We expect clickhouse server to shutdown without LOGICAL_ERRORs or deadlocks.
+    # Use try/finally to ensure dummy_node is always recovered for subsequent tests.
+    start_failed_as_expected = False
+    try:
+        dummy_node.start_clickhouse(expected_to_fail=True)
+        start_failed_as_expected = True
 
-    assert not dummy_node.contains_in_log("LOGICAL_ERROR")
+        assert not dummy_node.contains_in_log("LOGICAL_ERROR")
+    finally:
+        # Always fix the corrupted metadata and ensure dummy_node is running,
+        # regardless of whether the assertion above passed or failed.
+        if not start_failed_as_expected:
+            # Server did not shut down as expected, kill it so we can fix metadata
+            dummy_node.stop_clickhouse(kill=True)
 
-    print(f"Fix corrupted metadata")
-    replace_text_in_metadata(
-        dummy_node, metadata_path, "CorruptedMergeTree", "ReplicatedMergeTree"
-    )
+        print(f"Fix corrupted metadata")
+        replace_text_in_metadata(
+            dummy_node, metadata_path, "CorruptedMergeTree", "ReplicatedMergeTree"
+        )
 
-    dummy_node.start_clickhouse()
+        dummy_node.start_clickhouse()
+
     assert_eq_with_retry(dummy_node, query, expected)
 
     main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption SYNC")

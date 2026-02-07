@@ -23,6 +23,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 
 #include <Storages/StorageMerge.h>
 
@@ -608,7 +609,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     return updated_steps;
 }
 
-size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -786,8 +787,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Union does not change header.
         /// We can push down filter and update header.
         auto union_input_headers = child->getInputHeaders();
+        auto expected_output = filter->getOutputHeader();
+
         for (auto & input_header : union_input_headers)
-            input_header = filter->getOutputHeader();
+            input_header = expected_output;
 
         ///                - Something
         /// Filter - Union - Something
@@ -825,6 +828,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
     {
+        if (!settings.parallel_replicas_filter_pushdown)
+            return 0;
+
         // actual push down will be done when plan for local parallel replica will be optimized
         FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
         parallel_replicas_local_plan->addFilter(std::move(info));

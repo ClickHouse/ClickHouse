@@ -85,7 +85,7 @@ struct EntropyData
         Float64 shannon_entropy = 0;
         for (const auto & pair : map)
         {
-            Float64 frequency = Float64(pair.getMapped()) / total_value;
+            Float64 frequency = static_cast<Float64>(pair.getMapped()) / static_cast<Float64>(total_value);
             shannon_entropy -= frequency * log2(frequency);
         }
 

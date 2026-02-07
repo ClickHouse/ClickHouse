@@ -325,7 +325,8 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     /// indexes are build simultaneously (e.g. multiple merges run at the same time).
     auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
+    /// The lambda must be declared before the runner so that during stack unwinding
+    /// the runner is destroyed first (waits for all tasks) and the lambda is destroyed second.
     auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row)
     {
         const typename Column::ValueType & value = column_array_data_float_data[column_array_offsets[row - 1]];
@@ -351,6 +352,8 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
         ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, result.visited_members);
         ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, result.computed_distances);
     };
+
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
 
     size_t index_size = index->size();
 
@@ -450,7 +453,7 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
 
     if (!std::isfinite(index_fetch_multiplier)
         || index_fetch_multiplier <= 0.0 || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
-        || (parameters && !std::isfinite(index_fetch_multiplier * parameters->limit)))
+        || (parameters && !std::isfinite(index_fetch_multiplier * static_cast<double>(parameters->limit))))
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_INDEX_FETCH_MULTIPLIER);
 }
 
@@ -497,7 +500,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
     if (parameters->additional_filters_present || is_rescoring)
         /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
         /// Similarly, if rescoring is on, fetch more neighbours from the index and pass them for the final re-ranking by ORDER BY ... LIMIT.
-        limit = std::min(static_cast<size_t>(limit * index_fetch_multiplier), max_limit);
+        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
 
     /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
     /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to

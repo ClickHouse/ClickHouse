@@ -124,7 +124,8 @@ std::span<const ManifestFileEntryPtr> defineDeletesSpan(
         assert(*previous_it);
         LOG_DEBUG(
             logger,
-            "Got {} {} delete elements for data file {}, taken data file object info: {}, first taken delete object info is {}, last taken "
+            "Preliminary check got {} {} delete elements for data file {}, taken data file object info: {}, first taken delete object info is "
+            "{}, last taken "
             "delete object info is {}",
             std::distance(beg_it, end_it),
             is_equality_delete ? "equality" : "position",
@@ -172,11 +173,11 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
                 data_snapshot->manifest_list_entries[manifest_file_index].added_sequence_number,
                 data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
             internal_data_index = 0;
+            files = files_generator(current_manifest_file_content);
         }
-        auto files = files_generator(current_manifest_file_content);
         while (internal_data_index < files.size())
         {
-            const auto & manifest_file_entry = files[internal_data_index++];
+            const ManifestFileEntryPtr & manifest_file_entry = files[internal_data_index++];
             if ((manifest_file_entry->schema_id != previous_entry_schema) && (use_partition_pruning))
             {
                 previous_entry_schema = manifest_file_entry->schema_id;
@@ -219,6 +220,7 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
             }
         }
         current_manifest_file_content = nullptr;
+        files.clear();
         current_pruner = std::nullopt;
         ++manifest_file_index;
         internal_data_index = 0;
@@ -405,10 +407,29 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 object_info->addPositionDeleteObject(position_delete);
             }
         }
+
+        if (!object_info->info.position_deletes_objects.empty())
+        {
+            LOG_DEBUG(
+                logger,
+                "Finally got {} position delete elements for data file {}",
+                object_info->info.position_deletes_objects.size(),
+                object_info->info.data_object_file_path_key);
+        }
+
         for (const auto & equality_delete :
              defineDeletesSpan(manifest_file_entry, equality_deletes_files, /* is_equality_delete */ true, logger))
         {
             object_info->addEqualityDeleteObject(equality_delete);
+        }
+
+        if (!object_info->info.equality_deletes_objects.empty())
+        {
+            LOG_DEBUG(
+                logger,
+                "Finally got {} equality delete elements for data file {}",
+                object_info->info.equality_deletes_objects.size(),
+                object_info->info.data_object_file_path_key);
         }
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);

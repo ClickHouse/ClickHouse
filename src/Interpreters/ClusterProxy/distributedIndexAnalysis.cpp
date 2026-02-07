@@ -33,6 +33,7 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/VectorSearchUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <fmt/ranges.h>
@@ -90,7 +91,7 @@ size_t partReplica(const std::string & part_name, size_t replicas_count)
     return ConsistentHashing(hash.get64(), replicas_count);
 }
 
-size_t findLocalReplica(std::vector<ConnectionPoolPtr> & pools, const Cluster::Addresses & local_addresses)
+size_t findLocalReplica(const std::vector<ConnectionPoolPtr> & pools, const Cluster::Addresses & local_addresses)
 {
     std::optional<size_t> local_replica_index;
     for (size_t i = 0, s = pools.size(); i < s; ++i)
@@ -134,12 +135,25 @@ std::vector<ConnectionPoolPtr> prepareConnectionPools(const ContextPtr & context
     return pools_to_use;
 }
 
-IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, const StorageID & storage_id, const std::optional<std::string> & filter, ContextPtr context, const Tables & external_tables, const std::vector<std::string_view> & parts, ConnectionPoolPtr pool)
+IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, const StorageID & storage_id, const std::optional<std::string> & filter,
+                                                     const OptionalVectorSearchParameters & vector_search_parameters, ContextPtr context, const Tables & external_tables,
+                                                     const std::vector<std::string_view> & parts, ConnectionPoolPtr pool)
 {
-    std::string analyze_index_query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', {}, '^({})$')",
+    std::string analyze_index_query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', {}, '^({})$'",
         storage_id.uuid,
         filter.value_or("true"),
         fmt::join(parts, "|"));
+
+    if (vector_search_parameters)
+    {
+        std::string vector_search_args = fmt::format(", 'vector_search_index_analysis', array('{}', '{}', {}, {}, {}, {})",
+                        vector_search_parameters->column, vector_search_parameters->distance_function,
+                        vector_search_parameters->limit, vector_search_parameters->reference_vector,
+                        vector_search_parameters->additional_filters_present, vector_search_parameters->return_distances);
+        analyze_index_query += vector_search_args;
+    }
+
+    analyze_index_query += ")";
 
     IndexAnalysisPartsRanges res;
 
@@ -214,6 +228,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const ActionsDAG * filter_actions_dag,
     const Names & primary_key_column_names,
     const RangesInDataParts & parts_with_ranges,
+    const OptionalVectorSearchParameters & vector_search_parameters,
     LocalIndexAnalysisCallback local_index_analysis_callback,
     ContextPtr context)
 {
@@ -228,18 +243,18 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const auto & shard = cluster->getShardsInfo().at(0);
     auto connection_pools = prepareConnectionPools(context, shard);
     size_t local_replica_index = findLocalReplica(connection_pools, shard.local_addresses);
-    size_t replicas = std::min<size_t>(settings[Setting::max_parallel_replicas], shard.getAllNodeCount());
+    size_t total_replicas = shard.getAllNodeCount();
+    size_t active_replicas = std::min<size_t>(settings[Setting::max_parallel_replicas], total_replicas);
 
-    chassert(replicas <= connection_pools.size());
-    connection_pools.resize(replicas);
+    chassert(active_replicas <= connection_pools.size());
 
     std::vector<std::vector<std::string_view>> replicas_parts;
-    replicas_parts.resize(replicas);
+    replicas_parts.resize(active_replicas);
 
     std::vector<size_t> replicas_marks;
-    replicas_marks.resize(replicas);
+    replicas_marks.resize(active_replicas);
     std::vector<size_t> replicas_rows;
-    replicas_rows.resize(replicas);
+    replicas_rows.resize(active_replicas);
 
     for (const auto & part_ranges : parts_with_ranges)
     {
@@ -247,7 +262,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         chassert(part_ranges.exact_ranges.empty());
 
         const auto & part_name = part_ranges.data_part->name;
-        const auto & part_replica_index = partReplica(part_name, replicas);
+        const auto & part_replica_index = partReplica(part_name, active_replicas);
         replicas_parts[part_replica_index].push_back(part_name);
 
         replicas_marks[part_replica_index] += part_ranges.getMarksCount();
@@ -255,7 +270,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     }
 
     DistributedIndexAnalysisPartsRanges res;
-    res.resize(replicas);
+    res.resize(total_replicas);
 
     ContextMutablePtr execution_context = Context::createCopy(context);
     auto external_tables = execution_context->getExternalTables();
@@ -302,7 +317,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
                 try
                 {
                     LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
-                    auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, execution_context, external_tables, replica_parts, connection_pool);
+                    auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, vector_search_parameters, execution_context, external_tables, replica_parts, connection_pool);
                     LOG_TRACE(logger, "Received {} parts from {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
                     res[i].second = std::move(parts_ranges);
                 }

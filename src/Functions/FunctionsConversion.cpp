@@ -173,7 +173,9 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 
                 if (isBool(right.getPtr()))
                 {
-                    result = nativeBoolCast(builder, arguments[0]);
+                    /// nativeBoolCast returns i1, but Bool (UInt8) needs i8
+                    auto * bool_value = nativeBoolCast(builder, arguments[0]);
+                    result = builder.CreateZExt(bool_value, builder.getInt8Ty());
                     return true;
                 }
 
@@ -302,7 +304,9 @@ llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesW
 
                 if (isBool(right.getPtr()))
                 {
-                    result_value = nativeBoolCast(builder, left.getPtr(), input_value);
+                    /// nativeBoolCast returns i1, but Bool (UInt8) needs i8
+                    auto * bool_value = nativeBoolCast(builder, left.getPtr(), input_value);
+                    result_value = builder.CreateZExt(bool_value, builder.getInt8Ty());
                     return true;
                 }
 

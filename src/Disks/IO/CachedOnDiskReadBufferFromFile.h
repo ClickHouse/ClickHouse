@@ -9,7 +9,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/UserInfo.h>
+#include <Interpreters/Cache/FileCacheOriginInfo.h>
 
 
 namespace CurrentMetrics
@@ -29,7 +29,7 @@ public:
         const String & source_file_path_,
         const FileCacheKey & cache_key_,
         FileCachePtr cache_,
-        const FileCacheUserInfo & user_,
+        const FileCacheOriginInfo & origin_,
         ImplementationBufferCreator implementation_buffer_creator_,
         const ReadSettings & settings_,
         const String & query_id_,
@@ -143,12 +143,11 @@ private:
 
     String query_id;
     String current_buffer_id;
-    FileCacheUserInfo user;
+    FileCacheOriginInfo origin;
 
     bool allow_seeks_after_first_read;
-    [[maybe_unused]]bool use_external_buffer;
+    bool use_external_buffer;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheReadBuffers};
-    ProfileEvents::Counters current_file_segment_counters;
 
     FileCacheQueryLimit::QueryContextHolderPtr query_context_holder;
 

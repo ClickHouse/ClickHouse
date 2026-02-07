@@ -242,7 +242,7 @@ StorageObjectStorage::StorageObjectStorage(
     ///    There's probably no reason for this, and it should just copy those fields like the others.
     ///  * If the table contains files in different formats, with only some of them supporting
     ///    prewhere, things break.
-    supports_prewhere = !configuration->isDataLakeConfiguration() && format_supports_prewhere;
+    supports_prewhere = configuration->supportsPrewhere() && format_supports_prewhere;
     supports_tuple_elements = format_supports_prewhere;
 
     StorageInMemoryMetadata metadata;
@@ -341,6 +341,9 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
 
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
+    if (!configuration->supportsTotalRows())
+        return std::nullopt;
+
     configuration->update(
         object_storage,
         query_context,
@@ -350,6 +353,9 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
 
 std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
 {
+    if (!configuration->supportsTotalBytes())
+        return std::nullopt;
+
     configuration->update(
         object_storage,
         query_context,

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: use-xray, no-parallel, no-fasttest
+# Tags: use-xray, no-parallel, no-fasttest, no-llvm-coverage
 # no-parallel: avoid other tests interfering with the global system.instrumentation table
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

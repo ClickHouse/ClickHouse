@@ -31,6 +31,7 @@ Coordination::RequestPtr makeSetRequest(const std::string & path, const std::str
 Coordination::RequestPtr makeCheckRequest(const std::string & path, int version, bool not_exists = false, std::optional<Coordination::Stat> stat_to_check = std::nullopt);
 Coordination::RequestPtr makeGetRequest(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch = {});
 Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL, Coordination::WatchCallbackPtrOrEventPtr watch = {});
+Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type, bool with_stat, bool with_data, Coordination::WatchCallbackPtrOrEventPtr watch = {});
 Coordination::RequestPtr makeSimpleListRequest(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch = {});
 Coordination::RequestPtr makeExistsRequest(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch = {});
 

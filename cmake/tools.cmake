@@ -13,7 +13,7 @@ execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version --target=${CMAKE_CXX_COM
 message (STATUS "Using compiler:\n${COMPILER_SELF_IDENTIFICATION}")
 
 # Require minimum compiler versions
-set (CLANG_MINIMUM_VERSION 19)
+set (CLANG_MINIMUM_VERSION 21)
 if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
     message (FATAL_ERROR "Compilation with Clang version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${CLANG_MINIMUM_VERSION}.")
 endif ()

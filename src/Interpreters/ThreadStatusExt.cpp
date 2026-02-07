@@ -106,6 +106,26 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
 {
 }
 
+// c-tor for method createForFlushAsyncInsertQueue
+ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
+    : master_thread_id(CurrentThread::get().thread_id)
+    , query_context(query_context_)
+    , global_context(query_context_->getGlobalContext())
+    , fatal_error_callback(parent->fatal_error_callback)
+    , os_threads_nice_value(parent->os_threads_nice_value)
+    , memory_spill_scheduler(parent->memory_spill_scheduler)
+    , performance_counters(VariableContext::Process, &parent->performance_counters)
+    , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
+{
+    shared_data.query_is_canceled_predicate = [this] () -> bool {
+        if (auto context_locked = query_context.lock())
+        {
+            return context_locked->isCurrentQueryKilled();
+        }
+        return false;
+    };
+}
+
 std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
 {
     std::vector<UInt64> res;
@@ -124,10 +144,10 @@ size_t ThreadGroup::getPeakThreadsUsage() const
     return peak_threads_usage;
 }
 
-UInt64 ThreadGroup::getThreadsTotalElapsedMs() const
+UInt64 ThreadGroup::getGroupElapsedMs() const
 {
     std::lock_guard lock(mutex);
-    return elapsed_total_threads_counter_ms;
+    return elapsed_group_ms;
 }
 
 void ThreadGroup::linkThread(UInt64 thread_id)
@@ -135,16 +155,21 @@ void ThreadGroup::linkThread(UInt64 thread_id)
     std::lock_guard lock(mutex);
     thread_ids.insert(thread_id);
 
+    if (active_thread_count == 0)
+        effective_group_stopwatch.restart();
+
     ++active_thread_count;
     peak_threads_usage = std::max(peak_threads_usage, active_thread_count);
 }
 
-void ThreadGroup::unlinkThread(UInt64 elapsed_thread_counter_ms)
+void ThreadGroup::unlinkThread()
 {
     std::lock_guard lock(mutex);
     chassert(active_thread_count > 0);
     --active_thread_count;
-    elapsed_total_threads_counter_ms += elapsed_thread_counter_ms;
+
+    if (active_thread_count == 0)
+        elapsed_group_ms += effective_group_stopwatch.elapsedMilliseconds();
 }
 
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
@@ -194,6 +219,13 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
         res_group = create(context, os_threads_nice_value);
     }
     res_group->memory_tracker.setDescription("MaterializeView");
+    return res_group;
+}
+
+ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent)
+{
+    auto res_group = std::make_shared<ThreadGroup>(context, parent);
+    res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
     return res_group;
 }
 
@@ -403,7 +435,7 @@ void ThreadStatus::detachFromGroup()
     /// Extract MemoryTracker out from query and user context
     memory_tracker.setParent(&total_memory_tracker);
 
-    thread_group->unlinkThread(thread_attach_time.elapsedMilliseconds());
+    thread_group->unlinkThread();
 
     if (thread_group->os_threads_nice_value != 0)
     {
@@ -742,25 +774,6 @@ void CurrentThread::detachFromGroupIfNotDetached()
     current_thread->detachFromGroup();
 }
 
-CurrentThread::QueryScope::QueryScope(ContextMutablePtr query_context, std::function<void()> fatal_error_callback)
-{
-    if (!query_context->hasQueryContext())
-        query_context->makeQueryContext();
-
-    auto group = ThreadGroup::createForQuery(query_context, std::move(fatal_error_callback));
-    CurrentThread::attachToGroup(group);
-}
-
-CurrentThread::QueryScope::QueryScope(ContextPtr query_context, std::function<void()> fatal_error_callback)
-{
-    if (!query_context->hasQueryContext())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Cannot initialize query scope without query context");
-
-    auto group = ThreadGroup::createForQuery(query_context, std::move(fatal_error_callback));
-    CurrentThread::attachToGroup(group);
-}
-
 void CurrentThread::QueryScope::logPeakMemoryUsage()
 {
     auto group = CurrentThread::getGroup();
@@ -771,8 +784,61 @@ void CurrentThread::QueryScope::logPeakMemoryUsage()
     group->memory_tracker.logPeakMemoryUsage();
 }
 
+CurrentThread::QueryScope::QueryScope(bool initialized_)
+: initialized(initialized_)
+{}
+
+CurrentThread::QueryScope::QueryScope(QueryScope && other) noexcept
+: initialized(other.initialized)
+{
+    other.initialized = false;
+}
+
+CurrentThread::QueryScope & CurrentThread::QueryScope::operator=(QueryScope && other) noexcept
+{
+    if (this == &other)
+        return *this;
+    initialized = other.initialized;
+    other.initialized = false;
+    return *this;
+}
+
+CurrentThread::QueryScope CurrentThread::QueryScope::create(ContextPtr query_context, std::function<void()> fatal_error_callback)
+{
+    if (!query_context->hasQueryContext())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Cannot initialize query scope without query context");
+
+    auto group = ThreadGroup::createForQuery(query_context, std::move(fatal_error_callback));
+    CurrentThread::attachToGroup(group);
+    return QueryScope(true);
+}
+
+CurrentThread::QueryScope CurrentThread::QueryScope::create(ContextMutablePtr query_context, std::function<void()> fatal_error_callback)
+{
+    if (!query_context->hasQueryContext())
+        query_context->makeQueryContext();
+
+    auto group = ThreadGroup::createForQuery(query_context, std::move(fatal_error_callback));
+    CurrentThread::attachToGroup(group);
+    return QueryScope(true);
+}
+
+CurrentThread::QueryScope CurrentThread::QueryScope::createForFlushAsyncInsert(ContextMutablePtr query_context, ThreadGroupPtr parent)
+{
+    if (!query_context->hasQueryContext())
+        query_context->makeQueryContext();
+
+    auto group = ThreadGroup::createForFlushAsyncInsertQueue(query_context, parent);
+    CurrentThread::attachToGroup(group);
+    return QueryScope(true);
+}
+
 CurrentThread::QueryScope::~QueryScope()
 {
+    if (!initialized)
+        return;
+
     try
     {
         if (log_peak_memory_usage_in_destructor)

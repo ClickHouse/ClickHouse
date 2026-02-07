@@ -24,7 +24,6 @@ no_warning(zero-length-array) # Clang extension
 no_warning(c++98-compat-pedantic) # We don't care about C++98 compatibility (We use aliases, variadic macros...)
 no_warning(c++20-compat) # Use C++20 features incompatible with older standards (consteval, constinit, implicit typename...)
 no_warning(sign-conversion) # TODO: Fix the code and enable it
-no_warning(implicit-int-float-conversion) # TODO: Fix the code and enable it
 no_warning(deprecated-declarations) # TODO: Fix the code and enable it
 no_warning(disabled-macro-expansion)
 no_warning(documentation-unknown-command)
@@ -45,6 +44,8 @@ no_warning(unsafe-buffer-usage) # too aggressive
 no_warning(switch-default) # conflicts with "defaults in a switch covering all enum values"
 no_warning(nrvo) # not eliding copy on return - too aggressive
 no_warning(missing-noreturn) # too aggressive with no clear benefit, see https://github.com/ClickHouse/ClickHouse/pull/86416
+no_warning(lifetime-safety-intra-tu-suggestions) # New in clang-23
+no_warning(lifetime-safety-cross-tu-suggestions) # New in clang-23
 if (ARCH_E2K)
     # disable "use of GNU statement expression extension from macro expansion" warning
     no_warning(gnu-statement-expression-from-macro-expansion)

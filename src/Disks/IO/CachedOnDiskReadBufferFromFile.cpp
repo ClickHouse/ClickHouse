@@ -20,12 +20,7 @@
 
 namespace ProfileEvents
 {
-extern const Event FileSegmentWaitReadBufferMicroseconds;
-extern const Event FileSegmentReadMicroseconds;
-extern const Event FileSegmentCacheWriteMicroseconds;
-extern const Event FileSegmentPredownloadMicroseconds;
-extern const Event FileSegmentUsedBytes;
-
+extern const Event CachedReadBufferWaitReadBufferMicroseconds;
 extern const Event CachedReadBufferReadFromSourceMicroseconds;
 extern const Event CachedReadBufferPredownloadedFromSourceMicroseconds;
 extern const Event CachedReadBufferReadFromCacheMicroseconds;
@@ -55,7 +50,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     const String & source_file_path_,
     const FileCache::Key & cache_key_,
     FileCachePtr cache_,
-    const FileCacheUserInfo & user_,
+    const FileCacheOriginInfo & origin_,
     ImplementationBufferCreator implementation_buffer_creator_,
     const ReadSettings & settings_,
     const String & query_id_,
@@ -79,10 +74,10 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , cache(cache_)
     , settings(settings_)
     , read_until_position(read_until_position_ ? *read_until_position_ : file_size_)
-    , implementation_buffer_creator(implementation_buffer_creator_)
+    , implementation_buffer_creator(std::move(implementation_buffer_creator_))
     , query_id(query_id_)
     , current_buffer_id(getRandomASCIIString(8))
-    , user(user_)
+    , origin(origin_)
     , allow_seeks_after_first_read(allow_seeks_after_first_read_)
     , use_external_buffer(use_external_buffer_)
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
@@ -132,12 +127,8 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
         .file_segment_size = range.size(),
         .read_from_cache_attempted = true,
         .read_buffer_id = current_buffer_id,
-        .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(
-            current_file_segment_counters.getPartiallyAtomicSnapshot()),
-        .user_id = user.user_id,
+        .user_id = origin.user_id,
     };
-
-    current_file_segment_counters.reset();
 
     switch (type)
     {
@@ -164,7 +155,7 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
 
     if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
-        file_segments = cache->get(cache_key, file_offset_of_buffer_end, size, settings.filesystem_cache_segments_batch_size, user.user_id);
+        file_segments = cache->get(cache_key, file_offset_of_buffer_end, size, settings.filesystem_cache_segments_batch_size, origin.user_id);
     }
     else
     {
@@ -173,7 +164,7 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
 
         file_segments = cache->getOrSet(
             cache_key, file_offset_of_buffer_end, size, object_size,
-            create_settings, settings.filesystem_cache_segments_batch_size, user, settings.filesystem_cache_boundary_alignment);
+            create_settings, settings.filesystem_cache_segments_batch_size, origin, settings.filesystem_cache_boundary_alignment);
     }
 
     return !file_segments->empty();
@@ -471,10 +462,7 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
         read_buffer_for_file_segment->getFileOffsetOfBufferEnd(),
         file_segment.getInfoForLog());
 
-    current_file_segment_counters.increment(
-        ProfileEvents::FileSegmentWaitReadBufferMicroseconds, watch.elapsedMicroseconds());
-
-    ProfileEvents::increment(ProfileEvents::FileSegmentWaitReadBufferMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::CachedReadBufferWaitReadBufferMicroseconds, watch.elapsedMicroseconds());
 
     [[maybe_unused]] auto download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
     chassert(download_current_segment == file_segment.isDownloader());
@@ -615,8 +603,6 @@ bool CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
     Stopwatch predownload_watch(CLOCK_MONOTONIC);
     SCOPE_EXIT({
         predownload_watch.stop();
-        current_file_segment_counters.increment(
-            ProfileEvents::FileSegmentPredownloadMicroseconds, predownload_watch.elapsedMicroseconds());
     });
 
     OpenTelemetry::SpanHolder span("CachedOnDiskReadBufferFromFile::predownload");
@@ -648,7 +634,6 @@ bool CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
 
                 watch.stop();
                 auto elapsed = watch.elapsedMicroseconds();
-                current_file_segment_counters.increment(ProfileEvents::FileSegmentReadMicroseconds, elapsed);
                 ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedFromSourceMicroseconds, elapsed);
             }
 
@@ -834,7 +819,6 @@ bool CachedOnDiskReadBufferFromFile::writeCache(char * data, size_t size, size_t
 
     watch.stop();
     auto elapsed = watch.elapsedMicroseconds();
-    current_file_segment_counters.increment(ProfileEvents::FileSegmentCacheWriteMicroseconds, elapsed);
     ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteMicroseconds, elapsed);
     ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteBytes, size);
 
@@ -1046,7 +1030,6 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         watch.stop();
         auto elapsed = watch.elapsedMicroseconds();
-        current_file_segment_counters.increment(ProfileEvents::FileSegmentReadMicroseconds, elapsed);
 
         // We don't support implementation_buffer implementations that use nextimpl_working_buffer_offset.
         chassert(implementation_buffer->position() == implementation_buffer->buffer().begin());
@@ -1225,8 +1208,6 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     }
 
     swap.reset();
-
-    current_file_segment_counters.increment(ProfileEvents::FileSegmentUsedBytes, available());
 
     // No necessary because of the SCOPE_EXIT above, but useful for logging below.
     if (download_current_segment)

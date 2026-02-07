@@ -729,6 +729,9 @@ void ColumnVariant::insertManyDefaults(size_t length)
 
 void ColumnVariant::popBack(size_t n)
 {
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
     /// If we have only NULLs, just pop back from local_discriminators and offsets.
     if (hasOnlyNulls())
     {
@@ -1178,7 +1181,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
     if (size() != replicate_offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets {} doesn't match size of column {}", replicate_offsets.size(), size());
 
-    if (empty())
+    if (empty() || replicate_offsets.back() == 0)
         return cloneEmpty();
 
     /// If we have only NULLs, just resize column to the new size.
@@ -1601,7 +1604,7 @@ ColumnPtr ColumnVariant::compress(bool force_compression) const
 double ColumnVariant::getRatioOfDefaultRows(double) const
 {
     UInt64 num_defaults = getNumberOfDefaultRows();
-    return static_cast<double>(num_defaults) / local_discriminators->size();
+    return static_cast<double>(num_defaults) / static_cast<double>(local_discriminators->size());
 }
 
 UInt64 ColumnVariant::getNumberOfDefaultRows() const

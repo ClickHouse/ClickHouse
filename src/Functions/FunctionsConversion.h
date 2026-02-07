@@ -2138,8 +2138,8 @@ struct ConvertImpl
                 && !(std::is_same_v<DataTypeTime64, FromDataType> || std::is_same_v<DataTypeTime64, ToDataType>)
                 && (!IsDataTypeDecimalOrNumber<FromDataType> || !IsDataTypeDecimalOrNumber<ToDataType>))
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}/{} of first argument of function {}",
-                    named_from.column->getName(), typeid(FromDataType).name(), Name::name);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    named_from.column->getName(), Name::name);
             }
 
             const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
@@ -2840,6 +2840,12 @@ public:
 
         if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
         {
+            if (isDecimal(arguments[0].type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of function {}",
+                    arguments[0].type->getName(), getName());
+
             return std::make_shared<DataTypeInterval>(Name::kind);
         }
         else if constexpr (to_decimal)
@@ -3710,6 +3716,12 @@ struct ToDateTimeMonotonicity
 
             if (std::is_same_v<T, DataTypeDateTime64> && (which.isDateOrDate32OrDateTimeOrDateTime64() || which.isNativeInteger()))
                 return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+            /// Converting to Time/Time64 is only monotonic from Time/Time64.
+            /// Converting from other types (integers, DateTime, etc.) extracts the time-of-day
+            /// component using toTime, which is not monotonic.
+            if ((std::is_same_v<T, DataTypeTime> || std::is_same_v<T, DataTypeTime64>) && !which.isTimeOrTime64())
+                return {};
 
             return {.is_monotonic = true, .is_always_monotonic = true};
         }

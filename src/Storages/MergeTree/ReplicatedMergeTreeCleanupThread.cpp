@@ -92,17 +92,17 @@ void ReplicatedMergeTreeCleanupThread::run()
         auto expected_cleanup_points = (*storage_settings)[MergeTreeSetting::cleanup_thread_preferred_points_per_iteration];
 
         /// How long should we sleep to remove cleanup_thread_preferred_points_per_iteration on the next iteration?
-        Float32 ratio = cleanup_points / expected_cleanup_points;
+        Float32 ratio = cleanup_points / static_cast<Float32>(expected_cleanup_points);
         if (ratio == 0)
             sleep_ms = (*storage_settings)[MergeTreeSetting::max_cleanup_delay_period] * 1000;
         else
-            sleep_ms = static_cast<UInt64>(sleep_ms / ratio);
+            sleep_ms = static_cast<UInt64>(static_cast<Float32>(sleep_ms) / ratio);
 
         sleep_ms = std::clamp(sleep_ms, (*storage_settings)[MergeTreeSetting::cleanup_delay_period] * 1000, (*storage_settings)[MergeTreeSetting::max_cleanup_delay_period] * 1000);
 
         UInt64 interval_ms = now_ms - prev_timestamp;
         LOG_TRACE(log, "Scheduling next cleanup after {}ms (points: {}, interval: {}ms, ratio: {}, points per minute: {})",
-                  sleep_ms, cleanup_points, interval_ms, ratio, cleanup_points / interval_ms * 60'000);
+                  sleep_ms, cleanup_points, interval_ms, ratio, cleanup_points / static_cast<Float32>(interval_ms * 60'000));
     }
     prev_cleanup_timestamp_ms.store(now_ms, std::memory_order_relaxed);
 
@@ -130,7 +130,7 @@ void ReplicatedMergeTreeCleanupThread::wakeupEarlierIfNeeded()
         return;
 
     /// Do not re-check all parts too often (avoid constantly calling getNumberOfOutdatedPartsWithExpiredRemovalTime())
-    if (!wakeup_check_timer.compareAndRestart((*storage_settings)[MergeTreeSetting::cleanup_delay_period] / 4.0))
+    if (!wakeup_check_timer.compareAndRestart(static_cast<double>((*storage_settings)[MergeTreeSetting::cleanup_delay_period]) / 4.0))
         return;
 
     UInt64 prev_run_timestamp_ms = prev_cleanup_timestamp_ms.load(std::memory_order_relaxed);
@@ -201,8 +201,8 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
 
         /// Many async blocks are transformed into one ordinary block
         Float32 async_blocks_per_block = static_cast<Float32>((*storage_settings)[MergeTreeSetting::replicated_deduplication_window]) /
-            ((*storage_settings)[MergeTreeSetting::replicated_deduplication_window_for_async_inserts] + 1);
-        cleaned_blocks = (normal_blocks + async_blocks * async_blocks_per_block) / 2;
+            static_cast<Float32>((*storage_settings)[MergeTreeSetting::replicated_deduplication_window_for_async_inserts] + 1);
+        cleaned_blocks = (static_cast<Float32>(normal_blocks) + static_cast<Float32>(async_blocks) * async_blocks_per_block) / 2;
 
         cleaned_other += clearOldMutations();
         cleaned_part_like += storage.clearEmptyParts();
@@ -222,8 +222,8 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
     /// many Outdated parts, and WALs usually contain many parts too). We count then as one part for simplicity.
 
     constexpr Float32 parts_number_amplification = 1.3f;     /// Assuming we merge 4-5 parts each time
-    Float32 cleaned_inserted_parts = (cleaned_blocks + (cleaned_logs + cleaned_parts) / parts_number_amplification) / 3;
-    return cleaned_inserted_parts + cleaned_part_like + cleaned_other;
+    Float32 cleaned_inserted_parts = (cleaned_blocks + static_cast<Float32>(cleaned_logs + cleaned_parts) / parts_number_amplification) / 3;
+    return cleaned_inserted_parts + static_cast<Float32>(cleaned_part_like + cleaned_other);
 }
 
 
@@ -243,9 +243,9 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldLogs()
     /// Numbers are arbitrary.
     std::uniform_real_distribution<double> distr(1.05, 1.15);
     double ratio = distr(rng);
-    size_t min_replicated_logs_to_keep = static_cast<size_t>((*storage_settings)[MergeTreeSetting::min_replicated_logs_to_keep] * ratio);
+    size_t min_replicated_logs_to_keep = static_cast<size_t>(static_cast<double>((*storage_settings)[MergeTreeSetting::min_replicated_logs_to_keep]) * ratio);
 
-    if (static_cast<double>(children_count) < min_replicated_logs_to_keep)
+    if (static_cast<size_t>(children_count) < min_replicated_logs_to_keep)
         return 0;
 
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &stat);

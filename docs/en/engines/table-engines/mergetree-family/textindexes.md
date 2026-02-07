@@ -186,7 +186,7 @@ Optional parameter `posting_list_block_size` (default: 1048576) specifies the si
 
 Optional parameter `posting_list_codec` (default: `none`) specifies the codec for posting list:
 - `none` - the posting lists are stored without additional compression.
-- `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size).
+- `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size). Slows down SELECT queries and is not recommended at the moment.
 
 </details>
 
@@ -648,6 +648,13 @@ Please refer the following server settings to configure the caches.
 | [text_index_postings_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_postings_cache_max_entries)   | Maximum number of deserialized postings in cache.                                                       |
 | [text_index_postings_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_postings_cache_size_ratio)     | The size of the protected queue in the text index postings cache relative to the cache\'s total size.   |
 
+## Limitations {#limitations}
+
+The text index currently has the following limitations:
+- The materialization of text indexes with a high number of tokens (e.g. 10 billion tokens) can consume significant amounts of memory. Text
+  index materialization can happen directly (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) or indirectly in part merges.
+- It is not possible to materialize text indexes on parts with more than 4.294.967.296 (= 2^32 = ca. 4.2 billion) rows. Without a materialized text index, queries fall back to slow brute-force search within the part. As a worst case estimation, assume a part contains a single column of type String and MergeTree setting `max_bytes_to_merge_at_max_space_in_pool` (default: 150 GB) was not changed. In this case, the situation happens if the column contains less than 29.5 characters per row on average. In practice, tables also contain other columns and the threshold is multiples times smaller than that (depending on the number, type and size of the other columns).
+
 ## Implementation Details {#implementation}
 
 Each text index consists of two (abstract) data structures:
@@ -868,6 +875,7 @@ SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_re
 For this "AND" search, the direct read optimization is over 26 times faster (0.184s vs 0.007s) than the standard skip index scan.
 
 ### 4. Compound search: OR, AND, NOT, ... {#compound-search}
+
 The direct read optimization also applies to compound boolean expressions.
 Here, we'll perform a case-insensitive search for 'ClickHouse' OR 'clickhouse'.
 
@@ -905,6 +913,11 @@ By combining the results from the index, the direct read query is 34 times faste
 For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` would be the preferred, more efficient syntax.
 
 ## Related content {#related-content}
+
+- Presentation: https://github.com/ClickHouse/clickhouse-presentations/blob/master/2025-tumuchdata-munich/ClickHouse_%20full-text%20search%20-%2011.11.2025%20Munich%20Database%20Meetup.pdf
+- Presentation: https://presentations.clickhouse.com/2026-fosdem-inverted-index/Inverted_indexes_the_what_the_why_the_how.pdf
+
+**Outdated material**
 
 - Blog: [Introducing Inverted Indices in ClickHouse](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)
 - Blog: [Inside ClickHouse full-text search: fast, native, and columnar](https://clickhouse.com/blog/clickhouse-full-text-search)

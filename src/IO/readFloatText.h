@@ -367,7 +367,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in, bool & has_fractional)
     }
     else
     {
-        x = before_point;
+        x = static_cast<T>(before_point);
 
         /// Shortcut for the common case when there is an integer that fit in Int64.
         if (read_digits && (in.eof() || *in.position() < '.'))

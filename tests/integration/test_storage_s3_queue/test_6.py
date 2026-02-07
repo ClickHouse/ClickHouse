@@ -161,7 +161,7 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
                 assert data.count(expected_line) == 1, f"Expected exacly one element '{expected_line}', got: {data}"
 
     def wait_for_data(dst_table_name, expected_count):
-        for i in range(10):
+        for i in range(60):
             count = 0
             for node in instances:
                 count += int(node.query(f"SELECT count() FROM {dst_table_name}"))
@@ -373,7 +373,7 @@ def test_ordered_mode_with_regex_partitioning(started_cluster, engine_name, proc
                 assert data.count(expected_line) == 1, f"Expected exactly one element '{expected_line}', got: {data}"
 
     def wait_for_data(dst_table_name, expected_count):
-        for i in range(10):
+        for i in range(60):
             count = 0
             for node in instances:
                 count += int(node.query(f"SELECT count() FROM {dst_table_name}"))

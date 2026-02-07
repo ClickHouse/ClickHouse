@@ -863,18 +863,19 @@ When moving conditions from WHERE to PREWHERE, allow reordering them to optimize
 )", 0) \
     \
     DECLARE_WITH_ALIAS(UInt64, alter_sync, 1, R"(
-Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+Allows you to specify the wait behavior for actions that are to be executed on replicas by [`ALTER`](../../sql-reference/statements/alter/index.md), [`OPTIMIZE`](../../sql-reference/statements/optimize.md) or [`TRUNCATE`](../../sql-reference/statements/truncate.md) queries.
 
 Possible values:
 
 - `0` — Do not wait.
 - `1` — Wait for own execution.
 - `2` — Wait for everyone.
+- `3` - Only wait for active replicas.
 
 Cloud default value: `1`.
 
 :::note
-`alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
+`alter_sync` is applicable to `Replicated` and `SharedMergeTree` tables only, it does nothing to alter non `Replicated` or `Shared` tables.
 :::
 )", 0, replication_alter_partitions_sync) \
     DECLARE(Int64, replication_wait_for_inactive_replica_timeout, 120, R"(
@@ -1461,7 +1462,15 @@ DECLARE(Bool, merge_tree_use_prefixes_deserialization_thread_pool, true, R"(
 Enables usage of the thread pool for parallel prefixes reading in Wide parts in MergeTree. Size of that thread pool is controlled by server setting `max_prefixes_deserialization_thread_pool_size`.
 )", 0) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
-Merge parts only in one partition in select final
+Improve FINAL queries by avoiding merges across different partitions.
+
+When enabled, during SELECT FINAL queries, parts from different partitions will not be merged together. Instead, merging will only occur within each partition separately. This can significantly improve query performance when working with partitioned tables.
+
+If not explicitly set, ClickHouse will automatically enable this optimization when the partition key expression is deterministic and all columns used in the partition key expression are included in the primary key.
+
+This automatic derivation ensures that rows with the same primary key values will always belong to the same partition, making it safe to avoid cross-partition merges.
+
+**Default value:** `false` (but may be automatically enabled based on table structure if not set explicitly)
 )", 0) \
     DECLARE(Bool, split_parts_ranges_into_intersecting_and_non_intersecting_final, true, R"(
 Split parts ranges into intersecting and non intersecting during FINAL optimization
@@ -1952,10 +1961,19 @@ Possible values:
 ```
 )", 0) \
 \
-    DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE, R"(
-Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
-The setting overrids `insert_deduplicate` for `INSERT SELECT` queries.
+    DECLARE(DeduplicateInsertMode, deduplicate_insert, DeduplicateInsertMode::BACKWARD_COMPATIBLE_CHOICE, R"(
+Enables or disables block deduplication of  `INSERT INTO` (for Replicated\* tables).
+The setting overrides `insert_deduplicate` and `async_insert_deduplicate` settings.
 That setting has three possible values:
+- disable — Deduplication is disabled for `INSERT INTO` query.
+- enable — Deduplication is enabled for `INSERT INTO` query.
+- backward_compatible_choice — Deduplication is enabled if `insert_deduplicate` or `async_insert_deduplicate` are enabled for specific insert type.
+    )", 0) \
+\
+    DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE, R"(
+Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
+The setting overrids `insert_deduplicate` and `deduplicate_insert` for `INSERT SELECT` queries.
+That setting has four possible values:
 - disable — Deduplication is disabled for `INSERT SELECT` query.
 - force_enable — Deduplication is enabled for `INSERT SELECT` query. If select result is not stable, exception is thrown.
 - enable_when_possible — Deduplication is enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
@@ -4843,18 +4861,18 @@ Query:
 ```sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
 SET optimize_syntax_fuse_functions = 1;
-EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
 ```
 
 Result:
 
 ```text
 SELECT
-    sum(a),
-    sumCount(b).1,
-    sumCount(b).2,
-    (sumCount(b).1) / (sumCount(b).2)
-FROM fuse_tbl
+    sum(__table1.a) AS `sum(a)`,
+    tupleElement(sumCount(__table1.b), 1) AS `sum(b)`,
+    tupleElement(sumCount(__table1.b), 2) AS `count(b)`,
+    divide(tupleElement(sumCount(__table1.b), 1), toFloat64(tupleElement(sumCount(__table1.b), 2))) AS `avg(b)`
+FROM default.fuse_tbl AS __table1
 ```
 )", 0) \
     DECLARE(Bool, flatten_nested, true, R"(
@@ -5258,16 +5276,6 @@ Allow sharing set objects build for IN subqueries between different tasks of the
     DECLARE(Bool, use_query_condition_cache, true, R"(
 Enable the [query condition cache](/operations/query-condition-cache). The cache stores ranges of granules in data parts which do not satisfy the condition in the `WHERE` clause,
 and reuse this information as an ephemeral index for subsequent queries.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(Bool, query_condition_cache_store_conditions_as_plaintext, false, R"(
-Stores the filter condition for the [query condition cache](/operations/query-condition-cache) in plaintext.
-If enabled, system.query_condition_cache shows the verbatim filter condition which makes it easier to debug issues with the cache.
-Disabled by default because plaintext filter conditions may expose sensitive information.
 
 Possible values:
 
@@ -6067,6 +6075,12 @@ Use userspace page cache for remote disks that don't have filesystem cache enabl
     DECLARE(Bool, use_page_cache_with_distributed_cache, false, R"(
 Use userspace page cache when distributed cache is used.
 )", 0) \
+    DECLARE(Bool, use_page_cache_for_local_disks, false, R"(
+Use userspace page cache when reading from local disks. Used for testing, unlikely to improve performance in practice. Requires local_filesystem_read_method = 'pread' or 'read'. Doesn't disable the OS page cache; min_bytes_to_use_direct_io can be used for that. Only affects regular tables, not file() table function or File() table engine.
+)", 0) \
+    DECLARE(Bool, use_page_cache_for_object_storage, false, R"(
+    Use userspace page cache when reading from object storage table functions (s3, azure, hdfs) and table engines (S3, Azure, HDFS).
+    )", 0) \
     DECLARE(Bool, read_from_page_cache_if_exists_otherwise_bypass_cache, false, R"(
 Use userspace page cache in passive mode, similar to read_from_filesystem_cache_if_exists_otherwise_bypass_cache.
 )", 0) \
@@ -6869,6 +6883,7 @@ Enable automatic switching to execution with parallel replicas based on collecte
 )", EXPERIMENTAL) \
     DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 1_MiB, R"(
 Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
+The total number of bytes to read is estimated based on the collected statistics.
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.
@@ -6972,10 +6987,19 @@ Replace table function engines with their -Cluster alternatives
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
 Allow usage of materialized views with parallel replicas
 )", 0) \
+    DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
+Allow pushing down filters to part of query which parallel replicas choose to execute
+)", BETA) \
     DECLARE(Bool, distributed_index_analysis, false, R"(
 Index analysis will be distributed across replicas.
 Beneficial for shared storage and huge amount of data in cluster.
 Uses replicas from cluster_for_parallel_replicas.
+
+**See also**
+
+- [distributed_index_analysis_for_non_shared_merge_tree](#distributed_index_analysis_for_non_shared_merge_tree)
+- [distributed_index_analysis_min_parts_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_parts_to_activate)
+- [distributed_index_analysis_min_indexes_size_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_indexes_size_to_activate)
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_index_analysis_for_non_shared_merge_tree, false, R"(
 Enable distributed index analysis even for non SharedMergeTree (cloud only engine).
@@ -7307,9 +7331,6 @@ instead of glob listing. 0 means disabled.
     DECLARE(Bool, ignore_on_cluster_for_replicated_database, false, R"(
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, enable_qbit_type, true, R"(
-Allows creation of [QBit](../../sql-reference/data-types/qbit.md) data type.
-)", BETA, allow_experimental_qbit_type) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     \
@@ -7372,7 +7393,7 @@ Allows using statistics to optimize queries
     DECLARE_WITH_ALIAS(Bool, allow_experimental_statistics, false, R"(
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md/#column-statistics).
 )", EXPERIMENTAL, allow_experimental_statistic) \
-    DECLARE(Bool, use_statistics_cache, false, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", EXPERIMENTAL) \
+    DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", BETA) \
     \
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, false, R"(
 If set to true, allow using the text index.
@@ -7493,9 +7514,9 @@ DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, enable_join_runtime_filters, false, R"(
+    DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, R"(
 Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.
 )", EXPERIMENTAL) \
@@ -7562,6 +7583,7 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_r
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
+    MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false) \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0) \
     MAKE_OBSOLETE(M, UInt64, max_memory_usage_for_all_queries, 0) \
     MAKE_OBSOLETE(M, UInt64, multiple_joins_rewriter_version, 0) \
@@ -7579,6 +7601,8 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_r
     MAKE_OBSOLETE(M, Bool, allow_experimental_inverted_index, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_vector_similarity_index, true) \
     MAKE_OBSOLETE(M, Bool, enable_vector_similarity_index, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_qbit_type, true) \
+    MAKE_OBSOLETE(M, Bool, enable_qbit_type, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
@@ -7985,6 +8009,17 @@ std::vector<std::string_view> Settings::getAllRegisteredNames() const
         setting_names.emplace_back(setting.getName());
     }
     return setting_names;
+}
+
+std::vector<std::string_view> Settings::getAllAliasNames() const
+{
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+    {
+        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
+    }
+    return alias_names;
 }
 
 std::vector<std::string_view> Settings::getChangedAndObsoleteNames() const
