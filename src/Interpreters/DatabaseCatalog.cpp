@@ -387,11 +387,11 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             if (exception)
             {
                 TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), context_);
-                std::vector<String> names = hints.getHints(table_id.getTableName());
-                if (names.empty())
+                auto [hint_db_name, hint_table_name] = hints.getHintForTable(table_id.getTableName());
+                if (hint_db_name.empty())
                     exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
                 else
-                    exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist. Maybe you meant {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0])));
+                    exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist. Maybe you meant {}.{}?", table_id.getNameForLogs(), backQuoteIfNeed(hint_db_name), backQuoteIfNeed(hint_table_name)));
             }
             return {};
         }
@@ -487,14 +487,14 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     if (!table && exception && !exception->has_value())
     {
         TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), context_);
-        std::vector<String> names = hints.getHints(table_id.getTableName());
-        if (names.empty())
+        auto [hint_db_name, hint_table_name] = hints.getHintForTable(table_id.getTableName());
+        if (hint_db_name.empty())
         {
             exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
         }
         else
         {
-            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist. Maybe you meant {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0])));
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist. Maybe you meant {}.{}?", table_id.getNameForLogs(), backQuoteIfNeed(hint_db_name), backQuoteIfNeed(hint_table_name)));
         }
     }
     if (!table)
@@ -2145,7 +2145,9 @@ DDLGuard::~DDLGuard()
 std::pair<String, String> TableNameHints::getHintForTable(const String & table_name) const
 {
     auto results = this->getHints(table_name, getAllRegisteredNames());
-    if (results.empty())
+    /// Skip exact match from the same database - suggesting the same name is not helpful.
+    /// Fall through to extended search which may find the table in another database.
+    if (results.empty() || results[0] == table_name)
         return getExtendedHintForTable(table_name);
     return std::make_pair(database->getDatabaseName(), results[0]);
 }
