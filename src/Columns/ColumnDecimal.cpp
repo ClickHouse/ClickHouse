@@ -1,5 +1,5 @@
-#include <Common/Arena.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
@@ -11,13 +11,18 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>
 
+#include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/IColumnImpl.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
+
+#include <DataTypes/FieldToDataType.h>
+
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <base/TypeName.h>
@@ -316,6 +321,14 @@ size_t ColumnDecimal<T>::estimateCardinalityInPermutedRange(const IColumn::Permu
         elements.insert(data[permuted_i]);
     }
     return elements.size();
+}
+
+template <is_decimal T>
+DataTypePtr ColumnDecimal<T>::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const
+{
+    if (options.notFull(name_buf))
+        name_buf << FieldVisitorToString()(data[n], scale);
+    return FieldToDataType()(data[n], scale);
 }
 
 template <is_decimal T>

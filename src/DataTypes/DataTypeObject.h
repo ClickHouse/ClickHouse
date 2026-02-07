@@ -1,9 +1,8 @@
 #pragma once
 
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeDynamic.h>
 #include <Core/Field.h>
-#include <Common/re2.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/IDataType.h>
 
 
 namespace DB
@@ -56,7 +55,7 @@ public:
     void forEachChild(const ChildCallback &) const override;
 
     bool hasDynamicSubcolumnsData() const override { return true; }
-    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
+    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
 

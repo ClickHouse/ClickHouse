@@ -2841,7 +2841,11 @@ namespace
 
         void finalizeWrite() override
         {
-            writer->endMessage(/*with_length_delimiter = */ true);
+            /// Only write the envelope message if we actually wrote any rows.
+            /// Otherwise we would write a zero-length message (a single 0x00 byte),
+            /// which when read back would be interpreted as a message with default values.
+            if (!first_call_of_write_row)
+                writer->endMessage(/*with_length_delimiter = */ true);
         }
 
         void reset() override

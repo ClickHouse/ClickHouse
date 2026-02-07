@@ -745,6 +745,8 @@ The location and format of log messages.
 | `async_queue_max_size` | When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped                       |
 | `console` | Enable logging to the console. Set to `1` or `true` to enable. Default is `1` if ClickHouse does not run in daemon mode, `0` otherwise.                            |
 | `console_log_level` | Log level for console output. Defaults to `level`.                                                                                                                 |
+| `console_shutdown_log_level` | Shutdown level is used to set the console log level at server Shutdown.   
+| `console_startup_log_level` | Startup level is used to set the console log level at server startup. After startup log level is reverted to the `console_log_level` setting                                   |   
 | `count` | Rotation policy: How many historical log files ClickHouse are kept at most.                                                                                        |
 | `errorlog` | The path to the error log file.                                                                                                                                    |
 | `formatting.type` | Log format for console output. Currently, only `json` is supported                                                                                                 |

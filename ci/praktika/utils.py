@@ -391,8 +391,8 @@ class Shell:
                             print(
                                 f"ERROR: command failed, exit code: {proc.returncode}, retry: {retry+1}/{retries}"
                             )
+                        should_retry = not retry_errors
                         if retry_errors:
-                            should_retry = False
                             for err in retry_errors:
                                 if any(err in err_line for err_line in err_output):
                                     print(
@@ -405,6 +405,10 @@ class Shell:
                                     f"No retryable errors found, stopping retry attempts"
                                 )
                                 break
+                        if should_retry and retry < retries - 1:
+                            delay = min(2 ** (retry + 1), 60)
+                            print(f"Retrying in {delay}s...")
+                            time.sleep(delay)
             except Exception as e:
                 if verbose:
                     print(

@@ -281,7 +281,7 @@ public:
                     input_type->getName());
 
             auto subcolumn_name = subcolumn_name_col->getValue<String>();
-            res = input_type_as_object->getSubcolumn(subcolumn_name, arguments[0].column);
+            res = input_type_as_object->getSubcolumn(subcolumn_name, input_col->getPtr());
         }
         else
         {

@@ -570,7 +570,9 @@ def main():
                 failed_tests.append(t.name)
             elif t.is_error():
                 failed_tests = []
-                print("NOTE: Skipping retry stage because the main test run ended with errors")
+                print(
+                    "NOTE: Skipping retry stage because the main test run ended with errors"
+                )
                 break
 
         if len(failed_tests) > 10:

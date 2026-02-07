@@ -3,6 +3,7 @@
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/PODArray.h>
+#include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
@@ -311,6 +312,28 @@ size_t ColumnFunction::allocatedBytes() const
         total_size += column.column->allocatedBytes();
 
     return total_size;
+}
+
+void ColumnFunction::updateHashWithValue(size_t n, SipHash & hash) const
+{
+    hash.update(function->getName());
+    for (const auto & column : captured_columns)
+        column.column->updateHashWithValue(n, hash);
+}
+
+WeakHash32 ColumnFunction::getWeakHash32() const
+{
+    WeakHash32 hash(elements_size);
+    for (const auto & column : captured_columns)
+        hash.update(column.column->getWeakHash32());
+    return hash;
+}
+
+void ColumnFunction::updateHashFast(SipHash & hash) const
+{
+    hash.update(function->getName());
+    for (const auto & column : captured_columns)
+        column.column->updateHashFast(hash);
 }
 
 void ColumnFunction::appendArguments(const ColumnsWithTypeAndName & columns)

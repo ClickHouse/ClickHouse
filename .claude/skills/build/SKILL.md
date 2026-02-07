@@ -8,7 +8,7 @@ allowed-tools: Task, Bash(ninja:*), Bash(cd:*), Bash(ls:*), Bash(pgrep:*), Bash(
 
 # ClickHouse Build Skill
 
-Build ClickHouse in `build` or `build_${buildType}` or `build/${buildType}` directory (e.g., `build`, `build_debug`, `build_asan`...)
+Build ClickHouse in `build` or `build_debug`, `build_asan`, `build_tsan`, `build_msan`, `build_ubsan` or, if exists, `build/${buildType}` directory.
 
 ## Arguments
 
@@ -64,6 +64,8 @@ Build ClickHouse in `build` or `build_${buildType}` or `build/${buildType}` dire
    ```bash
    cd build/${buildType} && ninja [target] > [log file path] 2>&1
    ```
+
+    When using ninja you can pass `-k{num}` to continue building even if some targets fail. For example, `-k20` will keep going after 20 failures. Adjust this number based on your needs.
 
    **Important:**
    - Do NOT create build directories or run `cmake` configuration

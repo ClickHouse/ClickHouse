@@ -122,20 +122,9 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot skip serialized {}", getName());
     }
 
-    void updateHashWithValue(size_t, SipHash &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateHashWithValue is not implemented for {}", getName());
-    }
-
-    WeakHash32 getWeakHash32() const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getWeakHash32 is not implemented for {}", getName());
-    }
-
-    void updateHashFast(SipHash &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateHashFast is not implemented for {}", getName());
-    }
+    void updateHashWithValue(size_t n, SipHash & hash) const override;
+    WeakHash32 getWeakHash32() const override;
+    void updateHashFast(SipHash & hash) const override;
 
     void popBack(size_t) override
     {

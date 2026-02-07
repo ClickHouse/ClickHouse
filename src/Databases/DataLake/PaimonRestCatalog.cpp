@@ -19,6 +19,7 @@
 #include <Databases/DataLake/PaimonRestCatalog.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>

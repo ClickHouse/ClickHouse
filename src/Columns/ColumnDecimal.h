@@ -1,18 +1,11 @@
 #pragma once
 
-#include <Common/FieldVisitorToString.h>
-#include <DataTypes/FieldToDataType.h>
-#include <base/sort.h>
 #include <base/TypeName.h>
 #include <Core/Field.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
-#include <Columns/IColumnImpl.h>
-#include <IO/Operators.h>
-
 
 namespace DB
 {
@@ -133,12 +126,7 @@ public:
 
     Field operator[](size_t n) const override { return DecimalField<ValueType>(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const override
-    {
-        if (options.notFull(name_buf))
-            name_buf << FieldVisitorToString()(data[n], scale);
-        return FieldToDataType()(data[n], scale);
-    }
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const override;
     bool getBool(size_t n) const override { return bool(data[n].value); }
     Int64 getInt(size_t n) const override { return Int64(data[n].value); }
     UInt64 get64(size_t n) const override;

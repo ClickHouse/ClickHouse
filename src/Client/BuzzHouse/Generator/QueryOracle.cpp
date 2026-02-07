@@ -951,7 +951,7 @@ void QueryOracle::truncatePeerTables(const StatementGenerator & gen)
     for (const auto & entry : found_tables)
     {
         /// First truncate tables
-        other_steps_sucess &= gen.connections.truncatePeerTableOnRemote(gen.tables.at(entry));
+        other_steps_success &= gen.connections.truncatePeerTableOnRemote(gen.tables.at(entry));
     }
 }
 
@@ -962,10 +962,10 @@ void QueryOracle::optimizePeerTables(const StatementGenerator & gen)
         /// Lastly optimize tables
         const auto & ntable = gen.tables.at(entry);
 
-        other_steps_sucess &= gen.connections.optimizeTableForOracle(PeerTableDatabase::ClickHouse, ntable);
+        other_steps_success &= gen.connections.optimizeTableForOracle(PeerTableDatabase::ClickHouse, ntable);
         if (measure_performance)
         {
-            other_steps_sucess &= gen.connections.optimizeTableForOracle(PeerTableDatabase::None, ntable);
+            other_steps_success &= gen.connections.optimizeTableForOracle(PeerTableDatabase::None, ntable);
         }
     }
 }
@@ -1085,7 +1085,7 @@ void QueryOracle::resetOracleValues()
     compare_explain = false;
     measure_performance = false;
     first_errcode = 0;
-    other_steps_sucess = true;
+    other_steps_success = true;
     can_test_oracle_result = fc.compare_success_results;
     nrows = 0;
     res1 = PerformanceResult();
@@ -1094,7 +1094,7 @@ void QueryOracle::resetOracleValues()
 
 void QueryOracle::setIntermediateStepSuccess(const bool success)
 {
-    other_steps_sucess &= success;
+    other_steps_success &= success;
 }
 
 void QueryOracle::processFirstOracleQueryResult(const int errcode, ExternalIntegrations & ei)
@@ -1105,7 +1105,7 @@ void QueryOracle::processFirstOracleQueryResult(const int errcode, ExternalInteg
         {
             if (measure_performance)
             {
-                other_steps_sucess &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->res1);
+                other_steps_success &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->res1);
             }
             else
             {
@@ -1118,7 +1118,7 @@ void QueryOracle::processFirstOracleQueryResult(const int errcode, ExternalInteg
 
 void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalIntegrations & ei, const String & oracle_name)
 {
-    if (other_steps_sucess && can_test_oracle_result)
+    if (other_steps_success && can_test_oracle_result)
     {
         if (((first_errcode && !errcode) || (!first_errcode && errcode))
             && !fc.oracle_ignore_error_codes.contains(static_cast<uint32_t>(first_errcode ? first_errcode : errcode)))

@@ -678,7 +678,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.storage_def->order_by->ptr(), metadata.columns, context, merging_param_key_arg);
 
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
-            MergeTreeData::verifySortingKey(metadata.sorting_key, merging_params);
+            MergeTreeData::verifySortingKey(metadata.sorting_key);
 
         /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
@@ -806,7 +806,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             = KeyDescription::getSortingKeyFromAST(engine_args[arg_num], metadata.columns, context, merging_param_key_arg);
 
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
-            MergeTreeData::verifySortingKey(metadata.sorting_key, merging_params);
+            MergeTreeData::verifySortingKey(metadata.sorting_key);
 
         /// In old syntax primary_key always equals to sorting key.
         metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, context);

@@ -31,6 +31,14 @@
              It is useful for debugging shutdown issues -->
         <!-- <shutdown_level>trace</shutdown_level> -->
 
+        <!-- Startup console level is used to set the console logger level at server startup.
+             It is useful for debugging startup issues.
+             The console logger level will be reset to the default level after the server is fully initialized -->
+        <!-- <startup_console_log_level>trace</startup_console_log_level> -->
+       <!-- Shutdown console log level is used to set the console logger level at server Shutdown.
+             It is useful for debugging shutdown issues -->
+        <!-- <shutdown_console_log_level>trace</shutdown_console_log_level> -->
+
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
         <!-- Rotation policy

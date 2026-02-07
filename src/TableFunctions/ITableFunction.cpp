@@ -70,4 +70,18 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
                                                        std::move(cached_columns), needStructureConversion());
 }
 
+String ITableFunction::getFunctionURINormalized() const
+{
+    try
+    {
+        Poco::URI uri(getFunctionURI());
+        uri.normalize();
+        return uri.toString();
+    }
+    catch (const Poco::Exception &)
+    {
+        return "";
+    }
+}
+
 }

@@ -50,9 +50,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Config Workflow' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Config Workflow' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Config Workflow' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Config Workflow' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   dockers_build_amd:
@@ -90,9 +90,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers Build (amd)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (amd)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Dockers Build (amd)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (amd)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   dockers_build_arm:
@@ -130,9 +130,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers Build (arm)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Dockers Build (arm)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_debug:
@@ -170,9 +170,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_debug)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_debug)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_debug)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_debug)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_asan:
@@ -210,9 +210,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_asan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_asan)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_asan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_asan)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_tsan:
@@ -250,9 +250,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_tsan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_tsan)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_tsan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_tsan)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_msan:
@@ -290,9 +290,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_msan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_msan)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_msan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_msan)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_ubsan:
@@ -330,9 +330,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_ubsan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_ubsan)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_ubsan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_ubsan)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_arm_asan:
@@ -370,9 +370,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_asan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_asan)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (arm_asan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_asan)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_release:
@@ -410,9 +410,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_release)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_release)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_release)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_release)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_arm_release:
@@ -450,9 +450,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_release)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_release)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (arm_release)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_release)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_darwin:
@@ -490,9 +490,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_darwin)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_darwin)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_darwin)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_darwin)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_arm_darwin:
@@ -530,9 +530,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_darwin)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_darwin)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (arm_darwin)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (arm_darwin)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   docker_server_image:
@@ -570,9 +570,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Docker server image' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Docker server image' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Docker server image' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Docker server image' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   docker_keeper_image:
@@ -610,9 +610,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Docker keeper image' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Docker keeper image' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Docker keeper image' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Docker keeper image' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   install_packages_amd_release:
@@ -650,9 +650,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Install packages (amd_release)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Install packages (amd_release)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Install packages (amd_release)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Install packages (amd_release)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   install_packages_arm_release:
@@ -690,9 +690,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Install packages (arm_release)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Install packages (arm_release)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Install packages (arm_release)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Install packages (arm_release)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_asan_distributed_plan_parallel_1_2:
@@ -730,9 +730,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_asan_distributed_plan_parallel_2_2:
@@ -770,9 +770,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stateless_tests_amd_asan_db_disk_distributed_plan_sequential:
@@ -810,9 +810,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_asan, db disk, distributed plan, sequential)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, db disk, distributed plan, sequential)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_asan, db disk, distributed plan, sequential)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, db disk, distributed plan, sequential)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_1_4:
@@ -850,9 +850,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, 1/4)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, 1/4)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, 1/4)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, 1/4)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_2_4:
@@ -890,9 +890,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, 2/4)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, 2/4)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, 2/4)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, 2/4)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_3_4:
@@ -930,9 +930,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, 3/4)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, 3/4)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, 3/4)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, 3/4)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_4_4:
@@ -970,9 +970,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, 4/4)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, 4/4)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, 4/4)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, 4/4)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_old_analyzer_1_6:
@@ -1010,9 +1010,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 1/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 1/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 1/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 1/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_old_analyzer_2_6:
@@ -1050,9 +1050,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 2/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 2/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 2/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 2/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_old_analyzer_3_6:
@@ -1090,9 +1090,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 3/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 3/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 3/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 3/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_old_analyzer_4_6:
@@ -1130,9 +1130,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 4/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 4/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 4/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 4/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_old_analyzer_5_6:
@@ -1170,9 +1170,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 5/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 5/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 5/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 5/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_asan_db_disk_old_analyzer_6_6:
@@ -1210,9 +1210,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 6/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 6/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 6/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 6/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_tsan_1_6:
@@ -1250,9 +1250,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_tsan_2_6:
@@ -1290,9 +1290,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_tsan_3_6:
@@ -1330,9 +1330,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_tsan_4_6:
@@ -1370,9 +1370,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_tsan_5_6:
@@ -1410,9 +1410,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   integration_tests_amd_tsan_6_6:
@@ -1450,9 +1450,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stress_test_amd_debug:
@@ -1490,9 +1490,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (amd_debug)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_debug)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (amd_debug)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_debug)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stress_test_amd_tsan:
@@ -1530,9 +1530,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (amd_tsan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_tsan)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (amd_tsan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_tsan)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stress_test_arm_asan:
@@ -1570,9 +1570,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (arm_asan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (arm_asan)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (arm_asan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (arm_asan)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stress_test_arm_asan_s3:
@@ -1610,9 +1610,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (arm_asan, s3)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (arm_asan, s3)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (arm_asan, s3)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (arm_asan, s3)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stress_test_amd_ubsan:
@@ -1650,9 +1650,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (amd_ubsan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_ubsan)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (amd_ubsan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_ubsan)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   stress_test_amd_msan:
@@ -1690,9 +1690,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (amd_msan)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_msan)' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (amd_msan)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (amd_msan)' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   finish_workflow:
@@ -1730,7 +1730,7 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Finish Workflow' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Finish Workflow' --workflow "ReleaseBranchCI" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Finish Workflow' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Finish Workflow' --workflow "ReleaseBranchCI" --ci 2>&1 | tee ./ci/tmp/job.log
           fi

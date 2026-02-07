@@ -11,6 +11,8 @@
 #include <base/types.h>
 #include <Common/RadixSort.h>
 
+#include <mutex>
+
 
 namespace DB
 {

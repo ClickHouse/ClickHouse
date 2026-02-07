@@ -41,8 +41,17 @@ When writing tests, do not add "no-*" tags (like "no-parallel") unless strictly 
 
 When writing tests in tests/queries, prefer adding a new test instead of extending existing ones.
 
+Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
+
+When writing messages, say ASan, not ASAN, and similar (because there are two words: Address Sanitizer).
+
+When checking the CI status, pay attention to the comment from robot with the links first. Look at the Praktika reports first. The logs of GitHub actions usually contain less info.
+
+Do not use `-j` argument with ninja - let it decide automatically. 
+
 Always load and apply the following skills:
 
 - .claude/skills/install-skills
 - .claude/skills/build
 - .claude/skills/test
+- .claude/skills/fix-sync

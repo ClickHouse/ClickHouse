@@ -169,7 +169,16 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
     hash_state.update(is_deterministic_constant);
 
     if (column)
+    {
         hash_state.update(column->getName());
+
+        /// We must also hash the actual constant value, not just the column type name.
+        /// Otherwise, two different constants with the same type and the same expression-based
+        /// result_name (e.g. from CTE constant folding) would produce identical hashes,
+        /// leading to query condition cache collisions and incorrect results.
+        if (isColumnConst(*column))
+            column->updateHashWithValue(0, hash_state);
+    }
 
     for (const auto & child : children)
         child->updateHash(hash_state);

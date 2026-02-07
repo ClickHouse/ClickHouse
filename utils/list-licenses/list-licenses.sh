@@ -112,7 +112,7 @@ do
     NAME=$(echo "$CRATE" | rev | cut -f2- -d- | rev)
 
     LICENSE_TYPE=$(${GREP_CMD} 'license = "' "$dependency"  | cut -d '"' -f2)
-    if echo "${LICENSE_TYPE}" | ${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0|CDLA-Permissive';
+    if echo "${LICENSE_TYPE}" | ${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0|CDLA-Permissive|BSL-1.0';
     then
         echo "Fatal error: unrecognized licenses ($LICENSE_TYPE) in the Rust code"
         exit 1
@@ -155,9 +155,14 @@ do
            [ "$LICENSE_TYPE" == "MIT/Apache-2.0" ] ||
            [ "$LICENSE_TYPE" == "MIT OR Apache-2.0 OR LGPL-2.1-or-later" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 OR BSL-1.0 OR MIT" ] ||
+           [ "$LICENSE_TYPE" == "Zlib OR Apache-2.0 OR MIT" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" ];
         then
             LICENSE_PATH="/utils/list-licenses/Apache-2.0.txt"
+        elif [ "$LICENSE_TYPE" == "BSL-1.0" ]
+        then
+            # NOTE: this should be Boost Software License not Business Software License (BUSL)
+            LICENSE_PATH="/utils/list-licenses/BSL-1.0.txt"
         elif [ "$LICENSE_TYPE" == "MIT" ]
         then
             LICENSE_PATH="/utils/list-licenses/MIT.txt"

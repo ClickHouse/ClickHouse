@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/MsgPackRowOutputFormat.h>
+#include <Processors/Port.h>
 
 #if USE_MSGPACK
 

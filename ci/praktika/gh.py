@@ -130,7 +130,8 @@ class GH:
                 break
             if not res:
                 retry_count += 1
-                time.sleep(5)
+                delay = min(2 ** (retry_count + 1), 60)
+                time.sleep(delay)
 
         if not res:
             print(

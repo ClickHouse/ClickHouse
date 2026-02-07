@@ -1118,6 +1118,12 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, parts_killer_pool_size, 128, R"(
     Threads for cleanup of shared merge tree outdated threads. Only available in ClickHouse Cloud
     )", 0) \
+    DECLARE(UInt64, snapshot_cleaner_period, 120, R"(
+    Period to completely remove snapshot parts for SharedMergeTree. Only available in ClickHouse Cloud
+    )", 0) \
+    DECLARE(UInt64, snapshot_cleaner_pool_size, 128, R"(
+    Threads for cleanup of shared merge tree snapshot cleaner threads. Only available in ClickHouse Cloud
+    )", 0) \
     DECLARE(UInt64, keeper_multiread_batch_size, 10'000, R"(
     Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching. If set to 0, batching is disabled. Available only in ClickHouse Cloud.
     )", 0) \

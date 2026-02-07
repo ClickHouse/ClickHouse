@@ -20,6 +20,8 @@ class ObjectStorageQueueIFileMetadata
 public:
     struct FileStatus
     {
+        explicit FileStatus(const std::string & path_) : path(path_) {}
+
         enum class State : uint8_t
         {
             Processing,
@@ -41,6 +43,7 @@ public:
 
         std::mutex processing_lock;
 
+        const std::string path;
         std::atomic<State> state = State::None;
         std::atomic<size_t> processed_rows = 0;
         std::atomic<time_t> processing_start_time = 0;

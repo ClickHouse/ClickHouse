@@ -31,6 +31,8 @@ class RunnerLabels:
     ARM_SMALL_MEM = ["self-hosted", "arm-small-mem"]
     STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
     STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
+    # GitHub-hosted macOS runners for native smoke tests
+    MACOS_ARM = ["macos-14"]  # Apple Silicon (M1/M2/M3)
 
 
 class CIFiles:
@@ -352,6 +354,7 @@ class JobNames:
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
+    MACOS_SMOKE_TEST = "macOS smoke test"
 
 
 class ToolSet:
@@ -440,6 +443,19 @@ LLVM_IT_ARTIFACTS_LIST = [
 LLVM_ARTIFACTS_LIST = (
     LLVM_FT_ARTIFACTS_LIST + LLVM_IT_ARTIFACTS_LIST + [ArtifactNames.LLVM_COVERAGE_FILE]
 )
+
+BINARIES_WITH_LONG_RETENTION = [
+    ArtifactNames.CH_AMD_DEBUG,
+    ArtifactNames.CH_AMD_RELEASE,
+    ArtifactNames.CH_AMD_ASAN,
+    ArtifactNames.CH_AMD_TSAN,
+    ArtifactNames.CH_AMD_MSAN,
+    ArtifactNames.CH_AMD_UBSAN,
+    ArtifactNames.CH_AMD_BINARY,
+    ArtifactNames.CH_ARM_RELEASE,
+    ArtifactNames.CH_ARM_ASAN,
+    ArtifactNames.CH_ARM_TSAN,
+]
 
 
 class ArtifactConfigs:

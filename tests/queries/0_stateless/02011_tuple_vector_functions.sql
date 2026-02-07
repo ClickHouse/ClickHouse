@@ -118,7 +118,7 @@ SELECT cosineDistance(tuple(*, * + 1), tuple(1, 2)) FROM numbers(1, 3);
 SELECT -tuple(NULL, * * 2, *) FROM numbers(2);
 
 SELECT normL1((1, 1)), normL2((1, 1)), normLinf((1, 1)), normLp((1, 1), 1.);
-SELECT distanceL1((1, 1), (1, 1)), distanceL2((1, 1), (1, 1)), distanceLinf((1, 1), (1, 1)), distanceLp((1, 1), (1, 1), 1.);
+SELECT distanceL1((1, 1), (1, 1)), distanceL2((1, 1), (1, 1)), distanceLinf((1, 1), (1, 1)), distanceLp((1, 1), (1, 1), 1.), round(distanceCosine((1, 1), (1, 1)), 7);
 SELECT normalizeL1((1, 1)), normalizeL2((1, 1)), normalizeLinf((1, 1)), normalizeLp((1, 1), 1.);
 
 SELECT LpNorm((1, 2, 3), 2.2);

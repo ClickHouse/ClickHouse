@@ -6,6 +6,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <IO/ParallelReadBuffer.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IRowInputFormat.h>

@@ -1,8 +1,11 @@
 #pragma once
 
+#include <Core/MergeTreeSerializationEnums.h>
 #include <Core/Types_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
+
+#include <map>
 
 namespace Poco::JSON
 {

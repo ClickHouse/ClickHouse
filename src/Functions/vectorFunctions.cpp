@@ -2424,6 +2424,7 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
     factory.registerAlias("distanceL2Squared", FunctionL2SquaredDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceCosine", TupleOrArrayFunctionCosineDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2Transposed", L2DistanceTransposedName, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceCosineTransposed", CosineDistanceTransposedName, FunctionFactory::Case::Insensitive);
 

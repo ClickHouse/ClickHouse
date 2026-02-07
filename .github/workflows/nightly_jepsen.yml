@@ -49,9 +49,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Config Workflow' --workflow "NightlyJepsen" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Config Workflow' --workflow "NightlyJepsen" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Config Workflow' --workflow "NightlyJepsen" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Config Workflow' --workflow "NightlyJepsen" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   dockers_build_amd:
@@ -89,9 +89,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyJepsen" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyJepsen" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyJepsen" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyJepsen" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   dockers_build_arm:
@@ -129,9 +129,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyJepsen" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyJepsen" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyJepsen" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyJepsen" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   build_amd_binary:
@@ -169,9 +169,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_binary)' --workflow "NightlyJepsen" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_binary)' --workflow "NightlyJepsen" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (amd_binary)' --workflow "NightlyJepsen" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (amd_binary)' --workflow "NightlyJepsen" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   clickhouse_keeper_jepsen:
@@ -209,9 +209,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'ClickHouse Keeper Jepsen' --workflow "NightlyJepsen" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'ClickHouse Keeper Jepsen' --workflow "NightlyJepsen" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'ClickHouse Keeper Jepsen' --workflow "NightlyJepsen" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'ClickHouse Keeper Jepsen' --workflow "NightlyJepsen" --ci 2>&1 | tee ./ci/tmp/job.log
           fi
 
   finish_workflow:
@@ -249,7 +249,7 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Finish Workflow' --workflow "NightlyJepsen" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Finish Workflow' --workflow "NightlyJepsen" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Finish Workflow' --workflow "NightlyJepsen" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Finish Workflow' --workflow "NightlyJepsen" --ci 2>&1 | tee ./ci/tmp/job.log
           fi

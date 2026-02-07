@@ -166,9 +166,9 @@ jobs:
           . {ENV_SETUP_SCRIPT}
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee {TEMP_DIR}/job.log
+            python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' | tee {TEMP_DIR}/job.log
           else
-            python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci |& tee {TEMP_DIR}/job.log
+            python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci 2>&1 | tee {TEMP_DIR}/job.log
           fi
 {UPLOADS_GITHUB}\
 """

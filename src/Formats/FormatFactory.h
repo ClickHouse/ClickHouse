@@ -1,17 +1,12 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserSharedResources.h>
-#include <Formats/FormatFilterInfo.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
-#include <IO/ParallelReadBuffer.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Allocator.h>
 #include <Common/NamePrompter.h>
-
-#include <Processors/Formats/IInputFormat.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -54,6 +49,16 @@ template <typename Allocator>
 struct Memory;
 
 struct FormatParserSharedResources;
+using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
+
+struct FormatFilterInfo;
+using FormatFilterInfoPtr = std::shared_ptr<FormatFilterInfo>;
+
+struct FileBucketInfo;
+using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
+
+struct IBucketSplitter;
+using BucketSplitter = std::shared_ptr<IBucketSplitter>;
 
 FormatSettings getFormatSettings(const ContextPtr & context);
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings);

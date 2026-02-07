@@ -96,9 +96,24 @@ namespace DB
         }
     }
 
-    ColumnsDescription TableFunctionLoop::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
+    ColumnsDescription TableFunctionLoop::getActualTableStructure(ContextPtr context, bool is_insert_query) const
     {
-        return ColumnsDescription();
+        if (inner_table_function_ast)
+        {
+            auto inner_table_function = TableFunctionFactory::instance().get(inner_table_function_ast, context);
+            return inner_table_function->getActualTableStructure(context, is_insert_query);
+        }
+
+        String database_name = loop_database_name;
+        if (database_name.empty())
+            database_name = context->getCurrentDatabase();
+
+        auto database = DatabaseCatalog::instance().getDatabase(database_name);
+        auto storage = database->tryGetTable(loop_table_name, context);
+        if (!storage)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
+
+        return storage->getInMemoryMetadataPtr()->getColumns();
     }
 
     StoragePtr TableFunctionLoop::executeImpl(

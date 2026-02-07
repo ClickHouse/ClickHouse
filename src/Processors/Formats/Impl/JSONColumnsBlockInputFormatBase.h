@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/BlockNameMap.h>
+#include <Core/BlockMissingValues.h>
 #include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>

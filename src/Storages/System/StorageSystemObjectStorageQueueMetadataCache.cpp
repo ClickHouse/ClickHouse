@@ -1,4 +1,4 @@
-#include <Storages/System/StorageSystemObjectStorageQueue.h>
+#include <Storages/System/StorageSystemObjectStorageQueueMetadataCache.h>
 
 #include <Access/ContextAccess.h>
 #include <DataTypes/DataTypeString.h>
@@ -21,7 +21,7 @@ namespace DB
 {
 
 template <ObjectStorageType type>
-ColumnsDescription StorageSystemObjectStorageQueue<type>::getColumnsDescription()
+ColumnsDescription StorageSystemObjectStorageQueueMetadataCache<type>::getColumnsDescription()
 {
     return ColumnsDescription
     {
@@ -37,23 +37,25 @@ ColumnsDescription StorageSystemObjectStorageQueue<type>::getColumnsDescription(
 }
 
 template <ObjectStorageType type>
-StorageSystemObjectStorageQueue<type>::StorageSystemObjectStorageQueue(const StorageID & table_id_)
+StorageSystemObjectStorageQueueMetadataCache<type>::StorageSystemObjectStorageQueueMetadataCache(const StorageID & table_id_)
     : IStorageSystemOneBlock(table_id_, getColumnsDescription())
 {
 }
 
 template <ObjectStorageType type>
-void StorageSystemObjectStorageQueue<type>::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemObjectStorageQueueMetadataCache<type>::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (const auto & [zookeeper_path, metadata] : ObjectStorageQueueMetadataFactory::instance().getAll())
     {
         if (type != metadata->getType())
             continue;
 
-        for (const auto & [file_path, file_status] : metadata->getFileStatuses())
+        auto cache = metadata->getFileStatusesCache().dump();
+        for (const auto & [_, file_status] : cache)
         {
             size_t i = 0;
             res_columns[i++]->insert(zookeeper_path);
+            const auto file_path = file_status->path;
             res_columns[i++]->insert(file_path);
             res_columns[i++]->insert(std::filesystem::path(file_path).filename().string());
 
@@ -74,7 +76,7 @@ void StorageSystemObjectStorageQueue<type>::fillData(MutableColumns & res_column
     }
 }
 
-template class StorageSystemObjectStorageQueue<ObjectStorageType::S3>;
-template class StorageSystemObjectStorageQueue<ObjectStorageType::Azure>;
+template class StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::S3>;
+template class StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::Azure>;
 
 }

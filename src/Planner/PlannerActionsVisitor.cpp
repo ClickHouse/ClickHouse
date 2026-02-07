@@ -203,9 +203,19 @@ public:
                     chassert(exists_argument != nullptr);
 
                     const auto & table_alias = exists_argument->getAlias();
-                    chassert(!table_alias.empty());
-
-                    result = fmt::format("exists({})", table_alias);
+                    if (!table_alias.empty())
+                    {
+                        result = fmt::format("exists({})", table_alias);
+                    }
+                    else
+                    {
+                        /// The alias may be empty when EXISTS was constant-folded into a ConstantNode
+                        /// and its source expression is being traversed to reconstruct the action node name.
+                        /// In this case, createUniqueAliasesIfNecessary did not visit the subquery argument
+                        /// because it is not a child of ConstantNode. Use the tree hash as a stable identifier.
+                        auto hash = exists_argument->getTreeHash();
+                        result = fmt::format("exists({}_{})", hash.low64, hash.high64);
+                    }
                     break;
                 }
                 else if (function_node.getFunctionName() == "__getScalar")
@@ -216,9 +226,9 @@ public:
                     const auto & argument = arguments.front();
                     chassert(argument != nullptr);
 
-                    auto * argument_node = argument->as<ConstantNode>();
-                    chassert(argument_node != nullptr);
-                    chassert(isString(argument_node->getResultType()));
+                    const auto * argument_node = argument->as<ConstantNode>();
+                    if (!argument_node || !isString(argument_node->getResultType()))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __getScalar is internal and should not be used directly");
 
                     result = fmt::format("__getScalar('{}'_String)", argument_node->getValue().safeGet<String>());
                     break;

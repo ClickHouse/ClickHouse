@@ -1,6 +1,6 @@
 from praktika import Workflow
 
-from ci.defs.defs import DOCKERS, SECRETS, ArtifactConfigs
+from ci.defs.defs import BINARIES_WITH_LONG_RETENTION, DOCKERS, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 
@@ -9,6 +9,13 @@ builds_for_release_branch = [
     for job in JobConfigs.build_jobs
     if "coverage" not in job.name and "binary" not in job.name
 ] + JobConfigs.release_build_jobs
+
+# Add long retention tags to subset of artifacts
+clickhouse_binaries_with_tags = []
+for artifact in ArtifactConfigs.clickhouse_binaries:
+    if artifact.name in BINARIES_WITH_LONG_RETENTION:
+        artifact = artifact.add_tags({"retention": "long"})
+    clickhouse_binaries_with_tags.append(artifact)
 
 workflow = Workflow.Config(
     name="ReleaseBranchCI",
@@ -43,7 +50,7 @@ workflow = Workflow.Config(
         *JobConfigs.stress_test_jobs,
     ],
     artifacts=[
-        *ArtifactConfigs.clickhouse_binaries,
+        *clickhouse_binaries_with_tags,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,

@@ -779,6 +779,75 @@ private:
         return ColumnMap::create(std::move(nested_column));
     }
 
+    static ColumnPtr executeGenericWithType(
+        const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, size_t input_rows_count, const DataTypePtr & common_type)
+    {
+        /// Convert both columns to the given common type.
+        const ColumnWithTypeAndName & arg1 = arguments[1];
+        const ColumnWithTypeAndName & arg2 = arguments[2];
+
+        ColumnPtr col_then = castColumn(arg1, common_type);
+        ColumnPtr col_else = castColumn(arg2, common_type);
+
+        MutableColumnPtr result_column = common_type->createColumn();
+        result_column->reserve(input_rows_count);
+
+        bool then_is_const = isColumnConst(*col_then);
+        bool else_is_const = isColumnConst(*col_else);
+
+        const auto & cond_array = cond_col->getData();
+
+        if (then_is_const && else_is_const)
+        {
+            const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
+            const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if (cond_array[i])
+                    result_column->insertFrom(then_nested_column, 0);
+                else
+                    result_column->insertFrom(else_nested_column, 0);
+            }
+        }
+        else if (then_is_const)
+        {
+            const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if (cond_array[i])
+                    result_column->insertFrom(then_nested_column, 0);
+                else
+                    result_column->insertFrom(*col_else, i);
+            }
+        }
+        else if (else_is_const)
+        {
+            const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if (cond_array[i])
+                    result_column->insertFrom(*col_then, i);
+                else
+                    result_column->insertFrom(else_nested_column, 0);
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if (cond_array[i])
+                    result_column->insertFrom(*col_then, i);
+                else
+                    result_column->insertFrom(*col_else, i);
+            }
+        }
+
+        return result_column;
+    }
+
     static ColumnPtr executeGeneric(
         const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, size_t input_rows_count, bool use_variant_when_no_common_type)
     {
@@ -1281,10 +1350,30 @@ public:
         /// Special case when one column is Integer and another is UInt64 that can be actually Int64.
         /// The result type for this case is Int64 and we need to change UInt64 type to Int64
         /// so the NumberTraits::ResultOfIf will return Int64 instead if Int128.
+        bool uint64_to_int64 = false;
         if (isNativeInteger(left_type) && isUInt64ThatCanBeInt64(right_type))
+        {
             right_type = std::make_shared<DataTypeInt64>();
+            uint64_to_int64 = true;
+        }
         else if (isNativeInteger(right_type) && isUInt64ThatCanBeInt64(left_type))
+        {
             left_type = std::make_shared<DataTypeInt64>();
+            uint64_to_int64 = true;
+        }
+
+        /// When the result type is Int64 but we have UInt64 and Int32 arguments,
+        /// the canUnsignedBeSigned flag on UInt64 type may have been lost during query plan transformations.
+        /// In this case, we use executeGenericWithType which casts both columns to the expected result type.
+        /// See issue #70017.
+        bool left_is_uint64 = WhichDataType(left_type).isUInt64();
+        bool right_is_uint64 = WhichDataType(right_type).isUInt64();
+        bool result_type_is_int64 = WhichDataType(removeNullable(result_type)).isInt64();
+        if (result_type_is_int64 && (left_is_uint64 || right_is_uint64) && !uint64_to_int64)
+        {
+            /// Cast both columns to Int64 using the pre-computed result type
+            return executeGenericWithType(cond_col, arguments, input_rows_count, removeNullable(result_type));
+        }
 
         TypeIndex left_id = left_type->getTypeId();
         TypeIndex right_id = right_type->getTypeId();

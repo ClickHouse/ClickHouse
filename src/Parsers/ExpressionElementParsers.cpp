@@ -126,12 +126,17 @@ static ASTPtr buildSelectFromTableFunction(const boost::intrusive_ptr<ASTFunctio
 
 bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserSelectWithUnionQuery select;
+    starts_with_valid_select_or_explain = false;
+
+    ParserWithOptionalAlias select(std::make_unique<ParserSelectWithUnionQuery>(), false);
     ParserExplainQuery explain;
 
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
     ++pos;
+
+    /// Lookahead for inner subquery
+    const bool possible_inner_subquery = pos->type == TokenType::OpeningRoundBracket;
 
     ASTPtr result_node = nullptr;
 
@@ -188,6 +193,9 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         return false;
     }
+
+    /// Inner subquery should be handled separately
+    starts_with_valid_select_or_explain = !possible_inner_subquery && result_node != nullptr;
 
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
