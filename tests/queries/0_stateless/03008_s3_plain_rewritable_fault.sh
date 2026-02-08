@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree, no-parallel, no-replicated-database
+# Tags: no-fasttest, no-shared-merge-tree, no-parallel, no-replicated-database, no-random-detach
 # Tag no-fasttest: requires S3
 # Tag no-shared-merge-tree: does not support replication
 # Tag no-parallel: uses failpoints

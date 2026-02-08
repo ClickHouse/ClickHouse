@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-parallel-replicas
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-parallel-replicas, no-random-detach
 # Tag no-parallel: Fails due to failpoint intersection
 # no-replicated-database: Fails due to additional replicas or shards
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-replicated-database, no-ordinary-database, no-encrypted-storage
+# Tags: no-fasttest, no-parallel, no-replicated-database, no-ordinary-database, no-encrypted-storage, no-random-detach
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

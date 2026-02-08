@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, no-object-storage, no-random-settings
+# Tags: no-parallel, no-fasttest, no-object-storage, no-random-settings, no-random-detach
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 

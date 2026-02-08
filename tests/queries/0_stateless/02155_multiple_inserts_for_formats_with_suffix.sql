@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest, no-parallel, no-random-detach
 
 drop table if exists test;
 create table test (number UInt64) engine=File('Parquet');

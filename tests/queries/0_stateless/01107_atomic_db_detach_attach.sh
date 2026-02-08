@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-random-detach
 # no-parallel: FIXME: Timing issues with INSERT + DETACH (https://github.com/ClickHouse/ClickHouse/pull/67610/files#r1700345054)
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

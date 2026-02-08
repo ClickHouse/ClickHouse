@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-shared-merge-tree
+# Tags: no-parallel, no-shared-merge-tree, no-random-detach
 # Tag no-parallel: failpoint is in use
 # Tag no-shared-merge-tree: looks like it tests a specific behaviour of ReplicatedMergeTree with failpoints
 

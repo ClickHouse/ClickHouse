@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-random-detach
 -- Tag no-fasttest: Depends on S3
 
 SET s3_truncate_on_insert = 1,

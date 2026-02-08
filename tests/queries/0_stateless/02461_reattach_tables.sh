@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-detach
+# Tags: no-random-detach, no-replicated-database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

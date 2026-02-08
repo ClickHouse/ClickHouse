@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
 
 DROP TABLE IF EXISTS t_prewarm_cache;
 
