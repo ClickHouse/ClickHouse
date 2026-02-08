@@ -158,6 +158,54 @@ bool isNaN(const Field & field)
     const double value = field.safeGet<Float64>();
     return std::isnan(value);
 }
+
+bool invertInequalityDirection(std::string & func_name)
+{
+    if (func_name == "less")
+    {
+        func_name = "greater";
+        return true;
+    }
+    if (func_name == "greater")
+    {
+        func_name = "less";
+        return true;
+    }
+    if (func_name == "greaterOrEquals")
+    {
+        func_name = "lessOrEquals";
+        return true;
+    }
+    if (func_name == "lessOrEquals")
+    {
+        func_name = "greaterOrEquals";
+        return true;
+    }
+
+    return false;
+}
+
+bool invertComparisonForSwappedArguments(std::string & func_name)
+{
+    if (invertInequalityDirection(func_name))
+        return true;
+
+    /// Some comparisons are not symmetric when swapping the constant and the key expression.
+    if (func_name == "like" || func_name == "notLike" || func_name == "ilike" || func_name == "notILike" || func_name == "startsWith"
+        || func_name == "match")
+        return false;
+
+    return true;
+}
+
+void relaxComparisonForTransformedConstant(std::string & func_name)
+{
+    if (func_name == "less")
+        func_name = "lessOrEquals";
+    else if (func_name == "greater")
+        func_name = "greaterOrEquals";
+}
+
 }
 
 const KeyCondition::AtomMap KeyCondition::atom_map
@@ -897,7 +945,7 @@ KeyCondition::KeyCondition(
 
     /// Skip any analysis. Toggled by the `use_primary_key` setting. This is useful for catching bugs
     /// in the index condition analysis logic. It is better to skip analysis in the constructor rather than in
-    /// `checkInHyperrectangle` or elsewhere, because bugs during `extractAtomFromTree` calls can lead to
+    /// `checkInHyperrectangle` or elsewhere, because bugs during `extractAtomsFromTree` calls can lead to
     /// unexpected exceptions.
     /// This will lead to reading all granules with no primary key skipping.
     if (skip_analysis_)
@@ -923,9 +971,9 @@ KeyCondition::KeyCondition(
 
     has_filter = true;
 
-    RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
+    RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, std::vector<RPNElement> & out)
     {
-        return extractAtomFromTree(node, info, out);
+        return extractAtomsFromTree(node, info, out);
     });
 
     rpn = std::move(builder).extractRPN();
@@ -1135,81 +1183,21 @@ bool KeyCondition::isFunctionReallyMonotonic(const IFunctionBase & func, const I
     return true;
 }
 
-bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
+std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantForKeyColumns(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
-    size_t & out_key_column_num,
-    DataTypePtr & out_key_column_type,
-    Field & out_value,
-    DataTypePtr & out_type)
-{
-    String expr_name = node.getColumnName();
-
-    if (!info.key_subexpr_names.contains(expr_name))
-        return false;
-
-    if (out_value.isNull())
-        return false;
-
-    MonotonicFunctionsChain transform_functions;
-    auto can_transform_constant = extractMonotonicFunctionsChainFromKey(
-        node.getTreeContext().getQueryContext(),
-        expr_name,
-        info,
-        out_key_column_num,
-        out_key_column_type,
-        transform_functions,
-        [this](const IFunctionBase & func, const IDataType & type)
-        {
-            if (!func.hasInformationAboutMonotonicity())
-                return false;
-
-            if (!isFunctionReallyMonotonic(func, type))
-                return false;
-
-            /// Range is irrelevant in this case.
-            auto monotonicity = func.getMonotonicityForRange(type, Field(), Field());
-            if (!monotonicity.is_always_monotonic)
-                return false;
-
-            return true;
-        });
-
-    if (!can_transform_constant)
-        return false;
-
-    auto const_column = out_type->createColumnConst(1, out_value);
-
-    ColumnPtr transformed_const_column;
-    DataTypePtr transformed_const_type;
-    bool constant_transformed = applyFunctionChainToColumn(
-        const_column,
-        out_type,
-        transform_functions,
-        transformed_const_column,
-        transformed_const_type);
-
-    if (!constant_transformed)
-        return false;
-
-    out_value = (*transformed_const_column)[0];
-    out_type = transformed_const_type;
-    return true;
-}
-
-/// Looking for possible transformation of `column = constant` into `partition_expr = function(constant)`
-bool KeyCondition::canConstantBeWrappedByFunctions(
-    const RPNBuilderTreeNode & node,
-    const BuildInfo & info,
-    size_t & out_key_column_num,
-    DataTypePtr & out_key_column_type,
-    Field & out_value,
-    DataTypePtr & out_type)
+    const Field & value,
+    const DataTypePtr & type,
+    std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function,
+    bool allow_modulo_legacy) const
 {
     String expr_name = node.getColumnName();
 
     if (!info.key_subexpr_names.contains(expr_name))
     {
+        if (!allow_modulo_legacy)
+            return {};
+
         /// Let's check another one case.
         /// If our storage was created with moduloLegacy in partition key,
         /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
@@ -1220,44 +1208,40 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
         ///
         /// Note: for negative values, we can filter more partitions then needed.
         expr_name = node.getColumnNameWithModuloLegacy();
-
         if (!info.key_subexpr_names.contains(expr_name))
-            return false;
+            return {};
     }
 
-    if (out_value.isNull())
-        return false;
+    if (value.isNull())
+        return {};
 
-    MonotonicFunctionsChain transform_functions;
-    auto can_transform_constant = extractMonotonicFunctionsChainFromKey(
-        node.getTreeContext().getQueryContext(),
-        expr_name,
-        info,
-        out_key_column_num,
-        out_key_column_type,
-        transform_functions,
-        [](const IFunctionBase & func, const IDataType &) { return func.isDeterministic(); });
+    auto chains
+        = extractMonotonicFunctionsChainsFromKey(node.getTreeContext().getQueryContext(), expr_name, info, std::move(allow_key_function));
 
-    if (!can_transform_constant)
-        return false;
+    if (chains.empty())
+        return {};
 
-    auto const_column = out_type->createColumnConst(1, out_value);
+    std::vector<TransformedConstant> result;
+    result.reserve(chains.size());
 
-    ColumnPtr transformed_const_column;
-    DataTypePtr transformed_const_type;
-    bool constant_transformed = applyFunctionChainToColumn(
-        const_column,
-        out_type,
-        transform_functions,
-        transformed_const_column,
-        transformed_const_type);
+    for (const auto & chain : chains)
+    {
+        auto const_column = type->createColumnConst(1, value);
 
-    if (!constant_transformed)
-        return false;
+        ColumnPtr transformed_const_column;
+        DataTypePtr transformed_const_type;
+        if (!applyFunctionChainToColumn(const_column, type, chain.functions_chain, transformed_const_column, transformed_const_type))
+            continue;
 
-    out_value = (*transformed_const_column)[0];
-    out_type = transformed_const_type;
-    return true;
+        result.push_back(
+            TransformedConstant{
+                .key_column_num = chain.key_column_num,
+                .key_column_type = chain.key_column_type,
+                .value = (*transformed_const_column)[0],
+                .type = transformed_const_type});
+    }
+
+    return result;
 }
 
 void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
@@ -1470,12 +1454,32 @@ bool tryPrepareSetColumnsForIndex(
     return true;
 }
 
-bool KeyCondition::tryPrepareSetIndexForIn(
+namespace
+{
+String getExprNameOrEmptyForSetWrapping(const RPNBuilderTreeNode & node, const NameSet & key_subexpr_names)
+{
+    String expr_name = node.getColumnName();
+
+    if (!key_subexpr_names.contains(expr_name))
+    {
+        expr_name = node.getColumnNameWithModuloLegacy();
+
+        if (!key_subexpr_names.contains(expr_name))
+            return {};
+    }
+
+    return expr_name;
+}
+}
+
+bool KeyCondition::tryPrepareSetAtomsForIn(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
-    RPNElement & out,
+    RPN & out,
     bool allow_constant_transformation)
 {
+    out.clear();
+
     const RPNBuilderTreeNode & left_arg = func.getArgumentAt(0);
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
     std::vector<MonotonicFunctionsChain> set_transforming_chains;
@@ -1490,9 +1494,6 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         left_args_count,
         info,
         allow_constant_transformation);
-
-    if (indexes_mapping.empty())
-        return false;
 
     const RPNBuilderTreeNode & right_arg = func.getArgumentAt(1);
     auto future_set = right_arg.tryGetPreparedSet();
@@ -1512,58 +1513,146 @@ bool KeyCondition::tryPrepareSetIndexForIn(
       * In this example table `id` column has type UInt64, Set column has type UInt8. To use index
       * we need to convert set column to primary key column.
       */
-    auto set_columns = prepared_set->getSetElements();
-
-    auto set_types = future_set->getTypes();
+    const auto set_columns = prepared_set->getSetElements();
+    const auto set_types = future_set->getTypes();
 
     chassert(set_types.size() == set_columns.size());
 
-    /// Special case: ORDER BY key_tuple (a single Tuple-typed key column) with predicate
-    /// `key_tuple IN ((a, b), (c, d), ...)`.
-    ///
-    /// The prepared set for `IN` can come as "unpacked" columns (one column per tuple element),
-    /// but for a packed tuple key we must keep it as a single ColumnTuple so it can be cast to
-    /// the key column type when preparing index conditions
-    if (left_args_count == 1 && data_types.size() == 1 && set_columns.size() > 1)
+    auto try_build_atom = [&](std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> atom_indexes_mapping,
+                              const std::vector<MonotonicFunctionsChain> & atom_set_transforming_chains,
+                              const DataTypes & atom_data_types,
+                              size_t args_count) -> std::optional<RPNElement>
     {
-        DataTypePtr key_type = removeNullable(data_types[0]);
-        if (const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get()))
+        if (atom_indexes_mapping.empty())
+            return std::nullopt;
+
+        auto atom_set_columns = set_columns;
+        auto atom_set_types = set_types;
+
+        /// Special case: ORDER BY key_tuple (a single Tuple-typed key column) with predicate
+        /// `key_tuple IN ((a, b), (c, d), ...)`.
+        ///
+        /// The prepared set for `IN` can come as "unpacked" columns (one column per tuple element),
+        /// but for a packed tuple key we must keep it as a single ColumnTuple so it can be cast to
+        /// the key column type when preparing index conditions.
+        if (args_count == 1 && atom_data_types.size() == 1 && atom_set_columns.size() > 1)
         {
-            if (key_tuple_type->getElements().size() == set_types.size())
+            DataTypePtr key_type = removeNullable(atom_data_types[0]);
+            if (const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get()))
             {
-                set_columns = {ColumnTuple::create(set_columns)};
-                set_types = {std::make_shared<DataTypeTuple>(set_types)};
+                if (key_tuple_type->getElements().size() == atom_set_types.size())
+                {
+                    atom_set_columns = {ColumnTuple::create(atom_set_columns)};
+                    atom_set_types = {std::make_shared<DataTypeTuple>(atom_set_types)};
+                }
+            }
+        }
+
+        bool is_constant_transformed = false;
+        if (!tryPrepareSetColumnsForIndex(
+                atom_set_columns,
+                atom_set_types,
+                atom_set_transforming_chains,
+                atom_data_types,
+                atom_indexes_mapping,
+                args_count,
+                is_constant_transformed))
+            return std::nullopt;
+
+        if (is_constant_transformed)
+        {
+            atom_set_columns.emplace_back(DataTypeUInt8().createColumnConstWithDefaultValue(atom_set_columns.front()->size()));
+            atom_set_types.emplace_back(std::make_shared<DataTypeUInt8>());
+        }
+
+        RPNElement element;
+        element.set_index = std::make_shared<MergeTreeSetIndex>(atom_set_columns, std::move(atom_indexes_mapping));
+
+        /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
+        const auto & adjusted_indexes_mapping = element.set_index->getIndexesMapping();
+        for (const auto & index_mapping : adjusted_indexes_mapping)
+            element.key_columns.push_back(index_mapping.key_index);
+
+        /// When not all key columns are used or when there are multiple elements in
+        /// the set, the atom's hyperrectangle is expanded to encompass the missing
+        /// dimensions and any "gaps".
+        element.relaxed
+            = (adjusted_indexes_mapping.size() < atom_set_types.size() || element.set_index->size() > 1 || is_constant_transformed);
+
+        return element;
+    };
+
+    if (auto atom = try_build_atom(indexes_mapping, set_transforming_chains, data_types, left_args_count))
+        out.emplace_back(std::move(*atom));
+
+    std::vector<bool> has_atom_for_key_column(num_key_columns, false);
+    for (const auto & element : out)
+    {
+        for (size_t column_idx : element.key_columns)
+            if (column_idx < has_atom_for_key_column.size())
+                has_atom_for_key_column[column_idx] = true;
+    }
+
+    /// If LHS is a single value (not a tuple), also add set-wrapping atoms for all PK components
+    /// that are deterministic functions of that value (by transforming the set elements).
+    if (left_args_count == 1 && allow_constant_transformation)
+    {
+        const String expr_name = getExprNameOrEmptyForSetWrapping(left_arg, info.key_subexpr_names);
+        if (!expr_name.empty())
+        {
+            auto candidates = extractMonotonicFunctionsChainsFromKey(
+                left_arg.getTreeContext().getQueryContext(),
+                expr_name,
+                info,
+                [](const IFunctionBase & func_base, const IDataType &) { return func_base.isDeterministic(); });
+
+            std::ranges::sort(candidates, [](const auto & lhs, const auto & rhs) { return lhs.key_column_num < rhs.key_column_num; });
+
+            for (const auto & candidate : candidates)
+            {
+                if (candidate.key_column_num < has_atom_for_key_column.size() && has_atom_for_key_column[candidate.key_column_num])
+                    continue;
+
+                MergeTreeSetIndex::KeyTuplePositionMapping mapping;
+                mapping.tuple_index = 0;
+                mapping.key_index = candidate.key_column_num;
+
+                std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> candidate_indexes_mapping;
+                candidate_indexes_mapping.emplace_back(std::move(mapping));
+
+                std::vector<MonotonicFunctionsChain> candidate_set_transforming_chains;
+                candidate_set_transforming_chains.emplace_back(candidate.functions_chain);
+
+                DataTypes candidate_data_types;
+                candidate_data_types.emplace_back(candidate.key_column_type);
+
+                if (auto candidate_atom = try_build_atom(
+                        std::move(candidate_indexes_mapping),
+                        candidate_set_transforming_chains,
+                        candidate_data_types,
+                        /*args_count*/ 1))
+                {
+                    for (size_t column_idx : candidate_atom->key_columns)
+                        if (column_idx < has_atom_for_key_column.size())
+                            has_atom_for_key_column[column_idx] = true;
+
+                    out.emplace_back(std::move(*candidate_atom));
+                }
             }
         }
     }
 
-    bool is_constant_transformed = false;
-    if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_chains, data_types, indexes_mapping, left_args_count, is_constant_transformed))
-        return false;
-
-    out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
-
-    /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
-    const auto & adjusted_indexes_mapping = out.set_index->getIndexesMapping();
-    for (const auto & index_mapping : adjusted_indexes_mapping)
-        out.key_columns.push_back(index_mapping.key_index);
-
-    /// When not all key columns are used or when there are multiple elements in
-    /// the set, the atom's hyperrectangle is expanded to encompass the missing
-    /// dimensions and any "gaps".
-    if (adjusted_indexes_mapping.size() < set_types.size() || out.set_index->size() > 1 || is_constant_transformed)
-        relaxed = true;
-
-    return true;
+    return !out.empty();
 }
 
-bool KeyCondition::tryPrepareSetIndexForHas(
+bool KeyCondition::tryPrepareSetAtomsForHas(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
-    RPNElement & out,
+    RPN & out,
     bool allow_constant_transformation)
 {
+    out.clear();
+
     chassert(func.getFunctionName() == "has");
     chassert(func.getArgumentsSize() == 2);
 
@@ -1585,8 +1674,8 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     const Array & values = array_value.safeGet<Array>();
     if (values.empty())
     {
-        /// has([], x) is always false – we can mark the condition as always false
-        out.function = RPNElement::ALWAYS_FALSE;
+        /// has([], x) is always false – we can mark the condition as always false.
+        out.emplace_back(RPNElement::ALWAYS_FALSE);
         return true;
     }
 
@@ -1638,6 +1727,50 @@ bool KeyCondition::tryPrepareSetIndexForHas(
         set_types.push_back(array_nested_type);
     }
 
+    auto try_build_atom = [&](std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> atom_indexes_mapping,
+                              const std::vector<MonotonicFunctionsChain> & atom_set_transforming_chains,
+                              const DataTypes & atom_data_types,
+                              size_t args_count) -> std::optional<RPNElement>
+    {
+        if (atom_indexes_mapping.empty())
+            return std::nullopt;
+
+        auto atom_set_columns = set_columns;
+        auto atom_set_types = set_types;
+
+        bool is_constant_transformed = false;
+        if (!tryPrepareSetColumnsForIndex(
+                atom_set_columns,
+                atom_set_types,
+                atom_set_transforming_chains,
+                atom_data_types,
+                atom_indexes_mapping,
+                args_count,
+                is_constant_transformed))
+            return std::nullopt;
+
+        if (is_constant_transformed)
+        {
+            atom_set_columns.emplace_back(DataTypeUInt8().createColumnConstWithDefaultValue(atom_set_columns.front()->size()));
+            atom_set_types.emplace_back(std::make_shared<DataTypeUInt8>());
+        }
+
+        RPNElement element;
+        element.set_index = std::make_shared<MergeTreeSetIndex>(atom_set_columns, std::move(atom_indexes_mapping));
+
+        /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
+        const auto & adjusted_indexes_mapping = element.set_index->getIndexesMapping();
+        for (const auto & index_mapping : adjusted_indexes_mapping)
+            element.key_columns.push_back(index_mapping.key_index);
+
+        /// When not all key columns are used or when there are multiple elements in
+        /// the set, the atom's hyperrectangle is expanded to encompass the missing
+        /// dimensions and any "gaps".
+        element.relaxed = (adjusted_indexes_mapping.size() < atom_set_types.size() || element.set_index->size() > 1 || is_constant_transformed);
+
+        return element;
+    };
+
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
     std::vector<MonotonicFunctionsChain> set_transforming_chains;
     DataTypes data_types;
@@ -1646,28 +1779,65 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     analyzeKeyExpressionForSetIndex(
         key_arg, indexes_mapping, set_transforming_chains, data_types, key_args_count, info, allow_constant_transformation);
 
-    if (indexes_mapping.empty())
-        return false;
+    if (auto atom = try_build_atom(indexes_mapping, set_transforming_chains, data_types, key_args_count))
+        out.emplace_back(std::move(*atom));
 
-    bool is_constant_transformed = false;
-    if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_chains, data_types, indexes_mapping, key_args_count, is_constant_transformed))
-        return false;
+    std::vector<bool> has_atom_for_key_column(num_key_columns, false);
+    for (const auto & element : out)
+    {
+        for (size_t column_idx : element.key_columns)
+            if (column_idx < has_atom_for_key_column.size())
+                has_atom_for_key_column[column_idx] = true;
+    }
 
-    out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
+    if (key_args_count == 1 && allow_constant_transformation)
+    {
+        const String expr_name = getExprNameOrEmptyForSetWrapping(key_arg, info.key_subexpr_names);
+        if (!expr_name.empty())
+        {
+            auto candidates = extractMonotonicFunctionsChainsFromKey(
+                key_arg.getTreeContext().getQueryContext(),
+                expr_name,
+                info,
+                [](const IFunctionBase & func_base, const IDataType &) { return func_base.isDeterministic(); });
 
-    /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
-    const auto & adjusted_indexes_mapping = out.set_index->getIndexesMapping();
-    for (const auto & index_mapping : adjusted_indexes_mapping)
-        out.key_columns.push_back(index_mapping.key_index);
+            std::ranges::sort(candidates, [](const auto & lhs, const auto & rhs) { return lhs.key_column_num < rhs.key_column_num; });
 
-    /// When not all key columns are used or when there are multiple elements in
-    /// the set, the atom's hyperrectangle is expanded to encompass the missing
-    /// dimensions and any "gaps".
-    if (adjusted_indexes_mapping.size() < set_types.size() || out.set_index->size() > 1 || is_constant_transformed)
-        relaxed = true;
+            for (const auto & candidate : candidates)
+            {
+                if (candidate.key_column_num < has_atom_for_key_column.size() && has_atom_for_key_column[candidate.key_column_num])
+                    continue;
 
-    return true;
+                MergeTreeSetIndex::KeyTuplePositionMapping mapping;
+                mapping.tuple_index = 0;
+                mapping.key_index = candidate.key_column_num;
+
+                std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> candidate_indexes_mapping;
+                candidate_indexes_mapping.emplace_back(std::move(mapping));
+
+                std::vector<MonotonicFunctionsChain> candidate_set_transforming_chains;
+                candidate_set_transforming_chains.emplace_back(candidate.functions_chain);
+
+                DataTypes candidate_data_types;
+                candidate_data_types.emplace_back(candidate.key_column_type);
+
+                if (auto candidate_atom = try_build_atom(
+                        std::move(candidate_indexes_mapping),
+                        candidate_set_transforming_chains,
+                        candidate_data_types,
+                        /*args_count*/ 1))
+                {
+                    for (size_t column_idx : candidate_atom->key_columns)
+                        if (column_idx < has_atom_for_key_column.size())
+                            has_atom_for_key_column[column_idx] = true;
+
+                    out.emplace_back(std::move(*candidate_atom));
+                }
+            }
+        }
+    }
+
+    return !out.empty();
 }
 
 
@@ -1983,16 +2153,15 @@ static std::set<std::string_view> date_time_parsing_functions = {
   * Instead, we can qualify only functions that do not transform the range (for example rounding),
   * which while not strictly monotonic, are monotonic everywhere on the input range.
   */
-bool KeyCondition::extractMonotonicFunctionsChainFromKey(
+std::vector<KeyCondition::KeyFunctionChain> KeyCondition::extractMonotonicFunctionsChainsFromKey(
     ContextPtr context,
     const String & expr_name,
     const BuildInfo & info,
-    size_t & out_key_column_num,
-    DataTypePtr & out_key_column_type,
-    MonotonicFunctionsChain & out_functions_chain,
     std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
 {
     const auto & sample_block = info.key_expr->getSampleBlock();
+
+    std::vector<KeyFunctionChain> result;
 
     for (const auto & node : info.key_expr->getNodes())
     {
@@ -2038,8 +2207,14 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     is_valid_chain = false;
             }
 
-            if (is_valid_chain)
+            if (is_valid_chain && cur_node->result_name == expr_name)
             {
+                KeyFunctionChain candidate;
+                candidate.key_column_num = it->second;
+                candidate.key_column_type = sample_block.getByName(it->first).type;
+
+                bool candidate_valid = true;
+
                 while (!chain.empty())
                 {
                     const auto * func = chain.top();
@@ -2064,7 +2239,10 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                         // Skipping analysis in case when is requires parsing datetime from string
                         // with `session_timezone` specified
                         if (has_string_argument && has_session_timezone)
-                            return false;
+                        {
+                            candidate_valid = false;
+                            break;
+                        }
 
                         // Otherwise, in case when datetime parsing is required, rebuilding the function,
                         // to get its "-OrNull" version required for safe parsing, and not failing on
@@ -2076,6 +2254,12 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                                 new_args.push_back({nullptr, type, ""});
 
                             const auto func_builder = FunctionFactory::instance().tryGet(func_name + "OrNull", context);
+                            if (!func_builder)
+                            {
+                                candidate_valid = false;
+                                break;
+                            }
+
                             func_base = func_builder->build(new_args);
                         }
                     }
@@ -2099,19 +2283,18 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     }
 
                     if (kind == FunctionWithOptionalConstArg::Kind::NO_CONST)
-                        out_functions_chain.push_back(func_base);
+                        candidate.functions_chain.push_back(func_base);
                     else
-                        out_functions_chain.push_back(std::make_shared<FunctionWithOptionalConstArg>(func_base, const_arg, kind));
+                        candidate.functions_chain.push_back(std::make_shared<FunctionWithOptionalConstArg>(func_base, const_arg, kind));
                 }
 
-                out_key_column_num = it->second;
-                out_key_column_type = sample_block.getByName(it->first).type;
-                return true;
+                if (candidate_valid)
+                    result.push_back(std::move(candidate));
             }
         }
     }
 
-    return false;
+    return result;
 }
 
 bool KeyCondition::canSetValuesBeWrappedByFunctions(
@@ -2132,17 +2315,24 @@ bool KeyCondition::canSetValuesBeWrappedByFunctions(
             return false;
     }
 
-    return extractMonotonicFunctionsChainFromKey(
+    auto candidates = extractMonotonicFunctionsChainsFromKey(
         node.getTreeContext().getQueryContext(),
         expr_name,
         info,
-        out_key_column_num,
-        out_key_res_column_type,
-        out_functions_chain,
-        [](const IFunctionBase & func, const IDataType &)
-        {
-            return func.isDeterministic();
-        });
+        [](const IFunctionBase & func, const IDataType &) { return func.isDeterministic(); });
+
+    if (candidates.empty())
+        return false;
+
+    const auto best_it = std::ranges::min_element(
+        candidates,
+        [](const auto & lhs, const auto & rhs) { return lhs.key_column_num < rhs.key_column_num; });
+    chassert(best_it != candidates.end());
+
+    out_key_column_num = best_it->key_column_num;
+    out_key_res_column_type = best_it->key_column_type;
+    out_functions_chain = best_it->functions_chain;
+    return true;
 }
 
 struct KeyCondition::RPNElement::Polygon
@@ -2178,34 +2368,51 @@ KeyCondition::RPNElement::RPNElement(Function function_, std::vector<size_t> key
 {
 }
 
-
-bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out)
+bool KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out)
 {
+    out.clear();
+
     const auto * node_dag = node.getDAGNode();
     if (node_dag && node_dag->result_type->equals(DataTypeNullable(std::make_shared<DataTypeNothing>())))
     {
         /// If the inferred result type is Nullable(Nothing) at the query analysis stage,
         /// we don't analyze this node further as its condition will always be false.
-        out.function = RPNElement::ALWAYS_FALSE;
+        out.emplace_back(RPNElement::ALWAYS_FALSE);
         return true;
     }
 
+    if (node.isFunction())
+        return extractAtomsFromFunction(node, info, out);
+
+    return extractAtomsFromConstant(node, out);
+}
+
+bool KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out)
+{
     /** Functions < > = != <= >= in `notIn` isNull isNotNull, where one argument is a constant, and the other is one of columns of key,
       *  or itself, wrapped in a chain of possibly-monotonic functions,
       *  (for example, if the table has ORDER BY time, we will check the conditions like
       *   toDate(time) = '2023-10-14', toMonth(time) = 12, etc)
       *  or any of arguments of a space-filling curve function if it is in the key,
       *  (for example, if the table has ORDER BY mortonEncode(x, y), we will check the conditions like x > c, y <= c, etc.)
-      *  or constant expression - number
-      *  (for example x AND 0)
       */
-    Field const_value;
-    DataTypePtr const_type;
-    if (node.isFunction())
-    {
-        auto func = node.toFunctionNode();
-        size_t num_args = func.getArgumentsSize();
 
+    auto func = node.toFunctionNode();
+    const size_t num_args = func.getArgumentsSize();
+
+    const std::string func_name = func.getFunctionName();
+
+    if (atom_map.find(func_name) == std::end(atom_map))
+        return false;
+
+    if (func_name == "pointInPolygon")
+        return extractPointInPolygonAtom(func, func_name, out);
+
+    const bool allow_constant_transformation = !no_relaxed_atom_functions.contains(func_name);
+
+    /// Unary functions over a key expression, like isNull(key), toDate(key), etc.
+    if (num_args == 1)
+    {
         /// Type of expression containing key column
         DataTypePtr key_expr_type;
 
@@ -2216,295 +2423,451 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         std::optional<size_t> argument_num_of_space_filling_curve;
 
         MonotonicFunctionsChain chain;
-        std::string func_name = func.getFunctionName();
-
-        if (atom_map.find(func_name) == std::end(atom_map))
+        if (!isKeyPossiblyWrappedByMonotonicFunctions(
+                func.getArgumentAt(0), info, key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain))
             return false;
 
-        auto analyze_point_in_polygon = [&, this]() -> bool
+        if (key_column_num == static_cast<size_t>(-1))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
+
+        RPNElement element;
+        element.key_columns.push_back(key_column_num);
+        element.monotonic_functions_chain = std::move(chain);
+        element.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
+
+        Field dummy_value;
+        const auto atom_it = atom_map.find(func_name);
+        if (!atom_it->second(element, dummy_value))
+            return false;
+
+        if (element.relaxed)
+            relaxed = true;
+
+        out.emplace_back(std::move(element));
+        return true;
+    }
+
+    /// Binary functions with a constant, key expression, or supported set patterns.
+    if (num_args == 2)
+    {
+        /// IN / NOT IN
+        if (functionIsInOrGlobalInOperator(func_name))
         {
-            /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
-            if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
-                return false;
-            if (!func.getArgumentAt(1).tryGetConstant(const_value, const_type))
+            if (!tryPrepareSetAtomsForIn(func, info, out, allow_constant_transformation))
                 return false;
 
+            Field dummy_value;
             const auto atom_it = atom_map.find(func_name);
-
-            /// Analyze (x, y)
-
-            /// TODO: support index analysis for first argument of Point/Tuple type.
-            if (!func.getArgumentAt(0).isFunction())
-                return false;
-
-            auto first_argument = func.getArgumentAt(0).toFunctionNode();
-            if (first_argument.getArgumentsSize() != 2 || first_argument.getFunctionName() != "tuple")
-                return false;
-
-            for (size_t i = 0; i < 2; ++i)
+            for (auto & element : out)
             {
-                auto name = first_argument.getArgumentAt(i).getColumnName();
-                auto it = key_columns.find(name);
-                if (it == key_columns.end())
+                if (!atom_it->second(element, dummy_value))
                     return false;
-                out.key_columns.push_back(it->second);
+
+                if (element.relaxed)
+                    relaxed = true;
             }
-            out.point_in_polygon_function_name = func_name;
-
-            /// Analyze [(0, 0), (8, 4), (5, 8), (0, 2)]
-            chassert(WhichDataType(const_type).isArray());
-            for (const auto & elem : const_value.safeGet<Array>())
-            {
-                if (elem.getType() != Field::Types::Tuple)
-                    return false;
-
-                const auto & elem_tuple = elem.safeGet<Tuple>();
-                if (elem_tuple.size() != 2)
-                    return false;
-
-                auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[0]);
-                auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[1]);
-                out.polygon->data.outer().push_back({x, y});
-            }
-            boost::geometry::correct(out.polygon->data);
-            return atom_it->second(out, const_value);
-        };
-
-        bool allow_constant_transformation = !no_relaxed_atom_functions.contains(func_name);
-        if (num_args == 1)
-        {
-            if (!(isKeyPossiblyWrappedByMonotonicFunctions(
-                func.getArgumentAt(0), info, key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain)))
-                return false;
-
-            if (key_column_num == static_cast<size_t>(-1))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
+            return true;
         }
-        else if (num_args == 2)
+
+        /// has(const_array, key)
+        if (func_name == "has")
         {
-            if (functionIsInOrGlobalInOperator(func_name))
-            {
-                if (tryPrepareSetIndexForIn(func, info, out, allow_constant_transformation))
-                {
-                    const auto atom_it = atom_map.find(func_name);
-                    bool valid_atom = atom_it->second(out, const_value);
-                    if (valid_atom && out.relaxed)
-                        relaxed = true;
-                    return valid_atom;
-                }
-                else
-                    return false;
-            }
-
-            if (func_name == "has")
-            {
-                if (tryPrepareSetIndexForHas(func, info, out, allow_constant_transformation))
-                {
-                    /// Found empty array constant in has([], x) -> always false
-                    if (out.function == RPNElement::ALWAYS_FALSE)
-                        return true;
-
-                    const auto atom_it = atom_map.find(func_name);
-                    bool valid_atom = atom_it->second(out, const_value);
-                    if (valid_atom && out.relaxed)
-                        relaxed = true;
-                    return valid_atom;
-                }
-                else
-                    return false;
-            }
-
-            if (func_name == "pointInPolygon")
-            {
-                /// Case1 no holes in polygon
-                return analyze_point_in_polygon();
-            }
-
-            /// Looking for func(key, const) or func(const, key).
-            size_t const_arg_pos;
-            if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
-                const_arg_pos = 1;
-            else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
-                const_arg_pos = 0;
-            else
+            if (!tryPrepareSetAtomsForHas(func, info, out, allow_constant_transformation))
                 return false;
 
-            /// If the const operand is null, the atom will be always false
-            if (const_value.isNull())
-            {
-                out.function = RPNElement::ALWAYS_FALSE;
+            /// Found empty array constant in has([], x) -> always false.
+            if (out.size() == 1 && out[0].function == RPNElement::ALWAYS_FALSE)
                 return true;
-            }
 
-            size_t key_arg_pos = 1 - const_arg_pos;
-            auto key_arg = func.getArgumentAt(key_arg_pos);
-            bool is_constant_transformed = false;
+            Field dummy_value;
+            const auto atom_it = atom_map.find(func_name);
+            for (auto & element : out)
+            {
+                if (!atom_it->second(element, dummy_value))
+                    return false;
 
-            if (isKeyPossiblyWrappedByMonotonicFunctions(
-                    key_arg,
-                    info,
-                    key_column_num,
-                    argument_num_of_space_filling_curve,
-                    key_expr_type,
-                    chain,
-                    single_point && func_name == "equals"))
-            {
+                if (element.relaxed)
+                    relaxed = true;
             }
-            else if (
-                allow_constant_transformation
-                && canConstantBeWrappedByMonotonicFunctions(
-                    key_arg, info, key_column_num, key_expr_type, const_value, const_type))
-            {
-                is_constant_transformed = true;
-            }
-            else if (
-                single_point && func_name == "equals"
-                && canConstantBeWrappedByFunctions(key_arg, info, key_column_num, key_expr_type, const_value, const_type))
-            {
-                is_constant_transformed = true;
-            }
-            else
-                return false;
+            return true;
+        }
 
+        return extractBinaryComparisonAtoms(
+            node, func, info, func_name, func_name, allow_constant_transformation, out);
+    }
+
+    return false;
+}
+
+bool KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const std::string & func_name, RPN & out)
+{
+    /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
+    /// For polygons with holes, we will ignore the holes for the index analysis.
+    /// (The additional polygon arguments are ignored as well.)
+
+    const size_t num_args = func.getArgumentsSize();
+    if (num_args < 2)
+        return false;
+
+    Field point_field;
+    DataTypePtr point_type;
+    if (func.getArgumentAt(0).tryGetConstant(point_field, point_type))
+        return false;
+
+    Field polygon_field;
+    DataTypePtr polygon_type;
+    if (!func.getArgumentAt(1).tryGetConstant(polygon_field, polygon_type))
+        return false;
+
+    const auto atom_it = atom_map.find(func_name);
+
+    RPNElement element;
+
+    /// Analyze (x, y)
+
+    /// TODO: support index analysis for first argument of Point/Tuple type.
+    if (!func.getArgumentAt(0).isFunction())
+        return false;
+
+    auto first_argument = func.getArgumentAt(0).toFunctionNode();
+    if (first_argument.getArgumentsSize() != 2 || first_argument.getFunctionName() != "tuple")
+        return false;
+
+    for (size_t i = 0; i < 2; ++i)
+    {
+        auto name = first_argument.getArgumentAt(i).getColumnName();
+        auto it = key_columns.find(name);
+        if (it == key_columns.end())
+            return false;
+        element.key_columns.push_back(it->second);
+    }
+
+    element.point_in_polygon_function_name = func_name;
+
+    /// Analyze [(0, 0), (8, 4), (5, 8), (0, 2)]
+    chassert(WhichDataType(polygon_type).isArray());
+    for (const auto & elem : polygon_field.safeGet<Array>())
+    {
+        if (elem.getType() != Field::Types::Tuple)
+            return false;
+
+        const auto & elem_tuple = elem.safeGet<Tuple>();
+        if (elem_tuple.size() != 2)
+            return false;
+
+        auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[0]);
+        auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[1]);
+        element.polygon->data.outer().push_back({x, y});
+    }
+
+    boost::geometry::correct(element.polygon->data);
+
+    if (!atom_it->second(element, polygon_field))
+        return false;
+
+    out.emplace_back(std::move(element));
+    return true;
+}
+
+bool KeyCondition::extractBinaryComparisonAtoms(
+    const RPNBuilderTreeNode & node,
+    const RPNBuilderFunctionTreeNode & func,
+    const BuildInfo & info,
+    const std::string & original_func_name,
+    const std::string & func_name,
+    bool allow_constant_transformation,
+    RPN & out)
+{
+    Field const_value;
+    DataTypePtr const_type;
+
+    /// Looking for func(key, const) or func(const, key).
+    size_t const_arg_pos = 0;
+    if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
+        const_arg_pos = 1;
+    else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
+        const_arg_pos = 0;
+    else
+        return false;
+
+    /// If the const operand is NULL, the atom will be always false.
+    if (const_value.isNull())
+    {
+        out.emplace_back(RPNElement::ALWAYS_FALSE);
+        return true;
+    }
+
+    const size_t key_arg_pos = 1 - const_arg_pos;
+    const auto & key_arg = func.getArgumentAt(key_arg_pos);
+
+    struct RegularAtomCandidate
+    {
+        size_t key_column_num = 0;
+        DataTypePtr key_expr_type;
+        MonotonicFunctionsChain chain;
+        std::optional<size_t> argument_num_of_space_filling_curve;
+        Field const_value;
+        DataTypePtr const_type;
+        bool is_constant_transformed = false;
+    };
+
+    std::vector<RegularAtomCandidate> candidates;
+
+    auto add_direct_key_candidate = [&](size_t key_column_num,
+                                        DataTypePtr key_expr_type,
+                                        MonotonicFunctionsChain chain,
+                                        std::optional<size_t> argument_num_of_space_filling_curve)
+    {
+        candidates.push_back(RegularAtomCandidate{
+            .key_column_num = key_column_num,
+            .key_expr_type = std::move(key_expr_type),
+            .chain = std::move(chain),
+            .argument_num_of_space_filling_curve = argument_num_of_space_filling_curve,
+            .const_value = const_value,
+            .const_type = const_type,
+            .is_constant_transformed = false});
+    };
+
+    auto add_transformed_constant_candidate = [&](const TransformedConstant & transformed, bool allow_constant_relaxation)
+    {
+        candidates.push_back(RegularAtomCandidate{
+            .key_column_num = transformed.key_column_num,
+            .key_expr_type = transformed.key_column_type,
+            .chain = {},
+            .argument_num_of_space_filling_curve = std::nullopt,
+            .const_value = transformed.value,
+            .const_type = transformed.type,
+            .is_constant_transformed = allow_constant_relaxation});
+    };
+
+    /// Try: func(key_expr, const) where key_expr is (possibly monotonic) wrapping of a key column.
+    {
+        DataTypePtr key_expr_type;
+        size_t key_column_num = size_t(-1);
+        std::optional<size_t> argument_num_of_space_filling_curve;
+        MonotonicFunctionsChain chain;
+
+        const bool assume_function_monotonicity = single_point && original_func_name == "equals";
+        if (isKeyPossiblyWrappedByMonotonicFunctions(
+                key_arg,
+                info,
+                key_column_num,
+                argument_num_of_space_filling_curve,
+                key_expr_type,
+                chain,
+                assume_function_monotonicity))
+        {
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
 
-            /// Replace <const> <sign> <data> on to <data> <-sign> <const>
-            if (key_arg_pos == 1)
+            add_direct_key_candidate(key_column_num, std::move(key_expr_type), std::move(chain), argument_num_of_space_filling_curve);
+        }
+    }
+
+    /// Try infer key constraints by transforming the constant with key functions.
+    if (allow_constant_transformation)
+    {
+        auto transformed_candidates = transformConstantForKeyColumns(
+            key_arg,
+            info,
+            const_value,
+            const_type,
+            [this](const IFunctionBase & func_base, const IDataType & type) -> bool
             {
-                if (func_name == "less")
-                    func_name = "greater";
-                else if (func_name == "greater")
-                    func_name = "less";
-                else if (func_name == "greaterOrEquals")
-                    func_name = "lessOrEquals";
-                else if (func_name == "lessOrEquals")
-                    func_name = "greaterOrEquals";
-                else if (func_name == "like" || func_name == "notLike" ||
-                         func_name == "ilike" || func_name == "notILike" ||
-                         func_name == "startsWith" || func_name == "match")
+                if (!func_base.hasInformationAboutMonotonicity())
                     return false;
-            }
 
-            key_expr_type = recursiveRemoveLowCardinality(key_expr_type);
-            DataTypePtr key_expr_type_not_null;
-            bool key_expr_type_is_nullable = false;
-            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(key_expr_type.get()))
-            {
-                key_expr_type_is_nullable = true;
-                key_expr_type_not_null = nullable_type->getNestedType();
-            }
-            else
-                key_expr_type_not_null = key_expr_type;
+                if (!isFunctionReallyMonotonic(func_base, type))
+                    return false;
 
-            /// Native integers and DateTime are accurately compared without cast.
-            bool cast_not_needed =
-                (isNativeInteger(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
-                && (isNativeInteger(const_type) || isDateTime(const_type));
+                /// Range is irrelevant in this case.
+                auto monotonicity = func_base.getMonotonicityForRange(type, Field(), Field());
+                return monotonicity.is_always_monotonic;
+            },
+            /*allow_modulo_legacy*/ false);
 
-            if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
-            {
-                if (const_value.getType() == Field::Types::String)
-                {
-                    const_value = convertFieldToType(const_value, *key_expr_type_not_null);
-                    if (const_value.isNull())
-                        return false;
-                    // No need to set is_constant_transformed because we're doing exact conversion
-                }
-                else
-                {
-                    DataTypePtr common_type = tryGetLeastSupertype(DataTypes{key_expr_type_not_null, const_type});
-                    if (!common_type)
-                        return false;
+        for (const auto & transformed : transformed_candidates)
+            add_transformed_constant_candidate(transformed, /*allow_constant_relaxation*/ true);
+    }
 
-                    if (!const_type->equals(*common_type))
-                    {
-                        // Replace direct call that throws exception with try version
-                        Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
-                        if (converted.isNull())
-                            return false;
+    if (candidates.empty() && single_point && original_func_name == "equals")
+    {
+        auto transformed_candidates = transformConstantForKeyColumns(
+            key_arg,
+            info,
+            const_value,
+            const_type,
+            [](const IFunctionBase & func_base, const IDataType &) { return func_base.isDeterministic(); },
+            /*allow_modulo_legacy*/ true);
 
-                        const_value = converted;
+        for (const auto & transformed : transformed_candidates)
+            add_transformed_constant_candidate(transformed, /*allow_constant_relaxation*/ true);
+    }
 
-                        // Need to set is_constant_transformed unless we're doing exact conversion
-                        if (!key_expr_type_not_null->equals(*common_type))
-                            is_constant_transformed = true;
-                    }
-                    if (!key_expr_type_not_null->equals(*common_type))
-                    {
-                        auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
-                            ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
-                            : common_type;
+    if (candidates.empty())
+        return false;
 
-                        auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
+    /// Replace <const> <sign> <data> to <data> <-sign> <const>.
+    /// This is shared between all candidates.
+    std::string base_func_name = func_name;
+    if (key_arg_pos == 1 && !invertComparisonForSwappedArguments(base_func_name))
+        return false;
 
-                        /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
-                        if (!single_point && !func_cast->hasInformationAboutMonotonicity())
-                            return false;
-                        chain.push_back(func_cast);
-                    }
-                }
-            }
+    struct NormalizedCandidate
+    {
+        std::string func_name;
+        Field const_value;
+        RPNElement element;
+    };
 
-            /// Transformed constant must weaken the condition, for example "x > 5" must weaken to "round(x) >= 5"
-            if (is_constant_transformed)
-            {
-                if (func_name == "less")
-                    func_name = "lessOrEquals";
-                else if (func_name == "greater")
-                    func_name = "greaterOrEquals";
+    auto normalize_candidate = [&](const RegularAtomCandidate & candidate, std::string candidate_func_name) -> std::optional<NormalizedCandidate>
+    {
+        bool is_constant_transformed = candidate.is_constant_transformed;
 
-                relaxed = true;
-            }
+        DataTypePtr key_expr_type = candidate.key_expr_type;
+        Field candidate_const_value = candidate.const_value;
+        DataTypePtr candidate_const_type = candidate.const_type;
+        MonotonicFunctionsChain chain = candidate.chain;
 
+        key_expr_type = recursiveRemoveLowCardinality(key_expr_type);
+
+        DataTypePtr key_expr_type_not_null;
+        bool key_expr_type_is_nullable = false;
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(key_expr_type.get()))
+        {
+            key_expr_type_is_nullable = true;
+            key_expr_type_not_null = nullable_type->getNestedType();
         }
         else
+            key_expr_type_not_null = key_expr_type;
+
+        /// Native integers and DateTime are accurately compared without cast.
+        bool cast_not_needed
+            = (isNativeInteger(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
+            && (isNativeInteger(candidate_const_type) || isDateTime(candidate_const_type));
+
+        if (!cast_not_needed && !key_expr_type_not_null->equals(*candidate_const_type))
         {
-            if (func_name == "pointInPolygon")
+            if (candidate_const_value.getType() == Field::Types::String)
             {
-                /// Case2 has holes in polygon, when checking skip index, the hole will be ignored.
-                return analyze_point_in_polygon();
+                candidate_const_value = convertFieldToType(candidate_const_value, *key_expr_type_not_null);
+                if (candidate_const_value.isNull())
+                    return std::nullopt;
+                // No need to set is_constant_transformed because we're doing exact conversion.
             }
+            else
+            {
+                DataTypePtr common_type = tryGetLeastSupertype(DataTypes{key_expr_type_not_null, candidate_const_type});
+                if (!common_type)
+                    return std::nullopt;
 
-            return false;
+                if (!candidate_const_type->equals(*common_type))
+                {
+                    // Replace direct call that throws exception with try version.
+                    Field converted = tryConvertFieldToType(candidate_const_value, *common_type, candidate_const_type.get(), {});
+                    if (converted.isNull())
+                        return std::nullopt;
+
+                    candidate_const_value = converted;
+
+                    // Need to set is_constant_transformed unless we're doing exact conversion.
+                    if (!key_expr_type_not_null->equals(*common_type))
+                        is_constant_transformed = true;
+                }
+                if (!key_expr_type_not_null->equals(*common_type))
+                {
+                    auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
+                        ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
+                        : common_type;
+
+                    auto func_cast = createInternalCast(
+                        {key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
+
+                    /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
+                    if (!single_point && !func_cast->hasInformationAboutMonotonicity())
+                        return std::nullopt;
+
+                    chain.push_back(func_cast);
+                }
+            }
         }
 
-        const auto atom_it = atom_map.find(func_name);
+        /// Transformed constant must weaken the condition, for example "x > 5" must weaken to "round(x) >= 5".
+        if (is_constant_transformed)
+            relaxComparisonForTransformedConstant(candidate_func_name);
 
-        out.key_columns.push_back(key_column_num);
-        out.monotonic_functions_chain = std::move(chain);
-        out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
+        RPNElement element;
+        element.key_columns.push_back(candidate.key_column_num);
+        element.monotonic_functions_chain = std::move(chain);
+        element.argument_num_of_space_filling_curve = candidate.argument_num_of_space_filling_curve;
+        element.relaxed = is_constant_transformed;
 
-        bool valid_atom = atom_it->second(out, const_value);
-        if (valid_atom && out.relaxed)
-            relaxed = true;
-        return valid_atom;
-    }
-    if (node.tryGetConstant(const_value, const_type))
+        return NormalizedCandidate{
+            .func_name = std::move(candidate_func_name),
+            .const_value = candidate_const_value,
+            .element = std::move(element)};
+    };
+
+    std::vector<bool> has_atom_for_key_column(num_key_columns, false);
+
+    for (const auto & candidate : candidates)
     {
-        /// For cases where it says, for example, `WHERE 0 AND something`
+        if (candidate.key_column_num < has_atom_for_key_column.size() && has_atom_for_key_column[candidate.key_column_num])
+            continue;
 
-        if (const_value.isNull())
-        {
-            out.function = RPNElement::ALWAYS_FALSE;
-            return true;
-        }
-        if (const_value.getType() == Field::Types::UInt64)
-        {
-            out.function = const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-            return true;
-        }
-        if (const_value.getType() == Field::Types::Int64)
-        {
-            out.function = const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-            return true;
-        }
-        if (const_value.getType() == Field::Types::Float64)
-        {
-            out.function = const_value.safeGet<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-            return true;
-        }
+        std::string candidate_func_name = base_func_name;
+
+        auto normalized = normalize_candidate(candidate, std::move(candidate_func_name));
+        if (!normalized)
+            continue;
+
+        auto atom_it_for_candidate = atom_map.find(normalized->func_name);
+        if (atom_it_for_candidate == atom_map.end())
+            continue;
+
+        if (!atom_it_for_candidate->second(normalized->element, normalized->const_value))
+            continue;
+
+        if (normalized->element.relaxed)
+            relaxed = true;
+
+        out.emplace_back(std::move(normalized->element));
+        if (candidate.key_column_num < has_atom_for_key_column.size())
+            has_atom_for_key_column[candidate.key_column_num] = true;
     }
+
+    return !out.empty();
+}
+
+bool KeyCondition::extractAtomsFromConstant(const RPNBuilderTreeNode & node, RPN & out)
+{
+    Field const_value;
+    DataTypePtr const_type;
+    if (!node.tryGetConstant(const_value, const_type))
+        return false;
+
+    /// For cases where it says, for example, `WHERE 0 AND something`
+    if (const_value.isNull())
+    {
+        out.emplace_back(RPNElement::ALWAYS_FALSE);
+        return true;
+    }
+    if (const_value.getType() == Field::Types::UInt64)
+    {
+        out.emplace_back(const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
+        return true;
+    }
+    if (const_value.getType() == Field::Types::Int64)
+    {
+        out.emplace_back(const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
+        return true;
+    }
+    if (const_value.getType() == Field::Types::Float64)
+    {
+        out.emplace_back(const_value.safeGet<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
+        return true;
+    }
+
     return false;
 }
 

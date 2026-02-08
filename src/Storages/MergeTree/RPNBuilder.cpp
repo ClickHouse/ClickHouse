@@ -479,22 +479,63 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
     return RPNBuilderTreeNode(dag_node->children[index], tree_context);
 }
 
+namespace
+{
+
+template <typename RPNElement>
+typename RPNBuilder<RPNElement>::ExtractAtomsFromTreeFunction makeExtractAtomsFromTreeFunction(
+    const typename RPNBuilder<RPNElement>::ExtractAtomFromTreeFunction & extract_atom_from_tree_function)
+{
+    return [&](const RPNBuilderTreeNode & node, typename RPNBuilder<RPNElement>::RPNElements & out)
+    {
+        out.clear();
+
+        RPNElement element;
+        if (!extract_atom_from_tree_function(node, element))
+            return false;
+
+        out.emplace_back(std::move(element));
+        return true;
+    };
+}
+
+}
+
 template <typename RPNElement>
 RPNBuilder<RPNElement>::RPNBuilder(
     const ActionsDAG::Node * filter_actions_dag_node,
     ContextPtr query_context_,
     const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
-    : extract_atom_from_tree_function(extract_atom_from_tree_function_)
 {
     RPNBuilderTreeContext tree_context(query_context_);
-    traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context));
+
+    auto extract_atoms_from_tree_function = makeExtractAtomsFromTreeFunction<RPNElement>(extract_atom_from_tree_function_);
+
+    traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context), extract_atoms_from_tree_function);
+}
+
+template <typename RPNElement>
+RPNBuilder<RPNElement>::RPNBuilder(
+    const ActionsDAG::Node * filter_actions_dag_node,
+    ContextPtr query_context_,
+    const ExtractAtomsFromTreeFunction & extract_atoms_from_tree_function_)
+{
+    RPNBuilderTreeContext tree_context(query_context_);
+    traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context), extract_atoms_from_tree_function_);
 }
 
 template <typename RPNElement>
 RPNBuilder<RPNElement>::RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
-    : extract_atom_from_tree_function(extract_atom_from_tree_function_)
 {
-    traverseTree(node);
+    auto extract_atoms_from_tree_function = makeExtractAtomsFromTreeFunction<RPNElement>(extract_atom_from_tree_function_);
+
+    traverseTree(node, extract_atoms_from_tree_function);
+}
+
+template <typename RPNElement>
+RPNBuilder<RPNElement>::RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomsFromTreeFunction & extract_atoms_from_tree_function_)
+{
+    traverseTree(node, extract_atoms_from_tree_function_);
 }
 
 template <typename RPNElement>
@@ -504,44 +545,68 @@ RPNBuilder<RPNElement>::RPNElements && RPNBuilder<RPNElement>::extractRPN() &&
 }
 
 template <typename RPNElement>
-void RPNBuilder<RPNElement>::traverseTree(const RPNBuilderTreeNode & node)
+void RPNBuilder<RPNElement>::traverseTree(
+    const RPNBuilderTreeNode & node,
+    const ExtractAtomsFromTreeFunction & extract_atoms_from_tree_function)
 {
-    RPNElement element;
-
     if (node.isFunction())
     {
         auto function_node = node.toFunctionNode();
 
-        if (extractLogicalOperatorFromTree(function_node, element))
+        RPNElement operator_element;
+        if (extractLogicalOperatorFromTree(function_node, operator_element))
         {
+            const auto operator_function = operator_element.function;
             size_t arguments_size = function_node.getArgumentsSize();
 
             for (size_t argument_index = 0; argument_index < arguments_size; ++argument_index)
             {
                 auto function_node_argument = function_node.getArgumentAt(argument_index);
-                traverseTree(function_node_argument);
+                traverseTree(function_node_argument, extract_atoms_from_tree_function);
 
                 /** The first part of the condition is for the correct support of `and` and `or` functions of arbitrary arity
                       * - in this case `n - 1` elements are added (where `n` is the number of arguments).
                       */
-                if (argument_index != 0 || element.function == RPNElement::FUNCTION_NOT)
-                    rpn_elements.emplace_back(std::move(element)); /// NOLINT(bugprone-use-after-move,hicpp-invalid-access-moved)
+                if (argument_index != 0 || operator_function == RPNElement::FUNCTION_NOT)
+                {
+                    RPNElement op;
+                    op.function = operator_function;
+                    rpn_elements.emplace_back(std::move(op));
+                }
             }
 
             if (arguments_size == 0 && function_node.getFunctionName() == "indexHint")
             {
-                element.function = RPNElement::ALWAYS_TRUE;
-                rpn_elements.emplace_back(std::move(element));
+                RPNElement always_true;
+                always_true.function = RPNElement::ALWAYS_TRUE;
+                rpn_elements.emplace_back(std::move(always_true));
             }
 
             return;
         }
     }
 
-    if (!extract_atom_from_tree_function(node, element))
-        element.function = RPNElement::FUNCTION_UNKNOWN;
+    RPNElements atoms;
+    if (extract_atoms_from_tree_function(node, atoms) && !atoms.empty())
+    {
+        for (size_t i = 0; i < atoms.size(); ++i)
+        {
+            rpn_elements.emplace_back(std::move(atoms[i]));
 
-    rpn_elements.emplace_back(std::move(element));
+            if (i != 0)
+            {
+                RPNElement and_operator;
+                and_operator.function = RPNElement::FUNCTION_AND;
+                rpn_elements.emplace_back(std::move(and_operator));
+            }
+        }
+
+        return;
+    }
+
+    RPNElement unknown;
+    unknown.function = RPNElement::FUNCTION_UNKNOWN;
+    rpn_elements.emplace_back(std::move(unknown));
 }
 
 template <typename RPNElement>

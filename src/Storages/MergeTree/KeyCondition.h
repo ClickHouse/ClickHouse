@@ -341,6 +341,21 @@ private:
         const NameSet key_subexpr_names;
     };
 
+    struct KeyFunctionChain
+    {
+        size_t key_column_num = 0;
+        DataTypePtr key_column_type;
+        MonotonicFunctionsChain functions_chain;
+    };
+
+    struct TransformedConstant
+    {
+        size_t key_column_num = 0;
+        DataTypePtr key_column_type;
+        Field value;
+        DataTypePtr type;
+    };
+
     BoolMask checkInRange(
         size_t used_key_size,
         const FieldRef * left_key,
@@ -349,7 +364,18 @@ private:
         bool right_bounded,
         BoolMask initial_mask) const;
 
-    bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
+    bool extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
+    bool extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
+    bool extractAtomsFromConstant(const RPNBuilderTreeNode & node, RPN & out);
+    bool extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const std::string & func_name, RPN & out);
+    bool extractBinaryComparisonAtoms(
+        const RPNBuilderTreeNode & node,
+        const RPNBuilderFunctionTreeNode & func,
+        const BuildInfo & info,
+        const std::string & original_func_name,
+        const std::string & func_name,
+        bool allow_constant_transformation,
+        RPN & out);
 
     /// Is node the key column, or an argument of a space-filling curve that is a key column,
     ///  or expression in which that column is wrapped by a chain of functions,
@@ -377,30 +403,19 @@ private:
         DataTypePtr & out_key_column_type,
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
-    bool extractMonotonicFunctionsChainFromKey(
+    std::vector<KeyFunctionChain> extractMonotonicFunctionsChainsFromKey(
         ContextPtr context,
         const String & expr_name,
         const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        MonotonicFunctionsChain & out_functions_chain,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
-    bool canConstantBeWrappedByMonotonicFunctions(
+    std::vector<TransformedConstant> transformConstantForKeyColumns(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        Field & out_value,
-        DataTypePtr & out_type);
-
-    bool canConstantBeWrappedByFunctions(
-        const RPNBuilderTreeNode & node,
-        const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        Field & out_value,
-        DataTypePtr & out_type);
+        const Field & value,
+        const DataTypePtr & type,
+        std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function,
+        bool allow_modulo_legacy) const;
 
     /// Checks if node is a subexpression of any of key columns expressions,
     /// wrapped by deterministic functions, and if so, returns `true`, and
@@ -414,18 +429,17 @@ private:
         DataTypePtr & out_key_res_column_type,
         MonotonicFunctionsChain & out_functions_chain);
 
-    /// If it's possible to make an RPNElement
-    /// that will filter values (possibly tuples) by the content of 'prepared_set',
-    /// do it and return true.
-    bool tryPrepareSetIndexForIn(
+    /// If it's possible to make one or more RPNElements that will filter values (possibly tuples) by a set,
+    /// append them to `out` and return true. (If multiple atoms are produced, RPNBuilder will AND them.)
+    bool tryPrepareSetAtomsForIn(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        RPNElement & out,
+        RPN & out,
         bool allow_constant_transformation);
-    bool tryPrepareSetIndexForHas(
+    bool tryPrepareSetAtomsForHas(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        RPNElement & out,
+        RPN & out,
         bool allow_constant_transformation);
 
     void analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
