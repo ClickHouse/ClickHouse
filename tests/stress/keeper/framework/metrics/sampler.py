@@ -13,6 +13,7 @@ from keeper.framework.core.util import ts_ms
 from keeper.framework.io.probes import (
     ch_async_metrics,
     ch_metrics,
+    container_stats,
     dirs,
     lgif,
     mntr,
@@ -26,19 +27,25 @@ from keeper.framework.io.sink import sink_clickhouse
 def compute_prom_config(default_interval: int = 10) -> Dict:
     """Compute Prometheus sampling configuration.
     
-    Uses two intervals because:
-    - Lightweight metrics (mntr, dirs, srvr): sampled every interval_s (10s) - tracks trends, sufficient granularity
-    - Heavy Prometheus metrics: sampled every prom_every_n * interval_s (30s) - HTTP scrape, 100+ metrics, higher overhead
-    
-    This design reuses the same sampling loop, only querying Prometheus when needed.
+    If KEEPER_METRICS_INTERVAL_S is set: sample and push metrics every N seconds (e.g. 5).
+    If not set: interval_s=10, flush every 3 snapshots (push every 30s).
     """
-    interval = env_int("KEEPER_MONITOR_INTERVAL_S", default_interval)
-    # Default: sample Prometheus every 30s (3 * 10s interval)
+    metrics_interval_env = os.environ.get("KEEPER_METRICS_INTERVAL_S", "").strip()
+    if metrics_interval_env:
+        try:
+            interval = max(1, int(metrics_interval_env))
+            flush_every = 1
+        except ValueError:
+            interval = env_int("KEEPER_MONITOR_INTERVAL_S", default_interval)
+            flush_every = SAMPLER_FLUSH_EVERY
+    else:
+        interval = env_int("KEEPER_MONITOR_INTERVAL_S", default_interval)
+        flush_every = SAMPLER_FLUSH_EVERY
     prom_every_n = env_int("KEEPER_PROM_EVERY_N", 3)
-
     return {
         "interval_s": interval,
         "prom_every_n": prom_every_n,
+        "flush_every": flush_every,
     }
 
 
@@ -75,6 +82,7 @@ class MetricsSampler:
         interval_s=10,
         prom_every_n=3,
         ctx=None,
+        flush_every=None,
     ):
         self.nodes = nodes
         self.run_meta = run_meta or {}
@@ -91,7 +99,7 @@ class MetricsSampler:
         self._th = None
         self._metrics_ts_rows = []
         self._snap_count = 0
-        self._flush_every = int(SAMPLER_FLUSH_EVERY)
+        self._flush_every = int(flush_every if flush_every is not None else SAMPLER_FLUSH_EVERY)
         self._row_flush_threshold = int(SAMPLER_ROW_FLUSH_THRESHOLD)
 
     def _parse_prom(self, text):
@@ -160,6 +168,11 @@ class MetricsSampler:
                 _append_kv("srvr", srvr_kv(n))
             except Exception as e:
                 print(f"[keeper][snapshot_stage] error getting srvr for node {n.name}: {e}")
+            
+            try:
+                _append_kv("container", container_stats(n))
+            except Exception as e:
+                print(f"[keeper][snapshot_stage] error getting container_stats for node {n.name}: {e}")
             
             try:
                 parsed = self._parse_prom(prom_metrics(n))
@@ -233,6 +246,7 @@ class MetricsSampler:
         _sample_kv("mntr", lambda: mntr(n))
         _sample_dirs()
         _sample_kv("srvr", lambda: srvr_kv(n))
+        _sample_kv("container", lambda: container_stats(n))
         _sample_prom()
         # Note: ch_metrics and ch_async_metrics are NOT collected during continuous sampling
         # They're expensive SQL queries and are only collected in snapshot_stage("post") at the end

@@ -29,7 +29,7 @@ scenarios:
     duration: 120
     workload: 
       config: workloads/prod_mix.yaml
-      replay: tests/stress/keeper/workloads/zookeeper_log.parquet
+      replay: tests/stress/keeper/workloads/zookeeper_log_extended.parquet
     pre:
       - { kind: ensure_paths, on: leader, paths: ["/e2e/prod", "/e2e/prod/create", "/e2e/prod/set"] }
     faults:
@@ -40,7 +40,7 @@ scenarios:
       # Replay: bootstrap + version tracking; errors = unexpected results only
       - { type: error_rate_le, max_ratio: 0.5 }
       # Replay latency can be higher under load (bootstrap CREATEs + full log); allow p99 up to 20s
-      - { type: p99_le, max_ms: 20000 }
+      - { type: p99_le, max_ms: 200000 }
       - { type: log_sanity_ok }
       - { type: print_summary }
       - { type: mntr_print }

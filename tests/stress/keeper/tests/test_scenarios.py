@@ -852,11 +852,14 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         single_leader(nodes)
         leader = _get_current_leader(nodes)
         
-        # Setup metrics collection
+        # Setup metrics collection (interval/flush from KEEPER_METRICS_INTERVAL_S if set, else 30s)
         cfg = compute_prom_config()
         sampler = MetricsSampler(
             nodes, run_meta_eff, scenario_id, topo, run_id,
-            interval_s=cfg["interval_s"], prom_every_n=cfg.get("prom_every_n", 3), ctx=ctx,
+            interval_s=cfg["interval_s"],
+            prom_every_n=cfg.get("prom_every_n", 3),
+            ctx=ctx,
+            flush_every=cfg.get("flush_every"),
         )
         
         # Pre-execution snapshot (captures baseline for derived metrics)

@@ -69,6 +69,7 @@ def set_default_env():
         "KEEPER_DURATION": "1200",
         "KEEPER_FAULTS": "false",
         "KEEPER_MATRIX_BACKENDS": "default,rocks",
+        "KEEPER_METRICS_INTERVAL_S": "5",
     }.items():
         os.environ.setdefault(k, v)
 

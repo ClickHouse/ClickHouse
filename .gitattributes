@@ -3,3 +3,4 @@ contrib/* linguist-vendored
 tests/queries/0_stateless/data_json/* binary
 tests/queries/0_stateless/*.reference -crlf
 src/Core/SettingsChangesHistory.cpp merge=union
+tests/stress/keeper/workloads/zookeeper_log_extended.parquet filter=lfs diff=lfs merge=lfs -text

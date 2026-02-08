@@ -216,3 +216,37 @@ def ch_trace_log(node, limit_rows=500):
 def dirs(node):
     """Return raw output of 4LW 'dirs' command (best-effort)."""
     return four(node, "dirs")
+
+
+def container_stats(node):
+    """Return CPU and memory usage for the container (from cgroup, inside container).
+    Returns dict with container_memory_bytes and container_cpu_usage_usec (may be missing if unreadable).
+    """
+    out = {}
+    try:
+        # Memory: cgroup v2 memory.current (bytes) or v1 memory.usage_in_bytes
+        mem_cmd = (
+            "cat /sys/fs/cgroup/memory.current 2>/dev/null || "
+            "cat /sys/fs/cgroup/memory/memory.usage_in_bytes 2>/dev/null"
+        )
+        r = _exec(node, mem_cmd, nothrow=True, timeout=2)
+        if r and str(r).strip().isdigit():
+            out["container_memory_bytes"] = int(str(r).strip())
+    except Exception as e:
+        print(f"[keeper][container_stats] error getting container memory for node {node.name}: {e}")
+    try:
+        # CPU: cgroup v2 cpu.stat (usage_usec) or v1 cpuacct.usage (nanoseconds)
+        cpu_cmd = (
+            "grep '^usage_usec' /sys/fs/cgroup/cpu.stat 2>/dev/null | awk '{print $2}' || "
+            "cat /sys/fs/cgroup/cpuacct/cpuacct.usage 2>/dev/null"
+        )
+        r = _exec(node, cpu_cmd, nothrow=True, timeout=2)
+        if r and str(r).strip().isdigit():
+            val = int(str(r).strip())
+            # cpuacct.usage is in nanoseconds; convert to microseconds for a single metric unit
+            if val > 10**12:
+                val = val // 1000
+            out["container_cpu_usage_usec"] = val
+    except Exception as e:
+        print(f"[keeper][container_stats] error getting container cpu for node {node.name}: {e}")
+    return out
