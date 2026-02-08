@@ -45,6 +45,7 @@
 
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/SelectUnionMode.h>
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -59,6 +60,7 @@
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
@@ -73,6 +75,7 @@
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 
+#include <Planner/CollectTableExpressionData.h>
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerJoins.h>
@@ -133,6 +136,7 @@ namespace Setting
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool parallel_replicas_allow_merge_tables;
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 namespace ErrorCodes
@@ -1104,8 +1108,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         table_ptr = mv->getTargetTable().get();
                     }
 
-                    /// Handle Merge tables - they can use parallel replicas by distributing the query
-                    /// to replicas, where each replica reads from underlying MergeTree tables.
+                    /// Allow Merge tables when the setting is enabled.
                     const auto * merge = typeid_cast<const StorageMerge *>(table_ptr);
                     if (merge)
                         return static_cast<bool>(query_settings[Setting::parallel_replicas_allow_merge_tables]);
@@ -1118,9 +1121,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                     return true;
                 };
-
-                /// Check if storage is a Merge table (for separate handling below)
-                const auto * merge_storage = typeid_cast<const StorageMerge *>(storage.get());
 
                 /// query_plan can be empty if there is nothing to read
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
@@ -1177,7 +1177,115 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         return false;
                     };
 
-                    if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
+                    const auto * merge_storage = typeid_cast<const StorageMerge *>(storage.get());
+
+                    if (merge_storage && settings[Setting::parallel_replicas_allow_merge_tables]
+                        && ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
+                        && allow_parallel_replicas_for_table_expression(table_expression, parent_join_tree))
+                    {
+                        /// Build per-table parallel replicas plans and UNION ALL them on initiator.
+                        QueryPlan::Node * node = query_plan.getRootNode();
+                        ReadFromMerge * read_from_merge = nullptr;
+                        while (node)
+                        {
+                            read_from_merge = typeid_cast<ReadFromMerge *>(node->step.get());
+                            if (read_from_merge)
+                                break;
+
+                            QueryPlan::Node * prev_node = node;
+                            if (!node->children.empty())
+                            {
+                                chassert(node->children.size() == 1);
+                                node = node->children.at(0);
+                            }
+                            else
+                            {
+                                throw Exception(
+                                    ErrorCodes::LOGICAL_ERROR,
+                                    "Step is expected to be ReadFromMerge but it's {}",
+                                    prev_node->step->getName());
+                            }
+                        }
+
+                        chassert(read_from_merge);
+
+                        const auto & selected_tables = read_from_merge->getSelectedTables();
+                        if (!selected_tables.empty())
+                        {
+                            std::vector<std::unique_ptr<QueryPlan>> child_plans;
+                            SharedHeaders child_headers;
+                            child_plans.reserve(selected_tables.size());
+                            child_headers.reserve(selected_tables.size());
+
+                            QueryProcessingStage::Enum max_child_stage = QueryProcessingStage::FetchColumns;
+
+                            for (const auto & table : selected_tables)
+                            {
+                                const auto & child_storage = std::get<1>(table);
+                                const auto & child_lock = std::get<2>(table);
+                                auto child_storage_snapshot = child_storage->getStorageSnapshot(child_storage->getInMemoryMetadataPtr(), query_context);
+
+                                auto child_table_node = std::make_shared<TableNode>(
+                                    child_storage,
+                                    child_storage->getStorageID(),
+                                    child_lock,
+                                    child_storage_snapshot);
+
+                                if (table_node && table_node->hasTableExpressionModifiers())
+                                    child_table_node->getTableExpressionModifiers() = table_node->getTableExpressionModifiers();
+
+                                if (table_expression->hasAlias())
+                                    child_table_node->setAlias(table_expression->getAlias());
+
+                                auto child_query_tree = table_expression_query_info.query_tree->cloneAndReplace(table_expression, child_table_node);
+                                auto child_global_context
+                                    = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+                                auto child_planner_context
+                                    = std::make_shared<PlannerContext>(Context::createCopy(query_context), child_global_context, select_query_options);
+
+                                collectTableExpressionData(child_query_tree, child_planner_context);
+
+                                auto child_select_query_info = buildSelectQueryInfo(child_query_tree, child_planner_context);
+                                auto & child_query_node = child_query_tree->as<QueryNode &>();
+                                auto child_plan = buildQueryPlanForTableExpression(
+                                    child_table_node,
+                                    child_query_node.getJoinTree(),
+                                    child_select_query_info,
+                                    select_query_options,
+                                    child_planner_context,
+                                    true /* is_single_table_expression */,
+                                    wrap_read_columns_in_subquery);
+
+                                max_child_stage = static_cast<QueryProcessingStage::Enum>(
+                                    std::max(static_cast<int>(max_child_stage), static_cast<int>(child_plan.stage)));
+
+                                for (const auto & row_policy : child_plan.used_row_policies)
+                                    used_row_policies.insert(row_policy);
+                                useful_sets.insert(child_plan.useful_sets.begin(), child_plan.useful_sets.end());
+
+                                auto child_query_plan = std::make_unique<QueryPlan>(std::move(child_plan.query_plan));
+                                child_headers.push_back(child_query_plan->getCurrentHeader());
+                                child_plans.push_back(std::move(child_query_plan));
+                            }
+
+                            if (!child_plans.empty())
+                            {
+                                Block union_common_header = buildCommonHeaderForUnion(
+                                    child_headers,
+                                    SelectUnionMode::UNION_ALL,
+                                    settings[Setting::use_variant_as_common_type]);
+                                addConvertingToCommonHeaderActionsIfNeeded(child_plans, union_common_header, child_headers, query_context);
+
+                                auto union_step = std::make_unique<UnionStep>(std::move(child_headers), max_threads_execute_query);
+                                QueryPlan union_plan;
+                                union_plan.unitePlans(std::move(union_step), std::move(child_plans));
+
+                                query_plan = std::move(union_plan);
+                                till_stage = max_child_stage;
+                            }
+                        }
+                    }
+                    else if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
                     {
                         if (auto cluster = query_context->getClusterForParallelReplicas();
                             query_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
@@ -1203,142 +1311,96 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
                         && allow_parallel_replicas_for_table_expression(table_expression, parent_join_tree))
                     {
-                        /// For Merge tables and merge() table function, we use a different code path
-                        /// that doesn't require finding ReadFromMergeTree step. The query is distributed
-                        /// to replicas, and each replica reads from underlying MergeTree tables.
-                        ///
-                        /// For table functions (like merge()), we use an empty StorageID because the
-                        /// table function's storage ID ("_table_function.merge") doesn't exist on replicas.
-                        /// Using an empty StorageID skips the table existence check, and the query
-                        /// (including the table function) is sent to replicas for evaluation.
-                        ///
-                        /// NOTE: This only works safely if the Merge table/function maps to exactly ONE
-                        /// underlying MergeTree table on each replica. If it maps to multiple, both will
-                        /// try to participate in parallel replica coordination using the same replica ID,
-                        /// causing the Coordinator to throw "Duplicate announcement received".
-                        const bool is_table_function = (table_function_node != nullptr);
-                        if (merge_storage && settings[Setting::parallel_replicas_allow_merge_tables])
+                        // (1) find read step
+                        QueryPlan::Node * node = query_plan.getRootNode();
+                        ReadFromMergeTree * reading = nullptr;
+                        while (node)
+                        {
+                            reading = typeid_cast<ReadFromMergeTree *>(node->step.get());
+                            if (reading)
+                                break;
+
+                            QueryPlan::Node * prev_node = node;
+                            if (!node->children.empty())
+                            {
+                                chassert(node->children.size() == 1);
+                                node = node->children.at(0);
+                            }
+                            else
+                            {
+                                throw Exception(
+                                    ErrorCodes::LOGICAL_ERROR,
+                                    "Step is expected to be ReadFromMergeTree but it's {}",
+                                    prev_node->step->getName());
+                            }
+                        }
+
+                        chassert(reading);
+
+                        // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
+                        if (settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
+                        {
+                            auto result_ptr = reading->selectRangesToRead();
+                            UInt64 rows_to_read = result_ptr->selected_rows;
+
+                            if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
+                                rows_to_read = table_expression_query_info.trivial_limit;
+
+                            if (max_block_size_limited && (max_block_size_limited < rows_to_read))
+                                rows_to_read = max_block_size_limited;
+
+                            const size_t number_of_replicas_to_use
+                                = rows_to_read / settings[Setting::parallel_replicas_min_number_of_rows_per_replica];
+                            LOG_TRACE(
+                                getLogger("Planner"),
+                                "Estimated {} rows to read. It is enough work for {} parallel replicas",
+                                rows_to_read,
+                                number_of_replicas_to_use);
+
+                            if (number_of_replicas_to_use <= 1)
+                            {
+                                planner_context->getMutableQueryContext()->setSetting(
+                                    "allow_experimental_parallel_reading_from_replicas", Field(0));
+                                planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{1});
+                                LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because there aren't enough rows to read");
+                            }
+                            else if (number_of_replicas_to_use < settings[Setting::max_parallel_replicas])
+                            {
+                                planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", number_of_replicas_to_use);
+                                LOG_DEBUG(getLogger("Planner"), "Reducing the number of replicas to use to {}", number_of_replicas_to_use);
+                            }
+                        }
+
+                        // (3) if parallel replicas still enabled - replace reading step
+                        if (planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
                         {
                             till_stage = QueryProcessingStage::WithMergeableState;
                             QueryPlan query_plan_parallel_replicas;
-
-                            /// For Merge tables/functions, we must disable local plan because
-                            /// createLocalPlanForParallelReplicas expects ReadFromMergeTree step
-                            /// which doesn't exist for Merge tables.
-                            /// The query will be sent to all replicas (including local) via remote execution.
-                            auto merge_context = Context::createCopy(query_context);
-                            merge_context->setSetting("parallel_replicas_local_plan", Field(false));
-
-                            /// For table functions, use empty StorageID to skip table existence check.
-                            /// The query tree contains the table function which will be re-evaluated on each replica.
-                            auto storage_id_for_parallel_replicas = is_table_function
-                                ? StorageID::createEmpty()
-                                : storage->getStorageID();
-
+                            QueryPlanStepPtr reading_step = std::move(node->step);
                             ClusterProxy::executeQueryWithParallelReplicas(
                                 query_plan_parallel_replicas,
-                                storage_id_for_parallel_replicas,
+                                storage->getStorageID(),
                                 till_stage,
                                 table_expression_query_info.query_tree,
                                 table_expression_query_info.planner_context,
-                                merge_context,
+                                query_context,
                                 table_expression_query_info.storage_limits,
-                                nullptr);  /// No analyzed ReadFromMergeTree step for Merge tables
+                                std::move(reading_step));
                             query_plan = std::move(query_plan_parallel_replicas);
                         }
                         else
                         {
-                            // (1) find read step
-                            QueryPlan::Node * node = query_plan.getRootNode();
-                            ReadFromMergeTree * reading = nullptr;
-                            while (node)
-                            {
-                                reading = typeid_cast<ReadFromMergeTree *>(node->step.get());
-                                if (reading)
-                                    break;
-
-                                QueryPlan::Node * prev_node = node;
-                                if (!node->children.empty())
-                                {
-                                    chassert(node->children.size() == 1);
-                                    node = node->children.at(0);
-                                }
-                                else
-                                {
-                                    throw Exception(
-                                        ErrorCodes::LOGICAL_ERROR,
-                                        "Step is expected to be ReadFromMergeTree but it's {}",
-                                        prev_node->step->getName());
-                                }
-                            }
-
-                            chassert(reading);
-
-                            // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
-                            if (settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
-                            {
-                                auto result_ptr = reading->selectRangesToRead();
-                                UInt64 rows_to_read = result_ptr->selected_rows;
-
-                                if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
-                                    rows_to_read = table_expression_query_info.trivial_limit;
-
-                                if (max_block_size_limited && (max_block_size_limited < rows_to_read))
-                                    rows_to_read = max_block_size_limited;
-
-                                const size_t number_of_replicas_to_use
-                                    = rows_to_read / settings[Setting::parallel_replicas_min_number_of_rows_per_replica];
-                                LOG_TRACE(
-                                    getLogger("Planner"),
-                                    "Estimated {} rows to read. It is enough work for {} parallel replicas",
-                                    rows_to_read,
-                                    number_of_replicas_to_use);
-
-                                if (number_of_replicas_to_use <= 1)
-                                {
-                                    planner_context->getMutableQueryContext()->setSetting(
-                                        "allow_experimental_parallel_reading_from_replicas", Field(0));
-                                    planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{1});
-                                    LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because there aren't enough rows to read");
-                                }
-                                else if (number_of_replicas_to_use < settings[Setting::max_parallel_replicas])
-                                {
-                                    planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", number_of_replicas_to_use);
-                                    LOG_DEBUG(getLogger("Planner"), "Reducing the number of replicas to use to {}", number_of_replicas_to_use);
-                                }
-                            }
-
-                            // (3) if parallel replicas still enabled - replace reading step
-                            if (planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
-                            {
-                                till_stage = QueryProcessingStage::WithMergeableState;
-                                QueryPlan query_plan_parallel_replicas;
-                                QueryPlanStepPtr reading_step = std::move(node->step);
-                                ClusterProxy::executeQueryWithParallelReplicas(
-                                    query_plan_parallel_replicas,
-                                    storage->getStorageID(),
-                                    till_stage,
-                                    table_expression_query_info.query_tree,
-                                    table_expression_query_info.planner_context,
-                                    query_context,
-                                    table_expression_query_info.storage_limits,
-                                    std::move(reading_step));
-                                query_plan = std::move(query_plan_parallel_replicas);
-                            }
-                            else
-                            {
-                                QueryPlan query_plan_no_parallel_replicas;
-                                storage->read(
-                                    query_plan_no_parallel_replicas,
-                                    storage_column_names,
-                                    storage_snapshot,
-                                    table_expression_query_info,
-                                    query_context,
-                                    till_stage,
-                                    max_block_size,
-                                    max_streams);
-                                query_plan = std::move(query_plan_no_parallel_replicas);
-                            }
+                            QueryPlan query_plan_no_parallel_replicas;
+                            storage->read(
+                                query_plan_no_parallel_replicas,
+                                storage_column_names,
+                                storage_snapshot,
+                                table_expression_query_info,
+                                query_context,
+                                till_stage,
+                                max_block_size,
+                                max_streams);
+                            query_plan = std::move(query_plan_no_parallel_replicas);
                         }
                     }
                 }
