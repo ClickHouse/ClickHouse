@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
@@ -73,14 +74,23 @@ struct ProjectionDescription
 
     bool with_parent_part_offset = false;
 
+    /// If not null, this projection is treated as a specialized index. It triggers specific calculation and application
+    /// logic during query execution to optimize data access paths.
     ProjectionIndexPtr index;
 
-    std::optional<UInt64> index_granularity;
-    std::optional<UInt64> index_granularity_bytes;
+    /// Optional SETTINGS overrides for the projection.
+    SettingsChanges settings_changes;
+
+    /// Cache whether index_granularity or index_granularity_bytes is overridden to avoid re-scanning the changes list
+    /// during data writing.
+    bool has_index_granularity_overrides = false;
 
     /// Parse projection from definition AST
-    static ProjectionDescription
-    getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
+    static ProjectionDescription getProjectionFromAST(
+        const ASTPtr & definition_ast,
+        const ColumnsDescription & columns,
+        ContextPtr query_context,
+        LoadingStrictnessLevel mode = LoadingStrictnessLevel::ATTACH);
 
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,
@@ -105,8 +115,6 @@ struct ProjectionDescription
     ProjectionDescription & operator=(ProjectionDescription && other) = default;
 
     ProjectionDescription clone() const;
-
-    void loadSettings(const SettingsChanges & changes);
 
     bool operator==(const ProjectionDescription & other) const;
     bool operator!=(const ProjectionDescription & other) const { return !(*this == other); }

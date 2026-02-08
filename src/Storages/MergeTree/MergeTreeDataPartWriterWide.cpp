@@ -9,6 +9,8 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/ProjectionIndex/PostingListState.h>
+#include <Storages/MergeTree/ProjectionIndex/ProjectionIndexSerializationContext.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
@@ -195,6 +197,20 @@ void MergeTreeDataPartWriterWide::addStreams(
             settings.marks_compress_block_size,
             query_write_settings);
 
+        if (dynamic_cast<const DataTypePostingList *>(name_and_type.type->getCustomName()))
+        {
+            large_posting_streams.emplace(
+                stream_name,
+                std::make_unique<LargePostingListWriterStream>(
+                    stream_name,
+                    data_part_storage,
+                    stream_name,
+                    PROJECTION_INDEX_LARGE_POSTING_SUFFIX,
+                    compression_codec,
+                    settings.max_compress_block_size,
+                    settings.query_write_settings));
+        }
+
         if (columns_to_load_marks.contains(name_and_type.name))
             cached_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
 
@@ -271,7 +287,7 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
     }
 }
 
-void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermutation * permutation)
+void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache)
 {
     Block block_to_write = block;
 
@@ -319,9 +335,9 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
     auto offset_columns = written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{};
     Block primary_key_block;
     if (settings.rewrite_primary_key)
-        primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
+        primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation, permuted_columns_cache);
 
-    Block skip_indexes_block = getIndexBlockAndPermute(block, getSkipIndicesColumns(), permutation);
+    Block skip_indexes_block = getIndexBlockAndPermute(block, getSkipIndicesColumns(), permutation, permuted_columns_cache);
 
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
@@ -516,6 +532,18 @@ void MergeTreeDataPartWriterWide::writeColumn(
         auto & stream = column_streams.at(stream_name);
         return {stream->plain_hashing.count(), stream->compressed_hashing.offset()};
     };
+
+    ProjectionIndexSerializationContext projection_index_context;
+    if (dynamic_cast<const DataTypePostingList *>(name_and_type.type->getCustomName()))
+    {
+        projection_index_context.large_posting_getter
+            = [&](const ISerialization::SubstreamPath & substream_path) -> LargePostingListWriterStream *
+        {
+            auto stream_name = getStreamName(name_and_type, substream_path);
+            return large_posting_streams.at(stream_name).get();
+        };
+        serialize_settings.projection_index_context = &projection_index_context;
+    }
 
     for (const auto & granule : granules)
     {
@@ -789,6 +817,7 @@ void MergeTreeDataPartWriterWide::fillChecksums(MergeTreeDataPartChecksums & che
 
     fillSkipIndicesChecksums(checksums);
     fillStatisticsChecksums(checksums);
+    fillLargePostingChecksums(checksums);
 }
 
 void MergeTreeDataPartWriterWide::finish(bool sync)
@@ -802,6 +831,7 @@ void MergeTreeDataPartWriterWide::finish(bool sync)
 
     finishSkipIndicesSerialization(sync);
     finishStatisticsSerialization(sync);
+    finishLargePostingSerialization(sync);
 }
 
 void MergeTreeDataPartWriterWide::cancel() noexcept

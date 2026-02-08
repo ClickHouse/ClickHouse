@@ -39,7 +39,7 @@ public:
         const MergeTreeWriterSettings & settings,
         MergeTreeIndexGranularityPtr index_granularity_);
 
-    void write(const Block & block, const IColumnPermutation * permutation) override;
+    void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) override;
 
     void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;
 

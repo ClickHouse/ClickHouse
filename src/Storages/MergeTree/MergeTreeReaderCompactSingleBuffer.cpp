@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/ProjectionIndex/PostingListState.h>
+#include <Storages/MergeTree/ProjectionIndex/ProjectionIndexSerializationContext.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
@@ -133,6 +135,17 @@ try
         all_mark_ranges, stream_settings,uncompressed_cache,
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
+
+    for (auto & column : columns_to_read)
+    {
+        if (dynamic_cast<const DataTypePostingList *>(column.type->getCustomName()))
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                column, {}, PROJECTION_INDEX_LARGE_POSTING_SUFFIX, data_part_info_for_read->getChecksums(), storage_settings);
+            chassert(stream_name);
+            large_posting_streams.emplace(*stream_name, createLargePostingStream(*stream_name, profile_callback, clock_type));
+        }
+    }
 
     initialized = true;
 }
