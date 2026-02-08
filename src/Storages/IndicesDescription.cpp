@@ -117,6 +117,9 @@ IndexDescription IndexDescription::getIndexFromAST(
         result.data_types.push_back(elem.type);
     }
 
+    if (result.column_names.empty())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index '{}' must have at least one column in its expression", result.name);
+
     if (index_type && index_type->arguments)
     {
         result.arguments = (index_type->name == TEXT_INDEX_NAME)

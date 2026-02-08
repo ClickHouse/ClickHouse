@@ -68,6 +68,7 @@ void checkObjectExists(
     std::string_view description = {});
 
 bool isNotFoundError(Aws::S3::S3Errors error);
+bool isAuthenticationError(Aws::S3::S3Errors error);
 
 }
 

@@ -8,6 +8,8 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/quoteString.h>
+#include <Storages/MergeTree/VectorSearchUtils.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace
 {
@@ -62,10 +64,17 @@ private:
     void parseArgumentsUUID(const ASTs & args_func, ContextPtr context);
     void parseArgumentsDatabaseTable(const ASTs & args_func, ContextPtr context);
 
+    /// 2 features will benefit from distributed index load + analysis:
+    /// a) vector search with large vector indexes
+    /// b) top-k using only minmax index (e.g SELECT * FROM youtube ORDER BY dislike_count LIMIT 10)
+    /// These 2 cannot be packaged in the 'predicate'
+    void parseArgumentsForOptimizations(const ASTs & args, ContextPtr context);
+
     const bool resolve_by_uuid;
     StorageID source_table_id{StorageID::createEmpty()};
     String parts_regexp;
     ASTPtr predicate;
+    OptionalVectorSearchParameters vector_search_parameters;
 };
 
 std::vector<size_t> TableFunctionMergeTreeAnalyzeIndexes::skipAnalysisForArguments(const QueryTreeNodePtr & /* query_node_table_function */, ContextPtr /* context */) const
@@ -93,9 +102,9 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
 {
     ASTs & args = args_func.at(0)->children;
     /// clang-tidy suggest to use args.empty() over args.size() < 1, which looks wrong here, but OK, let's use empty()
-    if (args.empty() || args.size() > 3)
+    if (args.empty() || args.size() > 5)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{}' must have at from 1 to 3 arguments (UUID, condition[, parts_regexp]), got: {}", getName(), args.size());
+            "Table function '{}' must have at from 1 to 3 or 5 arguments (UUID, condition[, parts_regexp], [, optimization, args_array]), got: {}", getName(), args.size());
 
     args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
     auto uuid = parseFromString<UUID>(checkAndGetLiteralArgument<String>(args[0], "UUID"));
@@ -108,6 +117,9 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
         args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], context);
         parts_regexp = checkAndGetLiteralArgument<String>(args[2], "parts_regexp");
     }
+
+    if (args.size() > 3)
+        parseArgumentsForOptimizations(args, context);
 
     source_table_id = StorageID{/*database=*/ "", /*table=*/ "", uuid};
 }
@@ -134,7 +146,41 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const AST
         parts_regexp = checkAndGetLiteralArgument<String>(args[3], "parts_regexp");
     }
 
+    if (args.size() > 3)
+        parseArgumentsForOptimizations(args, context);
+
     source_table_id = StorageID{database, table};
+}
+
+void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const ASTs & args, ContextPtr /*context*/)
+{
+    if (args.size() == 5)
+    {
+        auto optimization = checkAndGetLiteralArgument<String>(args[3], "extra_optimization");
+        if (optimization == "vector_search_index_analysis")
+        {
+            auto cast_node = args[4]->children.at(0);
+            auto vector_search_args = cast_node->children.at(0)->as<ASTLiteral>()->value.safeGet<Array>();
+            if (vector_search_args.size() != 6)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "vector_search_index_analysis requires 6 arguments");
+
+            Array field_array = vector_search_args[3].safeGet<Array>();
+            std::vector<Float64> reference_vector;
+            for (const auto & field_array_value : field_array)
+            {
+                Float64 float64 = field_array_value.safeGet<Float64>();
+                reference_vector.push_back(float64);
+            }
+
+            vector_search_parameters = VectorSearchParameters{vector_search_args[0].safeGet<String>(), /// column
+                vector_search_args[1].safeGet<String>(), /// distance function
+                vector_search_args[2].safeGet<UInt64>(), /// limit
+                reference_vector, /// search vector
+                static_cast<bool>(vector_search_args[4].safeGet<bool>()), /// additional filters
+                static_cast<bool>(vector_search_args[5].safeGet<bool>())}; /// return distances
+        }
+    }
 }
 
 ColumnsDescription TableFunctionMergeTreeAnalyzeIndexes::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
@@ -175,7 +221,8 @@ StoragePtr TableFunctionMergeTreeAnalyzeIndexes::executeImpl(
         std::move(source_table),
         std::move(columns),
         parts_regexp,
-        predicate);
+        predicate,
+        vector_search_parameters);
     res->startup();
     return res;
 }

@@ -832,6 +832,7 @@ void Client::addExtraOptions(OptionsDescription & options_description)
 
     options_description.external_description.emplace(createOptionsDescription("External tables options", terminal_width));
     options_description.external_description->add_options()
+        ("external", "marks the beginning of a clause. You may have multiple sections like this, for the number of tables being transmitted")
         ("file", po::value<std::string>(), "data file or - for stdin")
         ("name", po::value<std::string>()->default_value("_data"), "name of the table")
         ("format", po::value<std::string>()->default_value("TabSeparated"), "data format")

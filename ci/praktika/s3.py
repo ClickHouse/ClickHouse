@@ -100,10 +100,17 @@ class S3:
 
                 # Prepare ExtraArgs for upload_file
                 extra_args = {}
+
+                inferred_content_type = ""
+                if not content_type and not (text and not content_type):
+                    inferred_content_type, _ = mimetypes.guess_type(key)
+
                 if text and not content_type:
                     extra_args["ContentType"] = "text/plain"
                 elif content_type:
                     extra_args["ContentType"] = content_type
+                elif inferred_content_type:
+                    extra_args["ContentType"] = inferred_content_type
                 if content_encoding:
                     extra_args["ContentEncoding"] = content_encoding
 
@@ -122,6 +129,10 @@ class S3:
                         Bucket=bucket, Key=key, Tagging={"TagSet": tag_set}
                     )
 
+            except NoCredentialsError as e:
+                print(f"ERROR: Failed to upload to S3 using boto3 (no credentials): {e}")
+                if not no_strict:
+                    raise
             except ClientError as e:
                 error_code = e.response.get("Error", {}).get("Code", "")
                 print(f"ERROR: Failed to upload to S3 using boto3: {error_code}")

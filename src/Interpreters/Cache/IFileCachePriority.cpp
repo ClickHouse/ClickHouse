@@ -1,4 +1,5 @@
 #include <Interpreters/Cache/IFileCachePriority.h>
+#include <Interpreters/Cache/EvictionCandidates.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 

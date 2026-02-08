@@ -61,7 +61,6 @@ public:
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
-        bool is_dynamic_resize,
         const IFileCachePriority::OriginInfo & origin,
         const CacheStateGuard::Lock &) override;
 
@@ -117,6 +116,12 @@ public:
         size_t max_elements_,
         double size_ratio_,
         const CacheStateGuard::Lock &) override;
+
+    EvictionInfoPtr collectEvictionInfoForResize(
+        size_t desired_max_size,
+        size_t desired_max_elements,
+        const OriginInfo & origin_info,
+        const CacheStateGuard::Lock & lock) override;
 
     FileCachePriorityPtr copy() const { return std::make_unique<LRUFileCachePriority>(max_size, max_elements, description, state); }
 

@@ -82,6 +82,7 @@ If no test name is provided in arguments, prompt the user with `AskUserQuestion`
      - Use `AskUserQuestion` to prompt: "Did you start the ClickHouse server?"
        - Option 1: "Yes, server is running now" - Run the liveness check Task again to verify
        - Option 2: "No, I'll start it later" - Exit without running the test
+       - Option 3: "Run the server by yourself" - Run the server on your own
      - If user confirms server is running, run the liveness check Task again before proceeding
 
    - **If server is running and healthy:**

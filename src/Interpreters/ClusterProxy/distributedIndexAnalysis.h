@@ -6,6 +6,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/VectorSearchUtils.h>
 
 namespace DB
 {
@@ -31,6 +32,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const ActionsDAG * filter_actions_dag,
     const Names & primary_key_column_names,
     const RangesInDataParts & parts_with_ranges,
+    const OptionalVectorSearchParameters & vector_search_parameters,
     LocalIndexAnalysisCallback local_index_analysis_callback,
     ContextPtr context);
 

@@ -58,7 +58,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         total_size_bytes_compressed += source_part->getBytesOnDisk();
         total_size_bytes_uncompressed += source_part->getTotalColumnsSize().data_uncompressed;
         total_size_marks += source_part->getMarksCount();
-        total_rows_count += source_part->index_granularity->getTotalRows();
+        total_rows_count += source_part->rows_count;
     }
 
     if (!future_part->parts.empty())

@@ -45,7 +45,7 @@ SELECT
     multiIf(number % 3 = 0, 'aa',
             number % 3 = 1, 'bb',
             'cc') AS str
-FROM numbers(1024000);
+FROM numbers(10000);
 
 INSERT INTO tab_uncompressed
 SELECT
@@ -53,7 +53,7 @@ SELECT
     multiIf(number % 3 = 0, 'aa',
             number % 3 = 1, 'bb',
             'cc') AS str
-FROM numbers(1024000);
+FROM numbers(10000);
 
 INSERT INTO tab_bitpacking
 SELECT

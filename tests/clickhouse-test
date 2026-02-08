@@ -770,6 +770,7 @@ def get_processlist_size(args):
                     count()
                 FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
                 WHERE query NOT LIKE '%system.processes%'
+                AND query NOT LIKE '%system.minio_%_logs%'
                 """,
             ).strip()
         )
@@ -782,6 +783,7 @@ def get_processlist_size(args):
                     count()
                 FROM clusterAllReplicas('test_cluster_shared_catalog', system.processes)
                 WHERE query NOT LIKE '%system.processes%'
+                AND query NOT LIKE '%system.minio_%_logs%'
                 """,
             ).strip()
         )
@@ -793,6 +795,7 @@ def get_processlist_size(args):
                     count()
                 FROM system.processes
                 WHERE query NOT LIKE '%system.processes%'
+                AND query NOT LIKE '%system.minio_%_logs%'
             """,
         ).strip()
     )
@@ -815,6 +818,7 @@ def get_processlist_with_stacktraces(args):
             FROM system.processes p
             JOIN system.stack_trace s USING (query_id)
             WHERE query NOT LIKE '%system.processes%'
+            AND query NOT LIKE '%system.minio_%_logs%'
             GROUP BY p.*
         ))
         ORDER BY elapsed DESC FORMAT Vertical
@@ -840,6 +844,7 @@ def get_processlist_with_stacktraces(args):
             FROM system.processes p
             JOIN system.stack_trace s USING (query_id)
             WHERE query NOT LIKE '%system.processes%'
+            AND query NOT LIKE '%system.minio_%_logs%'
             GROUP BY p.*
         ))
         ORDER BY elapsed DESC FORMAT Vertical
@@ -861,6 +866,7 @@ def get_processlist_with_stacktraces(args):
         FROM system.processes p
         JOIN system.stack_trace s USING (query_id)
         WHERE query NOT LIKE '%system.processes%'
+        AND query NOT LIKE '%system.minio_%_logs%'
         GROUP BY p.*
         ORDER BY elapsed DESC FORMAT Vertical
         """,

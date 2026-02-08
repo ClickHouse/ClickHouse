@@ -21,6 +21,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/WKB.h>
 #include <Common/config_version.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/formatReadable.h>
 #include <Common/HashTable/HashSet.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -36,6 +37,7 @@ namespace DB::ErrorCodes
     extern const int CANNOT_COMPRESS;
     extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace DB::Parquet
@@ -373,9 +375,14 @@ struct ConverterDateTime64WithMultiplier
     {
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
-            /// Not checking overflow because DateTime64 values should already be in the range where
-            /// they fit in Int64 at any allowed scale (i.e. up to nanoseconds).
-            buf[i] = column.getData()[offset + i].value * multiplier;
+        {
+            Int64 value = column.getData()[offset + i].value;
+            if (common::mulOverflow(value, multiplier, buf[i]))
+                throw Exception(
+                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "DateTime64 value {} is out of range for Parquet timestamp (multiplier {})",
+                    value, multiplier);
+        }
         return buf.data();
     }
 };

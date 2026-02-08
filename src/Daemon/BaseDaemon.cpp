@@ -233,6 +233,11 @@ void BaseDaemon::closeFDs()
 void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
+
+    /// Remember the original working directory before any chdir calls below.
+    /// This is needed to correctly resolve relative config paths later.
+    original_working_directory = fs::current_path();
+
     ServerApplication::initialize(self);
 
     /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!

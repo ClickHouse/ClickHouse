@@ -759,8 +759,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             for (auto & projection_ast : args.query.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, context);
-                metadata.projections.add(std::move(projection));
+                try
+                {
+                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, context);
+                    metadata.projections.add(std::move(projection));
+                }
+                catch (...)
+                {
+                    if (args.mode < LoadingStrictnessLevel::FORCE_ATTACH)
+                        throw;
+                    tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format(
+                        "Cannot parse projection {} during server startup, skipping it. "
+                        "It may be caused by a dependency on a dropped dictionary or a missing object. "
+                        "Consider recreating the projection or dropping and recreating the table.",
+                        projection_ast->formatForErrorMessage()));
+                }
             }
         }
 

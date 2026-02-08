@@ -184,11 +184,12 @@ def new_backup_name():
 
 
 def get_events_for_query(node, query_id: str) -> Dict[str, int]:
+    # Flush logs separately with a longer timeout because query_log is stored
+    # on S3 (policy_s3_plain_rewritable) and can be slow to flush under CI load.
+    node.query("SYSTEM FLUSH LOGS", timeout=300)
     events = TSV(
         node.query(
             f"""
-            SYSTEM FLUSH LOGS;
-
             WITH arrayJoin(ProfileEvents) as pe
             SELECT pe.1, pe.2
             FROM system.query_log
@@ -226,6 +227,11 @@ def check_backup_and_restore(
 ):
     node = cluster.instances["node"]
     optimize_table_query = "OPTIMIZE TABLE data FINAL;" if optimize_table else ""
+
+    # Truncate query_log before running backup/restore so that SYSTEM FLUSH LOGS
+    # later only needs to flush this test's entries to S3 (query_log uses
+    # policy_s3_plain_rewritable), avoiding the 180s flush timeout.
+    node.query("TRUNCATE TABLE IF EXISTS system.query_log")
 
     node.query(
         f"""

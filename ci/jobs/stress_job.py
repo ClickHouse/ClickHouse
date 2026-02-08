@@ -64,6 +64,7 @@ def get_additional_envs(info, check_name: str) -> List[str]:
         azure_connection_string = Shell.get_output(
             f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
             verbose=True,
+            strict=True,
         )
         result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
     # some cloud-specific features require feature flags enabled

@@ -242,10 +242,12 @@ def main():
 
     if not info.is_local_run:
         # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
-        os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
+        azure_connection_string = Shell.get_output(
             f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
             verbose=True,
+            strict=True,
         )
+        os.environ["AZURE_CONNECTION_STRING"] = azure_connection_string
     else:
         print("Disable azure for a local run")
         config_installs_args += " --no-azure"

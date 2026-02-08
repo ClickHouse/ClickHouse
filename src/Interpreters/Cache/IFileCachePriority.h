@@ -190,7 +190,6 @@ public:
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
-        bool is_dynamic_resize,
         const IFileCachePriority::OriginInfo & origin,
         const CacheStateGuard::Lock &) = 0;
 
@@ -277,6 +276,16 @@ public:
         size_t max_elements_,
         double size_ratio_,
         const CacheStateGuard::Lock &) = 0;
+
+    /// Compute eviction info needed to resize the cache to the given limits.
+    /// Unlike collectEvictionInfo which takes total amounts to evict,
+    /// this method takes desired limits and computes per-sub-queue eviction
+    /// correctly for priority types with internal structure (e.g., SLRU).
+    virtual EvictionInfoPtr collectEvictionInfoForResize(
+        size_t desired_max_size,
+        size_t desired_max_elements,
+        const OriginInfo & origin_info,
+        const CacheStateGuard::Lock & lock) = 0;
 
     virtual void resetEvictionPos() = 0;
 

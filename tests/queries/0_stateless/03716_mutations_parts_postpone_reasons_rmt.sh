@@ -23,9 +23,7 @@ $CLICKHOUSE_CLIENT --query "
         merge_selecting_sleep_ms = 100,
         max_merge_selecting_sleep_ms = 200;
 
-    INSERT INTO rmt VALUES (1, 1);
-    INSERT INTO rmt VALUES (2, 2);
-    INSERT INTO rmt VALUES (3, 3);
+    INSERT INTO rmt VALUES (1, 1), (2, 2), (3, 3);
 "
 
 #test1 'all_parts'->no thread in pool for one mutation
@@ -84,9 +82,7 @@ $CLICKHOUSE_CLIENT --query "
         merge_selecting_sleep_ms = 100,
         max_merge_selecting_sleep_ms = 200;
 
-    INSERT INTO rmt VALUES (1, 1);
-    INSERT INTO rmt VALUES (2, 2);
-    INSERT INTO rmt VALUES (3, 3);
+    INSERT INTO rmt VALUES (1, 1), (2, 2), (3, 3);
 "
 
 #test3 part->postpone reasons for one mutation
